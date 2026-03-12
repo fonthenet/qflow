@@ -14,7 +14,9 @@ self.addEventListener('push', (event) => {
     renotify: true,
     vibrate: [300, 150, 300, 150, 300, 150, 600],
     requireInteraction: true,
+    silent: false,
     data: { url: data.url || '/' },
+    actions: [{ action: 'open', title: 'Open' }],
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

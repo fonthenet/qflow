@@ -68,7 +68,11 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
           endpoint: sub.endpoint,
           keys: { p256dh: sub.p256dh, auth: sub.auth },
         },
-        message
+        message,
+        {
+          urgency: 'high',  // FCM high priority — wakes device, plays sound on lock screen
+          TTL: 60,          // Expire after 60s (time-sensitive queue alerts)
+        }
       );
       console.log('[SendPush] Successfully sent to', sub.endpoint.slice(0, 60) + '...');
     } catch (err: unknown) {
