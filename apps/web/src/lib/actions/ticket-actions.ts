@@ -354,7 +354,7 @@ export async function recallTicket(ticketId: string) {
     sendPushToTicket(ticketId, {
       title: 'Reminder: Your Turn!',
     body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
-    tag: `recall-${ticketId}`,
+    tag: `recall-${ticketId}-${Date.now()}`,
     url: `/q/${ticket.qr_token}`,
   }).catch((err) => console.error('[Recall] Push notification error:', err));
   }
