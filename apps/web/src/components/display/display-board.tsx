@@ -85,9 +85,36 @@ export function DisplayBoard({
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Display] Realtime subscription failed:', status);
+        }
+      });
+
+    // Polling fallback: refresh every 4s in case realtime WebSocket fails
+    const refreshData = async () => {
+      const { data: active } = await supabase
+        .from('tickets')
+        .select('*, desk:desks(name, display_name), service:services(name)')
+        .eq('office_id', office.id)
+        .in('status', ['called', 'serving'])
+        .order('called_at', { ascending: false });
+
+      const { data: waiting } = await supabase
+        .from('tickets')
+        .select('id, department_id, ticket_number, created_at')
+        .eq('office_id', office.id)
+        .eq('status', 'waiting')
+        .order('created_at');
+
+      if (active) setActiveTickets(active);
+      if (waiting) setWaitingTickets(waiting);
+    };
+
+    const pollInterval = setInterval(refreshData, 4000);
 
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [office.id, screen.id]);

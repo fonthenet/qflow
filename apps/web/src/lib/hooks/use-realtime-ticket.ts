@@ -141,7 +141,11 @@ export function useRealtimeTicket({
           setTimeout(() => setIsUpdating(false), 500);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[RealtimeTicket] Subscription failed:', status, '— polling fallback active');
+        }
+      });
 
     // Channel 2: Listen for ANY ticket status change in same department
     // This triggers position refresh when someone ahead gets called/served
@@ -176,16 +180,36 @@ export function useRealtimeTicket({
 
     channelsRef.current = [ticketChannel, deptChannel, broadcastChannel];
 
-    // Periodic position refresh for waiting tickets
-    const interval = setInterval(() => {
-      if (ticket.status === 'waiting') {
-        fetchPosition();
-        fetchWaitTime(ticket.department_id, ticket.service_id);
-      }
-    }, 30000);
+    // Polling fallback: refresh ticket + position every 5s to guarantee updates
+    // even if realtime WebSocket is down (e.g., env vars not baked into client bundle)
+    const pollInterval = setInterval(() => {
+      supabase
+        .from('tickets')
+        .select('*')
+        .eq('id', ticketId)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setTicket((prev) => {
+              // Only update if something actually changed
+              if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                return data as Ticket;
+              }
+              return prev;
+            });
+            if (data.status === 'waiting') {
+              fetchPosition();
+              fetchWaitTime(data.department_id, data.service_id);
+            } else if (data.status !== (ticket as Ticket).status) {
+              setPosition(null);
+              setEstimatedWait(null);
+            }
+          }
+        });
+    }, 5000);
 
     return () => {
-      clearInterval(interval);
+      clearInterval(pollInterval);
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
       channelsRef.current = [];
     };
