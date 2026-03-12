@@ -1,0 +1,78 @@
+name: QueueFlow
+options:
+  bundleIdPrefix: com.queueflow
+  deploymentTarget:
+    iOS: "16.4"
+  xcodeVersion: "15.0"
+  developmentLanguage: en
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: W69MRY2826
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+
+  # ─────────────────────────────────────────
+  # Companion App (required by Apple)
+  # ─────────────────────────────────────────
+  QueueFlow:
+    type: application
+    platform: iOS
+    sources:
+      - path: QueueFlow
+        type: group
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.queueflow.app
+        INFOPLIST_GENERATION_MODE: GeneratedFile
+        GENERATE_INFOPLIST_FILE: YES
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    entitlements:
+      path: QueueFlow/QueueFlow.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - appclips:qflow-sigma.vercel.app
+
+  # ─────────────────────────────────────────
+  # App Clip (the star of the show)
+  # ─────────────────────────────────────────
+  QueueFlowClip:
+    type: app-clip
+    platform: iOS
+    sources:
+      - path: QueueFlowClip
+        type: group
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.queueflow.app.Clip
+        INFOPLIST_FILE: QueueFlowClip/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    entitlements:
+      path: QueueFlowClip/QueueFlowClip.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - appclips:qflow-sigma.vercel.app
+        com.apple.developer.parent-application-identifiers:
+          - $(AppIdentifierPrefix)com.queueflow.app
+    dependencies:
+      - target: QueueFlow
+        embed: false
+        link: false
+
+schemes:
+  QueueFlow:
+    build:
+      targets:
+        QueueFlow: all
+  QueueFlowClip:
+    build:
+      targets:
+        QueueFlowClip: all
+    run:
+      environmentVariables:
+        - variable: _XCAppClipURL
+          value: "https://qflow-sigma.vercel.app/q/test-token"
+          isEnabled: true
