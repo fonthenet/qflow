@@ -25,7 +25,12 @@ export async function POST(request: NextRequest) {
     if (!vapidPublic || !vapidPrivate) {
       return NextResponse.json({ error: 'VAPID keys not configured' }, { status: 500 });
     }
-    webpush.setVapidDetails('mailto:noreply@queueflow.app', vapidPublic, vapidPrivate);
+    // Strip any padding = from VAPID keys (must be URL-safe Base64 without padding)
+    webpush.setVapidDetails(
+      'mailto:noreply@queueflow.app',
+      vapidPublic.replace(/=+$/, ''),
+      vapidPrivate.replace(/=+$/, '')
+    );
 
     // Use direct supabase client (no cookies needed)
     const supabase = createClient(
