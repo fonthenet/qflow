@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.queueflow.app",
-      "sha256_cert_fingerprints": ["PLACEHOLDER_WILL_BE_UPDATED_AFTER_SIGNING_KEY_GENERATION"]
+      "sha256_cert_fingerprints": ["8C:A0:01:3C:16:C0:AF:B6:D6:1C:38:96:00:84:CC:0E:BB:38:B8:B8:DF:26:CA:1E:83:58:04:C0:F6:60:19:69"]
     }
   }
 ]
