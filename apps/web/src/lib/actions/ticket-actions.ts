@@ -1,7 +1,6 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { sendPushToTicket } from '@/lib/send-push';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 
@@ -84,29 +83,8 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Send Web Push notification (works even when page is backgrounded/closed)
-  if (ticket) {
-    // Fetch desk name for the notification
-    const deskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
-
-    try {
-      await sendPushToTicket(ticketId, {
-        title: "It's Your Turn!",
-        body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-        tag: `called-${ticketId}`,
-        url: `/q/${ticket.qr_token}`,
-      });
-    } catch (err) {
-      console.error('[CallNext] Push notification error:', err);
-    }
-  }
+  // Push notification is now handled by database trigger (pg_net → /api/push-send)
+  // This decouples push from the server action for reliability + handles subscription race condition
 
   revalidatePath('/desk');
   return { data: ticket };
@@ -343,17 +321,8 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Send Web Push notification (works even when page is backgrounded/closed)
-  try {
-    await sendPushToTicket(ticketId, {
-      title: 'Your Turn — Please Return!',
-      body: `Ticket ${ticket.ticket_number} — You are being recalled to the desk`,
-      tag: `recall-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
-    });
-  } catch {
-    // Push is best-effort, don't fail the recall
-  }
+  // Push notification is now handled by database trigger (pg_net → /api/push-send)
+  // The trigger fires on called_at change for recalls
 
   // Log event
   await supabase.from('ticket_events').insert({
