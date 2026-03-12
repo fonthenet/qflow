@@ -1,0 +1,79 @@
+name: Deploy iOS to TestFlight
+
+on:
+  workflow_dispatch:  # Manual trigger only — you control when to deploy
+    inputs:
+      lane:
+        description: 'Fastlane lane to run'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+          - beta     # Upload to TestFlight
+          - release  # Submit to App Store review
+
+jobs:
+  deploy:
+    runs-on: macos-14  # M1 Mac runner
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            XCODE_PATH="/Applications/Xcode.app"
+          fi
+          echo "Using: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen || brew upgrade xcodegen
+
+      - name: Install Ruby & Bundler
+        run: |
+          # Use system Ruby on macOS runners
+          gem install bundler --no-document
+
+      - name: Install Fastlane Dependencies
+        working-directory: apps/ios/QueueFlow
+        run: bundle install
+
+      - name: Generate Xcode Project
+        working-directory: apps/ios/QueueFlow
+        run: xcodegen generate
+
+      - name: Deploy to ${{ github.event.inputs.lane }}
+        working-directory: apps/ios/QueueFlow
+        env:
+          # Apple credentials for App Store Connect API
+          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.ASC_API_KEY_P8 }}
+
+          # Match (code signing)
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_AUTH }}
+
+          # Keychain
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+          # App identifiers
+          APP_APPLE_ID: ${{ secrets.APP_APPLE_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
+
+        run: bundle exec fastlane ${{ github.event.inputs.lane }}
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            apps/ios/QueueFlow/build/*.ipa
+            apps/ios/QueueFlow/fastlane/report.xml
+          retention-days: 7

@@ -1,0 +1,13 @@
+# App Clip
+app_identifier("com.queueflow.app.Clip")
+
+# Companion App
+for_platform :ios do
+  for_lane :release do
+    app_identifier("com.queueflow.app")
+  end
+end
+
+apple_id(ENV["APPLE_ID"])
+itc_team_id(ENV["ITC_TEAM_ID"])
+team_id("W69MRY2826")

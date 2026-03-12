@@ -1,0 +1,140 @@
+default_platform(:ios)
+
+TEAM_ID = "W69MRY2826"
+APP_IDENTIFIER = "com.queueflow.app"
+CLIP_IDENTIFIER = "com.queueflow.app.Clip"
+PROJECT = "QueueFlow.xcodeproj"
+SCHEME_APP = "QueueFlow"
+SCHEME_CLIP = "QueueFlowClip"
+
+platform :ios do
+
+  # ─────────────────────────────────────────
+  # Code Signing with Match
+  # ─────────────────────────────────────────
+  desc "Sync certificates and profiles via match"
+  lane :sync_certs do
+    # App Store distribution certs & profiles for both targets
+    match(
+      type: "appstore",
+      app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
+      readonly: is_ci,
+      git_url: ENV["MATCH_GIT_URL"],
+      keychain_name: ENV["KEYCHAIN_NAME"] || "login.keychain",
+      keychain_password: ENV["KEYCHAIN_PASSWORD"] || "",
+    )
+  end
+
+  # ─────────────────────────────────────────
+  # Build for TestFlight
+  # ─────────────────────────────────────────
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    # Set up CI keychain
+    if is_ci
+      create_keychain(
+        name: "ci_keychain",
+        password: ENV["KEYCHAIN_PASSWORD"],
+        default_keychain: true,
+        unlock: true,
+        timeout: 3600,
+        lock_when_sleeps: false,
+      )
+    end
+
+    # Sync signing certs
+    match(
+      type: "appstore",
+      app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
+      readonly: is_ci,
+      git_url: ENV["MATCH_GIT_URL"],
+      keychain_name: is_ci ? "ci_keychain" : "login.keychain",
+      keychain_password: ENV["KEYCHAIN_PASSWORD"] || "",
+    )
+
+    # Increment build number (uses current timestamp for uniqueness)
+    increment_build_number(
+      build_number: Time.now.strftime("%Y%m%d%H%M"),
+      xcodeproj: PROJECT,
+    )
+
+    # Build the archive
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME_APP,
+      export_method: "app-store",
+      destination: "generic/platform=iOS",
+      export_options: {
+        provisioningProfiles: {
+          APP_IDENTIFIER => "match AppStore #{APP_IDENTIFIER}",
+          CLIP_IDENTIFIER => "match AppStore #{CLIP_IDENTIFIER}",
+        },
+      },
+      output_directory: "./build",
+      output_name: "QueueFlow.ipa",
+      clean: true,
+    )
+
+    # Upload to TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      apple_id: ENV["APP_APPLE_ID"], # App's Apple ID from App Store Connect
+      ipa: "./build/QueueFlow.ipa",
+    )
+
+    UI.success("✅ QueueFlow uploaded to TestFlight!")
+  end
+
+  # ─────────────────────────────────────────
+  # Submit to App Store Review
+  # ─────────────────────────────────────────
+  desc "Submit the latest TestFlight build to App Store review"
+  lane :release do
+    deliver(
+      submit_for_review: true,
+      automatic_release: true,
+      force: true, # Skip HTML report verification
+      skip_screenshots: true,
+      skip_metadata: false,
+      app_identifier: APP_IDENTIFIER,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+      },
+    )
+  end
+
+  # ─────────────────────────────────────────
+  # Build only (for CI validation)
+  # ─────────────────────────────────────────
+  desc "Build for simulator (no signing)"
+  lane :build_debug do
+    # Build App Clip
+    xcodebuild(
+      project: PROJECT,
+      scheme: SCHEME_CLIP,
+      destination: "platform=iOS Simulator,name=iPhone 15,OS=latest",
+      configuration: "Debug",
+      build_settings: {
+        "CODE_SIGN_IDENTITY" => "",
+        "CODE_SIGNING_REQUIRED" => "NO",
+        "CODE_SIGNING_ALLOWED" => "NO",
+      },
+    )
+
+    # Build Companion App
+    xcodebuild(
+      project: PROJECT,
+      scheme: SCHEME_APP,
+      destination: "platform=iOS Simulator,name=iPhone 15,OS=latest",
+      configuration: "Debug",
+      build_settings: {
+        "CODE_SIGN_IDENTITY" => "",
+        "CODE_SIGNING_REQUIRED" => "NO",
+        "CODE_SIGNING_ALLOWED" => "NO",
+      },
+    )
+
+    UI.success("✅ Both targets built successfully!")
+  end
+
+end

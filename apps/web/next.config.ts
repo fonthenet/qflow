@@ -7,6 +7,18 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@queueflow/shared', '@queueflow/ui'],
   // Allow access from Cloudflare tunnel and local network
   allowedDevOrigins: ['*.trycloudflare.com', 'qflow.sihadz.com'],
+
+  // Ensure AASA file is served with correct content type for iOS App Clips
+  async headers() {
+    return [
+      {
+        source: '/.well-known/apple-app-site-association',
+        headers: [
+          { key: 'Content-Type', value: 'application/json' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
