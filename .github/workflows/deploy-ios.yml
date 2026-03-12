@@ -48,8 +48,8 @@ jobs:
           # Required for code signing on CI where system keychain may not have them
           curl -sL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o /tmp/AppleWWDRCAG3.cer
           curl -sL https://www.apple.com/certificateauthority/AppleRootCA-G3.cer -o /tmp/AppleRootCA-G3.cer
-          sudo security import /tmp/AppleWWDRCAG3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A
-          sudo security import /tmp/AppleRootCA-G3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A
+          sudo security import /tmp/AppleWWDRCAG3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A || true
+          sudo security import /tmp/AppleRootCA-G3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A || true
 
       - name: Generate Xcode Project
         working-directory: apps/ios/QueueFlow
