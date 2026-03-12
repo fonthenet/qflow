@@ -1,16 +1,16 @@
 import webpush from 'web-push';
 import { createClient } from '@/lib/supabase/server';
 
-// Configure web-push with VAPID keys
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY!;
-
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    'mailto:noreply@queueflow.app',
-    VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY
-  );
+// Lazy VAPID init — env vars not available at module load on Vercel serverless
+let vapidConfigured = false;
+function ensureVapid() {
+  if (vapidConfigured) return;
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const priv = process.env.VAPID_PRIVATE_KEY;
+  if (pub && priv) {
+    webpush.setVapidDetails('mailto:noreply@queueflow.app', pub, priv);
+    vapidConfigured = true;
+  }
 }
 
 interface PushPayload {
@@ -27,7 +27,8 @@ interface PushPayload {
 export async function sendPushToTicket(ticketId: string, payload: PushPayload): Promise<void> {
   console.log('[SendPush] Sending push for ticket:', ticketId, payload);
 
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+  ensureVapid();
+  if (!vapidConfigured) {
     console.warn('[SendPush] VAPID keys not configured, skipping push');
     return;
   }
