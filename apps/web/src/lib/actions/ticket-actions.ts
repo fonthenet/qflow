@@ -84,8 +84,10 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Fire-and-forget push (original pattern that works on locked screen)
-  if (ticket) {
+  // Push notification: on Vercel, pg_net trigger handles it via /api/push-send.
+  // On local/Cloudflare, server action sends directly (pg_net also fires but hits Vercel).
+  // Only send from server action if NOT on Vercel (avoid double-send which downgrades priority).
+  if (ticket && !process.env.VERCEL) {
     const deskName = ticket.desk_id
       ? await supabase
           .from('desks')
@@ -338,22 +340,24 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Fire-and-forget push for recall
-  const recallDeskName = ticket.desk_id
-    ? await supabase
-        .from('desks')
-        .select('display_name, name')
-        .eq('id', ticket.desk_id)
-        .single()
-        .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-    : 'your desk';
+  // Push: only from server action on local/Cloudflare. On Vercel, pg_net handles it.
+  if (!process.env.VERCEL) {
+    const recallDeskName = ticket.desk_id
+      ? await supabase
+          .from('desks')
+          .select('display_name, name')
+          .eq('id', ticket.desk_id)
+          .single()
+          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
+      : 'your desk';
 
-  sendPushToTicket(ticketId, {
-    title: 'Reminder: Your Turn!',
+    sendPushToTicket(ticketId, {
+      title: 'Reminder: Your Turn!',
     body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
     tag: `recall-${ticketId}`,
     url: `/q/${ticket.qr_token}`,
   }).catch((err) => console.error('[Recall] Push notification error:', err));
+  }
 
   // Log event
   await supabase.from('ticket_events').insert({
