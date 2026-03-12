@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   ...(process.env.BUILD_STANDALONE === 'true' ? { output: 'standalone' as const } : {}),
   transpilePackages: ['@queueflow/shared', '@queueflow/ui'],
   // Allow access from Cloudflare tunnel and local network
-  allowedDevOrigins: ['*.trycloudflare.com'],
+  allowedDevOrigins: ['*.trycloudflare.com', 'qflow.sihadz.com'],
 };
 
 export default nextConfig;
