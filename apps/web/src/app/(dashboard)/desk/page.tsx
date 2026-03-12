@@ -86,14 +86,14 @@ export default async function DeskPage() {
   }
 
   // Fetch current ticket being served or called at this desk
-  const { data: currentTicket } = await supabase
+  const { data: currentTickets } = await supabase
     .from('tickets')
     .select('*')
     .eq('desk_id', assignedDesk.id)
     .in('status', ['called', 'serving'])
     .order('called_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  const currentTicket = currentTickets?.[0] ?? null;
 
   // Fetch all departments and services for transfer functionality
   const { data: departments } = await supabase
