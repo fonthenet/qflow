@@ -64,11 +64,11 @@ platform :ios do
   lane :beta do
     setup_keychain
 
-    # Sync signing certs
+    # Sync signing certs (readonly: true downloads from git, installs to keychain)
     match(
       type: "appstore",
       app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
-      readonly: is_ci,
+      readonly: true,
       git_url: ENV["MATCH_GIT_URL"],
       keychain_name: is_ci ? "ci_keychain" : "login.keychain",
       keychain_password: ENV["KEYCHAIN_PASSWORD"] || "",
@@ -78,6 +78,26 @@ platform :ios do
     increment_build_number(
       build_number: Time.now.strftime("%Y%m%d%H%M"),
       xcodeproj: PROJECT,
+    )
+
+    # Update project signing settings to use match profiles
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: PROJECT,
+      team_id: TEAM_ID,
+      bundle_identifier: APP_IDENTIFIER,
+      code_sign_identity: "iPhone Distribution",
+      profile_name: "match AppStore #{APP_IDENTIFIER}",
+      targets: [SCHEME_APP],
+    )
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: PROJECT,
+      team_id: TEAM_ID,
+      bundle_identifier: CLIP_IDENTIFIER,
+      code_sign_identity: "iPhone Distribution",
+      profile_name: "match AppStore #{CLIP_IDENTIFIER}",
+      targets: [SCHEME_CLIP],
     )
 
     # Build the archive
