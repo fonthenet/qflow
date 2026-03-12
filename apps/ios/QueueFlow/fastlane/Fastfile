@@ -64,11 +64,11 @@ platform :ios do
   lane :beta do
     setup_keychain
 
-    # Sync signing certs (readonly: true downloads from git, installs to keychain)
+    # Sync signing certs (readonly: false to ensure certs are imported to CI keychain)
     match(
       type: "appstore",
       app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
-      readonly: true,
+      readonly: false,
       git_url: ENV["MATCH_GIT_URL"],
       keychain_name: is_ci ? "ci_keychain" : "login.keychain",
       keychain_password: ENV["KEYCHAIN_PASSWORD"] || "",
