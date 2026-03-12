@@ -70,12 +70,8 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
         },
         message,
         {
-          urgency: 'high',   // FCM high priority — bypasses Android Doze
-          TTL: 300,           // 5 min — allows time for Doze maintenance windows
-          topic: `ticket-${ticketId}`,  // FCM topic for dedup and priority
-          headers: {
-            Urgency: 'high',  // Explicit header backup
-          },
+          urgency: 'high',  // FCM high priority — wakes device, plays sound on lock screen
+          TTL: 60,          // Expire after 60s (time-sensitive queue alerts)
         }
       );
       console.log('[SendPush] Successfully sent to', sub.endpoint.slice(0, 60) + '...');
