@@ -9,8 +9,9 @@ on:
         default: 'beta'
         type: choice
         options:
-          - beta     # Upload to TestFlight
-          - release  # Submit to App Store review
+          - sync_certs  # Initialize/sync certificates (run first!)
+          - beta        # Upload to TestFlight
+          - release     # Submit to App Store review
 
 jobs:
   deploy:

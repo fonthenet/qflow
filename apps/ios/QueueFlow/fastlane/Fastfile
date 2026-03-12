@@ -12,17 +12,32 @@ platform :ios do
   # ─────────────────────────────────────────
   # Code Signing with Match
   # ─────────────────────────────────────────
-  desc "Sync certificates and profiles via match"
+  desc "Sync certificates and profiles via match (creates if missing)"
   lane :sync_certs do
+    # Set up CI keychain
+    if is_ci
+      create_keychain(
+        name: "ci_keychain",
+        password: ENV["KEYCHAIN_PASSWORD"],
+        default_keychain: true,
+        unlock: true,
+        timeout: 3600,
+        lock_when_sleeps: false,
+      )
+    end
+
     # App Store distribution certs & profiles for both targets
+    # readonly: false so it creates certs if they don't exist yet
     match(
       type: "appstore",
       app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
-      readonly: is_ci,
+      readonly: false,
       git_url: ENV["MATCH_GIT_URL"],
-      keychain_name: ENV["KEYCHAIN_NAME"] || "login.keychain",
+      keychain_name: is_ci ? "ci_keychain" : "login.keychain",
       keychain_password: ENV["KEYCHAIN_PASSWORD"] || "",
     )
+
+    UI.success("✅ Certificates and profiles synced!")
   end
 
   # ─────────────────────────────────────────
