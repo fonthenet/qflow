@@ -8,8 +8,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'QueueFlow';
   const options = {
     body: data.body || 'You have a notification',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/icon-192x192.png',
+    badge: '/icon-192x192.png',
     tag: data.tag || 'queueflow-' + Date.now(),
     renotify: true,
     vibrate: [300, 150, 300, 150, 300, 150, 600],

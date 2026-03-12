@@ -28,6 +28,7 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
   const [nowServing, setNowServing] = useState<string | null>(null);
   const [deskName, setDeskName] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [showIosPrompt, setShowIosPrompt] = useState(false);
   const notificationRequested = useRef(false);
 
   // Fetch "now serving" ticket for context
@@ -73,6 +74,14 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     }
   }, [ticket.status, ticket.desk_id]);
 
+  // Detect iOS and PWA status
+  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isInStandaloneMode = typeof window !== 'undefined' && (
+    (window.navigator as any).standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches
+  );
+  const iosPushSupported = isIos ? isInStandaloneMode : true;
+
   // Register service worker on mount + auto-subscribe if permission already granted
   useEffect(() => {
     if (!notificationRequested.current) {
@@ -93,6 +102,23 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
       }
     }
   }, [ticket.id]);
+
+  // Re-subscribe on visibility change (iOS aggressively kills service workers)
+  useEffect(() => {
+    if (!alertsEnabled) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && 'Notification' in window && Notification.permission === 'granted') {
+        console.log('[Push] Re-subscribing after visibility change');
+        subscribeToPush(ticket.id).catch((err) => {
+          console.error('[Push] Visibility re-subscribe failed:', err);
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [alertsEnabled, ticket.id]);
 
   // Re-subscribe to push when ticket is called (subscription may have expired since initial)
   // This ensures recall push works even if the original subscription went stale
@@ -115,6 +141,12 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
 
   // Enable alerts: request permission + unlock audio + test vibration
   const handleEnableAlerts = async () => {
+    // iOS: if not in PWA mode, show install prompt instead
+    if (isIos && !isInStandaloneMode) {
+      setShowIosPrompt(true);
+      return;
+    }
+
     // 1. Request notification permission (user taps Allow in browser prompt)
     if ('Notification' in window && Notification.permission === 'default') {
       const result = await Notification.requestPermission();
@@ -317,6 +349,43 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
             </div>
           </div>
         )}
+        {/* iOS install prompt */}
+        {showIosPrompt && (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg">
+                📲
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-blue-900">Add to Home Screen for Notifications</p>
+                <p className="mt-1 text-xs text-blue-700 leading-relaxed">
+                  To receive push notifications on iPhone, you need to add this page to your Home Screen:
+                </p>
+                <ol className="mt-2 space-y-1.5 text-xs text-blue-800">
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold">1.</span>
+                    <span>Tap the <strong>Share button</strong> (square with arrow) at the bottom of Safari</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold">2.</span>
+                    <span>Scroll down and tap <strong>&quot;Add to Home Screen&quot;</strong></span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="font-bold">3.</span>
+                    <span>Tap <strong>Add</strong>, then open from your Home Screen</span>
+                  </li>
+                </ol>
+                <button
+                  onClick={() => setShowIosPrompt(false)}
+                  className="mt-3 text-xs font-medium text-blue-600 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Waiting animation */}
         <div className="mt-6 flex flex-col items-center py-4">
           <div className="flex gap-1.5">

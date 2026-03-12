@@ -15,16 +15,51 @@ interface PriorityCategory {
   weight: number | null;
 }
 
+interface KioskSettingsType {
+  welcomeMessage: string;
+  headerText: string;
+  themeColor: string;
+  showPriorities: boolean;
+  showEstimatedTime: boolean;
+  hiddenDepartments: string[];
+  hiddenServices: string[];
+  lockedDepartmentId: string | null;
+  buttonLabel: string;
+  idleTimeout: number;
+}
+
 interface KioskViewProps {
   office: any;
   organization: any;
   departments: any[];
   priorityCategories?: PriorityCategory[];
+  kioskSettings?: KioskSettingsType;
 }
 
-export function KioskView({ office, organization, departments, priorityCategories = [] }: KioskViewProps) {
-  const [step, setStep] = useState<'department' | 'service' | 'priority' | 'ticket'>('department');
-  const [selectedDept, setSelectedDept] = useState<any>(null);
+export function KioskView({ office, organization, departments, priorityCategories = [], kioskSettings }: KioskViewProps) {
+  const ks = kioskSettings ?? {
+    welcomeMessage: 'Welcome',
+    headerText: '',
+    themeColor: '',
+    showPriorities: true,
+    showEstimatedTime: true,
+    hiddenDepartments: [],
+    hiddenServices: [],
+    lockedDepartmentId: null,
+    buttonLabel: 'Get Ticket',
+    idleTimeout: 60,
+  };
+
+  // If locked to a single department, skip department selection
+  const lockedDept = ks.lockedDepartmentId
+    ? departments.find((d: any) => d.id === ks.lockedDepartmentId) ?? null
+    : null;
+
+  const [step, setStep] = useState<'department' | 'service' | 'priority' | 'ticket'>(
+    lockedDept ? 'service' : 'department'
+  );
+  const initialDept = lockedDept ?? null;
+  const [selectedDept, setSelectedDept] = useState<any>(initialDept);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
   const [ticket, setTicket] = useState<any>(null);
@@ -121,8 +156,13 @@ export function KioskView({ office, organization, departments, priorityCategorie
   }
 
   function handleNewTicket() {
-    setStep('department');
-    setSelectedDept(null);
+    if (lockedDept) {
+      setStep('service');
+      setSelectedDept(lockedDept);
+    } else {
+      setStep('department');
+      setSelectedDept(null);
+    }
     setSelectedService(null);
     setSelectedPriority(null);
     setTicket(null);
@@ -134,7 +174,7 @@ export function KioskView({ office, organization, departments, priorityCategorie
       {/* Header */}
       <div className="bg-card border-b border-border px-6 py-4 text-center">
         <h1 className="text-2xl font-bold">
-          {organization?.name || 'QueueFlow'}
+          {ks.headerText || organization?.name || 'QueueFlow'}
         </h1>
         <p className="text-muted-foreground">{office.name}</p>
       </div>
@@ -144,7 +184,7 @@ export function KioskView({ office, organization, departments, priorityCategorie
         {step === 'department' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold">Welcome</h2>
+              <h2 className="text-3xl font-bold">{ks.welcomeMessage}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
                 Please select a department
               </p>
@@ -203,9 +243,11 @@ export function KioskView({ office, organization, departments, priorityCategorie
                           {service.description}
                         </p>
                       )}
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Est. {service.estimated_service_time} min
-                      </p>
+                      {ks.showEstimatedTime && service.estimated_service_time && (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Est. {service.estimated_service_time} min
+                        </p>
+                      )}
                     </div>
                     <div className="text-lg font-bold text-primary">
                       {service.code}

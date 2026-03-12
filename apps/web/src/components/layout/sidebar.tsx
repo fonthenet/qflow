@@ -15,6 +15,8 @@ import {
   Star,
   QrCode,
   Contact,
+  Tablet,
+  Tv,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 
@@ -39,6 +41,8 @@ const adminNav = [
   { href: '/admin/virtual-codes', label: 'Virtual Codes', icon: QrCode },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/customers', label: 'Customers', icon: Contact },
+  { href: '/admin/kiosk', label: 'Kiosk', icon: Tablet },
+  { href: '/admin/displays', label: 'Displays', icon: Tv },
   { href: '/admin/settings', label: 'Settings', icon: Cog },
 ];
 

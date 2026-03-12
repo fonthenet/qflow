@@ -32,7 +32,14 @@ export async function subscribeToPush(ticketId: string): Promise<boolean> {
   }
 
   try {
-    const reg = await navigator.serviceWorker.ready;
+    // On iOS, navigator.serviceWorker.ready can hang if SW isn't registered yet.
+    // Add a timeout to prevent infinite waiting.
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Service worker ready timeout')), 10000)
+      ),
+    ]);
     console.log('[Push] Service worker ready');
 
     // Always unsubscribe old and create fresh — expired subscriptions return 410 from FCM

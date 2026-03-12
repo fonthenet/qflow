@@ -332,6 +332,94 @@ export async function deletePriorityCategory(id: string) {
   return { success: true };
 }
 
+// ─── Kiosk Settings ──────────────────────────────────────────────────────
+
+export async function updateKioskSettings(settings: Record<string, any>) {
+  const { supabase, orgId } = await getOrgId();
+
+  // Fetch current settings to merge
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', orgId)
+    .single();
+
+  const currentSettings = (org?.settings as Record<string, any>) ?? {};
+
+  // Merge kiosk settings into existing settings
+  const mergedSettings = { ...currentSettings, ...settings };
+
+  const { error } = await supabase
+    .from('organizations')
+    .update({ settings: mergedSettings })
+    .eq('id', orgId);
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/kiosk');
+  revalidatePath('/admin/settings');
+  return { success: true };
+}
+
+// ─── Display Screens ────────────────────────────────────────────────────
+
+export async function createDisplayScreen(officeId: string, name: string) {
+  const { supabase } = await getOrgId();
+
+  // Generate a unique screen token
+  const screenToken = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+
+  const { data, error } = await supabase
+    .from('display_screens')
+    .insert({
+      office_id: officeId,
+      name,
+      screen_token: screenToken,
+      layout: 'list',
+      is_active: true,
+      settings: {},
+    })
+    .select()
+    .single();
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/displays');
+  return { data };
+}
+
+export async function updateDisplayScreen(
+  screenId: string,
+  updates: {
+    name?: string;
+    layout?: string;
+    is_active?: boolean;
+    settings?: Record<string, any>;
+  }
+) {
+  const { supabase } = await getOrgId();
+
+  const { error } = await supabase
+    .from('display_screens')
+    .update(updates)
+    .eq('id', screenId);
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/displays');
+  return { success: true };
+}
+
+export async function deleteDisplayScreen(screenId: string) {
+  const { supabase } = await getOrgId();
+
+  const { error } = await supabase
+    .from('display_screens')
+    .delete()
+    .eq('id', screenId);
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/displays');
+  return { success: true };
+}
+
 export async function updateStaffMember(id: string, formData: FormData) {
   const { supabase } = await getOrgId();
 

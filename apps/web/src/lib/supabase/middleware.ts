@@ -32,17 +32,16 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes that don't need auth
+  const publicPrefixes = [
+    '/q/', '/display/', '/kiosk/', '/join/', '/book/',
+    '/login', '/register', '/history', '/api/',
+    // Marketing pages
+    '/solutions', '/pricing', '/how-it-works', '/contact', '/docs',
+  ];
+
   const isPublicRoute =
     pathname === '/' ||
-    pathname.startsWith('/q/') ||
-    pathname.startsWith('/display/') ||
-    pathname.startsWith('/kiosk/') ||
-    pathname.startsWith('/join/') ||
-    pathname.startsWith('/book/') ||
-    pathname.startsWith('/login') ||
-    pathname.startsWith('/register') ||
-    pathname.startsWith('/history') ||
-    pathname.startsWith('/api/') ||
+    publicPrefixes.some((prefix) => pathname.startsWith(prefix)) ||
     pathname.endsWith('/branches');
 
   if (!user && !isPublicRoute) {
