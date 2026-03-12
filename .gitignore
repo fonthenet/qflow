@@ -14,3 +14,5 @@ apps/web/certificates/
 
 # Claude local settings
 .claude/settings.local.json
+
+.vercel
