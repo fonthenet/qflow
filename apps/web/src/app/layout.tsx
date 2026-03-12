@@ -4,6 +4,13 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'QueueFlow - Smart Queue Management',
   description: 'Modern queue and ticketing management system for businesses',
+  manifest: '/manifest.json',
+  themeColor: '#2563eb',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'QueueFlow',
+  },
 };
 
 export default function RootLayout({
