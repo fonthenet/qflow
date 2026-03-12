@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendPushToTicket } from '@/lib/send-push';
 import { createClient } from '@supabase/supabase-js';
 
-const PUSH_SECRET = process.env.PUSH_WEBHOOK_SECRET || 'qflow-push-internal';
-
 /**
  * POST /api/push-send
  * Called by Supabase pg_net trigger when a ticket is called.
@@ -13,50 +11,41 @@ const PUSH_SECRET = process.env.PUSH_WEBHOOK_SECRET || 'qflow-push-internal';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { ticketId, title, message, tag, url, secret, retry } = body;
-
-    // Basic auth check
-    if (secret !== PUSH_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { ticketId, title, message, tag, url } = body;
 
     if (!ticketId) {
       return NextResponse.json({ error: 'ticketId required' }, { status: 400 });
     }
 
-    console.log('[PushSend] Sending push for ticket:', ticketId, 'retry:', retry ?? 0);
+    console.log('[PushSend] Sending push for ticket:', ticketId);
 
-    // Check if subscription exists
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
 
-    const { data: subs } = await supabase
-      .from('push_subscriptions')
-      .select('id')
-      .eq('ticket_id', ticketId);
+    // Check if subscription exists — if not, wait and retry (race condition fix)
+    let hasSubs = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: subs } = await supabase
+        .from('push_subscriptions')
+        .select('id')
+        .eq('ticket_id', ticketId);
 
-    if (!subs || subs.length === 0) {
-      const retryCount = retry ?? 0;
-      if (retryCount < 3) {
-        // No subscription yet — wait 2s and retry (handles race condition)
-        console.log('[PushSend] No subscription found, waiting 2s for retry', retryCount + 1);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        // Re-check
-        const { data: subs2 } = await supabase
-          .from('push_subscriptions')
-          .select('id')
-          .eq('ticket_id', ticketId);
-
-        if (!subs2 || subs2.length === 0) {
-          console.log('[PushSend] Still no subscription after retry, giving up');
-          return NextResponse.json({ ok: false, reason: 'no_subscription' });
-        }
-      } else {
-        return NextResponse.json({ ok: false, reason: 'no_subscription_after_retries' });
+      if (subs && subs.length > 0) {
+        hasSubs = true;
+        break;
       }
+
+      if (attempt < 2) {
+        console.log(`[PushSend] No subscription found, retry ${attempt + 1}/3 in 2s...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+
+    if (!hasSubs) {
+      console.log('[PushSend] No subscription after 3 attempts, giving up');
+      return NextResponse.json({ ok: false, reason: 'no_subscription' });
     }
 
     await sendPushToTicket(ticketId, {
