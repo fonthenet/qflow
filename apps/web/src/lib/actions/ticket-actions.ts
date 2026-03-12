@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { sendPushToTicket } from '@/lib/send-push';
+import { sendAPNsToTicket } from '@/lib/apns';
 
 export async function createTicket(
   officeId: string,
@@ -103,6 +104,24 @@ export async function callNextTicket(deskId: string, staffId: string) {
       tag: `called-${ticketId}`,
       url: `/q/${ticket.qr_token}`,
     }).catch((err) => console.error('[CallNext] Push notification error:', err));
+  }
+
+  // APNs push for iOS App Clip users (fire-and-forget, always send regardless of env)
+  if (ticket) {
+    const apnsDeskName = ticket.desk_id
+      ? await supabase
+          .from('desks')
+          .select('display_name, name')
+          .eq('id', ticket.desk_id)
+          .single()
+          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
+      : 'your desk';
+
+    sendAPNsToTicket(ticketId, {
+      title: "It's Your Turn!",
+      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsDeskName}`,
+      url: `/q/${ticket.qr_token}`,
+    }).catch((err) => console.error('[CallNext] APNs notification error:', err));
   }
 
   revalidatePath('/desk');
@@ -353,10 +372,28 @@ export async function recallTicket(ticketId: string) {
 
     sendPushToTicket(ticketId, {
       title: 'Reminder: Your Turn!',
-    body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
-    tag: `recall-${ticketId}-${Date.now()}`,
-    url: `/q/${ticket.qr_token}`,
-  }).catch((err) => console.error('[Recall] Push notification error:', err));
+      body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
+      tag: `recall-${ticketId}-${Date.now()}`,
+      url: `/q/${ticket.qr_token}`,
+    }).catch((err) => console.error('[Recall] Push notification error:', err));
+  }
+
+  // APNs push for iOS App Clip users (always, regardless of env)
+  {
+    const apnsRecallDeskName = ticket.desk_id
+      ? await supabase
+          .from('desks')
+          .select('display_name, name')
+          .eq('id', ticket.desk_id)
+          .single()
+          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
+      : 'your desk';
+
+    sendAPNsToTicket(ticketId, {
+      title: 'Reminder: Your Turn!',
+      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsRecallDeskName}`,
+      url: `/q/${ticket.qr_token}`,
+    }).catch((err) => console.error('[Recall] APNs notification error:', err));
   }
 
   // Log event

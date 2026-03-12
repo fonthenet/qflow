@@ -8,6 +8,7 @@ import { RecallNotification } from '@/components/desk/recall-notification';
 import { EditCustomerData } from '@/components/queue/edit-customer-data';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
+import { IosInstallPrompt } from '@/components/queue/ios-install-prompt';
 import type { Database } from '@/lib/supabase/database.types';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
@@ -100,7 +101,27 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
           console.error('[Push] Auto-subscribe failed:', err);
         });
       }
+
+      // iOS in standalone mode: auto-enable alerts immediately (they installed the app!)
+      if (isIos && isInStandaloneMode && 'Notification' in window && Notification.permission === 'default') {
+        // Small delay so the page renders first, then trigger permission
+        setTimeout(() => {
+          handleEnableAlerts();
+        }, 800);
+      }
+
+      // iOS in Safari (not standalone): auto-show install prompt after brief delay
+      // so users don't have to find the "Enable Alerts" button
+      if (isIos && !isInStandaloneMode && !('Notification' in window && Notification.permission === 'granted')) {
+        const dismissed = sessionStorage.getItem('ios-install-dismissed');
+        if (!dismissed) {
+          setTimeout(() => {
+            setShowIosPrompt(true);
+          }, 2000);
+        }
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
   // Re-subscribe on visibility change (iOS aggressively kills service workers)
@@ -319,25 +340,33 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
 
         {/* Enable alerts banner */}
         {!alertsEnabled && (
-          <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
-                <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <button
+            onClick={handleEnableAlerts}
+            className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 p-4 shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20">
+                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-amber-900">Don&apos;t miss your turn!</p>
-                <p className="mt-0.5 text-xs text-amber-700">Enable alerts to get sound and vibration when called.</p>
-                <button
-                  onClick={handleEnableAlerts}
-                  className="mt-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm active:scale-[0.98] transition-transform"
-                >
-                  Enable Alerts
-                </button>
+              <div className="flex-1 text-left">
+                <p className="text-sm font-bold text-white">
+                  {isIos && !isInStandaloneMode
+                    ? 'Get Notified When Called'
+                    : "Don't Miss Your Turn!"}
+                </p>
+                <p className="mt-0.5 text-xs text-blue-100">
+                  {isIos && !isInStandaloneMode
+                    ? 'Tap to set up push notifications'
+                    : 'Enable alerts for sound & vibration'}
+                </p>
               </div>
+              <svg className="h-5 w-5 text-white/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
             </div>
-          </div>
+          </button>
         )}
         {alertsEnabled && (
           <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
@@ -349,41 +378,14 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
             </div>
           </div>
         )}
-        {/* iOS install prompt */}
+        {/* iOS install prompt — full-screen overlay */}
         {showIosPrompt && (
-          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-lg">
-                📲
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-blue-900">Add to Home Screen for Notifications</p>
-                <p className="mt-1 text-xs text-blue-700 leading-relaxed">
-                  To receive push notifications on iPhone, you need to add this page to your Home Screen:
-                </p>
-                <ol className="mt-2 space-y-1.5 text-xs text-blue-800">
-                  <li className="flex items-start gap-1.5">
-                    <span className="font-bold">1.</span>
-                    <span>Tap the <strong>Share button</strong> (square with arrow) at the bottom of Safari</span>
-                  </li>
-                  <li className="flex items-start gap-1.5">
-                    <span className="font-bold">2.</span>
-                    <span>Scroll down and tap <strong>&quot;Add to Home Screen&quot;</strong></span>
-                  </li>
-                  <li className="flex items-start gap-1.5">
-                    <span className="font-bold">3.</span>
-                    <span>Tap <strong>Add</strong>, then open from your Home Screen</span>
-                  </li>
-                </ol>
-                <button
-                  onClick={() => setShowIosPrompt(false)}
-                  className="mt-3 text-xs font-medium text-blue-600 hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
+          <IosInstallPrompt
+            onDismiss={() => {
+              setShowIosPrompt(false);
+              sessionStorage.setItem('ios-install-dismissed', '1');
+            }}
+          />
         )}
 
         {/* Waiting animation */}

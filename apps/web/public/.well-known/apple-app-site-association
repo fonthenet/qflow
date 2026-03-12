@@ -1,0 +1,14 @@
+{
+  "appclips": {
+    "apps": ["W69MRY2826.com.queueflow.app.Clip"]
+  },
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "W69MRY2826.com.queueflow.app.Clip",
+        "paths": ["/q/*"]
+      }
+    ]
+  }
+}
