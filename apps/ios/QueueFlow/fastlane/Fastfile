@@ -32,10 +32,10 @@ platform :ios do
         unlock: true,
         timeout: 3600,
         lock_when_sleeps: false,
-        add_to_search_list: :replace,
       )
       # Ensure system keychain is in the search list for WWDR certs
-      sh("security list-keychains -d user -s ci_keychain /Library/Keychains/System.keychain")
+      sh("security list-keychains -d user -s ~/Library/Keychains/ci_keychain-db /Library/Keychains/System.keychain")
+      sh("security set-keychain-settings -t 3600 ~/Library/Keychains/ci_keychain-db")
     end
   end
 
