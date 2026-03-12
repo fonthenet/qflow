@@ -14,11 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 15
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+      - name: Select Xcode
+        run: |
+          # Use the latest available Xcode on the runner
+          XCODE_PATH=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            XCODE_PATH="/Applications/Xcode.app"
+          fi
+          echo "Using: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen (latest)
+        run: brew install xcodegen || brew upgrade xcodegen
 
       - name: Generate Xcode Project
         working-directory: apps/ios/QueueFlow

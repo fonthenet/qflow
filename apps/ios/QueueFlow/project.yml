@@ -34,12 +34,15 @@ targets:
       properties:
         com.apple.developer.associated-domains:
           - appclips:qflow-sigma.vercel.app
+    dependencies:
+      - target: QueueFlowClip
+        embed: true
 
   # ─────────────────────────────────────────
   # App Clip (the star of the show)
   # ─────────────────────────────────────────
   QueueFlowClip:
-    type: app-clip
+    type: application.on-demand-install-capable
     platform: iOS
     sources:
       - path: QueueFlowClip
@@ -57,10 +60,6 @@ targets:
           - appclips:qflow-sigma.vercel.app
         com.apple.developer.parent-application-identifiers:
           - $(AppIdentifierPrefix)com.queueflow.app
-    dependencies:
-      - target: QueueFlow
-        embed: false
-        link: false
 
 schemes:
   QueueFlow:
