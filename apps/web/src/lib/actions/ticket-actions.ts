@@ -96,12 +96,16 @@ export async function callNextTicket(deskId: string, staffId: string) {
           .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
       : 'your desk';
 
-    sendPushToTicket(ticketId, {
-      title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-      tag: `called-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[CallNext] Push notification error:', err));
+    try {
+      await sendPushToTicket(ticketId, {
+        title: "It's Your Turn!",
+        body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+        tag: `called-${ticketId}`,
+        url: `/q/${ticket.qr_token}`,
+      });
+    } catch (err) {
+      console.error('[CallNext] Push notification error:', err);
+    }
   }
 
   revalidatePath('/desk');
@@ -340,12 +344,16 @@ export async function recallTicket(ticketId: string) {
   );
 
   // Send Web Push notification (works even when page is backgrounded/closed)
-  sendPushToTicket(ticketId, {
-    title: 'Your Turn — Please Return!',
-    body: `Ticket ${ticket.ticket_number} — You are being recalled to the desk`,
-    tag: `recall-${ticketId}`,
-    url: `/q/${ticket.qr_token}`,
-  }).catch(() => {}); // fire and forget
+  try {
+    await sendPushToTicket(ticketId, {
+      title: 'Your Turn — Please Return!',
+      body: `Ticket ${ticket.ticket_number} — You are being recalled to the desk`,
+      tag: `recall-${ticketId}`,
+      url: `/q/${ticket.qr_token}`,
+    });
+  } catch {
+    // Push is best-effort, don't fail the recall
+  }
 
   // Log event
   await supabase.from('ticket_events').insert({
