@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
+import { sendPushToTicket } from '@/lib/send-push';
 
 export async function createTicket(
   officeId: string,
@@ -83,8 +84,21 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Push notification is now handled by database trigger (pg_net → /api/push-send)
-  // This decouples push from the server action for reliability + handles subscription race condition
+  // Send push notification directly (local Node.js stays alive, no serverless timeout)
+  // Fetch desk name for the notification message
+  const { data: deskData } = await supabase
+    .from('desks')
+    .select('name, display_name')
+    .eq('id', ticket.desk_id)
+    .single();
+  const deskName = deskData?.display_name || deskData?.name || 'your desk';
+
+  await sendPushToTicket(ticketId, {
+    title: "It's Your Turn!",
+    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+    tag: `called-${ticketId}`,
+    url: `/q/${ticket.qr_token}`,
+  });
 
   revalidatePath('/desk');
   return { data: ticket };
@@ -321,8 +335,20 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Push notification is now handled by database trigger (pg_net → /api/push-send)
-  // The trigger fires on called_at change for recalls
+  // Send push notification directly for recall
+  const { data: deskData2 } = await supabase
+    .from('desks')
+    .select('name, display_name')
+    .eq('id', ticket.desk_id)
+    .single();
+  const recallDeskName = deskData2?.display_name || deskData2?.name || 'your desk';
+
+  await sendPushToTicket(ticketId, {
+    title: 'Reminder: Your Turn!',
+    body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
+    tag: `recall-${ticketId}`,
+    url: `/q/${ticket.qr_token}`,
+  });
 
   // Log event
   await supabase.from('ticket_events').insert({
