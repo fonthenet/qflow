@@ -44,7 +44,8 @@ export async function subscribeToPush(ticketId: string): Promise<boolean> {
 
     const subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as unknown as ArrayBuffer,
+      // @ts-expect-error Uint8Array works at runtime, TS strict mode complains
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
     console.log('[Push] Fresh subscription created');
 

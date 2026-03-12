@@ -84,24 +84,23 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Push notification: try direct send (works on local/Cloudflare),
-  // pg_net trigger handles it on Vercel as backup. Never crash the action.
-  try {
-    const { data: deskData } = await supabase
-      .from('desks')
-      .select('name, display_name')
-      .eq('id', ticket.desk_id)
-      .single();
-    const deskName = deskData?.display_name || deskData?.name || 'your desk';
+  // Fire-and-forget push (original pattern that works on locked screen)
+  if (ticket) {
+    const deskName = ticket.desk_id
+      ? await supabase
+          .from('desks')
+          .select('display_name, name')
+          .eq('id', ticket.desk_id)
+          .single()
+          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
+      : 'your desk';
 
-    await sendPushToTicket(ticketId, {
+    sendPushToTicket(ticketId, {
       title: "It's Your Turn!",
       body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
       tag: `called-${ticketId}`,
       url: `/q/${ticket.qr_token}`,
-    });
-  } catch (pushErr) {
-    console.error('[callNextTicket] Push failed (pg_net trigger will handle it):', pushErr);
+    }).catch((err) => console.error('[CallNext] Push notification error:', err));
   }
 
   revalidatePath('/desk');
@@ -339,24 +338,22 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Push notification for recall (pg_net trigger is the backup)
-  try {
-    const { data: deskData2 } = await supabase
-      .from('desks')
-      .select('name, display_name')
-      .eq('id', ticket.desk_id)
-      .single();
-    const recallDeskName = deskData2?.display_name || deskData2?.name || 'your desk';
+  // Fire-and-forget push for recall
+  const recallDeskName = ticket.desk_id
+    ? await supabase
+        .from('desks')
+        .select('display_name, name')
+        .eq('id', ticket.desk_id)
+        .single()
+        .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
+    : 'your desk';
 
-    await sendPushToTicket(ticketId, {
-      title: 'Reminder: Your Turn!',
-      body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
-      tag: `recall-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
-    });
-  } catch (pushErr) {
-    console.error('[recallTicket] Push failed (pg_net trigger will handle it):', pushErr);
-  }
+  sendPushToTicket(ticketId, {
+    title: 'Reminder: Your Turn!',
+    body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
+    tag: `recall-${ticketId}`,
+    url: `/q/${ticket.qr_token}`,
+  }).catch((err) => console.error('[Recall] Push notification error:', err));
 
   // Log event
   await supabase.from('ticket_events').insert({
