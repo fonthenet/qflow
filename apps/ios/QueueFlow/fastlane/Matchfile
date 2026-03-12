@@ -2,7 +2,7 @@ git_url(ENV["MATCH_GIT_URL"])
 storage_mode("git")
 type("appstore")
 
-app_identifier(["com.queueflow.app", "com.queueflow.app.Clip"])
+app_identifier(["com.queueflow.app", "com.queueflow.app.QueueFlowClip"])
 team_id("W69MRY2826")
 
 # For CI: keychain is created by Fastfile

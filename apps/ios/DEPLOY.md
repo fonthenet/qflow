@@ -31,7 +31,7 @@ Go to [Apple Developer Portal](https://developer.apple.com/account/resources/ide
 
 1. Register `com.queueflow.app` (App ID, type: App)
    - Enable: Associated Domains, Push Notifications
-2. Register `com.queueflow.app.Clip` (App ID, type: App Clip)
+2. Register `com.queueflow.app.QueueFlowClip` (App ID, type: App Clip)
    - Enable: Associated Domains, Push Notifications
    - Set parent app to `com.queueflow.app`
 
@@ -68,7 +68,7 @@ cd apps/ios/QueueFlow
 bundle install
 MATCH_GIT_URL=https://github.com/your-username/queueflow-certs.git \
   bundle exec fastlane match appstore \
-  --app_identifier "com.queueflow.app,com.queueflow.app.Clip"
+  --app_identifier "com.queueflow.app,com.queueflow.app.QueueFlowClip"
 ```
 
 **Option B: Run via GitHub Actions:**
@@ -141,7 +141,7 @@ GitHub → Actions → use workflow_dispatch for sync_certs
 ### "The bundle identifier does not match"
 Make sure both bundle IDs are registered in the Apple Developer Portal:
 - `com.queueflow.app`
-- `com.queueflow.app.Clip`
+- `com.queueflow.app.QueueFlowClip`
 
 ### Build fails on CI
 Check the build-ios.yml workflow first — it runs without signing and validates

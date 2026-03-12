@@ -2,7 +2,7 @@ default_platform(:ios)
 
 TEAM_ID = "W69MRY2826"
 APP_IDENTIFIER = "com.queueflow.app"
-CLIP_IDENTIFIER = "com.queueflow.app.Clip"
+CLIP_IDENTIFIER = "com.queueflow.app.QueueFlowClip"
 PROJECT = "QueueFlow.xcodeproj"
 SCHEME_APP = "QueueFlow"
 SCHEME_CLIP = "QueueFlowClip"

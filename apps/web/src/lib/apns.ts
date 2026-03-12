@@ -66,7 +66,7 @@ async function sendAPNsNotification(
   payload: APNsPayload,
   environment: string = 'production'
 ): Promise<{ success: boolean; status?: number; reason?: string }> {
-  const bundleId = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.Clip';
+  const bundleId = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.QueueFlowClip';
   const host = environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
   const url = `${host}/3/device/${deviceToken}`;
 

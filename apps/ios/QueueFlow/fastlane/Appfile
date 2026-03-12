@@ -1,5 +1,5 @@
 # App Clip
-app_identifier("com.queueflow.app.Clip")
+app_identifier("com.queueflow.app.QueueFlowClip")
 
 # Companion App
 for_platform :ios do

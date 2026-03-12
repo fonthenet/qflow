@@ -25,7 +25,7 @@
 2. Select **App Clip** → Next
 3. Configure:
    - Product Name: `QueueFlowClip`
-   - Bundle Identifier: `com.queueflow.app.Clip`
+   - Bundle Identifier: `com.queueflow.app.QueueFlowClip`
    - Embed in Application: `QueueFlow`
 4. Activate the scheme when prompted
 
@@ -83,7 +83,7 @@ Add to your Vercel environment variables:
 ```
 APNS_KEY_ID=YOUR_KEY_ID
 APNS_TEAM_ID=YOUR_TEAM_ID
-APNS_BUNDLE_ID=com.queueflow.app.Clip
+APNS_BUNDLE_ID=com.queueflow.app.QueueFlowClip
 APNS_KEY_P8=-----BEGIN PRIVATE KEY-----\nYOUR_KEY_CONTENT\n-----END PRIVATE KEY-----
 ```
 

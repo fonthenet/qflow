@@ -1,12 +1,12 @@
 {
   "appclips": {
-    "apps": ["W69MRY2826.com.queueflow.app.Clip"]
+    "apps": ["W69MRY2826.com.queueflow.app.QueueFlowClip"]
   },
   "applinks": {
     "apps": [],
     "details": [
       {
-        "appID": "W69MRY2826.com.queueflow.app.Clip",
+        "appID": "W69MRY2826.com.queueflow.app.QueueFlowClip",
         "paths": ["/q/*"]
       }
     ]
