@@ -25,6 +25,9 @@ platform :ios do
   # Helper: set up CI keychain
   private_lane :setup_keychain do
     if is_ci
+      # Delete stale keychain from previous runs if it exists
+      sh("security delete-keychain ci_keychain 2>/dev/null || true")
+
       create_keychain(
         name: "ci_keychain",
         password: ENV["KEYCHAIN_PASSWORD"],
@@ -33,9 +36,10 @@ platform :ios do
         timeout: 3600,
         lock_when_sleeps: false,
       )
-      # Ensure system keychain is in the search list for WWDR certs
+
+      # Ensure both CI keychain and system keychain are in search list
       sh("security list-keychains -d user -s ~/Library/Keychains/ci_keychain-db /Library/Keychains/System.keychain")
-      sh("security set-keychain-settings -t 3600 ~/Library/Keychains/ci_keychain-db")
+      sh("security unlock-keychain -p #{ENV['KEYCHAIN_PASSWORD']} ~/Library/Keychains/ci_keychain-db")
     end
   end
 
