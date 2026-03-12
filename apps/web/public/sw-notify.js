@@ -14,9 +14,7 @@ self.addEventListener('push', (event) => {
     renotify: true,
     vibrate: [300, 150, 300, 150, 300, 150, 600],
     requireInteraction: true,
-    silent: false,
     data: { url: data.url || '/' },
-    actions: [{ action: 'open', title: 'Open' }],
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -27,6 +25,7 @@ self.addEventListener('notificationclick', (event) => {
   const url = event.notification.data?.url || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Try to focus an existing window
       for (const client of clients) {
         if (client.url.includes(url) && 'focus' in client) {
           return client.focus();

@@ -1,24 +1,16 @@
 import webpush from 'web-push';
 import { createClient } from '@/lib/supabase/server';
 
-// Configure web-push with VAPID keys (lazy init to avoid crashes if env vars missing)
-let vapidConfigured = false;
+// Configure web-push with VAPID keys
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY!;
 
-function ensureVapidConfigured() {
-  if (vapidConfigured) return true;
-  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const priv = process.env.VAPID_PRIVATE_KEY;
-  if (pub && priv) {
-    try {
-      webpush.setVapidDetails('mailto:noreply@queueflow.app', pub, priv);
-      vapidConfigured = true;
-      return true;
-    } catch (err) {
-      console.error('[SendPush] Failed to configure VAPID:', err);
-      return false;
-    }
-  }
-  return false;
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:noreply@queueflow.app',
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
 }
 
 interface PushPayload {
@@ -35,7 +27,7 @@ interface PushPayload {
 export async function sendPushToTicket(ticketId: string, payload: PushPayload): Promise<void> {
   console.log('[SendPush] Sending push for ticket:', ticketId, payload);
 
-  if (!ensureVapidConfigured()) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     console.warn('[SendPush] VAPID keys not configured, skipping push');
     return;
   }
@@ -68,11 +60,7 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
           endpoint: sub.endpoint,
           keys: { p256dh: sub.p256dh, auth: sub.auth },
         },
-        message,
-        {
-          urgency: 'high',  // FCM high priority — wakes device, plays sound on lock screen
-          TTL: 60,          // Expire after 60s (time-sensitive queue alerts)
-        }
+        message
       );
       console.log('[SendPush] Successfully sent to', sub.endpoint.slice(0, 60) + '...');
     } catch (err: unknown) {
