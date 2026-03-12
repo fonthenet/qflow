@@ -42,7 +42,7 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
     pathname.startsWith('/history') ||
-    pathname.startsWith('/api/push-subscribe') ||
+    pathname.startsWith('/api/') ||
     pathname.endsWith('/branches');
 
   if (!user && !isPublicRoute) {
