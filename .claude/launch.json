@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../../node_modules/.pnpm/next@15.5.12_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/bin/next", "dev", "--turbopack", "--port", "3000", "--hostname", "0.0.0.0"],
+      "cwd": "apps/web",
+      "port": 3000
+    }
+  ]
+}

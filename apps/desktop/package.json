@@ -1,0 +1,68 @@
+{
+  "name": "@queueflow/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "QueueFlow Desktop - Queue Management System",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "tsx watch src/main/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "electron dist/main/index.js",
+    "build:web": "pnpm --filter @queueflow/web build",
+    "pack": "electron-builder --dir",
+    "dist": "pnpm build && electron-builder",
+    "dist:portable": "pnpm build && electron-builder --dir",
+    "build:usb": "pnpm build:web && pnpm dist:portable && node scripts/build-usb.js",
+    "clean": "rimraf dist out"
+  },
+  "build": {
+    "appId": "com.queueflow.desktop",
+    "productName": "QueueFlow",
+    "directories": {
+      "output": "out",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/.next",
+        "to": "nextjs/.next",
+        "filter": ["**/*", "!cache/**"]
+      },
+      {
+        "from": "../web/public",
+        "to": "nextjs/public",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../web/package.json",
+        "to": "nextjs/package.json"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "signAndEditExecutable": false
+    }
+  },
+  "dependencies": {
+    "sql.js": "^1.11.0",
+    "electron-updater": "^6.3.0",
+    "get-port": "^7.1.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "rimraf": "^6.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+.turbo
+.env.local
+.env*.local
+*.tsbuildinfo
+
+# Desktop build output
+apps/desktop/out/
+
+# Certificates
+apps/web/certificates/
+
+# Claude local settings
+.claude/settings.local.json

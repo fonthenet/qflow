@@ -1,0 +1,47 @@
+import { createClient } from '@/lib/supabase/server';
+import { VirtualCodesClient } from './virtual-codes-client';
+
+export default async function VirtualCodesPage() {
+  const supabase = await createClient();
+
+  const { data: codes, error } = await supabase
+    .from('virtual_queue_codes')
+    .select(
+      '*, office:offices(name), department:departments(name), service:services(name)'
+    )
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="text-destructive">
+          Failed to load virtual codes: {error.message}
+        </p>
+      </div>
+    );
+  }
+
+  const { data: offices } = await supabase
+    .from('offices')
+    .select('id, name')
+    .order('name');
+
+  const { data: departments } = await supabase
+    .from('departments')
+    .select('id, name, office_id')
+    .order('name');
+
+  const { data: services } = await supabase
+    .from('services')
+    .select('id, name, department_id')
+    .order('name');
+
+  return (
+    <VirtualCodesClient
+      codes={codes ?? []}
+      offices={offices ?? []}
+      departments={departments ?? []}
+      services={services ?? []}
+    />
+  );
+}

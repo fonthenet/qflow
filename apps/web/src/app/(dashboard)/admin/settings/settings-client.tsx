@@ -1,0 +1,360 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { Save, CheckCircle2 } from 'lucide-react';
+import { updateOrganizationSettings } from '@/lib/actions/settings-actions';
+
+interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string | null;
+  settings?: Record<string, any> | null;
+}
+
+interface SettingsClientProps {
+  organization: Organization;
+}
+
+export function SettingsClient({ organization }: SettingsClientProps) {
+  const [isPending, startTransition] = useTransition();
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const settings = organization.settings ?? {};
+
+  // Organization Settings
+  const [orgName, setOrgName] = useState(organization.name);
+  const [orgSlug, setOrgSlug] = useState(organization.slug);
+  const [logoUrl, setLogoUrl] = useState(organization.logo_url ?? '');
+
+  // Ticket Settings
+  const [checkInMode, setCheckInMode] = useState<string>(
+    settings.default_check_in_mode ?? 'manual'
+  );
+  const [ticketPrefix, setTicketPrefix] = useState<string>(
+    settings.ticket_number_prefix ?? ''
+  );
+  const [autoNoShowTimeout, setAutoNoShowTimeout] = useState<number>(
+    settings.auto_no_show_timeout ?? 10
+  );
+  const [maxQueueSize, setMaxQueueSize] = useState<number>(
+    settings.max_queue_size ?? 50
+  );
+
+  // Display Settings
+  const [displayLayout, setDisplayLayout] = useState<string>(
+    settings.default_display_layout ?? 'list'
+  );
+  const [announcementSound, setAnnouncementSound] = useState<boolean>(
+    settings.announcement_sound_enabled ?? true
+  );
+  const [refreshInterval, setRefreshInterval] = useState<number>(
+    settings.display_refresh_interval ?? 5
+  );
+
+  // Language Settings
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>(
+    settings.supported_languages ?? ['en']
+  );
+  const [defaultLanguage, setDefaultLanguage] = useState<string>(
+    settings.default_language ?? 'en'
+  );
+
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'fr', label: 'French' },
+    { code: 'ar', label: 'Arabic' },
+    { code: 'es', label: 'Spanish' },
+  ];
+
+  function toggleLanguage(code: string) {
+    setSupportedLanguages((prev) =>
+      prev.includes(code)
+        ? prev.filter((l) => l !== code)
+        : [...prev, code]
+    );
+  }
+
+  function handleSave() {
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
+    startTransition(async () => {
+      const result = await updateOrganizationSettings({
+        orgId: organization.id,
+        name: orgName,
+        slug: orgSlug,
+        logo_url: logoUrl || null,
+        settings: {
+          default_check_in_mode: checkInMode,
+          ticket_number_prefix: ticketPrefix,
+          auto_no_show_timeout: autoNoShowTimeout,
+          max_queue_size: maxQueueSize,
+          default_display_layout: displayLayout,
+          announcement_sound_enabled: announcementSound,
+          display_refresh_interval: refreshInterval,
+          supported_languages: supportedLanguages,
+          default_language: defaultLanguage,
+        },
+      });
+
+      if (result?.error) {
+        setErrorMessage(result.error);
+      } else {
+        setSuccessMessage('Settings saved successfully.');
+        setTimeout(() => setSuccessMessage(null), 4000);
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage your organization, ticket, display, and language settings.
+        </p>
+      </div>
+
+      {/* ── Organization Settings ──────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          Organization Settings
+        </h2>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Organization Name
+            </label>
+            <input
+              type="text"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Slug
+            </label>
+            <input
+              type="text"
+              value={orgSlug}
+              onChange={(e) => setOrgSlug(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Logo URL
+            </label>
+            <input
+              type="url"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              placeholder="https://example.com/logo.png"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Ticket Settings ────────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          Ticket Settings
+        </h2>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Default Check-in Mode
+            </label>
+            <select
+              value={checkInMode}
+              onChange={(e) => setCheckInMode(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="self_service">Self Service</option>
+              <option value="manual">Manual</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Ticket Number Prefix
+            </label>
+            <input
+              type="text"
+              value={ticketPrefix}
+              onChange={(e) => setTicketPrefix(e.target.value)}
+              placeholder="e.g. TK-"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Auto No-Show Timeout (minutes)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={autoNoShowTimeout}
+              onChange={(e) => setAutoNoShowTimeout(Number(e.target.value))}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Mark ticket as no-show if customer doesn&apos;t arrive within this time after being called.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Max Queue Size per Department
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={500}
+              value={maxQueueSize}
+              onChange={(e) => setMaxQueueSize(Number(e.target.value))}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Stop accepting tickets when department queue reaches this limit.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Display Settings ───────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          Display Settings
+        </h2>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Default Display Layout
+            </label>
+            <select
+              value={displayLayout}
+              onChange={(e) => setDisplayLayout(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="list">List</option>
+              <option value="grid">Grid</option>
+              <option value="department_split">Department Split</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Display Refresh Interval (seconds)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={announcementSound}
+                onChange={(e) => setAnnouncementSound(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              />
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  Announcement Sound
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  Play a sound when a ticket number is called on the display
+                  screen.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Language Settings ──────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          Language Settings
+        </h2>
+
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-2">
+            Supported Languages
+          </label>
+          <div className="flex flex-wrap gap-3">
+            {languageOptions.map((lang) => (
+              <label
+                key={lang.code}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={supportedLanguages.includes(lang.code)}
+                  onChange={() => toggleLanguage(lang.code)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+                />
+                <span className="text-sm text-foreground">{lang.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">
+            Default Language
+          </label>
+          <select
+            value={defaultLanguage}
+            onChange={(e) => setDefaultLanguage(e.target.value)}
+            className="w-full sm:w-64 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            {languageOptions
+              .filter((l) => supportedLanguages.includes(l.code))
+              .map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.label}
+                </option>
+              ))}
+          </select>
+        </div>
+      </section>
+
+      {/* ── Save Button ────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={handleSave}
+          disabled={isPending}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        >
+          <Save className="h-4 w-4" />
+          {isPending ? 'Saving...' : 'Save Settings'}
+        </button>
+
+        {successMessage && (
+          <span className="inline-flex items-center gap-1 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            {successMessage}
+          </span>
+        )}
+
+        {errorMessage && (
+          <span className="text-sm text-red-600">{errorMessage}</span>
+        )}
+      </div>
+    </div>
+  );
+}
