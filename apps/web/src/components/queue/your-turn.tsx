@@ -246,7 +246,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
               renotify: true,
               vibrate: [300, 150, 300, 150, 600],
               requireInteraction: false,
-            });
+            } as NotificationOptions);
           } catch { /* ignore */ }
         });
       }
