@@ -94,6 +94,25 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     }
   }, [ticket.id]);
 
+  // Re-subscribe to push when ticket is called (subscription may have expired since initial)
+  // This ensures recall push works even if the original subscription went stale
+  const lastResubscribeStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      ticket.status === 'called' &&
+      lastResubscribeStatus.current !== 'called' &&
+      alertsEnabled &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      console.log('[Push] Re-subscribing on call for fresh endpoint');
+      subscribeToPush(ticket.id).catch((err) => {
+        console.error('[Push] Re-subscribe on call failed:', err);
+      });
+    }
+    lastResubscribeStatus.current = ticket.status;
+  }, [ticket.status, ticket.id, alertsEnabled]);
+
   // Enable alerts: request permission + unlock audio + test vibration
   const handleEnableAlerts = async () => {
     // 1. Request notification permission (user taps Allow in browser prompt)
