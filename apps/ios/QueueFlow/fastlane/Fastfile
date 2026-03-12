@@ -9,12 +9,21 @@ SCHEME_CLIP = "QueueFlowClip"
 
 platform :ios do
 
-  # ─────────────────────────────────────────
-  # Code Signing with Match
-  # ─────────────────────────────────────────
-  desc "Sync certificates and profiles via match (creates if missing)"
-  lane :sync_certs do
-    # Set up CI keychain
+  # Helper: set up App Store Connect API key from env vars
+  before_all do
+    if ENV["APP_STORE_CONNECT_API_KEY_KEY_ID"]
+      app_store_connect_api_key(
+        key_id: ENV["APP_STORE_CONNECT_API_KEY_KEY_ID"],
+        issuer_id: ENV["APP_STORE_CONNECT_API_KEY_ISSUER_ID"],
+        key_content: ENV["APP_STORE_CONNECT_API_KEY_KEY"],
+        is_key_content_base64: false,
+        in_house: false,
+      )
+    end
+  end
+
+  # Helper: set up CI keychain
+  private_lane :setup_keychain do
     if is_ci
       create_keychain(
         name: "ci_keychain",
@@ -25,6 +34,14 @@ platform :ios do
         lock_when_sleeps: false,
       )
     end
+  end
+
+  # ─────────────────────────────────────────
+  # Code Signing with Match
+  # ─────────────────────────────────────────
+  desc "Sync certificates and profiles via match (creates if missing)"
+  lane :sync_certs do
+    setup_keychain
 
     # App Store distribution certs & profiles for both targets
     # readonly: false so it creates certs if they don't exist yet
@@ -45,17 +62,7 @@ platform :ios do
   # ─────────────────────────────────────────
   desc "Build and upload to TestFlight"
   lane :beta do
-    # Set up CI keychain
-    if is_ci
-      create_keychain(
-        name: "ci_keychain",
-        password: ENV["KEYCHAIN_PASSWORD"],
-        default_keychain: true,
-        unlock: true,
-        timeout: 3600,
-        lock_when_sleeps: false,
-      )
-    end
+    setup_keychain
 
     # Sync signing certs
     match(
