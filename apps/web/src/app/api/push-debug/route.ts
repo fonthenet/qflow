@@ -97,17 +97,30 @@ async function resubscribe() {
       L('Old subscription removed', 'warn');
     }
 
-    // Subscribe fresh
+    // Subscribe fresh using VAPID key from server config
     const resp = await fetch('/api/config');
     const config = await resp.json();
     L('VAPID key from server: ' + (config.vapidPublicKey ? 'present' : 'MISSING'),
       config.vapidPublicKey ? 'ok' : 'err');
 
-    // We don't have the VAPID key exposed in config, use inline
-    L('Subscribing with PushManager...', 'warn');
-    // This will use the key baked into the client bundle
+    if (!config.vapidPublicKey) {
+      L('Cannot subscribe without VAPID key', 'err');
+      return;
+    }
 
-    L('Done. Now create a ticket and test.', 'ok');
+    L('Subscribing with PushManager...', 'warn');
+    const padding = '='.repeat((4 - (config.vapidPublicKey.length % 4)) % 4);
+    const b64 = (config.vapidPublicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b64);
+    const keyArray = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) keyArray[i] = raw.charCodeAt(i);
+
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyArray,
+    });
+    L('Subscribed! Endpoint: ' + sub.endpoint.slice(0, 80) + '...', 'ok');
+    L('Done. Now create a ticket and save this subscription to test.', 'ok');
   } catch(e) {
     L('Error: ' + e.message, 'err');
   }

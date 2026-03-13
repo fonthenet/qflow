@@ -10,6 +10,15 @@ import { createClient } from '@supabase/supabase-js';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Verify webhook secret if configured (prevents unauthorized push sends)
+    const webhookSecret = process.env.PUSH_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader !== `Bearer ${webhookSecret}`) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    }
+
     const body = await request.json();
     const { ticketId, title, message, tag, url } = body;
 

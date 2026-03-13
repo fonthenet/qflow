@@ -54,9 +54,7 @@
     }
   },
   "dependencies": {
-    "sql.js": "^1.11.0",
-    "electron-updater": "^6.3.0",
-    "get-port": "^7.1.0"
+    "sql.js": "^1.11.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
