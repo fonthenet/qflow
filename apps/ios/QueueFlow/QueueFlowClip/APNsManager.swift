@@ -14,6 +14,9 @@ class APNsManager: NSObject, ObservableObject {
     /// Ticket ID to associate with this device token.
     var ticketId: String? {
         didSet {
+            if ticketId != oldValue {
+                tokenSentToServer = false
+            }
             // Try to register whenever ticketId is set (token may arrive later)
             tryRegisterWithBackend()
         }
@@ -134,6 +137,11 @@ extension APNsManager: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         print("[APNs] Notification tapped: \(response.notification.request.content.title)")
+
+        if let urlString = response.notification.request.content.userInfo["url"] as? String {
+            NotificationCenter.default.post(name: .queueFlowOpenURL, object: urlString)
+        }
+
         completionHandler()
     }
 }

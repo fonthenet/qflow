@@ -26,6 +26,7 @@ struct QueueView: View {
             } else if let ticket = ticket {
                 if ticket.status == "called" {
                     YourTurnView(ticket: ticket)
+                        .id("called-\(ticket.id)-\(ticket.called_at ?? "")-\(ticket.recall_count ?? 0)")
                 } else if ticket.status == "serving" {
                     servingView
                 } else if ticket.status == "served" {
@@ -219,7 +220,7 @@ struct QueueView: View {
                         }
 
                         // Notification status
-                        if apnsManager.isRegistered {
+                        if apnsManager.tokenSentToServer {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
