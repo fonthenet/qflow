@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import {
   QrCode, Bell, Monitor, Clock, Users, Shield,
-  Smartphone, BarChart3, Zap, Globe, Tablet, Calendar,
+  Zap, Globe, Tablet, Calendar,
   ArrowRight, Check, ChevronRight,
 } from 'lucide-react';
 

@@ -81,7 +81,6 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     (window.navigator as any).standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches
   );
-  const iosPushSupported = isIos ? isInStandaloneMode : true;
 
   // Register service worker on mount + auto-subscribe if permission already granted
   useEffect(() => {

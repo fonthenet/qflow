@@ -61,7 +61,7 @@ export function KioskView({ office, organization, departments, priorityCategorie
   const initialDept = lockedDept ?? null;
   const [selectedDept, setSelectedDept] = useState<any>(initialDept);
   const [selectedService, setSelectedService] = useState<any>(null);
-  const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
+  const [, setSelectedPriority] = useState<PriorityCategory | null>(null);
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);

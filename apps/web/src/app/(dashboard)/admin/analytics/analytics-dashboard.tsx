@@ -42,7 +42,7 @@ export function AnalyticsDashboard({
   initialStaffPerformance,
   initialFeedbackSummary,
   offices,
-  departments,
+  departments: _departments,
 }: AnalyticsDashboardProps) {
   const [summary, setSummary] = useState(initialSummary);
   const [ticketsByHour, setTicketsByHour] = useState(initialTicketsByHour);

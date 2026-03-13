@@ -78,7 +78,6 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
 
   useEffect(() => {
     const supabase = createClient();
-    let realtimeConnected = false;
 
     // Initial fetch
     setIsLoading(true);
@@ -108,7 +107,6 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
         }
       )
       .subscribe((status) => {
-        realtimeConnected = status === 'SUBSCRIBED';
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[RealtimeQueue] Subscription failed:', status, '— using polling fallback');
         }

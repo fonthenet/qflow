@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { nanoid } from 'nanoid';
 
@@ -26,7 +25,6 @@ export function RemoteJoinForm({
   estimatedWait = null,
   service,
 }: RemoteJoinFormProps) {
-  const router = useRouter();
   // If a single service prop is passed (from simplified page), use it
   const resolvedServices = service ? [service] : services;
   const resolvedHasSpecific = service ? true : hasSpecificService;

@@ -593,7 +593,7 @@ function DepartmentSplitLayout({
   departments,
   nowServing,
   filteredWaiting,
-  ticketNumClass,
+  ticketNumClass: _ticketNumClass,
   headingClass,
   bodyClass,
   accentColor,

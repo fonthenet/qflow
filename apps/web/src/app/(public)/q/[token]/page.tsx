@@ -1,8 +1,6 @@
-import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { CheckInForm } from '@/components/queue/check-in-form';
 import { QueueStatus } from '@/components/queue/queue-status';
-import { YourTurn } from '@/components/queue/your-turn';
 import { FeedbackForm } from '@/components/queue/feedback-form';
 import { GroupStatus } from '@/components/queue/group-status';
 

@@ -232,7 +232,7 @@ export async function getAvailableSlots(
   return { data: availableSlots };
 }
 
-function generateSlots(openTime: string, closeTime: string, date: string): string[] {
+function generateSlots(openTime: string, closeTime: string, _date: string): string[] {
   const slots: string[] = [];
   const [openH, openM] = openTime.split(':').map(Number);
   const [closeH, closeM] = closeTime.split(':').map(Number);
@@ -260,15 +260,6 @@ export async function findAppointment(officeId: string, searchTerm: string): Pro
   const today = new Date().toISOString().split('T')[0];
   const startOfDay = `${today}T00:00:00`;
   const endOfDay = `${today}T23:59:59`;
-
-  // Search by name or phone
-  let query = supabase
-    .from('appointments')
-    .select('*, service:services(name), department:departments(name)')
-    .eq('office_id', officeId)
-    .gte('scheduled_at', startOfDay)
-    .lte('scheduled_at', endOfDay)
-    .in('status', ['pending', 'confirmed']);
 
   // Try to match by name (case insensitive) or phone
   const { data: byName } = await supabase

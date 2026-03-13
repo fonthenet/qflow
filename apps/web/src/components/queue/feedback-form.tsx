@@ -18,7 +18,7 @@ export function FeedbackForm({ ticket, officeName, serviceName }: FeedbackFormPr
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [existingRating, setExistingRating] = useState<number | null>(null);
+  const [, setExistingRating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Check if feedback was already submitted for this ticket

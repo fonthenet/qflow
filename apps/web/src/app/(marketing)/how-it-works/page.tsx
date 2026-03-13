@@ -2,7 +2,7 @@ import Link from 'next/link';
 import {
   UserPlus, Settings, QrCode, LayoutDashboard,
   Smartphone, Bell, Monitor, BarChart3,
-  ArrowRight, Check, ChevronDown,
+  ArrowRight, Check,
 } from 'lucide-react';
 
 const steps = [

@@ -59,7 +59,6 @@ export function BranchComparison({ organization, offices: initialOffices }: Bran
 
         <div className="space-y-4">
           {sorted.map((office, index) => {
-            const isBest = index === 0 && office.waitingCount === 0;
             const estimatedWait = office.waitingCount * 8; // rough estimate
 
             return (

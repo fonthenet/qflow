@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Check, X, ArrowRight, Minus } from 'lucide-react';
+import { Check, ArrowRight, Minus } from 'lucide-react';
 import { plans, featureComparison } from '@/lib/data/pricing';
 
 export default function PricingPage() {

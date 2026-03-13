@@ -75,7 +75,7 @@ const STATUS_CONFIG: Record<
 
 export function GroupStatus({
   groupId,
-  currentTicketId,
+  currentTicketId: _currentTicketId,
   officeName,
 }: GroupStatusProps) {
   const [groupTickets, setGroupTickets] = useState<GroupTicket[]>([]);

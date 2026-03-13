@@ -13,7 +13,6 @@ export function SendTicketLink({ ticketUrl, ticketNumber, officeName }: SendTick
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
 
   const message = `Your ticket ${ticketNumber} at ${officeName}. Track your position: ${ticketUrl}`;
 

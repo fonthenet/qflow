@@ -85,10 +85,8 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Push notification: on Vercel, pg_net trigger handles it via /api/push-send.
-  // On local/Cloudflare, server action sends directly (pg_net also fires but hits Vercel).
-  // Only send from server action if NOT on Vercel (avoid double-send which downgrades priority).
-  if (ticket && !process.env.VERCEL) {
+  // Send push notifications (web + APNs)
+  if (ticket) {
     const deskName = ticket.desk_id
       ? await supabase
           .from('desks')
@@ -98,28 +96,21 @@ export async function callNextTicket(deskId: string, staffId: string) {
           .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
       : 'your desk';
 
-    sendPushToTicket(ticketId, {
-      title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-      tag: `called-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[CallNext] Push notification error:', err));
-  }
+    // Web Push: on Vercel, pg_net trigger handles it via /api/push-send.
+    // On local/Cloudflare, server action sends directly (pg_net also fires but hits Vercel).
+    if (!process.env.VERCEL) {
+      sendPushToTicket(ticketId, {
+        title: "It's Your Turn!",
+        body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+        tag: `called-${ticketId}`,
+        url: `/q/${ticket.qr_token}`,
+      }).catch((err) => console.error('[CallNext] Push notification error:', err));
+    }
 
-  // APNs push for iOS App Clip users (fire-and-forget, always send regardless of env)
-  if (ticket) {
-    const apnsDeskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
-
+    // APNs push for iOS App Clip users (fire-and-forget, always send regardless of env)
     sendAPNsToTicket(ticketId, {
       title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsDeskName}`,
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
       url: `/q/${ticket.qr_token}`,
     }).catch((err) => console.error('[CallNext] APNs notification error:', err));
   }
@@ -359,8 +350,8 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Push: only from server action on local/Cloudflare. On Vercel, pg_net handles it.
-  if (!process.env.VERCEL) {
+  // Send push notifications (web + APNs)
+  {
     const recallDeskName = ticket.desk_id
       ? await supabase
           .from('desks')
@@ -370,28 +361,20 @@ export async function recallTicket(ticketId: string) {
           .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
       : 'your desk';
 
-    sendPushToTicket(ticketId, {
-      title: 'Reminder: Your Turn!',
-      body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
-      tag: `recall-${ticketId}-${Date.now()}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[Recall] Push notification error:', err));
-  }
+    // Web Push: only from server action on local/Cloudflare. On Vercel, pg_net handles it.
+    if (!process.env.VERCEL) {
+      sendPushToTicket(ticketId, {
+        title: 'Reminder: Your Turn!',
+        body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
+        tag: `recall-${ticketId}-${Date.now()}`,
+        url: `/q/${ticket.qr_token}`,
+      }).catch((err) => console.error('[Recall] Push notification error:', err));
+    }
 
-  // APNs push for iOS App Clip users (always, regardless of env)
-  {
-    const apnsRecallDeskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
-
+    // APNs push for iOS App Clip users (always, regardless of env)
     sendAPNsToTicket(ticketId, {
       title: 'Reminder: Your Turn!',
-      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsRecallDeskName}`,
+      body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
       url: `/q/${ticket.qr_token}`,
     }).catch((err) => console.error('[Recall] APNs notification error:', err));
   }

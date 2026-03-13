@@ -32,7 +32,7 @@ interface GroupTicketModalProps {
 
 export function GroupTicketModal({
   office,
-  organization,
+  organization: _organization,
   department,
   priorityCategories,
   onClose,

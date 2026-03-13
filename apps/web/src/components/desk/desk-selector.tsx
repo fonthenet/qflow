@@ -25,7 +25,7 @@ interface DeskSelectorProps {
   officeId: string;
 }
 
-export function DeskSelector({ desks, staffId, staffName, officeId }: DeskSelectorProps) {
+export function DeskSelector({ desks, staffId, staffName, officeId: _officeId }: DeskSelectorProps) {
   const [selectedDeskId, setSelectedDeskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
