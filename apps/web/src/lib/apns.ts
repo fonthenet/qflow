@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // APNs endpoints
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
-const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
+const APNS_HOST_SANDBOX = 'https://api.development.push.apple.com';
 const DEFAULT_APNS_BUNDLE_ID =
   process.env.APNS_BUNDLE_ID?.trim() || 'com.queueflow.app.QueueFlowClip';
 
