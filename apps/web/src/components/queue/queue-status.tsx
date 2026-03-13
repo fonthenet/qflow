@@ -6,20 +6,29 @@ import { YourTurn } from '@/components/queue/your-turn';
 import { FeedbackForm } from '@/components/queue/feedback-form';
 import { RecallNotification } from '@/components/desk/recall-notification';
 import { EditCustomerData } from '@/components/queue/edit-customer-data';
+import { PriorityAlertSetup } from '@/components/queue/priority-alert-setup';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import { IosInstallPrompt } from '@/components/queue/ios-install-prompt';
 import type { Database } from '@/lib/supabase/database.types';
+import type { PriorityAlertConfig } from '@/lib/priority-alerts';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
+type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 
 interface QueueStatusProps {
   ticket: Ticket;
   officeName: string;
   serviceName: string;
+  priorityAlertConfig?: PriorityAlertConfig | null;
 }
 
-export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: QueueStatusProps) {
+export function QueueStatus({
+  ticket: initialTicket,
+  officeName,
+  serviceName,
+  priorityAlertConfig,
+}: QueueStatusProps) {
   const { ticket, position, estimatedWait, isUpdating } = useRealtimeTicket({
     ticketId: initialTicket.id,
     qrToken: initialTicket.qr_token,
@@ -32,6 +41,44 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
   const [showIosPrompt, setShowIosPrompt] = useState(false);
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const notificationRequested = useRef(false);
+  const lastBuzzNotificationId = useRef<string | null>(null);
+
+  const playBuzzSound = () => {
+    try {
+      const existing = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
+      const ctx = existing ?? new AudioContext();
+      (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
+
+      const schedulePattern = () => {
+        const pulse = (frequency: number, startAt: number, duration: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'square';
+          osc.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime + startAt);
+          gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + startAt + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + startAt + duration);
+          osc.start(ctx.currentTime + startAt);
+          osc.stop(ctx.currentTime + startAt + duration);
+        };
+
+        pulse(190, 0.00, 0.16);
+        pulse(240, 0.22, 0.16);
+        pulse(190, 0.44, 0.16);
+        pulse(240, 0.66, 0.16);
+      };
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(schedulePattern).catch(() => {});
+      } else {
+        schedulePattern();
+      }
+    } catch {
+      // Audio playback is best-effort only.
+    }
+  };
 
   // ── Buzz handler: aggressive vibration + screen flash ──
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -45,6 +92,7 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     const maxFlashes = 15; // 15 toggles = ~3 seconds
     if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     setShowBuzzFlash(true);
+    playBuzzSound();
     buzzTimerRef.current = setInterval(() => {
       flashes++;
       if (flashes >= maxFlashes) {
@@ -72,6 +120,52 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     return () => { supabase.removeChannel(channel); };
   }, [ticket.id, ticket.office_id]);
 
+  // Listen for persisted buzz notifications as a durable fallback.
+  useEffect(() => {
+    const supabase = createClient();
+
+    const seedLatestBuzz = async () => {
+      const { data } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('ticket_id', ticket.id)
+        .eq('type', 'buzz')
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id) {
+        lastBuzzNotificationId.current = data.id;
+      }
+    };
+
+    void seedLatestBuzz();
+
+    const channel = supabase
+      .channel(`buzz-notification-${ticket.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `ticket_id=eq.${ticket.id}`,
+        },
+        (payload) => {
+          const notification = payload.new as NotificationRow;
+          if (notification.type !== 'buzz') return;
+          if (notification.id === lastBuzzNotificationId.current) return;
+          lastBuzzNotificationId.current = notification.id;
+          fireBuzz();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [ticket.id]);
+
   // Listen for buzz via service worker postMessage (backup path)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -82,6 +176,14 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     navigator.serviceWorker?.addEventListener('message', handler);
     return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
   }, [ticket.id]);
+
+  useEffect(() => {
+    return () => {
+      if (buzzTimerRef.current) {
+        clearInterval(buzzTimerRef.current);
+      }
+    };
+  }, []);
 
   // Fetch "now serving" ticket for context
   useEffect(() => {
@@ -191,6 +293,31 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [alertsEnabled, ticket.id]);
+
+  // Check for a buzz that might have arrived while the page was backgrounded.
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('ticket_id', ticket.id)
+        .eq('type', 'buzz')
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id && data.id !== lastBuzzNotificationId.current) {
+        lastBuzzNotificationId.current = data.id;
+        fireBuzz();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [ticket.id]);
 
   // Re-subscribe to push when ticket is called (subscription may have expired since initial)
   // This ensures recall push works even if the original subscription went stale
@@ -398,6 +525,11 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
         <div className="mt-4">
           <EditCustomerData ticket={ticket} />
         </div>
+
+        <PriorityAlertSetup
+          ticket={ticket}
+          config={priorityAlertConfig}
+        />
 
         {/* Enable alerts banner */}
         {!alertsEnabled && (

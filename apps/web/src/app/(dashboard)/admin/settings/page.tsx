@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { SettingsClient } from './settings-client';
+import { isSmsProviderConfigured } from '@/lib/sms';
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -43,5 +44,10 @@ export default async function SettingsPage() {
     );
   }
 
-  return <SettingsClient organization={organization} />;
+  return (
+    <SettingsClient
+      organization={organization}
+      smsProviderReady={isSmsProviderConfigured()}
+    />
+  );
 }

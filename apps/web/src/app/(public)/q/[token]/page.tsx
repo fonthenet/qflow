@@ -5,6 +5,8 @@ import { QueueStatus } from '@/components/queue/queue-status';
 import { YourTurn } from '@/components/queue/your-turn';
 import { FeedbackForm } from '@/components/queue/feedback-form';
 import { GroupStatus } from '@/components/queue/group-status';
+import { getPriorityAlertConfig } from '@/lib/priority-alerts';
+import { isSmsProviderConfigured } from '@/lib/sms';
 
 interface PageProps {
   params: Promise<{ token: string }>;
@@ -73,9 +75,23 @@ export default async function TicketStatusPage({ params }: PageProps) {
   // Fetch office info
   const { data: office } = await supabase
     .from('offices')
-    .select('name, address')
+    .select('name, address, organization_id')
     .eq('id', ticket.office_id)
     .single();
+
+  let priorityAlertConfig = null;
+  if (office?.organization_id) {
+    const { data: organization } = await supabase
+      .from('organizations')
+      .select('settings')
+      .eq('id', office.organization_id)
+      .single();
+
+    priorityAlertConfig = getPriorityAlertConfig(
+      (organization?.settings as Record<string, any> | null) ?? null,
+      isSmsProviderConfigured()
+    );
+  }
 
   // Fetch service info
   const { data: service } = await supabase
@@ -120,6 +136,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
         ticket={ticket}
         officeName={contextInfo.officeName}
         serviceName={contextInfo.serviceName}
+        priorityAlertConfig={priorityAlertConfig}
       />
     );
   }

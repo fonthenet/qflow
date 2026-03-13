@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.QueueFlow" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/colorPrimary</item>
+        <item name="android:navigationBarColor">@color/navigationColor</item>
+    </style>
+
+    <style name="Theme.QueueFlow.Splash" parent="Theme.QueueFlow">
+        <item name="android:windowBackground">@color/backgroundColor</item>
+    </style>
+</resources>

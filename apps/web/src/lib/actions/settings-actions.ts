@@ -40,13 +40,27 @@ export async function updateOrganizationSettings(data: {
     return { error: 'Unauthorized: organization mismatch' };
   }
 
+  const { data: organization, error: fetchError } = await supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', orgId)
+    .single();
+
+  if (fetchError) return { error: fetchError.message };
+
+  const currentSettings = (organization?.settings as Record<string, any>) ?? {};
+  const mergedSettings = {
+    ...currentSettings,
+    ...data.settings,
+  };
+
   const { error } = await supabase
     .from('organizations')
     .update({
       name: data.name,
       slug: data.slug,
       logo_url: data.logo_url,
-      settings: data.settings,
+      settings: mergedSettings,
     })
     .eq('id', orgId);
 

@@ -119,6 +119,7 @@ export function RemoteJoinForm({
   }
 
   const orgName = organization?.name || 'QueueFlow';
+  const smsBackupEnabled = organization?.settings?.priority_alerts_sms_enabled === true;
   const displayService = resolvedServices.length === 1 ? resolvedServices[0] : null;
 
   // Success state - show ticket and link to tracking
@@ -297,6 +298,11 @@ export function RemoteJoinForm({
               autoComplete="tel"
               className="w-full rounded-lg border border-input bg-card px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
+            {smsBackupEnabled && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Add a mobile number if you want guaranteed text backup alerts for urgent queue updates.
+              </p>
+            )}
           </div>
 
           {error && (

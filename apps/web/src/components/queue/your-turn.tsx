@@ -6,6 +6,7 @@ import { subscribeToPush } from '@/lib/push';
 import type { Database } from '@/lib/supabase/database.types';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
+type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 
 interface YourTurnProps {
   ticket: Ticket;
@@ -27,6 +28,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
   const lastAlertedAt = useRef<string | null>(null);
   const [recallCount, setRecallCount] = useState(ticket.recall_count ?? 0);
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
+  const lastBuzzNotificationId = useRef<string | null>(null);
   const [soundUnlocked, setSoundUnlocked] = useState(() => {
     // Check if AudioContext was already unlocked on the waiting page
     if (typeof window !== 'undefined') {
@@ -210,6 +212,42 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
     }
+
+    try {
+      const existing = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
+      const ctx = existing ?? new AudioContext();
+      (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
+
+      const schedulePattern = () => {
+        const pulse = (frequency: number, startAt: number, duration: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'square';
+          osc.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime + startAt);
+          gain.gain.exponentialRampToValueAtTime(0.24, ctx.currentTime + startAt + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + startAt + duration);
+          osc.start(ctx.currentTime + startAt);
+          osc.stop(ctx.currentTime + startAt + duration);
+        };
+
+        pulse(180, 0.00, 0.16);
+        pulse(230, 0.22, 0.16);
+        pulse(180, 0.44, 0.16);
+        pulse(230, 0.66, 0.16);
+      };
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(schedulePattern).catch(() => {});
+      } else {
+        schedulePattern();
+      }
+    } catch {
+      // Audio playback is best-effort only.
+    }
+
     // Rapid screen flash: toggle on/off every 200ms for 3 seconds
     let flashes = 0;
     const maxFlashes = 15;
@@ -260,6 +298,52 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     return () => { supabase.removeChannel(channel); };
   }, [ticket.id, ticket.office_id]);
 
+  // Listen for persisted buzz notifications as a durable fallback.
+  useEffect(() => {
+    const supabase = createClient();
+
+    const seedLatestBuzz = async () => {
+      const { data } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('ticket_id', ticket.id)
+        .eq('type', 'buzz')
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id) {
+        lastBuzzNotificationId.current = data.id;
+      }
+    };
+
+    void seedLatestBuzz();
+
+    const channel = supabase
+      .channel(`buzz-notification-${ticket.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `ticket_id=eq.${ticket.id}`,
+        },
+        (payload) => {
+          const notification = payload.new as NotificationRow;
+          if (notification.type !== 'buzz') return;
+          if (notification.id === lastBuzzNotificationId.current) return;
+          lastBuzzNotificationId.current = notification.id;
+          fireBuzz();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [ticket.id]);
+
   // Listen for buzz via service worker postMessage
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -270,6 +354,14 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     navigator.serviceWorker?.addEventListener('message', handler);
     return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
   }, [ticket.id]);
+
+  useEffect(() => {
+    return () => {
+      if (buzzTimerRef.current) {
+        clearInterval(buzzTimerRef.current);
+      }
+    };
+  }, []);
 
   // When page regains focus: mark pending alert so next tap replays, check for missed recalls
   useEffect(() => {
@@ -317,6 +409,31 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [ticket.id, calledAt, ticket.ticket_number, deskName]);
+
+  // Check for a buzz that might have arrived while the page was backgrounded.
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('ticket_id', ticket.id)
+        .eq('type', 'buzz')
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.id && data.id !== lastBuzzNotificationId.current) {
+        lastBuzzNotificationId.current = data.id;
+        fireBuzz();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [ticket.id]);
 
   // 60-second countdown from when called
   useEffect(() => {

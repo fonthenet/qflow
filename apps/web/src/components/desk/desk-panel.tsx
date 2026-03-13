@@ -240,11 +240,17 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
+      const smsSent = 'smsSent' in result && result.smsSent === true;
       // Update local state so countdown resets
       setCurrentTicket((prev) =>
         prev ? { ...prev, called_at: new Date().toISOString() } : prev
       );
-      addToast('Recall notification sent — timer reset', 'info');
+      addToast(
+        smsSent
+          ? 'Recall alert sent — timer reset and text backup delivered'
+          : 'Recall alert sent — timer reset',
+        'info'
+      );
     });
   };
 
@@ -256,7 +262,13 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
-      addToast('Buzz sent to customer\'s phone', 'info');
+      const smsSent = 'smsSent' in result && result.smsSent === true;
+      addToast(
+        smsSent
+          ? 'Buzz alert sent by push + text'
+          : 'Buzz alert sent',
+        'info'
+      );
     });
   };
 

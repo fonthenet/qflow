@@ -14,9 +14,10 @@ interface Organization {
 
 interface SettingsClientProps {
   organization: Organization;
+  smsProviderReady: boolean;
 }
 
-export function SettingsClient({ organization }: SettingsClientProps) {
+export function SettingsClient({ organization, smsProviderReady }: SettingsClientProps) {
   const [isPending, startTransition] = useTransition();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -60,6 +61,21 @@ export function SettingsClient({ organization }: SettingsClientProps) {
   const [defaultLanguage, setDefaultLanguage] = useState<string>(
     settings.default_language ?? 'en'
   );
+  const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState<boolean>(
+    settings.priority_alerts_sms_enabled ?? false
+  );
+  const [priorityAlertsOnCall, setPriorityAlertsOnCall] = useState<boolean>(
+    settings.priority_alerts_sms_on_call ?? true
+  );
+  const [priorityAlertsOnRecall, setPriorityAlertsOnRecall] = useState<boolean>(
+    settings.priority_alerts_sms_on_recall ?? true
+  );
+  const [priorityAlertsOnBuzz, setPriorityAlertsOnBuzz] = useState<boolean>(
+    settings.priority_alerts_sms_on_buzz ?? true
+  );
+  const [priorityAlertsPhoneLabel, setPriorityAlertsPhoneLabel] = useState<string>(
+    settings.priority_alerts_phone_label ?? 'Mobile number'
+  );
 
   const languageOptions = [
     { code: 'en', label: 'English' },
@@ -96,6 +112,11 @@ export function SettingsClient({ organization }: SettingsClientProps) {
           display_refresh_interval: refreshInterval,
           supported_languages: supportedLanguages,
           default_language: defaultLanguage,
+          priority_alerts_sms_enabled: priorityAlertsEnabled,
+          priority_alerts_sms_on_call: priorityAlertsOnCall,
+          priority_alerts_sms_on_recall: priorityAlertsOnRecall,
+          priority_alerts_sms_on_buzz: priorityAlertsOnBuzz,
+          priority_alerts_phone_label: priorityAlertsPhoneLabel,
         },
       });
 
@@ -158,6 +179,110 @@ export function SettingsClient({ organization }: SettingsClientProps) {
               className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Priority Alerts
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep free push notifications as the primary path, and add SMS as an optional backup for customers who choose to enter a phone number.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              smsProviderReady
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}
+          >
+            {smsProviderReady ? 'Provider Ready' : 'Provider Not Configured'}
+          </span>
+        </div>
+
+        {!smsProviderReady && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            SMS is not configured in environment variables yet. You can save these settings now, but text alerts will not send until the provider credentials are added.
+          </div>
+        )}
+
+        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4">
+          <input
+            type="checkbox"
+            checked={priorityAlertsEnabled}
+            onChange={(e) => setPriorityAlertsEnabled(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+          />
+          <div>
+            <span className="text-sm font-medium text-foreground">
+              Enable SMS backup alerts
+            </span>
+            <p className="text-xs text-muted-foreground mt-1">
+              Customers can add a mobile number on their queue page to receive a text backup for urgent queue events.
+            </p>
+          </div>
+        </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Phone Field Label
+            </label>
+            <input
+              type="text"
+              value={priorityAlertsPhoneLabel}
+              onChange={(e) => setPriorityAlertsPhoneLabel(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder="Mobile number"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Shown on the customer queue page when they add a text-alert number.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={priorityAlertsOnCall}
+              onChange={(e) => setPriorityAlertsOnCall(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
+            <div>
+              <span className="text-sm font-medium text-foreground">On Call</span>
+              <p className="text-xs text-muted-foreground">Send when the ticket is first called.</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={priorityAlertsOnRecall}
+              onChange={(e) => setPriorityAlertsOnRecall(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
+            <div>
+              <span className="text-sm font-medium text-foreground">On Recall</span>
+              <p className="text-xs text-muted-foreground">Send reminder texts on recall.</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={priorityAlertsOnBuzz}
+              onChange={(e) => setPriorityAlertsOnBuzz(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
+            <div>
+              <span className="text-sm font-medium text-foreground">On Buzz</span>
+              <p className="text-xs text-muted-foreground">Send a stronger “staff is trying to reach you” text.</p>
+            </div>
+          </label>
         </div>
       </section>
 

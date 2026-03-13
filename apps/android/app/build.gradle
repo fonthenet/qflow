@@ -1,0 +1,106 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { stream ->
+        localProperties.load(stream)
+    }
+}
+
+def readConfig = { String key, String fallback = "" ->
+    def localValue = localProperties.getProperty(key)
+    if (localValue != null && localValue.toString().trim()) {
+        return localValue.toString().trim()
+    }
+
+    def envValue = System.getenv(key)
+    if (envValue != null && envValue.toString().trim()) {
+        return envValue.toString().trim()
+    }
+
+    return fallback
+}
+
+def quote = { String value ->
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
+def releaseKeystorePath = readConfig("QUEUEFLOW_ANDROID_KEYSTORE", "../android.keystore")
+def releaseKeystoreFile = file(releaseKeystorePath)
+def releaseStorePassword = readConfig("QUEUEFLOW_ANDROID_STORE_PASSWORD", "queueflow123")
+def releaseKeyAlias = readConfig("QUEUEFLOW_ANDROID_KEY_ALIAS", "queueflow")
+def releaseKeyPassword = readConfig("QUEUEFLOW_ANDROID_KEY_PASSWORD", "queueflow123")
+
+android {
+    namespace 'com.queueflow.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.queueflow.app"
+        minSdk 21
+        targetSdk 36
+        versionCode 2
+        versionName "1.1.0"
+
+        // TWA metadata
+        manifestPlaceholders = [
+            hostName: "qflow-sigma.vercel.app",
+            defaultUrl: "https://qflow-sigma.vercel.app/",
+            launcherName: "QueueFlow",
+            assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"],' +
+                ' "target": { "namespace": "web", "site": "https://qflow-sigma.vercel.app" } }]'
+        ]
+
+        buildConfigField "String", "APP_BASE_URL", quote("https://qflow-sigma.vercel.app")
+        buildConfigField "String", "FIREBASE_PROJECT_ID", quote(readConfig("QUEUEFLOW_FIREBASE_PROJECT_ID"))
+        buildConfigField "String", "FIREBASE_APP_ID", quote(readConfig("QUEUEFLOW_FIREBASE_APP_ID"))
+        buildConfigField "String", "FIREBASE_API_KEY", quote(readConfig("QUEUEFLOW_FIREBASE_API_KEY"))
+        buildConfigField "String", "FIREBASE_SENDER_ID", quote(readConfig("QUEUEFLOW_FIREBASE_SENDER_ID"))
+        buildConfigField "boolean", "ANDROID_LIVE_UPDATES_ENABLED", "true"
+    }
+
+    signingConfigs {
+        if (releaseKeystoreFile.exists()) {
+            release {
+                storeFile releaseKeystoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            if (releaseKeystoreFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.17.0'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'com.google.firebase:firebase-messaging:24.1.0'
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
