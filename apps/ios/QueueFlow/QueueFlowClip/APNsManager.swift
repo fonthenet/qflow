@@ -166,10 +166,26 @@ extension APNsManager: UNUserNotificationCenterDelegate {
         let userInfo = notification.request.content.userInfo
         let title = notification.request.content.title.lowercased()
 
-        // Detect buzz notification and trigger aggressive haptics
-        if title.contains("buzz") || (userInfo["type"] as? String) == "buzz" {
+        let notificationType = (userInfo["type"] as? String) ?? ""
+
+        // Detect buzz notification and trigger aggressive haptics + strobe
+        if title.contains("buzz") || notificationType == "buzz" {
             triggerBuzzHaptics()
+            TonePlayer.shared.playBuzzTone()
             NotificationCenter.default.post(name: .queueFlowBuzz, object: nil)
+        }
+
+        // Detect recall notification — reset timer and re-alert
+        if title.contains("recall") || title.contains("reminder") || notificationType == "recall" {
+            triggerRecallHaptics()
+            TonePlayer.shared.playCalledTone()
+            NotificationCenter.default.post(name: .queueFlowRecall, object: nil)
+        }
+
+        // Detect called notification — trigger immediate refresh
+        if notificationType == "called" {
+            TonePlayer.shared.playCalledTone()
+            NotificationCenter.default.post(name: .queueFlowCalled, object: nil)
         }
 
         // Show banner + sound + badge even when app is open
@@ -178,6 +194,18 @@ extension APNsManager: UNUserNotificationCenterDelegate {
 
     /// Aggressive haptic pattern for buzz — 5 heavy impacts
     private func triggerBuzzHaptics() {
+        let heavy = UIImpactFeedbackGenerator(style: .heavy)
+        heavy.prepare()
+
+        for i in 0..<5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) {
+                heavy.impactOccurred(intensity: 1.0)
+            }
+        }
+    }
+
+    /// Haptic pattern for recall — same as buzz to grab attention
+    private func triggerRecallHaptics() {
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.prepare()
 

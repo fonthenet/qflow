@@ -188,6 +188,8 @@ class AppState: ObservableObject {
 extension Notification.Name {
     static let queueFlowOpenURL = Notification.Name("queueflow.openURL")
     static let queueFlowBuzz = Notification.Name("queueflow.buzz")
+    static let queueFlowRecall = Notification.Name("queueflow.recall")
+    static let queueFlowCalled = Notification.Name("queueflow.called")
 }
 
 /// Loading screen shown while waiting for URL.

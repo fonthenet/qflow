@@ -17,8 +17,12 @@ struct QueueView: View {
     // Timer for polling
     @State private var pollTimer: Timer?
 
-    // Buzz flash overlay
+    // Buzz flash overlay (rapid strobe)
     @State private var showBuzzFlash = false
+    @State private var buzzFlashCount = 0
+
+    // Foreground recovery
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -41,24 +45,19 @@ struct QueueView: View {
                 }
             }
 
-            // Buzz flash overlay — red pulse when operator buzzes
+            // Buzz flash overlay — rapid red/white strobe
             if showBuzzFlash {
-                Color.red.opacity(0.35)
+                Color.red
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                    .transition(.opacity)
 
-                VStack(spacing: 12) {
-                    Image(systemName: "iphone.radiowaves.left.and.right")
-                        .font(.system(size: 56, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .red, radius: 20)
+                VStack(spacing: 8) {
+                    Text("\u{1f4f3}")
+                        .font(.system(size: 60))
                     Text("BUZZ!")
-                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        .font(.system(size: 40, weight: .black, design: .rounded))
                         .foregroundColor(.white)
-                        .shadow(color: .red, radius: 10)
                 }
-                .transition(.scale.combined(with: .opacity))
                 .allowsHitTesting(false)
             }
         }
@@ -71,13 +70,18 @@ struct QueueView: View {
             pollTimer?.invalidate()
         }
         .onReceive(NotificationCenter.default.publisher(for: .queueFlowBuzz)) { _ in
-            withAnimation(.easeIn(duration: 0.15)) {
-                showBuzzFlash = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                withAnimation(.easeOut(duration: 0.5)) {
-                    showBuzzFlash = false
-                }
+            startBuzzStrobe()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .queueFlowRecall)) { _ in
+            Task { await refreshData() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .queueFlowCalled)) { _ in
+            Task { await refreshData() }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                // Foreground recovery: re-fetch to catch missed recalls/status changes
+                Task { await refreshData() }
             }
         }
     }
@@ -546,6 +550,25 @@ struct QueueView: View {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
             Task {
                 await refreshData()
+            }
+        }
+    }
+
+    /// Rapid red/white strobe for buzz — 200ms toggle, 15 flashes (3 seconds)
+    private func startBuzzStrobe() {
+        guard !showBuzzFlash else { return }
+        buzzFlashCount = 0
+        showBuzzFlash = true
+
+        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
+            DispatchQueue.main.async {
+                self.buzzFlashCount += 1
+                if self.buzzFlashCount >= 15 {
+                    timer.invalidate()
+                    self.showBuzzFlash = false
+                    return
+                }
+                self.showBuzzFlash.toggle()
             }
         }
     }
