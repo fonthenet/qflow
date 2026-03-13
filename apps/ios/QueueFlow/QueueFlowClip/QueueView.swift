@@ -17,23 +17,49 @@ struct QueueView: View {
     // Timer for polling
     @State private var pollTimer: Timer?
 
+    // Buzz flash overlay
+    @State private var showBuzzFlash = false
+
     var body: some View {
-        Group {
-            if isLoading {
-                loadingView
-            } else if let error = error {
-                errorView(error)
-            } else if let ticket = ticket {
-                if ticket.status == "called" {
-                    YourTurnView(ticket: ticket)
-                        .id("called-\(ticket.id)-\(ticket.called_at ?? "")-\(ticket.recall_count ?? 0)")
-                } else if ticket.status == "serving" {
-                    servingView
-                } else if ticket.status == "served" {
-                    servedView
-                } else {
-                    waitingView(ticket)
+        ZStack {
+            Group {
+                if isLoading {
+                    loadingView
+                } else if let error = error {
+                    errorView(error)
+                } else if let ticket = ticket {
+                    if ticket.status == "called" {
+                        YourTurnView(ticket: ticket)
+                            .id("called-\(ticket.id)-\(ticket.called_at ?? "")-\(ticket.recall_count ?? 0)")
+                    } else if ticket.status == "serving" {
+                        servingView
+                    } else if ticket.status == "served" {
+                        servedView
+                    } else {
+                        waitingView(ticket)
+                    }
                 }
+            }
+
+            // Buzz flash overlay — red pulse when operator buzzes
+            if showBuzzFlash {
+                Color.red.opacity(0.35)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+
+                VStack(spacing: 12) {
+                    Image(systemName: "iphone.radiowaves.left.and.right")
+                        .font(.system(size: 56, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(color: .red, radius: 20)
+                    Text("BUZZ!")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        .foregroundColor(.white)
+                        .shadow(color: .red, radius: 10)
+                }
+                .transition(.scale.combined(with: .opacity))
+                .allowsHitTesting(false)
             }
         }
         .task {
@@ -43,6 +69,16 @@ struct QueueView: View {
         }
         .onDisappear {
             pollTimer?.invalidate()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .queueFlowBuzz)) { _ in
+            withAnimation(.easeIn(duration: 0.15)) {
+                showBuzzFlash = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    showBuzzFlash = false
+                }
+            }
         }
     }
 

@@ -157,13 +157,35 @@ class APNsManager: NSObject, ObservableObject {
 
 extension APNsManager: UNUserNotificationCenterDelegate {
     /// Show notifications even when the App Clip is in the foreground.
+    /// For buzz notifications, trigger aggressive haptic feedback.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+        let title = notification.request.content.title.lowercased()
+
+        // Detect buzz notification and trigger aggressive haptics
+        if title.contains("buzz") || (userInfo["type"] as? String) == "buzz" {
+            triggerBuzzHaptics()
+            NotificationCenter.default.post(name: .queueFlowBuzz, object: nil)
+        }
+
         // Show banner + sound + badge even when app is open
         completionHandler([.banner, .sound, .badge])
+    }
+
+    /// Aggressive haptic pattern for buzz — 5 heavy impacts
+    private func triggerBuzzHaptics() {
+        let heavy = UIImpactFeedbackGenerator(style: .heavy)
+        heavy.prepare()
+
+        for i in 0..<5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) {
+                heavy.impactOccurred(intensity: 1.0)
+            }
+        }
     }
 
     /// Handle notification tap — user tapped the notification banner.
