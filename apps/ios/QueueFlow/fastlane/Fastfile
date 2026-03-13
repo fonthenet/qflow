@@ -144,7 +144,8 @@ platform :ios do
       automatic_release: true,
       force: true, # Skip HTML report verification
       skip_screenshots: true,
-      skip_metadata: false,
+      skip_metadata: true,
+      precheck_include_in_app_purchases: false,
       app_identifier: APP_IDENTIFIER,
       submission_information: {
         add_id_info_uses_idfa: false,
