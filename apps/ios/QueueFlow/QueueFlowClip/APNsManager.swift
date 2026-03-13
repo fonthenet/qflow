@@ -34,21 +34,34 @@ class APNsManager: NSObject, ObservableObject {
         // Set delegate so notifications show even when app is in foreground
         center.delegate = self
 
-        // Do NOT use .provisional — it delivers silently (no lock screen, no sound).
-        // App Clips with NSAppClipRequestEphemeralUserNotification get full authorization
-        // automatically without prompting the user, so .alert/.sound/.badge is enough.
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("[APNs] Authorization error: \(error)")
-                return
-            }
-
-            print("[APNs] Authorization granted: \(granted)")
-
-            if granted {
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .ephemeral, .authorized, .provisional:
+                print("[APNs] Notification authorization status: \(settings.authorizationStatus.rawValue)")
                 DispatchQueue.main.async {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
+            case .notDetermined:
+                // Fallback for non-ephemeral test paths. In production App Clip launches,
+                // the system should usually provide ephemeral authorization automatically.
+                center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                    if let error = error {
+                        print("[APNs] Authorization error: \(error)")
+                        return
+                    }
+
+                    print("[APNs] Authorization granted after request: \(granted)")
+
+                    if granted {
+                        DispatchQueue.main.async {
+                            UIApplication.shared.registerForRemoteNotifications()
+                        }
+                    }
+                }
+            case .denied:
+                print("[APNs] Notification permission denied for App Clip")
+            @unknown default:
+                print("[APNs] Unknown notification authorization status")
             }
         }
     }
