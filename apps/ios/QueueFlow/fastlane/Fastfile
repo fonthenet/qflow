@@ -3,6 +3,8 @@ default_platform(:ios)
 TEAM_ID = "W69MRY2826"
 APP_IDENTIFIER = "com.queueflow.app"
 CLIP_IDENTIFIER = "com.queueflow.app.QueueFlowClip"
+LIVE_ACTIVITY_IDENTIFIER = "com.queueflow.app.QueueFlowClip.LiveActivity"
+ALL_IDENTIFIERS = [APP_IDENTIFIER, CLIP_IDENTIFIER, LIVE_ACTIVITY_IDENTIFIER]
 PROJECT = "QueueFlow.xcodeproj"
 SCHEME_APP = "QueueFlow"
 SCHEME_CLIP = "QueueFlowClip"
@@ -50,11 +52,11 @@ platform :ios do
   lane :sync_certs do
     setup_keychain
 
-    # App Store distribution certs & profiles for both targets
+    # App Store distribution certs & profiles for all targets
     # readonly: false so it creates certs if they don't exist yet
     match(
       type: "appstore",
-      app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
+      app_identifier: ALL_IDENTIFIERS,
       readonly: false,
       git_url: ENV["MATCH_GIT_URL"],
       keychain_name: is_ci ? "ci_keychain" : "login.keychain",
@@ -74,7 +76,7 @@ platform :ios do
     # Sync signing certs (readonly: false to ensure certs are imported to CI keychain)
     match(
       type: "appstore",
-      app_identifier: [APP_IDENTIFIER, CLIP_IDENTIFIER],
+      app_identifier: ALL_IDENTIFIERS,
       readonly: false,
       git_url: ENV["MATCH_GIT_URL"],
       keychain_name: is_ci ? "ci_keychain" : "login.keychain",
@@ -106,6 +108,15 @@ platform :ios do
       profile_name: "match AppStore #{CLIP_IDENTIFIER}",
       targets: [SCHEME_CLIP],
     )
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: PROJECT,
+      team_id: TEAM_ID,
+      bundle_identifier: LIVE_ACTIVITY_IDENTIFIER,
+      code_sign_identity: "iPhone Distribution",
+      profile_name: "match AppStore #{LIVE_ACTIVITY_IDENTIFIER}",
+      targets: ["QueueFlowLiveActivity"],
+    )
 
     # Build the archive
     build_app(
@@ -117,6 +128,7 @@ platform :ios do
         provisioningProfiles: {
           APP_IDENTIFIER => "match AppStore #{APP_IDENTIFIER}",
           CLIP_IDENTIFIER => "match AppStore #{CLIP_IDENTIFIER}",
+          LIVE_ACTIVITY_IDENTIFIER => "match AppStore #{LIVE_ACTIVITY_IDENTIFIER}",
         },
       },
       output_directory: "./build",
