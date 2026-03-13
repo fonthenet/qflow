@@ -30,7 +30,45 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
   const [deskName, setDeskName] = useState<string | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [showIosPrompt, setShowIosPrompt] = useState(false);
+  const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const notificationRequested = useRef(false);
+
+  // ── Buzz handler: aggressive vibration + red flash ──
+  const fireBuzz = () => {
+    // Aggressive vibration pattern (5 long pulses)
+    if ('vibrate' in navigator) {
+      navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
+    }
+    // Red flash overlay
+    setShowBuzzFlash(true);
+    setTimeout(() => setShowBuzzFlash(false), 2000);
+  };
+
+  // Listen for buzz via Supabase Realtime broadcast
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`buzz-${ticket.office_id}`)
+      .on('broadcast', { event: 'ticket_buzz' }, (payload) => {
+        if (payload.payload?.ticket_id === ticket.id) {
+          fireBuzz();
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [ticket.id, ticket.office_id]);
+
+  // Listen for buzz via service worker postMessage (backup path)
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
+        fireBuzz();
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handler);
+    return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
+  }, [ticket.id]);
 
   // Fetch "now serving" ticket for context
   useEffect(() => {
@@ -243,7 +281,17 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
       : 5;
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted">
+    <div className="flex min-h-screen flex-col bg-muted relative">
+      {/* Buzz flash overlay */}
+      {showBuzzFlash && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600/40 animate-pulse pointer-events-none">
+          <div className="text-center">
+            <p className="text-6xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
+            <p className="mt-2 text-lg font-bold text-white/90">Attention needed!</p>
+          </div>
+        </div>
+      )}
+
       {/* Recall notification overlay */}
       <RecallNotification
         ticketId={ticket.id}

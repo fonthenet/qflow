@@ -26,6 +26,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
   const [calledAt, setCalledAt] = useState(ticket.called_at);
   const lastAlertedAt = useRef<string | null>(null);
   const [recallCount, setRecallCount] = useState(ticket.recall_count ?? 0);
+  const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const [soundUnlocked, setSoundUnlocked] = useState(() => {
     // Check if AudioContext was already unlocked on the waiting page
     if (typeof window !== 'undefined') {
@@ -203,6 +204,15 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     };
   }, []);
 
+  // ── Buzz handler: aggressive vibration + red flash ──
+  const fireBuzz = () => {
+    if ('vibrate' in navigator) {
+      navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
+    }
+    setShowBuzzFlash(true);
+    setTimeout(() => setShowBuzzFlash(false), 2000);
+  };
+
   // Listen for recall broadcasts
   useEffect(() => {
     const supabase = createClient();
@@ -220,6 +230,32 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       supabase.removeChannel(channel);
     };
   }, [ticket.id, ticket.office_id]);
+
+  // Listen for buzz via Supabase Realtime broadcast
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`buzz-${ticket.office_id}`)
+      .on('broadcast', { event: 'ticket_buzz' }, (payload) => {
+        if (payload.payload?.ticket_id === ticket.id) {
+          fireBuzz();
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [ticket.id, ticket.office_id]);
+
+  // Listen for buzz via service worker postMessage
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
+        fireBuzz();
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handler);
+    return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
+  }, [ticket.id]);
 
   // When page regains focus: mark pending alert so next tap replays, check for missed recalls
   useEffect(() => {
@@ -367,8 +403,17 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
   return (
     <div
       suppressHydrationWarning
-      className={`flex min-h-screen flex-col items-center justify-center p-4 transition-colors duration-700 ${bgColor}`}
+      className={`flex min-h-screen flex-col items-center justify-center p-4 transition-colors duration-700 ${bgColor} relative`}
     >
+      {/* Buzz flash overlay */}
+      {showBuzzFlash && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600/50 animate-pulse pointer-events-none">
+          <div className="text-center">
+            <p className="text-6xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
+            <p className="mt-2 text-lg font-bold text-white/90">Go to your desk NOW!</p>
+          </div>
+        </div>
+      )}
       <div
         className="w-full max-w-sm text-center"
         style={

@@ -225,6 +225,15 @@ self.addEventListener('push', (event) => {
 
       const { title, options } = buildNotification(data);
       await self.registration.showNotification(title, options);
+
+      // For buzz: post message to all open clients so they trigger
+      // navigator.vibrate() directly (more reliable than notification vibrate property)
+      if (type === 'buzz') {
+        const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of allClients) {
+          client.postMessage({ type: 'buzz', ticketId });
+        }
+      }
     })()
   );
 });
