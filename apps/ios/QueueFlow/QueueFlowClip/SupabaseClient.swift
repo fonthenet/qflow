@@ -84,13 +84,17 @@ class SupabaseClient {
         return try? JSONDecoder().decode(Int.self, from: data)
     }
 
-    /// Register APNs device token with the backend.
-    func registerAPNsToken(ticketId: String, deviceToken: String) async {
-        guard let url = URL(string: "\(apiBaseURL)/api/apns-register") else { return }
+    /// Register APNs device token with the backend. Returns true on success.
+    func registerAPNsToken(ticketId: String, deviceToken: String) async -> Bool {
+        guard let url = URL(string: "\(apiBaseURL)/api/apns-register") else {
+            print("[APNs] Invalid registration URL")
+            return false
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
 
         let body: [String: String] = [
             "ticketId": ticketId,
@@ -101,12 +105,21 @@ class SupabaseClient {
         request.httpBody = try? JSONEncoder().encode(body)
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
-                print("[APNs] Token registration: \(httpResponse.statusCode)")
+                print("[APNs] Token registration response: \(httpResponse.statusCode)")
+                if httpResponse.statusCode == 200 {
+                    return true
+                }
+                // Log error body for debugging
+                if let errorBody = String(data: data, encoding: .utf8) {
+                    print("[APNs] Registration error body: \(errorBody)")
+                }
             }
+            return false
         } catch {
-            print("[APNs] Token registration failed: \(error)")
+            print("[APNs] Token registration network error: \(error)")
+            return false
         }
     }
 
