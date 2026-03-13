@@ -104,6 +104,10 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         PRODUCT_NAME: QueueFlowLiveActivity
+    entitlements:
+      path: QueueFlowLiveActivity/QueueFlowLiveActivity.entitlements
+      properties:
+        com.apple.developer.on-demand-install-capable: true
 
 schemes:
   QueueFlow:
