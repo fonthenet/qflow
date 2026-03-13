@@ -6,7 +6,11 @@
     "dev": "next dev --turbopack --port 3000 --experimental-https --experimental-https-key certificates/localhost-key.pem --experimental-https-cert certificates/localhost.pem",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ios:push-test": "node scripts/ios-push-test.mjs",
+    "ios:clip-e2e": "node scripts/ios-clip-e2e.mjs",
+    "ios:clip-e2e:auto": "node scripts/ios-clip-e2e.mjs",
+    "ios:clip-call-again": "node scripts/ios-clip-e2e.mjs --call-only"
   },
   "dependencies": {
     "@queueflow/shared": "workspace:*",

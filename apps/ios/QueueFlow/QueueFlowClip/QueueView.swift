@@ -90,181 +90,220 @@ struct QueueView: View {
     // MARK: - Waiting View (Main)
 
     private func waitingView(_ ticket: Ticket) -> some View {
-        ZStack {
-            Color(red: 0.96, green: 0.96, blue: 0.97).ignoresSafeArea()
+        let accent = visitAccent(for: ticket.status)
+        let waitValue = estimatedWait ?? ticket.estimated_wait_minutes
+
+        return ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.07, blue: 0.14),
+                    Color(red: 0.08, green: 0.11, blue: 0.22),
+                    Color(red: 0.12, green: 0.18, blue: 0.32)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 0) {
-                    // Header
-                    VStack(spacing: 4) {
-                        Text(ticket.department?.name ?? "Queue")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.8))
-                        Text(ticket.service?.name ?? "")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .padding(.bottom, 40)
-                    .background(Color(red: 0.145, green: 0.388, blue: 0.922))
+                VStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Active Visit", systemImage: "person.text.rectangle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.75))
 
-                    // Ticket number card (overlapping header)
-                    VStack(spacing: 4) {
-                        Text("Your Ticket")
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.secondary)
-                        Text(ticket.ticket_number)
-                            .font(.system(size: 48, weight: .heavy, design: .rounded))
-                            .foregroundColor(Color(red: 0.145, green: 0.388, blue: 0.922))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.white)
-                            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-                    )
-                    .padding(.horizontal, 20)
-                    .offset(y: -32)
+                            Spacer()
 
-                    VStack(spacing: 12) {
-                        // Position card
-                        VStack(spacing: 8) {
-                            Text("Your position")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.secondary)
+                            Text(visitStatusText(for: ticket.status))
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(accent)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(accent.opacity(0.18), in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(accent.opacity(0.35), lineWidth: 1)
+                                )
+                        }
 
-                            if let position = position {
-                                Text("#\(position)")
-                                    .font(.system(size: 40, weight: .heavy, design: .rounded))
-                                Text("in line")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                ProgressView()
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(ticket.ticket_number)
+                                    .font(.system(size: 42, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(.white)
+
+                                Text(ticket.department?.name ?? "Queue")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.92))
+
+                                if let serviceName = ticket.service?.name, !serviceName.isEmpty {
+                                    Text(serviceName)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.white.opacity(0.72))
+                                }
                             }
 
-                            // Progress bar
-                            let progress = position.map { max(0.05, min(0.95, Double(10 - $0) / 10.0)) } ?? 0.05
+                            Spacer(minLength: 0)
+
+                            VStack(alignment: .trailing, spacing: 8) {
+                                HStack(spacing: 6) {
+                                    ForEach(0..<3, id: \.self) { i in
+                                        Circle()
+                                            .fill(accent)
+                                            .frame(width: 8, height: 8)
+                                            .scaleEffect(animatingDot == i ? 1.25 : 0.9)
+                                            .opacity(animatingDot == i ? 1 : 0.55)
+                                            .animation(
+                                                .easeInOut(duration: 0.45)
+                                                    .repeatForever()
+                                                    .delay(Double(i) * 0.16),
+                                                value: animatingDot
+                                            )
+                                    }
+                                }
+
+                                Text(position.map { "#\($0)" } ?? "--")
+                                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(.white)
+
+                                Text("Current spot")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.62))
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Queue progress")
+                                Spacer()
+                                Text(position.map { "\($0) ahead" } ?? "Calculating")
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.68))
+
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.gray.opacity(0.15))
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color(red: 0.145, green: 0.388, blue: 0.922))
-                                        .frame(width: geo.size.width * progress)
-                                        .animation(.easeInOut(duration: 0.5), value: progress)
+                                    Capsule()
+                                        .fill(.white.opacity(0.10))
+
+                                    Capsule()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [accent, accent.opacity(0.65)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: geo.size.width * queueProgress(for: position))
+                                        .animation(.easeInOut(duration: 0.45), value: position)
                                 }
                             }
-                            .frame(height: 8)
-
-                            HStack {
-                                Text("Joined")
-                                Spacer()
-                                Text("Your turn")
-                            }
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .frame(height: 12)
                         }
-                        .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(.white)
-                                .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
+
+                        HStack(spacing: 14) {
+                            Label("Updated \(Date().formatted(date: .omitted, time: .shortened))", systemImage: "clock")
+                            Spacer()
+                            if let recallCount = ticket.recall_count, recallCount > 0 {
+                                Label("Recall \(recallCount)x", systemImage: "arrow.counterclockwise")
+                            } else {
+                                Label("Stay nearby", systemImage: "figure.walk")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.68))
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 12),
+                            GridItem(.flexible(), spacing: 12)
+                        ],
+                        spacing: 12
+                    ) {
+                        visitMetricCard(
+                            title: "Position",
+                            value: position.map { "#\($0)" } ?? "--",
+                            detail: position.map { "\($0) ticket\($0 == 1 ? "" : "s") ahead" } ?? "Refreshing queue",
+                            systemImage: "list.number",
+                            accent: accent
                         )
 
-                        // Stats row
-                        HStack(spacing: 12) {
-                            // Estimated wait
-                            VStack(spacing: 4) {
-                                Text("Est. Wait")
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundColor(.secondary)
-                                if let wait = estimatedWait {
-                                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                                        Text("\(wait)")
-                                            .font(.title2.bold())
-                                        Text("min")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                } else {
-                                    Text("—")
-                                        .font(.title2.weight(.semibold))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(.white)
-                                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
-                            )
+                        visitMetricCard(
+                            title: "Estimated wait",
+                            value: waitValue.map { "\($0) min" } ?? "--",
+                            detail: waitValue.map { $0 <= 1 ? "Almost there" : "Approximate wait" } ?? "Calculating time",
+                            systemImage: "clock.badge",
+                            accent: Color(red: 0.36, green: 0.73, blue: 0.99)
+                        )
 
-                            // Now serving
-                            VStack(spacing: 4) {
-                                Text("Now Serving")
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundColor(.secondary)
-                                Text(nowServing ?? "—")
-                                    .font(.title2.bold())
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(.white)
-                                    .shadow(color: .black.opacity(0.04), radius: 4, y: 2)
-                            )
-                        }
+                        visitMetricCard(
+                            title: "Now serving",
+                            value: nowServing ?? "--",
+                            detail: "Current counter activity",
+                            systemImage: "person.3.sequence.fill",
+                            accent: Color(red: 0.49, green: 0.86, blue: 0.63)
+                        )
 
-                        // Notification status
-                        if apnsManager.tokenSentToServer {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("You'll be notified when it's your turn")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundColor(.green)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.green.opacity(0.1))
-                            )
-                        }
-
-                        // Waiting animation
-                        VStack(spacing: 12) {
-                            HStack(spacing: 6) {
-                                ForEach(0..<3, id: \.self) { i in
-                                    Circle()
-                                        .fill(Color(red: 0.145, green: 0.388, blue: 0.922))
-                                        .frame(width: 8, height: 8)
-                                        .scaleEffect(animatingDot == i ? 1.3 : 1.0)
-                                        .animation(
-                                            .easeInOut(duration: 0.5)
-                                                .repeatForever()
-                                                .delay(Double(i) * 0.15),
-                                            value: animatingDot
-                                        )
-                                }
-                            }
-                            Text("Waiting for your turn...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Text("We'll notify you — you can close this app")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 8)
+                        visitMetricCard(
+                            title: "Alerts",
+                            value: apnsManager.tokenSentToServer ? "Ready" : "Pending",
+                            detail: apnsManager.tokenSentToServer
+                                ? "Lock-screen alerts enabled"
+                                : "Keep this screen open",
+                            systemImage: apnsManager.tokenSentToServer ? "bell.badge.fill" : "bell.slash",
+                            accent: apnsManager.tokenSentToServer
+                                ? Color(red: 0.98, green: 0.76, blue: 0.28)
+                                : Color(red: 0.72, green: 0.78, blue: 0.92)
+                        )
                     }
-                    .padding(.horizontal, 20)
-                    .offset(y: -16)
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("What happens next")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+
+                        visitStepRow(
+                            icon: "bell.badge.fill",
+                            title: "We will alert you",
+                            detail: "A notification appears when the desk calls your number."
+                        )
+
+                        visitStepRow(
+                            icon: "rectangle.portrait.and.arrow.right",
+                            title: "You can close this app",
+                            detail: "Your visit keeps tracking in the background after alerts are ready."
+                        )
+
+                        visitStepRow(
+                            icon: "person.text.rectangle",
+                            title: "Keep your ticket number handy",
+                            detail: "Staff may ask for \(ticket.ticket_number) when you arrive at the desk."
+                        )
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            )
+                    )
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
+                .padding(.bottom, 28)
             }
         }
         .onAppear {
@@ -273,6 +312,104 @@ struct QueueView: View {
     }
 
     @State private var animatingDot = 0
+
+    private func visitAccent(for status: String) -> Color {
+        switch status {
+        case "called":
+            return Color(red: 0.45, green: 0.95, blue: 0.62)
+        case "serving":
+            return Color(red: 0.36, green: 0.73, blue: 0.99)
+        case "served":
+            return Color(red: 0.72, green: 0.78, blue: 0.92)
+        default:
+            return Color(red: 0.98, green: 0.68, blue: 0.24)
+        }
+    }
+
+    private func visitStatusText(for status: String) -> String {
+        switch status {
+        case "waiting":
+            return "Waiting in queue"
+        case "called":
+            return "Your turn"
+        case "serving":
+            return "At the desk"
+        case "served":
+            return "Visit complete"
+        default:
+            return status.capitalized
+        }
+    }
+
+    private func queueProgress(for position: Int?) -> Double {
+        guard let position else { return 0.08 }
+        return max(0.08, min(0.98, Double(12 - min(position, 12)) / 12.0))
+    }
+
+    @ViewBuilder
+    private func visitMetricCard(
+        title: String,
+        value: String,
+        detail: String,
+        systemImage: String,
+        accent: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(accent)
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.72))
+            }
+
+            Text(value)
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func visitStepRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.68))
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
 
     // MARK: - Serving View
 
@@ -317,6 +454,10 @@ struct QueueView: View {
             let fetchedTicket = try await SupabaseClient.shared.fetchTicket(token: token)
             ticket = fetchedTicket
 
+            if !AppState.shouldPersist(ticketStatus: fetchedTicket.status) {
+                TicketSessionStore.clear()
+            }
+
             // Register APNs token for this ticket
             APNsManager.shared.ticketId = fetchedTicket.id
             APNsManager.shared.registerForNotifications()
@@ -337,8 +478,28 @@ struct QueueView: View {
             )
             nowServing = serving
 
+            await LiveActivityManager.shared.sync(
+                ticket: fetchedTicket,
+                position: pos,
+                estimatedWait: wait,
+                nowServing: serving
+            )
+
+            if !AppState.shouldPersist(ticketStatus: fetchedTicket.status) {
+                APNsManager.shared.ticketId = nil
+                APNsManager.shared.tokenSentToServer = false
+            }
+
             isLoading = false
         } catch {
+            if let supabaseError = error as? SupabaseError, supabaseError == .ticketNotFound {
+                TicketSessionStore.clear()
+                await LiveActivityManager.shared.endAll()
+                await MainActor.run {
+                    APNsManager.shared.ticketId = nil
+                    APNsManager.shared.tokenSentToServer = false
+                }
+            }
             self.error = error.localizedDescription
             isLoading = false
         }
@@ -354,12 +515,16 @@ struct QueueView: View {
     }
 
     private func refreshData() async {
-        guard let currentTicket = ticket else { return }
+        guard ticket != nil else { return }
 
         do {
             let updated = try await SupabaseClient.shared.fetchTicket(token: token)
             await MainActor.run {
                 ticket = updated
+            }
+
+            if !AppState.shouldPersist(ticketStatus: updated.status) {
+                TicketSessionStore.clear()
             }
 
             if updated.status == "waiting" {
@@ -372,8 +537,37 @@ struct QueueView: View {
                     position = pos
                     nowServing = serving
                 }
+
+                await LiveActivityManager.shared.sync(
+                    ticket: updated,
+                    position: pos,
+                    estimatedWait: estimatedWait,
+                    nowServing: serving
+                )
+            } else {
+                await LiveActivityManager.shared.sync(
+                    ticket: updated,
+                    position: position,
+                    estimatedWait: estimatedWait,
+                    nowServing: nowServing
+                )
+            }
+
+            if !AppState.shouldPersist(ticketStatus: updated.status) {
+                await MainActor.run {
+                    APNsManager.shared.ticketId = nil
+                    APNsManager.shared.tokenSentToServer = false
+                }
             }
         } catch {
+            if let supabaseError = error as? SupabaseError, supabaseError == .ticketNotFound {
+                TicketSessionStore.clear()
+                await LiveActivityManager.shared.endAll()
+                await MainActor.run {
+                    APNsManager.shared.ticketId = nil
+                    APNsManager.shared.tokenSentToServer = false
+                }
+            }
             print("[Poll] Refresh failed: \(error)")
         }
     }

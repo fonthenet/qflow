@@ -84,8 +84,12 @@ class SupabaseClient {
         return try? JSONDecoder().decode(Int.self, from: data)
     }
 
-    /// Register APNs device token with the backend. Returns true on success.
-    func registerAPNsToken(ticketId: String, deviceToken: String) async -> Bool {
+    /// Register an APNs token with the backend. Returns true on success.
+    func registerAPNsToken(
+        ticketId: String,
+        deviceToken: String,
+        kind: String = "alert"
+    ) async -> Bool {
         guard let url = URL(string: "\(apiBaseURL)/api/apns-register") else {
             print("[APNs] Invalid registration URL")
             return false
@@ -99,6 +103,7 @@ class SupabaseClient {
         let body: [String: String] = [
             "ticketId": ticketId,
             "deviceToken": deviceToken,
+            "kind": kind,
             "environment": isDebug ? "sandbox" : "production",
             "bundleId": appClipBundleIdentifier
         ]
@@ -195,7 +200,7 @@ struct Ticket: Codable, Identifiable {
     }
 }
 
-enum SupabaseError: Error, LocalizedError {
+enum SupabaseError: Error, LocalizedError, Equatable {
     case invalidURL
     case fetchFailed
     case ticketNotFound

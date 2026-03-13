@@ -1,43 +1,40 @@
 /**
  * Apple Push Notification service (APNs) HTTP/2 client.
- * Sends push notifications to iOS App Clip users via APNs.
- * Uses JWT (ES256) authentication with a p8 key from Apple Developer Console.
+ * Sends standard alert pushes and ActivityKit Live Activity updates.
  */
 
 import { connect } from 'node:http2';
 import { SignJWT, importPKCS8 } from 'jose';
 import { createClient } from '@supabase/supabase-js';
 
-// APNs endpoints
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.development.push.apple.com';
 const DEFAULT_APNS_BUNDLE_ID =
   process.env.APNS_BUNDLE_ID?.trim() || 'com.queueflow.app.QueueFlowClip';
+const SWIFT_REFERENCE_DATE_UNIX_SECONDS = 978307200;
 
-// JWT token cache (valid for ~55 minutes, APNs allows up to 1 hour)
+function getTrimmedEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
 let cachedToken: { jwt: string; expiresAt: number } | null = null;
 
-/**
- * Generate a JWT for APNs authentication.
- * Tokens are cached for 55 minutes (APNs allows up to 1 hour).
- */
 async function getAPNsJWT(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
 
-  // Return cached token if still valid (with 5 min buffer)
   if (cachedToken && cachedToken.expiresAt > now + 300) {
     return cachedToken.jwt;
   }
 
-  const keyId = process.env.APNS_KEY_ID?.trim();
-  const teamId = process.env.APNS_TEAM_ID?.trim();
-  const keyP8 = process.env.APNS_KEY_P8?.trim();
+  const keyId = getTrimmedEnv('APNS_KEY_ID');
+  const teamId = getTrimmedEnv('APNS_TEAM_ID');
+  const keyP8 = getTrimmedEnv('APNS_KEY_P8');
 
   if (!keyId || !teamId || !keyP8) {
     throw new Error('APNs credentials not configured (APNS_KEY_ID, APNS_TEAM_ID, APNS_KEY_P8)');
   }
 
-  // Parse p8 key (handle escaped newlines from env vars)
   const pemKey = keyP8.replace(/\\n/g, '\n').trim();
   const privateKey = await importPKCS8(pemKey, 'ES256');
 
@@ -47,7 +44,6 @@ async function getAPNsJWT(): Promise<string> {
     .setIssuedAt(now)
     .sign(privateKey);
 
-  // Cache for 55 minutes
   cachedToken = { jwt, expiresAt: now + 55 * 60 };
   return jwt;
 }
@@ -60,10 +56,70 @@ interface APNsPayload {
 }
 
 type APNsEnvironment = 'production' | 'sandbox';
+type APNsKind = 'alert' | 'liveactivity';
+type LiveActivityEvent = 'update' | 'end';
 
 interface APNsTarget {
+  kind: APNsKind;
   environment: APNsEnvironment;
   bundleId: string;
+}
+
+interface APNsSendResult {
+  success: boolean;
+  status?: number;
+  reason?: string;
+}
+
+interface APNsTokenRecord {
+  id: string;
+  device_token: string;
+  environment: string | null;
+}
+
+interface QueueLiveActivityState {
+  status: string;
+  position?: number | null;
+  estimatedWaitMinutes?: number | null;
+  nowServing?: string | null;
+  deskName?: string | null;
+  recallCount: number;
+  updatedAt?: Date;
+}
+
+interface QueueLiveActivityPayload {
+  event?: LiveActivityEvent;
+  state: QueueLiveActivityState;
+  staleDate?: Date;
+  dismissalDate?: Date;
+  alert?: {
+    title: string;
+    body: string;
+    sound?: string;
+  };
+}
+
+interface TicketSnapshot {
+  id: string;
+  ticket_number: string;
+  qr_token: string;
+  office_id: string;
+  department_id: string;
+  status: string;
+  desk_id: string | null;
+  estimated_wait_minutes: number | null;
+  recall_count: number | null;
+  department: { name: string } | null;
+  service: { name: string } | null;
+  desk: { name: string; display_name: string | null } | null;
+}
+
+function hasAPNsCredentials(): boolean {
+  return Boolean(
+    getTrimmedEnv('APNS_KEY_ID') &&
+    getTrimmedEnv('APNS_TEAM_ID') &&
+    getTrimmedEnv('APNS_KEY_P8')
+  );
 }
 
 function buildInvocationURL(urlPath?: string): string | undefined {
@@ -83,36 +139,61 @@ function buildInvocationURL(urlPath?: string): string | undefined {
   return `${baseURL}${normalizedPath}`;
 }
 
-/**
- * Send a push notification to a single APNs device token.
- * Returns true on success, false on failure.
- * Throws on configuration errors.
- */
-async function sendAPNsNotification(
-  deviceToken: string,
-  payload: APNsPayload,
-  target: APNsTarget
-): Promise<{ success: boolean; status?: number; reason?: string }> {
-  const host = target.environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
-  const url = `${host}/3/device/${deviceToken}`;
-  const invocationURL = buildInvocationURL(payload.url);
+function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
+  if (!rawTarget) {
+    return {
+      kind: 'alert',
+      environment: 'production',
+      bundleId: DEFAULT_APNS_BUNDLE_ID,
+    };
+  }
 
-  const jwt = await getAPNsJWT();
+  const parts = rawTarget.split('|');
 
-  const apnsPayload = {
-    aps: {
-      alert: {
-        title: payload.title,
-        body: payload.body,
-      },
-      sound: payload.sound || 'default',
-      'interruption-level': 'time-sensitive' as const,
-      'mutable-content': 1,
-      ...(invocationURL ? { 'target-content-id': invocationURL } : {}),
-    },
-    // Custom data for the App Clip to handle
-    url: invocationURL,
+  if (parts[0] === 'alert' || parts[0] === 'liveactivity') {
+    const [, rawEnvironment, rawBundleId] = parts;
+    return {
+      kind: parts[0],
+      environment: rawEnvironment === 'sandbox' ? 'sandbox' : 'production',
+      bundleId: rawBundleId?.trim() || DEFAULT_APNS_BUNDLE_ID,
+    };
+  }
+
+  const [rawEnvironment, rawBundleId] = parts;
+  return {
+    kind: 'alert',
+    environment: rawEnvironment === 'sandbox' ? 'sandbox' : 'production',
+    bundleId: rawBundleId?.trim() || DEFAULT_APNS_BUNDLE_ID,
   };
+}
+
+function buildAPNsTopic(target: APNsTarget): string {
+  if (target.kind === 'liveactivity') {
+    return `${target.bundleId}.push-type.liveactivity`;
+  }
+
+  return target.bundleId;
+}
+
+function buildAPNsHeaders(target: APNsTarget, jwt: string) {
+  return {
+    ':method': 'POST',
+    authorization: `bearer ${jwt}`,
+    'apns-topic': buildAPNsTopic(target),
+    'apns-push-type': target.kind === 'liveactivity' ? 'liveactivity' : 'alert',
+    'apns-priority': target.kind === 'liveactivity' ? '5' : '10',
+    'apns-expiration': '0',
+    'content-type': 'application/json',
+  };
+}
+
+async function sendAPNsRequest(
+  deviceToken: string,
+  target: APNsTarget,
+  payload: Record<string, unknown>
+): Promise<APNsSendResult> {
+  const host = target.environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
+  const jwt = await getAPNsJWT();
 
   return await new Promise((resolve) => {
     const client = connect(host);
@@ -120,7 +201,7 @@ async function sendAPNsNotification(
     let statusCode: number | undefined;
     let responseBody = '';
 
-    const finish = (result: { success: boolean; status?: number; reason?: string }) => {
+    const finish = (result: APNsSendResult) => {
       if (settled) return;
       settled = true;
       client.close();
@@ -133,14 +214,8 @@ async function sendAPNsNotification(
     });
 
     const request = client.request({
-      ':method': 'POST',
+      ...buildAPNsHeaders(target, jwt),
       ':path': `/3/device/${deviceToken}`,
-      'authorization': `bearer ${jwt}`,
-      'apns-topic': target.bundleId,
-      'apns-push-type': 'alert',
-      'apns-priority': '10', // Immediate delivery
-      'apns-expiration': '0', // Deliver immediately or not at all
-      'content-type': 'application/json',
     });
 
     request.setEncoding('utf8');
@@ -171,8 +246,9 @@ async function sendAPNsNotification(
 
       console.error(
         `[APNs] Failed: ${statusCode ?? 'unknown'} ${reason} for token ${deviceToken.slice(0, 12)}...` +
-        ` env=${target.environment} topic=${target.bundleId}`
+          ` kind=${target.kind} env=${target.environment} topic=${buildAPNsTopic(target)}`
       );
+
       finish({ success: false, status: statusCode, reason });
     });
 
@@ -187,51 +263,108 @@ async function sendAPNsNotification(
       finish({ success: false, reason: 'timeout' });
     });
 
-    request.end(JSON.stringify(apnsPayload));
+    request.end(JSON.stringify(payload));
   });
 }
 
-function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
-  if (!rawTarget) {
-    return {
-      environment: 'production',
-      bundleId: DEFAULT_APNS_BUNDLE_ID,
-    };
-  }
+async function sendAlertNotification(
+  deviceToken: string,
+  payload: APNsPayload,
+  target: APNsTarget
+): Promise<APNsSendResult> {
+  const invocationURL = buildInvocationURL(payload.url);
 
-  const [environmentPart, bundleIdPart] = rawTarget.split('|', 2);
-  const environment: APNsEnvironment =
-    environmentPart === 'sandbox' ? 'sandbox' : 'production';
-  const bundleId = bundleIdPart?.trim() || DEFAULT_APNS_BUNDLE_ID;
+  const apnsPayload = {
+    aps: {
+      alert: {
+        title: payload.title,
+        body: payload.body,
+      },
+      sound: payload.sound || 'default',
+      'interruption-level': 'time-sensitive' as const,
+      'mutable-content': 1,
+      ...(invocationURL ? { 'target-content-id': invocationURL } : {}),
+    },
+    url: invocationURL,
+  };
 
-  return { environment, bundleId };
+  return sendAPNsRequest(deviceToken, target, apnsPayload);
 }
 
-/**
- * Send APNs push notification to all registered tokens for a ticket.
- * Handles cleanup of expired/invalid tokens.
- * Returns true if at least one notification was sent successfully.
- */
-export async function sendAPNsToTicket(
-  ticketId: string,
-  payload: APNsPayload
-): Promise<boolean> {
-  // Check if APNs is configured
-  if (!process.env.APNS_KEY_ID || !process.env.APNS_TEAM_ID || !process.env.APNS_KEY_P8) {
-    // APNs not configured — silently skip (web push still works)
-    return false;
+function toSwiftReferenceDateSeconds(date: Date): number {
+  return Math.floor(date.getTime() / 1000) - SWIFT_REFERENCE_DATE_UNIX_SECONDS;
+}
+
+function serializeLiveActivityState(state: QueueLiveActivityState) {
+  return {
+    status: state.status,
+    ...(state.position != null ? { position: state.position } : {}),
+    ...(state.estimatedWaitMinutes != null
+      ? { estimatedWaitMinutes: state.estimatedWaitMinutes }
+      : {}),
+    ...(state.nowServing ? { nowServing: state.nowServing } : {}),
+    ...(state.deskName ? { deskName: state.deskName } : {}),
+    recallCount: state.recallCount,
+    updatedAt: toSwiftReferenceDateSeconds(state.updatedAt ?? new Date()),
+  };
+}
+
+async function sendLiveActivityNotification(
+  deviceToken: string,
+  payload: QueueLiveActivityPayload,
+  target: APNsTarget
+): Promise<APNsSendResult> {
+  const now = Math.floor(Date.now() / 1000);
+
+  const aps: Record<string, unknown> = {
+    timestamp: now,
+    event: payload.event ?? 'update',
+    'content-state': serializeLiveActivityState(payload.state),
+  };
+
+  if ((payload.event ?? 'update') === 'update') {
+    aps['stale-date'] = Math.floor(
+      (payload.staleDate ?? new Date(Date.now() + 15 * 60_000)).getTime() / 1000
+    );
   }
 
-  console.log('[APNs] Sending notification for ticket:', ticketId);
+  if ((payload.event ?? 'update') === 'end' && payload.dismissalDate) {
+    aps['dismissal-date'] = Math.floor(payload.dismissalDate.getTime() / 1000);
+  }
 
+  if (payload.alert) {
+    aps.alert = {
+      title: payload.alert.title,
+      body: payload.alert.body,
+    };
+    aps.sound = payload.alert.sound || 'default';
+    aps['interruption-level'] = 'time-sensitive';
+  }
+
+  return sendAPNsRequest(deviceToken, target, { aps });
+}
+
+function createServiceSupabaseClient() {
+  const supabaseUrl =
+    getTrimmedEnv('NEXT_PUBLIC_SUPABASE_URL') ||
+    getTrimmedEnv('SUPABASE_URL');
   const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    getTrimmedEnv('SUPABASE_SERVICE_ROLE_KEY') ||
+    getTrimmedEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    supabaseKey
-  );
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[APNs] Supabase credentials not configured');
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+async function loadTicketTokens(ticketId: string) {
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return { supabase: null, tokens: [] };
+  }
 
   const { data: tokens, error } = await supabase
     .from('apns_tokens')
@@ -240,38 +373,163 @@ export async function sendAPNsToTicket(
 
   if (error) {
     console.error('[APNs] Failed to fetch tokens:', error);
+    return { supabase, tokens: [] };
+  }
+
+  return { supabase, tokens: (tokens ?? []) as APNsTokenRecord[] };
+}
+
+async function sendToTicketTokens(
+  ticketId: string,
+  kind: APNsKind,
+  sender: (token: APNsTokenRecord, target: APNsTarget) => Promise<APNsSendResult>
+): Promise<boolean> {
+  if (!hasAPNsCredentials()) {
     return false;
   }
 
-  if (!tokens || tokens.length === 0) {
-    console.log('[APNs] No APNs tokens for ticket:', ticketId);
+  const { supabase, tokens } = await loadTicketTokens(ticketId);
+  if (!supabase) {
     return false;
   }
 
-  console.log('[APNs] Found', tokens.length, 'token(s)');
+  const matchingTokens = tokens.filter((token) => parseAPNsTarget(token.environment).kind === kind);
+
+  if (matchingTokens.length === 0) {
+    console.log(`[APNs] No ${kind} tokens for ticket:`, ticketId);
+    return false;
+  }
+
+  console.log(`[APNs] Sending ${kind} notification for ticket:`, ticketId);
   let anySent = false;
 
-  for (const token of tokens) {
+  for (const token of matchingTokens) {
     const target = parseAPNsTarget(token.environment);
-    const result = await sendAPNsNotification(
-      token.device_token,
-      payload,
-      target
-    );
+    const result = await sender(token, target);
 
     if (result.success) {
       anySent = true;
-    } else if (result.status === 410 || result.reason === 'Unregistered') {
-      // Token is invalid/expired — clean up
+      continue;
+    }
+
+    if (result.status === 410 || result.reason === 'Unregistered') {
       console.log('[APNs] Removing invalid token:', token.id);
       await supabase.from('apns_tokens').delete().eq('id', token.id);
-    } else if (result.reason === 'BadDeviceToken' || result.reason === 'DeviceTokenNotForTopic') {
+      continue;
+    }
+
+    if (result.reason === 'BadDeviceToken' || result.reason === 'DeviceTokenNotForTopic') {
       console.warn(
         `[APNs] Preserving token ${token.id} after ${result.reason};` +
-        ` verify Xcode bundle id and APNs topic match (${target.bundleId})`
+          ` verify APNs topic match (${buildAPNsTopic(target)})`
       );
     }
   }
 
   return anySent;
+}
+
+export async function sendAPNsToTicket(
+  ticketId: string,
+  payload: APNsPayload
+): Promise<boolean> {
+  return sendToTicketTokens(ticketId, 'alert', (token, target) =>
+    sendAlertNotification(token.device_token, payload, target)
+  );
+}
+
+export async function sendLiveActivityUpdateToTicket(
+  ticketId: string,
+  payload: QueueLiveActivityPayload
+): Promise<boolean> {
+  return sendToTicketTokens(ticketId, 'liveactivity', (token, target) =>
+    sendLiveActivityNotification(token.device_token, payload, target)
+  );
+}
+
+async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
+  ticket: TicketSnapshot;
+  state: QueueLiveActivityState;
+} | null> {
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data: ticketData, error } = await supabase
+    .from('tickets')
+    .select(
+      'id, ticket_number, qr_token, office_id, department_id, status, desk_id, estimated_wait_minutes, recall_count, department:departments(name), service:services(name), desk:desks(name, display_name)'
+    )
+    .eq('id', ticketId)
+    .single();
+
+  const ticket = ticketData as TicketSnapshot | null;
+
+  if (error || !ticket) {
+    console.error('[LiveActivity] Failed to fetch ticket snapshot:', error);
+    return null;
+  }
+
+  let position: number | null = null;
+  let nowServing: string | null = null;
+
+  if (ticket.status === 'waiting') {
+    const { data: queuePosition, error: positionError } = await supabase.rpc('get_queue_position', {
+      p_ticket_id: ticket.id,
+    });
+
+    if (!positionError && typeof queuePosition === 'number' && queuePosition > 0) {
+      position = queuePosition;
+    }
+
+    const { data: activeTickets, error: activeError } = await supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('department_id', ticket.department_id)
+      .eq('office_id', ticket.office_id)
+      .in('status', ['serving', 'called'])
+      .order('called_at', { ascending: false })
+      .limit(1);
+
+    if (!activeError) {
+      nowServing = activeTickets?.[0]?.ticket_number ?? null;
+    }
+  } else if (ticket.status === 'called' || ticket.status === 'serving') {
+    nowServing = ticket.ticket_number;
+  }
+
+  return {
+    ticket,
+    state: {
+      status: ticket.status,
+      position,
+      estimatedWaitMinutes: ticket.estimated_wait_minutes,
+      nowServing,
+      deskName: ticket.desk?.display_name ?? ticket.desk?.name ?? null,
+      recallCount: ticket.recall_count ?? 0,
+      updatedAt: new Date(),
+    },
+  };
+}
+
+function shouldEndLiveActivity(status: string): boolean {
+  return status === 'served' || status === 'no_show' || status === 'transferred';
+}
+
+export async function sendLiveActivityUpdateForTicket(ticketId: string): Promise<boolean> {
+  const snapshot = await fetchLiveActivitySnapshot(ticketId);
+  if (!snapshot) {
+    return false;
+  }
+
+  const { state } = snapshot;
+
+  return sendLiveActivityUpdateToTicket(ticketId, {
+    event: shouldEndLiveActivity(state.status) ? 'end' : 'update',
+    state,
+    dismissalDate: shouldEndLiveActivity(state.status)
+      ? new Date(Date.now() + 60_000)
+      : undefined,
+  });
 }

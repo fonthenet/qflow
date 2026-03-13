@@ -4,7 +4,27 @@ import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { sendPushToTicket } from '@/lib/send-push';
-import { sendAPNsToTicket } from '@/lib/apns';
+import { sendAPNsToTicket, sendLiveActivityUpdateForTicket } from '@/lib/apns';
+
+const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
+
+async function syncLiveActivity(ticketId: string, source: string): Promise<boolean> {
+  const synced = await sendLiveActivityUpdateForTicket(ticketId).catch((err) => {
+    console.error(`[${source}] Live Activity sync error:`, err);
+    return false;
+  });
+
+  if (!synced) {
+    console.warn(`[${source}] Live Activity update was not sent for ticket:`, ticketId);
+  }
+
+  return synced;
+}
+
+async function syncLiveActivityAfterAlert(ticketId: string, source: string): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, LIVE_ACTIVITY_FOLLOWUP_DELAY_MS));
+  return syncLiveActivity(ticketId, source);
+}
 
 export async function createTicket(
   officeId: string,
@@ -117,11 +137,20 @@ export async function callNextTicket(deskId: string, staffId: string) {
           .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
       : 'your desk';
 
-    sendAPNsToTicket(ticketId, {
+    const apnsSent = await sendAPNsToTicket(ticketId, {
       title: "It's Your Turn!",
       body: `Ticket ${ticket.ticket_number} — Please go to ${apnsDeskName}`,
       url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[CallNext] APNs notification error:', err));
+    }).catch((err) => {
+      console.error('[CallNext] APNs notification error:', err);
+      return false;
+    });
+
+    if (!apnsSent) {
+      console.warn('[CallNext] APNs notification was not sent for ticket:', ticketId);
+    }
+
+    await syncLiveActivityAfterAlert(ticketId, 'CallNext');
   }
 
   revalidatePath('/desk');
@@ -155,6 +184,8 @@ export async function startServing(ticketId: string, staffId: string) {
     staff_id: staffId,
   });
 
+  await syncLiveActivity(ticketId, 'StartServing');
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -186,6 +217,8 @@ export async function markServed(ticketId: string, staffId: string) {
     staff_id: staffId,
   });
 
+  await syncLiveActivity(ticketId, 'MarkServed');
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -216,6 +249,8 @@ export async function markNoShow(ticketId: string, staffId: string) {
     to_status: 'no_show',
     staff_id: staffId,
   });
+
+  await syncLiveActivity(ticketId, 'MarkNoShow');
 
   revalidatePath('/desk');
   return { data: ticket };
@@ -301,6 +336,8 @@ export async function transferTicket(
       target_service_id: targetServiceId,
     },
   });
+
+  await syncLiveActivity(ticketId, 'TransferTicket');
 
   revalidatePath('/desk');
   return { data: newTicket };
@@ -389,11 +426,20 @@ export async function recallTicket(ticketId: string) {
           .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
       : 'your desk';
 
-    sendAPNsToTicket(ticketId, {
+    const apnsSent = await sendAPNsToTicket(ticketId, {
       title: 'Reminder: Your Turn!',
       body: `Ticket ${ticket.ticket_number} — Please go to ${apnsRecallDeskName}`,
       url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[Recall] APNs notification error:', err));
+    }).catch((err) => {
+      console.error('[Recall] APNs notification error:', err);
+      return false;
+    });
+
+    if (!apnsSent) {
+      console.warn('[Recall] APNs notification was not sent for ticket:', ticketId);
+    }
+
+    await syncLiveActivityAfterAlert(ticketId, 'Recall');
   }
 
   // Log event
@@ -430,6 +476,8 @@ export async function resetTicketToQueue(ticketId: string) {
   if (error) {
     return { error: 'Failed to reset ticket' };
   }
+
+  await syncLiveActivity(ticketId, 'ResetTicketToQueue');
 
   return { data: true };
 }

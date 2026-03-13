@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-function encodeAPNsTarget(environment: unknown, bundleId: unknown): string {
+function getTrimmedEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
+function encodeAPNsTarget(kind: unknown, environment: unknown, bundleId: unknown): string {
+  const normalizedKind = kind === 'liveactivity' ? 'liveactivity' : 'alert';
   const normalizedEnvironment = environment === 'sandbox' ? 'sandbox' : 'production';
   const normalizedBundleId =
     typeof bundleId === 'string' && bundleId.trim().length > 0
@@ -9,8 +15,17 @@ function encodeAPNsTarget(environment: unknown, bundleId: unknown): string {
       : '';
 
   return normalizedBundleId
-    ? `${normalizedEnvironment}|${normalizedBundleId}`
-    : normalizedEnvironment;
+    ? `${normalizedKind}|${normalizedEnvironment}|${normalizedBundleId}`
+    : `${normalizedKind}|${normalizedEnvironment}`;
+}
+
+function parseAPNsKind(rawTarget: string | null): 'alert' | 'liveactivity' {
+  if (!rawTarget) {
+    return 'alert';
+  }
+
+  const [firstPart] = rawTarget.split('|', 1);
+  return firstPart === 'liveactivity' ? 'liveactivity' : 'alert';
 }
 
 /**
@@ -21,7 +36,7 @@ function encodeAPNsTarget(environment: unknown, bundleId: unknown): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { ticketId, deviceToken, environment, bundleId } = await request.json();
+    const { ticketId, deviceToken, kind, environment, bundleId } = await request.json();
 
     if (!ticketId || !deviceToken) {
       return NextResponse.json(
@@ -30,20 +45,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabaseUrl = getTrimmedEnv('NEXT_PUBLIC_SUPABASE_URL');
     const supabaseKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+      getTrimmedEnv('SUPABASE_SERVICE_ROLE_KEY') ||
+      getTrimmedEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      supabaseKey
-    );
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json(
+        { error: 'Supabase credentials not configured' },
+        { status: 500 }
+      );
+    }
 
-    // Delete old tokens for this ticket (fresh token on each launch)
-    await supabase
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const normalizedKind = kind === 'liveactivity' ? 'liveactivity' : 'alert';
+
+    const { data: existingTokens, error: existingError } = await supabase
       .from('apns_tokens')
-      .delete()
+      .select('id, environment')
       .eq('ticket_id', ticketId);
+
+    if (existingError) {
+      console.error('[APNs Register] Failed to fetch existing tokens:', existingError);
+      return NextResponse.json({ error: existingError.message }, { status: 500 });
+    }
+
+    const tokenIdsToReplace =
+      existingTokens
+        ?.filter((token) => parseAPNsKind(token.environment) === normalizedKind)
+        .map((token) => token.id) ?? [];
+
+    if (tokenIdsToReplace.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('apns_tokens')
+        .delete()
+        .in('id', tokenIdsToReplace);
+
+      if (deleteError) {
+        console.error('[APNs Register] Failed to replace existing token:', deleteError);
+        return NextResponse.json({ error: deleteError.message }, { status: 500 });
+      }
+    }
 
     // Insert new token
     const { error } = await supabase
@@ -51,7 +94,7 @@ export async function POST(request: NextRequest) {
       .insert({
         ticket_id: ticketId,
         device_token: deviceToken,
-        environment: encodeAPNsTarget(environment, bundleId),
+        environment: encodeAPNsTarget(normalizedKind, environment, bundleId),
       });
 
     if (error) {
