@@ -276,8 +276,10 @@ object QueueLiveUpdateNotifier {
 
     private fun liveBody(payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "called" -> "Proceed now. Countdown is active."
-            "recall" -> "Staff is waiting for you right now."
+            "called" -> payload.ticketNumber?.let { "Ticket $it • Show this screen when you arrive." }
+                ?: "Proceed now. Countdown is active."
+            "recall" -> payload.ticketNumber?.let { "Ticket $it • Please return to the desk now." }
+                ?: "Staff is waiting for you right now."
             "serving" -> payload.deskName?.let { "At $it" } ?: "A staff member is helping you."
             else -> buildString {
                 if (payload.position != null) append("#${payload.position} in line")
@@ -305,7 +307,7 @@ object QueueLiveUpdateNotifier {
     private fun alertTitle(payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
             "buzz" -> "Buzz from QueueFlow"
-            "recall" -> "Return to the desk now"
+            "recall" -> "Reminder: your turn"
             else -> "It's your turn"
         }
     }
@@ -368,11 +370,11 @@ object QueueLiveUpdateNotifier {
 
     private fun accentColor(type: String): Int {
         return when (type) {
-            "called", "recall" -> Color.parseColor("#34D399")
+            "called", "recall" -> Color.parseColor("#F2B633")
             "serving" -> Color.parseColor("#38BDF8")
             "served", "stop_tracking" -> Color.parseColor("#94A3B8")
             "buzz" -> Color.parseColor("#F43F5E")
-            else -> Color.parseColor("#F59E0B")
+            else -> Color.parseColor("#67D0F8")
         }
     }
 

@@ -201,8 +201,8 @@ class SupabaseClient {
         }
     }
 
-    func stopTracking(ticketId: String) async {
-        guard let url = URL(string: "\(apiBaseURL)/api/tracking-stop") else { return }
+    func stopTracking(ticketId: String) async -> TrackingStopResult? {
+        guard let url = URL(string: "\(apiBaseURL)/api/tracking-stop") else { return nil }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -211,9 +211,29 @@ class SupabaseClient {
         request.httpBody = try? JSONEncoder().encode(["ticketId": ticketId])
 
         do {
-            _ = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("[Tracking] Stop request missing response")
+                return nil
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                if let body = String(data: data, encoding: .utf8) {
+                    print("[Tracking] Stop request failed: \(httpResponse.statusCode) \(body)")
+                } else {
+                    print("[Tracking] Stop request failed: \(httpResponse.statusCode)")
+                }
+                return nil
+            }
+
+            if let payload = try? JSONDecoder().decode(TrackingStopResult.self, from: data) {
+                return payload
+            }
+
+            return TrackingStopResult(ok: true, leftQueue: false)
         } catch {
             print("[Tracking] Stop request failed: \(error)")
+            return nil
         }
     }
 
@@ -284,4 +304,9 @@ enum SupabaseError: Error, LocalizedError, Equatable {
         case .feedbackSubmitFailed: return "Could not submit feedback"
         }
     }
+}
+
+struct TrackingStopResult: Codable {
+    let ok: Bool
+    let leftQueue: Bool
 }

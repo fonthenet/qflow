@@ -6,6 +6,7 @@ interface QueueStopDialogProps {
   title?: string;
   description?: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -13,9 +14,10 @@ interface QueueStopDialogProps {
 export function QueueStopDialog({
   isOpen,
   isStopping,
-  title = 'Stop tracking this visit?',
-  description = 'This will stop live updates and lock-screen alerts on this device for the current ticket.',
-  confirmLabel = 'Stop tracking',
+  title = 'Leave this queue?',
+  description = 'This removes the ticket from the queue and stops live updates on this device.',
+  confirmLabel = 'Leave queue',
+  cancelLabel = 'Stay in line',
   onCancel,
   onConfirm,
 }: QueueStopDialogProps) {
@@ -41,7 +43,7 @@ export function QueueStopDialog({
             disabled={isStopping}
             className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Keep tracking
+            {cancelLabel}
           </button>
           <button
             type="button"

@@ -518,7 +518,7 @@ async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
 }
 
 function shouldEndLiveActivity(status: string): boolean {
-  return status === 'served' || status === 'no_show' || status === 'transferred';
+  return status === 'served' || status === 'no_show' || status === 'cancelled' || status === 'transferred';
 }
 
 export async function sendLiveActivityUpdateForTicket(ticketId: string): Promise<boolean> {

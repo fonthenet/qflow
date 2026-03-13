@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushToTicket } from '@/lib/send-push';
 import { endLiveActivityForTicket } from '@/lib/apns';
-import { sendAndroidToTicket } from '@/lib/android-push';
+import { notifyWaitingAndroidTickets, sendAndroidToTicket } from '@/lib/android-push';
+import { notifyWaitingTickets } from '@/lib/send-push';
 
 function getTrimmedEnv(name: string): string | undefined {
   const value = process.env[name];
@@ -37,31 +38,99 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Supabase credentials not configured' }, { status: 500 });
     }
 
+    const { data: existingTicket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('id, status, office_id, department_id')
+      .eq('id', ticketId)
+      .single();
+
+    if (ticketError || !existingTicket) {
+      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    }
+
+    const activeStatuses = new Set(['issued', 'waiting', 'called', 'serving']);
+    const shouldLeaveQueue = activeStatuses.has(existingTicket.status);
+
+    if (shouldLeaveQueue) {
+      const { error: updateError } = await supabase
+        .from('tickets')
+        .update({
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', ticketId);
+
+      if (updateError) {
+        console.error('[TrackingStop] Failed to cancel ticket:', updateError.message);
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+
+      const { error: eventError } = await supabase.from('ticket_events').insert({
+        ticket_id: ticketId,
+        event_type: 'status_change',
+        from_status: existingTicket.status,
+        to_status: 'cancelled',
+        metadata: {
+          source: 'customer_leave_queue',
+        },
+      });
+
+      if (eventError) {
+        console.error('[TrackingStop] Failed to log cancellation event:', eventError.message);
+      }
+    }
+
     await Promise.allSettled([
       sendPushToTicket(ticketId, {
         type: 'stop_tracking',
-        title: 'Tracking stopped',
-        body: 'QueueFlow tracking stopped for this visit.',
+        title: shouldLeaveQueue ? 'Queue cancelled' : 'Tracking stopped',
+        body: shouldLeaveQueue
+          ? 'This ticket has left the queue.'
+          : 'QueueFlow tracking stopped for this visit.',
         ticketId,
         silent: true,
       }),
       sendAndroidToTicket(ticketId, {
         type: 'stop_tracking',
-        title: 'Tracking stopped',
-        body: 'QueueFlow tracking stopped for this visit.',
+        title: shouldLeaveQueue ? 'Queue cancelled' : 'Tracking stopped',
+        body: shouldLeaveQueue
+          ? 'This ticket has left the queue.'
+          : 'QueueFlow tracking stopped for this visit.',
         ticketId,
         silent: true,
       }),
       endLiveActivityForTicket(ticketId),
     ]);
 
-    await Promise.all([
+    if (shouldLeaveQueue) {
+      await Promise.allSettled([
+        notifyWaitingTickets(existingTicket.department_id, existingTicket.office_id, ticketId),
+        notifyWaitingAndroidTickets(existingTicket.department_id, existingTicket.office_id, ticketId),
+      ]);
+    }
+
+    const [pushDelete, apnsDelete, androidDelete] = await Promise.all([
       supabase.from('push_subscriptions').delete().eq('ticket_id', ticketId),
       supabase.from('apns_tokens').delete().eq('ticket_id', ticketId),
       supabase.from('android_tokens').delete().eq('ticket_id', ticketId),
     ]);
 
-    return NextResponse.json({ ok: true });
+    const deleteErrors = [
+      pushDelete.error,
+      apnsDelete.error,
+      androidDelete.error,
+    ].filter(Boolean);
+
+    if (deleteErrors.length > 0) {
+      const message = deleteErrors.map((item) => item?.message).join(' | ');
+      console.error('[TrackingStop] Delete error:', message);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      leftQueue: shouldLeaveQueue,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[TrackingStop] Error:', message);

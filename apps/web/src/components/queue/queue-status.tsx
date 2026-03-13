@@ -109,19 +109,21 @@ function WaitingMetric({
   value,
   detail,
   accentClass,
+  compact = false,
 }: {
   label: string;
   value: string;
   detail: string;
   accentClass: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
-      <div className={`mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
+    <div className={`rounded-[22px] border border-white/10 bg-white/6 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur ${compact ? 'p-3' : 'p-4'}`}>
+      <div className={`inline-flex rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${accentClass} ${compact ? 'mb-2' : 'mb-3'}`}>
         {label}
       </div>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-300">{detail}</p>
+      <p className={`${compact ? 'text-2xl' : 'text-3xl'} font-semibold tracking-tight text-white`}>{value}</p>
+      <p className={`mt-2 text-slate-300 ${compact ? 'text-xs leading-5' : 'text-sm leading-6'}`}>{detail}</p>
     </div>
   );
 }
@@ -172,6 +174,7 @@ export function QueueStatus({
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [trackingStopped, setTrackingStopped] = useState(false);
+  const [stopOutcome, setStopOutcome] = useState<'left_queue' | 'cleared'>('left_queue');
   const [stopError, setStopError] = useState<string | null>(null);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
@@ -260,12 +263,13 @@ export function QueueStatus({
     setStopError(null);
 
     try {
-      const stopped = await stopTicketTracking(ticket.id);
-      if (!stopped) {
+      const result = await stopTicketTracking(ticket.id);
+      if (!result) {
         setStopError('We could not stop tracking just yet. Please try again.');
         return;
       }
 
+      setStopOutcome(result.leftQueue ? 'left_queue' : 'cleared');
       setTrackingStopped(true);
     } finally {
       setIsStopping(false);
@@ -507,24 +511,71 @@ export function QueueStatus({
   if (trackingStopped) {
     return (
       <QueueSessionEnded
-        detail={`Ticket ${ticket.ticket_number} no longer has live updates on this device.`}
-        onResume={() => window.location.reload()}
+        title={stopOutcome === 'left_queue' ? 'You left the queue' : 'Visit cleared'}
+        description={
+          stopOutcome === 'left_queue'
+            ? 'This ticket was removed from the queue and all alerts for this visit have been turned off on this device.'
+            : 'This completed visit has been cleared from this device and any remaining alerts have been turned off.'
+        }
+        detail={
+          stopOutcome === 'left_queue'
+            ? `Ticket ${ticket.ticket_number} is no longer active in line.`
+            : `Ticket ${ticket.ticket_number} no longer has live updates on this device.`
+        }
+        onResume={stopOutcome === 'cleared' ? () => window.location.reload() : undefined}
+      />
+    );
+  }
+
+  if (ticket.status === 'cancelled' || ticket.status === 'no_show' || ticket.status === 'transferred') {
+    const statusMessage = {
+      cancelled: {
+        title: 'Ticket cancelled',
+        description: 'This ticket is no longer active in the queue.',
+      },
+      no_show: {
+        title: 'Missed your turn',
+        description: 'The desk marked this ticket as missed. Please talk to staff if you still need help.',
+      },
+      transferred: {
+        title: 'Ticket transferred',
+        description: 'This ticket moved to a different service flow.',
+      },
+    }[ticket.status];
+
+    return (
+      <QueueSessionEnded
+        title={statusMessage.title}
+        description={statusMessage.description}
+        detail={`Ticket ${ticket.ticket_number}`}
       />
     );
   }
 
   if (ticket.status === 'called') {
     return (
-      <YourTurn
-        ticket={ticket}
-        deskName={deskName ?? ''}
-        officeName={officeName}
-        serviceName={serviceName}
-        lastSyncedAt={lastSyncedAt}
-        isRefreshing={isRefreshing}
-        onRefresh={handleManualRefresh}
-        onStopTracking={() => setShowStopDialog(true)}
-      />
+      <>
+        <YourTurn
+          ticket={ticket}
+          deskName={deskName ?? ''}
+          officeName={officeName}
+          serviceName={serviceName}
+          lastSyncedAt={lastSyncedAt}
+          isRefreshing={isRefreshing}
+          stopError={stopError}
+          onRefresh={handleManualRefresh}
+          onStopTracking={() => setShowStopDialog(true)}
+        />
+        <QueueStopDialog
+          isOpen={showStopDialog}
+          isStopping={isStopping}
+          onCancel={() => setShowStopDialog(false)}
+          onConfirm={() => void handleStopTracking()}
+          title="Leave this queue?"
+          description="This removes the ticket from the queue and closes any remaining alerts on this device."
+          confirmLabel="Leave queue"
+        />
+      </>
     );
   }
 
@@ -546,6 +597,7 @@ export function QueueStatus({
           title="Finish this visit?"
           description="We’ll clear this completed visit from this device and stop any remaining alerts."
           confirmLabel="Finish visit"
+          cancelLabel="Keep visit"
         />
       </>
     );
@@ -654,8 +706,8 @@ export function QueueStatus({
 
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_62%)]" />
 
-        <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
-          <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
@@ -679,27 +731,30 @@ export function QueueStatus({
             </div>
           </div>
 
-          <section className="rounded-[34px] border border-white/10 bg-white/6 p-6 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+          <section className="rounded-[30px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
+            <div className="grid grid-cols-[minmax(0,1fr)_104px] items-start gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+              <div className="min-w-0">
                 <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${accentTone}`}>
                   {accentLabel}
                 </div>
-                <p className="mt-4 text-sm font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
-                <p className="mt-2 text-5xl font-black tracking-[0.12em] text-white">{ticket.ticket_number}</p>
+                <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
+                <p className="mt-2 truncate text-[42px] font-black leading-[0.94] tracking-[0.10em] text-white sm:text-5xl">
+                  {ticket.ticket_number}
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-100">{serviceName}</p>
               </div>
 
-              <div className="rounded-[28px] border border-cyan-300/18 bg-cyan-400/8 px-4 py-4 text-right">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100/70">Position</p>
-                <p className="mt-2 text-4xl font-semibold text-white">{position ? `#${position}` : '--'}</p>
-                <p className="mt-2 text-sm text-cyan-50/70">
+              <div className="rounded-[26px] border border-cyan-300/18 bg-cyan-400/8 px-3 py-4 text-right shadow-[0_20px_40px_rgba(34,211,238,0.08)]">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Position</p>
+                <p className="mt-2 text-4xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
+                <p className="mt-2 text-xs leading-5 text-cyan-50/70">
                   {position && position > 1 ? `${position - 1} ahead of you` : 'You are nearly up'}
                 </p>
               </div>
             </div>
 
-            <div className="mt-6">
-              <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
                 <span>Queue movement</span>
                 <span>{ticket.status === 'serving' ? 'At the desk' : 'Live'}</span>
               </div>
@@ -711,24 +766,27 @@ export function QueueStatus({
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-3 gap-2.5">
               <WaitingMetric
                 label="Wait"
                 value={estimatedWait != null ? `${estimatedWait} min` : '--'}
-                detail={estimatedWait != null ? 'Approximate wait until your turn.' : 'Calculating timing now.'}
+                detail={estimatedWait != null ? 'Approximate timing' : 'Calculating timing'}
                 accentClass="bg-sky-400/15 text-sky-100"
+                compact
               />
               <WaitingMetric
                 label="Now serving"
                 value={nowServing ?? '--'}
-                detail="Current ticket being helped right now."
+                detail="Current desk activity"
                 accentClass="bg-emerald-400/15 text-emerald-100"
+                compact
               />
               <WaitingMetric
                 label="Alerts"
                 value={alertsEnabled ? 'Ready' : 'Off'}
-                detail={alertsEnabled ? 'We can reach you even if you step away.' : 'Turn alerts on so you do not miss your turn.'}
+                detail={alertsEnabled ? 'Background alerts on' : 'Turn alerts on'}
                 accentClass="bg-amber-300/15 text-amber-100"
+                compact
               />
             </div>
           </section>
@@ -764,8 +822,8 @@ export function QueueStatus({
                 detail="Use the Refresh button whenever you want an immediate sync, just like a pull-to-refresh check."
               />
               <JourneyStep
-                title="End tracking when you are done"
-                detail="When your visit is complete, finish the session so this device stops getting updates."
+                title="Leave the queue if plans change"
+                detail="Use End if you need to cancel this ticket and step out of the line completely."
               />
             </div>
           </section>
@@ -808,6 +866,9 @@ export function QueueStatus({
         isStopping={isStopping}
         onCancel={() => setShowStopDialog(false)}
         onConfirm={() => void handleStopTracking()}
+        title="Leave this queue?"
+        description="This removes the ticket from the queue for everyone and stops live updates on this device."
+        confirmLabel="Leave queue"
       />
     </>
   );

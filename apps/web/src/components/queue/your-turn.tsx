@@ -15,6 +15,7 @@ interface YourTurnProps {
   serviceName: string;
   lastSyncedAt: Date | null;
   isRefreshing: boolean;
+  stopError?: string | null;
   onRefresh: () => Promise<void> | void;
   onStopTracking: () => void;
 }
@@ -71,6 +72,7 @@ export function YourTurn({
   serviceName,
   lastSyncedAt,
   isRefreshing,
+  stopError,
   onRefresh,
   onStopTracking,
 }: YourTurnProps) {
@@ -523,9 +525,9 @@ export function YourTurn({
   }, [calledAt, ticket.ticket_number, ticket.id, deskName]);
 
   const backgroundClass = {
-    green: 'from-emerald-600 via-emerald-700 to-emerald-900',
-    yellow: 'from-amber-400 via-amber-500 to-orange-700',
-    red: 'from-rose-600 via-rose-700 to-red-950',
+    green: 'from-[#1f8758] via-[#1a6f49] to-[#0d4d32]',
+    yellow: 'from-[#f1b72b] via-[#dca126] to-[#b97613]',
+    red: 'from-[#b42828] via-[#8e1f1f] to-[#5f1414]',
   }[phase];
 
   const ringClass = {
@@ -582,28 +584,28 @@ export function YourTurn({
           </div>
         </div>
 
-        <div className="mt-7 flex flex-1 flex-col items-center justify-center text-center text-white">
-          <div className="relative flex h-40 w-40 items-center justify-center">
+        <div className="mt-4 flex flex-1 flex-col items-center justify-center text-center text-white">
+          <div className="relative flex h-32 w-32 items-center justify-center sm:h-36 sm:w-36">
             <div className={`absolute inset-0 rounded-full ${ringClass} ${phase === 'red' ? 'animate-pulse' : ''}`} />
-            <div className="absolute inset-4 animate-ping rounded-full bg-white/12 [animation-duration:2.2s]" />
-            <div className="absolute inset-10 rounded-full bg-white/18" />
-            <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white/22 shadow-[0_16px_50px_rgba(15,23,42,0.2)]">
+            <div className="absolute inset-4 animate-ping rounded-full bg-white/12 [animation-duration:2.4s]" />
+            <div className="absolute inset-9 rounded-full bg-white/18" />
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white/22 shadow-[0_16px_50px_rgba(15,23,42,0.2)] sm:h-24 sm:w-24">
               <svg className="h-11 w-11 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
             </div>
           </div>
 
-          <p className="mt-8 text-sm font-semibold uppercase tracking-[0.36em] text-white/68">Called now</p>
-          <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Go to {deskName}</h2>
-          <p className="mt-3 max-w-xs text-base leading-7 text-white/80">{message}</p>
+          <p className="mt-6 text-sm font-semibold uppercase tracking-[0.36em] text-white/68">Called now</p>
+          <h2 className="mt-3 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">Go to {deskName}</h2>
+          <p className="mt-3 max-w-[18rem] text-base leading-7 text-white/80">{message}</p>
 
-          <div className="mt-7 rounded-full border border-white/15 bg-white/14 px-5 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white/88">
+          <div className="mt-6 rounded-full border border-white/15 bg-white/14 px-5 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white/88">
             Ticket {ticket.ticket_number}
           </div>
 
           {recallCount > 0 ? (
-            <div className="mt-4 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
+            <div className="mt-3 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
               Recall {recallCount} {recallCount === 1 ? 'time' : 'times'}
             </div>
           ) : null}
@@ -618,28 +620,40 @@ export function YourTurn({
             </button>
           ) : null}
 
-          <div className={`mt-8 flex h-44 w-44 flex-col items-center justify-center rounded-full border bg-white/8 backdrop-blur ${countdownBorderClass}`}>
-            <p className="text-[14px] font-semibold uppercase tracking-[0.32em] text-white/65">Respond in</p>
-            <p className="mt-3 text-6xl font-black tabular-nums">{countdown}</p>
+          <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border bg-white/8 backdrop-blur sm:h-44 sm:w-44 ${countdownBorderClass}`}>
+            <p className="text-[13px] font-semibold uppercase tracking-[0.32em] text-white/65">Respond in</p>
+            <p className="mt-3 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
             <p className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
               {countdown === 0 ? 'Expired' : 'Seconds'}
             </p>
           </div>
 
-          <div className="mt-8 w-full rounded-[30px] border border-white/12 bg-black/12 p-5 text-left shadow-[0_25px_90px_rgba(2,6,23,0.2)] backdrop-blur">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to do</p>
-                <p className="mt-3 text-lg font-semibold text-white">Proceed straight to {deskName}</p>
-                <p className="mt-2 text-sm leading-6 text-white/72">Staff already called your ticket. The faster you arrive, the smoother the handoff.</p>
+          <p className="mt-6 max-w-sm text-xl leading-9 text-white/92">
+            Proceed to the desk and keep this screen visible.
+          </p>
+
+          <div className="mt-7 w-full rounded-[28px] border border-white/12 bg-black/12 p-5 text-left shadow-[0_25px_90px_rgba(2,6,23,0.2)] backdrop-blur">
+            <div className="space-y-3">
+              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">Where to go</p>
+                <p className="mt-2 text-lg font-semibold text-white">{deskName}</p>
               </div>
-              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
+              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to show</p>
-                <p className="mt-3 text-lg font-semibold text-white">Ticket {ticket.ticket_number}</p>
-                <p className="mt-2 text-sm leading-6 text-white/72">Keep this screen visible until staff starts serving you.</p>
+                <p className="mt-2 text-lg font-semibold text-white">Ticket {ticket.ticket_number}</p>
+              </div>
+              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to do now</p>
+                <p className="mt-2 text-lg font-semibold text-white">Walk straight to the desk while the countdown is active.</p>
               </div>
             </div>
           </div>
+
+          {stopError ? (
+            <div className="mt-4 w-full rounded-2xl border border-rose-200/20 bg-rose-500/14 px-4 py-3 text-sm text-rose-50">
+              {stopError}
+            </div>
+          ) : null}
         </div>
 
         <div className="pt-6 text-center">

@@ -166,7 +166,7 @@ class AppState: ObservableObject {
     }
 
     static func shouldPersist(ticketStatus: String) -> Bool {
-        !["served", "no_show", "transferred"].contains(ticketStatus)
+        !["served", "no_show", "cancelled", "transferred"].contains(ticketStatus)
     }
 
     @MainActor

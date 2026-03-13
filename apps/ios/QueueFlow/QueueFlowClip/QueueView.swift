@@ -18,6 +18,7 @@ struct QueueView: View {
     @State private var showBuzzFlash = false
     @State private var buzzFlashCount = 0
     @State private var showStopConfirmation = false
+    @State private var stopErrorMessage: String?
 
     @StateObject private var apnsManager = APNsManager.shared
 
@@ -96,18 +97,26 @@ struct QueueView: View {
             }
         }
         .confirmationDialog(
-            "Stop tracking this visit?",
+            "Leave this queue?",
             isPresented: $showStopConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Stop Tracking", role: .destructive) {
+            Button("Leave Queue", role: .destructive) {
                 Task {
                     await stopTrackingAndClose()
                 }
             }
-            Button("Keep Tracking", role: .cancel) {}
+            Button("Stay in Line", role: .cancel) {}
         } message: {
-            Text("This clears the current ticket from this App Clip and stops any remaining alerts or live updates.")
+            Text("This removes the current ticket from the queue and stops any remaining alerts or live updates on this App Clip.")
+        }
+        .alert("Could not leave the queue", isPresented: Binding(
+            get: { stopErrorMessage != nil },
+            set: { if !$0 { stopErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(stopErrorMessage ?? "Please try again.")
         }
     }
 
@@ -304,8 +313,8 @@ struct QueueView: View {
 
                         visitStepRow(
                             icon: "xmark.circle",
-                            title: "Finish when you are done",
-                            detail: "Use End to clear this visit from the App Clip once service is complete."
+                            title: "Leave the queue if plans change",
+                            detail: "Use End if you need to cancel this ticket and step out of line completely."
                         )
                     }
                     .padding(20)
@@ -566,6 +575,18 @@ struct QueueView: View {
                 nowServing: currentServing
             )
 
+            let shouldDismissTicket = ["cancelled", "no_show", "transferred"].contains(fetchedTicket.status)
+            if shouldDismissTicket {
+                await appState.clearCurrentTicket()
+                await MainActor.run {
+                    ticket = nil
+                    error = nil
+                    isLoading = false
+                    lastUpdatedAt = Date()
+                }
+                return
+            }
+
             if !AppState.shouldPersist(ticketStatus: fetchedTicket.status) {
                 TicketSessionStore.clear()
                 APNsManager.shared.ticketId = nil
@@ -630,8 +651,17 @@ struct QueueView: View {
 
     private func stopTrackingAndClose() async {
         let currentTicketId = ticket?.id
+        let currentStatus = ticket?.status
         if let currentTicketId {
-            await SupabaseClient.shared.stopTracking(ticketId: currentTicketId)
+            let result = await SupabaseClient.shared.stopTracking(ticketId: currentTicketId)
+            guard result != nil else {
+                await MainActor.run {
+                    stopErrorMessage = ["waiting", "called", "serving", "issued"].contains(currentStatus ?? "")
+                        ? "We could not leave the queue just yet. Please try again."
+                        : "We could not finish this visit just yet. Please try again."
+                }
+                return
+            }
         }
         await appState.clearCurrentTicket()
     }

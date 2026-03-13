@@ -78,7 +78,7 @@ final class LiveActivityManager {
     }
 
     private func shouldEnd(for status: String) -> Bool {
-        status == "served" || status == "no_show" || status == "transferred"
+        status == "served" || status == "no_show" || status == "cancelled" || status == "transferred"
     }
 
     private func activity(for ticketId: String) -> Activity<QueueLiveActivityAttributes>? {
