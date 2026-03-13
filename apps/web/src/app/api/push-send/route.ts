@@ -7,17 +7,29 @@ import { createClient } from '@supabase/supabase-js';
  * Called by Supabase pg_net trigger when a ticket is called.
  * Self-contained: configures VAPID, fetches subscriptions, sends push.
  * Does NOT use sendPushToTicket (which needs cookie-based supabase client).
+ * Supports rich typed payloads for the premium notification engine.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { ticketId, title, message, tag, url } = body;
+    const {
+      ticketId,
+      title,
+      message,
+      tag,
+      url,
+      // Rich notification fields
+      type,
+      ticketNumber,
+      deskName,
+      recallCount,
+    } = body;
 
     if (!ticketId) {
       return NextResponse.json({ error: 'ticketId required' }, { status: 400 });
     }
 
-    console.log('[PushSend] Sending push for ticket:', ticketId);
+    console.log('[PushSend] Sending push for ticket:', ticketId, type || 'legacy');
 
     // Configure VAPID
     const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -64,12 +76,24 @@ export async function POST(request: NextRequest) {
 
     console.log('[PushSend] Found', subscriptions.length, 'subscription(s)');
 
+    // Build rich payload — pass all fields through to the service worker
     const payload = JSON.stringify({
       title: title || "It's Your Turn!",
       body: message || 'Please proceed to the desk',
-      tag: tag || `called-${ticketId}`,
-      url: url,
+      tag: tag || `qf-turn-${ticketId}`,
+      url,
+      // Rich fields for the premium notification engine
+      type: type || 'called',
+      ticketId,
+      ticketNumber: ticketNumber || '',
+      deskName: deskName || 'your desk',
+      recallCount: recallCount || 0,
     });
+
+    // Determine urgency for FCM delivery optimization
+    const urgency = (type === 'called' || type === 'recall') ? 'high'
+      : (type === 'position_update') ? 'low'
+      : 'normal';
 
     for (const sub of subscriptions) {
       try {
@@ -78,9 +102,10 @@ export async function POST(request: NextRequest) {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
-          payload
+          payload,
+          { urgency }
         );
-        console.log('[PushSend] Sent to', sub.endpoint.slice(0, 60) + '...');
+        console.log('[PushSend] Sent to', sub.endpoint.slice(0, 60) + '...', `(urgency: ${urgency})`);
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number })?.statusCode;
         console.error('[PushSend] Failed:', statusCode, err);

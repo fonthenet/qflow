@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { sendPositionUpdatePush } from '@/lib/send-push';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,6 +29,11 @@ export async function POST(request: NextRequest) {
       console.error('Failed to save push subscription:', error);
       return NextResponse.json({ error: 'Failed to save subscription' }, { status: 500 });
     }
+
+    // Send initial position notification immediately — gives "ongoing notification" feel
+    sendPositionUpdatePush(ticketId).catch((err) =>
+      console.error('[PushSubscribe] Initial position push error:', err)
+    );
 
     return NextResponse.json({ ok: true });
   } catch (err) {

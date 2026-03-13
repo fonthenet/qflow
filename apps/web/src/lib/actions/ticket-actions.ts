@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
-import { sendPushToTicket } from '@/lib/send-push';
+import { sendPushToTicket, notifyWaitingTickets } from '@/lib/send-push';
 import { sendAPNsToTicket, sendLiveActivityUpdateForTicket } from '@/lib/apns';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
@@ -24,6 +24,17 @@ async function syncLiveActivity(ticketId: string, source: string): Promise<boole
 async function syncLiveActivityAfterAlert(ticketId: string, source: string): Promise<boolean> {
   await new Promise((resolve) => setTimeout(resolve, LIVE_ACTIVITY_FOLLOWUP_DELAY_MS));
   return syncLiveActivity(ticketId, source);
+}
+
+/** Helper to get desk display name */
+async function getDeskName(supabase: Awaited<ReturnType<typeof createClient>>, deskId: string | null): Promise<string> {
+  if (!deskId) return 'your desk';
+  const { data } = await supabase
+    .from('desks')
+    .select('display_name, name')
+    .eq('id', deskId)
+    .single();
+  return data?.display_name ?? data?.name ?? 'your desk';
 }
 
 export async function createTicket(
@@ -105,41 +116,28 @@ export async function callNextTicket(deskId: string, staffId: string) {
     return { error: fetchError.message };
   }
 
-  // Push notification: on Vercel, pg_net trigger handles it via /api/push-send.
-  // On local/Cloudflare, server action sends directly (pg_net also fires but hits Vercel).
-  // Only send from server action if NOT on Vercel (avoid double-send which downgrades priority).
-  if (ticket && !process.env.VERCEL) {
-    const deskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
-
-    sendPushToTicket(ticketId, {
-      title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-      tag: `called-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => console.error('[CallNext] Push notification error:', err));
-  }
-
-  // APNs push for iOS App Clip users (fire-and-forget, always send regardless of env)
   if (ticket) {
-    const apnsDeskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
+    const deskName = await getDeskName(supabase, ticket.desk_id);
 
+    // Web Push — rich typed notification
+    // On Vercel, pg_net trigger handles it via /api/push-send. On local, send directly.
+    if (!process.env.VERCEL) {
+      sendPushToTicket(ticketId, {
+        type: 'called',
+        title: "🔔 YOUR TURN!",
+        body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
+        tag: `qf-turn-${ticketId}`,
+        url: `/q/${ticket.qr_token}`,
+        ticketId,
+        ticketNumber: ticket.ticket_number,
+        deskName,
+      }).catch((err) => console.error('[CallNext] Push notification error:', err));
+    }
+
+    // APNs push for iOS App Clip users (always, regardless of env)
     const apnsSent = await sendAPNsToTicket(ticketId, {
       title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsDeskName}`,
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
       url: `/q/${ticket.qr_token}`,
     }).catch((err) => {
       console.error('[CallNext] APNs notification error:', err);
@@ -151,6 +149,11 @@ export async function callNextTicket(deskId: string, staffId: string) {
     }
 
     await syncLiveActivityAfterAlert(ticketId, 'CallNext');
+
+    // Notify all other waiting tickets — their position shifted
+    notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+      console.error('[CallNext] notifyWaitingTickets error:', err)
+    );
   }
 
   revalidatePath('/desk');
@@ -183,6 +186,28 @@ export async function startServing(ticketId: string, staffId: string) {
     to_status: 'serving',
     staff_id: staffId,
   });
+
+  if (ticket) {
+    const deskName = await getDeskName(supabase, ticket.desk_id);
+
+    // Web Push — "Being Served" silent status update
+    sendPushToTicket(ticketId, {
+      type: 'serving',
+      title: 'Being Served',
+      body: `Ticket ${ticket.ticket_number} at ${deskName}`,
+      tag: `qf-status-${ticketId}`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      deskName,
+      silent: true,
+    }).catch((err) => console.error('[StartServing] Push error:', err));
+
+    // Notify waiting tickets — "now serving" number changed
+    notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+      console.error('[StartServing] notifyWaitingTickets error:', err)
+    );
+  }
 
   await syncLiveActivity(ticketId, 'StartServing');
 
@@ -217,6 +242,25 @@ export async function markServed(ticketId: string, staffId: string) {
     staff_id: staffId,
   });
 
+  if (ticket) {
+    // Web Push — "Visit Complete" + close all previous notifications
+    sendPushToTicket(ticketId, {
+      type: 'served',
+      title: 'Visit Complete ✓',
+      body: 'Thank you! Tap to leave feedback.',
+      tag: `qf-done-${ticketId}`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      silent: true,
+    }).catch((err) => console.error('[MarkServed] Push error:', err));
+
+    // Notify waiting tickets — positions shifted forward
+    notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+      console.error('[MarkServed] notifyWaitingTickets error:', err)
+    );
+  }
+
   await syncLiveActivity(ticketId, 'MarkServed');
 
   revalidatePath('/desk');
@@ -249,6 +293,25 @@ export async function markNoShow(ticketId: string, staffId: string) {
     to_status: 'no_show',
     staff_id: staffId,
   });
+
+  if (ticket) {
+    // Web Push — "Missed Your Turn"
+    sendPushToTicket(ticketId, {
+      type: 'no_show',
+      title: 'Missed Your Turn',
+      body: `Ticket ${ticket.ticket_number} was marked as no-show.`,
+      tag: `qf-done-${ticketId}`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      silent: true,
+    }).catch((err) => console.error('[MarkNoShow] Push error:', err));
+
+    // Notify waiting tickets — positions shifted forward
+    notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+      console.error('[MarkNoShow] notifyWaitingTickets error:', err)
+    );
+  }
 
   await syncLiveActivity(ticketId, 'MarkNoShow');
 
@@ -359,11 +422,12 @@ export async function recallTicket(ticketId: string) {
   }
 
   // Reset called_at so the customer's countdown timer restarts + increment recall count
+  const newRecallCount = (ticket.recall_count ?? 0) + 1;
   const { error: updateError } = await supabase
     .from('tickets')
     .update({
       called_at: new Date().toISOString(),
-      recall_count: (ticket.recall_count ?? 0) + 1,
+      recall_count: newRecallCount,
     })
     .eq('id', ticketId);
 
@@ -396,51 +460,38 @@ export async function recallTicket(ticketId: string) {
     }
   );
 
-  // Push: only from server action on local/Cloudflare. On Vercel, pg_net handles it.
-  if (!process.env.VERCEL) {
-    const recallDeskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
+  const deskName = await getDeskName(supabase, ticket.desk_id);
 
+  // Web Push — rich recall alert
+  if (!process.env.VERCEL) {
     sendPushToTicket(ticketId, {
-      title: 'Reminder: Your Turn!',
-      body: `Ticket ${ticket.ticket_number} — Please go to ${recallDeskName}`,
-      tag: `recall-${ticketId}-${Date.now()}`,
+      type: 'recall',
+      title: '⚠️ REMINDER — YOUR TURN!',
+      body: `Ticket ${ticket.ticket_number} — Go to ${deskName} NOW`,
+      tag: `qf-turn-${ticketId}`,
       url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      deskName,
+      recallCount: newRecallCount,
     }).catch((err) => console.error('[Recall] Push notification error:', err));
   }
 
   // APNs push for iOS App Clip users (always, regardless of env)
-  {
-    const apnsRecallDeskName = ticket.desk_id
-      ? await supabase
-          .from('desks')
-          .select('display_name, name')
-          .eq('id', ticket.desk_id)
-          .single()
-          .then(({ data }) => data?.display_name ?? data?.name ?? 'your desk')
-      : 'your desk';
+  const apnsSent = await sendAPNsToTicket(ticketId, {
+    title: 'Reminder: Your Turn!',
+    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${ticket.qr_token}`,
+  }).catch((err) => {
+    console.error('[Recall] APNs notification error:', err);
+    return false;
+  });
 
-    const apnsSent = await sendAPNsToTicket(ticketId, {
-      title: 'Reminder: Your Turn!',
-      body: `Ticket ${ticket.ticket_number} — Please go to ${apnsRecallDeskName}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => {
-      console.error('[Recall] APNs notification error:', err);
-      return false;
-    });
-
-    if (!apnsSent) {
-      console.warn('[Recall] APNs notification was not sent for ticket:', ticketId);
-    }
-
-    await syncLiveActivityAfterAlert(ticketId, 'Recall');
+  if (!apnsSent) {
+    console.warn('[Recall] APNs notification was not sent for ticket:', ticketId);
   }
+
+  await syncLiveActivityAfterAlert(ticketId, 'Recall');
 
   // Log event
   await supabase.from('ticket_events').insert({
