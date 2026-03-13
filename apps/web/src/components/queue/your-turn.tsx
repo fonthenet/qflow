@@ -204,13 +204,27 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     };
   }, []);
 
-  // ── Buzz handler: aggressive vibration + red flash ──
+  // ── Buzz handler: aggressive vibration + screen flash ──
+  const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fireBuzz = () => {
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
     }
+    // Rapid screen flash: toggle on/off every 200ms for 3 seconds
+    let flashes = 0;
+    const maxFlashes = 15;
+    if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     setShowBuzzFlash(true);
-    setTimeout(() => setShowBuzzFlash(false), 2000);
+    buzzTimerRef.current = setInterval(() => {
+      flashes++;
+      if (flashes >= maxFlashes) {
+        if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
+        buzzTimerRef.current = null;
+        setShowBuzzFlash(false);
+        return;
+      }
+      setShowBuzzFlash((prev) => !prev);
+    }, 200);
   };
 
   // Listen for recall broadcasts
@@ -405,12 +419,12 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       suppressHydrationWarning
       className={`flex min-h-screen flex-col items-center justify-center p-4 transition-colors duration-700 ${bgColor} relative`}
     >
-      {/* Buzz flash overlay */}
+      {/* Buzz flash overlay — full-screen strobe */}
       {showBuzzFlash && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600/50 animate-pulse pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600 pointer-events-none">
           <div className="text-center">
-            <p className="text-6xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-2 text-lg font-bold text-white/90">Go to your desk NOW!</p>
+            <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
+            <p className="mt-3 text-xl font-bold text-white">Go to your desk NOW!</p>
           </div>
         </div>
       )}

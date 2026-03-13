@@ -33,15 +33,28 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const notificationRequested = useRef(false);
 
-  // ── Buzz handler: aggressive vibration + red flash ──
+  // ── Buzz handler: aggressive vibration + screen flash ──
+  const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fireBuzz = () => {
-    // Aggressive vibration pattern (5 long pulses)
+    // Aggressive vibration
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
     }
-    // Red flash overlay
+    // Rapid screen flash: toggle on/off every 200ms for 3 seconds
+    let flashes = 0;
+    const maxFlashes = 15; // 15 toggles = ~3 seconds
+    if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     setShowBuzzFlash(true);
-    setTimeout(() => setShowBuzzFlash(false), 2000);
+    buzzTimerRef.current = setInterval(() => {
+      flashes++;
+      if (flashes >= maxFlashes) {
+        if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
+        buzzTimerRef.current = null;
+        setShowBuzzFlash(false);
+        return;
+      }
+      setShowBuzzFlash((prev) => !prev);
+    }, 200);
   };
 
   // Listen for buzz via Supabase Realtime broadcast
@@ -282,12 +295,12 @@ export function QueueStatus({ ticket: initialTicket, officeName, serviceName }: 
 
   return (
     <div className="flex min-h-screen flex-col bg-muted relative">
-      {/* Buzz flash overlay */}
+      {/* Buzz flash overlay — full-screen strobe */}
       {showBuzzFlash && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600/40 animate-pulse pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600 pointer-events-none">
           <div className="text-center">
-            <p className="text-6xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-2 text-lg font-bold text-white/90">Attention needed!</p>
+            <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
+            <p className="mt-3 text-xl font-bold text-white">Attention needed!</p>
           </div>
         </div>
       )}
