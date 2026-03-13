@@ -120,6 +120,27 @@ function buildNotification(data) {
       };
     }
 
+    // ── BUZZ — maximum urgency, long aggressive vibration ──
+    case 'buzz': {
+      return {
+        title: '📳 BUZZ!',
+        options: {
+          body: data.body || `Ticket ${ticketNumber} — Attention needed!`,
+          icon: '/icon-192x192.png',
+          badge: '/badge-96x96.png',
+          tag: data.tag || `qf-buzz-${ticketId}-${Date.now()}`,
+          renotify: true,
+          requireInteraction: true,
+          vibrate: [800, 200, 800, 200, 800, 200, 800, 200, 800],
+          data: { url, ticketId, type },
+          actions: [
+            { action: 'open', title: 'Open' },
+            { action: 'onmyway', title: 'On my way' },
+          ],
+        },
+      };
+    }
+
     // ── No show ──
     case 'no_show': {
       return {

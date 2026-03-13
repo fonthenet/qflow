@@ -8,6 +8,7 @@ import {
   UserX,
   ArrowRightLeft,
   Volume2,
+  Smartphone,
   Clock,
   Users,
   Ticket,
@@ -24,6 +25,7 @@ import {
   markNoShow,
   transferTicket,
   recallTicket,
+  buzzTicket,
   resetTicketToQueue,
 } from '@/lib/actions/ticket-actions';
 import { CustomerDataCard } from '@/components/desk/customer-data-card';
@@ -246,6 +248,18 @@ export function DeskPanel({
     });
   };
 
+  const handleBuzz = () => {
+    if (!currentTicket) return;
+    startTransition(async () => {
+      const result = await buzzTicket(currentTicket.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      addToast('Buzz sent to customer\'s phone', 'info');
+    });
+  };
+
   const handleResetToQueue = () => {
     if (!currentTicket) return;
     startTransition(async () => {
@@ -463,6 +477,14 @@ export function DeskPanel({
                       >
                         <Volume2 className="h-4 w-4" />
                         Recall
+                      </button>
+                      <button
+                        onClick={handleBuzz}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-xl bg-destructive/10 px-5 py-3 text-sm font-bold text-destructive hover:bg-destructive/20 disabled:opacity-50 transition-all"
+                      >
+                        <Smartphone className="h-4 w-4" />
+                        Buzz
                       </button>
                       <button
                         onClick={handleNoShow}

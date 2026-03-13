@@ -515,6 +515,81 @@ export async function recallTicket(ticketId: string) {
   return { data: ticket };
 }
 
+export async function buzzTicket(ticketId: string) {
+  const supabase = await createClient();
+
+  // Fetch the ticket — works for any active status (waiting, called, serving)
+  const { data: ticket, error: fetchError } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .in('status', ['waiting', 'called', 'serving'])
+    .single();
+
+  if (fetchError || !ticket) {
+    return { error: 'Ticket not found or already completed' };
+  }
+
+  const deskName = await getDeskName(supabase, ticket.desk_id);
+
+  // Web Push — aggressive buzz notification
+  sendPushToTicket(ticketId, {
+    type: 'buzz',
+    title: '📳 BUZZ!',
+    body: ticket.status === 'called'
+      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+      : `Ticket ${ticket.ticket_number} — Attention needed`,
+    tag: `qf-buzz-${ticketId}-${Date.now()}`, // unique tag forces new notification
+    url: `/q/${ticket.qr_token}`,
+    ticketId,
+    ticketNumber: ticket.ticket_number,
+    deskName,
+  }).catch((err) => console.error('[Buzz] Push error:', err));
+
+  // APNs for iOS
+  sendAPNsToTicket(ticketId, {
+    title: 'Buzz!',
+    body: ticket.status === 'called'
+      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+      : `Ticket ${ticket.ticket_number} — Attention needed`,
+    url: `/q/${ticket.qr_token}`,
+  }).catch((err) => console.error('[Buzz] APNs error:', err));
+
+  // Broadcast buzz via Supabase Realtime (triggers in-app alert too)
+  await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            topic: `buzz-${ticket.office_id}`,
+            event: 'ticket_buzz',
+            payload: {
+              ticket_id: ticket.id,
+              ticket_number: ticket.ticket_number,
+              desk_id: ticket.desk_id,
+            },
+          },
+        ],
+      }),
+    }
+  );
+
+  // Log event
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: 'buzz',
+    desk_id: ticket.desk_id,
+  });
+
+  return { data: ticket };
+}
+
 export async function resetTicketToQueue(ticketId: string) {
   const supabase = await createClient();
 
