@@ -4,6 +4,7 @@
  * Uses JWT (ES256) authentication with a p8 key from Apple Developer Console.
  */
 
+import { connect } from 'node:http2';
 import { SignJWT, importPKCS8 } from 'jose';
 import { createClient } from '@supabase/supabase-js';
 
@@ -112,36 +113,81 @@ async function sendAPNsNotification(
     url: invocationURL,
   };
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'authorization': `bearer ${jwt}`,
-        'apns-topic': target.bundleId,
-        'apns-push-type': 'alert',
-        'apns-priority': '10', // Immediate delivery
-        'apns-expiration': '0', // Deliver immediately or not at all
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(apnsPayload),
+  return await new Promise((resolve) => {
+    const client = connect(host);
+    let settled = false;
+    let statusCode: number | undefined;
+    let responseBody = '';
+
+    const finish = (result: { success: boolean; status?: number; reason?: string }) => {
+      if (settled) return;
+      settled = true;
+      client.close();
+      resolve(result);
+    };
+
+    client.on('error', (err) => {
+      console.error('[APNs] HTTP/2 session error:', err);
+      finish({ success: false, reason: 'network_error' });
     });
 
-    if (response.status === 200) {
-      return { success: true, status: 200 };
-    }
+    const request = client.request({
+      ':method': 'POST',
+      ':path': `/3/device/${deviceToken}`,
+      'authorization': `bearer ${jwt}`,
+      'apns-topic': target.bundleId,
+      'apns-push-type': 'alert',
+      'apns-priority': '10', // Immediate delivery
+      'apns-expiration': '0', // Deliver immediately or not at all
+      'content-type': 'application/json',
+    });
 
-    // Parse error response
-    const errorBody = await response.json().catch(() => ({}));
-    const reason = (errorBody as { reason?: string })?.reason || 'unknown';
-    console.error(
-      `[APNs] Failed: ${response.status} ${reason} for token ${deviceToken.slice(0, 12)}...` +
-      ` env=${target.environment} topic=${target.bundleId}`
-    );
-    return { success: false, status: response.status, reason };
-  } catch (err) {
-    console.error('[APNs] Network error:', err);
-    return { success: false, reason: 'network_error' };
-  }
+    request.setEncoding('utf8');
+
+    request.on('response', (headers) => {
+      const rawStatus = headers[':status'];
+      statusCode = typeof rawStatus === 'number' ? rawStatus : Number(rawStatus);
+    });
+
+    request.on('data', (chunk) => {
+      responseBody += chunk;
+    });
+
+    request.on('end', () => {
+      if (statusCode === 200) {
+        finish({ success: true, status: 200 });
+        return;
+      }
+
+      let reason = 'unknown';
+      if (responseBody) {
+        try {
+          reason = JSON.parse(responseBody).reason || reason;
+        } catch {
+          reason = responseBody;
+        }
+      }
+
+      console.error(
+        `[APNs] Failed: ${statusCode ?? 'unknown'} ${reason} for token ${deviceToken.slice(0, 12)}...` +
+        ` env=${target.environment} topic=${target.bundleId}`
+      );
+      finish({ success: false, status: statusCode, reason });
+    });
+
+    request.on('error', (err) => {
+      console.error('[APNs] Network error:', err);
+      finish({ success: false, reason: 'network_error' });
+    });
+
+    request.setTimeout(10_000, () => {
+      console.error('[APNs] Request timed out');
+      request.close();
+      finish({ success: false, reason: 'timeout' });
+    });
+
+    request.end(JSON.stringify(apnsPayload));
+  });
 }
 
 function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
