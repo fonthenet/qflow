@@ -56,6 +56,23 @@ interface APNsPayload {
   url?: string;
 }
 
+function buildInvocationURL(urlPath?: string): string | undefined {
+  if (!urlPath) return undefined;
+
+  if (/^https?:\/\//i.test(urlPath)) {
+    return urlPath;
+  }
+
+  const baseURL = (
+    process.env.APP_CLIP_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'https://qflow-sigma.vercel.app'
+  ).replace(/\/+$/, '');
+
+  const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
+  return `${baseURL}${normalizedPath}`;
+}
+
 /**
  * Send a push notification to a single APNs device token.
  * Returns true on success, false on failure.
@@ -69,6 +86,7 @@ async function sendAPNsNotification(
   const bundleId = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.QueueFlowClip';
   const host = environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
   const url = `${host}/3/device/${deviceToken}`;
+  const invocationURL = buildInvocationURL(payload.url);
 
   const jwt = await getAPNsJWT();
 
@@ -81,9 +99,10 @@ async function sendAPNsNotification(
       sound: payload.sound || 'default',
       'interruption-level': 'time-sensitive' as const,
       'mutable-content': 1,
+      ...(invocationURL ? { 'target-content-id': invocationURL } : {}),
     },
     // Custom data for the App Clip to handle
-    url: payload.url,
+    url: invocationURL,
   };
 
   try {
