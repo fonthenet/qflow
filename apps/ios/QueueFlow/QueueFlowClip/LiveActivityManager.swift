@@ -36,6 +36,7 @@ final class LiveActivityManager {
             nowServing: nowServing,
             deskName: ticket.deskDisplayName == "—" ? nil : ticket.deskDisplayName,
             recallCount: ticket.recall_count ?? 0,
+            calledAt: parseDate(ticket.called_at),
             updatedAt: Date()
         )
 
@@ -182,5 +183,18 @@ final class LiveActivityManager {
         if currentActivity?.attributes.ticketId != ticketId {
             currentActivity = nil
         }
+    }
+
+    private func parseDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }

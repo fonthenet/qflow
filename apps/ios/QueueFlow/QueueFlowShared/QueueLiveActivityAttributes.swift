@@ -9,6 +9,7 @@ struct QueueLiveActivityAttributes: ActivityAttributes {
         var nowServing: String?
         var deskName: String?
         var recallCount: Int
+        var calledAt: Date?
         var updatedAt: Date
     }
 

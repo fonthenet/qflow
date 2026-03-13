@@ -84,6 +84,7 @@ interface QueueLiveActivityState {
   nowServing?: string | null;
   deskName?: string | null;
   recallCount: number;
+  calledAt?: Date | null;
   updatedAt?: Date;
 }
 
@@ -107,6 +108,7 @@ interface TicketSnapshot {
   department_id: string;
   status: string;
   desk_id: string | null;
+  called_at: string | null;
   estimated_wait_minutes: number | null;
   recall_count: number | null;
   department: { name: string } | null;
@@ -305,6 +307,7 @@ function serializeLiveActivityState(state: QueueLiveActivityState) {
     ...(state.nowServing ? { nowServing: state.nowServing } : {}),
     ...(state.deskName ? { deskName: state.deskName } : {}),
     recallCount: state.recallCount,
+    ...(state.calledAt ? { calledAt: toSwiftReferenceDateSeconds(state.calledAt) } : {}),
     updatedAt: toSwiftReferenceDateSeconds(state.updatedAt ?? new Date()),
   };
 }
@@ -459,7 +462,7 @@ async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
   const { data: ticketData, error } = await supabase
     .from('tickets')
     .select(
-      'id, ticket_number, qr_token, office_id, department_id, status, desk_id, estimated_wait_minutes, recall_count, department:departments(name), service:services(name), desk:desks(name, display_name)'
+      'id, ticket_number, qr_token, office_id, department_id, status, desk_id, called_at, estimated_wait_minutes, recall_count, department:departments(name), service:services(name), desk:desks(name, display_name)'
     )
     .eq('id', ticketId)
     .single();
@@ -508,6 +511,7 @@ async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
       nowServing,
       deskName: ticket.desk?.display_name ?? ticket.desk?.name ?? null,
       recallCount: ticket.recall_count ?? 0,
+      calledAt: ticket.called_at ? new Date(ticket.called_at) : null,
       updatedAt: new Date(),
     },
   };
@@ -531,5 +535,18 @@ export async function sendLiveActivityUpdateForTicket(ticketId: string): Promise
     dismissalDate: shouldEndLiveActivity(state.status)
       ? new Date(Date.now() + 60_000)
       : undefined,
+  });
+}
+
+export async function endLiveActivityForTicket(ticketId: string): Promise<boolean> {
+  const snapshot = await fetchLiveActivitySnapshot(ticketId);
+  if (!snapshot) {
+    return false;
+  }
+
+  return sendLiveActivityUpdateToTicket(ticketId, {
+    event: 'end',
+    state: snapshot.state,
+    dismissalDate: new Date(),
   });
 }

@@ -79,3 +79,37 @@ export async function subscribeToPush(ticketId: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function unsubscribeFromPush(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const subscription = await reg.pushManager.getSubscription();
+    if (subscription) {
+      await subscription.unsubscribe().catch(() => {});
+    }
+  } catch (err) {
+    console.error('[Push] Unsubscribe failed:', err);
+  }
+}
+
+export async function closeQueueNotifications(ticketId?: string): Promise<void> {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const notifications = await reg.getNotifications();
+    notifications.forEach((notification) => {
+      if (!ticketId || notification.data?.ticketId === ticketId) {
+        notification.close();
+      }
+    });
+  } catch (err) {
+    console.error('[Push] Failed to close notifications:', err);
+  }
+}

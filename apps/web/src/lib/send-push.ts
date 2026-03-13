@@ -21,7 +21,15 @@ export interface PushPayload {
   tag?: string;
   url?: string;
   // Notification type — determines how SW renders it
-  type?: 'position_update' | 'called' | 'recall' | 'serving' | 'served' | 'no_show' | 'buzz';
+  type?:
+    | 'position_update'
+    | 'called'
+    | 'recall'
+    | 'serving'
+    | 'served'
+    | 'no_show'
+    | 'buzz'
+    | 'stop_tracking';
   // Structured queue data for rich notification body
   ticketId?: string;
   ticketNumber?: string;
@@ -44,6 +52,7 @@ function getUrgency(type?: string): 'very-low' | 'low' | 'normal' | 'high' {
     case 'serving':
     case 'served':
     case 'no_show':
+    case 'stop_tracking':
       return 'normal';
     case 'position_update':
       return 'low';

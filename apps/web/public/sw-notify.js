@@ -158,6 +158,19 @@ function buildNotification(data) {
       };
     }
 
+    // ── Stop tracking — no visible notification, handled in push event ──
+    case 'stop_tracking': {
+      return {
+        title: '',
+        options: {
+          body: '',
+          tag: `qf-stop-${ticketId}`,
+          silent: true,
+          data: { url, ticketId, type },
+        },
+      };
+    }
+
     // ── Legacy fallback (backward compatible with old payloads) ──
     default: {
       return {
@@ -201,6 +214,11 @@ self.addEventListener('push', (event) => {
       // For terminal states, close all existing notifications first
       if (type === 'served' || type === 'no_show') {
         await closeTicketNotifications(ticketId);
+      }
+
+      if (type === 'stop_tracking') {
+        await closeTicketNotifications(ticketId);
+        return;
       }
 
       // For "serving", close the "called" notification

@@ -51,6 +51,7 @@ struct QueueFlowClipApp: App {
                     NoActiveTicketView()
                 }
             }
+            .environmentObject(appState)
             .onReceive(NotificationCenter.default.publisher(for: .queueFlowOpenURL)) { notification in
                 guard let urlString = notification.object as? String else { return }
                 appState.handleNotificationURL(urlString)

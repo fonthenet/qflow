@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import type { Database } from '@/lib/supabase/database.types';
@@ -11,6 +11,12 @@ type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 interface YourTurnProps {
   ticket: Ticket;
   deskName: string;
+  officeName: string;
+  serviceName: string;
+  lastSyncedAt: Date | null;
+  isRefreshing: boolean;
+  onRefresh: () => Promise<void> | void;
+  onStopTracking: () => void;
 }
 
 const WAIT_SECONDS = 60;
@@ -21,8 +27,54 @@ function calcRemaining(calledAt: string | null) {
   return Math.max(0, WAIT_SECONDS - elapsed);
 }
 
-export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
-  const [deskName, setDeskName] = useState(initialDeskName);
+function formatSyncLabel(date: Date | null, isRefreshing: boolean) {
+  if (isRefreshing) return 'Refreshing now';
+  if (!date) return 'Waiting for fresh desk sync';
+  return `Updated ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function QueueActionPill({
+  label,
+  onClick,
+  tone = 'secondary',
+  disabled = false,
+  loading = false,
+}: {
+  label: string;
+  onClick: () => void;
+  tone?: 'secondary' | 'danger' | 'primary';
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const toneClass = {
+    secondary: 'border-white/12 bg-white/10 text-white hover:bg-white/14',
+    danger: 'border-rose-200/20 bg-rose-500/15 text-rose-50 hover:bg-rose-500/22',
+    primary: 'border-white/12 bg-white text-slate-950 hover:bg-slate-100',
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
+    >
+      {loading ? 'Working...' : label}
+    </button>
+  );
+}
+
+export function YourTurn({
+  ticket,
+  deskName: initialDeskName,
+  officeName,
+  serviceName,
+  lastSyncedAt,
+  isRefreshing,
+  onRefresh,
+  onStopTracking,
+}: YourTurnProps) {
+  const [deskName, setDeskName] = useState(initialDeskName || 'your desk');
   const [countdown, setCountdown] = useState(() => calcRemaining(ticket.called_at));
   const [calledAt, setCalledAt] = useState(ticket.called_at);
   const lastAlertedAt = useRef<string | null>(null);
@@ -30,28 +82,31 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const [soundUnlocked, setSoundUnlocked] = useState(() => {
-    // Check if AudioContext was already unlocked on the waiting page
     if (typeof window !== 'undefined') {
       const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
       return !!ctx && ctx.state === 'running';
     }
     return false;
   });
-  const pendingAlert = useRef(true); // Start true so first tap plays sound
+  const pendingAlert = useRef(true);
+  const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Phase: green (>30), yellow (10-30), red (<=10)
   const phase = countdown > 30 ? 'green' : countdown > 10 ? 'yellow' : 'red';
+  const syncLabel = useMemo(() => formatSyncLabel(lastSyncedAt, isRefreshing), [isRefreshing, lastSyncedAt]);
 
-  // Play vibration + sound
   const fireVibAndSound = () => {
     try {
       if ('vibrate' in navigator) {
         navigator.vibrate([500, 200, 500, 200, 500]);
       }
-    } catch { /* ignore */ }
+    } catch {
+      // Ignore vibration failures.
+    }
 
     try {
-      const ctx = ((window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext) || new AudioContext();
+      const ctx =
+        ((window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext) ||
+        new AudioContext();
       (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
 
       const scheduleTones = () => {
@@ -67,6 +122,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
           osc.start(ctx.currentTime + startAt);
           osc.stop(ctx.currentTime + startAt + duration);
         };
+
         playTone(880, 0, 0.3);
         playTone(1100, 0.35, 0.3);
         playTone(1320, 0.7, 0.5);
@@ -77,137 +133,11 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       } else {
         scheduleTones();
       }
-    } catch { /* ignore */ }
+    } catch {
+      // Ignore audio failures.
+    }
   };
 
-  // Fetch actual desk name if we got the fallback
-  useEffect(() => {
-    if (ticket.desk_id) {
-      const supabase = createClient();
-      supabase
-        .from('desks')
-        .select('name, display_name')
-        .eq('id', ticket.desk_id)
-        .single()
-        .then(({ data }) => {
-          if (data) {
-            setDeskName(data.display_name ?? data.name);
-          }
-        });
-    }
-  }, [ticket.desk_id]);
-
-  // Register SW on mount, subscribe to push if already granted
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-notify.js').catch(() => {});
-    }
-    if ('Notification' in window && Notification.permission === 'granted') {
-      subscribeToPush(ticket.id).catch(() => {});
-    }
-  }, [ticket.id]);
-
-  // Unlock sound + request notification permission (triggered by explicit button tap)
-  const enableAlerts = async () => {
-    // 1. Unlock AudioContext
-    try {
-      let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
-      if (!ctx) {
-        ctx = new AudioContext();
-        (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
-      }
-      if (ctx.state === 'suspended') await ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.01);
-    } catch { /* ignore */ }
-
-    // 2. Request notification permission (only if not yet asked)
-    if ('Notification' in window && Notification.permission === 'default') {
-      const result = await Notification.requestPermission();
-      if (result === 'granted') {
-        await subscribeToPush(ticket.id).catch(() => {});
-      }
-    }
-
-    // 3. Play the alert sound now
-    setSoundUnlocked(true);
-    fireVibAndSound();
-  };
-
-  // On any tap: unlock AudioContext and replay pending alerts
-  useEffect(() => {
-    const handleTouch = () => {
-      // 1. Unlock or resume AudioContext (needs gesture)
-      let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
-      if (!ctx) {
-        try {
-          ctx = new AudioContext();
-          (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.01);
-          setSoundUnlocked(true);
-        } catch { /* ignore */ }
-      } else if (ctx.state === 'suspended') {
-        ctx.resume().then(() => setSoundUnlocked(true)).catch(() => {});
-      } else {
-        setSoundUnlocked(true);
-      }
-
-      // 2. Replay pending alert (sound failed earlier because AudioContext was suspended)
-      if (pendingAlert.current) {
-        pendingAlert.current = false;
-        setTimeout(() => {
-          try {
-            const c = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext;
-            if (c && c.state === 'running') {
-              const playTone = (freq: number, startAt: number, duration: number) => {
-                const osc = c.createOscillator();
-                const gain = c.createGain();
-                osc.connect(gain);
-                gain.connect(c.destination);
-                osc.frequency.value = freq;
-                osc.type = 'sine';
-                gain.gain.setValueAtTime(0.5, c.currentTime + startAt);
-                gain.gain.exponentialRampToValueAtTime(0.01, c.currentTime + startAt + duration);
-                osc.start(c.currentTime + startAt);
-                osc.stop(c.currentTime + startAt + duration);
-              };
-              playTone(880, 0, 0.3);
-              playTone(1100, 0.35, 0.3);
-              playTone(1320, 0.7, 0.5);
-            }
-          } catch { /* ignore */ }
-          try {
-            if ('vibrate' in navigator) navigator.vibrate([500, 200, 500, 200, 500]);
-          } catch { /* ignore */ }
-        }, 100);
-      }
-
-      // 3. Ensure push subscription exists if already granted
-      if ('Notification' in window && Notification.permission === 'granted') {
-        subscribeToPush(ticket.id).catch(() => {});
-      }
-    };
-    document.addEventListener('touchstart', handleTouch, { once: false });
-    document.addEventListener('click', handleTouch, { once: false });
-    return () => {
-      document.removeEventListener('touchstart', handleTouch);
-      document.removeEventListener('click', handleTouch);
-    };
-  }, []);
-
-  // ── Buzz handler: aggressive vibration + screen flash ──
-  const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fireBuzz = () => {
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
@@ -233,7 +163,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
           osc.stop(ctx.currentTime + startAt + duration);
         };
 
-        pulse(180, 0.00, 0.16);
+        pulse(180, 0.0, 0.16);
         pulse(230, 0.22, 0.16);
         pulse(180, 0.44, 0.16);
         pulse(230, 0.66, 0.16);
@@ -245,16 +175,15 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
         schedulePattern();
       }
     } catch {
-      // Audio playback is best-effort only.
+      // Ignore.
     }
 
-    // Rapid screen flash: toggle on/off every 200ms for 3 seconds
     let flashes = 0;
     const maxFlashes = 15;
     if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     setShowBuzzFlash(true);
     buzzTimerRef.current = setInterval(() => {
-      flashes++;
+      flashes += 1;
       if (flashes >= maxFlashes) {
         if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
         buzzTimerRef.current = null;
@@ -265,7 +194,105 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     }, 200);
   };
 
-  // Listen for recall broadcasts
+  useEffect(() => {
+    if (ticket.desk_id) {
+      const supabase = createClient();
+      supabase
+        .from('desks')
+        .select('name, display_name')
+        .eq('id', ticket.desk_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setDeskName(data.display_name ?? data.name);
+          }
+        });
+    }
+  }, [ticket.desk_id]);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw-notify.js').catch(() => {});
+    }
+    if ('Notification' in window && Notification.permission === 'granted') {
+      subscribeToPush(ticket.id).catch(() => {});
+    }
+  }, [ticket.id]);
+
+  const enableAlerts = async () => {
+    try {
+      let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
+      if (!ctx) {
+        ctx = new AudioContext();
+        (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
+      }
+      if (ctx.state === 'suspended') await ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.01);
+    } catch {
+      // Ignore.
+    }
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      const result = await Notification.requestPermission();
+      if (result === 'granted') {
+        await subscribeToPush(ticket.id).catch(() => {});
+      }
+    }
+
+    setSoundUnlocked(true);
+    fireVibAndSound();
+  };
+
+  useEffect(() => {
+    const handleTouch = () => {
+      let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
+      if (!ctx) {
+        try {
+          ctx = new AudioContext();
+          (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0, ctx.currentTime);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.01);
+          setSoundUnlocked(true);
+        } catch {
+          // Ignore.
+        }
+      } else if (ctx.state === 'suspended') {
+        ctx.resume().then(() => setSoundUnlocked(true)).catch(() => {});
+      } else {
+        setSoundUnlocked(true);
+      }
+
+      if (pendingAlert.current) {
+        pendingAlert.current = false;
+        setTimeout(() => {
+          fireVibAndSound();
+        }, 100);
+      }
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        subscribeToPush(ticket.id).catch(() => {});
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouch, { once: false });
+    document.addEventListener('click', handleTouch, { once: false });
+    return () => {
+      document.removeEventListener('touchstart', handleTouch);
+      document.removeEventListener('click', handleTouch);
+    };
+  }, [ticket.id]);
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -273,7 +300,7 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       .on('broadcast', { event: 'ticket_recall' }, (payload) => {
         if (payload.payload?.ticket_id === ticket.id) {
           setCalledAt(new Date().toISOString());
-          setRecallCount((c) => c + 1);
+          setRecallCount((count) => count + 1);
         }
       })
       .subscribe();
@@ -283,7 +310,6 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     };
   }, [ticket.id, ticket.office_id]);
 
-  // Listen for buzz via Supabase Realtime broadcast
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -295,10 +321,11 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [ticket.id, ticket.office_id]);
 
-  // Listen for persisted buzz notifications as a durable fallback.
   useEffect(() => {
     const supabase = createClient();
 
@@ -344,7 +371,6 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     };
   }, [ticket.id]);
 
-  // Listen for buzz via service worker postMessage
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
@@ -352,54 +378,54 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       }
     };
     navigator.serviceWorker?.addEventListener('message', handler);
-    return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handler);
+    };
   }, [ticket.id]);
 
   useEffect(() => {
     return () => {
-      if (buzzTimerRef.current) {
-        clearInterval(buzzTimerRef.current);
-      }
+      if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     };
   }, []);
 
-  // When page regains focus: mark pending alert so next tap replays, check for missed recalls
   useEffect(() => {
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
 
-      // 1. Mark alert as pending — Chrome Android requires user gesture for sound+vibration
-      //    The touch/click handler will replay it on the very next tap
       pendingAlert.current = true;
 
-      // 2. Try vibration (may work without gesture on some devices)
       try {
         if ('vibrate' in navigator) navigator.vibrate([500, 200, 500, 200, 500]);
-      } catch { /* ignore */ }
+      } catch {
+        // Ignore.
+      }
 
-      // 3. Show a SW notification (works without gesture, gets user's attention)
       if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.ready.then(async (reg) => {
           try {
             await reg.showNotification('Your Turn!', {
               body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-              icon: '/favicon.ico',
+              icon: '/icon-192x192.png',
+              badge: '/badge-96x96.png',
               tag: `called-${ticket.id}`,
               renotify: true,
               vibrate: [300, 150, 300, 150, 600],
               requireInteraction: false,
             } as NotificationOptions);
-          } catch { /* ignore */ }
+          } catch {
+            // Ignore.
+          }
         });
       }
 
-      // 4. Check for missed recalls (broadcast may not have arrived while backgrounded)
       const supabase = createClient();
       const { data } = await supabase
         .from('tickets')
         .select('called_at, recall_count')
         .eq('id', ticket.id)
         .single();
+
       if (data?.called_at && data.called_at !== calledAt) {
         setCalledAt(data.called_at);
         setRecallCount(data.recall_count ?? 0);
@@ -408,9 +434,8 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [ticket.id, calledAt, ticket.ticket_number, deskName]);
+  }, [ticket.id, ticket.ticket_number, deskName, calledAt]);
 
-  // Check for a buzz that might have arrived while the page was backgrounded.
   useEffect(() => {
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -435,7 +460,6 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [ticket.id]);
 
-  // 60-second countdown from when called
   useEffect(() => {
     const start = calledAt ? new Date(calledAt).getTime() : Date.now();
     const tick = () => {
@@ -443,18 +467,18 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       const remaining = Math.max(0, WAIT_SECONDS - elapsed);
       setCountdown(remaining);
     };
+
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [calledAt]);
 
-  // Resume AudioContext if suspended (one-time on mount)
   useEffect(() => {
     const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
     if (ctx) {
       if (ctx.state === 'running') {
         setSoundUnlocked(true);
-        pendingAlert.current = false; // No need — sound will play directly
+        pendingAlert.current = false;
       } else if (ctx.state === 'suspended') {
         ctx.resume().then(() => {
           setSoundUnlocked(true);
@@ -464,15 +488,12 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
     }
   }, []);
 
-  // Fire alerts on initial load and every recall (calledAt change)
   useEffect(() => {
     if (lastAlertedAt.current === calledAt) return;
     lastAlertedAt.current = calledAt;
 
-    // Sound + vibration
     fireVibAndSound();
 
-    // If AudioContext couldn't play (suspended), mark as pending for next tap
     setTimeout(() => {
       const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
       if (!ctx || ctx.state === 'suspended') {
@@ -480,192 +501,150 @@ export function YourTurn({ ticket, deskName: initialDeskName }: YourTurnProps) {
       }
     }, 300);
 
-    // SW notification
     if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then(async (reg) => {
         try {
           const existing = await reg.getNotifications();
-          existing.forEach((n) => n.close());
+          existing.forEach((notification) => notification.close());
           await reg.showNotification('Your Turn!', {
             body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-            icon: '/favicon.ico',
+            icon: '/icon-192x192.png',
+            badge: '/badge-96x96.png',
             tag: `called-${ticket.id}`,
             renotify: true,
             vibrate: [300, 150, 300, 150, 600],
             requireInteraction: true,
           } as NotificationOptions);
-        } catch { /* ignore */ }
+        } catch {
+          // Ignore.
+        }
       });
     }
-  }, [calledAt, ticket.ticket_number, deskName]);
+  }, [calledAt, ticket.ticket_number, ticket.id, deskName]);
 
-  // Background color per phase
-  const bgColor = {
-    green: 'bg-emerald-600',
-    yellow: 'bg-amber-500',
-    red: 'bg-red-700',
+  const backgroundClass = {
+    green: 'from-emerald-600 via-emerald-700 to-emerald-900',
+    yellow: 'from-amber-400 via-amber-500 to-orange-700',
+    red: 'from-rose-600 via-rose-700 to-red-950',
   }[phase];
 
-  const circleClass = {
-    green: 'bg-white shadow-xl',
-    yellow: 'bg-white shadow-xl',
-    red: 'bg-white shadow-[0_0_40px_rgba(239,68,68,0.4)]',
+  const ringClass = {
+    green: 'bg-white/12 shadow-[0_0_80px_rgba(16,185,129,0.28)]',
+    yellow: 'bg-white/14 shadow-[0_0_80px_rgba(251,191,36,0.28)]',
+    red: 'bg-white/14 shadow-[0_0_95px_rgba(244,63,94,0.38)]',
   }[phase];
 
-  const numberColor = {
-    green: 'text-emerald-700',
-    yellow: 'text-amber-600',
-    red: 'text-red-700',
-  }[phase];
-
-  const labelColor = {
-    green: 'text-emerald-600/70',
-    yellow: 'text-amber-500/70',
-    red: 'text-red-700/70',
+  const countdownBorderClass = {
+    green: 'border-emerald-200/30 text-emerald-50',
+    yellow: 'border-amber-100/25 text-amber-50',
+    red: 'border-rose-100/20 text-rose-50',
   }[phase];
 
   const message =
     countdown === 0
-      ? 'Time expired — please hurry to the desk!'
+      ? 'Time expired. Please go to the desk immediately.'
       : phase === 'red'
-        ? 'Hurry! Time is running out!'
-        : 'Please proceed to the desk now';
+        ? 'Please head over now. Staff is waiting for you.'
+        : 'Show this screen if staff asks for your number.';
 
   return (
-    <div
-      suppressHydrationWarning
-      className={`flex min-h-screen flex-col items-center justify-center p-4 transition-colors duration-700 ${bgColor} relative`}
-    >
-      {/* Buzz flash overlay — full-screen strobe */}
-      {showBuzzFlash && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600 pointer-events-none">
+    <div className={`relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-b ${backgroundClass}`}>
+      {showBuzzFlash ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
           <div className="text-center">
             <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-3 text-xl font-bold text-white">Go to your desk NOW!</p>
+            <p className="mt-3 text-xl font-bold text-white">Go to your desk now</p>
           </div>
         </div>
-      )}
-      <div
-        className="w-full max-w-sm text-center"
-        style={
-          phase === 'green'
-            ? { animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
-            : undefined
-        }
-      >
-        {/* Attention icon */}
-        <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white/30 shadow-[0_0_60px_rgba(255,255,255,0.4)]">
-          <svg
-            className="h-12 w-12 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+      ) : null}
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),_transparent_58%)]" />
+
+      <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
+        <div className="flex items-start justify-between gap-3 text-white">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">{officeName}</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">{serviceName}</h1>
+            <p className="mt-2 text-sm text-white/72">{syncLabel}</p>
+          </div>
+
+          <div className="flex flex-col items-end gap-2">
+            <QueueActionPill
+              label="Refresh"
+              onClick={() => {
+                void onRefresh();
+              }}
+              tone="primary"
+              disabled={isRefreshing}
+              loading={isRefreshing}
             />
-          </svg>
+            <QueueActionPill label="End" onClick={onStopTracking} tone="danger" />
+          </div>
         </div>
 
-        {/* YOUR TURN text */}
-        <h1 className="mb-4 text-5xl font-black tracking-tight text-white drop-shadow-lg">
-          YOUR TURN!
-        </h1>
+        <div className="mt-7 flex flex-1 flex-col items-center justify-center text-center text-white">
+          <div className="relative flex h-40 w-40 items-center justify-center">
+            <div className={`absolute inset-0 rounded-full ${ringClass} ${phase === 'red' ? 'animate-pulse' : ''}`} />
+            <div className="absolute inset-4 animate-ping rounded-full bg-white/12 [animation-duration:2.2s]" />
+            <div className="absolute inset-10 rounded-full bg-white/18" />
+            <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white/22 shadow-[0_16px_50px_rgba(15,23,42,0.2)]">
+              <svg className="h-11 w-11 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </div>
+          </div>
 
-        {/* Ticket number */}
-        <div className="mx-auto mb-6 rounded-2xl bg-white/95 px-8 py-4 shadow-xl">
-          <p className="text-sm font-medium text-gray-500">Ticket</p>
-          <p className="text-5xl font-extrabold tracking-wider text-gray-900">
-            {ticket.ticket_number}
-          </p>
-        </div>
+          <p className="mt-8 text-sm font-semibold uppercase tracking-[0.36em] text-white/68">Called now</p>
+          <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">Go to {deskName}</h2>
+          <p className="mt-3 max-w-xs text-base leading-7 text-white/80">{message}</p>
 
-        {/* Go to desk */}
-        <div className="mx-auto rounded-2xl bg-white/95 px-6 py-5 shadow-xl">
-          <p className="text-sm font-medium text-gray-500">Please go to</p>
-          <div className="mt-1 flex items-center justify-center gap-2">
-            <svg
-              className="h-6 w-6 text-gray-700"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div className="mt-7 rounded-full border border-white/15 bg-white/14 px-5 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white/88">
+            Ticket {ticket.ticket_number}
+          </div>
+
+          {recallCount > 0 ? (
+            <div className="mt-4 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
+              Recall {recallCount} {recallCount === 1 ? 'time' : 'times'}
+            </div>
+          ) : null}
+
+          {!soundUnlocked ? (
+            <button
+              type="button"
+              onClick={() => void enableAlerts()}
+              className="mt-6 rounded-full border border-white/15 bg-white/90 px-5 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_55px_rgba(255,255,255,0.18)] transition hover:bg-white"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            <p className="text-3xl font-bold text-gray-900">
-              {deskName}
+              Tap for sound + vibration
+            </button>
+          ) : null}
+
+          <div className={`mt-8 flex h-44 w-44 flex-col items-center justify-center rounded-full border bg-white/8 backdrop-blur ${countdownBorderClass}`}>
+            <p className="text-[14px] font-semibold uppercase tracking-[0.32em] text-white/65">Respond in</p>
+            <p className="mt-3 text-6xl font-black tabular-nums">{countdown}</p>
+            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+              {countdown === 0 ? 'Expired' : 'Seconds'}
             </p>
+          </div>
+
+          <div className="mt-8 w-full rounded-[30px] border border-white/12 bg-black/12 p-5 text-left shadow-[0_25px_90px_rgba(2,6,23,0.2)] backdrop-blur">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to do</p>
+                <p className="mt-3 text-lg font-semibold text-white">Proceed straight to {deskName}</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Staff already called your ticket. The faster you arrive, the smoother the handoff.</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to show</p>
+                <p className="mt-3 text-lg font-semibold text-white">Ticket {ticket.ticket_number}</p>
+                <p className="mt-2 text-sm leading-6 text-white/72">Keep this screen visible until staff starts serving you.</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Sound hint — shows until user taps anywhere on the page */}
-        {!soundUnlocked && (
-          <button
-            onClick={enableAlerts}
-            className="mx-auto mt-6 flex items-center gap-2 rounded-xl bg-white/90 px-6 py-3 shadow-lg active:scale-95 transition-transform animate-bounce"
-          >
-            <svg className="h-5 w-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-            </svg>
-            <span className="text-sm font-bold text-gray-800">Tap for Sound</span>
-          </button>
-        )}
-
-        {/* Recall banner */}
-        {recallCount > 0 && (
-          <div className="mx-auto mt-6 rounded-xl bg-white/20 px-5 py-3 backdrop-blur-sm">
-            <p className="text-sm font-bold text-white">
-              You&apos;ve been recalled {recallCount} {recallCount === 1 ? 'time' : 'times'}
-            </p>
-          </div>
-        )}
-
-        {/* Countdown timer */}
-        <div
-          suppressHydrationWarning
-          className={`mx-auto mt-8 w-36 h-36 rounded-full flex flex-col items-center justify-center transition-all duration-500 ${circleClass} ${
-            phase === 'red' ? 'animate-pulse' : ''
-          }`}
-        >
-          <span suppressHydrationWarning className={`text-5xl font-mono font-black leading-none ${numberColor}`}>
-            {countdown}
-          </span>
-          <span suppressHydrationWarning className={`mt-1 text-xs font-semibold uppercase tracking-wider ${labelColor}`}>
-            {countdown === 0 ? 'EXPIRED' : 'seconds'}
-          </span>
+        <div className="pt-6 text-center">
+          <p className="text-xs uppercase tracking-[0.28em] text-white/42">QueueFlow</p>
         </div>
-        <p suppressHydrationWarning className="mt-3 text-sm font-semibold text-white drop-shadow">
-          {message}
-        </p>
-      </div>
-
-      {/* Pulsing rings behind the main content (green phase only) */}
-      {phase === 'green' && (
-        <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
-          <div className="absolute h-64 w-64 animate-ping rounded-full bg-white/5 [animation-duration:2s]" />
-          <div className="absolute h-96 w-96 animate-ping rounded-full bg-white/5 [animation-delay:500ms] [animation-duration:2s]" />
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="mt-auto px-4 pb-6 pt-8 text-center">
-        <p className="text-xs text-white/70">
-          Powered by QueueFlow
-        </p>
       </div>
     </div>
   );

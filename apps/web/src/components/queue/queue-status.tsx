@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeTicket } from '@/lib/hooks/use-realtime-ticket';
 import { YourTurn } from '@/components/queue/your-turn';
 import { FeedbackForm } from '@/components/queue/feedback-form';
 import { RecallNotification } from '@/components/desk/recall-notification';
 import { EditCustomerData } from '@/components/queue/edit-customer-data';
 import { PriorityAlertSetup } from '@/components/queue/priority-alert-setup';
+import { QueueSessionEnded } from '@/components/queue/queue-session-ended';
+import { QueueStopDialog } from '@/components/queue/queue-stop-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
+import { stopTicketTracking } from '@/lib/tracking';
 import { IosInstallPrompt } from '@/components/queue/ios-install-prompt';
 import type { Database } from '@/lib/supabase/database.types';
 import type { PriorityAlertConfig } from '@/lib/priority-alerts';
@@ -23,13 +26,138 @@ interface QueueStatusProps {
   priorityAlertConfig?: PriorityAlertConfig | null;
 }
 
+function formatSyncLabel(date: Date | null) {
+  if (!date) return 'Syncing live updates';
+  return `Updated ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function progressPercent(position: number | null) {
+  if (!position || position <= 1) return 0.92;
+  return Math.max(0.08, Math.min(0.92, (14 - Math.min(position, 14)) / 14));
+}
+
+function playBuzzSound() {
+  try {
+    const existing = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
+    const ctx = existing ?? new AudioContext();
+    (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
+
+    const schedulePattern = () => {
+      const pulse = (frequency: number, startAt: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + startAt);
+        gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + startAt + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + startAt + duration);
+        osc.start(ctx.currentTime + startAt);
+        osc.stop(ctx.currentTime + startAt + duration);
+      };
+
+      pulse(190, 0.0, 0.16);
+      pulse(240, 0.22, 0.16);
+      pulse(190, 0.44, 0.16);
+      pulse(240, 0.66, 0.16);
+    };
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(schedulePattern).catch(() => {});
+    } else {
+      schedulePattern();
+    }
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function QueueActionPill({
+  label,
+  onClick,
+  tone = 'secondary',
+  disabled = false,
+  loading = false,
+}: {
+  label: string;
+  onClick: () => void;
+  tone?: 'secondary' | 'danger' | 'primary';
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const toneClass = {
+    secondary: 'border-white/10 bg-white/8 text-white hover:bg-white/12',
+    danger: 'border-rose-400/25 bg-rose-500/15 text-rose-100 hover:bg-rose-500/20',
+    primary: 'border-sky-400/20 bg-sky-500/15 text-sky-50 hover:bg-sky-500/20',
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
+    >
+      {loading ? 'Working...' : label}
+    </button>
+  );
+}
+
+function WaitingMetric({
+  label,
+  value,
+  detail,
+  accentClass,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  accentClass: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
+      <div className={`mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
+        {label}
+      </div>
+      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{detail}</p>
+    </div>
+  );
+}
+
+function JourneyStep({
+  title,
+  detail,
+}: {
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-[20px] border border-white/8 bg-white/5 p-4">
+      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.6)]" />
+      <div>
+        <p className="text-sm font-semibold text-white">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-300">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 export function QueueStatus({
   ticket: initialTicket,
   officeName,
   serviceName,
   priorityAlertConfig,
 }: QueueStatusProps) {
-  const { ticket, position, estimatedWait, isUpdating } = useRealtimeTicket({
+  const {
+    ticket,
+    position,
+    estimatedWait,
+    isUpdating,
+    lastSyncedAt,
+    refresh,
+  } = useRealtimeTicket({
     ticketId: initialTicket.id,
     qrToken: initialTicket.qr_token,
     initialData: initialTicket,
@@ -40,61 +168,39 @@ export function QueueStatus({
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [showIosPrompt, setShowIosPrompt] = useState(false);
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showStopDialog, setShowStopDialog] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [trackingStopped, setTrackingStopped] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
-
-  const playBuzzSound = () => {
-    try {
-      const existing = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
-      const ctx = existing ?? new AudioContext();
-      (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
-
-      const schedulePattern = () => {
-        const pulse = (frequency: number, startAt: number, duration: number) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.type = 'square';
-          osc.frequency.value = frequency;
-          gain.gain.setValueAtTime(0.0001, ctx.currentTime + startAt);
-          gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + startAt + 0.01);
-          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + startAt + duration);
-          osc.start(ctx.currentTime + startAt);
-          osc.stop(ctx.currentTime + startAt + duration);
-        };
-
-        pulse(190, 0.00, 0.16);
-        pulse(240, 0.22, 0.16);
-        pulse(190, 0.44, 0.16);
-        pulse(240, 0.66, 0.16);
-      };
-
-      if (ctx.state === 'suspended') {
-        ctx.resume().then(schedulePattern).catch(() => {});
-      } else {
-        schedulePattern();
-      }
-    } catch {
-      // Audio playback is best-effort only.
-    }
-  };
-
-  // ── Buzz handler: aggressive vibration + screen flash ──
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isInStandaloneMode = typeof window !== 'undefined' && (
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches
+  );
+
+  const syncLabel = useMemo(() => {
+    if (isUpdating || isRefreshing) return 'Syncing now';
+    return formatSyncLabel(lastSyncedAt);
+  }, [isRefreshing, isUpdating, lastSyncedAt]);
+
   const fireBuzz = () => {
-    // Aggressive vibration
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
     }
-    // Rapid screen flash: toggle on/off every 200ms for 3 seconds
+
     let flashes = 0;
-    const maxFlashes = 15; // 15 toggles = ~3 seconds
+    const maxFlashes = 15;
     if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     setShowBuzzFlash(true);
     playBuzzSound();
+
     buzzTimerRef.current = setInterval(() => {
-      flashes++;
+      flashes += 1;
       if (flashes >= maxFlashes) {
         if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
         buzzTimerRef.current = null;
@@ -105,7 +211,72 @@ export function QueueStatus({
     }, 200);
   };
 
-  // Listen for buzz via Supabase Realtime broadcast
+  const fetchNowServing = async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('department_id', ticket.department_id)
+      .eq('office_id', ticket.office_id)
+      .in('status', ['serving', 'called'])
+      .order('called_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    setNowServing(data?.ticket_number ?? null);
+  };
+
+  const fetchDeskName = async () => {
+    if (!ticket.desk_id) {
+      setDeskName(null);
+      return;
+    }
+
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('desks')
+      .select('name, display_name')
+      .eq('id', ticket.desk_id)
+      .single();
+
+    setDeskName(data?.display_name ?? data?.name ?? null);
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refresh(),
+        fetchNowServing(),
+        ticket.status === 'called' ? fetchDeskName() : Promise.resolve(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleStopTracking = async () => {
+    setIsStopping(true);
+    setStopError(null);
+
+    try {
+      const stopped = await stopTicketTracking(ticket.id);
+      if (!stopped) {
+        setStopError('We could not stop tracking just yet. Please try again.');
+        return;
+      }
+
+      setTrackingStopped(true);
+    } finally {
+      setIsStopping(false);
+      setShowStopDialog(false);
+    }
+  };
+
+  const handleFeedbackDone = async () => {
+    await handleStopTracking();
+  };
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -117,10 +288,11 @@ export function QueueStatus({
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [ticket.id, ticket.office_id]);
 
-  // Listen for persisted buzz notifications as a durable fallback.
   useEffect(() => {
     const supabase = createClient();
 
@@ -166,77 +338,37 @@ export function QueueStatus({
     };
   }, [ticket.id]);
 
-  // Listen for buzz via service worker postMessage (backup path)
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
         fireBuzz();
       }
     };
+
     navigator.serviceWorker?.addEventListener('message', handler);
-    return () => { navigator.serviceWorker?.removeEventListener('message', handler); };
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', handler);
+    };
   }, [ticket.id]);
 
   useEffect(() => {
     return () => {
-      if (buzzTimerRef.current) {
-        clearInterval(buzzTimerRef.current);
-      }
+      if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     };
   }, []);
 
-  // Fetch "now serving" ticket for context
   useEffect(() => {
-    const fetchNowServing = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('tickets')
-        .select('ticket_number')
-        .eq('department_id', ticket.department_id)
-        .eq('office_id', ticket.office_id)
-        .in('status', ['serving', 'called'])
-        .order('called_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (data) {
-        setNowServing(data.ticket_number);
-      }
-    };
-
-    fetchNowServing();
+    void fetchNowServing();
     const interval = setInterval(fetchNowServing, 15000);
     return () => clearInterval(interval);
   }, [ticket.department_id, ticket.office_id]);
 
-  // Fetch desk name when ticket is called
   useEffect(() => {
     if (ticket.status === 'called' && ticket.desk_id) {
-      const fetchDesk = async () => {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('desks')
-          .select('name, display_name')
-          .eq('id', ticket.desk_id!)
-          .single();
-
-        if (data) {
-          setDeskName(data.display_name ?? data.name);
-        }
-      };
-      fetchDesk();
+      void fetchDeskName();
     }
   }, [ticket.status, ticket.desk_id]);
 
-  // Detect iOS and PWA status
-  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isInStandaloneMode = typeof window !== 'undefined' && (
-    (window.navigator as any).standalone === true ||
-    window.matchMedia('(display-mode: standalone)').matches
-  );
-  const iosPushSupported = isIos ? isInStandaloneMode : true;
-
-  // Register service worker on mount + auto-subscribe if permission already granted
   useEffect(() => {
     if (!notificationRequested.current) {
       notificationRequested.current = true;
@@ -247,7 +379,6 @@ export function QueueStatus({
         });
       }
 
-      // If permission already granted (from previous visit), auto-subscribe to push
       if ('Notification' in window && Notification.permission === 'granted') {
         setAlertsEnabled(true);
         subscribeToPush(ticket.id).catch((err) => {
@@ -255,16 +386,12 @@ export function QueueStatus({
         });
       }
 
-      // iOS in standalone mode: auto-enable alerts immediately (they installed the app!)
       if (isIos && isInStandaloneMode && 'Notification' in window && Notification.permission === 'default') {
-        // Small delay so the page renders first, then trigger permission
         setTimeout(() => {
-          handleEnableAlerts();
+          void handleEnableAlerts();
         }, 800);
       }
 
-      // iOS in Safari (not standalone): auto-show install prompt after brief delay
-      // so users don't have to find the "Enable Alerts" button
       if (isIos && !isInStandaloneMode && !('Notification' in window && Notification.permission === 'granted')) {
         const dismissed = sessionStorage.getItem('ios-install-dismissed');
         if (!dismissed) {
@@ -277,13 +404,15 @@ export function QueueStatus({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
-  // Re-subscribe on visibility change (iOS aggressively kills service workers)
   useEffect(() => {
     if (!alertsEnabled) return;
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-        console.log('[Push] Re-subscribing after visibility change');
+      if (
+        document.visibilityState === 'visible' &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
         subscribeToPush(ticket.id).catch((err) => {
           console.error('[Push] Visibility re-subscribe failed:', err);
         });
@@ -294,7 +423,6 @@ export function QueueStatus({
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [alertsEnabled, ticket.id]);
 
-  // Check for a buzz that might have arrived while the page was backgrounded.
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -319,8 +447,6 @@ export function QueueStatus({
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [ticket.id]);
 
-  // Re-subscribe to push when ticket is called (subscription may have expired since initial)
-  // This ensures recall push works even if the original subscription went stale
   const lastResubscribeStatus = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -330,7 +456,6 @@ export function QueueStatus({
       'Notification' in window &&
       Notification.permission === 'granted'
     ) {
-      console.log('[Push] Re-subscribing on call for fresh endpoint');
       subscribeToPush(ticket.id).catch((err) => {
         console.error('[Push] Re-subscribe on call failed:', err);
       });
@@ -338,15 +463,12 @@ export function QueueStatus({
     lastResubscribeStatus.current = ticket.status;
   }, [ticket.status, ticket.id, alertsEnabled]);
 
-  // Enable alerts: request permission + unlock audio + test vibration
   const handleEnableAlerts = async () => {
-    // iOS: if not in PWA mode, show install prompt instead
     if (isIos && !isInStandaloneMode) {
       setShowIosPrompt(true);
       return;
     }
 
-    // 1. Request notification permission (user taps Allow in browser prompt)
     if ('Notification' in window && Notification.permission === 'default') {
       const result = await Notification.requestPermission();
       if (result !== 'granted') {
@@ -355,7 +477,6 @@ export function QueueStatus({
       }
     }
 
-    // 2. Unlock AudioContext with user gesture (stored globally for YourTurn)
     try {
       const ctx = new AudioContext();
       const osc = ctx.createOscillator();
@@ -367,17 +488,15 @@ export function QueueStatus({
       osc.stop(ctx.currentTime + 0.05);
       (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
     } catch {
-      // AudioContext not available
+      // Ignore unlock failures.
     }
 
-    // 3. Subscribe to Web Push (for background notifications)
     try {
       await subscribeToPush(ticket.id);
     } catch (err) {
       console.error('[Push] Subscribe failed:', err);
     }
 
-    // 4. Test vibration
     if ('vibrate' in navigator) {
       navigator.vibrate([150, 80, 150]);
     }
@@ -385,222 +504,311 @@ export function QueueStatus({
     setAlertsEnabled(true);
   };
 
-  // If ticket status changed to 'called', transition to YourTurn
-  // YourTurn fetches its own desk name on mount, so pass whatever we have
-  if (ticket.status === 'called') {
-    return <YourTurn ticket={ticket} deskName={deskName ?? ''} />;
-  }
-
-  // If ticket status changed to 'serving'
-  if (ticket.status === 'serving') {
+  if (trackingStopped) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-primary/5 p-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="rounded-xl bg-card p-8 shadow-lg">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <svg className="h-8 w-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <h1 className="mb-2 text-2xl font-bold">Being Served</h1>
-            <p className="text-muted-foreground">You are currently being attended to.</p>
-          </div>
-        </div>
-      </div>
+      <QueueSessionEnded
+        detail={`Ticket ${ticket.ticket_number} no longer has live updates on this device.`}
+        onResume={() => window.location.reload()}
+      />
     );
   }
 
-  // If ticket is served, show feedback
-  if (ticket.status === 'served') {
-    return <FeedbackForm ticket={ticket} officeName={officeName} serviceName={serviceName} />;
+  if (ticket.status === 'called') {
+    return (
+      <YourTurn
+        ticket={ticket}
+        deskName={deskName ?? ''}
+        officeName={officeName}
+        serviceName={serviceName}
+        lastSyncedAt={lastSyncedAt}
+        isRefreshing={isRefreshing}
+        onRefresh={handleManualRefresh}
+        onStopTracking={() => setShowStopDialog(true)}
+      />
+    );
   }
 
-  const progressPercent =
-    position !== null && position > 0
-      ? Math.max(5, Math.min(95, ((10 - position) / 10) * 100))
-      : 5;
-
-  return (
-    <div className="flex min-h-screen flex-col bg-muted relative">
-      {/* Buzz flash overlay — full-screen strobe */}
-      {showBuzzFlash && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-600 pointer-events-none">
-          <div className="text-center">
-            <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-3 text-xl font-bold text-white">Attention needed!</p>
-          </div>
-        </div>
-      )}
-
-      {/* Recall notification overlay */}
-      <RecallNotification
-        ticketId={ticket.id}
-        ticketNumber={ticket.ticket_number}
-        officeId={ticket.office_id}
-      />
-
-      {/* Header */}
-      <div className="bg-primary px-4 pb-6 pt-6 text-primary-foreground">
-        <div className="mx-auto max-w-sm">
-          <p className="text-sm font-medium opacity-80">{officeName}</p>
-          <p className="text-xs opacity-60">{serviceName}</p>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="mx-auto w-full max-w-sm flex-1 px-4">
-        {/* Ticket number card - overlapping header */}
-        <div className="-mt-8 mb-6 rounded-xl bg-card p-6 text-center shadow-lg">
-          <p className="mb-1 text-sm font-medium text-muted-foreground">Your Ticket</p>
-          <p className="text-5xl font-extrabold tracking-wider text-primary">
-            {ticket.ticket_number}
-          </p>
-          {isUpdating && (
-            <div className="mt-2 flex items-center justify-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-              <span className="text-xs text-muted-foreground">Updating...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Position in queue */}
-        <div className="mb-4 rounded-xl bg-card p-5 shadow-sm">
-          <div className="mb-4 text-center">
-            {position !== null ? (
-              <>
-                <p className="text-sm font-medium text-muted-foreground">Your position</p>
-                <p className="mt-1 text-4xl font-extrabold text-foreground">
-                  #{position}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">in line</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-muted-foreground">Position</p>
-                <div className="mt-2 flex justify-center">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Progress bar */}
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-1000 ease-out"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>Joined</span>
-            <span>Your turn</span>
-          </div>
-        </div>
-
-        {/* Wait time and now serving */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-card p-4 text-center shadow-sm">
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Est. Wait</p>
-            {estimatedWait !== null ? (
-              <p className="text-2xl font-bold text-foreground">
-                {estimatedWait}
-                <span className="text-sm font-normal text-muted-foreground"> min</span>
-              </p>
-            ) : (
-              <p className="text-lg font-semibold text-muted-foreground">--</p>
-            )}
-          </div>
-
-          <div className="rounded-xl bg-card p-4 text-center shadow-sm">
-            <p className="mb-1 text-xs font-medium text-muted-foreground">Now Serving</p>
-            {nowServing ? (
-              <p className="text-2xl font-bold text-foreground">{nowServing}</p>
-            ) : (
-              <p className="text-lg font-semibold text-muted-foreground">--</p>
-            )}
-          </div>
-        </div>
-
-        {/* Edit customer data */}
-        <div className="mt-4">
-          <EditCustomerData ticket={ticket} />
-        </div>
-
-        <PriorityAlertSetup
+  if (ticket.status === 'served') {
+    return (
+      <>
+        <FeedbackForm
           ticket={ticket}
-          config={priorityAlertConfig}
+          officeName={officeName}
+          serviceName={serviceName}
+          onDone={handleFeedbackDone}
+          onStopTracking={() => setShowStopDialog(true)}
         />
+        <QueueStopDialog
+          isOpen={showStopDialog}
+          isStopping={isStopping}
+          onCancel={() => setShowStopDialog(false)}
+          onConfirm={() => void handleStopTracking()}
+          title="Finish this visit?"
+          description="We’ll clear this completed visit from this device and stop any remaining alerts."
+          confirmLabel="Finish visit"
+        />
+      </>
+    );
+  }
 
-        {/* Enable alerts banner */}
-        {!alertsEnabled && (
-          <button
-            onClick={handleEnableAlerts}
-            className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 p-4 shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-transform"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20">
-                <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+  if (ticket.status === 'serving') {
+    return (
+      <>
+        <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
+          <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
+                <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <QueueActionPill
+                  label="Refresh"
+                  onClick={() => void handleManualRefresh()}
+                  tone="primary"
+                  disabled={isRefreshing}
+                  loading={isRefreshing}
+                />
+                <QueueActionPill label="End" onClick={() => setShowStopDialog(true)} tone="danger" />
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-[34px] border border-white/10 bg-slate-950/82 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-100 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-bold text-white">
-                  {isIos && !isInStandaloneMode
-                    ? 'Get Notified When Called'
-                    : "Don't Miss Your Turn!"}
-                </p>
-                <p className="mt-0.5 text-xs text-blue-100">
-                  {isIos && !isInStandaloneMode
-                    ? 'Tap to set up push notifications'
-                    : 'Enable alerts for sound & vibration'}
+
+              <div className="mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-sky-100">
+                With staff now
+              </div>
+
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">You are being served</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                Stay with the staff member at {deskName ?? 'your desk'}. You can finish this visit after your service is complete.
+              </p>
+
+              <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                <WaitingMetric
+                  label="Ticket"
+                  value={ticket.ticket_number}
+                  detail="Keep this visible in case the team asks for your number again."
+                  accentClass="bg-sky-400/15 text-sky-100"
+                />
+                <WaitingMetric
+                  label="Desk"
+                  value={deskName ?? 'Assigned'}
+                  detail="This is the current service point handling your visit."
+                  accentClass="bg-emerald-400/15 text-emerald-100"
+                />
+              </div>
+            </div>
+
+            {stopError ? (
+              <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {stopError}
+              </div>
+            ) : null}
+
+            <div className="mt-auto pt-6 text-center">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">QueueFlow</p>
+            </div>
+          </div>
+        </div>
+
+        <QueueStopDialog
+          isOpen={showStopDialog}
+          isStopping={isStopping}
+          onCancel={() => setShowStopDialog(false)}
+          onConfirm={() => void handleStopTracking()}
+        />
+      </>
+    );
+  }
+
+  const accentLabel = ticket.status === 'serving' ? 'Now at desk' : 'Waiting in line';
+  const accentTone =
+    ticket.status === 'serving'
+      ? 'bg-sky-400/15 text-sky-100'
+      : 'bg-amber-300/15 text-amber-100';
+
+  return (
+    <>
+      <div className="relative flex min-h-screen flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),radial-gradient(circle_at_80%_20%,_rgba(249,115,22,0.18),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
+        {showBuzzFlash ? (
+          <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
+            <div className="text-center">
+              <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
+              <p className="mt-3 text-xl font-bold text-white">Attention needed now</p>
+            </div>
+          </div>
+        ) : null}
+
+        <RecallNotification
+          ticketId={ticket.id}
+          ticketNumber={ticket.ticket_number}
+          officeId={ticket.office_id}
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_62%)]" />
+
+        <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
+              <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
+            </div>
+
+            <div className="flex flex-col items-end gap-2">
+              <QueueActionPill
+                label="Refresh"
+                onClick={() => void handleManualRefresh()}
+                tone="primary"
+                disabled={isRefreshing}
+                loading={isRefreshing}
+              />
+              <QueueActionPill
+                label="End"
+                onClick={() => setShowStopDialog(true)}
+                tone="danger"
+                disabled={isStopping}
+              />
+            </div>
+          </div>
+
+          <section className="rounded-[34px] border border-white/10 bg-white/6 p-6 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${accentTone}`}>
+                  {accentLabel}
+                </div>
+                <p className="mt-4 text-sm font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
+                <p className="mt-2 text-5xl font-black tracking-[0.12em] text-white">{ticket.ticket_number}</p>
+              </div>
+
+              <div className="rounded-[28px] border border-cyan-300/18 bg-cyan-400/8 px-4 py-4 text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-100/70">Position</p>
+                <p className="mt-2 text-4xl font-semibold text-white">{position ? `#${position}` : '--'}</p>
+                <p className="mt-2 text-sm text-cyan-50/70">
+                  {position && position > 1 ? `${position - 1} ahead of you` : 'You are nearly up'}
                 </p>
               </div>
-              <svg className="h-5 w-5 text-white/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
             </div>
-          </button>
-        )}
-        {alertsEnabled && (
-          <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <svg className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <p className="text-sm font-medium text-emerald-700">Alerts enabled — we&apos;ll notify you</p>
-            </div>
-          </div>
-        )}
-        {/* iOS install prompt — full-screen overlay */}
-        {showIosPrompt && (
-          <IosInstallPrompt
-            onDismiss={() => {
-              setShowIosPrompt(false);
-              sessionStorage.setItem('ios-install-dismissed', '1');
-            }}
-          />
-        )}
 
-        {/* Waiting animation */}
-        <div className="mt-6 flex flex-col items-center py-4">
-          <div className="flex gap-1.5">
-            <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary [animation-delay:0ms]" />
-            <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary [animation-delay:150ms]" />
-            <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary [animation-delay:300ms]" />
+            <div className="mt-6">
+              <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                <span>Queue movement</span>
+                <span>{ticket.status === 'serving' ? 'At the desk' : 'Live'}</span>
+              </div>
+              <div className="h-3 rounded-full bg-white/8">
+                <div
+                  className="h-3 rounded-full bg-gradient-to-r from-cyan-300 via-sky-300 to-emerald-300 transition-all duration-700"
+                  style={{ width: `${progressPercent(position) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <WaitingMetric
+                label="Wait"
+                value={estimatedWait != null ? `${estimatedWait} min` : '--'}
+                detail={estimatedWait != null ? 'Approximate wait until your turn.' : 'Calculating timing now.'}
+                accentClass="bg-sky-400/15 text-sky-100"
+              />
+              <WaitingMetric
+                label="Now serving"
+                value={nowServing ?? '--'}
+                detail="Current ticket being helped right now."
+                accentClass="bg-emerald-400/15 text-emerald-100"
+              />
+              <WaitingMetric
+                label="Alerts"
+                value={alertsEnabled ? 'Ready' : 'Off'}
+                detail={alertsEnabled ? 'We can reach you even if you step away.' : 'Turn alerts on so you do not miss your turn.'}
+                accentClass="bg-amber-300/15 text-amber-100"
+              />
+            </div>
+          </section>
+
+          <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 p-5 backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold text-white">Keep it simple</p>
+                <p className="mt-1 text-sm leading-6 text-slate-300">
+                  Stay nearby, keep your phone available, and we will bring you straight to the desk when it is time.
+                </p>
+              </div>
+              {!alertsEnabled ? (
+                <QueueActionPill
+                  label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
+                  onClick={() => void handleEnableAlerts()}
+                  tone="primary"
+                />
+              ) : (
+                <div className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                  Alerts ready
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <JourneyStep
+                title="We call your number once it is your turn"
+                detail="The moment the desk calls you, this screen changes instantly and your lock screen updates too."
+              />
+              <JourneyStep
+                title="Refresh any time if you want reassurance"
+                detail="Use the Refresh button whenever you want an immediate sync, just like a pull-to-refresh check."
+              />
+              <JourneyStep
+                title="End tracking when you are done"
+                detail="When your visit is complete, finish the session so this device stops getting updates."
+              />
+            </div>
+          </section>
+
+          <div className="mt-4 space-y-4">
+            <div className="rounded-[24px] border border-white/8 bg-white/5 p-4 backdrop-blur">
+              <p className="text-sm font-semibold text-white">Visit details</p>
+              <p className="mt-1 text-sm text-slate-300">Need to change your contact details or backup alert options? You can do that here.</p>
+              <div className="mt-4">
+                <EditCustomerData ticket={ticket} />
+              </div>
+            </div>
+
+            <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">Waiting for your turn...</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Keep this page open. We&apos;ll notify you.
-          </p>
+
+          {stopError ? (
+            <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {stopError}
+            </div>
+          ) : null}
+
+          {showIosPrompt ? (
+            <IosInstallPrompt
+              onDismiss={() => {
+                setShowIosPrompt(false);
+                sessionStorage.setItem('ios-install-dismissed', '1');
+              }}
+            />
+          ) : null}
+
+          <div className="mt-auto pt-6 text-center">
+            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">QueueFlow</p>
+          </div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 pb-6 pt-4 text-center">
-        <p className="text-xs text-muted-foreground">
-          Powered by QueueFlow
-        </p>
-      </div>
-    </div>
+      <QueueStopDialog
+        isOpen={showStopDialog}
+        isStopping={isStopping}
+        onCancel={() => setShowStopDialog(false)}
+        onConfirm={() => void handleStopTracking()}
+      />
+    </>
   );
 }

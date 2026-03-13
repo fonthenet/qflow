@@ -44,6 +44,15 @@ object QueueTrackingStore {
             .apply()
     }
 
+    fun clearTrackedTicket(context: Context) {
+        prefs(context).edit()
+            .remove(KEY_QR_TOKEN)
+            .remove(KEY_TICKET_URL)
+            .remove(KEY_TICKET_ID)
+            .remove(KEY_TICKET_NUMBER)
+            .apply()
+    }
+
     fun hasPromptedForNotifications(context: Context): Boolean {
         return prefs(context).getBoolean(KEY_NOTIFICATIONS_PROMPTED, false)
     }

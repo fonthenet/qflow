@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -83,8 +84,9 @@ object QueueLiveUpdateNotifier {
             "Queue Live Updates",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Live queue position and progress updates"
+            description = "Live queue progress and ticket status"
             setShowBadge(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
 
         val alertChannel = NotificationChannel(
@@ -92,10 +94,12 @@ object QueueLiveUpdateNotifier {
             "Queue Alerts",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Urgent queue alerts, recalls, and buzzes"
+            description = "Urgent queue calls, recalls, and buzzes"
             enableLights(true)
+            lightColor = Color.RED
             enableVibration(true)
             vibrationPattern = longArrayOf(400, 180, 400, 180, 600)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
 
         manager.createNotificationChannel(liveChannel)
@@ -113,7 +117,14 @@ object QueueLiveUpdateNotifier {
             "buzz" -> postUrgentAlert(context, payload)
             "served", "no_show" -> {
                 cancelLiveUpdate(context, payload.ticketId)
+                cancelAlertNotifications(context, payload.ticketId)
+                QueueTrackingStore.clearTrackedTicket(context)
                 postCompletionNotification(context, payload)
+            }
+            "stop_tracking" -> {
+                cancelLiveUpdate(context, payload.ticketId)
+                cancelAlertNotifications(context, payload.ticketId)
+                QueueTrackingStore.clearTrackedTicket(context)
             }
             else -> postLiveUpdate(context, payload, silent = payload.silent)
         }
@@ -121,7 +132,6 @@ object QueueLiveUpdateNotifier {
 
     private fun postLiveUpdate(context: Context, payload: QueueLiveUpdatePayload, silent: Boolean) {
         val notification = buildLiveNotification(context, payload, silent)
-
         NotificationManagerCompat.from(context)
             .notify(liveNotificationId(payload.ticketId), notification)
     }
@@ -135,15 +145,28 @@ object QueueLiveUpdateNotifier {
 
         val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(payload.title)
-            .setContentText(payload.body)
+            .setContentTitle(alertTitle(payload))
+            .setContentText(alertBody(payload))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(alertBody(payload))
+                    .setBigContentTitle(alertTitle(payload))
+                    .setSummaryText(payload.ticketNumber?.let { "Ticket $it" } ?: "QueueFlow")
+            )
             .setContentIntent(buildOpenIntent(context, payload))
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setCategory(if (payload.type == "buzz") NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setAutoCancel(true)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setVibrate(vibrationPattern)
+            .setColor(accentColor(payload.type))
+            .setColorized(true)
+            .addAction(
+                R.drawable.ic_notification,
+                "Open",
+                buildOpenIntent(context, payload)
+            )
 
         NotificationManagerCompat.from(context)
             .notify(alertNotificationId(payload.ticketId, payload.type), builder.build())
@@ -152,11 +175,19 @@ object QueueLiveUpdateNotifier {
     private fun postCompletionNotification(context: Context, payload: QueueLiveUpdatePayload) {
         val builder = NotificationCompat.Builder(context, LIVE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(payload.title)
-            .setContentText(payload.body)
+            .setContentTitle(completionTitle(payload))
+            .setContentText(completionBody(payload))
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(completionBody(payload))
+                    .setBigContentTitle(completionTitle(payload))
+            )
             .setContentIntent(buildOpenIntent(context, payload))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
+            .setTimeoutAfter(120_000)
+            .setColor(accentColor(payload.type))
+            .setColorized(true)
 
         NotificationManagerCompat.from(context)
             .notify(liveNotificationId(payload.ticketId), builder.build())
@@ -166,11 +197,15 @@ object QueueLiveUpdateNotifier {
         NotificationManagerCompat.from(context).cancel(liveNotificationId(ticketId))
     }
 
+    private fun cancelAlertNotifications(context: Context, ticketId: String) {
+        val manager = NotificationManagerCompat.from(context)
+        manager.cancel(alertNotificationId(ticketId, "called"))
+        manager.cancel(alertNotificationId(ticketId, "recall"))
+        manager.cancel(alertNotificationId(ticketId, "buzz"))
+    }
+
     private fun buildOpenIntent(context: Context, payload: QueueLiveUpdatePayload): PendingIntent {
-        val targetUrl = normalizeQueueUrl(
-            payload.url?.takeIf { it.isNotBlank() },
-            payload.qrToken
-        )
+        val targetUrl = normalizeQueueUrl(payload.url?.takeIf { it.isNotBlank() }, payload.qrToken)
             ?: payload.qrToken?.let { "${BuildConfig.APP_BASE_URL.trimEnd('/')}/q/$it" }
             ?: BuildConfig.APP_BASE_URL
 
@@ -194,9 +229,9 @@ object QueueLiveUpdateNotifier {
     ): Notification {
         val builder = NotificationCompat.Builder(context, LIVE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(payload.title)
-            .setContentText(payload.body)
-            .setSubText(payload.ticketNumber?.let { "Ticket $it" })
+            .setContentTitle(liveTitle(payload))
+            .setContentText(liveBody(payload))
+            .setSubText(liveSubtext(payload))
             .setContentIntent(buildOpenIntent(context, payload))
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -204,15 +239,100 @@ object QueueLiveUpdateNotifier {
             .setOngoing(true)
             .setAutoCancel(false)
             .setSilent(silent)
+            .setColor(accentColor(payload.type))
+            .setColorized(true)
             .setRequestPromotedOngoing(Build.VERSION.SDK_INT >= 36)
             .setStyle(
                 NotificationCompat.ProgressStyle()
                     .setStyledByProgress(true)
                     .setProgress(progressPercent(payload))
             )
+            .addAction(
+                R.drawable.ic_notification,
+                "Open",
+                buildOpenIntent(context, payload)
+            )
+
+        if (payload.type == "called" || payload.type == "recall") {
+            builder
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis() + 60_000)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+        }
 
         shortCriticalText(payload)?.let { builder.setShortCriticalText(it) }
         return builder.build()
+    }
+
+    private fun liveTitle(payload: QueueLiveUpdatePayload): String {
+        return when (payload.type) {
+            "called" -> "Go to ${payload.deskName ?: "your desk"}"
+            "recall" -> "Return to ${payload.deskName ?: "your desk"}"
+            "serving" -> "You are being served"
+            else -> payload.ticketNumber?.let { "QueueFlow • Ticket $it" } ?: "QueueFlow"
+        }
+    }
+
+    private fun liveBody(payload: QueueLiveUpdatePayload): String {
+        return when (payload.type) {
+            "called" -> "Proceed now. Countdown is active."
+            "recall" -> "Staff is waiting for you right now."
+            "serving" -> payload.deskName?.let { "At $it" } ?: "A staff member is helping you."
+            else -> buildString {
+                if (payload.position != null) append("#${payload.position} in line")
+                if (payload.estimatedWait != null) {
+                    if (isNotEmpty()) append(" • ")
+                    append("~${payload.estimatedWait} min")
+                }
+                if (!payload.nowServing.isNullOrBlank()) {
+                    if (isNotEmpty()) append(" • ")
+                    append("Now ${payload.nowServing}")
+                }
+                if (isEmpty()) append("Waiting for your turn")
+            }
+        }
+    }
+
+    private fun liveSubtext(payload: QueueLiveUpdatePayload): String? {
+        return when (payload.type) {
+            "called", "recall" -> payload.ticketNumber?.let { "Ticket $it" }
+            "serving" -> payload.ticketNumber?.let { "Ticket $it" }
+            else -> payload.status?.replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    private fun alertTitle(payload: QueueLiveUpdatePayload): String {
+        return when (payload.type) {
+            "buzz" -> "Buzz from QueueFlow"
+            "recall" -> "Return to the desk now"
+            else -> "It's your turn"
+        }
+    }
+
+    private fun alertBody(payload: QueueLiveUpdatePayload): String {
+        val desk = payload.deskName ?: "your desk"
+        return when (payload.type) {
+            "buzz" -> payload.body.ifBlank {
+                "Ticket ${payload.ticketNumber ?: ""} • Please go to $desk now"
+            }
+            "recall" -> "Ticket ${payload.ticketNumber ?: ""} • Return to $desk immediately"
+            else -> "Ticket ${payload.ticketNumber ?: ""} • Go to $desk now"
+        }
+    }
+
+    private fun completionTitle(payload: QueueLiveUpdatePayload): String {
+        return when (payload.type) {
+            "no_show" -> "Visit status updated"
+            else -> "Visit complete"
+        }
+    }
+
+    private fun completionBody(payload: QueueLiveUpdatePayload): String {
+        return when (payload.type) {
+            "no_show" -> "This ticket was marked as missed."
+            else -> "Thanks for visiting. Tap to leave feedback."
+        }
     }
 
     private fun normalizeQueueUrl(url: String?, qrToken: String?): String? {
@@ -246,11 +366,21 @@ object QueueLiveUpdateNotifier {
         }
     }
 
+    private fun accentColor(type: String): Int {
+        return when (type) {
+            "called", "recall" -> Color.parseColor("#34D399")
+            "serving" -> Color.parseColor("#38BDF8")
+            "served", "stop_tracking" -> Color.parseColor("#94A3B8")
+            "buzz" -> Color.parseColor("#F43F5E")
+            else -> Color.parseColor("#F59E0B")
+        }
+    }
+
     private fun liveNotificationId(ticketId: String): Int {
         return 1000 + (ticketId.hashCode().absoluteValue % 900000)
     }
 
     private fun alertNotificationId(ticketId: String, type: String): Int {
-        return 2000000 + ((ticketId + type).hashCode().absoluteValue % 900000)
+        return 2_000_000 + ((ticketId + type).hashCode().absoluteValue % 900000)
     }
 }

@@ -1,16 +1,14 @@
 import SwiftUI
 import AVFoundation
 
-// MARK: - Countdown Phase
-
 enum CountdownPhase {
     case green, yellow, red
 
     var backgroundColor: Color {
         switch self {
-        case .green:  return Color(red: 0.13, green: 0.53, blue: 0.35)  // Emerald
-        case .yellow: return Color(red: 0.92, green: 0.69, blue: 0.15)  // Amber
-        case .red:    return Color(red: 0.70, green: 0.15, blue: 0.15)  // Red-700
+        case .green:  return Color(red: 0.13, green: 0.53, blue: 0.35)
+        case .yellow: return Color(red: 0.92, green: 0.69, blue: 0.15)
+        case .red:    return Color(red: 0.70, green: 0.15, blue: 0.15)
         }
     }
 
@@ -22,14 +20,6 @@ enum CountdownPhase {
         }
     }
 
-    var countdownNumberColor: Color {
-        switch self {
-        case .green:  return Color(red: 0.06, green: 0.44, blue: 0.29)
-        case .yellow: return Color(red: 0.72, green: 0.53, blue: 0.04)
-        case .red:    return Color(red: 0.70, green: 0.15, blue: 0.15)
-        }
-    }
-
     static func from(countdown: Int) -> CountdownPhase {
         if countdown > 30 { return .green }
         if countdown > 10 { return .yellow }
@@ -37,36 +27,30 @@ enum CountdownPhase {
     }
 }
 
-// MARK: - YourTurnView
-
-/// Full-screen "Your Turn!" alert with 60-second countdown timer,
-/// color phase transitions (green -> yellow -> red), recall handling, and tone audio.
 struct YourTurnView: View {
     let ticket: Ticket
+    let lastUpdatedAt: Date?
+    let isRefreshing: Bool
+    let onRefresh: () async -> Void
+    let onStopTracking: () -> Void
 
     private let waitSeconds = 60
 
-    // Timer state
     @State private var countdown: Int = 60
     @State private var calledAt: Date = Date()
     @State private var recallCount: Int = 0
     @State private var phase: CountdownPhase = .green
-
-    // Animation state
     @State private var isAnimating = false
     @State private var pulseScale: CGFloat = 1.0
     @State private var redPulseOpacity: Double = 1.0
-
-    // Buzz flash
     @State private var showBuzzFlash = false
     @State private var buzzFlashCount = 0
+    @State private var soundUnlocked = false
 
-    // Timer publisher (1 second interval)
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
-            // Phase-based gradient background
             LinearGradient(
                 colors: [phase.backgroundColor, phase.backgroundGradientEnd],
                 startPoint: .topLeading,
@@ -75,144 +59,90 @@ struct YourTurnView: View {
             .ignoresSafeArea()
             .animation(.easeInOut(duration: 0.7), value: phase)
 
-            // Pulsing rings (green phase only)
             if phase == .green {
                 Circle()
                     .fill(Color.white.opacity(0.04))
-                    .frame(width: 300, height: 300)
-                    .scaleEffect(pulseScale * 1.1)
+                    .frame(width: 320, height: 320)
+                    .scaleEffect(pulseScale * 1.08)
 
                 Circle()
                     .fill(Color.white.opacity(0.06))
-                    .frame(width: 240, height: 240)
+                    .frame(width: 250, height: 250)
                     .scaleEffect(pulseScale)
             }
 
-            VStack(spacing: 20) {
-                Spacer()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 22) {
+                    topBar
 
-                // Bell icon with pulse ring
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(phase == .red ? 0.2 : 0.15))
-                        .frame(width: 110, height: 110)
-                        .scaleEffect(pulseScale)
-                        .shadow(color: phase == .red ? .red.opacity(0.4) : .clear, radius: 20)
+                    VStack(spacing: 18) {
+                        bellHero
 
-                    Circle()
-                        .fill(Color.white.opacity(0.25))
-                        .frame(width: 80, height: 80)
+                        Text("Go to \(ticket.deskDisplayName)")
+                            .font(.system(size: 34, weight: .heavy, design: .rounded))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
 
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 36))
-                        .foregroundColor(.white)
-                        .rotationEffect(.degrees(isAnimating ? 15 : -15))
-                        .animation(
-                            .easeInOut(duration: 0.3)
-                                .repeatCount(6, autoreverses: true),
-                            value: isAnimating
-                        )
-                }
-
-                // Main heading
-                Text("YOUR TURN!")
-                    .font(.system(size: 30, weight: .heavy, design: .rounded))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-
-                // Ticket number in white card
-                Text(ticket.ticket_number)
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    .foregroundColor(phase.countdownNumberColor)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(.white)
-                    )
-
-                // Desk card
-                VStack(spacing: 4) {
-                    Text("Please go to")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.7))
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.title2)
-                        Text(ticket.deskDisplayName)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(.white.opacity(0.2))
-                    )
-                }
-
-                // Recall badge
-                if recallCount > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("Recalled \(recallCount) time\(recallCount > 1 ? "s" : "")")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(.white.opacity(0.2))
-                    )
-                }
-
-                // ── COUNTDOWN CIRCLE ──
-                VStack(spacing: 6) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 130, height: 130)
-                            .shadow(
-                                color: phase == .red ? .red.opacity(0.4) : .white.opacity(0.3),
-                                radius: phase == .red ? 20 : 8
+                        Text("Ticket \(ticket.ticket_number)")
+                            .font(.system(size: 16, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.92))
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule()
+                                    .fill(.white.opacity(0.16))
                             )
-                            .opacity(phase == .red ? redPulseOpacity : 1.0)
 
-                        VStack(spacing: 2) {
-                            Text("\(countdown)")
-                                .font(.system(size: 48, weight: .bold, design: .monospaced))
-                                .foregroundColor(phase.countdownNumberColor)
-                                .contentTransition(.numericText())
+                        if recallCount > 0 {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.counterclockwise")
+                                Text("Recalled \(recallCount) time\(recallCount > 1 ? "s" : "")")
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(.white.opacity(0.18)))
+                        }
 
-                            Text(countdown > 0 ? "seconds" : "EXPIRED")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(countdown > 0 ? .gray : .red)
-                                .textCase(.uppercase)
+                        countdownCard
+
+                        Text(urgencyMessage)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white.opacity(0.86))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
+
+                        infoCard
+                    }
+                    .padding(.top, 10)
+
+                    if !soundUnlocked {
+                        Button {
+                            unlockAlertsAndReplay()
+                        } label: {
+                            Label("Tap for sound and haptics", systemImage: "speaker.wave.2.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color(red: 0.03, green: 0.07, blue: 0.14))
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 14)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.white)
+                                )
                         }
                     }
+
+                    Text("Powered by QueueFlow")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.42))
+                        .padding(.top, 8)
+                        .padding(.bottom, 16)
                 }
-                .padding(.top, 4)
-
-                // Urgency message
-                Text(urgencyMessage)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .animation(.easeInOut(duration: 0.3), value: phase)
-
-                Spacer()
-
-                // Footer
-                Text("Powered by QueueFlow")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.4))
-                    .padding(.bottom, 16)
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
             }
 
-            // ── BUZZ FLASH OVERLAY (rapid strobe) ──
             if showBuzzFlash {
                 Color.red
                     .ignoresSafeArea()
@@ -227,52 +157,200 @@ struct YourTurnView: View {
                     )
             }
         }
-        // ── LIFECYCLE ──
         .onAppear {
             setupInitialState()
             triggerEntryEffects()
         }
-        // 1-second timer tick
         .onReceive(timer) { _ in
             updateCountdown()
         }
-        // Recall notification from APNsManager
         .onReceive(NotificationCenter.default.publisher(for: .queueFlowRecall)) { _ in
             handleRecall()
         }
-        // Buzz notification
         .onReceive(NotificationCenter.default.publisher(for: .queueFlowBuzz)) { _ in
             startBuzzStrobe()
         }
     }
 
-    // MARK: - Computed
+    private var topBar: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Your turn")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.66))
+                    .textCase(.uppercase)
+
+                Text(isRefreshing ? "Refreshing now" : syncLabel)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.78))
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                circleActionButton(systemImage: "arrow.clockwise", title: "Refresh", isDisabled: isRefreshing) {
+                    Task { await onRefresh() }
+                }
+
+                circleActionButton(systemImage: "xmark", title: "End", isDisabled: false) {
+                    onStopTracking()
+                }
+            }
+        }
+    }
+
+    private var bellHero: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(phase == .red ? 0.20 : 0.15))
+                .frame(width: 138, height: 138)
+                .scaleEffect(pulseScale)
+                .shadow(color: phase == .red ? .red.opacity(0.4) : .clear, radius: 24)
+
+            Circle()
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 98, height: 98)
+
+            Image(systemName: "bell.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.white)
+                .rotationEffect(.degrees(isAnimating ? 15 : -15))
+                .animation(
+                    .easeInOut(duration: 0.3)
+                        .repeatCount(6, autoreverses: true),
+                    value: isAnimating
+                )
+        }
+    }
+
+    private var countdownCard: some View {
+        ZStack {
+            Circle()
+                .fill(.white)
+                .frame(width: 154, height: 154)
+                .shadow(
+                    color: phase == .red ? .red.opacity(0.42) : .white.opacity(0.26),
+                    radius: phase == .red ? 22 : 10
+                )
+                .opacity(phase == .red ? redPulseOpacity : 1.0)
+
+            VStack(spacing: 3) {
+                Text("\(countdown)")
+                    .font(.system(size: 54, weight: .bold, design: .monospaced))
+                    .foregroundColor(phase == .red ? Color.red : Color(red: 0.12, green: 0.20, blue: 0.25))
+                    .contentTransition(.numericText())
+
+                Text(countdown > 0 ? "seconds" : "EXPIRED")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(countdown > 0 ? .gray : .red)
+                    .textCase(.uppercase)
+            }
+        }
+    }
+
+    private var infoCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            infoRow(
+                icon: "mappin.circle.fill",
+                title: "Where to go",
+                detail: ticket.deskDisplayName
+            )
+
+            infoRow(
+                icon: "person.text.rectangle.fill",
+                title: "What to show",
+                detail: "Ticket \(ticket.ticket_number)"
+            )
+
+            infoRow(
+                icon: "clock.badge.exclamationmark",
+                title: "What to do now",
+                detail: "Walk straight to the desk while the countdown is active."
+            )
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.white.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        )
+    }
+
+    private func infoRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.white.opacity(0.10))
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.64))
+
+                Text(detail)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func circleActionButton(
+        systemImage: String,
+        title: String,
+        isDisabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.6 : 1.0)
+    }
+
+    private var syncLabel: String {
+        if let lastUpdatedAt {
+            return "Updated \(lastUpdatedAt.formatted(date: .omitted, time: .shortened))"
+        }
+
+        return "Live queue sync"
+    }
 
     private var urgencyMessage: String {
         if countdown == 0 {
-            return "Time expired \u{2014} please hurry to the desk!"
+            return "Time expired. Please hurry to the desk now."
         }
         if phase == .red {
-            return "Hurry! Time is running out!"
+            return "Staff is waiting for you. Head to the desk immediately."
         }
-        return "Please proceed to the desk now"
+        return "Proceed to the desk and keep this screen visible."
     }
 
-    // MARK: - State Setup
-
     private func setupInitialState() {
-        // Parse called_at from ticket
         if let calledAtStr = ticket.called_at {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let parsed = formatter.date(from: calledAtStr) {
-                calledAt = parsed
-            } else {
-                formatter.formatOptions = [.withInternetDateTime]
-                if let parsed = formatter.date(from: calledAtStr) {
-                    calledAt = parsed
-                }
-            }
+            calledAt = parseDate(calledAtStr) ?? Date()
         }
 
         recallCount = ticket.recall_count ?? 0
@@ -280,17 +358,14 @@ struct YourTurnView: View {
     }
 
     private func triggerEntryEffects() {
-        // Bell animation
         withAnimation {
             isAnimating = true
         }
 
-        // Pulse ring
         withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
             pulseScale = 1.2
         }
 
-        // Haptics: success + 2 heavy impacts
         let notification = UINotificationFeedbackGenerator()
         notification.notificationOccurred(.success)
 
@@ -303,11 +378,9 @@ struct YourTurnView: View {
             heavy.impactOccurred(intensity: 1.0)
         }
 
-        // Play ascending tone
         TonePlayer.shared.playCalledTone()
+        soundUnlocked = true
     }
-
-    // MARK: - Timer
 
     private func updateCountdown() {
         let elapsed = Int(Date().timeIntervalSince(calledAt))
@@ -318,7 +391,6 @@ struct YourTurnView: View {
             phase = CountdownPhase.from(countdown: remaining)
         }
 
-        // Red phase pulsing
         if phase == .red && countdown > 0 {
             withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
                 redPulseOpacity = 0.7
@@ -328,14 +400,10 @@ struct YourTurnView: View {
         }
     }
 
-    // MARK: - Recall
-
     private func handleRecall() {
-        // Reset timer to now
         calledAt = Date()
         recallCount += 1
 
-        // Re-trigger bell animation
         isAnimating = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             withAnimation {
@@ -343,33 +411,26 @@ struct YourTurnView: View {
             }
         }
 
-        // Haptics
         let notification = UINotificationFeedbackGenerator()
         notification.notificationOccurred(.warning)
 
         let heavy = UIImpactFeedbackGenerator(style: .heavy)
         heavy.prepare()
-        for i in 0..<3 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.4) {
+        for index in 0..<3 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.4) {
                 heavy.impactOccurred(intensity: 1.0)
             }
         }
 
-        // Re-play tone
         TonePlayer.shared.playCalledTone()
-
-        // Immediate countdown update
         updateCountdown()
     }
-
-    // MARK: - Buzz Strobe
 
     private func startBuzzStrobe() {
         guard !showBuzzFlash else { return }
         buzzFlashCount = 0
-
-        // Rapid toggle every 200ms for 3 seconds (15 flashes)
         showBuzzFlash = true
+
         Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
             DispatchQueue.main.async {
                 self.buzzFlashCount += 1
@@ -381,5 +442,23 @@ struct YourTurnView: View {
                 self.showBuzzFlash.toggle()
             }
         }
+    }
+
+    private func unlockAlertsAndReplay() {
+        let heavy = UIImpactFeedbackGenerator(style: .heavy)
+        heavy.impactOccurred(intensity: 1.0)
+        TonePlayer.shared.playCalledTone()
+        soundUnlocked = true
+    }
+
+    private func parseDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let parsed = formatter.date(from: value) {
+            return parsed
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }

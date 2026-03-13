@@ -10,7 +10,8 @@ type AndroidPushType =
   | 'serving'
   | 'served'
   | 'no_show'
-  | 'buzz';
+  | 'buzz'
+  | 'stop_tracking';
 
 interface AndroidPushPayload {
   type: AndroidPushType;
@@ -207,6 +208,8 @@ function getAndroidMessagePriority(type: AndroidPushType): 'HIGH' | 'NORMAL' {
     case 'recall':
     case 'buzz':
       return 'HIGH';
+    case 'stop_tracking':
+      return 'NORMAL';
     default:
       return 'NORMAL';
   }
@@ -393,13 +396,14 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
       const position = positionResult.data ?? null;
       const estimatedWait = waitResult.data ?? null;
       const nowServing = servingResult.data?.ticket_number ?? null;
-      title = position ? `QueueFlow · #${position} in line` : `QueueFlow · ${ticket.ticket_number}`;
+      title = `QueueFlow · Ticket ${ticket.ticket_number}`;
       body = [
-        estimatedWait ? `~${estimatedWait} min wait` : null,
-        nowServing ? `Now serving: ${nowServing}` : null,
+        position ? `#${position} in line` : null,
+        estimatedWait ? `~${estimatedWait} min` : null,
+        nowServing ? `Now ${nowServing}` : null,
       ]
         .filter(Boolean)
-        .join(' · ') || 'Waiting for your turn';
+      .join(' · ') || 'Waiting for your turn';
 
       return {
         ticketId: ticket.id,
@@ -419,18 +423,18 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
     }
     case 'called':
       type = 'called';
-      title = 'Your Turn!';
-      body = `Ticket ${ticket.ticket_number} — Go to ${deskName ?? 'your desk'}`;
+      title = `Go to ${deskName ?? 'your desk'}`;
+      body = `Ticket ${ticket.ticket_number} • Proceed now`;
       break;
     case 'serving':
       type = 'serving';
       title = 'Being Served';
-      body = `Ticket ${ticket.ticket_number} at ${deskName ?? 'your desk'}`;
+      body = deskName ? `At ${deskName}` : `Ticket ${ticket.ticket_number}`;
       break;
     case 'served':
       type = 'served';
       title = 'Visit Complete';
-      body = 'Thank you for visiting QueueFlow.';
+      body = 'Thanks for visiting. Tap to leave feedback.';
       break;
     case 'no_show':
       type = 'no_show';

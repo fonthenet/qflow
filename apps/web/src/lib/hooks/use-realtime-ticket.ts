@@ -25,6 +25,8 @@ interface UseRealtimeTicketReturn {
   estimatedWait: number | null;
   isUpdating: boolean;
   broadcast: BroadcastPayload | null;
+  lastSyncedAt: Date | null;
+  refresh: () => Promise<void>;
 }
 
 export function useRealtimeTicket({
@@ -37,6 +39,7 @@ export function useRealtimeTicket({
   const [estimatedWait, setEstimatedWait] = useState<number | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [broadcast, setBroadcast] = useState<BroadcastPayload | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const channelsRef = useRef<RealtimeChannel[]>([]);
   const supabaseRef = useRef(createClient());
 
@@ -48,6 +51,7 @@ export function useRealtimeTicket({
       });
       if (data !== null && data !== undefined) {
         setPosition(data);
+        setLastSyncedAt(new Date());
       }
     } catch {
       // Silently handle - position will remain stale
@@ -63,11 +67,36 @@ export function useRealtimeTicket({
       });
       if (data !== null && data !== undefined) {
         setEstimatedWait(data);
+        setLastSyncedAt(new Date());
       }
     } catch {
       // Silently handle
     }
   }, []);
+
+  const refresh = useCallback(async () => {
+    const supabase = supabaseRef.current;
+    const { data } = await supabase
+      .from('tickets')
+      .select('*')
+      .eq('id', ticketId)
+      .single();
+
+    if (!data) return;
+
+    setTicket(data as Ticket);
+    setLastSyncedAt(new Date());
+
+    if (data.status === 'waiting') {
+      await Promise.all([
+        fetchPosition(),
+        fetchWaitTime(data.department_id, data.service_id),
+      ]);
+    } else {
+      setPosition(null);
+      setEstimatedWait(null);
+    }
+  }, [ticketId, fetchPosition, fetchWaitTime]);
 
   // Fetch initial position and wait time for waiting tickets
   useEffect(() => {
@@ -83,31 +112,14 @@ export function useRealtimeTicket({
       if (document.visibilityState === 'visible') {
         // Small delay to let network reconnect
         setTimeout(() => {
-          const supabase = supabaseRef.current;
-          supabase
-            .from('tickets')
-            .select('*')
-            .eq('id', ticketId)
-            .single()
-            .then(({ data }) => {
-              if (data) {
-                setTicket(data as Ticket);
-                if (data.status === 'waiting') {
-                  fetchPosition();
-                  fetchWaitTime(data.department_id, data.service_id);
-                } else {
-                  setPosition(null);
-                  setEstimatedWait(null);
-                }
-              }
-            });
+          void refresh();
         }, 300);
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [ticketId, fetchPosition, fetchWaitTime]);
+  }, [refresh]);
 
   // Subscribe to realtime changes
   useEffect(() => {
@@ -128,6 +140,7 @@ export function useRealtimeTicket({
           setIsUpdating(true);
           const newTicket = payload.new as Ticket;
           setTicket(newTicket);
+          setLastSyncedAt(new Date());
 
           // Refresh position if still waiting
           if (newTicket.status === 'waiting') {
@@ -191,8 +204,8 @@ export function useRealtimeTicket({
         .then(({ data }) => {
           if (data) {
             setTicket((prev) => {
-              // Only update if something actually changed
               if (JSON.stringify(prev) !== JSON.stringify(data)) {
+                setLastSyncedAt(new Date());
                 return data as Ticket;
               }
               return prev;
@@ -215,5 +228,5 @@ export function useRealtimeTicket({
     };
   }, [ticketId, qrToken, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
 
-  return { ticket, position, estimatedWait, isUpdating, broadcast };
+  return { ticket, position, estimatedWait, isUpdating, broadcast, lastSyncedAt, refresh };
 }

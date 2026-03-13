@@ -2,8 +2,6 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { CheckInForm } from '@/components/queue/check-in-form';
 import { QueueStatus } from '@/components/queue/queue-status';
-import { YourTurn } from '@/components/queue/your-turn';
-import { FeedbackForm } from '@/components/queue/feedback-form';
 import { GroupStatus } from '@/components/queue/group-status';
 import { getPriorityAlertConfig } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured } from '@/lib/sms';
@@ -129,79 +127,19 @@ export default async function TicketStatusPage({ params }: PageProps) {
     );
   }
 
-  // Status: waiting or called -> show QueueStatus (handles realtime transitions + YourTurn)
-  if (ticket.status === 'waiting' || ticket.status === 'called') {
+  // Main customer journey: waiting, called, serving, served
+  if (
+    ticket.status === 'waiting' ||
+    ticket.status === 'called' ||
+    ticket.status === 'serving' ||
+    ticket.status === 'served'
+  ) {
     return (
       <QueueStatus
         ticket={ticket}
         officeName={contextInfo.officeName}
         serviceName={contextInfo.serviceName}
         priorityAlertConfig={priorityAlertConfig}
-      />
-    );
-  }
-
-  // Status: serving -> show being served
-  if (ticket.status === 'serving') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-primary/5 p-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="mb-6 rounded-xl bg-card p-8 shadow-lg">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <svg
-                className="h-8 w-8 text-primary"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-            </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground">
-              Being Served
-            </h1>
-            <p className="mb-6 text-muted-foreground">
-              You are currently being attended to.
-            </p>
-            <div className="rounded-lg bg-muted p-4">
-              <p className="text-sm font-medium text-muted-foreground">
-                Ticket Number
-              </p>
-              <p className="text-3xl font-bold text-primary">
-                {ticket.ticket_number}
-              </p>
-            </div>
-            {desk && (
-              <div className="mt-4 rounded-lg bg-muted p-4">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Desk
-                </p>
-                <p className="text-lg font-semibold text-foreground">
-                  {desk.display_name ?? desk.name}
-                </p>
-              </div>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {contextInfo.officeName} &middot; {contextInfo.serviceName}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Status: served -> show feedback form
-  if (ticket.status === 'served') {
-    return (
-      <FeedbackForm
-        ticket={ticket}
-        officeName={contextInfo.officeName}
-        serviceName={contextInfo.serviceName}
       />
     );
   }

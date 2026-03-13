@@ -148,6 +148,75 @@ class SupabaseClient {
         }
     }
 
+    func fetchExistingFeedback(ticketId: String) async -> Int? {
+        let urlString = "\(baseURL)/rest/v1/feedback?ticket_id=eq.\(ticketId)&select=rating&limit=1"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            struct FeedbackRow: Codable { let rating: Int }
+            let results = try JSONDecoder().decode([FeedbackRow].self, from: data)
+            return results.first?.rating
+        } catch {
+            return nil
+        }
+    }
+
+    func submitFeedback(
+        ticket: Ticket,
+        rating: Int,
+        comment: String
+    ) async throws {
+        guard let url = URL(string: "\(baseURL)/rest/v1/feedback") else {
+            throw SupabaseError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+
+        let payload: [String: Any?] = [
+            "ticket_id": ticket.id,
+            "service_id": ticket.service_id,
+            "staff_id": ticket.called_by_staff_id,
+            "rating": rating,
+            "comment": comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload.compactMapValues { $0 })
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw SupabaseError.feedbackSubmitFailed
+        }
+    }
+
+    func stopTracking(ticketId: String) async {
+        guard let url = URL(string: "\(apiBaseURL)/api/tracking-stop") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+        request.httpBody = try? JSONEncoder().encode(["ticketId": ticketId])
+
+        do {
+            _ = try await URLSession.shared.data(for: request)
+        } catch {
+            print("[Tracking] Stop request failed: \(error)")
+        }
+    }
+
     private var isDebug: Bool {
         #if DEBUG
         return true
@@ -173,6 +242,7 @@ struct Ticket: Codable, Identifiable {
     let status: String
     let desk_id: String?
     let called_at: String?
+    let called_by_staff_id: String?
     let estimated_wait_minutes: Int?
     let recall_count: Int?
 
@@ -204,12 +274,14 @@ enum SupabaseError: Error, LocalizedError, Equatable {
     case invalidURL
     case fetchFailed
     case ticketNotFound
+    case feedbackSubmitFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "Invalid URL"
         case .fetchFailed: return "Failed to fetch data"
         case .ticketNotFound: return "Ticket not found"
+        case .feedbackSubmitFailed: return "Could not submit feedback"
         }
     }
 }
