@@ -33,9 +33,15 @@ class APNsManager: NSObject, ObservableObject {
     func registerForNotifications() {
         let center = UNUserNotificationCenter.current()
 
+        // Set delegate so notifications show even when app is in foreground
+        center.delegate = self
+
         // Request authorization — App Clips get ephemeral permission automatically
         // if NSAppClipRequestEphemeralUserNotification is true in Info.plist
-        center.requestAuthorization(options: [.alert, .sound, .badge, .provisional]) { granted, error in
+        // Do NOT use .provisional — it delivers silently (no lock screen, no sound).
+        // App Clips with NSAppClipRequestEphemeralUserNotification get full authorization
+        // automatically without prompting the user, so .alert/.sound/.badge is enough.
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("[APNs] Authorization error: \(error)")
                 return
@@ -74,6 +80,30 @@ class APNsManager: NSObject, ObservableObject {
 
     func didFailToRegisterForRemoteNotifications(error: Error) {
         print("[APNs] Registration failed: \(error)")
+    }
+}
+
+// MARK: - Foreground Notification Display
+
+extension APNsManager: UNUserNotificationCenterDelegate {
+    /// Show notifications even when the App Clip is in the foreground.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show banner + sound + badge even when app is open
+        completionHandler([.banner, .sound, .badge])
+    }
+
+    /// Handle notification tap — user tapped the notification banner.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        print("[APNs] Notification tapped: \(response.notification.request.content.title)")
+        completionHandler()
     }
 }
 
