@@ -11,7 +11,8 @@ import { createClient } from '@supabase/supabase-js';
 // APNs endpoints
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
-const DEFAULT_APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.QueueFlowClip';
+const DEFAULT_APNS_BUNDLE_ID =
+  process.env.APNS_BUNDLE_ID?.trim() || 'com.queueflow.app.QueueFlowClip';
 
 // JWT token cache (valid for ~55 minutes, APNs allows up to 1 hour)
 let cachedToken: { jwt: string; expiresAt: number } | null = null;
@@ -28,16 +29,16 @@ async function getAPNsJWT(): Promise<string> {
     return cachedToken.jwt;
   }
 
-  const keyId = process.env.APNS_KEY_ID;
-  const teamId = process.env.APNS_TEAM_ID;
-  const keyP8 = process.env.APNS_KEY_P8;
+  const keyId = process.env.APNS_KEY_ID?.trim();
+  const teamId = process.env.APNS_TEAM_ID?.trim();
+  const keyP8 = process.env.APNS_KEY_P8?.trim();
 
   if (!keyId || !teamId || !keyP8) {
     throw new Error('APNs credentials not configured (APNS_KEY_ID, APNS_TEAM_ID, APNS_KEY_P8)');
   }
 
   // Parse p8 key (handle escaped newlines from env vars)
-  const pemKey = keyP8.replace(/\\n/g, '\n');
+  const pemKey = keyP8.replace(/\\n/g, '\n').trim();
   const privateKey = await importPKCS8(pemKey, 'ES256');
 
   const jwt = await new SignJWT({})
