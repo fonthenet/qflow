@@ -66,6 +66,7 @@ targets:
           - appclips:qflow-sigma.vercel.app
         com.apple.developer.parent-application-identifiers:
           - $(AppIdentifierPrefix)com.queueflow.app
+        aps-environment: development
 
 schemes:
   QueueFlow:

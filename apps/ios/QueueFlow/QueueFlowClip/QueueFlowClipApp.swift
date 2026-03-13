@@ -5,6 +5,7 @@ import SwiftUI
 @main
 struct QueueFlowClipApp: App {
     @UIApplicationDelegateAdaptor(AppClipDelegate.self) var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
 
     var body: some Scene {
@@ -26,6 +27,11 @@ struct QueueFlowClipApp: App {
             }
             .onOpenURL { url in
                 appState.handleURL(url)
+            }
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    APNsManager.shared.registerForNotifications()
+                }
             }
         }
     }

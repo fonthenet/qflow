@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+function encodeAPNsTarget(environment: unknown, bundleId: unknown): string {
+  const normalizedEnvironment = environment === 'sandbox' ? 'sandbox' : 'production';
+  const normalizedBundleId =
+    typeof bundleId === 'string' && bundleId.trim().length > 0
+      ? bundleId.trim()
+      : '';
+
+  return normalizedBundleId
+    ? `${normalizedEnvironment}|${normalizedBundleId}`
+    : normalizedEnvironment;
+}
+
 /**
  * POST /api/apns-register
  * Registers an APNs device token for a ticket.
@@ -9,7 +21,7 @@ import { createClient } from '@supabase/supabase-js';
  */
 export async function POST(request: NextRequest) {
   try {
-    const { ticketId, deviceToken, environment } = await request.json();
+    const { ticketId, deviceToken, environment, bundleId } = await request.json();
 
     if (!ticketId || !deviceToken) {
       return NextResponse.json(
@@ -18,9 +30,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      supabaseKey
     );
 
     // Delete old tokens for this ticket (fresh token on each launch)
@@ -35,7 +51,7 @@ export async function POST(request: NextRequest) {
       .insert({
         ticket_id: ticketId,
         device_token: deviceToken,
-        environment: environment || 'production',
+        environment: encodeAPNsTarget(environment, bundleId),
       });
 
     if (error) {

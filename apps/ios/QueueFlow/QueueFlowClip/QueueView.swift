@@ -37,6 +37,7 @@ struct QueueView: View {
             }
         }
         .task {
+            APNsManager.shared.registerForNotifications()
             await loadTicket()
             startPolling()
         }
@@ -318,6 +319,7 @@ struct QueueView: View {
 
             // Register APNs token for this ticket
             APNsManager.shared.ticketId = fetchedTicket.id
+            APNsManager.shared.registerForNotifications()
 
             // Fetch position and wait time
             let pos = try await SupabaseClient.shared.fetchQueuePosition(ticketId: fetchedTicket.id)

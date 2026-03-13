@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 // APNs endpoints
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.sandbox.push.apple.com';
+const DEFAULT_APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.QueueFlowClip';
 
 // JWT token cache (valid for ~55 minutes, APNs allows up to 1 hour)
 let cachedToken: { jwt: string; expiresAt: number } | null = null;
@@ -56,6 +57,13 @@ interface APNsPayload {
   url?: string;
 }
 
+type APNsEnvironment = 'production' | 'sandbox';
+
+interface APNsTarget {
+  environment: APNsEnvironment;
+  bundleId: string;
+}
+
 function buildInvocationURL(urlPath?: string): string | undefined {
   if (!urlPath) return undefined;
 
@@ -81,10 +89,9 @@ function buildInvocationURL(urlPath?: string): string | undefined {
 async function sendAPNsNotification(
   deviceToken: string,
   payload: APNsPayload,
-  environment: string = 'production'
+  target: APNsTarget
 ): Promise<{ success: boolean; status?: number; reason?: string }> {
-  const bundleId = process.env.APNS_BUNDLE_ID || 'com.queueflow.app.QueueFlowClip';
-  const host = environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
+  const host = target.environment === 'sandbox' ? APNS_HOST_SANDBOX : APNS_HOST_PRODUCTION;
   const url = `${host}/3/device/${deviceToken}`;
   const invocationURL = buildInvocationURL(payload.url);
 
@@ -110,7 +117,7 @@ async function sendAPNsNotification(
       method: 'POST',
       headers: {
         'authorization': `bearer ${jwt}`,
-        'apns-topic': bundleId,
+        'apns-topic': target.bundleId,
         'apns-push-type': 'alert',
         'apns-priority': '10', // Immediate delivery
         'apns-expiration': '0', // Deliver immediately or not at all
@@ -126,12 +133,31 @@ async function sendAPNsNotification(
     // Parse error response
     const errorBody = await response.json().catch(() => ({}));
     const reason = (errorBody as { reason?: string })?.reason || 'unknown';
-    console.error(`[APNs] Failed: ${response.status} ${reason} for token ${deviceToken.slice(0, 12)}...`);
+    console.error(
+      `[APNs] Failed: ${response.status} ${reason} for token ${deviceToken.slice(0, 12)}...` +
+      ` env=${target.environment} topic=${target.bundleId}`
+    );
     return { success: false, status: response.status, reason };
   } catch (err) {
     console.error('[APNs] Network error:', err);
     return { success: false, reason: 'network_error' };
   }
+}
+
+function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
+  if (!rawTarget) {
+    return {
+      environment: 'production',
+      bundleId: DEFAULT_APNS_BUNDLE_ID,
+    };
+  }
+
+  const [environmentPart, bundleIdPart] = rawTarget.split('|', 2);
+  const environment: APNsEnvironment =
+    environmentPart === 'sandbox' ? 'sandbox' : 'production';
+  const bundleId = bundleIdPart?.trim() || DEFAULT_APNS_BUNDLE_ID;
+
+  return { environment, bundleId };
 }
 
 /**
@@ -151,9 +177,13 @@ export async function sendAPNsToTicket(
 
   console.log('[APNs] Sending notification for ticket:', ticketId);
 
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    supabaseKey
   );
 
   const { data: tokens, error } = await supabase
@@ -175,18 +205,24 @@ export async function sendAPNsToTicket(
   let anySent = false;
 
   for (const token of tokens) {
+    const target = parseAPNsTarget(token.environment);
     const result = await sendAPNsNotification(
       token.device_token,
       payload,
-      token.environment
+      target
     );
 
     if (result.success) {
       anySent = true;
-    } else if (result.status === 410 || result.reason === 'Unregistered' || result.reason === 'BadDeviceToken') {
+    } else if (result.status === 410 || result.reason === 'Unregistered') {
       // Token is invalid/expired — clean up
       console.log('[APNs] Removing invalid token:', token.id);
       await supabase.from('apns_tokens').delete().eq('id', token.id);
+    } else if (result.reason === 'BadDeviceToken' || result.reason === 'DeviceTokenNotForTopic') {
+      console.warn(
+        `[APNs] Preserving token ${token.id} after ${result.reason};` +
+        ` verify Xcode bundle id and APNs topic match (${target.bundleId})`
+      );
     }
   }
 

@@ -10,6 +10,7 @@ class APNsManager: NSObject, ObservableObject {
     @Published var deviceToken: String?
     @Published var isRegistered = false
     @Published var tokenSentToServer = false
+    private var isRequestInFlight = false
 
     /// Ticket ID to associate with this device token.
     var ticketId: String? {
@@ -34,11 +35,18 @@ class APNsManager: NSObject, ObservableObject {
         // Set delegate so notifications show even when app is in foreground
         center.delegate = self
 
+        guard !isRequestInFlight else {
+            print("[APNs] Registration request already in flight")
+            return
+        }
+        isRequestInFlight = true
+
         center.getNotificationSettings { settings in
             switch settings.authorizationStatus {
             case .ephemeral, .authorized, .provisional:
                 print("[APNs] Notification authorization status: \(settings.authorizationStatus.rawValue)")
                 DispatchQueue.main.async {
+                    self.isRequestInFlight = false
                     UIApplication.shared.registerForRemoteNotifications()
                 }
             case .notDetermined:
@@ -47,21 +55,31 @@ class APNsManager: NSObject, ObservableObject {
                 center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
                     if let error = error {
                         print("[APNs] Authorization error: \(error)")
+                        DispatchQueue.main.async {
+                            self.isRequestInFlight = false
+                        }
                         return
                     }
 
                     print("[APNs] Authorization granted after request: \(granted)")
 
-                    if granted {
-                        DispatchQueue.main.async {
+                    DispatchQueue.main.async {
+                        self.isRequestInFlight = false
+                        if granted {
                             UIApplication.shared.registerForRemoteNotifications()
                         }
                     }
                 }
             case .denied:
                 print("[APNs] Notification permission denied for App Clip")
+                DispatchQueue.main.async {
+                    self.isRequestInFlight = false
+                }
             @unknown default:
                 print("[APNs] Unknown notification authorization status")
+                DispatchQueue.main.async {
+                    self.isRequestInFlight = false
+                }
             }
         }
     }
@@ -69,7 +87,8 @@ class APNsManager: NSObject, ObservableObject {
     /// Called by AppDelegate when APNs token is received.
     func didRegisterForRemoteNotifications(deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02x", $0) }.joined()
-        print("[APNs] Device token received: \(tokenString.prefix(12))...")
+        let bundleId = Bundle.main.bundleIdentifier ?? "unknown.bundle"
+        print("[APNs] Device token received for \(bundleId): \(tokenString.prefix(12))...")
 
         DispatchQueue.main.async {
             self.deviceToken = tokenString
@@ -81,6 +100,10 @@ class APNsManager: NSObject, ObservableObject {
 
     func didFailToRegisterForRemoteNotifications(error: Error) {
         print("[APNs] Registration failed: \(error)")
+        DispatchQueue.main.async {
+            self.isRegistered = false
+            self.isRequestInFlight = false
+        }
     }
 
     /// Try to send the token to the backend. Both ticketId AND deviceToken must be available.

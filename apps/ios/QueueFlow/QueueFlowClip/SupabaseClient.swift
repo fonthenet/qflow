@@ -99,7 +99,8 @@ class SupabaseClient {
         let body: [String: String] = [
             "ticketId": ticketId,
             "deviceToken": deviceToken,
-            "environment": isDebug ? "sandbox" : "production"
+            "environment": isDebug ? "sandbox" : "production",
+            "bundleId": appClipBundleIdentifier
         ]
 
         request.httpBody = try? JSONEncoder().encode(body)
@@ -148,6 +149,10 @@ class SupabaseClient {
         #else
         return false
         #endif
+    }
+
+    private var appClipBundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "com.queueflow.app.QueueFlowClip"
     }
 }
 
