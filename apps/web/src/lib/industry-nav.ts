@@ -9,17 +9,34 @@ export interface NavItem {
 }
 
 const allNavItems: NavItem[] = [
-  // QUEUE MANAGEMENT
+  // OPERATIONS — the command center (always visible, all roles)
+  { href: '/admin/queue', label: 'Queue', iconName: 'TicketCheck', section: 'OPERATIONS' },
+
+  // MANAGEMENT — core (always visible)
   { href: '/admin/offices', label: '{officePlural}', iconName: 'Building2', section: 'MANAGEMENT' },
   { href: '/admin/departments', label: '{departmentPlural}', iconName: 'Layers', section: 'MANAGEMENT' },
   { href: '/admin/services', label: 'Services', iconName: 'Grid3X3', section: 'MANAGEMENT' },
   { href: '/admin/desks', label: '{deskPlural}', iconName: 'Monitor', section: 'MANAGEMENT' },
   { href: '/admin/staff', label: 'Staff', iconName: 'Users', section: 'MANAGEMENT' },
 
-  // ENGAGEMENT
+  // MANAGEMENT — business-specific (feature-gated)
+  { href: '/admin/reservations', label: 'Reservations', iconName: 'CalendarCheck', section: 'MANAGEMENT', featureFlag: 'reservations' },
+  { href: '/admin/appointments', label: 'Appointments', iconName: 'CalendarClock', section: 'MANAGEMENT', featureFlag: 'appointment_booking' },
+  { href: '/admin/tables', label: 'Table Management', iconName: 'LayoutGrid', section: 'MANAGEMENT', featureFlag: 'table_management' },
+  { href: '/admin/triage', label: 'Triage', iconName: 'HeartPulse', section: 'MANAGEMENT', featureFlag: 'patient_triage' },
+  { href: '/admin/intake-forms', label: 'Intake Forms', iconName: 'ClipboardList', section: 'MANAGEMENT', featureFlag: 'intake_forms' },
+  { href: '/admin/room-assignment', label: 'Room Assignment', iconName: 'DoorOpen', section: 'MANAGEMENT', featureFlag: 'room_assignment' },
+  { href: '/admin/concierge', label: 'Concierge Queue', iconName: 'BellRing', section: 'MANAGEMENT', featureFlag: 'concierge_queue' },
+  { href: '/admin/document-checklist', label: 'Document Checklist', iconName: 'FileCheck', section: 'MANAGEMENT', featureFlag: 'document_checklist' },
+
+  // ENGAGEMENT — core
   { href: '/admin/customers', label: '{customerPlural}', iconName: 'Contact', section: 'ENGAGEMENT' },
   { href: '/admin/priorities', label: 'Priorities', iconName: 'Star', section: 'ENGAGEMENT' },
   { href: '/admin/virtual-codes', label: 'Virtual Codes', iconName: 'QrCode', section: 'ENGAGEMENT' },
+
+  // ENGAGEMENT — business-specific
+  { href: '/admin/vip-routing', label: 'VIP Routing', iconName: 'Crown', section: 'ENGAGEMENT', featureFlag: 'vip_routing' },
+  { href: '/admin/loyalty', label: 'Loyalty Priority', iconName: 'Award', section: 'ENGAGEMENT', featureFlag: 'loyalty_priority' },
 
   // DISPLAY
   { href: '/admin/kiosk', label: 'Kiosk', iconName: 'Tablet', section: 'DISPLAY' },

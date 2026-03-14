@@ -21,6 +21,17 @@ import {
   Key,
   Webhook,
   Shield,
+  CalendarCheck,
+  CalendarClock,
+  LayoutGrid,
+  HeartPulse,
+  ClipboardList,
+  DoorOpen,
+  BellRing,
+  FileCheck,
+  Crown,
+  Award,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
@@ -29,7 +40,9 @@ import { buildSidebarNav } from '@/lib/industry-nav';
 const iconMap: Record<string, LucideIcon> = {
   Building2, Layers, Cog, Users, BarChart3, Monitor,
   Grid3X3, Star, QrCode, Contact, Tablet, Tv,
-  CreditCard, Key, Webhook,
+  CreditCard, Key, Webhook, TicketCheck,
+  CalendarCheck, CalendarClock, LayoutGrid, HeartPulse,
+  ClipboardList, DoorOpen, BellRing, FileCheck, Crown, Award, History,
 };
 
 interface SidebarProps {
@@ -43,13 +56,14 @@ interface SidebarProps {
       business_type?: string | null;
     };
   };
+  isPlatformAdmin?: boolean;
 }
 
-const deskNav = [
-  { href: '/desk', label: 'My Desk', icon: TicketCheck },
+const staffNav = [
+  { href: '/admin/queue', label: 'Queue', icon: TicketCheck },
 ];
 
-export function Sidebar({ staff }: SidebarProps) {
+export function Sidebar({ staff, isPlatformAdmin }: SidebarProps) {
   const pathname = usePathname();
   const isAdmin = staff.role === 'admin' || staff.role === 'manager';
 
@@ -73,7 +87,7 @@ export function Sidebar({ staff }: SidebarProps) {
     <aside className="flex w-64 flex-col border-r border-border bg-card">
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-6">
-        <Link href="/admin/offices" className="text-xl font-bold">
+        <Link href="/admin/queue" className="text-xl font-bold">
           Queue<span className="text-primary">Flow</span>
         </Link>
       </div>
@@ -120,36 +134,12 @@ export function Sidebar({ staff }: SidebarProps) {
               </div>
             ))}
 
-            {/* Desk nav */}
-            <div className="mb-4">
-              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                OPERATIONS
-              </p>
-              <div className="space-y-0.5">
-                {deskNav.map((item) => {
-                  const isActive = pathname.startsWith(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                      }`}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+            {/* OPERATIONS section is now part of dynamic nav via buildSidebarNav() */}
           </>
         )}
 
         {!isAdmin &&
-          deskNav.map((item) => {
+          staffNav.map((item) => {
             const isActive = pathname.startsWith(item.href);
             return (
               <Link
@@ -168,8 +158,8 @@ export function Sidebar({ staff }: SidebarProps) {
           })}
       </nav>
 
-      {/* Super Admin Link */}
-      {isAdmin && (
+      {/* Super Admin Link — only for platform admins */}
+      {isPlatformAdmin && (
         <div className="border-t border-border px-3 py-2">
           <Link
             href="/platform-admin"

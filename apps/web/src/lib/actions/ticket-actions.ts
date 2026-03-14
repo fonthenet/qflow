@@ -282,7 +282,7 @@ export async function createTicket(
     dispatchWebhook(officeData.organization_id, 'ticket.created', ticket).catch(() => {});
   }
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: ticket };
 }
 
@@ -405,7 +405,7 @@ export async function callNextTicket(deskId: string, staffId: string) {
     }
   }
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: ticket, smsSent };
 }
 
@@ -479,7 +479,7 @@ export async function startServing(ticketId: string, staffId: string) {
 
   if (ticket) dispatchTicketWebhook(supabase, ticket);
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: ticket };
 }
 
@@ -549,7 +549,7 @@ export async function markServed(ticketId: string, staffId: string) {
 
   if (ticket) dispatchTicketWebhook(supabase, ticket);
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: ticket };
 }
 
@@ -619,7 +619,7 @@ export async function markNoShow(ticketId: string, staffId: string) {
 
   if (ticket) dispatchTicketWebhook(supabase, ticket);
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: ticket };
 }
 
@@ -706,7 +706,7 @@ export async function transferTicket(
 
   await syncLiveActivity(ticketId, 'TransferTicket');
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: newTicket };
 }
 
@@ -975,22 +975,20 @@ export async function assignDesk(deskId: string, staffId: string) {
   const supabase = await createClient();
 
   // Update desk with current staff
-  const { data: desk, error } = await supabase
+  const { error } = await supabase
     .from('desks')
     .update({
       current_staff_id: staffId,
       status: 'open',
     })
-    .eq('id', deskId)
-    .select('*, department:departments(*)')
-    .single();
+    .eq('id', deskId);
 
   if (error) {
     return { error: error.message };
   }
 
-  revalidatePath('/desk');
-  return { data: desk };
+  revalidatePath('/admin/queue');
+  return { data: true };
 }
 
 export async function unassignDesk(deskId: string) {
@@ -1008,6 +1006,6 @@ export async function unassignDesk(deskId: string) {
     return { error: error.message };
   }
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: true };
 }

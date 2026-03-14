@@ -1,6 +1,12 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) {
+    _resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return _resend;
+}
 
 const FROM_EMAIL = process.env.EMAIL_FROM || 'QueueFlow <noreply@queueflow.com>';
 
@@ -16,7 +22,7 @@ export async function sendTicketCalledEmail(to: string, data: {
 }) {
   if (!isEmailConfigured()) return;
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Your number ${data.ticketNumber} has been called`,
@@ -69,7 +75,7 @@ export async function sendAppointmentReminderEmail(to: string, data: {
     minute: '2-digit',
   });
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Appointment reminder: ${data.serviceName} on ${formattedDate}`,
@@ -116,7 +122,7 @@ export async function sendTicketIssuedEmail(to: string, data: {
     ? `Estimated wait: ~${data.estimatedWait} minutes.`
     : 'We will notify you when it\'s your turn.';
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `Your ticket ${data.ticketNumber} — ${data.officeName}`,
@@ -163,7 +169,7 @@ export async function sendStaffAlertEmail(to: string, data: {
     long_wait: 'Long wait time alert',
   };
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM_EMAIL,
     to,
     subject: `${subjectMap[data.alertType]} — ${data.officeName}`,
