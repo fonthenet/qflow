@@ -10,6 +10,11 @@ export async function saveBusinessType(data: {
   businessSize: string;
   locationCount: string;
   operatingMode: string;
+  arrivalModes?: string[];
+  visitorExperience?: string[];
+  officeName?: string;
+  officeAddress?: string;
+  officeTimezone?: string;
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -35,6 +40,11 @@ export async function saveBusinessType(data: {
         business_size: data.businessSize,
         location_count: data.locationCount,
         operating_mode: data.operatingMode,
+        arrival_modes: data.arrivalModes || [],
+        visitor_experience: data.visitorExperience || [],
+        launch_office_name: data.officeName || null,
+        launch_office_address: data.officeAddress || null,
+        launch_office_timezone: data.officeTimezone || null,
         feature_flags: template?.featureFlags || [],
         terminology: template?.terminology || null,
         ...template?.recommendedSettings,
@@ -151,5 +161,5 @@ export async function completeOnboarding(data: {
 
   if (updateError) return { error: updateError.message };
 
-  redirect('/admin/offices');
+  redirect('/admin/queue');
 }

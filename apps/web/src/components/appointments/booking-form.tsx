@@ -28,6 +28,8 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
   const [appointment, setAppointment] = useState<any>(null);
 
   const today = new Date().toISOString().split('T')[0];
+  const terminology = organization?.settings?.terminology || null;
+  const visitLabel = terminology?.customer ? `Book a ${terminology.customer.toLowerCase()} visit` : 'Book a visit';
 
   // Fetch available slots when date changes
   useEffect(() => {
@@ -168,20 +170,19 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
-      {/* Header */}
-      <div className="border-b border-border bg-card px-6 py-4 text-center">
-        <h1 className="text-2xl font-bold text-foreground">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,241,226,0.92),_rgba(248,244,238,0)_32%),radial-gradient(circle_at_right,_rgba(202,232,224,0.6),_rgba(248,244,238,0)_36%),linear-gradient(180deg,_#faf7f1_0%,_#f6f1ea_100%)]">
+      <div className="border-b border-white/70 bg-white/70 px-6 py-5 text-center backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">QueueFlow booking</p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
           {organization?.name || 'QueueFlow'}
         </h1>
-        <div className="mt-1 flex items-center justify-center gap-1.5 text-muted-foreground">
+        <div className="mt-2 flex items-center justify-center gap-1.5 text-slate-500">
           <MapPin className="h-4 w-4" />
           <span>{office.name}</span>
         </div>
-        <p className="mt-1 text-sm font-medium text-primary">Book an Appointment</p>
+        <p className="mt-2 text-sm font-medium text-slate-700">{visitLabel}</p>
       </div>
 
-      {/* Progress bar */}
       {step !== 'done' && (
         <div className="mx-auto max-w-2xl px-4 pt-6">
           <div className="mb-2 flex items-center gap-2">

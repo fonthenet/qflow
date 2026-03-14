@@ -23,11 +23,11 @@ export default async function TicketStatusPage({ params }: PageProps) {
 
   if (error || !ticket) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted p-4">
-        <div className="w-full max-w-sm rounded-xl bg-card p-8 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(255,241,226,0.92),_rgba(248,244,238,0)_34%),linear-gradient(180deg,_#faf7f1_0%,_#f6f1ea_100%)] p-4">
+        <div className="w-full max-w-sm rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-50">
             <svg
-              className="h-8 w-8 text-destructive"
+              className="h-8 w-8 text-rose-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -40,12 +40,12 @@ export default async function TicketStatusPage({ params }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-xl font-bold text-foreground">
-            Ticket Not Found
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">QueueFlow status</p>
+          <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight text-slate-950">
+            Ticket not found
           </h1>
-          <p className="text-sm text-muted-foreground">
-            This ticket link is invalid or has expired. Please check your QR code
-            and try again.
+          <p className="text-sm leading-6 text-slate-500">
+            This live status link is invalid or has expired. Return to the business and request a fresh join link or QR code.
           </p>
         </div>
       </div>
@@ -172,12 +172,12 @@ export default async function TicketStatusPage({ params }: PageProps) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted p-4">
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(255,241,226,0.92),_rgba(248,244,238,0)_34%),linear-gradient(180deg,_#faf7f1_0%,_#f6f1ea_100%)] p-4">
       <div className="w-full max-w-sm text-center">
-        <div className="rounded-xl bg-card p-8 shadow-lg">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
+        <div className="rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
             <svg
-              className="h-8 w-8 text-warning"
+              className="h-8 w-8 text-amber-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -190,14 +190,15 @@ export default async function TicketStatusPage({ params }: PageProps) {
               />
             </svg>
           </div>
-          <h1 className="mb-2 text-xl font-bold text-foreground">{config.title}</h1>
-          <p className="mb-6 text-sm text-muted-foreground">{config.description}</p>
-          <div className="rounded-lg bg-muted p-4">
-            <p className="text-sm font-medium text-muted-foreground">Ticket Number</p>
-            <p className="text-2xl font-bold text-foreground">{ticket.ticket_number}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">QueueFlow status</p>
+          <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight text-slate-950">{config.title}</h1>
+          <p className="mb-6 text-sm leading-6 text-slate-500">{config.description}</p>
+          <div className="rounded-[22px] bg-[#f6f7f4] p-4">
+            <p className="text-sm font-medium text-slate-500">Ticket number</p>
+            <p className="text-2xl font-semibold tracking-tight text-slate-950">{ticket.ticket_number}</p>
           </div>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">
+        <p className="mt-4 text-xs text-slate-500">
           {contextInfo.officeName} &middot; {contextInfo.serviceName}
         </p>
       </div>

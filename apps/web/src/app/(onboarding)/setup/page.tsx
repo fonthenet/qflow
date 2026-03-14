@@ -22,7 +22,7 @@ export default async function SetupPage() {
 
   // If onboarding is already completed, go to dashboard
   if (org.onboarding_completed) {
-    redirect('/admin/offices');
+    redirect('/admin/queue');
   }
 
   return (
@@ -32,6 +32,7 @@ export default async function SetupPage() {
       initialStep={(org.onboarding_step as number) || 0}
       savedBusinessType={(org.business_type as string) || ''}
       savedBusinessSubtype={(org.business_subtype as string) || ''}
+      savedSettings={(org.settings as Record<string, unknown>) || {}}
     />
   );
 }

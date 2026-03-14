@@ -628,9 +628,9 @@ export function QueueClient({
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Queue</h1>
+          <h1 className="text-2xl font-bold text-foreground">Live operations</h1>
           <p className="text-sm text-muted-foreground">
-            Manage {t.customer.toLowerCase()} queue in real time
+            Manage arrivals, active service, and customer handoff in real time
           </p>
         </div>
       </div>

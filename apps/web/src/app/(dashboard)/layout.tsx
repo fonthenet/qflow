@@ -46,11 +46,13 @@ export default async function DashboardLayout({
   );
 
   return (
-    <div className="flex h-screen">
+    <div className="flex min-h-screen bg-[#f6f1ea]">
       <Sidebar staff={staff} isPlatformAdmin={isPlatformAdmin} />
       <TerminologyProvider terminology={terminology}>
-        <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
-          {children}
+        <main className="flex-1 overflow-y-auto">
+          <div className="min-h-screen bg-[linear-gradient(180deg,_#f8f4ee_0%,_#f6f1ea_100%)] p-5 md:p-8">
+            {children}
+          </div>
         </main>
       </TerminologyProvider>
     </div>

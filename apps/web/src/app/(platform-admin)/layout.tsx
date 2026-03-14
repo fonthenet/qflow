@@ -16,14 +16,16 @@ export default async function PlatformAdminLayout({
 
   const email = user.email?.toLowerCase() || '';
   if (!PLATFORM_ADMIN_EMAILS.includes(email)) {
-    redirect('/admin/offices');
+    redirect('/admin/queue');
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex min-h-screen bg-[#f6f1ea]">
       <PlatformSidebar email={email} />
-      <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
-        {children}
+      <main className="flex-1 overflow-y-auto">
+        <div className="min-h-screen bg-[linear-gradient(180deg,_#f8f4ee_0%,_#f6f1ea_100%)] p-5 md:p-8">
+          {children}
+        </div>
       </main>
     </div>
   );

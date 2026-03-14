@@ -35,6 +35,7 @@ export async function updateSession(request: NextRequest) {
   const publicPrefixes = [
     '/q/', '/display/', '/kiosk/', '/join/', '/book/',
     '/login', '/register', '/history', '/api/',
+    '/auth/callback',
     '/setup',
     // Marketing pages
     '/solutions', '/pricing', '/how-it-works', '/contact', '/docs',
@@ -53,7 +54,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && (pathname === '/login' || pathname === '/register')) {
     const url = request.nextUrl.clone();
-    url.pathname = '/admin/offices';
+    url.pathname = '/admin/queue';
     return NextResponse.redirect(url);
   }
 

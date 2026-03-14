@@ -33,7 +33,8 @@ export function Footer() {
           <div className="space-y-3">
             <span className="text-[15px] font-semibold text-gray-900">QueueFlow</span>
             <p className="max-w-xs text-[13px] leading-relaxed text-gray-500">
-              A service-operations platform for businesses managing arrivals, visits, and live customer updates.
+              Customer flow software for service businesses managing arrivals, waiting, bookings, reservations, and
+              handoff in one place.
             </p>
           </div>
 

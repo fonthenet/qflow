@@ -8,15 +8,15 @@ const inter = Inter({
 });
 
 export const viewport: Viewport = {
-  themeColor: '#111827',
+  themeColor: '#10292f',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
 };
 
 export const metadata: Metadata = {
-  title: 'QueueFlow | Modern Arrival and Visit Management',
-  description: 'QueueFlow helps service businesses manage arrivals, appointments, walk-ins, and live customer updates from one place.',
+  title: 'QueueFlow | Customer Flow Software for Service Businesses',
+  description: 'QueueFlow helps service businesses run arrivals, waiting, bookings, reservations, and service handoff from one system.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

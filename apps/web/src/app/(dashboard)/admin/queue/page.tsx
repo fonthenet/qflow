@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { QueueClient } from './queue-client';
+import { getDefaultTerminology, type IndustryTerminology } from '@/lib/data/industry-templates';
 
 export default async function QueuePage({
   searchParams,
@@ -17,12 +18,15 @@ export default async function QueuePage({
   // Get staff with full details
   const { data: staff } = await supabase
     .from('staff')
-    .select('id, organization_id, office_id, full_name')
+    .select('id, organization_id, office_id, full_name, organization:organizations(name, business_type, settings)')
     .eq('auth_user_id', user.id)
     .single();
   if (!staff) redirect('/login');
 
   const orgId = staff.organization_id;
+  const organization = Array.isArray(staff.organization) ? staff.organization[0] : staff.organization;
+  const orgSettings = (organization?.settings as Record<string, unknown>) || null;
+  const terminology = (orgSettings?.terminology as IndustryTerminology) || getDefaultTerminology();
 
   // Fetch offices for filter
   const { data: offices } = await supabase
@@ -32,6 +36,19 @@ export default async function QueuePage({
     .order('name');
 
   const officeIds = (offices || []).map((o) => o.id);
+
+  const today = new Date().toISOString().split('T')[0];
+  const [{ count: waitingCount }, { count: calledCount }, { count: servingCount }, { count: todayAppointments }] = await Promise.all([
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).in('status', ['waiting', 'issued']),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'called'),
+    supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'serving'),
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .in('office_id', officeIds)
+      .gte('scheduled_at', `${today}T00:00:00`)
+      .lte('scheduled_at', `${today}T23:59:59`),
+  ]);
 
   // Find desk currently assigned to this staff member
   const { data: assignedDesk } = await supabase
@@ -108,24 +125,55 @@ export default async function QueuePage({
   }));
 
   return (
-    <QueueClient
-      staffId={staff.id}
-      staffName={staff.full_name}
-      assignedDesk={assignedDesk || null}
-      availableDesks={(availableDesks || []) as any}
-      departments={(departments || []) as any}
-      services={(services || []) as any}
-      offices={(offices || []) as any}
-      primaryOfficeId={primaryOfficeId}
-      tickets={normalizedTickets as any}
-      totalCount={count || 0}
-      currentPage={currentPage}
-      pageSize={pageSize}
-      filters={{
-        office: params.office || '',
-        status: params.status || 'all',
-        date: params.date || '',
-      }}
-    />
+    <div className="space-y-6">
+      <section className="rounded-[32px] border border-white/70 bg-[linear-gradient(135deg,_#10292f_0%,_#173740_100%)] px-6 py-6 text-white shadow-[0_24px_70px_rgba(10,26,31,0.14)] sm:px-8 sm:py-8">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8de2d5]">Command center</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+              Run today&apos;s {terminology.customerPlural.toLowerCase()}, wait states, and handoffs from one place.
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/72">
+              {organization?.name || 'QueueFlow'} is configured for {organization?.business_type?.replace(/_/g, ' ') || 'service operations'}.
+              Use this command center to keep arrivals, live service, and scheduled volume aligned.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              { label: 'Waiting now', value: waitingCount || 0 },
+              { label: 'Called', value: calledCount || 0 },
+              { label: 'Serving', value: servingCount || 0 },
+              { label: 'Appointments today', value: todayAppointments || 0 },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[24px] border border-white/10 bg-white/8 px-4 py-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">{item.label}</p>
+                <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <QueueClient
+        staffId={staff.id}
+        staffName={staff.full_name}
+        assignedDesk={assignedDesk || null}
+        availableDesks={(availableDesks || []) as any}
+        departments={(departments || []) as any}
+        services={(services || []) as any}
+        offices={(offices || []) as any}
+        primaryOfficeId={primaryOfficeId}
+        tickets={normalizedTickets as any}
+        totalCount={count || 0}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        filters={{
+          office: params.office || '',
+          status: params.status || 'all',
+          date: params.date || '',
+        }}
+      />
+    </div>
   );
 }
