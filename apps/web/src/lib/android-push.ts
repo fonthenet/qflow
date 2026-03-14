@@ -365,6 +365,14 @@ async function getDeskNameForTicket(supabase: ReturnType<typeof createServiceSup
   return data?.display_name ?? data?.name ?? null;
 }
 
+function relationName(value: { name: string | null } | { name: string | null }[] | null | undefined) {
+  if (Array.isArray(value)) {
+    return value[0]?.name ?? null;
+  }
+
+  return value?.name ?? null;
+}
+
 export async function getAndroidTicketState(ticketId: string): Promise<AndroidTicketState | null> {
   const supabase = createServiceSupabaseClient();
   if (!supabase) return null;
@@ -400,9 +408,9 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
   ]);
 
   let type: AndroidPushType = 'position_update';
-  const officeName = ticket.office?.name ?? null;
-  const departmentName = ticket.department?.name ?? null;
-  const serviceName = ticket.service?.name ?? departmentName ?? officeName ?? null;
+  const officeName = relationName(ticket.office);
+  const departmentName = relationName(ticket.department);
+  const serviceName = relationName(ticket.service) ?? departmentName ?? officeName ?? null;
   let title = serviceName ?? `Ticket ${ticket.ticket_number}`;
   let body = 'Waiting for your turn';
 

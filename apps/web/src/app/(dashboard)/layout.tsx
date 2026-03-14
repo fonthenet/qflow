@@ -23,6 +23,12 @@ export default async function DashboardLayout({
 
   if (!staff) redirect('/login');
 
+  // Redirect to onboarding if not completed
+  const org = staff.organization as Record<string, unknown> | null;
+  if (org && !org.onboarding_completed) {
+    redirect('/setup');
+  }
+
   return (
     <div className="flex h-screen">
       <Sidebar staff={staff} />

@@ -17,8 +17,20 @@ import {
   Contact,
   Tablet,
   Tv,
+  CreditCard,
+  Key,
+  Webhook,
+  Shield,
+  type LucideIcon,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
+import { buildSidebarNav } from '@/lib/industry-nav';
+
+const iconMap: Record<string, LucideIcon> = {
+  Building2, Layers, Cog, Users, BarChart3, Monitor,
+  Grid3X3, Star, QrCode, Contact, Tablet, Tv,
+  CreditCard, Key, Webhook,
+};
 
 interface SidebarProps {
   staff: {
@@ -27,24 +39,11 @@ interface SidebarProps {
     role: string;
     organization: {
       name: string;
+      settings?: Record<string, unknown> | null;
+      business_type?: string | null;
     };
   };
 }
-
-const adminNav = [
-  { href: '/admin/offices', label: 'Offices', icon: Building2 },
-  { href: '/admin/departments', label: 'Departments', icon: Layers },
-  { href: '/admin/services', label: 'Services', icon: Grid3X3 },
-  { href: '/admin/desks', label: 'Desks', icon: Monitor },
-  { href: '/admin/staff', label: 'Staff', icon: Users },
-  { href: '/admin/priorities', label: 'Priorities', icon: Star },
-  { href: '/admin/virtual-codes', label: 'Virtual Codes', icon: QrCode },
-  { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/admin/customers', label: 'Customers', icon: Contact },
-  { href: '/admin/kiosk', label: 'Kiosk', icon: Tablet },
-  { href: '/admin/displays', label: 'Displays', icon: Tv },
-  { href: '/admin/settings', label: 'Settings', icon: Cog },
-];
 
 const deskNav = [
   { href: '/desk', label: 'My Desk', icon: TicketCheck },
@@ -53,7 +52,22 @@ const deskNav = [
 export function Sidebar({ staff }: SidebarProps) {
   const pathname = usePathname();
   const isAdmin = staff.role === 'admin' || staff.role === 'manager';
-  const navItems = isAdmin ? [...adminNav, ...deskNav] : deskNav;
+
+  // Build dynamic nav based on business type and terminology
+  const orgSettings = (staff.organization?.settings as Record<string, unknown>) || null;
+  const dynamicNav = buildSidebarNav(orgSettings);
+
+  // Group nav items by section
+  const sections = isAdmin
+    ? dynamicNav.reduce(
+        (acc, item) => {
+          if (!acc[item.section]) acc[item.section] = [];
+          acc[item.section].push(item);
+          return acc;
+        },
+        {} as Record<string, typeof dynamicNav>
+      )
+    : {};
 
   return (
     <aside className="flex w-64 flex-col border-r border-border bg-card">
@@ -75,25 +89,97 @@ export function Sidebar({ staff }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
-          const isActive = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        {isAdmin && (
+          <>
+            {Object.entries(sections).map(([section, items]) => (
+              <div key={section} className="mb-4">
+                <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  {section}
+                </p>
+                <div className="space-y-0.5">
+                  {items.map((item) => {
+                    const Icon = iconMap[item.iconName] || Building2;
+                    const isActive = pathname.startsWith(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* Desk nav */}
+            <div className="mb-4">
+              <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                OPERATIONS
+              </p>
+              <div className="space-y-0.5">
+                {deskNav.map((item) => {
+                  const isActive = pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        {!isAdmin &&
+          deskNav.map((item) => {
+            const isActive = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            );
+          })}
       </nav>
+
+      {/* Super Admin Link */}
+      {isAdmin && (
+        <div className="border-t border-border px-3 py-2">
+          <Link
+            href="/platform-admin"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <Shield className="h-4 w-4" />
+            Super Admin
+          </Link>
+        </div>
+      )}
 
       {/* User */}
       <div className="border-t border-border p-4">

@@ -16,8 +16,32 @@ import {
   type PriorityAlertEvent,
 } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
+import { getPlanLimits, type PlanId } from '@/lib/plan-limits';
+import { sendTicketCalledEmail } from '@/lib/email';
+import { dispatchWebhook, type WebhookEvent } from '@/lib/webhooks';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
+
+const STATUS_TO_WEBHOOK: Record<string, WebhookEvent> = {
+  called: 'ticket.called',
+  serving: 'ticket.serving',
+  served: 'ticket.served',
+  no_show: 'ticket.no_show',
+  cancelled: 'ticket.cancelled',
+  transferred: 'ticket.transferred',
+};
+
+async function dispatchTicketWebhook(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ticket: { office_id: string; status: string; [key: string]: any }
+) {
+  const event = STATUS_TO_WEBHOOK[ticket.status];
+  if (!event) return;
+  const { organizationId } = await getOfficeContext(supabase, ticket.office_id);
+  if (organizationId) {
+    dispatchWebhook(organizationId, event, ticket).catch(() => {});
+  }
+}
 
 async function syncLiveActivity(ticketId: string, source: string): Promise<boolean> {
   const synced = await sendLiveActivityUpdateForTicket(ticketId).catch((err) => {
@@ -192,6 +216,28 @@ export async function createTicket(
 ) {
   const supabase = await createClient();
 
+  // Check visit limit before creating ticket
+  const { data: officeData } = await supabase
+    .from('offices')
+    .select('organization_id')
+    .eq('id', officeId)
+    .single();
+
+  if (officeData?.organization_id) {
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('plan_id, monthly_visit_count')
+      .eq('id', officeData.organization_id)
+      .single();
+
+    if (org) {
+      const limits = getPlanLimits(org.plan_id as PlanId);
+      if (limits.customersPerMonth !== Infinity && org.monthly_visit_count >= limits.customersPerMonth) {
+        return { error: 'Monthly visit limit reached. Please upgrade your plan.' };
+      }
+    }
+  }
+
   // Generate daily ticket number via RPC
   const { data: seqData, error: seqError } = await supabase.rpc(
     'generate_daily_ticket_number',
@@ -229,6 +275,11 @@ export async function createTicket(
 
   if (error) {
     return { error: error.message };
+  }
+
+  // Dispatch webhook
+  if (officeData?.organization_id && ticket) {
+    dispatchWebhook(officeData.organization_id, 'ticket.created', ticket).catch(() => {});
   }
 
   revalidatePath('/desk');
@@ -322,6 +373,19 @@ export async function callNextTicket(deskId: string, staffId: string) {
     });
     smsSent = smsResult.sent;
 
+    // Email notification (if customer has email in customer_data)
+    const customerEmail = ticket.customer_data?.email as string | undefined;
+    const customerName = (ticket.customer_data?.name as string) || 'Customer';
+    if (customerEmail) {
+      const { officeName } = await getOfficeContext(supabase, ticket.office_id);
+      sendTicketCalledEmail(customerEmail, {
+        customerName,
+        ticketNumber: ticket.ticket_number,
+        deskName,
+        officeName,
+      }).catch((err) => console.error('[CallNext] Email notification error:', err));
+    }
+
     await syncLiveActivityAfterAlert(ticketId, 'CallNext');
 
     // Notify all other waiting tickets — their position shifted
@@ -331,6 +395,14 @@ export async function callNextTicket(deskId: string, staffId: string) {
     notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[CallNext] notifyWaitingAndroidTickets error:', err)
     );
+  }
+
+  // Dispatch webhook for ticket called
+  if (ticket) {
+    const { organizationId } = await getOfficeContext(supabase, ticket.office_id);
+    if (organizationId) {
+      dispatchWebhook(organizationId, 'ticket.called', ticket).catch(() => {});
+    }
   }
 
   revalidatePath('/desk');
@@ -405,6 +477,8 @@ export async function startServing(ticketId: string, staffId: string) {
 
   await syncLiveActivity(ticketId, 'StartServing');
 
+  if (ticket) dispatchTicketWebhook(supabase, ticket);
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -473,6 +547,8 @@ export async function markServed(ticketId: string, staffId: string) {
 
   await syncLiveActivity(ticketId, 'MarkServed');
 
+  if (ticket) dispatchTicketWebhook(supabase, ticket);
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -540,6 +616,8 @@ export async function markNoShow(ticketId: string, staffId: string) {
   }
 
   await syncLiveActivity(ticketId, 'MarkNoShow');
+
+  if (ticket) dispatchTicketWebhook(supabase, ticket);
 
   revalidatePath('/desk');
   return { data: ticket };

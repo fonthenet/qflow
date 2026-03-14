@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 const footerLinks = {
   Product: [
+    { href: '/', label: 'Overview' },
     { href: '/solutions', label: 'Solutions' },
     { href: '/pricing', label: 'Pricing' },
     { href: '/how-it-works', label: 'How It Works' },
@@ -18,39 +19,31 @@ const footerLinks = {
     { href: '/login', label: 'Log in' },
     { href: '/register', label: 'Sign up' },
   ],
+  Trust: [
+    { href: '/privacy', label: 'Privacy' },
+    { href: '/terms', label: 'Terms' },
+  ],
 };
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-muted/30">
-      <div className="mx-auto max-w-7xl px-6 py-16">
-        <div className="grid gap-12 md:grid-cols-4">
-          {/* Brand */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-black text-primary-foreground">
-                Q
-              </div>
-              <span className="text-lg font-bold">
-                Queue<span className="text-primary">Flow</span>
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Smart queue management for modern businesses. Free push notifications, no SMS fees.
+    <footer className="border-t border-gray-100 bg-white">
+      <div className="mx-auto max-w-6xl px-6 py-14">
+        <div className="grid gap-10 md:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
+          <div className="space-y-3">
+            <span className="text-[15px] font-semibold text-gray-900">QueueFlow</span>
+            <p className="max-w-xs text-[13px] leading-relaxed text-gray-500">
+              A service-operations platform for businesses managing arrivals, visits, and live customer updates.
             </p>
           </div>
 
-          {/* Link Columns */}
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <h3 className="mb-4 text-sm font-semibold text-foreground">{category}</h3>
-              <ul className="space-y-3">
+              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">{category}</h3>
+              <ul className="space-y-2">
                 {links.map((link) => (
                   <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    >
+                    <Link href={link.href} className="text-[13px] text-gray-500 transition-colors hover:text-gray-900">
                       {link.label}
                     </Link>
                   </li>
@@ -60,17 +53,11 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 md:flex-row">
-          <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} QueueFlow. All rights reserved.
-          </p>
+        <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-gray-100 pt-6 md:flex-row">
+          <p className="text-[12px] text-gray-400">&copy; {new Date().getFullYear()} QueueFlow. All rights reserved.</p>
           <div className="flex gap-6">
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Privacy Policy
-            </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Terms of Service
-            </Link>
+            <Link href="/privacy" className="text-[12px] text-gray-400 hover:text-gray-600">Privacy Policy</Link>
+            <Link href="/terms" className="text-[12px] text-gray-400 hover:text-gray-600">Terms of Service</Link>
           </div>
         </div>
       </div>

@@ -1,351 +1,345 @@
 import Link from 'next/link';
-import {
-  QrCode, Bell, Monitor, Clock, Users, Shield,
-  Smartphone, BarChart3, Zap, Globe, Tablet, Calendar,
-  ArrowRight, Check, ChevronRight,
-} from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
-const features = [
-  {
-    icon: QrCode,
-    title: 'QR Code Check-In',
-    description: 'Customers scan a QR code to join your queue — no app download, no signup required.',
-  },
-  {
-    icon: Bell,
-    title: 'Free Push Notifications',
-    description: 'Unlimited push notifications on all plans. No SMS fees, no WhatsApp charges. Ever.',
-  },
-  {
-    icon: Monitor,
-    title: 'TV Display Boards',
-    description: 'Show real-time queue status on lobby screens with 3 layout options and dark/light themes.',
-  },
-  {
-    icon: Clock,
-    title: 'Real-Time Tracking',
-    description: 'Customers see their exact position and estimated wait time, updated live on their phone.',
-  },
-  {
-    icon: Users,
-    title: 'Multi-Department',
-    description: 'Run separate queues for different departments — each with its own numbering and counters.',
-  },
-  {
-    icon: Shield,
-    title: 'Priority Queue',
-    description: 'Configurable priority categories for elderly, disabled, VIP, or any custom group.',
-  },
-  {
-    icon: Tablet,
-    title: 'Self-Service Kiosk',
-    description: 'Touch-screen kiosk mode for lobbies — customers select their service and get a ticket.',
-  },
-  {
-    icon: Calendar,
-    title: 'Appointments',
-    description: 'Online booking with walk-in/appointment hybrid mode — automated interleaving.',
-  },
-  {
-    icon: Globe,
-    title: 'Virtual Queue',
-    description: 'Customers join remotely from anywhere — wait at home and arrive when it\'s their turn.',
-  },
-];
+/* ---------- mock UI ---------- */
 
-const industries = [
-  { name: 'Restaurants', slug: 'restaurants', icon: '🍽️' },
-  { name: 'Clinics', slug: 'clinics', icon: '🏥' },
-  { name: 'Retail', slug: 'retail', icon: '🛍️' },
-  { name: 'Government', slug: 'government', icon: '🏛️' },
-  { name: 'Banks', slug: 'banks', icon: '🏦' },
-  { name: 'Hotels', slug: 'hotels', icon: '🏨' },
-  { name: 'Barbershops', slug: 'barbershops', icon: '💈' },
-  { name: 'Pharmacies', slug: 'pharmacies', icon: '💊' },
-];
+function QueueCard() {
+  return (
+    <div className="w-full max-w-[340px] overflow-hidden rounded-2xl bg-white shadow-[0_4px_40px_rgba(0,0,0,0.08)] ring-1 ring-gray-950/5">
+      <div className="px-5 pb-1 pt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">Live queue</p>
+            <p className="mt-0.5 text-[15px] font-semibold text-gray-900">Downtown Clinic</p>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-600">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Live
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 px-5">
+        {[
+          { name: 'Sarah M.', service: 'General Consult', badge: 'Now serving', accent: true },
+          { name: 'James K.', service: 'Lab Work', badge: '#2', accent: false },
+          { name: 'Amira L.', service: 'Prescription', badge: '#3', accent: false },
+        ].map((v, i) => (
+          <div key={v.name} className={`flex items-center justify-between py-3 ${i > 0 ? 'border-t border-gray-100' : ''}`}>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${v.accent ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
+                {v.name.split(' ').map(n => n[0]).join('')}
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-gray-900">{v.name}</p>
+                <p className="text-[11px] text-gray-400">{v.service}</p>
+              </div>
+            </div>
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${v.accent ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
+              {v.badge}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 border-t border-gray-100 px-5 py-3">
+        <div className="flex items-center justify-between text-[11px] text-gray-400">
+          <span>Avg wait: <span className="font-medium text-gray-600">8 min</span></span>
+          <span>3 in queue</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-const steps = [
-  { number: '01', title: 'Sign Up in 2 Minutes', description: 'Create your account, choose your industry template, and your queue system is ready.' },
-  { number: '02', title: 'Share Your QR Code', description: 'Print or display the QR code. Customers scan to join — no app needed.' },
-  { number: '03', title: 'Manage Your Queue', description: 'Call next, serve, track — all from your dashboard. Customers get notified instantly.' },
-];
+function PhoneStatus() {
+  return (
+    <div className="w-full max-w-[220px] overflow-hidden rounded-[2rem] bg-white shadow-[0_8px_40px_rgba(0,0,0,0.1)] ring-1 ring-gray-950/5">
+      <div className="flex items-center justify-center pt-4">
+        <div className="h-5 w-20 rounded-full bg-gray-900" />
+      </div>
+      <div className="px-6 pb-8 pt-6 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
+          <span className="text-xl font-bold text-gray-900">#2</span>
+        </div>
+        <p className="mt-4 text-[17px] font-semibold text-gray-900">You&apos;re next</p>
+        <p className="mt-1 text-[13px] text-gray-500">About 4 min remaining</p>
+        <div className="mx-auto mt-5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+          <div className="h-full w-3/4 rounded-full bg-gray-900" />
+        </div>
+        <p className="mt-4 text-[11px] text-gray-400">General Consultation &middot; Counter 3</p>
+      </div>
+    </div>
+  );
+}
+
+function DashboardPreview() {
+  return (
+    <div className="w-full overflow-hidden rounded-xl bg-white shadow-[0_4px_40px_rgba(0,0,0,0.06)] ring-1 ring-gray-950/5">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="flex gap-1.5">
+          <div className="h-3 w-3 rounded-full bg-gray-200" />
+          <div className="h-3 w-3 rounded-full bg-gray-200" />
+          <div className="h-3 w-3 rounded-full bg-gray-200" />
+        </div>
+        <div className="ml-2 h-5 w-48 rounded bg-gray-100" />
+      </div>
+      <div className="grid grid-cols-[200px_1fr]">
+        <div className="border-r border-gray-100 p-3">
+          {['Queue', 'Visitors', 'Services', 'Analytics', 'Settings'].map((item, i) => (
+            <div
+              key={item}
+              className={`rounded-lg px-3 py-2 text-[12px] font-medium ${i === 0 ? 'bg-gray-900 text-white' : 'text-gray-400'}`}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+        <div className="p-5">
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'In queue', value: '7', change: '+2' },
+              { label: 'Avg wait', value: '11m', change: '-3m' },
+              { label: 'Served today', value: '43', change: '+12' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl bg-gray-50 p-4">
+                <p className="text-2xl font-semibold text-gray-900">{s.value}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="text-[11px] text-gray-400">{s.label}</p>
+                  <span className="text-[10px] font-medium text-emerald-600">{s.change}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex items-center justify-between rounded-xl bg-gray-900 px-4 py-3 text-white">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500">
+                <ArrowRight className="h-3 w-3" />
+              </div>
+              <span className="text-[13px] font-medium">Call next &mdash; Sarah M. &middot; General Consultation</span>
+            </div>
+            <span className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] font-medium text-gray-300">Counter 2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- page ---------- */
 
 export default function HomePage() {
   return (
-    <>
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/10" />
-        <div className="relative mx-auto max-w-7xl px-6 py-24 md:py-32">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
-              <Zap className="h-3.5 w-3.5" />
-              Unlimited free push notifications
-            </div>
-            <h1 className="text-5xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
-              Smart Queue Management for{' '}
-              <span className="bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                Modern Business
-              </span>
-            </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              Customers scan a QR code to join your queue, track their position in real-time, and get notified when it&apos;s their turn. No app download. No SMS fees.
-            </p>
-            <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-              <Link
-                href="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 hover:shadow-xl hover:-translate-y-0.5"
-              >
-                Get Started Free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/how-it-works"
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
-              >
-                See How It Works
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Free forever for up to 50 customers/month. No credit card required.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Social Proof Bar */}
-      <section className="border-y border-border bg-muted/30 py-8">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-            {[
-              { value: '0', label: 'Cost per notification' },
-              { value: '<3 min', label: 'Setup time' },
-              { value: '0', label: 'Apps to download' },
-              { value: '99.9%', label: 'Uptime SLA' },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <p className="text-3xl font-extrabold text-primary">{stat.value}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section className="py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Everything You Need to Manage Queues
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              From QR check-in to TV display boards — a complete queue management platform with zero per-message fees.
-            </p>
-          </div>
-          <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {features.map((feature) => (
-              <div
-                key={feature.title}
-                className="group rounded-2xl border border-border bg-card p-6 transition-all hover:border-primary/30 hover:shadow-lg"
-              >
-                <div className="mb-4 inline-flex rounded-xl bg-primary/10 p-3 text-primary">
-                  <feature.icon className="h-6 w-6" />
-                </div>
-                <h3 className="text-lg font-semibold">{feature.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                  {feature.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works (Brief) */}
-      <section className="border-y border-border bg-muted/20 py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Up and Running in 3 Steps
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              No complex setup. No training needed. Start managing queues in minutes.
-            </p>
-          </div>
-          <div className="mt-16 grid gap-8 md:grid-cols-3">
-            {steps.map((step) => (
-              <div key={step.number} className="relative text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-2xl font-extrabold text-primary-foreground">
-                  {step.number}
-                </div>
-                <h3 className="text-lg font-semibold">{step.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{step.description}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-12 text-center">
-            <Link
-              href="/how-it-works"
-              className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-            >
-              Learn more about how it works
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Industry Solutions */}
-      <section className="py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Built for Every Industry
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              Pre-configured templates for your industry. Choose one and start in seconds.
-            </p>
-          </div>
-          <div className="mt-16 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {industries.map((industry) => (
-              <Link
-                key={industry.slug}
-                href={`/solutions/${industry.slug}`}
-                className="group flex flex-col items-center gap-3 rounded-2xl border border-border bg-card p-6 text-center transition-all hover:border-primary/30 hover:shadow-lg"
-              >
-                <span className="text-4xl">{industry.icon}</span>
-                <span className="text-sm font-semibold group-hover:text-primary transition-colors">
-                  {industry.name}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing Preview */}
-      <section className="border-y border-border bg-muted/20 py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Simple, Transparent Pricing
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              Start free. Upgrade as you grow. All plans include unlimited push notifications.
-            </p>
-          </div>
-          <div className="mt-12 grid gap-6 md:grid-cols-3 lg:grid-cols-5">
-            {[
-              { name: 'Free', price: '$0', desc: '50 customers/mo' },
-              { name: 'Starter', price: '$19', desc: '500 customers/mo' },
-              { name: 'Growth', price: '$49', desc: '2,000 customers/mo', highlight: true },
-              { name: 'Pro', price: '$99', desc: '10,000 customers/mo' },
-              { name: 'Enterprise', price: '$199', desc: 'Unlimited' },
-            ].map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-2xl border p-6 text-center transition-all ${
-                  plan.highlight
-                    ? 'border-primary bg-primary/5 shadow-lg scale-105'
-                    : 'border-border bg-card hover:border-primary/30'
-                }`}
-              >
-                <p className="text-sm font-semibold text-muted-foreground">{plan.name}</p>
-                <p className="mt-2 text-3xl font-extrabold">{plan.price}</p>
-                <p className="mt-1 text-xs text-muted-foreground">/month</p>
-                <p className="mt-3 text-sm text-muted-foreground">{plan.desc}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-10 text-center">
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow transition-all hover:bg-primary/90"
-            >
-              View Full Pricing
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Why QueueFlow vs SMS */}
-      <section className="py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-3xl">
-            <div className="text-center">
-              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                Why Pay for SMS When Push Is Free?
-              </h2>
-              <p className="mt-4 text-lg text-muted-foreground">
-                Other queue systems charge $0.08-$0.15 per SMS. With QueueFlow, every notification is free.
+    <div className="bg-white">
+      {/* Hero */}
+      <section className="relative overflow-hidden pb-16 pt-20 md:pb-24 md:pt-28">
+        {/* clean white — no gradient */}
+        <div className="relative mx-auto max-w-6xl px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20">
+            <div>
+              <h1 className="text-[clamp(2.2rem,5vw,3.8rem)] font-bold leading-[1.08] tracking-[-0.04em] text-gray-900">
+                Stop losing customers{' '}
+                <br className="hidden sm:block" />
+                to bad wait experiences.
+              </h1>
+              <p className="mt-5 max-w-[440px] text-[16px] leading-7 text-gray-600">
+                QueueFlow replaces paper sign-ins and guesswork with a live service flow. Visitors join from their phone, track their place, and get called when ready.
               </p>
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-6 py-3 text-[14px] font-semibold text-white shadow-sm transition hover:bg-gray-800"
+                >
+                  Start free
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="/how-it-works"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-5 py-3 text-[14px] font-medium text-gray-700 transition hover:bg-gray-50"
+                >
+                  See how it works
+                </Link>
+              </div>
+              <div className="mt-10 flex flex-wrap gap-5 text-[13px] text-gray-500">
+                <span>No app download</span>
+                <span className="text-gray-300">·</span>
+                <span>Free forever plan</span>
+                <span className="text-gray-300">·</span>
+                <span>Setup in 3 minutes</span>
+              </div>
             </div>
-            <div className="mt-12 overflow-hidden rounded-2xl border border-border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/50">
-                    <th className="px-6 py-4 text-left font-semibold">Feature</th>
-                    <th className="px-6 py-4 text-center font-semibold text-muted-foreground">SMS-Based Systems</th>
-                    <th className="px-6 py-4 text-center font-semibold text-primary">QueueFlow</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['Cost per notification', '$0.08 - $0.15', 'Free'],
-                    ['1,000 notifications/mo', '$80 - $150', '$0'],
-                    ['Notification speed', '5-30 seconds', 'Instant'],
-                    ['Works on locked phone', 'Yes', 'Yes'],
-                    ['Rich content (links, images)', 'Limited', 'Yes'],
-                    ['No phone number required', 'No', 'Yes'],
-                    ['International coverage', 'Extra cost', 'Free worldwide'],
-                  ].map(([feature, sms, qf]) => (
-                    <tr key={feature} className="border-b border-border last:border-0">
-                      <td className="px-6 py-3.5 font-medium">{feature}</td>
-                      <td className="px-6 py-3.5 text-center text-muted-foreground">{sms}</td>
-                      <td className="px-6 py-3.5 text-center font-semibold text-primary">{qf}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="relative flex justify-center lg:justify-end">
+              <div className="relative">
+                <QueueCard />
+                <div className="absolute -bottom-8 -left-12 lg:-left-16">
+                  <PhoneStatus />
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Final CTA */}
-      <section className="bg-primary py-20">
-        <div className="mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-3xl font-bold text-primary-foreground md:text-4xl">
-            Ready to Eliminate Wait Time Frustration?
+      {/* Social proof bar */}
+      <section className="border-y border-gray-100">
+        <div className="mx-auto max-w-6xl px-6 py-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+            {['Clinics', 'Government', 'Banks', 'Retail', 'Hotels', 'Barbershops'].map((item) => (
+              <span key={item} className="text-[13px] font-medium text-gray-400">{item}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Dashboard preview */}
+      <section className="py-20 md:py-28">
+        <div className="mx-auto max-w-5xl px-6">
+          <div className="text-center">
+            <p className="text-[13px] font-semibold uppercase tracking-widest text-gray-400">The operator view</p>
+            <h2 className="mt-2 text-[clamp(1.5rem,3vw,2.2rem)] font-semibold tracking-[-0.03em] text-gray-900">
+              One screen to manage every visit
+            </h2>
+            <p className="mx-auto mt-3 max-w-lg text-[15px] leading-7 text-gray-600">
+              Call the next visitor, route between departments, and track wait times — all from a single dashboard.
+            </p>
+          </div>
+          <div className="mt-14">
+            <DashboardPreview />
+          </div>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="border-y border-gray-100">
+        <div className="mx-auto max-w-5xl px-6 py-20 md:py-28">
+          <p className="text-[13px] font-semibold uppercase tracking-widest text-gray-400">How it works</p>
+          <h2 className="mt-2 text-[clamp(1.5rem,3vw,2.2rem)] font-semibold tracking-[-0.03em] text-gray-900">
+            Three steps. No training needed.
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-primary-foreground/80">
-            Join businesses that have transformed their customer experience with smart queue management.
+          <div className="mt-14 grid gap-8 md:grid-cols-3 md:gap-12">
+            {[
+              {
+                n: '01',
+                title: 'They arrive',
+                desc: 'QR code at the door, a link on your site, or a kiosk. No app install. They pick a service and they\u2019re in.',
+              },
+              {
+                n: '02',
+                title: 'They wait \u2014 informed',
+                desc: 'Position in queue, estimated time, live updates. All on their phone. They can leave and come back.',
+              },
+              {
+                n: '03',
+                title: 'You serve',
+                desc: 'Call, route, transfer, complete. One screen for your whole team. Clean records for every visit.',
+              },
+            ].map((item) => (
+              <div key={item.n}>
+                <p className="text-[12px] font-semibold text-gray-400">{item.n}</p>
+                <h3 className="mt-1 text-[17px] font-semibold text-gray-900">{item.title}</h3>
+                <p className="mt-2 text-[14px] leading-6 text-gray-600">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="py-20 md:py-28">
+        <div className="mx-auto max-w-5xl px-6">
+          <div className="max-w-lg">
+            <p className="text-[13px] font-semibold uppercase tracking-widest text-gray-400">What&apos;s included</p>
+            <h2 className="mt-2 text-[clamp(1.5rem,3vw,2.2rem)] font-semibold leading-[1.15] tracking-[-0.025em] text-gray-900">
+              One platform. Not six tools duct-taped together.
+            </h2>
+            <p className="mt-3 text-[15px] leading-7 text-gray-600">
+              Everything from check-in to completion. No add-ons, no per-message fees.
+            </p>
+          </div>
+
+          <div className="mt-10 grid gap-x-12 gap-y-4 sm:grid-cols-2">
+            {[
+              'Walk-ins + appointments in one queue',
+              'Live status pages for visitors',
+              'Push notifications — free, unlimited',
+              'QR code and kiosk check-in',
+              'Desk and department routing',
+              'Multi-location from day one',
+              'TV display boards',
+              'Intake forms before handoff',
+              'Priority rules (VIP, elderly)',
+              'Analytics and export',
+            ].map((f) => (
+              <div key={f} className="flex items-center gap-3 border-b border-gray-100 py-3">
+                <div className="h-1 w-1 shrink-0 rounded-full bg-gray-900" />
+                <span className="text-[14px] text-gray-600">{f}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Industries */}
+      <section className="border-y border-gray-100">
+        <div className="mx-auto max-w-5xl px-6 py-20 md:py-28">
+          <div className="max-w-md">
+            <p className="text-[13px] font-semibold uppercase tracking-widest text-gray-400">Industries</p>
+            <h2 className="mt-2 text-[clamp(1.5rem,3vw,2.2rem)] font-semibold leading-[1.12] tracking-[-0.03em] text-gray-900">
+              If people walk in and wait, this is for you.
+            </h2>
+          </div>
+
+          <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { name: 'Clinics', detail: 'Check-in, triage, multi-department routing' },
+              { name: 'Government', detail: 'Kiosk ticketing, counter displays, priority rules' },
+              { name: 'Banks', detail: 'VIP routing, appointments + walk-ins, analytics' },
+              { name: 'Retail', detail: 'Service desks, returns, browse-while-waiting' },
+              { name: 'Hotels', detail: 'Check-in queue, concierge, spa and restaurant' },
+              { name: 'Barbershops', detail: 'Digital waitlist, stylist selection, push alerts' },
+            ].map((ind) => (
+              <Link
+                key={ind.name}
+                href={`/solutions/${ind.name.toLowerCase()}`}
+                className="group flex items-start justify-between rounded-xl border border-gray-100 p-5 transition-all hover:border-gray-200 hover:shadow-sm"
+              >
+                <div>
+                  <h3 className="text-[15px] font-semibold text-gray-900">{ind.name}</h3>
+                  <p className="mt-1 text-[13px] leading-5 text-gray-600">{ind.detail}</p>
+                </div>
+                <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-gray-900" />
+              </Link>
+            ))}
+          </div>
+
+          <Link href="/solutions" className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-medium text-gray-500 transition hover:text-gray-900">
+            All solutions <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="border-t border-gray-100 py-24 md:py-32">
+        <div className="mx-auto max-w-3xl px-6 text-center">
+          <h2 className="text-[clamp(1.8rem,4vw,2.8rem)] font-bold leading-[1.12] tracking-[-0.03em] text-gray-900">
+            Start with one location.<br />Scale when it works.
+          </h2>
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-7 text-gray-500">
+            Free plan. No credit card. No sales call. Set up your first queue in minutes.
           </p>
-          <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-6 py-3 text-[14px] font-semibold text-white transition hover:bg-gray-800"
             >
-              Get Started Free
+              Create your queue
               <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link
-              href="/contact"
-              className="inline-flex items-center gap-2 rounded-xl border border-primary-foreground/30 px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:bg-primary-foreground/10"
-            >
-              Talk to Sales
+            <Link href="/pricing" className="text-[14px] font-medium text-gray-500 transition hover:text-gray-900">
+              View pricing &rarr;
             </Link>
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-6 text-sm text-primary-foreground/70">
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Free forever plan</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> No credit card</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Setup in 3 minutes</span>
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }

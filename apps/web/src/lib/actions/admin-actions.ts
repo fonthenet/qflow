@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { getPlanLimits, type PlanId } from '@/lib/plan-limits';
 
 // ─── Helper: get org_id from authenticated user ────────────────────────────
 
@@ -244,6 +245,26 @@ export async function deleteDesk(id: string) {
 
 export async function createStaffMember(formData: FormData) {
   const { supabase, orgId } = await getOrgId();
+
+  // Check staff limit
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('plan_id')
+    .eq('id', orgId)
+    .single();
+
+  if (org) {
+    const limits = getPlanLimits(org.plan_id as PlanId);
+    const { count } = await supabase
+      .from('staff')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .eq('is_active', true);
+
+    if (limits.staff !== Infinity && (count || 0) >= limits.staff) {
+      return { error: 'Staff limit reached for your current plan. Please upgrade.' };
+    }
+  }
 
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;

@@ -1,16 +1,22 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+});
+
 export const viewport: Viewport = {
-  themeColor: '#2563eb',
+  themeColor: '#111827',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
 };
 
 export const metadata: Metadata = {
-  title: 'QueueFlow - Smart Queue Management',
-  description: 'Modern queue and ticketing management system for businesses',
+  title: 'QueueFlow | Modern Arrival and Visit Management',
+  description: 'QueueFlow helps service businesses manage arrivals, appointments, walk-ins, and live customer updates from one place.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -37,7 +43,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+      <body className={`${inter.variable} min-h-screen font-sans antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }

@@ -6,13 +6,27 @@ import { redirect } from 'next/navigation';
 export async function login(formData: FormData) {
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data: authData, error } = await supabase.auth.signInWithPassword({
     email: formData.get('email') as string,
     password: formData.get('password') as string,
   });
 
   if (error) {
     return { error: error.message };
+  }
+
+  // Check if onboarding is completed
+  if (authData.user) {
+    const { data: staff } = await supabase
+      .from('staff')
+      .select('organization:organizations(onboarding_completed)')
+      .eq('auth_user_id', authData.user.id)
+      .single();
+
+    const org = staff?.organization as unknown as Record<string, unknown> | null;
+    if (org && !org.onboarding_completed) {
+      redirect('/setup');
+    }
   }
 
   redirect('/admin/offices');
@@ -64,7 +78,7 @@ export async function register(formData: FormData) {
     return { error: orgError.message };
   }
 
-  redirect('/admin/offices');
+  redirect('/setup');
 }
 
 export async function logout() {
