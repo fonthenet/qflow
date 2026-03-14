@@ -80,12 +80,14 @@ function QueueActionPill({
   tone = 'secondary',
   disabled = false,
   loading = false,
+  icon,
 }: {
   label: string;
   onClick: () => void;
   tone?: 'secondary' | 'danger' | 'primary';
   disabled?: boolean;
   loading?: boolean;
+  icon?: React.ReactNode;
 }) {
   const toneClass = {
     secondary: 'border-white/10 bg-white/8 text-white hover:bg-white/12',
@@ -98,9 +100,9 @@ function QueueActionPill({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
     >
-      {loading ? 'Working...' : label}
+      {loading ? 'Working...' : <>{icon}{label}</>}
     </button>
   );
 }
@@ -118,11 +120,9 @@ function WaitingMetric({
 }) {
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
-      <div className={`mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
-        {label}
-      </div>
+      <p className={`mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>{label}</p>
       <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-300">{detail}</p>
+      <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
     </div>
   );
 }
@@ -525,7 +525,7 @@ export function QueueStatus({
             ? `Ticket ${ticket.ticket_number} is no longer active in line.`
             : `Ticket ${ticket.ticket_number} no longer has live updates on this device.`
         }
-        onResume={stopOutcome === 'cleared' ? () => window.location.reload() : undefined}
+        onResume={undefined}
       />
     );
   }
@@ -712,54 +712,58 @@ export function QueueStatus({
           <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-5 pt-5">
             <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
-              <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">{officeName}</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
+              <p className="mt-1 text-sm text-slate-400">{syncLabel}</p>
             </div>
-
             <div className="flex flex-col items-end gap-2">
-              <QueueActionPill
-                label="Refresh"
-                onClick={() => void handleManualRefresh()}
-                tone="primary"
-                disabled={isRefreshing}
-                loading={isRefreshing}
-              />
-              <QueueActionPill
-                label="End"
-                onClick={() => setShowStopDialog(true)}
-                tone="danger"
-                disabled={isStopping}
-              />
+              <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.20em] ${accentTone}`}>
+                {accentLabel}
+              </div>
+              <div className="flex items-center gap-2">
+                <QueueActionPill
+                  icon={<RefreshCw className="h-3.5 w-3.5" />}
+                  label="Refresh"
+                  onClick={() => void handleManualRefresh()}
+                  tone="primary"
+                  disabled={isRefreshing}
+                  loading={isRefreshing}
+                />
+                <QueueActionPill
+                  icon={<XCircle className="h-3.5 w-3.5" />}
+                  label="End"
+                  onClick={() => setShowStopDialog(true)}
+                  tone="danger"
+                  disabled={isStopping}
+                />
+              </div>
             </div>
           </div>
 
           <section className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${accentTone}`}>
-                  {accentLabel}
-                </div>
-                <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
                 <p className="mt-2 truncate text-[42px] font-black leading-[0.94] tracking-[0.10em] text-white sm:text-5xl">
                   {ticket.ticket_number}
                 </p>
-                <p className="mt-2 text-sm font-semibold text-slate-100">{serviceName}</p>
+                <p className="mt-2 text-sm font-medium text-slate-300">{serviceName}</p>
               </div>
 
               <div className="text-right">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Position</p>
                 <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
                 <p className="mt-2 text-sm leading-5 text-cyan-50/70">
-                  {position && position > 1 ? `${position - 1} ahead of you` : 'You are nearly up'}
+                  {position === 1 ? 'Almost there' : position && position <= 3 ? 'You are nearly up' : position ? `${position - 1} ahead of you` : '--'}
                 </p>
               </div>
             </div>
 
             <div className="mt-5">
               <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
-                <span>Queue movement</span>
-                <span>{ticket.status === 'serving' ? 'At the desk' : 'Live'}</span>
+                <span>Queue progress</span>
+                <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-400' : ''}>
+                  {ticket.status === 'serving' ? 'At the desk' : position ? `#${position} in line` : '--'}
+                </span>
               </div>
               <div className="h-3 rounded-full bg-white/8">
                 <div
@@ -768,59 +772,68 @@ export function QueueStatus({
                 />
               </div>
             </div>
+          </section>
 
-            <div className="mt-5 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-3 gap-3">
               <WaitingMetric
                 label="Wait"
                 value={estimatedWait != null ? `${estimatedWait} min` : '--'}
                 detail={estimatedWait != null ? 'Approximate timing' : 'Calculating time'}
-                accentClass="bg-sky-400/15 text-sky-100"
+                accentClass="text-sky-400"
               />
               <WaitingMetric
                 label="Now serving"
                 value={nowServing ?? '--'}
                 detail="Current desk activity"
-                accentClass="bg-emerald-400/15 text-emerald-100"
+                accentClass="text-emerald-400"
               />
               <WaitingMetric
                 label="Alerts"
                 value={alertsEnabled ? 'Ready' : 'Off'}
                 detail={alertsEnabled ? 'Background alerts on' : 'Turn alerts on'}
-                accentClass="bg-amber-300/15 text-amber-100"
+                accentClass="text-amber-400"
               />
-            </div>
-          </section>
+          </div>
 
-          <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 p-5 backdrop-blur">
+          <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 px-5 py-4 backdrop-blur">
             <div className="grid gap-4">
-              <div>
-                <p className="text-[30px] font-semibold tracking-tight text-white">What happens next</p>
-              </div>
-              <JourneyStep
-                icon={<BellRing className="h-4 w-4" />}
-                title="We call your number once it is your turn"
-                detail="The moment the desk calls you, this screen changes instantly and your lock screen updates too."
-              />
-              <JourneyStep
-                icon={<RefreshCw className="h-4 w-4" />}
-                title="Refresh any time if you want reassurance"
-                detail="Use the Refresh button whenever you want an immediate sync, just like a pull-to-refresh check."
-              />
-              <JourneyStep
-                icon={<XCircle className="h-4 w-4" />}
-                title="Leave the queue if plans change"
-                detail="Use End if you need to cancel this ticket and step out of the line completely."
-              />
-
-              {!alertsEnabled ? (
-                <div className="pt-1">
+              <div className="flex items-center justify-between">
+                <p className="text-base font-semibold tracking-tight text-white">What happens next</p>
+                {!alertsEnabled ? (
                   <QueueActionPill
                     label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
                     onClick={() => void handleEnableAlerts()}
                     tone="primary"
                   />
+                ) : null}
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <BellRing className="h-4 w-4 text-slate-200" />
                 </div>
-              ) : null}
+                <div>
+                  <p className="text-sm font-semibold text-white">We will alert you</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">When the desk calls your number, the screen and lock screen update immediately.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <RefreshCw className="h-4 w-4 text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Refresh any time</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use Refresh whenever you want an instant sync, just like pull to refresh.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <XCircle className="h-4 w-4 text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Finish when you are done</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use End to clear this visit once service is complete.</p>
+                </div>
+              </div>
             </div>
           </section>
 

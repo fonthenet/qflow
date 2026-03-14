@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Info, Contact, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import type { Database } from '@/lib/supabase/database.types';
@@ -29,9 +30,9 @@ function calcRemaining(calledAt: string | null) {
 }
 
 function formatSyncLabel(date: Date | null, isRefreshing: boolean) {
-  if (isRefreshing) return 'Refreshing now';
-  if (!date) return 'Waiting for fresh desk sync';
-  return `Updated ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  if (isRefreshing) return 'Refreshing…';
+  if (!date) return `Last update: ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  return `Last update: ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 function QueueActionPill({
@@ -494,10 +495,10 @@ export function YourTurn({
     red: 'bg-white/14 shadow-[0_0_95px_rgba(244,63,94,0.38)]',
   }[phase];
 
-  const countdownBorderClass = {
-    green: 'border-emerald-200/30 text-emerald-50',
-    yellow: 'border-amber-100/25 text-amber-50',
-    red: 'border-rose-100/20 text-rose-50',
+  const countdownCircleClass = {
+    green: 'border-white/30 bg-white/15 text-white',
+    yellow: 'border-white/30 bg-white/15 text-white',
+    red: 'border-white/30 bg-white/15 text-white',
   }[phase];
 
   const message =
@@ -523,27 +524,27 @@ export function YourTurn({
       <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
         <div className="flex items-start justify-between gap-3 text-white">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/65">{officeName}</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight">{serviceName}</h1>
-            <p className="mt-2 text-sm text-white/72">{syncLabel}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.28em] text-white/80">{officeName}</p>
+            <p className="mt-1 text-sm font-medium text-white/65">{serviceName}</p>
+            <p className="mt-0.5 text-xs text-white/50">{syncLabel}</p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <QueueActionPill
-              label="Refresh"
-              onClick={() => {
-                void onRefresh();
-              }}
-              tone="primary"
-              disabled={isRefreshing}
-              loading={isRefreshing}
-            />
-            <QueueActionPill label="End" onClick={onStopTracking} tone="danger" />
-            {recallCount > 0 ? (
-              <div className="rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
-                Recalled {recallCount} {recallCount === 1 ? 'time' : 'times'}
-              </div>
-            ) : null}
+            <div className="rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-white/88">
+              Ticket {ticket.ticket_number}
+            </div>
+            <div className="flex items-center gap-2">
+              <QueueActionPill
+                label="Refresh"
+                onClick={() => {
+                  void onRefresh();
+                }}
+                tone="primary"
+                disabled={isRefreshing}
+                loading={isRefreshing}
+              />
+              <QueueActionPill label="End" onClick={onStopTracking} tone="danger" />
+            </div>
           </div>
         </div>
 
@@ -560,37 +561,53 @@ export function YourTurn({
           </div>
 
           <h2 className="mt-6 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">Go to {deskName}</h2>
-          <p className="mt-3 max-w-[18rem] text-base leading-7 text-white/80">{message}</p>
 
-          <div className="mt-6 rounded-full border border-white/15 bg-white/14 px-5 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white/88">
-            Ticket {ticket.ticket_number}
-          </div>
+          {recallCount > 0 ? (
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Recalled {recallCount} {recallCount === 1 ? 'time' : 'times'}
+            </div>
+          ) : null}
 
-          <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border bg-white/8 backdrop-blur sm:h-44 sm:w-44 ${countdownBorderClass}`}>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.32em] text-white/65">Respond in</p>
-            <p className="mt-3 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
+          <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border backdrop-blur sm:h-44 sm:w-44 ${countdownCircleClass}`}>
+            <p className="mt-2 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
             <p className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
               {countdown === 0 ? 'Expired' : 'Seconds'}
             </p>
           </div>
 
-          <p className="mt-6 max-w-sm text-xl leading-9 text-white/92">
-            Proceed to the desk and keep this screen visible.
-          </p>
+          <p className="mt-6 whitespace-nowrap text-base text-white/80">{message}</p>
 
           <div className="mt-7 w-full rounded-[28px] border border-white/12 bg-black/12 p-5 text-left shadow-[0_25px_90px_rgba(2,6,23,0.2)] backdrop-blur">
-            <div className="space-y-3">
-              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">Where to go</p>
-                <p className="mt-2 text-lg font-semibold text-white">{deskName}</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
+                  <Info className="h-5 w-5 text-white/80" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-white/55">Where to go</p>
+                  <p className="text-base font-semibold text-white">{deskName}</p>
+                </div>
               </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to show</p>
-                <p className="mt-2 text-lg font-semibold text-white">Ticket {ticket.ticket_number}</p>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
+                  <Contact className="h-5 w-5 text-white/80" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-white/55">What to show</p>
+                  <p className="text-base font-semibold text-white">Ticket {ticket.ticket_number}</p>
+                </div>
               </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/8 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/58">What to do now</p>
-                <p className="mt-2 text-lg font-semibold text-white">Walk straight to the desk while the countdown is active.</p>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15">
+                  <Clock className="h-5 w-5 text-white/80" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-white/55">What to do now</p>
+                  <p className="text-base font-semibold text-white">Walk straight to the desk while the countdown is active.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -603,7 +620,7 @@ export function YourTurn({
         </div>
 
         <div className="pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-white/42">QueueFlow</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-white/42">Powered by QueueFlow</p>
         </div>
       </div>
     </div>

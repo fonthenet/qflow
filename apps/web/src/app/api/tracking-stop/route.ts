@@ -109,22 +109,33 @@ export async function POST(request: NextRequest) {
       ]);
     }
 
-    const [pushDelete, apnsDelete, androidDelete] = await Promise.all([
+    const [pushDelete, apnsDelete] = await Promise.all([
       supabase.from('push_subscriptions').delete().eq('ticket_id', ticketId),
       supabase.from('apns_tokens').delete().eq('ticket_id', ticketId),
-      supabase.from('android_tokens').delete().eq('ticket_id', ticketId),
     ]);
+
+    // android_tokens table may not exist yet — delete only if available
+    let androidDeleteError: { message: string } | null = null;
+    try {
+      const { error } = await supabase.from('android_tokens').delete().eq('ticket_id', ticketId);
+      androidDeleteError = error;
+    } catch {
+      // Table doesn't exist yet, safe to ignore.
+    }
 
     const deleteErrors = [
       pushDelete.error,
       apnsDelete.error,
-      androidDelete.error,
     ].filter(Boolean);
 
     if (deleteErrors.length > 0) {
       const message = deleteErrors.map((item) => item?.message).join(' | ');
       console.error('[TrackingStop] Delete error:', message);
       return NextResponse.json({ error: message }, { status: 500 });
+    }
+
+    if (androidDeleteError) {
+      console.warn('[TrackingStop] Android tokens cleanup skipped:', androidDeleteError.message);
     }
 
     return NextResponse.json({

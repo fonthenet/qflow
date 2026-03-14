@@ -117,10 +117,10 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
 
   const renderField = (field: IntakeField) => {
     const hasError = !!errors[field.field_name];
-    const baseClass = `w-full rounded-lg border px-3 py-2.5 text-sm transition-colors outline-none ${
+    const baseClass = `w-full rounded-lg border px-3 py-2.5 text-sm transition-colors outline-none text-white placeholder:text-slate-500 ${
       hasError
-        ? 'border-destructive bg-destructive/5'
-        : 'border-input bg-background focus:border-primary focus:ring-1 focus:ring-primary'
+        ? 'border-red-500/50 bg-red-500/10'
+        : 'border-white/10 bg-white/5 focus:border-white/25 focus:ring-1 focus:ring-white/15'
     }`;
 
     switch (field.field_type) {
@@ -130,16 +130,16 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
         const options = (field.options as string[]) ?? [];
         return (
           <select id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)}>
-            <option value="">Select...</option>
-            {options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+            <option value="" className="bg-slate-900 text-slate-400">Select...</option>
+            {options.map((opt) => <option key={opt} value={opt} className="bg-slate-900 text-white">{opt}</option>)}
           </select>
         );
       }
       case 'checkbox':
         return (
           <label className="flex cursor-pointer items-center gap-2">
-            <input type="checkbox" className="h-4 w-4 rounded accent-primary" checked={!!formData[field.field_name]} onChange={(e) => handleChange(field.field_name, e.target.checked)} />
-            <span className="text-sm">{field.field_label}</span>
+            <input type="checkbox" className="h-4 w-4 rounded accent-cyan-400" checked={!!formData[field.field_name]} onChange={(e) => handleChange(field.field_name, e.target.checked)} />
+            <span className="text-sm text-slate-200">{field.field_label}</span>
           </label>
         );
       case 'date':
@@ -154,24 +154,24 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
   };
 
   return (
-    <div className="rounded-xl bg-card shadow-sm">
+    <div className="rounded-[20px] border border-white/10 bg-white/6 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
       {/* Toggle button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        className="flex w-full items-center justify-between px-5 py-4 text-left"
       >
-        <div className="flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="flex items-center gap-2.5">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          <span className="text-sm font-medium text-foreground">My Information</span>
+          <span className="text-sm font-medium text-white">My Information</span>
           {hasData && !isOpen && (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">Filled</span>
+            <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-xs font-medium text-cyan-200">Filled</span>
           )}
         </div>
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -180,13 +180,13 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
 
       {/* Expandable form */}
       {isOpen && (
-        <div className="border-t border-border px-4 pb-4 pt-3">
+        <div className="border-t border-white/10 px-5 pb-5 pt-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-6">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
             </div>
           ) : fields.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
+            <p className="py-4 text-center text-sm text-slate-400">
               No additional information needed for this service.
             </p>
           ) : (
@@ -194,29 +194,29 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
               {fields.map((field) => (
                 <div key={field.id}>
                   {field.field_type !== 'checkbox' && (
-                    <label htmlFor={field.field_name} className="mb-1 block text-xs font-medium text-muted-foreground">
+                    <label htmlFor={field.field_name} className="mb-1 block text-xs font-medium text-slate-400">
                       {field.field_label}
-                      {field.is_required && <span className="ml-0.5 text-destructive">*</span>}
+                      {field.is_required && <span className="ml-0.5 text-red-400">*</span>}
                     </label>
                   )}
                   {renderField(field)}
                   {errors[field.field_name] && (
-                    <p className="mt-1 text-xs text-destructive">{errors[field.field_name]}</p>
+                    <p className="mt-1 text-xs text-red-400">{errors[field.field_name]}</p>
                   )}
                 </div>
               ))}
 
               {errors._form && (
-                <p className="text-xs text-destructive">{errors._form}</p>
+                <p className="text-xs text-red-400">{errors._form}</p>
               )}
 
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
+                className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
                   saved
-                    ? 'bg-green-600 text-white'
-                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
+                    : 'bg-cyan-500/15 text-cyan-50 border border-cyan-400/20 hover:bg-cyan-500/25'
                 } disabled:opacity-60`}
               >
                 {isSaving ? (

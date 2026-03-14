@@ -40,4 +40,14 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Dark dropdown highlight for queue pages */
+  select option:checked,
+  select option:hover {
+    background-color: rgb(30 41 59) !important; /* slate-800 */
+    color: white !important;
+  }
+  select option {
+    background-color: rgb(15 23 42); /* slate-900 */
+    color: rgb(226 232 240); /* slate-200 */
+  }
 }

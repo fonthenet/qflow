@@ -121,6 +121,11 @@ export function DeskPanel({
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(
     initialCurrentTicket ?? null
   );
+  const [lastAction, setLastAction] = useState<{
+    ticketNumber: string;
+    action: 'served' | 'no_show' | 'cancelled' | 'transferred' | 'reset';
+    time: Date;
+  } | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState('');
   const [transferServiceId, setTransferServiceId] = useState('');
@@ -166,6 +171,7 @@ export function DeskPanel({
 
     const cancelledTicket = queue.cancelled.find((t) => t.id === currentTicket.id);
     if (cancelledTicket) {
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'cancelled', time: new Date() });
       setCurrentTicket(null);
       return;
     }
@@ -228,6 +234,7 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'served', time: new Date() });
       setCurrentTicket(null);
       addToast('Customer marked as served', 'success');
     });
@@ -241,6 +248,7 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'no_show', time: new Date() });
       setCurrentTicket(null);
       addToast('Ticket marked as no-show', 'info');
     });
@@ -294,6 +302,7 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
       setCurrentTicket(null);
       addToast('Ticket reset to queue', 'info');
     });
@@ -311,6 +320,7 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'transferred', time: new Date() });
       setCurrentTicket(null);
       setShowTransferDialog(false);
       setTransferDeptId('');
@@ -379,17 +389,60 @@ export function DeskPanel({
           >
             {isIdle ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="rounded-full bg-muted p-6 mb-4">
-                  <Ticket className="h-10 w-10 text-muted-foreground" />
-                </div>
-                <h2 className="text-xl font-semibold text-foreground mb-1">
-                  No Active Ticket
-                </h2>
-                <p className="text-sm text-muted-foreground mb-6">
-                  {queue.waiting.length > 0
-                    ? `${queue.waiting.length} ticket${queue.waiting.length > 1 ? 's' : ''} waiting in queue`
-                    : 'Queue is empty'}
-                </p>
+                {lastAction ? (
+                  <>
+                    <div className={`rounded-full p-5 mb-4 ${
+                      lastAction.action === 'served' ? 'bg-success/10' :
+                      lastAction.action === 'no_show' ? 'bg-warning/10' :
+                      lastAction.action === 'cancelled' ? 'bg-destructive/10' :
+                      'bg-muted'
+                    }`}>
+                      {lastAction.action === 'served' ? (
+                        <CheckCircle2 className="h-8 w-8 text-success" />
+                      ) : lastAction.action === 'no_show' ? (
+                        <UserX className="h-8 w-8 text-warning" />
+                      ) : lastAction.action === 'cancelled' ? (
+                        <AlertCircle className="h-8 w-8 text-destructive" />
+                      ) : lastAction.action === 'transferred' ? (
+                        <ArrowRightLeft className="h-8 w-8 text-primary" />
+                      ) : (
+                        <Ticket className="h-8 w-8 text-muted-foreground" />
+                      )}
+                    </div>
+                    <h2 className="text-xl font-semibold text-foreground mb-1">
+                      {lastAction.action === 'served' ? 'Visit Complete' :
+                       lastAction.action === 'no_show' ? 'Marked No-Show' :
+                       lastAction.action === 'cancelled' ? 'Customer Left Queue' :
+                       lastAction.action === 'transferred' ? 'Ticket Transferred' :
+                       'Ticket Reset'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Ticket <span className="font-bold text-foreground">{lastAction.ticketNumber}</span>
+                      {lastAction.action === 'served' ? ' was served by you' :
+                       lastAction.action === 'no_show' ? ' did not show up' :
+                       lastAction.action === 'cancelled' ? ' ended their visit' :
+                       lastAction.action === 'transferred' ? ' was transferred' :
+                       ' was sent back to queue'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-6">
+                      {lastAction.time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-full bg-muted p-6 mb-4">
+                      <Ticket className="h-10 w-10 text-muted-foreground" />
+                    </div>
+                    <h2 className="text-xl font-semibold text-foreground mb-1">
+                      No Active Ticket
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      {queue.waiting.length > 0
+                        ? `${queue.waiting.length} ticket${queue.waiting.length > 1 ? 's' : ''} waiting in queue`
+                        : 'Queue is empty'}
+                    </p>
+                  </>
+                )}
                 <button
                   onClick={handleCallNext}
                   disabled={isPending || queue.waiting.length === 0}
@@ -400,7 +453,7 @@ export function DeskPanel({
                   ) : (
                     <PhoneForwarded className="h-6 w-6" />
                   )}
-                  Call Next
+                  {queue.waiting.length > 0 ? `Call Next (${queue.waiting.length})` : 'Call Next'}
                 </button>
               </div>
             ) : (
