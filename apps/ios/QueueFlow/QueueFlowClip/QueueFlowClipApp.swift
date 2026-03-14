@@ -202,29 +202,119 @@ extension Notification.Name {
     static let queueFlowCalled = Notification.Name("queueflow.called")
 }
 
-/// Loading screen shown while waiting for URL.
+/// Branded loading screen — visible in the App Clip card preview.
 struct LoadingView: View {
+    @State private var pulse = false
+
     var body: some View {
         ZStack {
-            Color(red: 0.145, green: 0.388, blue: 0.922) // #2563eb
-                .ignoresSafeArea()
+            // Rich gradient background — visible even in card preview
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.16, blue: 0.36),
+                    Color(red: 0.12, green: 0.24, blue: 0.52),
+                    Color(red: 0.08, green: 0.18, blue: 0.42)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Image(systemName: "person.2.badge.clock")
-                    .font(.system(size: 48))
-                    .foregroundColor(.white)
+            // Top accent glow
+            RadialGradient(
+                colors: [
+                    Color(red: 0.34, green: 0.63, blue: 0.98).opacity(0.28),
+                    .clear
+                ],
+                center: .top,
+                startRadius: 10,
+                endRadius: 300
+            )
+            .ignoresSafeArea()
 
-                Text("QueueFlow")
-                    .font(.title.bold())
-                    .foregroundColor(.white)
+            VStack(spacing: 28) {
+                Spacer()
 
-                ProgressView()
-                    .tint(.white)
+                // Animated ring + icon
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(width: 140, height: 140)
+                        .scaleEffect(pulse ? 1.12 : 1.0)
 
-                Text("Loading your queue...")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.8))
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 100, height: 100)
+
+                    Circle()
+                        .fill(Color.white.opacity(0.16))
+                        .frame(width: 68, height: 68)
+
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                VStack(spacing: 10) {
+                    Text("QueueFlow")
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+
+                    Text("Smart queue management")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.68))
+                }
+
+                // Loading indicator
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(1.1)
+
+                    Text("Connecting to your queue...")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.56))
+                }
+                .padding(.top, 8)
+
+                Spacer()
+
+                // Feature hints
+                HStack(spacing: 20) {
+                    featureChip(icon: "bell.fill", label: "Alerts")
+                    featureChip(icon: "clock.fill", label: "Live wait")
+                    featureChip(icon: "number", label: "Your turn")
+                }
+                .padding(.bottom, 6)
+
+                Text("POWERED BY QUEUEFLOW")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.34))
+                    .tracking(3)
+                    .padding(.bottom, 20)
             }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+
+    private func featureChip(icon: String, label: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white.opacity(0.72))
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                )
+
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.52))
         }
     }
 }
@@ -234,9 +324,9 @@ struct NoActiveTicketView: View {
         ZStack {
             LinearGradient(
                 colors: [
-                    Color(red: 0.03, green: 0.08, blue: 0.16),
-                    Color(red: 0.06, green: 0.12, blue: 0.24),
-                    Color(red: 0.09, green: 0.15, blue: 0.28)
+                    Color(red: 0.08, green: 0.16, blue: 0.36),
+                    Color(red: 0.12, green: 0.24, blue: 0.52),
+                    Color(red: 0.08, green: 0.18, blue: 0.42)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -266,17 +356,17 @@ struct NoActiveTicketView: View {
                         .fill(Color.white.opacity(0.12))
                         .frame(width: 92, height: 92)
 
-                    Image(systemName: "ticket.fill")
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundColor(Color(red: 0.38, green: 0.76, blue: 0.98))
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundColor(Color(red: 0.38, green: 0.82, blue: 0.62))
                 }
 
                 VStack(spacing: 10) {
-                    Text("Visit finished")
+                    Text("Visit complete")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("You're all set. To join again, scan the latest code or open a new queue link.")
+                    Text("Your queue session has ended.\nScan a new QR code to join again.")
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.72))
                         .multilineTextAlignment(.center)
@@ -286,14 +376,14 @@ struct NoActiveTicketView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     noTicketRow(
                         icon: "checkmark.circle.fill",
-                        title: "Current visit closed",
-                        detail: "Your previous ticket is no longer active on this device."
+                        title: "Session closed",
+                        detail: "Your ticket is no longer active."
                     )
 
                     noTicketRow(
-                        icon: "link",
+                        icon: "qrcode.viewfinder",
                         title: "Join again anytime",
-                        detail: "Scan again or open a new queue link whenever you need another visit."
+                        detail: "Scan the QR code at any location to get a new ticket."
                     )
                 }
                 .padding(20)
@@ -309,10 +399,10 @@ struct NoActiveTicketView: View {
 
                 Spacer()
 
-                Text("Powered by QueueFlow")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.40))
-                    .tracking(4)
+                Text("POWERED BY QUEUEFLOW")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.34))
+                    .tracking(3)
                     .padding(.bottom, 18)
             }
         }
