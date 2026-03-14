@@ -25,6 +25,10 @@ data class QueueLiveUpdatePayload(
     val estimatedWait: Int?,
     val nowServing: String?,
     val deskName: String?,
+    val officeName: String?,
+    val departmentName: String?,
+    val serviceName: String?,
+    val servingStartedAt: String?,
     val recallCount: Int,
     val status: String?,
     val silent: Boolean
@@ -33,7 +37,7 @@ data class QueueLiveUpdatePayload(
         fun fromMap(data: Map<String, String>): QueueLiveUpdatePayload {
             return QueueLiveUpdatePayload(
                 type = data["type"].orEmpty().ifBlank { "position_update" },
-                title = data["title"].orEmpty().ifBlank { "QueueFlow" },
+                title = data["title"].orEmpty().ifBlank { "Current visit" },
                 body = data["body"].orEmpty(),
                 ticketId = data["ticketId"].orEmpty(),
                 ticketNumber = data["ticketNumber"],
@@ -43,6 +47,10 @@ data class QueueLiveUpdatePayload(
                 estimatedWait = data["estimatedWait"]?.toIntOrNull(),
                 nowServing = data["nowServing"]?.takeIf { it.isNotBlank() },
                 deskName = data["deskName"]?.takeIf { it.isNotBlank() },
+                officeName = data["officeName"]?.takeIf { it.isNotBlank() },
+                departmentName = data["departmentName"]?.takeIf { it.isNotBlank() },
+                serviceName = data["serviceName"]?.takeIf { it.isNotBlank() },
+                servingStartedAt = data["servingStartedAt"]?.takeIf { it.isNotBlank() },
                 recallCount = data["recallCount"]?.toIntOrNull() ?: 0,
                 status = data["status"],
                 silent = data["silent"] == "1"
@@ -52,7 +60,7 @@ data class QueueLiveUpdatePayload(
         fun fromJson(json: org.json.JSONObject): QueueLiveUpdatePayload {
             return QueueLiveUpdatePayload(
                 type = json.optString("type", "position_update"),
-                title = json.optString("title", "QueueFlow"),
+                title = json.optString("title", "Current visit"),
                 body = json.optString("body"),
                 ticketId = json.optString("ticketId"),
                 ticketNumber = json.optString("ticketNumber").takeIf { it.isNotBlank() },
@@ -62,6 +70,10 @@ data class QueueLiveUpdatePayload(
                 estimatedWait = json.optInt("estimatedWait").takeIf { json.has("estimatedWait") },
                 nowServing = json.optString("nowServing").takeIf { it.isNotBlank() },
                 deskName = json.optString("deskName").takeIf { it.isNotBlank() },
+                officeName = json.optString("officeName").takeIf { it.isNotBlank() },
+                departmentName = json.optString("departmentName").takeIf { it.isNotBlank() },
+                serviceName = json.optString("serviceName").takeIf { it.isNotBlank() },
+                servingStartedAt = json.optString("servingStartedAt").takeIf { it.isNotBlank() },
                 recallCount = json.optInt("recallCount", 0),
                 status = json.optString("status").takeIf { it.isNotBlank() },
                 silent = json.optBoolean("silent", false)
@@ -151,7 +163,7 @@ object QueueLiveUpdateNotifier {
                 NotificationCompat.BigTextStyle()
                     .bigText(alertBody(payload))
                     .setBigContentTitle(alertTitle(payload))
-                    .setSummaryText(payload.ticketNumber?.let { "Ticket $it" } ?: "QueueFlow")
+                    .setSummaryText(payload.ticketNumber?.let { "Ticket $it" } ?: (payload.serviceName ?: payload.officeName ?: "Current visit"))
             )
             .setContentIntent(buildOpenIntent(context, payload))
             .setCategory(if (payload.type == "buzz") NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_CALL)
@@ -259,6 +271,14 @@ object QueueLiveUpdateNotifier {
                 .setWhen(System.currentTimeMillis() + 60_000)
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
+        } else if (payload.type == "serving") {
+            parseEpochMillis(payload.servingStartedAt)?.let { startedAt ->
+                builder
+                    .setShowWhen(true)
+                    .setWhen(startedAt)
+                    .setUsesChronometer(true)
+                    .setChronometerCountDown(false)
+            }
         }
 
         shortCriticalText(payload)?.let { builder.setShortCriticalText(it) }
@@ -269,8 +289,8 @@ object QueueLiveUpdateNotifier {
         return when (payload.type) {
             "called" -> "Go to ${payload.deskName ?: "your desk"}"
             "recall" -> "Return to ${payload.deskName ?: "your desk"}"
-            "serving" -> "You are being served"
-            else -> payload.ticketNumber?.let { "QueueFlow • Ticket $it" } ?: "QueueFlow"
+            "serving" -> payload.serviceName ?: "With staff now"
+            else -> payload.serviceName ?: payload.departmentName ?: payload.officeName ?: payload.ticketNumber?.let { "Ticket $it" } ?: "Current visit"
         }
     }
 
@@ -282,7 +302,11 @@ object QueueLiveUpdateNotifier {
                 ?: "Staff is waiting for you right now."
             "serving" -> payload.deskName?.let { "At $it" } ?: "A staff member is helping you."
             else -> buildString {
-                if (payload.position != null) append("#${payload.position} in line")
+                payload.officeName?.let { append(it) }
+                if (payload.position != null) {
+                    if (isNotEmpty()) append(" • ")
+                    append("#${payload.position} in line")
+                }
                 if (payload.estimatedWait != null) {
                     if (isNotEmpty()) append(" • ")
                     append("~${payload.estimatedWait} min")
@@ -299,14 +323,14 @@ object QueueLiveUpdateNotifier {
     private fun liveSubtext(payload: QueueLiveUpdatePayload): String? {
         return when (payload.type) {
             "called", "recall" -> payload.ticketNumber?.let { "Ticket $it" }
-            "serving" -> payload.ticketNumber?.let { "Ticket $it" }
-            else -> payload.status?.replaceFirstChar { it.uppercase() }
+            "serving" -> listOf(payload.officeName, payload.ticketNumber?.let { "Ticket $it" }).filterNotNull().joinToString(" • ").ifBlank { null }
+            else -> payload.departmentName ?: payload.status?.replaceFirstChar { it.uppercase() }
         }
     }
 
     private fun alertTitle(payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "buzz" -> "Buzz from QueueFlow"
+            "buzz" -> "Buzz alert"
             "recall" -> "Reminder: your turn"
             else -> "It's your turn"
         }
@@ -384,5 +408,12 @@ object QueueLiveUpdateNotifier {
 
     private fun alertNotificationId(ticketId: String, type: String): Int {
         return 2_000_000 + ((ticketId + type).hashCode().absoluteValue % 900000)
+    }
+
+    private fun parseEpochMillis(rawDate: String?): Long? {
+        if (rawDate.isNullOrBlank()) return null
+        return runCatching {
+            java.time.Instant.parse(rawDate).toEpochMilli()
+        }.getOrNull()
     }
 }

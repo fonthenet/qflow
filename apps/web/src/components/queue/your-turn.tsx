@@ -507,6 +507,7 @@ export function YourTurn({
       : phase === 'red'
         ? 'Please head over now. Staff is waiting for you.'
         : 'Show this screen if staff asks for your number.';
+  const bellShouldRipple = countdown > 0;
 
   return (
     <div className={`relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-b ${backgroundClass}`}>
@@ -550,8 +551,8 @@ export function YourTurn({
 
         <div className="mt-4 flex flex-1 flex-col items-center justify-center text-center text-white">
           <div className="relative flex h-32 w-32 items-center justify-center sm:h-36 sm:w-36">
-            <div className={`absolute inset-0 rounded-full ${ringClass} ${phase === 'red' ? 'animate-pulse' : ''}`} />
-            <div className="absolute inset-4 animate-ping rounded-full bg-white/12 [animation-duration:2.4s]" />
+            <div className={`absolute inset-0 rounded-full ${ringClass} ${bellShouldRipple && phase === 'red' ? 'animate-pulse' : ''}`} />
+            <div className={`absolute inset-4 rounded-full bg-white/12 ${bellShouldRipple ? 'animate-ping [animation-duration:2.4s]' : ''}`} />
             <div className="absolute inset-9 rounded-full bg-white/18" />
             <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white/22 shadow-[0_16px_50px_rgba(15,23,42,0.2)] sm:h-24 sm:w-24">
               <svg className="h-11 w-11 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>

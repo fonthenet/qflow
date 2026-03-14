@@ -81,8 +81,8 @@ struct QueueView: View {
                     case "served":
                         FeedbackView(
                             ticket: ticket,
-                            officeName: ticket.department?.name ?? "Queue",
-                            serviceName: ticket.service?.name ?? "Service",
+                            officeName: visitBusinessName(for: ticket),
+                            serviceName: visitServiceName(for: ticket),
                             onFinish: {
                                 await stopTrackingAndClose()
                             }
@@ -223,6 +223,69 @@ struct QueueView: View {
         }
     }
 
+    private func visitBusinessName(for ticket: Ticket) -> String {
+        ticket.office?.name
+            ?? ticket.department?.name
+            ?? "Current visit"
+    }
+
+    private func visitDepartmentName(for ticket: Ticket) -> String? {
+        guard let departmentName = ticket.department?.name else { return nil }
+        if departmentName == ticket.office?.name {
+            return nil
+        }
+        return departmentName
+    }
+
+    private func visitServiceName(for ticket: Ticket) -> String {
+        ticket.service?.name
+            ?? visitDepartmentName(for: ticket)
+            ?? visitBusinessName(for: ticket)
+    }
+
+    private func visitHeaderSubtitle(for ticket: Ticket, includeSync: Bool = true) -> String {
+        var parts: [String] = []
+        if let departmentName = visitDepartmentName(for: ticket) {
+            parts.append(departmentName)
+        }
+        if includeSync {
+            parts.append(syncLabel)
+        }
+        return parts.joined(separator: " • ")
+    }
+
+    private func servingElapsedText(for ticket: Ticket, now: Date = Date()) -> String {
+        guard
+            let rawStartedAt = ticket.serving_started_at,
+            let startedAt = parseDate(rawStartedAt)
+        else {
+            return "Just started"
+        }
+
+        let elapsed = max(0, Int(now.timeIntervalSince(startedAt)))
+        let hours = elapsed / 3600
+        let minutes = (elapsed % 3600) / 60
+        let seconds = elapsed % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func parseDate(_ value: String) -> Date? {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+
+        let fallbackFormatter = ISO8601DateFormatter()
+        fallbackFormatter.formatOptions = [.withInternetDateTime]
+        return fallbackFormatter.date(from: value)
+    }
+
     private func waitingView(_ ticket: Ticket) -> some View {
         switch previewWaitingVariant ?? waitingScreenVariant {
         case .original:
@@ -261,7 +324,7 @@ struct QueueView: View {
                                     .font(.system(size: 42, weight: .heavy, design: .rounded))
                                     .foregroundStyle(.white)
 
-                                Text(ticket.department?.name ?? "Queue")
+                                Text(visitServiceName(for: ticket))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.white.opacity(0.86))
                             }
@@ -360,8 +423,9 @@ struct QueueView: View {
         let statusText = position == 1
             ? "Almost there"
             : (position != nil && position! <= 3 ? "You are nearly up" : (position != nil ? "\(max(position! - 1, 0)) ahead of you" : "--"))
-        let departmentLabel = ticket.department.map { $0.name.uppercased() } ?? "QUEUE"
-        let serviceLabel = ticket.service?.name ?? ticket.department?.name ?? "Queue"
+        let departmentLabel = visitBusinessName(for: ticket).uppercased()
+        let serviceLabel = visitServiceName(for: ticket)
+        let headerSubtitle = visitHeaderSubtitle(for: ticket)
         let accentLabel = ticket.status == "serving" ? "NOW AT DESK" : "WAITING IN LINE"
         let accentTextColor = ticket.status == "serving"
             ? Color(red: 0.78, green: 0.94, blue: 1.0)
@@ -419,7 +483,7 @@ struct QueueView: View {
                                 .tracking(-0.5)
                                 .lineLimit(3)
 
-                            Text(syncLabel)
+                            Text(headerSubtitle)
                                 .font(.system(size: 14, weight: .regular, design: .rounded))
                                 .foregroundStyle(Color.white.opacity(0.58))
                         }
@@ -635,9 +699,10 @@ struct QueueView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
                     actionHeader(
-                        title: ticket.service?.name ?? "Queue",
-                        eyebrow: ticket.department?.name ?? "Queue",
-                        subtitle: syncLabel,
+                        title: visitServiceName(for: ticket),
+                        eyebrow: visitBusinessName(for: ticket),
+                        section: visitDepartmentName(for: ticket),
+                        subtitle: visitHeaderSubtitle(for: ticket),
                         accentText: "With staff now"
                     )
 
@@ -669,6 +734,23 @@ struct QueueView: View {
                                 accent: Color(red: 0.49, green: 0.86, blue: 0.63)
                             )
                         }
+
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            HStack(spacing: 12) {
+                                visitMetricCard(
+                                    title: "With staff for",
+                                    value: servingElapsedText(for: ticket, now: context.date),
+                                    detail: "Live visit timer",
+                                    accent: Color(red: 0.98, green: 0.78, blue: 0.31)
+                                )
+                                visitMetricCard(
+                                    title: "Business",
+                                    value: visitBusinessName(for: ticket),
+                                    detail: visitDepartmentName(for: ticket) ?? "Current location",
+                                    accent: Color(red: 0.68, green: 0.76, blue: 0.99)
+                                )
+                            }
+                        }
                     }
                     .padding(24)
                     .background(glassCard(radius: 30))
@@ -680,18 +762,20 @@ struct QueueView: View {
         }
     }
 
-    private func actionHeader(title: String, eyebrow: String, subtitle: String, accentText: String) -> some View {
+    private func actionHeader(title: String, eyebrow: String, section: String?, subtitle: String, accentText: String) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("QueueFlow")
+                Text(eyebrow)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.68))
                     .textCase(.uppercase)
+                    .tracking(4)
 
-                Text(eyebrow)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color(red: 0.43, green: 0.84, blue: 0.99))
-                    .textCase(.uppercase)
+                if let section, !section.isEmpty {
+                    Text(section)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color(red: 0.43, green: 0.84, blue: 0.99))
+                }
 
                 Text(title)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -1286,6 +1370,7 @@ struct QueueView: View {
             status: "waiting",
             desk_id: nil,
             called_at: nil,
+            serving_started_at: nil,
             called_by_staff_id: nil,
             estimated_wait_minutes: 6,
             recall_count: 0,
@@ -1293,6 +1378,7 @@ struct QueueView: View {
                 "name": .string("APNs Test"),
                 "source": .string("preview")
             ],
+            office: Ticket.Office(name: "Alfabits"),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: nil
@@ -1318,6 +1404,7 @@ struct QueueView: View {
             status: "waiting",
             desk_id: nil,
             called_at: nil,
+            serving_started_at: nil,
             called_by_staff_id: nil,
             estimated_wait_minutes: 6,
             recall_count: 0,
@@ -1325,6 +1412,7 @@ struct QueueView: View {
                 "name": .string("APNs Test"),
                 "source": .string("preview")
             ],
+            office: Ticket.Office(name: "Alfabits"),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: nil

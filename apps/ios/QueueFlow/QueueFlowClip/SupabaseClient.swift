@@ -19,7 +19,7 @@ class SupabaseClient {
 
     /// Fetch ticket by QR token from Supabase REST API.
     func fetchTicket(token: String) async throws -> Ticket {
-        let urlString = "\(baseURL)/rest/v1/tickets?qr_token=eq.\(token)&select=*,department:departments(name,code),service:services(name),desk:desks(name,display_name)"
+        let urlString = "\(baseURL)/rest/v1/tickets?qr_token=eq.\(token)&select=*,office:offices(name),department:departments(name,code),service:services(name),desk:desks(name,display_name)"
         guard let url = URL(string: urlString) else {
             throw SupabaseError.invalidURL
         }
@@ -295,15 +295,21 @@ struct Ticket: Codable, Identifiable {
     let status: String
     let desk_id: String?
     let called_at: String?
+    let serving_started_at: String?
     let called_by_staff_id: String?
     let estimated_wait_minutes: Int?
     let recall_count: Int?
     let customer_data: [String: CustomerDataValue]?
 
     // Joined relations
+    let office: Office?
     let department: Department?
     let service: Service?
     let desk: Desk?
+
+    struct Office: Codable {
+        let name: String
+    }
 
     struct Department: Codable {
         let name: String

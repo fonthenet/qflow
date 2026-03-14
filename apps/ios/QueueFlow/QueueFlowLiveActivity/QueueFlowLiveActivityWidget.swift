@@ -40,6 +40,11 @@ struct QueueFlowLiveActivityWidget: Widget {
                                 .font(.headline.weight(.heavy))
                                 .foregroundStyle(statusAccent(for: context.state.status))
                                 .monospacedDigit()
+                        } else if context.state.status == "serving", let startedAt = context.state.servingStartedAt {
+                            Text(startedAt, style: .timer)
+                                .font(.headline.weight(.heavy))
+                                .foregroundStyle(statusAccent(for: context.state.status))
+                                .monospacedDigit()
                         } else if let desk = context.state.deskName {
                             Text(desk)
                                 .font(.headline.weight(.semibold))
@@ -98,20 +103,32 @@ struct QueueFlowLiveActivityWidget: Widget {
                             }
                         }
                     case "serving":
-                        HStack(spacing: 10) {
-                            statusChip(
-                                title: "Desk",
-                                value: context.state.deskName ?? "Assigned",
-                                tint: statusAccent(for: "serving")
-                            )
-                            statusChip(
-                                title: "Status",
-                                value: "With staff",
-                                tint: .white.opacity(0.75)
-                            )
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) {
+                                statusChip(
+                                    title: "Ticket",
+                                    value: context.attributes.ticketNumber,
+                                    tint: statusAccent(for: "serving")
+                                )
+                                statusChip(
+                                    title: "Desk",
+                                    value: context.state.deskName ?? "Assigned",
+                                    tint: statusAccent(for: "serving")
+                                )
+                                islandServingStatusChip(state: context.state)
+                            }
+
+                            HStack(spacing: 10) {
+                                statusChip(
+                                    title: "Ticket",
+                                    value: context.attributes.ticketNumber,
+                                    tint: statusAccent(for: "serving")
+                                )
+                                islandServingStatusChip(state: context.state)
+                            }
                         }
                     default:
-                        Text("Thanks for visiting QueueFlow")
+                        Text("Visit complete")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                     }
@@ -138,10 +155,18 @@ struct QueueFlowLiveActivityWidget: Widget {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(statusAccent(for: context.state.status))
                         .monospacedDigit()
-                } else if let desk = context.state.deskName, context.state.status == "serving" {
-                    Text(String(desk.prefix(3)).uppercased())
+                } else if context.state.status == "serving", let startedAt = context.state.servingStartedAt {
+                    Text(compactServingElapsedText(since: startedAt))
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(statusAccent(for: context.state.status))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                } else if let desk = context.state.deskName, context.state.status == "serving" {
+                    Text(compactDeskLabel(for: desk))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(statusAccent(for: context.state.status))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                 } else {
                     Text(compactTicketLabel(for: context.attributes.ticketNumber))
                         .font(.caption2.weight(.bold))
@@ -339,48 +364,149 @@ private struct QueueLiveActivityView: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 10) {
-                if let range = countdownRange(for: context.state) {
-                    countdownChip(range: range, tint: statusAccent(for: "called"))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    if let range = countdownRange(for: context.state) {
+                        countdownChip(range: range, tint: statusAccent(for: "called"))
+                    }
+
+                    statusChip(
+                        title: "Desk",
+                        value: context.state.deskName ?? "Assigned",
+                        tint: statusAccent(for: "called")
+                    )
+
+                    if context.state.recallCount > 0 {
+                        statusChip(
+                            title: "Recall",
+                            value: "\(context.state.recallCount)x",
+                            tint: statusAccent(for: "waiting")
+                        )
+                    }
                 }
 
-                statusChip(
-                    title: "Desk",
-                    value: context.state.deskName ?? "Assigned",
-                    tint: statusAccent(for: "called")
-                )
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        if let range = countdownRange(for: context.state) {
+                            countdownChip(range: range, tint: statusAccent(for: "called"))
+                        }
 
-                if context.state.recallCount > 0 {
-                    statusChip(
-                        title: "Recall",
-                        value: "\(context.state.recallCount)x",
-                        tint: statusAccent(for: "waiting")
-                    )
+                        statusChip(
+                            title: "Desk",
+                            value: context.state.deskName ?? "Assigned",
+                            tint: statusAccent(for: "called")
+                        )
+                    }
+
+                    if context.state.recallCount > 0 {
+                        statusChip(
+                            title: "Recall",
+                            value: "\(context.state.recallCount)x",
+                            tint: statusAccent(for: "waiting")
+                        )
+                    }
                 }
             }
         }
     }
 
     private var servingSection: some View {
-        HStack(spacing: 10) {
-            liveMetric(
-                title: "Desk",
-                value: context.state.deskName ?? "Assigned",
-                tint: statusAccent(for: "serving")
-            )
-            liveMetric(
-                title: "Status",
-                value: "With staff",
-                tint: .white.opacity(0.82)
-            )
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WITH STAFF")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.56))
+                        .tracking(1.6)
+
+                    Text(context.attributes.ticketNumber)
+                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                }
+
+                Spacer(minLength: 0)
+
+                liveMetric(
+                    title: "Desk",
+                    value: context.state.deskName ?? "Assigned",
+                    tint: statusAccent(for: "serving")
+                )
+                .frame(maxWidth: 132)
+            }
+
+            servingTimerMetric
         }
     }
 
     private var completedSection: some View {
         infoBanner(
             symbol: "checkmark.circle.fill",
-            text: "Thanks for visiting QueueFlow.",
+            text: "Visit complete.",
             tint: statusAccent(for: "served")
+        )
+    }
+
+    private var servingTimerMetric: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("With staff")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.78))
+
+            if let startedAt = context.state.servingStartedAt {
+                Text(startedAt, style: .timer)
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            } else {
+                Text("Just started")
+                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    private var servingStatusChip: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("With staff")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.78))
+
+            if let startedAt = context.state.servingStartedAt {
+                Text(startedAt, style: .timer)
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            } else {
+                Text("Live")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.08))
         )
     }
 
@@ -514,15 +640,52 @@ private func statusChip(title: String, value: String, tint: Color) -> some View 
     )
 }
 
+private func islandServingStatusChip(state: QueueLiveActivityAttributes.ContentState) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        Text("With staff")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.78))
+
+        if let startedAt = state.servingStartedAt {
+            Text(startedAt, style: .timer)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        } else {
+            Text("Live")
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 7)
+    .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color.white.opacity(0.08))
+    )
+}
+
 private func countdownChip(range: ClosedRange<Date>, tint: Color) -> some View {
-    Text(timerInterval: range, countsDown: true)
-        .font(.caption.weight(.heavy))
-        .foregroundStyle(tint)
-        .monospacedDigit()
+    VStack(alignment: .leading, spacing: 2) {
+        Text("Time left")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(tint)
+
+        Text(timerInterval: range, countsDown: true)
+            .font(.caption.weight(.heavy))
+            .foregroundStyle(.white)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+    }
+        .frame(minWidth: 68, idealWidth: 76, maxWidth: 84, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(tint.opacity(0.14))
         )
 }
@@ -533,6 +696,41 @@ private func compactTicketLabel(for ticketNumber: String) -> String {
         return trimmed
     }
     return String(trimmed.suffix(8))
+}
+
+private func compactDeskLabel(for deskName: String) -> String {
+    let trimmed = deskName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return "DESK" }
+
+    if let match = trimmed.range(of: #"\d+"#, options: .regularExpression) {
+        return String(trimmed[match])
+    }
+
+    let letters = trimmed
+        .split(whereSeparator: \.isWhitespace)
+        .compactMap { $0.first }
+
+    if !letters.isEmpty {
+        return String(letters.prefix(2)).uppercased()
+    }
+
+    return String(trimmed.prefix(2)).uppercased()
+}
+
+private func compactServingElapsedText(since startedAt: Date, now: Date = .now) -> String {
+    let elapsed = max(0, Int(now.timeIntervalSince(startedAt)))
+    let hours = elapsed / 3600
+    let minutes = (elapsed % 3600) / 60
+
+    if hours > 0 {
+        return "\(hours)h"
+    }
+
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+
+    return "<1m"
 }
 
 private func compactSymbol(for status: String) -> String {
@@ -580,7 +778,7 @@ private func trailingSummary(for state: QueueLiveActivityAttributes.ContentState
     case "called":
         return state.deskName ?? "Desk pending"
     case "serving":
-        return "With staff"
+        return state.deskName ?? "With staff"
     case "served":
         return "Done"
     default:
@@ -615,6 +813,13 @@ private func queueProgress(for position: Int?) -> Double {
 }
 
 @available(iOSApplicationExtension 17.0, *)
+#Preview("Live Activity Serving", as: .content, using: QueueLiveActivityAttributes.preview) {
+    QueueFlowLiveActivityWidget()
+} contentStates: {
+    QueueLiveActivityAttributes.ContentState.servingPreview
+}
+
+@available(iOSApplicationExtension 17.0, *)
 private extension QueueLiveActivityAttributes {
     static let preview = QueueLiveActivityAttributes(
         ticketId: "preview-ticket-id",
@@ -635,6 +840,7 @@ private extension QueueLiveActivityAttributes.ContentState {
         deskName: nil,
         recallCount: 0,
         calledAt: nil,
+        servingStartedAt: nil,
         updatedAt: .now
     )
 
@@ -646,6 +852,19 @@ private extension QueueLiveActivityAttributes.ContentState {
         deskName: "Counter 1",
         recallCount: 1,
         calledAt: .now,
+        servingStartedAt: nil,
+        updatedAt: .now
+    )
+
+    static let servingPreview = QueueLiveActivityAttributes.ContentState(
+        status: "serving",
+        position: nil,
+        estimatedWaitMinutes: nil,
+        nowServing: nil,
+        deskName: "Counter 1",
+        recallCount: 0,
+        calledAt: nil,
+        servingStartedAt: .now.addingTimeInterval(-185),
         updatedAt: .now
     )
 }

@@ -25,8 +25,8 @@ final class LiveActivityManager {
             ticketId: ticket.id,
             ticketNumber: ticket.ticket_number,
             qrToken: ticket.qr_token,
-            departmentName: ticket.department?.name ?? "Queue",
-            serviceName: ticket.service?.name ?? ""
+            departmentName: ticket.department?.name ?? ticket.office?.name ?? "Current visit",
+            serviceName: ticket.service?.name ?? ticket.department?.name ?? ticket.office?.name ?? ""
         )
 
         let state = QueueLiveActivityAttributes.ContentState(
@@ -37,6 +37,7 @@ final class LiveActivityManager {
             deskName: ticket.deskDisplayName == "—" ? nil : ticket.deskDisplayName,
             recallCount: ticket.recall_count ?? 0,
             calledAt: parseDate(ticket.called_at),
+            servingStartedAt: parseDate(ticket.serving_started_at),
             updatedAt: Date()
         )
 

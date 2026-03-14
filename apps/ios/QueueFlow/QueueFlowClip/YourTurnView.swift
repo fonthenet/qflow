@@ -79,6 +79,7 @@ enum CountdownPhase {
             status: "called",
             desk_id: "desk-1",
             called_at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-12)),
+            serving_started_at: nil,
             called_by_staff_id: "staff-1",
             estimated_wait_minutes: 0,
             recall_count: 1,
@@ -86,6 +87,7 @@ enum CountdownPhase {
                 "full_name": .string("APNs Test"),
                 "phone_number": .string("07 123 456 78")
             ],
+            office: Ticket.Office(name: "Alfabits"),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: Ticket.Desk(name: "Counter 1", display_name: "Counter 1")
@@ -118,6 +120,31 @@ struct YourTurnView: View {
     @State private var soundUnlocked = false
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var businessName: String {
+        ticket.office?.name ?? ticket.department?.name ?? "Current visit"
+    }
+
+    private var departmentName: String? {
+        guard let name = ticket.department?.name else { return nil }
+        return name == ticket.office?.name ? nil : name
+    }
+
+    private var serviceName: String {
+        ticket.service?.name ?? departmentName ?? businessName
+    }
+
+    private var headerSubtitle: String {
+        let updateText = syncLabel.replacingOccurrences(of: "Updated", with: "Last update:")
+        if let departmentName {
+            return "\(departmentName) • \(updateText)"
+        }
+        return updateText
+    }
+
+    private var bellShouldRipple: Bool {
+        countdown > 0
+    }
 
     var body: some View {
         ZStack {
@@ -268,17 +295,18 @@ struct YourTurnView: View {
     private var topBar: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(ticket.department?.code ?? "POSTE")
+                Text(businessName)
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(.white.opacity(0.80))
                     .textCase(.uppercase)
                     .tracking(4)
+                    .lineLimit(2)
 
-                Text(ticket.service?.name ?? ticket.department?.name ?? "Queue")
+                Text(serviceName)
                     .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.92))
 
-                Text(isRefreshing ? "Refreshing…" : syncLabel.replacingOccurrences(of: "Updated", with: "Last update:"))
+                Text(isRefreshing ? "Refreshing…" : headerSubtitle)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.58))
             }
@@ -306,13 +334,13 @@ struct YourTurnView: View {
             Circle()
                 .fill(phase.glowColor.opacity(0.16))
                 .frame(width: 138, height: 138)
-                .scaleEffect(pulseScale)
+                .scaleEffect(bellShouldRipple ? pulseScale : 1.0)
                 .shadow(color: phase.glowColor.opacity(0.26), radius: 28)
 
             Circle()
                 .fill(phase.glowColor.opacity(0.12))
                 .frame(width: 98, height: 98)
-                .scaleEffect(pulseScale * 0.92)
+                .scaleEffect(bellShouldRipple ? pulseScale * 0.92 : 1.0)
 
             Circle()
                 .fill(Color.white.opacity(0.18))
@@ -509,6 +537,17 @@ struct YourTurnView: View {
         withAnimation(.linear(duration: 0.3)) {
             countdown = remaining
             phase = CountdownPhase.from(countdown: remaining)
+        }
+
+        if remaining == 0 {
+            isAnimating = false
+            withAnimation(.easeOut(duration: 0.2)) {
+                pulseScale = 1.0
+            }
+        } else if pulseScale == 1.0 {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                pulseScale = 1.16
+            }
         }
 
         if phase == .red && countdown > 0 {

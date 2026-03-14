@@ -25,6 +25,10 @@ interface AndroidPushPayload {
   estimatedWait?: number | null;
   nowServing?: string | null;
   deskName?: string | null;
+  officeName?: string | null;
+  departmentName?: string | null;
+  serviceName?: string | null;
+  servingStartedAt?: string | null;
   recallCount?: number;
   status?: string;
   silent?: boolean;
@@ -47,6 +51,10 @@ interface AndroidTicketState {
   estimatedWait: number | null;
   nowServing: string | null;
   deskName: string | null;
+  officeName: string | null;
+  departmentName: string | null;
+  serviceName: string | null;
+  servingStartedAt: string | null;
   recallCount: number;
   type: AndroidPushType;
   title: string;
@@ -228,6 +236,10 @@ function serializePayload(payload: AndroidPushPayload): Record<string, string> {
     estimatedWait: payload.estimatedWait != null ? String(payload.estimatedWait) : '',
     nowServing: payload.nowServing ?? '',
     deskName: payload.deskName ?? '',
+    officeName: payload.officeName ?? '',
+    departmentName: payload.departmentName ?? '',
+    serviceName: payload.serviceName ?? '',
+    servingStartedAt: payload.servingStartedAt ?? '',
     recallCount: payload.recallCount != null ? String(payload.recallCount) : '0',
     status: payload.status ?? '',
     silent: payload.silent ? '1' : '0',
@@ -359,7 +371,7 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
 
   const { data: ticket } = await supabase
     .from('tickets')
-    .select('id, ticket_number, qr_token, status, department_id, service_id, office_id, desk_id, estimated_wait_minutes, recall_count')
+    .select('id, ticket_number, qr_token, status, department_id, service_id, office_id, desk_id, estimated_wait_minutes, recall_count, serving_started_at, office:offices(name), department:departments(name), service:services(name)')
     .eq('id', ticketId)
     .single();
 
@@ -388,7 +400,10 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
   ]);
 
   let type: AndroidPushType = 'position_update';
-  let title = `QueueFlow · ${ticket.ticket_number}`;
+  const officeName = ticket.office?.name ?? null;
+  const departmentName = ticket.department?.name ?? null;
+  const serviceName = ticket.service?.name ?? departmentName ?? officeName ?? null;
+  let title = serviceName ?? `Ticket ${ticket.ticket_number}`;
   let body = 'Waiting for your turn';
 
   switch (ticket.status) {
@@ -396,11 +411,12 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
       const position = positionResult.data ?? null;
       const estimatedWait = waitResult.data ?? null;
       const nowServing = servingResult.data?.ticket_number ?? null;
-      title = `QueueFlow · Ticket ${ticket.ticket_number}`;
+      title = serviceName ?? `Ticket ${ticket.ticket_number}`;
       body = [
         position ? `#${position} in line` : null,
         estimatedWait ? `~${estimatedWait} min` : null,
         nowServing ? `Now ${nowServing}` : null,
+        officeName && officeName !== serviceName ? officeName : null,
       ]
         .filter(Boolean)
       .join(' · ') || 'Waiting for your turn';
@@ -415,6 +431,10 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
         estimatedWait,
         nowServing,
         deskName,
+        officeName,
+        departmentName,
+        serviceName,
+        servingStartedAt: ticket.serving_started_at ?? null,
         recallCount: ticket.recall_count ?? 0,
         type,
         title,
@@ -424,12 +444,16 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
     case 'called':
       type = 'called';
       title = `Go to ${deskName ?? 'your desk'}`;
-      body = `Ticket ${ticket.ticket_number} • Proceed now`;
+      body = [serviceName, `Ticket ${ticket.ticket_number}`, 'Proceed now']
+        .filter(Boolean)
+        .join(' • ');
       break;
     case 'serving':
       type = 'serving';
-      title = 'Being Served';
-      body = deskName ? `At ${deskName}` : `Ticket ${ticket.ticket_number}`;
+      title = serviceName ?? 'With staff now';
+      body = [deskName ? `At ${deskName}` : null, officeName]
+        .filter(Boolean)
+        .join(' • ') || `Ticket ${ticket.ticket_number}`;
       break;
     case 'served':
       type = 'served';
@@ -443,8 +467,8 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
       break;
     default:
       type = 'position_update';
-      title = `QueueFlow · ${ticket.ticket_number}`;
-      body = 'Open QueueFlow to continue tracking your visit.';
+      title = serviceName ?? `Ticket ${ticket.ticket_number}`;
+      body = 'Open your visit to continue tracking.';
       break;
   }
 
@@ -458,6 +482,10 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
     estimatedWait: ticket.estimated_wait_minutes ?? null,
     nowServing: servingResult.data?.ticket_number ?? null,
     deskName,
+    officeName,
+    departmentName,
+    serviceName,
+    servingStartedAt: ticket.serving_started_at ?? null,
     recallCount: ticket.recall_count ?? 0,
     type,
     title,
