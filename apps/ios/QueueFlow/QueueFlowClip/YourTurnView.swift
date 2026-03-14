@@ -4,19 +4,43 @@ import AVFoundation
 enum CountdownPhase {
     case green, yellow, red
 
-    var backgroundColor: Color {
+    var startColor: Color {
         switch self {
-        case .green:  return Color(red: 0.13, green: 0.53, blue: 0.35)
-        case .yellow: return Color(red: 0.92, green: 0.69, blue: 0.15)
-        case .red:    return Color(red: 0.70, green: 0.15, blue: 0.15)
+        case .green:  return Color(red: 0.32, green: 0.66, blue: 0.48)
+        case .yellow: return Color(red: 0.96, green: 0.74, blue: 0.24)
+        case .red:    return Color(red: 0.82, green: 0.24, blue: 0.22)
         }
     }
 
-    var backgroundGradientEnd: Color {
+    var midColor: Color {
         switch self {
-        case .green:  return Color(red: 0.08, green: 0.42, blue: 0.28)
-        case .yellow: return Color(red: 0.78, green: 0.55, blue: 0.10)
-        case .red:    return Color(red: 0.55, green: 0.10, blue: 0.10)
+        case .green:  return Color(red: 0.12, green: 0.52, blue: 0.34)
+        case .yellow: return Color(red: 0.83, green: 0.57, blue: 0.12)
+        case .red:    return Color(red: 0.61, green: 0.14, blue: 0.14)
+        }
+    }
+
+    var endColor: Color {
+        switch self {
+        case .green:  return Color(red: 0.04, green: 0.29, blue: 0.18)
+        case .yellow: return Color(red: 0.57, green: 0.36, blue: 0.08)
+        case .red:    return Color(red: 0.35, green: 0.08, blue: 0.09)
+        }
+    }
+
+    var darkPanelColor: Color {
+        switch self {
+        case .green:  return Color(red: 0.05, green: 0.36, blue: 0.21)
+        case .yellow: return Color(red: 0.50, green: 0.33, blue: 0.09)
+        case .red:    return Color(red: 0.36, green: 0.09, blue: 0.09)
+        }
+    }
+
+    var glowColor: Color {
+        switch self {
+        case .green:  return Color(red: 0.49, green: 0.89, blue: 0.67)
+        case .yellow: return Color(red: 0.99, green: 0.84, blue: 0.37)
+        case .red:    return Color(red: 0.98, green: 0.46, blue: 0.46)
         }
     }
 
@@ -25,6 +49,52 @@ enum CountdownPhase {
         if countdown > 10 { return .yellow }
         return .red
     }
+
+    var topGlowColor: Color {
+        switch self {
+        case .green:  return Color(red: 0.80, green: 0.95, blue: 0.86)
+        case .yellow: return Color(red: 1.00, green: 0.92, blue: 0.63)
+        case .red:    return Color(red: 1.00, green: 0.76, blue: 0.72)
+        }
+    }
+
+    var sideGlowColor: Color {
+        switch self {
+        case .green:  return Color(red: 0.10, green: 0.78, blue: 0.53)
+        case .yellow: return Color(red: 0.96, green: 0.62, blue: 0.18)
+        case .red:    return Color(red: 0.90, green: 0.24, blue: 0.28)
+        }
+    }
+}
+
+#Preview("Calling Screen") {
+    YourTurnView(
+        ticket: Ticket(
+            id: "preview-called-ticket",
+            qr_token: "preview-token",
+            office_id: "preview-office",
+            department_id: "preview-department",
+            service_id: "preview-service",
+            ticket_number: "CS-045",
+            status: "called",
+            desk_id: "desk-1",
+            called_at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-12)),
+            called_by_staff_id: "staff-1",
+            estimated_wait_minutes: 0,
+            recall_count: 1,
+            customer_data: [
+                "full_name": .string("APNs Test"),
+                "phone_number": .string("07 123 456 78")
+            ],
+            department: Ticket.Department(name: "Client Services", code: "CS"),
+            service: Ticket.Service(name: "Mail & Packages"),
+            desk: Ticket.Desk(name: "Counter 1", display_name: "Counter 1")
+        ),
+        lastUpdatedAt: .now,
+        isRefreshing: false,
+        onRefresh: {},
+        onStopTracking: {}
+    )
 }
 
 struct YourTurnView: View {
@@ -52,24 +122,64 @@ struct YourTurnView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [phase.backgroundColor, phase.backgroundGradientEnd],
+                colors: [phase.startColor, phase.midColor, phase.endColor],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
             .animation(.easeInOut(duration: 0.7), value: phase)
 
-            if phase == .green {
-                Circle()
-                    .fill(Color.white.opacity(0.04))
-                    .frame(width: 320, height: 320)
-                    .scaleEffect(pulseScale * 1.08)
+            RadialGradient(
+                colors: [phase.topGlowColor.opacity(0.24), .clear],
+                center: .top,
+                startRadius: 20,
+                endRadius: 320
+            )
+            .ignoresSafeArea()
 
-                Circle()
-                    .fill(Color.white.opacity(0.06))
-                    .frame(width: 250, height: 250)
-                    .scaleEffect(pulseScale)
-            }
+            RadialGradient(
+                colors: [phase.sideGlowColor.opacity(0.18), .clear],
+                center: UnitPoint(x: 0.82, y: 0.16),
+                startRadius: 10,
+                endRadius: 240
+            )
+            .ignoresSafeArea()
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.10),
+                    .clear,
+                    Color.black.opacity(0.10)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            LinearGradient(
+                colors: [
+                    .clear,
+                    phase.darkPanelColor.opacity(0.10),
+                    phase.darkPanelColor.opacity(0.24),
+                    phase.darkPanelColor.opacity(0.42),
+                    phase.darkPanelColor.opacity(0.58)
+                ],
+                startPoint: UnitPoint(x: 0.5, y: 0.42),
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    .clear,
+                    phase.darkPanelColor.opacity(0.18),
+                    phase.darkPanelColor.opacity(0.30)
+                ],
+                center: UnitPoint(x: 0.5, y: 0.82),
+                startRadius: 160,
+                endRadius: 520
+            )
+            .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
@@ -83,15 +193,9 @@ struct YourTurnView: View {
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
 
-                        Text("Ticket \(ticket.ticket_number)")
-                            .font(.system(size: 16, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.92))
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule()
-                                    .fill(.white.opacity(0.16))
-                            )
+                        if recallCount > 0 {
+                            recallBadge
+                        }
 
                         countdownCard
 
@@ -122,8 +226,9 @@ struct YourTurnView: View {
                     }
 
                     Text("Powered by QueueFlow")
-                        .font(.caption2)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.42))
+                        .tracking(4)
                         .padding(.top, 8)
                         .padding(.bottom, 16)
                 }
@@ -163,44 +268,34 @@ struct YourTurnView: View {
     private var topBar: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Your turn")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.66))
+                Text(ticket.department?.code ?? "POSTE")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.80))
                     .textCase(.uppercase)
+                    .tracking(4)
 
-                Text(ticket.department?.name ?? "Queue")
-                    .font(.caption.weight(.bold))
-                    .foregroundColor(Color(red: 0.99, green: 0.79, blue: 0.30))
-                    .textCase(.uppercase)
+                Text(ticket.service?.name ?? ticket.department?.name ?? "Queue")
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.92))
 
-                Text(isRefreshing ? "Refreshing now" : syncLabel)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.78))
+                Text(isRefreshing ? "Refreshing…" : syncLabel.replacingOccurrences(of: "Updated", with: "Last update:"))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.58))
             }
 
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 8) {
+                ticketBadge
+
                 HStack(spacing: 8) {
-                    circleActionButton(systemImage: "arrow.clockwise", title: "Refresh", isDisabled: isRefreshing) {
+                    actionPill(title: "Refresh", tone: .primary, isDisabled: isRefreshing) {
                         Task { await onRefresh() }
                     }
 
-                    circleActionButton(systemImage: "xmark", title: "End", isDisabled: false) {
+                    actionPill(title: "End", tone: .secondary, isDisabled: false) {
                         onStopTracking()
                     }
-                }
-
-                if recallCount > 0 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("Recalled \(recallCount)x")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(.white.opacity(0.14)))
                 }
             }
         }
@@ -209,17 +304,22 @@ struct YourTurnView: View {
     private var bellHero: some View {
         ZStack {
             Circle()
-                .fill(Color.white.opacity(phase == .red ? 0.20 : 0.15))
+                .fill(phase.glowColor.opacity(0.16))
                 .frame(width: 138, height: 138)
                 .scaleEffect(pulseScale)
-                .shadow(color: phase == .red ? .red.opacity(0.4) : .clear, radius: 24)
+                .shadow(color: phase.glowColor.opacity(0.26), radius: 28)
 
             Circle()
-                .fill(Color.white.opacity(0.22))
+                .fill(phase.glowColor.opacity(0.12))
                 .frame(width: 98, height: 98)
+                .scaleEffect(pulseScale * 0.92)
+
+            Circle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 68, height: 68)
 
             Image(systemName: "bell.fill")
-                .font(.system(size: 40))
+                .font(.system(size: 34, weight: .bold))
                 .foregroundColor(.white)
                 .rotationEffect(.degrees(isAnimating ? 15 : -15))
                 .animation(
@@ -233,24 +333,29 @@ struct YourTurnView: View {
     private var countdownCard: some View {
         ZStack {
             Circle()
-                .fill(.white)
+                .fill(Color.white.opacity(0.16))
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                )
                 .frame(width: 154, height: 154)
                 .shadow(
-                    color: phase == .red ? .red.opacity(0.42) : .white.opacity(0.26),
-                    radius: phase == .red ? 22 : 10
+                    color: Color.black.opacity(0.12),
+                    radius: 8
                 )
                 .opacity(phase == .red ? redPulseOpacity : 1.0)
 
             VStack(spacing: 3) {
                 Text("\(countdown)")
                     .font(.system(size: 54, weight: .bold, design: .monospaced))
-                    .foregroundColor(phase == .red ? Color.red : Color(red: 0.12, green: 0.20, blue: 0.25))
+                    .foregroundColor(.white)
                     .contentTransition(.numericText())
 
                 Text(countdown > 0 ? "seconds" : "EXPIRED")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(countdown > 0 ? .gray : .red)
+                    .foregroundColor(.white.opacity(0.72))
                     .textCase(.uppercase)
+                    .tracking(4)
             }
         }
     }
@@ -278,7 +383,7 @@ struct YourTurnView: View {
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.white.opacity(0.12))
+                .fill(Color.white.opacity(0.06))
                 .overlay(
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
@@ -291,10 +396,10 @@ struct YourTurnView: View {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.white)
-                .frame(width: 32, height: 32)
+                .frame(width: 40, height: 40)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.white.opacity(0.10))
+                    Circle()
+                        .fill(.white.opacity(0.16))
                 )
 
             VStack(alignment: .leading, spacing: 2) {
@@ -311,24 +416,32 @@ struct YourTurnView: View {
         }
     }
 
-    private func circleActionButton(
-        systemImage: String,
+    private enum ActionPillTone {
+        case primary
+        case secondary
+    }
+
+    private func actionPill(
         title: String,
+        tone: ActionPillTone,
         isDisabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
+        let background = tone == .primary ? Color.white : Color.white.opacity(0.14)
+        let foreground = tone == .primary ? Color.black.opacity(0.88) : Color.white
+
+        return Button(action: action) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundColor(foreground)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 10)
                 .background(
                     Capsule()
-                        .fill(Color.white.opacity(0.12))
+                        .fill(background)
                         .overlay(
                             Capsule()
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                .stroke(Color.white.opacity(tone == .primary ? 0.0 : 0.14), lineWidth: 1)
                         )
                 )
         }
@@ -352,7 +465,7 @@ struct YourTurnView: View {
         if phase == .red {
             return "Staff is waiting for you. Head to the desk immediately."
         }
-        return "Proceed to the desk and keep this screen visible."
+        return "Show this screen if staff asks for your number."
     }
 
     private func setupInitialState() {
@@ -370,7 +483,7 @@ struct YourTurnView: View {
         }
 
         withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-            pulseScale = 1.2
+            pulseScale = 1.16
         }
 
         let notification = UINotificationFeedbackGenerator()
@@ -467,5 +580,41 @@ struct YourTurnView: View {
 
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
+    }
+
+    private var ticketBadge: some View {
+        Text("TICKET \(ticket.ticket_number)")
+            .font(.system(size: 14, weight: .bold, design: .monospaced))
+            .foregroundColor(.white.opacity(0.88))
+            .tracking(2)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(.white.opacity(0.14))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                    )
+            )
+    }
+
+    private var recallBadge: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.counterclockwise")
+            Text("Recalled \(recallCount) \(recallCount == 1 ? "time" : "times")")
+        }
+        .font(.system(size: 14, weight: .semibold, design: .rounded))
+        .foregroundColor(.white)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(Color.black.opacity(0.12))
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 }

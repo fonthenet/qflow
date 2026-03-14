@@ -1,7 +1,16 @@
 import SwiftUI
 
+enum WaitingScreenVariant {
+    case original
+    case webInspired
+}
+
+private let waitingScreenVariant: WaitingScreenVariant = .webInspired
+
 struct QueueView: View {
     let token: String
+    private let previewWaitingVariant: WaitingScreenVariant?
+    private let runningForPreviews: Bool
 
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
@@ -19,9 +28,32 @@ struct QueueView: View {
     @State private var buzzFlashCount = 0
     @State private var showStopConfirmation = false
     @State private var stopErrorMessage: String?
-    @State private var showVisitorInfo = false
+    @State private var showCustomerInfo = false
+    @State private var visitorInfoDraft: [String: CustomerDataValue] = [:]
+    @State private var isSavingVisitorInfo = false
+    @State private var visitorInfoSaveError: String?
+    @FocusState private var focusedVisitorField: String?
 
     @StateObject private var apnsManager = APNsManager.shared
+
+    init(
+        token: String,
+        previewTicket: Ticket? = nil,
+        previewPosition: Int? = nil,
+        previewEstimatedWait: Int? = nil,
+        previewNowServing: String? = nil,
+        previewWaitingVariant: WaitingScreenVariant? = nil
+    ) {
+        self.token = token
+        self.previewWaitingVariant = previewWaitingVariant
+        self.runningForPreviews = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+        _ticket = State(initialValue: previewTicket)
+        _position = State(initialValue: previewPosition)
+        _estimatedWait = State(initialValue: previewEstimatedWait)
+        _nowServing = State(initialValue: previewNowServing)
+        _isLoading = State(initialValue: previewTicket == nil)
+        _lastUpdatedAt = State(initialValue: previewTicket == nil ? nil : Date())
+    }
 
     var body: some View {
         ZStack {
@@ -76,7 +108,12 @@ struct QueueView: View {
                 .allowsHitTesting(false)
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedVisitorField = nil
+        }
         .task {
+            guard !runningForPreviews else { return }
             APNsManager.shared.registerForNotifications()
             await loadTicket()
         }
@@ -93,6 +130,7 @@ struct QueueView: View {
             Task { await refreshData() }
         }
         .onChange(of: scenePhase) { newPhase in
+            guard !runningForPreviews else { return }
             if newPhase == .active {
                 Task { await refreshData() }
             }
@@ -107,9 +145,9 @@ struct QueueView: View {
                     await stopTrackingAndClose()
                 }
             }
-            Button("Stay in Line", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the current ticket from the queue and stops any remaining alerts or live updates on this App Clip.")
+            Text("This removes the current ticket from the queue and stops any remaining alerts or live updates.")
         }
         .alert("Could not leave the queue", isPresented: Binding(
             get: { stopErrorMessage != nil },
@@ -186,6 +224,15 @@ struct QueueView: View {
     }
 
     private func waitingView(_ ticket: Ticket) -> some View {
+        switch previewWaitingVariant ?? waitingScreenVariant {
+        case .original:
+            return AnyView(originalWaitingView(ticket))
+        case .webInspired:
+            return AnyView(webInspiredWaitingView(ticket))
+        }
+    }
+
+    private func originalWaitingView(_ ticket: Ticket) -> some View {
         let waitValue = estimatedWait ?? ticket.estimated_wait_minutes
 
         return ZStack {
@@ -202,13 +249,6 @@ struct QueueView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
-                    actionHeader(
-                        title: ticket.service?.name ?? "Queue",
-                        eyebrow: ticket.department?.name ?? "Queue",
-                        subtitle: syncLabel,
-                        accentText: ticket.status == "waiting" ? "Waiting in line" : "Active visit"
-                    )
-
                     VStack(alignment: .leading, spacing: 18) {
                         HStack(alignment: .top, spacing: 14) {
                             VStack(alignment: .leading, spacing: 8) {
@@ -296,34 +336,12 @@ struct QueueView: View {
                         )
                     }
 
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("What happens next")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.white)
-
-                        visitStepRow(
-                            icon: "bell.badge.fill",
-                            title: "We will alert you",
-                            detail: "When the desk calls your number, the screen and lock screen update immediately."
-                        )
-
-                        visitStepRow(
-                            icon: "arrow.clockwise",
-                            title: "Refresh any time",
-                            detail: "Use Refresh whenever you want an instant sync, just like pull to refresh."
-                        )
-
-                        visitStepRow(
-                            icon: "xmark.circle",
-                            title: "Leave the queue if plans change",
-                            detail: "Use End if you need to cancel this ticket and step out of line completely."
-                        )
-                    }
+                    waitingMessageCard
                     .padding(20)
                     .background(glassCard(radius: 26))
 
-                    if !visitorInfoRows(for: ticket).isEmpty {
-                        visitorInfoCard(rows: visitorInfoRows(for: ticket))
+                    if !editableVisitorInfo(for: ticket).isEmpty {
+                        visitorInfoCard(ticket: ticket)
                     }
                 }
                 .padding(.horizontal, 18)
@@ -334,6 +352,271 @@ struct QueueView: View {
                 await manualRefresh()
             }
         }
+    }
+
+    private func webInspiredWaitingView(_ ticket: Ticket) -> some View {
+        let lineValue = position.map { "#\($0)" } ?? "--"
+        let queueLabel = position.map { "#\($0) in line" } ?? "--"
+        let statusText = position == 1
+            ? "Almost there"
+            : (position != nil && position! <= 3 ? "You are nearly up" : (position != nil ? "\(max(position! - 1, 0)) ahead of you" : "--"))
+        let departmentLabel = ticket.department.map { $0.name.uppercased() } ?? "QUEUE"
+        let serviceLabel = ticket.service?.name ?? ticket.department?.name ?? "Queue"
+        let accentLabel = ticket.status == "serving" ? "NOW AT DESK" : "WAITING IN LINE"
+        let accentTextColor = ticket.status == "serving"
+            ? Color(red: 0.78, green: 0.94, blue: 1.0)
+            : Color(red: 0.98, green: 0.93, blue: 0.74)
+        let accentFill = ticket.status == "serving"
+            ? Color(red: 0.20, green: 0.48, blue: 0.68).opacity(0.24)
+            : Color(red: 0.58, green: 0.46, blue: 0.16).opacity(0.24)
+
+        return ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.09, blue: 0.17),
+                    Color(red: 0.07, green: 0.14, blue: 0.24),
+                    Color(red: 0.10, green: 0.09, blue: 0.16)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    Color(red: 0.22, green: 0.74, blue: 0.98).opacity(0.20),
+                    .clear
+                ],
+                center: .top,
+                startRadius: 20,
+                endRadius: 320
+            )
+            .ignoresSafeArea()
+
+            RadialGradient(
+                colors: [
+                    Color(red: 0.98, green: 0.50, blue: 0.18).opacity(0.16),
+                    .clear
+                ],
+                center: UnitPoint(x: 0.8, y: 0.2),
+                startRadius: 10,
+                endRadius: 180
+            )
+            .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    HStack(alignment: .top, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(departmentLabel)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .tracking(4.5)
+                                .foregroundStyle(Color.white.opacity(0.38))
+
+                            Text(serviceLabel)
+                                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .tracking(-0.5)
+                                .lineLimit(3)
+
+                            Text(syncLabel)
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.58))
+                        }
+
+                        Spacer(minLength: 0)
+
+                        VStack(alignment: .trailing, spacing: 10) {
+                            Text(accentLabel)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .tracking(2.6)
+                                .foregroundStyle(accentTextColor)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Capsule()
+                                        .fill(accentFill)
+                                )
+
+                            HStack(spacing: 12) {
+                                sessionButton(
+                                    title: "Refresh",
+                                    systemImage: "arrow.clockwise",
+                                    tone: .primary,
+                                    isAnimatingIcon: isRefreshing
+                                ) {
+                                    Task { await manualRefresh() }
+                                }
+                                .disabled(isRefreshing)
+
+                                sessionButton(title: "End", systemImage: "xmark.circle", tone: .danger) {
+                                    showStopConfirmation = true
+                                }
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 28) {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("TICKET")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .tracking(6)
+                                    .foregroundStyle(Color.white.opacity(0.48))
+
+                                Text(ticket.ticket_number)
+                                    .font(.system(size: 56, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.60)
+
+                                Text(serviceLabel)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.78))
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 24)
+
+                            VStack(alignment: .trailing, spacing: 10) {
+                                Text(lineValue)
+                                    .font(.system(size: 54, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white)
+
+                                Text(statusText)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.62))
+                                    .multilineTextAlignment(.trailing)
+                                }
+                        }
+
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("QUEUE PROGRESS")
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .tracking(4)
+                                    .foregroundStyle(Color.white.opacity(0.48))
+
+                                Spacer()
+
+                                Text((ticket.status == "serving" ? "AT THE DESK" : queueLabel).uppercased())
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .tracking(2.6)
+                                    .foregroundStyle(Color(red: 0.16, green: 0.93, blue: 0.73))
+                            }
+
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.10))
+
+                                    Capsule()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    Color(red: 0.30, green: 0.79, blue: 0.91),
+                                                    Color(red: 0.35, green: 0.87, blue: 0.77)
+                                                ],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .frame(width: geo.size.width * queueProgress(for: position))
+                                }
+                            }
+                            .frame(height: 12)
+                        }
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 32, style: .continuous)
+                            .fill(
+                                Color.white.opacity(0.06)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            )
+                    )
+
+                    HStack(spacing: 12) {
+                        visitMetricCard(
+                            title: "Wait",
+                            value: estimatedWait != nil ? "\(estimatedWait!) min" : "--",
+                            detail: estimatedWait != nil ? "Approximate timing" : "Calculating time",
+                            accent: Color(red: 0.22, green: 0.73, blue: 1.0)
+                        )
+
+                        visitMetricCard(
+                            title: "Now serving",
+                            value: nowServing ?? "--",
+                            detail: "Current desk activity",
+                            accent: Color(red: 0.20, green: 0.88, blue: 0.55)
+                        )
+
+                        visitMetricCard(
+                            title: "Alerts",
+                            value: apnsManager.tokenSentToServer ? "Ready" : "Off",
+                            detail: apnsManager.tokenSentToServer ? "Background alerts on" : "Turn alerts on",
+                            accent: Color(red: 0.98, green: 0.72, blue: 0.26)
+                        )
+                    }
+
+                    waitingMessageCard
+                        .padding(20)
+                        .background(glassCard(radius: 28))
+
+                    if !editableVisitorInfo(for: ticket).isEmpty {
+                        visitorInfoCard(ticket: ticket)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 28)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable {
+                await manualRefresh()
+            }
+        }
+    }
+
+    private func webWaitingStat(
+        label: String,
+        value: String,
+        detail: String,
+        accent: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(accent)
+                .textCase(.uppercase)
+                .tracking(1.2)
+
+            Text(value)
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.66))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
     }
 
     private func servingView(_ ticket: Ticket) -> some View {
@@ -443,21 +726,82 @@ struct QueueView: View {
         }
     }
 
-    private func sessionButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.10))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                        )
-                )
-                .foregroundStyle(.white)
+    private enum SessionButtonTone {
+        case primary
+        case danger
+        case neutral
+    }
+
+    private func sessionButton(
+        title: String,
+        systemImage: String,
+        tone: SessionButtonTone = .neutral,
+        isAnimatingIcon: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        let fill: LinearGradient
+        let stroke: Color
+
+        switch tone {
+        case .primary:
+            fill = LinearGradient(
+                colors: [
+                    Color(red: 0.12, green: 0.42, blue: 0.72).opacity(0.42),
+                    Color(red: 0.16, green: 0.55, blue: 0.86).opacity(0.28)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            stroke = Color(red: 0.29, green: 0.63, blue: 0.96).opacity(0.45)
+        case .danger:
+            fill = LinearGradient(
+                colors: [
+                    Color(red: 0.47, green: 0.18, blue: 0.31).opacity(0.34),
+                    Color(red: 0.66, green: 0.22, blue: 0.36).opacity(0.24)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            stroke = Color(red: 0.90, green: 0.43, blue: 0.58).opacity(0.38)
+        case .neutral:
+            fill = LinearGradient(
+                colors: [Color.white.opacity(0.12), Color.white.opacity(0.08)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            stroke = Color.white.opacity(0.12)
+        }
+
+        return Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .rotationEffect(.degrees(isAnimatingIcon ? 360 : 0))
+                    .animation(
+                        isAnimatingIcon
+                            ? .linear(duration: 0.9).repeatForever(autoreverses: false)
+                            : .default,
+                        value: isAnimatingIcon
+                    )
+
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(minWidth: 88)
+            .contentShape(Capsule())
+            .foregroundStyle(.white)
+            .background(
+                Capsule()
+                    .fill(fill)
+                    .overlay(
+                        Capsule()
+                            .stroke(stroke, lineWidth: 1)
+                    )
+            )
         }
         .buttonStyle(.plain)
     }
@@ -482,117 +826,132 @@ struct QueueView: View {
         detail: String,
         accent: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(accent)
                 .textCase(.uppercase)
+                .lineLimit(1)
 
             Text(value)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.70)
 
             Text(detail)
-                .font(.caption)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.64))
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
-        .padding(16)
-        .background(glassCard(radius: 24))
+        .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(glassCard(radius: 20))
     }
 
-    private func visitStepRow(icon: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
+    private var waitingMessageCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "bell.badge.fill")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(red: 0.98, green: 0.82, blue: 0.29))
                 .frame(width: 30, height: 30)
                 .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.68))
-            }
-
-            Spacer(minLength: 0)
+            Text("We will alert you when it's your turn.")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func visitorInfoCard(rows: [(label: String, value: String)]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private func visitorInfoCard(ticket: Ticket) -> some View {
+        let editableKeys = editableVisitorInfo(for: ticket).keys.sorted()
+
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    showVisitorInfo.toggle()
+                    showCustomerInfo.toggle()
                 }
             } label: {
-                HStack {
-                    HStack(spacing: 10) {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
-                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+                HStack(spacing: 12) {
+                    Image(systemName: "person")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.72))
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Visitor info")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                            Text("\(rows.count) saved field\(rows.count == 1 ? "" : "s")")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.66))
-                        }
-                    }
+                    Text("My Information")
+                        .font(.system(size: 18, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white)
 
-                    Spacer(minLength: 0)
+                    Spacer()
 
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.72))
-                        .rotationEffect(.degrees(showVisitorInfo ? 180 : 0))
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.62))
+                        .rotationEffect(.degrees(showCustomerInfo ? 0 : 180))
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 18)
             }
             .buttonStyle(.plain)
 
-            if showVisitorInfo {
-                VStack(spacing: 10) {
-                    ForEach(rows, id: \.label) { row in
-                        HStack(alignment: .top) {
-                            Text(row.label)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.62))
-                                .frame(maxWidth: .infinity, alignment: .leading)
+            if showCustomerInfo {
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
 
-                            Text(row.value)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.trailing)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                        .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(editableKeys, id: \.self) { key in
+                        visitorFieldEditorRow(key: key)
                     }
+
+                    if let visitorInfoSaveError {
+                        Text(visitorInfoSaveError)
+                            .font(.caption)
+                            .foregroundStyle(Color.red.opacity(0.92))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Button {
+                        Task {
+                            await saveVisitorInfo(ticketId: ticket.id)
+                        }
+                    } label: {
+                        Text(isSavingVisitorInfo ? "Saving..." : "Save Changes")
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(Color(red: 0.10, green: 0.30, blue: 0.40))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(Color(red: 0.10, green: 0.50, blue: 0.65).opacity(0.75), lineWidth: 1)
+                                    )
+                            )
+                            .foregroundStyle(Color(red: 0.90, green: 0.96, blue: 0.97))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSavingVisitorInfo)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 18)
             }
         }
-        .padding(20)
-        .background(glassCard(radius: 26))
-    }
-
-    private func visitorInfoRows(for ticket: Ticket) -> [(label: String, value: String)] {
-        (ticket.customer_data ?? [:])
-            .compactMap { key, value -> (String, String)? in
-                guard let displayText = value.displayText else { return nil }
-                return (formatVisitorLabel(key), displayText)
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            if visitorInfoDraft.isEmpty || Set(visitorInfoDraft.keys) != Set(editableKeys) {
+                visitorInfoDraft = editableVisitorInfo(for: ticket)
             }
-            .sorted { $0.0 < $1.0 }
+        }
     }
 
     private func formatVisitorLabel(_ key: String) -> String {
@@ -600,6 +959,163 @@ struct QueueView: View {
             .split(separator: "_")
             .map { $0.capitalized }
             .joined(separator: " ")
+    }
+
+    private func isRequiredVisitorField(_ key: String) -> Bool {
+        let lowered = key.lowercased()
+        return lowered.contains("name") || lowered.contains("phone") || lowered.contains("service")
+    }
+
+    private func editableVisitorInfo(for ticket: Ticket) -> [String: CustomerDataValue] {
+        (ticket.customer_data ?? [:]).filter { _, value in
+            switch value {
+            case .string, .bool, .int, .double:
+                return true
+            case .object, .array, .null:
+                return false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func visitorFieldEditorRow(key: String) -> some View {
+        let label = formatVisitorLabel(key)
+
+        switch visitorInfoDraft[key] ?? .null {
+        case .bool(let value):
+            visitorFieldShell(label: label, isRequired: isRequiredVisitorField(key)) {
+                Toggle(isOn: Binding(
+                    get: { value },
+                    set: { visitorInfoDraft[key] = .bool($0) }
+                )) {
+                    Text("")
+                }
+                .labelsHidden()
+                .tint(Color(red: 0.18, green: 0.58, blue: 0.95))
+            }
+        case .string(let value):
+            visitorFieldTextRow(
+                key: key,
+                label: label,
+                text: Binding(
+                    get: { value },
+                    set: { visitorInfoDraft[key] = .string($0) }
+                ),
+                keyboardType: keyboardType(for: key)
+            )
+        case .int(let value):
+            visitorFieldTextRow(
+                key: key,
+                label: label,
+                text: Binding(
+                    get: { String(value) },
+                    set: { visitorInfoDraft[key] = .int(Int($0) ?? value) }
+                ),
+                keyboardType: .numberPad
+            )
+        case .double(let value):
+            visitorFieldTextRow(
+                key: key,
+                label: label,
+                text: Binding(
+                    get: { String(value) },
+                    set: { visitorInfoDraft[key] = .double(Double($0) ?? value) }
+                ),
+                keyboardType: .decimalPad
+            )
+        case .object, .array, .null:
+            EmptyView()
+        }
+    }
+
+    private func visitorFieldTextRow(
+        key: String,
+        label: String,
+        text: Binding<String>,
+        keyboardType: UIKeyboardType
+    ) -> some View {
+        visitorFieldShell(label: label, isRequired: isRequiredVisitorField(key)) {
+            TextField("", text: text)
+                .keyboardType(keyboardType)
+                .textInputAutocapitalization(.words)
+                .disableAutocorrection(true)
+                .foregroundStyle(.white)
+                .focused($focusedVisitorField, equals: key)
+        }
+    }
+
+    private func visitorFieldShell<Content: View>(
+        label: String,
+        isRequired: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.62))
+                if isRequired {
+                    Text("*")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.red.opacity(0.90))
+                }
+            }
+
+            HStack {
+                content()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private func keyboardType(for key: String) -> UIKeyboardType {
+        let lowered = key.lowercased()
+        if lowered.contains("email") {
+            return .emailAddress
+        }
+        if lowered.contains("phone") || lowered.contains("mobile") {
+            return .phonePad
+        }
+        return .default
+    }
+
+    private func saveVisitorInfo(ticketId: String) async {
+        await MainActor.run {
+            isSavingVisitorInfo = true
+            visitorInfoSaveError = nil
+        }
+
+        let success = await SupabaseClient.shared.updateCustomerData(
+            ticketId: ticketId,
+            customerData: visitorInfoDraft
+        )
+
+        await MainActor.run {
+            isSavingVisitorInfo = false
+        }
+
+        guard success else {
+            await MainActor.run {
+                visitorInfoSaveError = "We could not save your information right now. Please try again."
+            }
+            return
+        }
+
+        await refreshData()
+        await MainActor.run {
+            if let ticket {
+                visitorInfoDraft = editableVisitorInfo(for: ticket)
+            }
+        }
     }
 
     private var syncLabel: String {
@@ -704,7 +1220,9 @@ struct QueueView: View {
             }
 
             await MainActor.run {
-                self.error = error.localizedDescription
+                if ticket == nil || showLoader {
+                    self.error = error.localizedDescription
+                }
                 isLoading = false
             }
         }
@@ -753,4 +1271,68 @@ struct QueueView: View {
         }
         await appState.clearCurrentTicket()
     }
+}
+
+#Preview("Waiting Screen") {
+    QueueView(
+        token: "preview-token",
+        previewTicket: Ticket(
+            id: "preview-ticket",
+            qr_token: "preview-token",
+            office_id: "preview-office",
+            department_id: "preview-department",
+            service_id: "preview-service",
+            ticket_number: "CS-045",
+            status: "waiting",
+            desk_id: nil,
+            called_at: nil,
+            called_by_staff_id: nil,
+            estimated_wait_minutes: 6,
+            recall_count: 0,
+            customer_data: [
+                "name": .string("APNs Test"),
+                "source": .string("preview")
+            ],
+            department: Ticket.Department(name: "Client Services", code: "CS"),
+            service: Ticket.Service(name: "Mail & Packages"),
+            desk: nil
+        ),
+        previewPosition: 3,
+        previewEstimatedWait: 6,
+        previewNowServing: "CS-042",
+        previewWaitingVariant: .webInspired
+    )
+    .environmentObject(AppState())
+}
+
+#Preview("Waiting Screen Original") {
+    QueueView(
+        token: "preview-token",
+        previewTicket: Ticket(
+            id: "preview-ticket",
+            qr_token: "preview-token",
+            office_id: "preview-office",
+            department_id: "preview-department",
+            service_id: "preview-service",
+            ticket_number: "CS-045",
+            status: "waiting",
+            desk_id: nil,
+            called_at: nil,
+            called_by_staff_id: nil,
+            estimated_wait_minutes: 6,
+            recall_count: 0,
+            customer_data: [
+                "name": .string("APNs Test"),
+                "source": .string("preview")
+            ],
+            department: Ticket.Department(name: "Client Services", code: "CS"),
+            service: Ticket.Service(name: "Mail & Packages"),
+            desk: nil
+        ),
+        previewPosition: 3,
+        previewEstimatedWait: 6,
+        previewNowServing: "CS-042",
+        previewWaitingVariant: .original
+    )
+    .environmentObject(AppState())
 }

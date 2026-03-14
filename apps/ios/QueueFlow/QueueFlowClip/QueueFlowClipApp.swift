@@ -1,5 +1,9 @@
 import SwiftUI
 
+var isRunningForPreviews: Bool {
+    ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+}
+
 enum TicketSessionStore {
     private static let lastTicketTokenKey = "queueflow.lastTicketToken"
     private static let lastTicketTokenSavedAtKey = "queueflow.lastTicketTokenSavedAt"
@@ -78,6 +82,11 @@ class AppState: ObservableObject {
     @Published var isResolvingSavedTicket = true
 
     init() {
+        guard !isRunningForPreviews else {
+            isResolvingSavedTicket = false
+            return
+        }
+
         if !restoreLaunchTicketTokenOverride() {
             Task {
                 await restoreRecentTicketTokenIfValid()
@@ -223,23 +232,115 @@ struct LoadingView: View {
 struct NoActiveTicketView: View {
     var body: some View {
         ZStack {
-            Color(red: 0.96, green: 0.96, blue: 0.97)
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    Color(red: 0.03, green: 0.08, blue: 0.16),
+                    Color(red: 0.06, green: 0.12, blue: 0.24),
+                    Color(red: 0.09, green: 0.15, blue: 0.28)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            VStack(spacing: 14) {
-                Image(systemName: "ticket")
-                    .font(.system(size: 40))
-                    .foregroundColor(Color(red: 0.145, green: 0.388, blue: 0.922))
+            RadialGradient(
+                colors: [
+                    Color(red: 0.34, green: 0.76, blue: 0.98).opacity(0.16),
+                    .clear
+                ],
+                center: .top,
+                startRadius: 20,
+                endRadius: 260
+            )
+            .ignoresSafeArea()
 
-                Text("No active ticket")
-                    .font(.title3.bold())
+            VStack(spacing: 22) {
+                Spacer()
 
-                Text("Open your latest QueueFlow link to load your current visit.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 128, height: 128)
+
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 92, height: 92)
+
+                    Image(systemName: "ticket.fill")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(Color(red: 0.38, green: 0.76, blue: 0.98))
+                }
+
+                VStack(spacing: 10) {
+                    Text("Visit finished")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+
+                    Text("You're all set. To join again, scan the latest code or open a new queue link.")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 26)
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    noTicketRow(
+                        icon: "checkmark.circle.fill",
+                        title: "Current visit closed",
+                        detail: "Your previous ticket is no longer active on this device."
+                    )
+
+                    noTicketRow(
+                        icon: "link",
+                        title: "Join again anytime",
+                        detail: "Scan again or open a new queue link whenever you need another visit."
+                    )
+                }
+                .padding(20)
+                .background(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.white.opacity(0.07))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        )
+                )
+                .padding(.horizontal, 20)
+
+                Spacer()
+
+                Text("Powered by QueueFlow")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.40))
+                    .tracking(4)
+                    .padding(.bottom, 18)
             }
+        }
+    }
+
+    private func noTicketRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 38, height: 38)
+                .background(
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.68))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
         }
     }
 }

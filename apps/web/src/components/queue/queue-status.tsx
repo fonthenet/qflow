@@ -112,17 +112,21 @@ function WaitingMetric({
   value,
   detail,
   accentClass,
+  valueClass,
+  detailClass,
 }: {
   label: string;
   value: string;
   detail: string;
   accentClass: string;
+  valueClass?: string;
+  detailClass?: string;
 }) {
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
       <p className={`mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>{label}</p>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
+      <p className={`text-2xl font-semibold leading-tight tracking-tight text-white sm:text-[28px] ${valueClass ?? ''}`}>{value}</p>
+      <p className={`mt-1 text-[11px] leading-5 text-slate-400 ${detailClass ?? ''}`}>{detail}</p>
     </div>
   );
 }
@@ -731,7 +735,7 @@ export function QueueStatus({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
-                <p className="mt-2 truncate text-[42px] font-black leading-[0.94] tracking-[0.10em] text-white sm:text-5xl">
+                <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
                   {ticket.ticket_number}
                 </p>
                 <p className="mt-2 text-sm font-medium text-slate-300">{serviceName}</p>
@@ -773,6 +777,8 @@ export function QueueStatus({
                 value={nowServing ?? '--'}
                 detail="Current desk activity"
                 accentClass="text-emerald-400"
+                valueClass="text-[18px] leading-tight sm:text-[22px]"
+                detailClass="text-[10px] leading-4"
               />
               <WaitingMetric
                 label="Alerts"

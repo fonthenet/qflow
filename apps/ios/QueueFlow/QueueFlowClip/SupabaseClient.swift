@@ -237,6 +237,39 @@ class SupabaseClient {
         }
     }
 
+    func updateCustomerData(
+        ticketId: String,
+        customerData: [String: CustomerDataValue]
+    ) async -> Bool {
+        let urlString = "\(baseURL)/rest/v1/tickets?id=eq.\(ticketId)"
+        guard let url = URL(string: urlString) else {
+            return false
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+
+        request.httpBody = try? JSONEncoder().encode([
+            "customer_data": customerData
+        ])
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return false
+            }
+
+            return (200..<300).contains(httpResponse.statusCode)
+        } catch {
+            print("[CustomerData] Update failed: \(error)")
+            return false
+        }
+    }
+
     private var isDebug: Bool {
         #if DEBUG
         return true
