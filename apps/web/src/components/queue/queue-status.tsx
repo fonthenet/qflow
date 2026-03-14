@@ -582,7 +582,7 @@ export function QueueStatus({
     );
   }
 
-  if (ticket.status === ‘served’) {
+  if (ticket.status === 'served') {
     return (
       <FeedbackForm
         ticket={ticket}
