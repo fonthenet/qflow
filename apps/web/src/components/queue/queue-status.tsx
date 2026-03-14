@@ -582,27 +582,14 @@ export function QueueStatus({
     );
   }
 
-  if (ticket.status === 'served') {
+  if (ticket.status === ‘served’) {
     return (
-      <>
-        <FeedbackForm
-          ticket={ticket}
-          officeName={officeName}
-          serviceName={serviceName}
-          onDone={handleFeedbackDone}
-          onStopTracking={() => setShowStopDialog(true)}
-        />
-        <QueueStopDialog
-          isOpen={showStopDialog}
-          isStopping={isStopping}
-          onCancel={() => setShowStopDialog(false)}
-          onConfirm={() => void handleStopTracking()}
-          title="Finish this visit?"
-          description="We’ll clear this completed visit from this device and stop any remaining alerts."
-          confirmLabel="Finish visit"
-          cancelLabel="Keep visit"
-        />
-      </>
+      <FeedbackForm
+        ticket={ticket}
+        officeName={officeName}
+        serviceName={serviceName}
+        onDone={handleFeedbackDone}
+      />
     );
   }
 
