@@ -10,5 +10,8 @@ export default async function UsersPage() {
     .select('id, full_name, email, role, is_active, created_at, organization:organizations(id, name, slug)')
     .order('created_at', { ascending: false });
 
-  return <UsersClient staff={staff || []} />;
+  return <UsersClient staff={(staff || []).map((s: Record<string, unknown>) => ({
+    ...s,
+    organization: Array.isArray(s.organization) ? s.organization[0] || null : s.organization,
+  })) as any} />;
 }

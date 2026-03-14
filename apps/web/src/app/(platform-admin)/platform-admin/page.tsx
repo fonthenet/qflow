@@ -50,7 +50,11 @@ export default async function PlatformDashboardPage() {
         totalTickets: totalTickets || 0,
       }}
       organizations={organizations || []}
-      recentTickets={recentTickets || []}
+      recentTickets={(recentTickets || []).map((t: Record<string, unknown>) => ({
+        ...t,
+        service: Array.isArray(t.service) ? t.service[0] || null : t.service,
+        office: Array.isArray(t.office) ? t.office[0] || null : t.office,
+      })) as any}
     />
   );
 }
