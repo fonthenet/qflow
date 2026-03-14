@@ -1,10 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 export type WebhookEvent =
   | 'ticket.created'
@@ -20,6 +26,7 @@ export async function dispatchWebhook(
   eventType: WebhookEvent,
   payload: Record<string, any>
 ) {
+  const supabase = getSupabase();
   // Find active webhook endpoints subscribed to this event
   const { data: endpoints } = await supabase
     .from('webhook_endpoints')

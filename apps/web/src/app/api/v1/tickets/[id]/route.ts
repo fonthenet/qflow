@@ -1,11 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '@/lib/api-auth';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 // GET /api/v1/tickets/:id
 export async function GET(
@@ -16,6 +22,7 @@ export async function GET(
   if ('error' in auth) return auth.error;
 
   const { id } = await params;
+  const supabase = getSupabase();
 
   const { data: ticket, error } = await supabase
     .from('tickets')
@@ -50,6 +57,7 @@ export async function PATCH(
   if ('error' in auth) return auth.error;
 
   const { id } = await params;
+  const supabase = getSupabase();
   const body = await request.json();
 
   const allowedFields = ['status', 'notes', 'customer_data', 'priority'];

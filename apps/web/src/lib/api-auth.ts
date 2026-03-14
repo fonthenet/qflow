@@ -1,11 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { hasFeature, type PlanId } from '@/lib/plan-limits';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getServiceClient(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 export interface ApiContext {
   organizationId: string;
@@ -28,6 +34,8 @@ export async function authenticateApiRequest(
   const apiKey = authHeader.slice(7);
 
   // Look up the API key
+  const supabase = getServiceClient();
+
   const { data: keyRecord } = await supabase
     .from('api_keys')
     .select('organization_id, is_active')

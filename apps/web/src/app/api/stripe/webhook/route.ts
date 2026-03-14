@@ -1,15 +1,21 @@
 import { stripe } from '@/lib/stripe';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-// Use service role client for webhook (no user session)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 export async function POST(request: NextRequest) {
+  const supabase = getSupabase();
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
 
@@ -68,6 +74,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const supabase = getSupabase();
   const orgId = session.metadata?.organization_id;
   const planId = session.metadata?.plan_id;
   if (!orgId || !planId) return;
@@ -84,6 +91,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 }
 
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
+  const supabase = getSupabase();
   const orgId = subscription.metadata?.organization_id;
   if (!orgId) return;
 
@@ -105,6 +113,7 @@ async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const supabase = getSupabase();
   const orgId = subscription.metadata?.organization_id;
   if (!orgId) return;
 
@@ -121,6 +130,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
+  const supabase = getSupabase();
   const customerId = invoice.customer as string;
 
   const { data: org } = await supabase
@@ -149,6 +159,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 }
 
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+  const supabase = getSupabase();
   const customerId = invoice.customer as string;
 
   const { data: org } = await supabase

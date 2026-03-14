@@ -1,17 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest } from '@/lib/api-auth';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 // GET /api/v1/tickets — list tickets with filters
 export async function GET(request: NextRequest) {
   const auth = await authenticateApiRequest(request);
   if ('error' in auth) return auth.error;
 
+  const supabase = getSupabase();
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
   const officeId = searchParams.get('office_id');
@@ -59,6 +66,8 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  const supabase = getSupabase();
 
   // Verify office belongs to this organization
   const { data: office } = await supabase
