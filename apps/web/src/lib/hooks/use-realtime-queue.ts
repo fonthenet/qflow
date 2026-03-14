@@ -12,6 +12,7 @@ export interface QueueData {
   called: Ticket[];
   serving: Ticket[];
   recentlyServed: Ticket[];
+  cancelled: Ticket[];
 }
 
 interface UseRealtimeQueueOptions {
@@ -25,6 +26,7 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
     called: [],
     serving: [],
     recentlyServed: [],
+    cancelled: [],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
       .select('*')
       .eq('office_id', officeId)
       .gte('created_at', todayIso)
-      .in('status', ['waiting', 'called', 'serving', 'served'])
+      .in('status', ['waiting', 'called', 'serving', 'served', 'cancelled'])
       .order('priority', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true });
 
@@ -66,6 +68,14 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
       serving: tickets.filter((t) => t.status === 'serving'),
       recentlyServed: tickets
         .filter((t) => t.status === 'served')
+        .sort(
+          (a, b) =>
+            new Date(b.completed_at ?? 0).getTime() -
+            new Date(a.completed_at ?? 0).getTime()
+        )
+        .slice(0, 5),
+      cancelled: tickets
+        .filter((t) => t.status === 'cancelled')
         .sort(
           (a, b) =>
             new Date(b.completed_at ?? 0).getTime() -

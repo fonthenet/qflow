@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { BellRing, RefreshCw, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRealtimeTicket } from '@/lib/hooks/use-realtime-ticket';
 import { YourTurn } from '@/components/queue/your-turn';
 import { FeedbackForm } from '@/components/queue/feedback-form';
@@ -109,35 +110,37 @@ function WaitingMetric({
   value,
   detail,
   accentClass,
-  compact = false,
 }: {
   label: string;
   value: string;
   detail: string;
   accentClass: string;
-  compact?: boolean;
 }) {
   return (
-    <div className={`rounded-[22px] border border-white/10 bg-white/6 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur ${compact ? 'p-3' : 'p-4'}`}>
-      <div className={`inline-flex rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${accentClass} ${compact ? 'mb-2' : 'mb-3'}`}>
+    <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
+      <div className={`mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>
         {label}
       </div>
-      <p className={`${compact ? 'text-2xl' : 'text-3xl'} font-semibold tracking-tight text-white`}>{value}</p>
-      <p className={`mt-2 text-slate-300 ${compact ? 'text-xs leading-5' : 'text-sm leading-6'}`}>{detail}</p>
+      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{detail}</p>
     </div>
   );
 }
 
 function JourneyStep({
+  icon,
   title,
   detail,
 }: {
+  icon: ReactNode;
   title: string;
   detail: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-[20px] border border-white/8 bg-white/5 p-4">
-      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.6)]" />
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-white/10 text-slate-100">
+        {icon}
+      </div>
       <div>
         <p className="text-sm font-semibold text-white">{title}</p>
         <p className="mt-1 text-sm leading-6 text-slate-300">{detail}</p>
@@ -265,7 +268,7 @@ export function QueueStatus({
     try {
       const result = await stopTicketTracking(ticket.id);
       if (!result) {
-        setStopError('We could not stop tracking just yet. Please try again.');
+        setStopError('We could not leave the queue just yet. Please try again.');
         return;
       }
 
@@ -688,7 +691,7 @@ export function QueueStatus({
 
   return (
     <>
-      <div className="relative flex min-h-screen flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),radial-gradient(circle_at_80%_20%,_rgba(249,115,22,0.18),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
+      <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),radial-gradient(circle_at_80%_20%,_rgba(249,115,22,0.18),_transparent_26%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)]">
         {showBuzzFlash ? (
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
             <div className="text-center">
@@ -706,8 +709,8 @@ export function QueueStatus({
 
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.14),_transparent_62%)]" />
 
-          <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
-            <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-5 pt-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
               <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
@@ -731,8 +734,8 @@ export function QueueStatus({
             </div>
           </div>
 
-          <section className="rounded-[30px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
-            <div className="grid grid-cols-[minmax(0,1fr)_104px] items-start gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+          <section className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${accentTone}`}>
                   {accentLabel}
@@ -744,10 +747,10 @@ export function QueueStatus({
                 <p className="mt-2 text-sm font-semibold text-slate-100">{serviceName}</p>
               </div>
 
-              <div className="rounded-[26px] border border-cyan-300/18 bg-cyan-400/8 px-3 py-4 text-right shadow-[0_20px_40px_rgba(34,211,238,0.08)]">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Position</p>
-                <p className="mt-2 text-4xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
-                <p className="mt-2 text-xs leading-5 text-cyan-50/70">
+              <div className="text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Position</p>
+                <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
+                <p className="mt-2 text-sm leading-5 text-cyan-50/70">
                   {position && position > 1 ? `${position - 1} ahead of you` : 'You are nearly up'}
                 </p>
               </div>
@@ -766,77 +769,63 @@ export function QueueStatus({
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2.5">
+            <div className="mt-5 grid grid-cols-3 gap-3">
               <WaitingMetric
                 label="Wait"
                 value={estimatedWait != null ? `${estimatedWait} min` : '--'}
-                detail={estimatedWait != null ? 'Approximate timing' : 'Calculating timing'}
+                detail={estimatedWait != null ? 'Approximate timing' : 'Calculating time'}
                 accentClass="bg-sky-400/15 text-sky-100"
-                compact
               />
               <WaitingMetric
                 label="Now serving"
                 value={nowServing ?? '--'}
                 detail="Current desk activity"
                 accentClass="bg-emerald-400/15 text-emerald-100"
-                compact
               />
               <WaitingMetric
                 label="Alerts"
                 value={alertsEnabled ? 'Ready' : 'Off'}
                 detail={alertsEnabled ? 'Background alerts on' : 'Turn alerts on'}
                 accentClass="bg-amber-300/15 text-amber-100"
-                compact
               />
             </div>
           </section>
 
           <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 p-5 backdrop-blur">
-            <div className="flex items-start justify-between gap-3">
+            <div className="grid gap-4">
               <div>
-                <p className="text-lg font-semibold text-white">Keep it simple</p>
-                <p className="mt-1 text-sm leading-6 text-slate-300">
-                  Stay nearby, keep your phone available, and we will bring you straight to the desk when it is time.
-                </p>
+                <p className="text-[30px] font-semibold tracking-tight text-white">What happens next</p>
               </div>
-              {!alertsEnabled ? (
-                <QueueActionPill
-                  label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
-                  onClick={() => void handleEnableAlerts()}
-                  tone="primary"
-                />
-              ) : (
-                <div className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
-                  Alerts ready
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 grid gap-3">
               <JourneyStep
+                icon={<BellRing className="h-4 w-4" />}
                 title="We call your number once it is your turn"
                 detail="The moment the desk calls you, this screen changes instantly and your lock screen updates too."
               />
               <JourneyStep
+                icon={<RefreshCw className="h-4 w-4" />}
                 title="Refresh any time if you want reassurance"
                 detail="Use the Refresh button whenever you want an immediate sync, just like a pull-to-refresh check."
               />
               <JourneyStep
+                icon={<XCircle className="h-4 w-4" />}
                 title="Leave the queue if plans change"
                 detail="Use End if you need to cancel this ticket and step out of the line completely."
               />
+
+              {!alertsEnabled ? (
+                <div className="pt-1">
+                  <QueueActionPill
+                    label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
+                    onClick={() => void handleEnableAlerts()}
+                    tone="primary"
+                  />
+                </div>
+              ) : null}
             </div>
           </section>
 
-          <div className="mt-4 space-y-4">
-            <div className="rounded-[24px] border border-white/8 bg-white/5 p-4 backdrop-blur">
-              <p className="text-sm font-semibold text-white">Visit details</p>
-              <p className="mt-1 text-sm text-slate-300">Need to change your contact details or backup alert options? You can do that here.</p>
-              <div className="mt-4">
-                <EditCustomerData ticket={ticket} />
-              </div>
-            </div>
-
+          <div className="mt-4 space-y-3">
+            <EditCustomerData ticket={ticket} />
             <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
           </div>
 
@@ -855,7 +844,7 @@ export function QueueStatus({
             />
           ) : null}
 
-          <div className="mt-auto pt-6 text-center">
+          <div className="mt-auto pt-4 text-center">
             <p className="text-xs uppercase tracking-[0.28em] text-slate-500">QueueFlow</p>
           </div>
         </div>

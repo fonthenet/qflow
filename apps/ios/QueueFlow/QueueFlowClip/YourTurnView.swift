@@ -93,18 +93,6 @@ struct YourTurnView: View {
                                     .fill(.white.opacity(0.16))
                             )
 
-                        if recallCount > 0 {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.counterclockwise")
-                                Text("Recalled \(recallCount) time\(recallCount > 1 ? "s" : "")")
-                            }
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(.white.opacity(0.18)))
-                        }
-
                         countdownCard
 
                         Text(urgencyMessage)
@@ -180,6 +168,11 @@ struct YourTurnView: View {
                     .foregroundColor(.white.opacity(0.66))
                     .textCase(.uppercase)
 
+                Text(ticket.department?.name ?? "Queue")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(Color(red: 0.99, green: 0.79, blue: 0.30))
+                    .textCase(.uppercase)
+
                 Text(isRefreshing ? "Refreshing now" : syncLabel)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.78))
@@ -187,13 +180,27 @@ struct YourTurnView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 8) {
-                circleActionButton(systemImage: "arrow.clockwise", title: "Refresh", isDisabled: isRefreshing) {
-                    Task { await onRefresh() }
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) {
+                    circleActionButton(systemImage: "arrow.clockwise", title: "Refresh", isDisabled: isRefreshing) {
+                        Task { await onRefresh() }
+                    }
+
+                    circleActionButton(systemImage: "xmark", title: "End", isDisabled: false) {
+                        onStopTracking()
+                    }
                 }
 
-                circleActionButton(systemImage: "xmark", title: "End", isDisabled: false) {
-                    onStopTracking()
+                if recallCount > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Recalled \(recallCount)x")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(.white.opacity(0.14)))
                 }
             }
         }

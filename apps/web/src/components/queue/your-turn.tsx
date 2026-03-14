@@ -83,13 +83,6 @@ export function YourTurn({
   const [recallCount, setRecallCount] = useState(ticket.recall_count ?? 0);
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
-  const [soundUnlocked, setSoundUnlocked] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
-      return !!ctx && ctx.state === 'running';
-    }
-    return false;
-  });
   const pendingAlert = useRef(true);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -221,36 +214,6 @@ export function YourTurn({
     }
   }, [ticket.id]);
 
-  const enableAlerts = async () => {
-    try {
-      let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
-      if (!ctx) {
-        ctx = new AudioContext();
-        (window as unknown as Record<string, unknown>).__queueAudioCtx = ctx;
-      }
-      if (ctx.state === 'suspended') await ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.01);
-    } catch {
-      // Ignore.
-    }
-
-    if ('Notification' in window && Notification.permission === 'default') {
-      const result = await Notification.requestPermission();
-      if (result === 'granted') {
-        await subscribeToPush(ticket.id).catch(() => {});
-      }
-    }
-
-    setSoundUnlocked(true);
-    fireVibAndSound();
-  };
-
   useEffect(() => {
     const handleTouch = () => {
       let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
@@ -265,14 +228,11 @@ export function YourTurn({
           gain.gain.setValueAtTime(0, ctx.currentTime);
           osc.start();
           osc.stop(ctx.currentTime + 0.01);
-          setSoundUnlocked(true);
         } catch {
           // Ignore.
         }
       } else if (ctx.state === 'suspended') {
-        ctx.resume().then(() => setSoundUnlocked(true)).catch(() => {});
-      } else {
-        setSoundUnlocked(true);
+        ctx.resume().catch(() => {});
       }
 
       if (pendingAlert.current) {
@@ -479,11 +439,9 @@ export function YourTurn({
     const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
     if (ctx) {
       if (ctx.state === 'running') {
-        setSoundUnlocked(true);
         pendingAlert.current = false;
       } else if (ctx.state === 'suspended') {
         ctx.resume().then(() => {
-          setSoundUnlocked(true);
           pendingAlert.current = false;
         }).catch(() => {});
       }
@@ -581,6 +539,11 @@ export function YourTurn({
               loading={isRefreshing}
             />
             <QueueActionPill label="End" onClick={onStopTracking} tone="danger" />
+            {recallCount > 0 ? (
+              <div className="rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
+                Recalled {recallCount} {recallCount === 1 ? 'time' : 'times'}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -596,29 +559,12 @@ export function YourTurn({
             </div>
           </div>
 
-          <p className="mt-6 text-sm font-semibold uppercase tracking-[0.36em] text-white/68">Called now</p>
-          <h2 className="mt-3 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">Go to {deskName}</h2>
+          <h2 className="mt-6 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">Go to {deskName}</h2>
           <p className="mt-3 max-w-[18rem] text-base leading-7 text-white/80">{message}</p>
 
           <div className="mt-6 rounded-full border border-white/15 bg-white/14 px-5 py-2 text-sm font-semibold uppercase tracking-[0.22em] text-white/88">
             Ticket {ticket.ticket_number}
           </div>
-
-          {recallCount > 0 ? (
-            <div className="mt-3 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
-              Recall {recallCount} {recallCount === 1 ? 'time' : 'times'}
-            </div>
-          ) : null}
-
-          {!soundUnlocked ? (
-            <button
-              type="button"
-              onClick={() => void enableAlerts()}
-              className="mt-6 rounded-full border border-white/15 bg-white/90 px-5 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_55px_rgba(255,255,255,0.18)] transition hover:bg-white"
-            >
-              Tap for sound + vibration
-            </button>
-          ) : null}
 
           <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border bg-white/8 backdrop-blur sm:h-44 sm:w-44 ${countdownBorderClass}`}>
             <p className="text-[13px] font-semibold uppercase tracking-[0.32em] text-white/65">Respond in</p>

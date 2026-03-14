@@ -265,6 +265,7 @@ struct Ticket: Codable, Identifiable {
     let called_by_staff_id: String?
     let estimated_wait_minutes: Int?
     let recall_count: Int?
+    let customer_data: [String: CustomerDataValue]?
 
     // Joined relations
     let department: Department?
@@ -302,6 +303,78 @@ enum SupabaseError: Error, LocalizedError, Equatable {
         case .fetchFailed: return "Failed to fetch data"
         case .ticketNotFound: return "Ticket not found"
         case .feedbackSubmitFailed: return "Could not submit feedback"
+        }
+    }
+}
+
+enum CustomerDataValue: Codable, Hashable {
+    case string(String)
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case object([String: CustomerDataValue])
+    case array([CustomerDataValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode([String: CustomerDataValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([CustomerDataValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported customer data value"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    var displayText: String? {
+        switch self {
+        case .string(let value):
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case .bool(let value):
+            return value ? "Yes" : "No"
+        case .int(let value):
+            return String(value)
+        case .double(let value):
+            return String(value)
+        case .object, .array, .null:
+            return nil
         }
     }
 }

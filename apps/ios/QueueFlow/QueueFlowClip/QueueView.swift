@@ -19,6 +19,7 @@ struct QueueView: View {
     @State private var buzzFlashCount = 0
     @State private var showStopConfirmation = false
     @State private var stopErrorMessage: String?
+    @State private var showVisitorInfo = false
 
     @StateObject private var apnsManager = APNsManager.shared
 
@@ -203,6 +204,7 @@ struct QueueView: View {
                 VStack(spacing: 18) {
                     actionHeader(
                         title: ticket.service?.name ?? "Queue",
+                        eyebrow: ticket.department?.name ?? "Queue",
                         subtitle: syncLabel,
                         accentText: ticket.status == "waiting" ? "Waiting in line" : "Active visit"
                     )
@@ -319,6 +321,10 @@ struct QueueView: View {
                     }
                     .padding(20)
                     .background(glassCard(radius: 26))
+
+                    if !visitorInfoRows(for: ticket).isEmpty {
+                        visitorInfoCard(rows: visitorInfoRows(for: ticket))
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 20)
@@ -347,6 +353,7 @@ struct QueueView: View {
                 VStack(spacing: 18) {
                     actionHeader(
                         title: ticket.service?.name ?? "Queue",
+                        eyebrow: ticket.department?.name ?? "Queue",
                         subtitle: syncLabel,
                         accentText: "With staff now"
                     )
@@ -390,12 +397,17 @@ struct QueueView: View {
         }
     }
 
-    private func actionHeader(title: String, subtitle: String, accentText: String) -> some View {
+    private func actionHeader(title: String, eyebrow: String, subtitle: String, accentText: String) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("QueueFlow")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.68))
+                    .textCase(.uppercase)
+
+                Text(eyebrow)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color(red: 0.43, green: 0.84, blue: 0.99))
                     .textCase(.uppercase)
 
                 Text(title)
@@ -512,6 +524,82 @@ struct QueueView: View {
 
             Spacer(minLength: 0)
         }
+    }
+
+    private func visitorInfoCard(rows: [(label: String, value: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showVisitorInfo.toggle()
+                }
+            } label: {
+                HStack {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Visitor info")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                            Text("\(rows.count) saved field\(rows.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.66))
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .rotationEffect(.degrees(showVisitorInfo ? 180 : 0))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showVisitorInfo {
+                VStack(spacing: 10) {
+                    ForEach(rows, id: \.label) { row in
+                        HStack(alignment: .top) {
+                            Text(row.label)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.62))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(row.value)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(20)
+        .background(glassCard(radius: 26))
+    }
+
+    private func visitorInfoRows(for ticket: Ticket) -> [(label: String, value: String)] {
+        (ticket.customer_data ?? [:])
+            .compactMap { key, value -> (String, String)? in
+                guard let displayText = value.displayText else { return nil }
+                return (formatVisitorLabel(key), displayText)
+            }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    private func formatVisitorLabel(_ key: String) -> String {
+        key
+            .split(separator: "_")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private var syncLabel: String {

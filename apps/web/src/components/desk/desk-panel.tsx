@@ -155,11 +155,25 @@ export function DeskPanel({
       if (updatedCalledAt >= currentCalledAt) {
         setCurrentTicket(updated);
       }
-    } else if (
+      return;
+    }
+
+    const waitingTicket = queue.waiting.find((t) => t.id === currentTicket.id);
+    if (waitingTicket) {
+      setCurrentTicket(null);
+      return;
+    }
+
+    const cancelledTicket = queue.cancelled.find((t) => t.id === currentTicket.id);
+    if (cancelledTicket) {
+      setCurrentTicket(null);
+      return;
+    }
+
+    if (
       currentTicket.status === 'serving' ||
       currentTicket.status === 'called'
     ) {
-      // Ticket was completed externally
       const inServed = queue.recentlyServed.find(
         (t) => t.id === currentTicket.id
       );
