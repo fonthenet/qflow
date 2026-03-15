@@ -1,46 +1,50 @@
-import { ClipboardList, Plus } from 'lucide-react';
+import { createClient } from '@/lib/supabase/server';
+import { IntakeFormsClient } from './intake-forms-client';
 
-export default function IntakeFormsPage() {
+export default async function IntakeFormsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ service?: string }>;
+}) {
+  const supabase = await createClient();
+  const params = await searchParams;
+
+  const { data: servicesData } = await supabase
+    .from('services')
+    .select('id, name, department_id, estimated_service_time, department:departments(id, name, office:offices(id, name))')
+    .eq('is_active', true)
+    .order('name');
+  const services = servicesData || [];
+
+  const serviceIds = services.map((service) => service.id);
+  let fieldQuery = supabase
+    .from('intake_form_fields')
+    .select('id, service_id, field_label, field_name, field_type, is_required, options, sort_order, created_at')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (params.service) {
+    fieldQuery = fieldQuery.eq('service_id', params.service);
+  } else if (serviceIds.length > 0) {
+    fieldQuery = fieldQuery.in('service_id', serviceIds);
+  }
+
+  const { data: fieldsData, error } = await fieldQuery;
+  const fields = fieldsData || [];
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <p className="text-destructive">Failed to load intake forms: {error.message}</p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Intake Forms</h1>
-          <p className="text-sm text-muted-foreground">
-            Collect information from visitors before their appointment
-          </p>
-        </div>
-        <button
-          disabled
-          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground opacity-50 cursor-not-allowed"
-        >
-          <Plus className="h-4 w-4" />
-          Create Form
-        </button>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3 mb-6">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Active Forms</p>
-          <p className="mt-1 text-2xl font-bold">0</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Submissions Today</p>
-          <p className="mt-1 text-2xl font-bold">0</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Completion Rate</p>
-          <p className="mt-1 text-2xl font-bold">0%</p>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-12 text-center">
-        <ClipboardList className="mx-auto h-12 w-12 text-muted-foreground/30" />
-        <h3 className="mt-4 text-lg font-semibold text-foreground">Intake forms coming soon</h3>
-        <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-          Build custom forms with drag-and-drop, collect documents, signatures, and pre-visit information to speed up service delivery.
-        </p>
-      </div>
-    </div>
+    <IntakeFormsClient
+      fields={fields}
+      services={services as any}
+      currentServiceFilter={params.service ?? ''}
+    />
   );
 }

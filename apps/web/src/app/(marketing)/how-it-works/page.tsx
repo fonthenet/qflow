@@ -1,184 +1,160 @@
 import Link from 'next/link';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, BellRing, Building2, CalendarClock, Monitor, QrCode, ShieldCheck, Workflow } from 'lucide-react';
+import { Sora } from 'next/font/google';
+
+const display = Sora({
+  subsets: ['latin'],
+});
 
 const steps = [
   {
     number: '01',
-    title: 'Create your account',
-    description: 'Sign up in 30 seconds. Choose your industry template or start from scratch.',
-    details: [
-      'No credit card required',
-      'Industry-specific templates auto-configure departments and services',
-      'Or start blank and set up everything how you need it',
-    ],
+    title: 'Start with your category and operating model',
+    description:
+      'QueueFlow shapes the first workspace around your business type, whether you run walk-ins, appointments, reservations, or a mix of all three.',
+    icon: Building2,
   },
   {
     number: '02',
-    title: 'Configure your queue',
-    description: 'Set up your departments, services, counters, and staff from the admin dashboard.',
-    details: [
-      'Create departments (e.g., Teller, Loans, Customer Service)',
-      'Add services within each department',
-      'Set up desks/counters and assign staff',
-      'Configure priority categories (elderly, VIP, etc.)',
-      'Customize intake forms per service',
-    ],
+    title: 'Turn on the intake paths that match reality',
+    description:
+      'Use QR join, shared links, staff-created visits, reservations, appointment check-in, or kiosk intake without fragmenting the flow.',
+    icon: QrCode,
   },
   {
     number: '03',
-    title: 'Share your QR code',
-    description: 'Print the QR code and place it at your entrance. Customers scan to join.',
-    details: [
-      'Works with any phone camera \u2014 no app download needed',
-      'Place at your entrance, on tables, or on your website',
-      'Customers can also join remotely before arriving',
-      'Set up a self-service kiosk for walk-in customers',
-    ],
+    title: 'Run one universal command center',
+    description:
+      'Every arrival moves through the same lifecycle so staff can call, serve, transfer, and complete work with full context attached.',
+    icon: Workflow,
   },
   {
     number: '04',
-    title: 'Manage from your dashboard',
-    description: 'Call next customer, mark served, handle no-shows \u2014 all from your operator panel.',
-    details: [
-      'One-click "Call Next" respects queue order and priority',
-      'View customer info and intake data before they arrive',
-      'Transfer tickets between departments',
-      'Track real-time queue statistics',
-    ],
+    title: 'Keep customers informed through each handoff',
+    description:
+      'Customers get a calm, app-free journey with live status, clear next steps, display boards, and branded updates.',
+    icon: BellRing,
   },
   {
     number: '05',
-    title: 'Customers track in real-time',
-    description: 'After scanning, customers see their position, estimated wait, and get live updates.',
-    details: [
-      'Real-time position tracking \u2014 "You are #3 in queue"',
-      'Estimated wait time based on average service duration',
-      'Live updates without refreshing the page',
-      'Works on any phone browser \u2014 iOS, Android, desktop',
-    ],
-  },
-  {
-    number: '06',
-    title: 'Instant push notifications',
-    description: "When it's their turn, customers get an instant push notification \u2014 even with the screen locked.",
-    details: [
-      'Free unlimited push notifications on ALL plans',
-      'Works on locked phones \u2014 no SMS needed',
-      'No per-message fees \u2014 $0 cost to you',
-      'Customers see "YOUR TURN \u2014 Go to Counter 3"',
-    ],
+    title: 'Expand into bookings, reservations, and owner control',
+    description:
+      'As the business grows, QueueFlow extends into scheduling, customer flow analytics, and the platform-level controls needed to scale.',
+    icon: ShieldCheck,
   },
 ];
 
-const extras = [
+const surfaces = [
   {
-    title: 'TV Display Boards',
-    description: 'Connect any screen to show your queue in real-time. 3 layout options, dark/light themes, customizable colors.',
+    title: 'For the operator',
+    description: 'A command center for arrivals, waiting, live service, and transfer between teams or stations.',
   },
   {
-    title: 'Analytics & Insights',
-    description: 'Track wait times, peak hours, staff performance, and customer satisfaction. Export reports as CSV or PDF.',
+    title: 'For the customer',
+    description: 'A modern browser journey with status clarity, less crowding, and no forced app install.',
+  },
+  {
+    title: 'For the owner',
+    description: 'A platform layer for plans, traffic, templates, feature flags, and rollout control.',
   },
 ];
 
 export default function HowItWorksPage() {
   return (
-    <div className="bg-white">
-      {/* Hero */}
-      <section className="pb-16 pt-20 md:pt-28">
-        <div className="mx-auto max-w-6xl px-6 text-center">
-          <p className="text-[13px] font-semibold uppercase tracking-widest text-gray-400">How it works</p>
-          <h1 className="mt-3 text-4xl font-bold tracking-[-0.03em] text-gray-900 md:text-5xl">
-            From sign-up to first notification
-          </h1>
-          <p className="mx-auto mt-4 max-w-xl text-[15px] leading-7 text-gray-500">
-            Here&apos;s exactly how QueueFlow transforms your queue management.
-          </p>
+    <div className="bg-[#f6f1ea] text-slate-900">
+      <section className="border-b border-black/5 bg-[radial-gradient(circle_at_top_left,_rgba(255,241,226,0.95),_rgba(246,241,234,0)_38%),radial-gradient(circle_at_right,_rgba(199,232,223,0.7),_rgba(246,241,234,0)_36%),linear-gradient(180deg,_#f8f4ee_0%,_#f6f1ea_100%)]">
+        <div className="mx-auto max-w-7xl px-6 py-18 md:py-24">
+          <div className="mx-auto max-w-4xl text-center">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-slate-400">How it works</p>
+            <h1 className={`${display.className} mt-4 text-[clamp(2.4rem,5vw,4.8rem)] leading-[0.98] tracking-[-0.055em] text-[#101717]`}>
+              Customer flow software that matches how service businesses actually operate.
+            </h1>
+            <p className="mx-auto mt-5 max-w-2xl text-[16px] leading-7 text-slate-600">
+              QueueFlow is designed to unify arrivals, waiting, bookings, reservations, and handoff instead of treating each
+              one like a separate tool.
+            </p>
+          </div>
+
+          <div className="mx-auto mt-12 grid max-w-5xl gap-4 md:grid-cols-3">
+            {surfaces.map((surface) => (
+              <div key={surface.title} className="rounded-[28px] border border-white/70 bg-white/80 p-6 shadow-[0_14px_30px_rgba(20,27,26,0.05)]">
+                <p className="text-lg font-semibold text-slate-900">{surface.title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{surface.description}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Steps */}
-      <section className="pb-20">
-        <div className="mx-auto max-w-3xl px-6">
-          <div className="space-y-6">
-            {steps.map((step, i) => (
-              <div
-                key={step.number}
-                className="relative flex gap-5"
-              >
-                {/* Timeline line */}
-                {i < steps.length - 1 && (
-                  <div className="absolute left-[22px] top-[56px] h-[calc(100%-20px)] w-px bg-gray-100" />
-                )}
-
-                {/* Number */}
-                <div className="shrink-0">
-                  <div className="relative z-10 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-50 text-sm font-bold text-gray-900">
+      <section className="bg-white">
+        <div className="mx-auto max-w-6xl px-6 py-18 md:py-22">
+          <div className="grid gap-6">
+            {steps.map((step) => {
+              const Icon = step.icon;
+              return (
+                <div key={step.number} className="grid gap-4 rounded-[30px] border border-slate-200 bg-[#fbfaf8] p-6 shadow-[0_14px_30px_rgba(20,27,26,0.04)] md:grid-cols-[auto_1fr_auto] md:items-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#10292f] text-sm font-semibold text-white">
                     {step.number}
                   </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">{step.title}</h2>
+                    <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
+                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#10292f]">
+                    <Icon className="h-5 w-5" />
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
-                {/* Content */}
-                <div className="flex-1 rounded-xl border border-gray-100 bg-white p-5">
-                  <h3 className="text-[16px] font-semibold text-gray-900">{step.title}</h3>
-                  <p className="mt-1.5 text-[13px] leading-6 text-gray-500">
-                    {step.description}
-                  </p>
-                  <ul className="mt-3 space-y-2">
-                    {step.details.map((detail) => (
-                      <li key={detail} className="flex items-start gap-2 text-[12px]">
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                        <span className="text-gray-600">{detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+      <section className="border-y border-black/5 bg-[#10292f] text-white">
+        <div className="mx-auto max-w-6xl px-6 py-18 md:py-22">
+          <div className="grid gap-4 md:grid-cols-4">
+            {[
+              { label: 'Intake paths', value: '6' },
+              { label: 'Universal lifecycle', value: '1' },
+              { label: 'Customer app installs', value: '0' },
+              { label: 'Owner consoles needed', value: '1' },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[26px] border border-white/10 bg-white/5 p-5">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">{item.label}</p>
+                <p className={`${display.className} mt-3 text-4xl leading-none tracking-[-0.05em] text-white`}>{item.value}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Extras */}
-      <section className="border-y border-gray-100 bg-white py-16">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="text-center text-xl font-semibold text-gray-900">Plus, powerful extras</h2>
-          <div className="mx-auto mt-8 grid max-w-3xl gap-4 md:grid-cols-2">
-            {extras.map((extra) => (
-              <div
-                key={extra.title}
-                className="rounded-xl border border-gray-100 bg-white p-5"
-              >
-                <h3 className="text-sm font-semibold text-gray-900">{extra.title}</h3>
-                <p className="mt-1.5 text-[13px] leading-6 text-gray-500">
-                  {extra.description}
-                </p>
-              </div>
-            ))}
+      <section className="bg-[linear-gradient(180deg,_#f6f1ea_0%,_#fff7ee_100%)]">
+        <div className="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-white text-[#10292f] shadow-[0_16px_34px_rgba(20,27,26,0.08)]">
+            <CalendarClock className="h-7 w-7" />
           </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-16">
-        <div className="mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-2xl font-semibold text-gray-900">Ready to get started?</h2>
-          <p className="mt-3 text-[15px] text-gray-500">
-            Set up your first queue in under 3 minutes. Free forever for up to 50 customers/month.
+          <h2 className={`${display.className} mt-6 text-[clamp(2rem,4vw,3.6rem)] leading-[0.98] tracking-[-0.05em] text-[#111716]`}>
+            Build the first workspace now. Add the rest of the flow as you grow.
+          </h2>
+          <p className="mx-auto mt-5 max-w-2xl text-[16px] leading-7 text-slate-600">
+            Start with one location and a clean command center, then expand into reservations, bookings, displays,
+            analytics, and owner-level controls.
           </p>
-          <div className="mt-8">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-5 py-2.5 text-[14px] font-medium text-white transition hover:bg-gray-800"
+              className="inline-flex items-center gap-2 rounded-full bg-[#10292f] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#18383f]"
             >
-              Create free account
+              Create your workspace
               <ArrowRight className="h-4 w-4" />
             </Link>
-          </div>
-          <div className="mt-5 flex items-center justify-center gap-5 text-[12px] text-gray-400">
-            <span className="flex items-center gap-1.5"><Check className="h-3 w-3" /> No credit card</span>
-            <span className="flex items-center gap-1.5"><Check className="h-3 w-3" /> Free push notifications</span>
-            <span className="flex items-center gap-1.5"><Check className="h-3 w-3" /> Cancel anytime</span>
+            <Link
+              href="/solutions"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400"
+            >
+              Explore categories
+              <Monitor className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>

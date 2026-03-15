@@ -353,6 +353,84 @@ export async function deletePriorityCategory(id: string) {
   return { success: true };
 }
 
+// ─── Intake Form Fields ───────────────────────────────────────────────────
+
+export async function createIntakeFormField(formData: FormData) {
+  const { supabase } = await getOrgId();
+
+  const fieldType = formData.get('field_type') as string;
+  const rawOptions = (formData.get('options') as string) || '';
+  const options =
+    fieldType === 'select'
+      ? rawOptions
+          .split('\n')
+          .map((option) => option.trim())
+          .filter(Boolean)
+      : null;
+
+  const { error } = await supabase.from('intake_form_fields').insert({
+    service_id: formData.get('service_id') as string,
+    field_label: formData.get('field_label') as string,
+    field_name: formData.get('field_name') as string,
+    field_type: fieldType,
+    is_required: formData.get('is_required') === 'true',
+    sort_order: formData.get('sort_order')
+      ? Number(formData.get('sort_order'))
+      : null,
+    options,
+  });
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/intake-forms');
+  return { success: true };
+}
+
+export async function updateIntakeFormField(id: string, formData: FormData) {
+  const { supabase } = await getOrgId();
+
+  const fieldType = formData.get('field_type') as string;
+  const rawOptions = (formData.get('options') as string) || '';
+  const options =
+    fieldType === 'select'
+      ? rawOptions
+          .split('\n')
+          .map((option) => option.trim())
+          .filter(Boolean)
+      : null;
+
+  const { error } = await supabase
+    .from('intake_form_fields')
+    .update({
+      service_id: formData.get('service_id') as string,
+      field_label: formData.get('field_label') as string,
+      field_name: formData.get('field_name') as string,
+      field_type: fieldType,
+      is_required: formData.get('is_required') === 'true',
+      sort_order: formData.get('sort_order')
+        ? Number(formData.get('sort_order'))
+        : null,
+      options,
+    })
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/intake-forms');
+  return { success: true };
+}
+
+export async function deleteIntakeFormField(id: string) {
+  const { supabase } = await getOrgId();
+
+  const { error } = await supabase
+    .from('intake_form_fields')
+    .delete()
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+  revalidatePath('/admin/intake-forms');
+  return { success: true };
+}
+
 // ─── Kiosk Settings ──────────────────────────────────────────────────────
 
 export async function updateKioskSettings(settings: Record<string, any>) {

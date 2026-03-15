@@ -87,63 +87,54 @@ export function AnalyticsDashboard({
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor your queue performance and staff metrics
-          </p>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Command center intelligence</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Analytics and service health</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Watch demand, wait pressure, service pacing, and satisfaction trends across every arrival mode and workspace.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <select
+              value={selectedDateRange}
+              onChange={(e) => setSelectedDateRange(e.target.value)}
+              className="rounded-full border border-slate-200 bg-[#fbfaf8] px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-[#10292f]"
+            >
+              <option value="today">Today</option>
+              <option value="last7">Last 7 days</option>
+              <option value="last30">Last 30 days</option>
+            </select>
+
+            <select
+              value={selectedOffice}
+              onChange={(e) => setSelectedOffice(e.target.value)}
+              className="rounded-full border border-slate-200 bg-[#fbfaf8] px-4 py-2.5 text-sm text-slate-700 outline-none focus:border-[#10292f]"
+            >
+              <option value="">All offices</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleRefresh}
+              disabled={isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10292f] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#173740] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${isPending ? 'animate-spin' : ''}`} />
+              Refresh view
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${isPending ? 'animate-spin' : ''}`}
-          />
-          Refresh
-        </button>
-      </div>
+      </section>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={selectedDateRange}
-          onChange={(e) => setSelectedDateRange(e.target.value)}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
-        >
-          <option value="today">Today</option>
-          <option value="last7">Last 7 days</option>
-          <option value="last30">Last 30 days</option>
-        </select>
-
-        <select
-          value={selectedOffice}
-          onChange={(e) => setSelectedOffice(e.target.value)}
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
-        >
-          <option value="">All Offices</option>
-          {offices.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-
-        <button
-          onClick={handleRefresh}
-          disabled={isPending}
-          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
-        >
-          Apply Filters
-        </button>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Total Tickets"
           value={summary.totalTicketsToday.toString()}
@@ -190,56 +181,52 @@ export function AnalyticsDashboard({
         />
       </div>
 
-      {/* Charts Row 1: Tickets by Hour + Tickets by Department */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-400">
             Tickets by Hour (Today)
           </h3>
           <TicketsByHourChart data={ticketsByHour} />
-        </div>
+        </section>
 
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-400">
             Tickets by Department
           </h3>
           <DepartmentBarChart data={ticketsByDepartment} />
-        </div>
+        </section>
       </div>
 
-      {/* Charts Row 2: Wait Time Trend + Feedback Distribution */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-400">
             Wait Time Trend
           </h3>
           <WaitTimeTrendChart data={waitTimeTrend} />
-        </div>
+        </section>
 
-        <div className="rounded-xl border border-border bg-card p-6">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
           <FeedbackDistribution data={feedbackSummary} />
-        </div>
+        </section>
       </div>
 
-      {/* Staff Performance Table */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="mb-4 text-sm font-semibold text-foreground">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-400">
           Staff Performance
         </h3>
         <StaffPerformanceTable data={staffPerformance} />
-      </div>
+      </section>
 
-      {/* Recent Feedback Comments */}
       {feedbackSummary.recentComments.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-400">
             Recent Feedback Comments
           </h3>
           <div className="space-y-3">
             {feedbackSummary.recentComments.map((c) => (
               <div
                 key={c.id}
-                className="rounded-lg border border-border bg-muted/30 p-4"
+                className="rounded-[24px] border border-slate-200 bg-[#fbfaf8] p-4"
               >
                 <div className="mb-1 flex items-center gap-2">
                   <div className="flex gap-0.5">
@@ -249,24 +236,24 @@ export function AnalyticsDashboard({
                         className={`h-3.5 w-3.5 ${
                           i < c.rating
                             ? 'fill-yellow-400 text-yellow-400'
-                            : 'text-muted-foreground/30'
+                            : 'text-slate-300'
                         }`}
                       />
                     ))}
                   </div>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-slate-500">
                     {c.staff_name && `Staff: ${c.staff_name}`}
                     {c.service_name && ` | Service: ${c.service_name}`}
                   </span>
                 </div>
-                <p className="text-sm text-foreground">{c.comment}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="text-sm text-slate-900">{c.comment}</p>
+                <p className="mt-1 text-xs text-slate-500">
                   {new Date(c.created_at).toLocaleDateString()}
                 </p>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
@@ -290,13 +277,13 @@ function SummaryCard({
   iconBg: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-md">
+    <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <div className={`rounded-lg p-2 ${iconBg}`}>{icon}</div>
+        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <div className={`rounded-2xl p-2 ${iconBg}`}>{icon}</div>
       </div>
-      <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
     </div>
   );
 }

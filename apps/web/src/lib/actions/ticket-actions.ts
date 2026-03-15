@@ -409,6 +409,137 @@ export async function callNextTicket(deskId: string, staffId: string) {
   return { data: ticket, smsSent };
 }
 
+export async function callSpecificTicket(ticketId: string, deskId: string, staffId: string) {
+  const supabase = await createClient();
+  let smsSent = false;
+
+  const { data: currentTicket, error: currentTicketError } = await supabase
+    .from('tickets')
+    .select('status')
+    .eq('id', ticketId)
+    .single();
+
+  if (currentTicketError || !currentTicket) {
+    return { error: currentTicketError?.message ?? 'Ticket not found' };
+  }
+
+  const calledAt = new Date().toISOString();
+
+  const { data: ticket, error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'called',
+      desk_id: deskId,
+      called_by_staff_id: staffId,
+      called_at: calledAt,
+    })
+    .eq('id', ticketId)
+    .in('status', ['issued', 'waiting'])
+    .select('*, department:departments(*), service:services(*)')
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  if (!ticket) {
+    return { error: 'Ticket not found or already active elsewhere' };
+  }
+
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: 'status_change',
+    from_status: currentTicket.status,
+    to_status: 'called',
+    staff_id: staffId,
+    desk_id: deskId,
+  });
+
+  const deskName = await getDeskName(supabase, ticket.desk_id);
+
+  if (!process.env.VERCEL) {
+    sendPushToTicket(ticketId, {
+      type: 'called',
+      title: '🔔 YOUR TURN!',
+      body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
+      tag: `qf-turn-${ticketId}`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      deskName,
+    }).catch((err) => console.error('[CallSpecific] Push notification error:', err));
+  }
+
+  const apnsSent = await sendAPNsToTicket(ticketId, {
+    title: "It's Your Turn!",
+    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${ticket.qr_token}`,
+  }).catch((err) => {
+    console.error('[CallSpecific] APNs notification error:', err);
+    return false;
+  });
+
+  if (!apnsSent) {
+    console.warn('[CallSpecific] APNs notification was not sent for ticket:', ticketId);
+  }
+
+  const androidSent = await sendAndroidToTicket(ticketId, {
+    type: 'called',
+    title: "It's Your Turn!",
+    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${ticket.qr_token}`,
+    ticketId,
+    ticketNumber: ticket.ticket_number,
+    qrToken: ticket.qr_token,
+    deskName,
+    status: ticket.status,
+    recallCount: ticket.recall_count ?? 0,
+  }).catch((err) => {
+    console.error('[CallSpecific] Android push error:', err);
+    return false;
+  });
+
+  if (!androidSent) {
+    console.log('[CallSpecific] Android live update was not sent for ticket:', ticketId);
+  }
+
+  const smsResult = await maybeSendPriorityAlertSms(supabase, {
+    ticket,
+    event: 'called',
+    deskName,
+  });
+  smsSent = smsResult.sent;
+
+  const customerEmail = ticket.customer_data?.email as string | undefined;
+  const customerName = (ticket.customer_data?.name as string) || 'Customer';
+  if (customerEmail) {
+    const { officeName } = await getOfficeContext(supabase, ticket.office_id);
+    sendTicketCalledEmail(customerEmail, {
+      customerName,
+      ticketNumber: ticket.ticket_number,
+      deskName,
+      officeName,
+    }).catch((err) => console.error('[CallSpecific] Email notification error:', err));
+  }
+
+  await syncLiveActivityAfterAlert(ticketId, 'CallSpecific');
+
+  notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+    console.error('[CallSpecific] notifyWaitingTickets error:', err)
+  );
+  notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
+    console.error('[CallSpecific] notifyWaitingAndroidTickets error:', err)
+  );
+
+  const { organizationId } = await getOfficeContext(supabase, ticket.office_id);
+  if (organizationId) {
+    dispatchWebhook(organizationId, 'ticket.called', ticket).catch(() => {});
+  }
+
+  revalidatePath('/admin/queue');
+  return { data: ticket, smsSent };
+}
+
 export async function startServing(ticketId: string, staffId: string) {
   const supabase = await createClient();
 

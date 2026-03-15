@@ -1,16 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Search,
+  Calendar,
   ChevronDown,
   ChevronUp,
-  User,
-  Phone,
-  Mail,
-  Calendar,
-  Star,
   Clock,
+  Mail,
+  Phone,
+  Search,
+  Star,
+  User,
+  Users,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useTerminology } from '@/lib/terminology-context';
@@ -38,6 +39,15 @@ interface TicketHistory {
   feedback: { rating: number; comment: string | null }[];
 }
 
+const statusClasses: Record<string, string> = {
+  completed: 'bg-emerald-50 text-emerald-700',
+  no_show: 'bg-rose-50 text-rose-700',
+  cancelled: 'bg-slate-100 text-slate-600',
+  serving: 'bg-sky-50 text-sky-700',
+  called: 'bg-amber-50 text-amber-700',
+  waiting: 'bg-[#f8efe1] text-[#946200]',
+};
+
 export function CustomersClient({
   customers: initialCustomers,
 }: {
@@ -46,20 +56,23 @@ export function CustomersClient({
   const t = useTerminology();
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [ticketHistory, setTicketHistory] = useState<
-    Record<string, TicketHistory[]>
-  >({});
+  const [ticketHistory, setTicketHistory] = useState<Record<string, TicketHistory[]>>({});
   const [loadingHistory, setLoadingHistory] = useState<string | null>(null);
 
-  const filtered = initialCustomers.filter((c) => {
-    const q = search.toLowerCase();
-    if (!q) return true;
-    return (
-      (c.name?.toLowerCase().includes(q) ?? false) ||
-      (c.phone?.includes(q) ?? false) ||
-      (c.email?.toLowerCase().includes(q) ?? false)
-    );
-  });
+  const filtered = useMemo(() => {
+    const query = search.toLowerCase();
+    return initialCustomers.filter((customer) => {
+      if (!query) return true;
+      return (
+        (customer.name?.toLowerCase().includes(query) ?? false) ||
+        (customer.phone?.includes(query) ?? false) ||
+        (customer.email?.toLowerCase().includes(query) ?? false)
+      );
+    });
+  }, [initialCustomers, search]);
+
+  const repeatCustomers = initialCustomers.filter((customer) => customer.visit_count > 1).length;
+  const reachableCustomers = initialCustomers.filter((customer) => customer.phone || customer.email).length;
 
   async function toggleExpand(customerId: string) {
     if (expandedId === customerId) {
@@ -69,15 +82,12 @@ export function CustomersClient({
 
     setExpandedId(customerId);
 
-    // Load ticket history if not already loaded
     if (!ticketHistory[customerId]) {
       setLoadingHistory(customerId);
       const supabase = createClient();
       const { data: tickets } = await supabase
         .from('tickets')
-        .select(
-          '*, service:services(name), department:departments(name), feedback(*)'
-        )
+        .select('*, service:services(name), department:departments(name), feedback(*)')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
         .limit(20);
@@ -95,194 +105,205 @@ export function CustomersClient({
     const waitMs =
       new Date(ticket.serving_started_at).getTime() -
       new Date(ticket.created_at).getTime();
-    const mins = Math.round(waitMs / 60000);
-    return `${mins} min`;
+    return `${Math.round(waitMs / 60000)} min`;
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t.customerPlural}</h1>
-        <p className="text-sm text-muted-foreground">
-          View registered {t.customerPlural.toLowerCase()} and their visit history
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Command center support</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{t.customerPlural}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              See every returning guest, client, patient, or visitor with enough context to route them back into live operations quickly.
+            </p>
+          </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search by name, phone, or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-border bg-card pl-10 pr-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-        />
-      </div>
-
-      {/* Customers List */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {/* Table Header */}
-        <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border bg-muted/30 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          <div className="col-span-2">{t.customer}</div>
-          <div>Phone</div>
-          <div>Email</div>
-          <div className="text-center">Visits</div>
-          <div className="text-right">Last Visit</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label={`Total ${t.customerPlural.toLowerCase()}`} value={initialCustomers.length.toString()} helper="Profiles in this workspace" />
+            <MetricCard label="Repeat visits" value={repeatCustomers.toString()} helper="Customers with 2 or more visits" />
+            <MetricCard label="Reachable" value={reachableCustomers.toString()} helper="Phone or email on file" />
+          </div>
         </div>
+      </section>
 
+      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="relative max-w-xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder={`Search ${t.customerPlural.toLowerCase()} by name, phone, or email`}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full rounded-full border border-slate-200 bg-[#fbfaf8] py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-[#10292f] focus:ring-2 focus:ring-[#10292f]/10"
+          />
+        </div>
+      </section>
+
+      <section className="space-y-4">
         {filtered.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-            {search
-              ? `No ${t.customerPlural.toLowerCase()} matching your search`
-              : `No ${t.customerPlural.toLowerCase()} found`}
+          <div className="rounded-[30px] border border-slate-200 bg-white px-6 py-16 text-center shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+            <Users className="mx-auto h-10 w-10 text-slate-300" />
+            <p className="mt-4 text-base font-semibold text-slate-900">
+              {search ? `No ${t.customerPlural.toLowerCase()} match this search.` : `No ${t.customerPlural.toLowerCase()} yet.`}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">Profiles will appear here as visits are created and customers return.</p>
           </div>
         ) : (
-          <div className="divide-y divide-border">
-            {filtered.map((customer) => (
-              <div key={customer.id}>
-                {/* Customer Row */}
-                <button
-                  onClick={() => toggleExpand(customer.id)}
-                  className="w-full text-left hover:bg-muted/30 transition-colors"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 sm:gap-4 px-6 py-4 items-center">
-                    <div className="col-span-2 flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
-                        <User className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {customer.name || `Unnamed ${t.customer}`}
-                        </p>
-                        <p className="text-xs text-muted-foreground sm:hidden">
-                          {customer.phone || '--'}
-                        </p>
-                      </div>
-                      {expandedId === customer.id ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground ml-auto sm:ml-0" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto sm:ml-0" />
-                      )}
+          filtered.map((customer) => (
+            <article
+              key={customer.id}
+              className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)]"
+            >
+              <button type="button" onClick={() => toggleExpand(customer.id)} className="w-full text-left">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f6f7f4] text-slate-700">
+                      <User className="h-5 w-5" />
                     </div>
-                    <div className="hidden sm:block text-sm text-muted-foreground truncate">
-                      {customer.phone || '--'}
-                    </div>
-                    <div className="hidden sm:block text-sm text-muted-foreground truncate">
-                      {customer.email || '--'}
-                    </div>
-                    <div className="hidden sm:block text-sm text-center font-medium">
-                      {customer.visit_count}
-                    </div>
-                    <div className="hidden sm:block text-sm text-muted-foreground text-right">
-                      {customer.last_visit_at
-                        ? new Date(
-                            customer.last_visit_at
-                          ).toLocaleDateString()
-                        : '--'}
+                    <div className="min-w-0">
+                      <p className="truncate text-lg font-semibold text-slate-950">
+                        {customer.name || `Unnamed ${t.customer}`}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {customer.phone || 'No phone'}
+                        {customer.email ? ` · ${customer.email}` : ''}
+                      </p>
                     </div>
                   </div>
-                </button>
 
-                {/* Expanded History */}
-                {expandedId === customer.id && (
-                  <div className="border-t border-border bg-muted/10 px-6 py-4">
-                    {/* Customer details (mobile) */}
-                    <div className="sm:hidden mb-4 space-y-1 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5" />
-                        {customer.phone || '--'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5" />
-                        {customer.email || '--'}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-3.5 w-3.5" />
-                        {customer.visit_count} visits
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                      {customer.visit_count} visits
+                    </span>
+                    <span className="text-sm text-slate-500">
+                      Last visit {customer.last_visit_at ? new Date(customer.last_visit_at).toLocaleDateString() : '—'}
+                    </span>
+                    {expandedId === customer.id ? (
+                      <ChevronUp className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    )}
+                  </div>
+                </div>
+              </button>
+
+              {expandedId === customer.id ? (
+                <div className="mt-5 border-t border-slate-100 pt-5">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <InfoCard icon={Phone} label="Phone" value={customer.phone || 'Not provided'} />
+                    <InfoCard icon={Mail} label="Email" value={customer.email || 'Not provided'} />
+                    <InfoCard
+                      icon={Calendar}
+                      label="Created"
+                      value={new Date(customer.created_at).toLocaleDateString()}
+                    />
+                  </div>
+
+                  <div className="mt-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Visit history</p>
+                        <p className="mt-1 text-sm text-slate-500">Most recent 20 visits and outcomes.</p>
                       </div>
                     </div>
 
-                    <h4 className="text-sm font-semibold mb-3">
-                      Visit History
-                    </h4>
-
                     {loadingHistory === customer.id ? (
-                      <p className="text-sm text-muted-foreground py-4 text-center">
-                        Loading history...
-                      </p>
+                      <p className="py-8 text-center text-sm text-slate-500">Loading visit history...</p>
                     ) : (ticketHistory[customer.id] ?? []).length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-4 text-center">
-                        No visit history found
-                      </p>
+                      <p className="py-8 text-center text-sm text-slate-500">No visit history found.</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="mt-4 space-y-3">
                         {(ticketHistory[customer.id] ?? []).map((ticket) => (
                           <div
                             key={ticket.id}
-                            className="rounded-lg border border-border bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4"
+                            className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4"
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded shrink-0">
-                                #{ticket.ticket_number}
-                              </span>
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
-                                  ticket.status === 'completed'
-                                    ? 'bg-green-100 text-green-700'
-                                    : ticket.status === 'no_show'
-                                      ? 'bg-red-100 text-red-700'
-                                      : ticket.status === 'cancelled'
-                                        ? 'bg-gray-100 text-gray-700'
-                                        : 'bg-blue-100 text-blue-700'
-                                }`}
-                              >
-                                {ticket.status}
-                              </span>
-                            </div>
-                            <div className="text-sm text-muted-foreground truncate">
-                              {ticket.service?.name ??
-                                ticket.department?.name ??
-                                '--'}
-                            </div>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                              <Clock className="h-3 w-3" />
-                              Wait: {formatWaitTime(ticket)}
-                            </div>
-                            <div className="text-xs text-muted-foreground shrink-0">
-                              {new Date(
-                                ticket.created_at
-                              ).toLocaleDateString()}{' '}
-                              {new Date(
-                                ticket.created_at
-                              ).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                            {ticket.feedback?.[0] && (
-                              <div className="flex items-center gap-1 shrink-0">
-                                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                <span className="text-xs font-medium">
-                                  {ticket.feedback[0].rating}/5
-                                </span>
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-sm font-semibold text-slate-900">
+                                    #{ticket.ticket_number}
+                                  </span>
+                                  <span
+                                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      statusClasses[ticket.status] || 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    {ticket.status.replace('_', ' ')}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-sm text-slate-700">
+                                  {ticket.service?.name ?? ticket.department?.name ?? 'Unassigned service'}
+                                </p>
                               </div>
-                            )}
+
+                              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  Wait {formatWaitTime(ticket)}
+                                </span>
+                                <span>
+                                  {new Date(ticket.created_at).toLocaleDateString()}{' '}
+                                  {new Date(ticket.created_at).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                                {ticket.feedback?.[0] ? (
+                                  <span className="inline-flex items-center gap-1.5 text-slate-700">
+                                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                    {ticket.feedback[0].rating}/5
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                </div>
+              ) : null}
+            </article>
+          ))
         )}
-      </div>
+      </section>
 
-      <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {initialCustomers.length} {t.customerPlural.toLowerCase()}
+      <p className="text-sm text-slate-500">
+        Showing {filtered.length} of {initialCustomers.length} {t.customerPlural.toLowerCase()}.
       </p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+function InfoCard({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Phone;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-slate-400" />
+        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      </div>
+      <p className="mt-3 text-sm font-medium text-slate-900">{value}</p>
     </div>
   );
 }

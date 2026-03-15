@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Globe, Info, Settings2, Sparkles } from 'lucide-react';
 
 interface Config {
   siteName: string;
@@ -29,107 +29,150 @@ const configItems: { key: keyof Config; label: string; envVar: string; descripti
 ];
 
 export function WebsiteConfigClient({ config }: { config: Config }) {
+  const toggles = configItems.filter((item) => item.type === 'boolean');
+  const details = configItems.filter((item) => item.type !== 'boolean');
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Website Configuration</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Control your marketing site, signup behavior, and platform defaults.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Owner console</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Website and growth controls</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Control the public site story, signup posture, and launch defaults from one operational view.
+            </p>
+          </div>
 
-      <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-        <div>
-          <p className="text-sm font-medium text-blue-900">How to configure</p>
-          <p className="mt-0.5 text-xs text-blue-700">
-            These settings are controlled via environment variables in your{' '}
-            <code className="rounded bg-blue-100 px-1 py-0.5 text-[10px] font-mono">.env.local</code>{' '}
-            file (for local dev) or your Vercel project settings (for production).
-            After changing env vars, restart the dev server or redeploy.
-          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label="Site name" value={config.siteName} helper="Current brand heading" />
+            <MetricCard label="Default plan" value={config.defaultPlan} helper="Assigned at signup" />
+            <MetricCard label="Trial length" value={`${config.trialDays} days`} helper="Paid-plan evaluation window" />
+          </div>
         </div>
-      </div>
+      </section>
 
-      {config.maintenanceMode && (
-        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
-          <AlertTriangle className="h-4 w-4 text-red-600" />
-          <p className="text-sm font-medium text-red-900">
-            Maintenance mode is ON. Your site is not accessible to visitors.
-          </p>
-        </div>
-      )}
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <section className="space-y-6 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start gap-3 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Config source</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                These values come from environment variables in <code className="rounded bg-white px-1.5 py-0.5 text-xs font-mono text-slate-700">.env.local</code> or your deployment settings. Restart locally or redeploy after changes.
+              </p>
+            </div>
+          </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="divide-y divide-gray-100">
-          {configItems.map((item) => {
-            const value = config[item.key];
-            return (
-              <div key={item.key} className="px-6 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900">{item.label}</p>
-                      {item.type === 'boolean' && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          value ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                        }`}>
-                          {value ? 'ON' : 'OFF'}
-                        </span>
-                      )}
+          {config.maintenanceMode ? (
+            <div className="flex items-start gap-3 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-4">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+              <div>
+                <p className="text-sm font-semibold text-rose-900">Maintenance mode is on</p>
+                <p className="mt-1 text-sm text-rose-700">Visitors are blocked from the public site until this flag is turned off.</p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-[24px] border border-slate-200 bg-[#fbfaf8] p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-slate-400" />
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Toggle posture</p>
+            </div>
+            <div className="mt-4 space-y-3">
+              {toggles.map((item) => {
+                const enabled = Boolean(config[item.key]);
+                return (
+                  <div key={item.key} className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                      <p className="mt-1 text-sm text-slate-500">{item.description}</p>
                     </div>
-                    <p className="mt-0.5 text-xs text-gray-500">{item.description}</p>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      {enabled ? 'Enabled' : 'Disabled'}
+                    </span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <code className="rounded bg-gray-100 px-2 py-1 text-[10px] font-mono text-gray-600">
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-slate-400" />
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Environment-backed details</p>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {details.map((item) => {
+              const value = config[item.key];
+              return (
+                <div key={item.key} className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-950">{item.label}</p>
+                      <p className="mt-1 text-sm text-slate-500">{item.description}</p>
+                    </div>
+                    <code className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-mono text-slate-500">
                       {item.envVar}
                     </code>
-                    {item.type !== 'boolean' && (
-                      <p className="mt-1 text-sm font-medium text-gray-900">
-                        {String(value) || <span className="text-gray-300 italic">not set</span>}
-                      </p>
-                    )}
                   </div>
+                  <p className="mt-4 break-words text-sm font-medium text-slate-900">
+                    {String(value) || <span className="italic text-slate-400">Not set</span>}
+                  </p>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
 
-      {/* Marketing Pages */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-sm font-semibold text-gray-900">Marketing Pages</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          These pages are code-managed. Edit the source files to change content.
-        </p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="flex items-center gap-2">
+          <Globe className="h-4 w-4 text-slate-400" />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Code-managed pages</p>
+            <p className="mt-1 text-sm text-slate-500">The marketing pages now carry the SaaS rebuild voice. Use these entry points for quick preview checks.</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[
-            { name: 'Homepage', path: 'apps/web/src/app/(marketing)/page.tsx', url: '/' },
-            { name: 'Pricing', path: 'apps/web/src/app/(marketing)/pricing/page.tsx', url: '/pricing' },
-            { name: 'How It Works', path: 'apps/web/src/app/(marketing)/how-it-works/page.tsx', url: '/how-it-works' },
-            { name: 'Solutions', path: 'apps/web/src/app/(marketing)/solutions/page.tsx', url: '/solutions' },
-            { name: 'Contact', path: 'apps/web/src/app/(marketing)/contact/page.tsx', url: '/contact' },
-            { name: 'Privacy Policy', path: 'apps/web/src/app/(marketing)/privacy/page.tsx', url: '/privacy' },
-            { name: 'Terms of Service', path: 'apps/web/src/app/(marketing)/terms/page.tsx', url: '/terms' },
+            { name: 'Homepage', url: '/' },
+            { name: 'Pricing', url: '/pricing' },
+            { name: 'How It Works', url: '/how-it-works' },
+            { name: 'Solutions', url: '/solutions' },
+            { name: 'Contact', url: '/contact' },
+            { name: 'Privacy Policy', url: '/privacy' },
+            { name: 'Terms of Service', url: '/terms' },
           ].map((page) => (
-            <div key={page.name} className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-2.5">
+            <a
+              key={page.name}
+              href={page.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center justify-between rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4 transition hover:border-slate-300 hover:bg-white"
+            >
               <div>
-                <p className="text-xs font-medium text-gray-700">{page.name}</p>
-                <p className="text-[10px] text-gray-400 font-mono">{page.url}</p>
+                <p className="text-sm font-semibold text-slate-900">{page.name}</p>
+                <p className="mt-1 text-xs font-mono text-slate-400">{page.url}</p>
               </div>
-              <a
-                href={page.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs font-medium text-gray-500 hover:text-gray-900"
-              >
-                View
-              </a>
-            </div>
+              <ExternalLink className="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" />
+            </a>
           ))}
         </div>
-      </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
     </div>
   );
 }

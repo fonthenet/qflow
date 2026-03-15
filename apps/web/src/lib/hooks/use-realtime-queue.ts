@@ -1,18 +1,26 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-type Ticket = Database['public']['Tables']['tickets']['Row'];
+export type QueueTicket = Database['public']['Tables']['tickets']['Row'] & {
+  service?: { name: string } | null;
+  department?: { name: string } | null;
+  office?: { name: string } | null;
+  desk?: { name: string | null; display_name?: string | null } | null;
+};
 
 export interface QueueData {
-  waiting: Ticket[];
-  called: Ticket[];
-  serving: Ticket[];
-  recentlyServed: Ticket[];
-  cancelled: Ticket[];
+  issued: QueueTicket[];
+  waiting: QueueTicket[];
+  called: QueueTicket[];
+  serving: QueueTicket[];
+  recentlyServed: QueueTicket[];
+  cancelled: QueueTicket[];
+  noShows: QueueTicket[];
+  transferred: QueueTicket[];
 }
 
 interface UseRealtimeQueueOptions {
@@ -20,13 +28,19 @@ interface UseRealtimeQueueOptions {
   departmentId?: string;
 }
 
+const ACTIVE_STATUSES = ['issued', 'waiting', 'called', 'serving'] as const;
+const RECENT_STATUSES = ['served', 'cancelled', 'no_show', 'transferred'] as const;
+
 export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOptions) {
   const [queue, setQueue] = useState<QueueData>({
+    issued: [],
     waiting: [],
     called: [],
     serving: [],
     recentlyServed: [],
     cancelled: [],
+    noShows: [],
+    transferred: [],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,17 +49,18 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
   const fetchQueue = useCallback(async () => {
     const supabase = createClient();
 
-    // Fetch today's active tickets
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayIso = today.toISOString();
 
     let query = supabase
       .from('tickets')
-      .select('*')
+      .select(
+        '*, service:services(name), department:departments(name), office:offices(name), desk:desks(name, display_name)'
+      )
       .eq('office_id', officeId)
       .gte('created_at', todayIso)
-      .in('status', ['waiting', 'called', 'serving', 'served', 'cancelled'])
+      .in('status', [...ACTIVE_STATUSES, ...RECENT_STATUSES])
       .order('priority', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true });
 
@@ -60,43 +75,36 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
       return;
     }
 
-    const tickets = data ?? [];
+    const tickets = (data ?? []).map((ticket: any) => ({
+      ...ticket,
+      service: Array.isArray(ticket.service) ? ticket.service[0] || null : ticket.service,
+      department: Array.isArray(ticket.department) ? ticket.department[0] || null : ticket.department,
+      office: Array.isArray(ticket.office) ? ticket.office[0] || null : ticket.office,
+      desk: Array.isArray(ticket.desk) ? ticket.desk[0] || null : ticket.desk,
+    })) as QueueTicket[];
+
+    const byCompletedAtDesc = (left: QueueTicket, right: QueueTicket) =>
+      new Date(right.completed_at ?? 0).getTime() - new Date(left.completed_at ?? 0).getTime();
 
     setQueue({
-      waiting: tickets.filter((t) => t.status === 'waiting'),
-      called: tickets.filter((t) => t.status === 'called'),
-      serving: tickets.filter((t) => t.status === 'serving'),
-      recentlyServed: tickets
-        .filter((t) => t.status === 'served')
-        .sort(
-          (a, b) =>
-            new Date(b.completed_at ?? 0).getTime() -
-            new Date(a.completed_at ?? 0).getTime()
-        )
-        .slice(0, 5),
-      cancelled: tickets
-        .filter((t) => t.status === 'cancelled')
-        .sort(
-          (a, b) =>
-            new Date(b.completed_at ?? 0).getTime() -
-            new Date(a.completed_at ?? 0).getTime()
-        )
-        .slice(0, 5),
+      issued: tickets.filter((ticket) => ticket.status === 'issued'),
+      waiting: tickets.filter((ticket) => ticket.status === 'waiting'),
+      called: tickets.filter((ticket) => ticket.status === 'called'),
+      serving: tickets.filter((ticket) => ticket.status === 'serving'),
+      recentlyServed: tickets.filter((ticket) => ticket.status === 'served').sort(byCompletedAtDesc).slice(0, 6),
+      cancelled: tickets.filter((ticket) => ticket.status === 'cancelled').sort(byCompletedAtDesc).slice(0, 6),
+      noShows: tickets.filter((ticket) => ticket.status === 'no_show').sort(byCompletedAtDesc).slice(0, 6),
+      transferred: tickets.filter((ticket) => ticket.status === 'transferred').sort(byCompletedAtDesc).slice(0, 6),
     });
     setError(null);
   }, [officeId, departmentId]);
 
   useEffect(() => {
     const supabase = createClient();
-    let realtimeConnected = false;
 
-    // Initial fetch
     setIsLoading(true);
     fetchQueue().finally(() => setIsLoading(false));
 
-    // Subscribe to realtime changes
-    // Note: postgres_changes only supports filtering on ONE column.
-    // Filter by office_id, then client-side filter by department if needed.
     const channel = supabase
       .channel(`queue-${officeId}-${departmentId ?? 'all'}`)
       .on(
@@ -108,25 +116,21 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
           filter: `office_id=eq.${officeId}`,
         },
         (payload) => {
-          // If filtering by department, ignore changes from other departments
           if (departmentId) {
-            const changed = (payload.new ?? payload.old) as Ticket | undefined;
+            const changed = (payload.new ?? payload.old) as Database['public']['Tables']['tickets']['Row'] | undefined;
             if (changed && changed.department_id !== departmentId) return;
           }
-          // Re-fetch on any ticket change for consistency
           fetchQueue();
         }
       )
       .subscribe((status) => {
-        realtimeConnected = status === 'SUBSCRIBED';
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[RealtimeQueue] Subscription failed:', status, '— using polling fallback');
+          console.warn('[RealtimeQueue] Subscription degraded:', status, '— falling back to polling.');
         }
       });
 
     channelRef.current = channel;
 
-    // Polling fallback: refresh every 3s to guarantee updates even if realtime is down
     const pollInterval = setInterval(() => {
       fetchQueue();
     }, 3000);

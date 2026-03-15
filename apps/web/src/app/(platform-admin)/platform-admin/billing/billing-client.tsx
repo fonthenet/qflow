@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { DollarSign, CheckCircle2, XCircle, TrendingUp, Building2 } from 'lucide-react';
+import { Building2, CheckCircle2, DollarSign, TrendingUp, XCircle } from 'lucide-react';
 import { overrideSubscription, resetOrgVisitCount } from '@/lib/actions/platform-actions';
 
 interface Org {
@@ -24,14 +24,6 @@ interface StripeConfig {
   prices: Record<string, { monthly: string; yearly: string }>;
 }
 
-const planColors: Record<string, string> = {
-  free: 'bg-gray-100 text-gray-600',
-  starter: 'bg-blue-50 text-blue-700',
-  growth: 'bg-emerald-50 text-emerald-700',
-  pro: 'bg-purple-50 text-purple-700',
-  enterprise: 'bg-amber-50 text-amber-700',
-};
-
 const PLANS = ['free', 'starter', 'growth', 'pro', 'enterprise'];
 const STATUSES = ['active', 'trialing', 'past_due', 'canceled', 'unpaid'];
 
@@ -47,11 +39,13 @@ export function BillingOverviewClient({
   stripeConfig: StripeConfig;
 }) {
   const [organizations, setOrganizations] = useState(initial);
-  const [isPending, startTransition] = useTransition();
   const [error, setError] = useState('');
+  const [isPending, startTransition] = useTransition();
 
-  const paidOrgs = organizations.filter(o => o.plan_id && o.plan_id !== 'free' && o.subscription_status === 'active').length;
-  const trialingOrgs = organizations.filter(o => o.subscription_status === 'trialing').length;
+  const paidOrgs = organizations.filter(
+    (org) => org.plan_id && org.plan_id !== 'free' && org.subscription_status === 'active'
+  ).length;
+  const trialingOrgs = organizations.filter((org) => org.subscription_status === 'trialing').length;
 
   function handleOverride(orgId: string, planId: string, status: string, period: string) {
     setError('');
@@ -65,186 +59,184 @@ export function BillingOverviewClient({
         setError(result.error);
         return;
       }
-      setOrganizations(prev => prev.map(o =>
-        o.id === orgId ? { ...o, plan_id: planId, subscription_status: status, billing_period: period } : o
-      ));
+      setOrganizations((prev) =>
+        prev.map((org) =>
+          org.id === orgId
+            ? { ...org, plan_id: planId, subscription_status: status, billing_period: period }
+            : org
+        )
+      );
     });
   }
 
   function handleResetVisits(orgId: string) {
+    setError('');
     startTransition(async () => {
       const result = await resetOrgVisitCount(orgId);
       if (result.error) {
         setError(result.error);
         return;
       }
-      setOrganizations(prev => prev.map(o =>
-        o.id === orgId ? { ...o, monthly_visit_count: 0 } : o
-      ));
+      setOrganizations((prev) =>
+        prev.map((org) => (org.id === orgId ? { ...org, monthly_visit_count: 0 } : org))
+      );
     });
   }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Billing & Stripe</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Global billing overview, Stripe configuration, and subscription management.
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
-      )}
-
-      {/* Revenue Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <DollarSign className="h-5 w-5 text-gray-400" />
-          <p className="mt-3 text-2xl font-bold text-gray-900">${totalMRR}</p>
-          <p className="mt-0.5 text-xs text-gray-500">Monthly Revenue</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <Building2 className="h-5 w-5 text-gray-400" />
-          <p className="mt-3 text-2xl font-bold text-gray-900">{paidOrgs}</p>
-          <p className="mt-0.5 text-xs text-gray-500">Paying Customers</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <TrendingUp className="h-5 w-5 text-gray-400" />
-          <p className="mt-3 text-2xl font-bold text-gray-900">{trialingOrgs}</p>
-          <p className="mt-0.5 text-xs text-gray-500">On Trial</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <Building2 className="h-5 w-5 text-gray-400" />
-          <p className="mt-3 text-2xl font-bold text-gray-900">{organizations.length}</p>
-          <p className="mt-0.5 text-xs text-gray-500">Total Organizations</p>
-        </div>
-      </div>
-
-      {/* Stripe Configuration */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-sm font-semibold text-gray-900">Stripe Configuration</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          Set these in your <code className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">.env.local</code> file. Create products and prices in your Stripe Dashboard first.
-        </p>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-2.5">
-            <code className="text-xs font-mono text-gray-600">STRIPE_SECRET_KEY</code>
-            {stripeConfig.secretKey ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-400" />
-            )}
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Owner console</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Billing and Stripe</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Review revenue posture, confirm Stripe readiness, and override subscription states without leaving the owner console.
+            </p>
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-2.5">
-            <code className="text-xs font-mono text-gray-600">STRIPE_WEBHOOK_SECRET</code>
-            {stripeConfig.webhookSecret ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            ) : (
-              <XCircle className="h-4 w-4 text-red-400" />
-            )}
+
+          <div className="grid gap-3 sm:grid-cols-4">
+            <MetricCard label="MRR" value={`$${totalMRR}`} helper="Monthly recurring revenue" />
+            <MetricCard label="Paying orgs" value={paidOrgs.toString()} helper="Active paid subscriptions" />
+            <MetricCard label="Trialing" value={trialingOrgs.toString()} helper="Still evaluating the product" />
+            <MetricCard label="Total orgs" value={organizations.length.toString()} helper="All subscription states" />
           </div>
         </div>
+      </section>
 
-        <h4 className="mt-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Price IDs</h4>
-        <div className="mt-2 rounded-lg border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-4 py-2 text-left text-[10px] font-medium text-gray-400 uppercase">Plan</th>
-                <th className="px-4 py-2 text-left text-[10px] font-medium text-gray-400 uppercase">Monthly Price ID</th>
-                <th className="px-4 py-2 text-left text-[10px] font-medium text-gray-400 uppercase">Yearly Price ID</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {Object.entries(stripeConfig.prices).map(([plan, prices]) => (
-                <tr key={plan}>
-                  <td className="px-4 py-2 text-xs font-medium capitalize text-gray-700">{plan}</td>
-                  <td className="px-4 py-2">
-                    {prices.monthly ? (
-                      <code className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{prices.monthly}</code>
-                    ) : (
-                      <span className="text-[10px] text-red-500">Not set</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    {prices.yearly ? (
-                      <code className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">{prices.yearly}</code>
-                    ) : (
-                      <span className="text-[10px] text-red-500">Not set</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {error ? (
+        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+      ) : null}
 
-      {/* Per-org Billing */}
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-100 px-6 py-4">
-          <h3 className="text-sm font-semibold text-gray-900">Organization Subscriptions</h3>
-          <p className="mt-0.5 text-xs text-gray-500">Override plan, status, and billing period for any organization.</p>
-        </div>
-        <div className="divide-y divide-gray-50">
-          {organizations.map((org) => (
-            <div key={org.id} className="px-6 py-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="min-w-[180px]">
-                  <p className="text-sm font-medium text-gray-900">{org.name}</p>
-                  <p className="text-xs text-gray-400">
-                    {(org.monthly_visit_count || 0).toLocaleString()} visits this month
-                    {org.stripe_customer_id && (
-                      <span className="ml-2 text-emerald-600">Stripe linked</span>
-                    )}
-                  </p>
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <h2 className="text-lg font-semibold text-slate-950">Stripe readiness</h2>
+          <p className="mt-1 text-sm text-slate-500">Environment and price wiring needed for production billing.</p>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <ConfigRow label="STRIPE_SECRET_KEY" isSet={stripeConfig.secretKey} />
+            <ConfigRow label="STRIPE_WEBHOOK_SECRET" isSet={stripeConfig.webhookSecret} />
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-slate-200 bg-[#fbfaf8] p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Plan mix</p>
+            <div className="mt-4 space-y-3">
+              {Object.entries(planCounts).map(([plan, count]) => (
+                <div key={plan}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium capitalize text-slate-700">{plan}</span>
+                    <span className="text-slate-500">{count}</span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-slate-950" style={{ width: `${Math.max(8, Math.round((count / Math.max(organizations.length, 1)) * 100))}%` }} />
+                  </div>
                 </div>
-
-                <select
-                  value={org.plan_id || 'free'}
-                  onChange={(e) => handleOverride(org.id, e.target.value, org.subscription_status || 'active', org.billing_period || 'monthly')}
-                  disabled={isPending}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900/10 disabled:opacity-50"
-                >
-                  {PLANS.map(p => (
-                    <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={org.subscription_status || 'active'}
-                  onChange={(e) => handleOverride(org.id, org.plan_id || 'free', e.target.value, org.billing_period || 'monthly')}
-                  disabled={isPending}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900/10 disabled:opacity-50"
-                >
-                  {STATUSES.map(s => (
-                    <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ')}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={org.billing_period || 'monthly'}
-                  onChange={(e) => handleOverride(org.id, org.plan_id || 'free', org.subscription_status || 'active', e.target.value)}
-                  disabled={isPending}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900/10 disabled:opacity-50"
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                </select>
-
-                <button
-                  onClick={() => handleResetVisits(org.id)}
-                  disabled={isPending}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Reset visits
-                </button>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-slate-200 bg-white p-4">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Price IDs</p>
+            <div className="mt-4 space-y-3">
+              {Object.entries(stripeConfig.prices).map(([plan, prices]) => (
+                <div key={plan} className="rounded-[20px] border border-slate-200 bg-[#fbfaf8] px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold capitalize text-slate-900">{plan}</span>
+                    <span className="text-xs text-slate-500">
+                      {prices.monthly ? 'Monthly set' : 'Monthly missing'} · {prices.yearly ? 'Yearly set' : 'Yearly missing'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Organization subscriptions</h2>
+              <p className="mt-1 text-sm text-slate-500">Override plan, status, and billing cadence when support or operations needs to intervene.</p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-4">
+            {organizations.map((org) => (
+              <article key={org.id} className="rounded-[24px] border border-slate-200 bg-[#fbfaf8] p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-lg font-semibold text-slate-950">{org.name}</p>
+                    <p className="mt-1 text-sm text-slate-500">/{org.slug}</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {(org.monthly_visit_count || 0).toLocaleString()} visits this month
+                      {org.stripe_customer_id ? ' · Stripe linked' : ' · No Stripe customer'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select
+                      value={org.plan_id || 'free'}
+                      onChange={(event) => handleOverride(org.id, event.target.value, org.subscription_status || 'active', org.billing_period || 'monthly')}
+                      disabled={isPending}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none disabled:opacity-50"
+                    >
+                      {PLANS.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
+                    </select>
+                    <select
+                      value={org.subscription_status || 'active'}
+                      onChange={(event) => handleOverride(org.id, org.plan_id || 'free', event.target.value, org.billing_period || 'monthly')}
+                      disabled={isPending}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none disabled:opacity-50"
+                    >
+                      {STATUSES.map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}
+                    </select>
+                    <select
+                      value={org.billing_period || 'monthly'}
+                      onChange={(event) => handleOverride(org.id, org.plan_id || 'free', org.subscription_status || 'active', event.target.value)}
+                      disabled={isPending}
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none disabled:opacity-50"
+                    >
+                      <option value="monthly">monthly</option>
+                      <option value="yearly">yearly</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleResetVisits(org.id)}
+                      disabled={isPending}
+                      className="rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50"
+                    >
+                      Reset visits
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+function ConfigRow({ label, isSet }: { label: string; isSet: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded-[20px] border border-slate-200 bg-[#fbfaf8] px-4 py-3">
+      <code className="text-xs text-slate-600">{label}</code>
+      <div className="flex items-center gap-1.5">
+        {isSet ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <XCircle className="h-4 w-4 text-rose-500" />}
+        <span className={`text-xs font-semibold ${isSet ? 'text-emerald-700' : 'text-rose-700'}`}>
+          {isSet ? 'Configured' : 'Missing'}
+        </span>
       </div>
     </div>
   );

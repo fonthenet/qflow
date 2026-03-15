@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Key, Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-react';
-import { createApiKey, revokeApiKey, deleteApiKey } from '@/lib/actions/api-key-actions';
+import { AlertTriangle, Check, Copy, Key, Plus, Trash2 } from 'lucide-react';
+import { createApiKey, deleteApiKey, revokeApiKey } from '@/lib/actions/api-key-actions';
 
 interface ApiKey {
   id: string;
@@ -35,7 +35,6 @@ export function ApiKeysClient({ keys: initialKeys }: { keys: ApiKey[] }) {
       setRevealedKey(result.key!);
       setNewKeyName('');
       setShowCreate(false);
-      // Refresh will happen on next navigation
     });
   }
 
@@ -49,156 +48,168 @@ export function ApiKeysClient({ keys: initialKeys }: { keys: ApiKey[] }) {
   function handleRevoke(keyId: string) {
     startTransition(async () => {
       await revokeApiKey(keyId);
-      setKeys(keys.map(k => k.id === keyId ? { ...k, is_active: false } : k));
+      setKeys((prev) => prev.map((key) => (key.id === keyId ? { ...key, is_active: false } : key)));
     });
   }
 
   function handleDelete(keyId: string) {
     startTransition(async () => {
       await deleteApiKey(keyId);
-      setKeys(keys.filter(k => k.id !== keyId));
+      setKeys((prev) => prev.filter((key) => key.id !== keyId));
     });
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">API Keys</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Manage API keys for REST API access. Available on Growth plans and above.
-          </p>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Developer access</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">API keys</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Manage server-to-server access for partner systems, warehouse jobs, or custom automations.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label="Keys" value={keys.length.toString()} helper="Saved credentials" />
+            <MetricCard label="Active" value={keys.filter((key) => key.is_active).length.toString()} helper="Currently usable" />
+            <MetricCard label="Revoked" value={keys.filter((key) => !key.is_active).length.toString()} helper="Blocked from use" />
+          </div>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          disabled={isPending}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          Create Key
-        </button>
-      </div>
+      </section>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      {error ? (
+        <div className="flex items-center gap-2 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <AlertTriangle className="h-4 w-4" />
           {error}
         </div>
-      )}
+      ) : null}
 
-      {/* Revealed key banner */}
-      {revealedKey && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-900">
-            Copy your API key now. It won&apos;t be shown again.
-          </p>
-          <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-mono text-gray-900 border border-amber-200">
+      {revealedKey ? (
+        <section className="rounded-[30px] border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-900">Copy this key now. It will not be shown again.</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+            <code className="flex-1 rounded-[20px] border border-amber-200 bg-white px-4 py-3 text-sm font-mono text-slate-900 break-all">
               {revealedKey}
             </code>
             <button
+              type="button"
               onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10292f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#173740]"
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Create a new key</p>
+            <p className="mt-1 text-sm text-slate-500">Name keys by environment, integration, or partner.</p>
+          </div>
           <button
-            onClick={() => setRevealedKey(null)}
-            className="mt-2 text-xs text-amber-700 hover:text-amber-900"
+            type="button"
+            onClick={() => setShowCreate((current) => !current)}
+            disabled={isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-[#fbfaf8] px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
           >
-            Dismiss
+            <Plus className="h-4 w-4" />
+            {showCreate ? 'Hide form' : 'Create key'}
           </button>
         </div>
-      )}
 
-      {/* Create form */}
-      {showCreate && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-900">New API Key</h3>
-          <div className="mt-3 flex gap-2">
+        {showCreate ? (
+          <div className="mt-5 flex flex-col gap-3 md:flex-row">
             <input
               type="text"
               value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
+              onChange={(event) => setNewKeyName(event.target.value)}
               placeholder="Key name (e.g. Production, Staging)"
-              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              className="flex-1 rounded-[20px] border border-slate-200 bg-[#fbfaf8] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#10292f]"
+              onKeyDown={(event) => event.key === 'Enter' && handleCreate()}
             />
             <button
+              type="button"
               onClick={handleCreate}
               disabled={isPending || !newKeyName.trim()}
-              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              className="rounded-full bg-[#10292f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#173740] disabled:opacity-50"
             >
               Create
             </button>
-            <button
-              onClick={() => setShowCreate(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
           </div>
-        </div>
-      )}
+        ) : null}
+      </section>
 
-      {/* Keys list */}
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
         {keys.length === 0 ? (
-          <div className="p-8 text-center">
-            <Key className="mx-auto h-8 w-8 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No API keys yet</p>
-            <p className="text-xs text-gray-400">Create one to start using the REST API</p>
+          <div className="py-12 text-center">
+            <Key className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-900">No API keys yet.</p>
+            <p className="mt-1 text-sm text-slate-500">Create one to unlock REST API access for external systems.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="space-y-3">
             {keys.map((key) => (
-              <div key={key.id} className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <Key className={`h-4 w-4 ${key.is_active ? 'text-gray-600' : 'text-gray-300'}`} />
+              <article key={key.id} className="flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-[#fbfaf8] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-500">
+                    <Key className="h-4 w-4" />
+                  </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-medium ${key.is_active ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className={`text-sm font-semibold ${key.is_active ? 'text-slate-950' : 'text-slate-400 line-through'}`}>
                         {key.name}
                       </p>
-                      {!key.is_active && (
-                        <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
-                          Revoked
-                        </span>
-                      )}
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${key.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        {key.is_active ? 'Active' : 'Revoked'}
+                      </span>
                     </div>
-                    <p className="text-xs text-gray-400">
-                      {key.key_prefix}... &middot; Created {new Date(key.created_at).toLocaleDateString()}
-                      {key.last_used_at && ` &middot; Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
+                    <p className="mt-1 text-xs text-slate-500">
+                      {key.key_prefix}... · Created {new Date(key.created_at).toLocaleDateString()}
+                      {key.last_used_at ? ` · Last used ${new Date(key.last_used_at).toLocaleDateString()}` : ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  {key.is_active && (
+
+                <div className="flex items-center gap-2">
+                  {key.is_active ? (
                     <button
+                      type="button"
                       onClick={() => handleRevoke(key.id)}
                       disabled={isPending}
-                      className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-amber-600 disabled:opacity-50"
-                      title="Revoke"
+                      className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
                     >
-                      <AlertTriangle className="h-4 w-4" />
+                      Revoke
                     </button>
-                  )}
+                  ) : null}
                   <button
+                    type="button"
                     onClick={() => handleDelete(key.id)}
                     disabled={isPending}
-                    className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-50"
-                    title="Delete"
+                    className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
                   >
                     <Trash2 className="h-4 w-4" />
+                    Delete
                   </button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
     </div>
   );
 }

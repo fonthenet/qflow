@@ -36,6 +36,8 @@ export async function createAppointment(data: CreateAppointmentData) {
     return { error: error.message };
   }
 
+  revalidatePath('/admin/appointments');
+  revalidatePath('/admin/reservations');
   return { data: appointment };
 }
 
@@ -122,6 +124,8 @@ export async function checkInAppointment(appointmentId: string) {
   }
 
   revalidatePath('/admin/queue');
+  revalidatePath('/admin/appointments');
+  revalidatePath('/admin/reservations');
   return { data: { appointment, ticket } };
 }
 
@@ -139,6 +143,9 @@ export async function cancelAppointment(appointmentId: string) {
     return { error: error.message };
   }
 
+  revalidatePath('/admin/appointments');
+  revalidatePath('/admin/reservations');
+  revalidatePath('/admin/queue');
   return { data: appointment };
 }
 

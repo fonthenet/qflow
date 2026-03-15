@@ -18,17 +18,17 @@ export const solutions: Solution[] = [
     title: 'Restaurants',
     slug: 'restaurants',
     icon: 'UtensilsCrossed',
-    shortDescription: 'Eliminate walkouts with smart waitlist management',
+    shortDescription: 'Keep dining flow moving from walk-in arrival to seated service',
     heroHeadline: 'Turn Wait Times into Happy Guests',
-    heroSubheadline: 'Let guests join your waitlist, track their position in real-time, and get notified instantly when their table is ready — no more crowded lobbies.',
+    heroSubheadline: 'Let guests join before they crowd the host stand, track progress live, and arrive at the right moment for seating.',
     painPoints: [
       'Guests leave when they see a long line',
-      'Paper waitlists are messy and inaccurate',
+      'Manual host stand lists are messy and inaccurate',
       'Staff waste time calling out names',
       'No visibility into actual wait times',
     ],
     features: [
-      { title: 'QR Waitlist', description: 'Guests scan a QR code to join the waitlist from their phone — no app download needed.', icon: 'QrCode' },
+      { title: 'QR Arrival', description: 'Guests scan a QR code to enter the seating flow from their phone with no app download required.', icon: 'QrCode' },
       { title: 'Real-Time Position', description: 'Guests see their exact position and estimated wait time, updated live.', icon: 'Clock' },
       { title: 'Instant Notifications', description: 'Push notification sent to guest\'s phone the moment their table is ready.', icon: 'Bell' },
       { title: 'Party Size Management', description: 'Track party sizes and assign tables efficiently with group ticket support.', icon: 'Users' },
@@ -36,7 +36,7 @@ export const solutions: Solution[] = [
       { title: 'Analytics', description: 'Track peak hours, average wait times, and table turnover to optimize operations.', icon: 'BarChart3' },
     ],
     useCases: [
-      { title: 'Busy Weekend Service', description: 'Guests scan the QR code outside, join the virtual waitlist, and browse nearby shops while waiting. They get a push notification when their table is ready.' },
+      { title: 'Busy Weekend Service', description: 'Guests scan the QR code outside, join the seating flow, and browse nearby shops while waiting. They get a push notification when their table is ready.' },
       { title: 'Multiple Dining Areas', description: 'Use departments to separate indoor, outdoor, and bar seating. Each area manages its own queue independently.' },
     ],
     stats: [
@@ -114,9 +114,9 @@ export const solutions: Solution[] = [
     title: 'Government & Public Services',
     slug: 'government',
     icon: 'Landmark',
-    shortDescription: 'Modernize citizen services with digital queue management',
+    shortDescription: 'Modernize citizen service flow across counters, appointments, and documents',
     heroHeadline: 'Efficient Public Services, Happy Citizens',
-    heroSubheadline: 'From DMV to city hall — replace take-a-number machines with a modern digital queue that citizens can join from their phone.',
+    heroSubheadline: 'From DMV to city hall — replace take-a-number machines with a modern arrival and service flow citizens can join from their phone.',
     painPoints: [
       'Citizens wait hours for simple services',
       'Old ticket machines break down',
@@ -180,7 +180,7 @@ export const solutions: Solution[] = [
     icon: 'Hotel',
     shortDescription: 'Elevate the guest experience from check-in to checkout',
     heroHeadline: 'Guest Experience Without the Wait',
-    heroSubheadline: 'From check-in to concierge — manage every guest touchpoint with a seamless digital queue.',
+    heroSubheadline: 'From check-in to concierge — manage every guest touchpoint with one seamless arrival and service flow.',
     painPoints: [
       'Long check-in/checkout lines frustrate guests',
       'Concierge services are first-come, first-served',
@@ -210,9 +210,9 @@ export const solutions: Solution[] = [
     title: 'Barbershops & Salons',
     slug: 'barbershops',
     icon: 'Scissors',
-    shortDescription: 'Modernize your shop with a digital waitlist',
+    shortDescription: 'Modernize walk-ins, bookings, and chair availability in one flow',
     heroHeadline: 'Your Chair is Ready — No More Walk-In Chaos',
-    heroSubheadline: 'Clients join your waitlist digitally, see real-time wait times, and show up exactly when it\'s their turn.',
+    heroSubheadline: 'Clients join digitally, see live timing, and show up when their barber or stylist is nearly ready.',
     painPoints: [
       'Walk-ins leave when they see a long wait',
       'Phone keeps ringing for "how long is the wait?"',
@@ -220,7 +220,7 @@ export const solutions: Solution[] = [
       'Can\'t manage multiple barbers/stylists efficiently',
     ],
     features: [
-      { title: 'Digital Waitlist', description: 'Clients scan a QR code on your door to join the waitlist — no calls needed.', icon: 'QrCode' },
+      { title: 'Walk-In Flow', description: 'Clients scan a QR code on your door to enter the walk-in flow without calling ahead.', icon: 'QrCode' },
       { title: 'Live Wait Times', description: 'Clients see estimated wait time on their phone — no more "how long?" calls.', icon: 'Clock' },
       { title: 'Barber Selection', description: 'Clients can request a specific barber or join the general queue.', icon: 'User' },
       { title: 'Push Notifications', description: 'Free push notification when it\'s the client\'s turn — no SMS costs.', icon: 'Bell' },
@@ -228,7 +228,7 @@ export const solutions: Solution[] = [
       { title: 'Client History', description: 'Track returning clients, visit frequency, and preferences.', icon: 'History' },
     ],
     useCases: [
-      { title: 'Saturday Morning Rush', description: 'Clients scan the QR code on the shop window, join the waitlist, and grab coffee next door. Push notification arrives when the chair is ready.' },
+      { title: 'Saturday Morning Rush', description: 'Clients scan the QR code on the shop window, enter the walk-in flow, and grab coffee next door. Push notification arrives when the chair is ready.' },
       { title: 'Regular Client', description: 'A returning client books their usual Saturday 10am slot online. They arrive on time and skip the walk-in queue.' },
     ],
     stats: [
@@ -252,7 +252,7 @@ export const solutions: Solution[] = [
       'Confusion between drop-off and pickup queues',
     ],
     features: [
-      { title: 'Drop-Off Queue', description: 'Patients submit their prescription and join the digital queue — no standing around.', icon: 'FileText' },
+      { title: 'Prescription Intake', description: 'Patients submit their prescription and enter the pickup workflow without standing at the counter.', icon: 'FileText' },
       { title: 'Preparation Tracking', description: 'Patients see their prescription status in real-time: received, preparing, ready.', icon: 'Activity' },
       { title: 'Ready Notification', description: 'Free push notification when the prescription is ready for pickup.', icon: 'Bell' },
       { title: 'Pickup Queue', description: 'Separate queue for pickup — patients are called to the counter when their turn comes.', icon: 'PackageCheck' },

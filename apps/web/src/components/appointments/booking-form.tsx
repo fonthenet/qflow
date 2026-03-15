@@ -29,7 +29,11 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
 
   const today = new Date().toISOString().split('T')[0];
   const terminology = organization?.settings?.terminology || null;
-  const visitLabel = terminology?.customer ? `Book a ${terminology.customer.toLowerCase()} visit` : 'Book a visit';
+  const departmentLabel = terminology?.department || 'Department';
+  const departmentPluralLabel = terminology?.departmentPlural || 'Departments';
+  const customerLabel = terminology?.customer || 'Customer';
+  const visitLabel = 'Reserve your time';
+  const visitTypeLabel = 'visit';
 
   // Fetch available slots when date changes
   useEffect(() => {
@@ -212,9 +216,9 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
         {step === 'department' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Select Department</h2>
+              <h2 className="text-3xl font-bold text-foreground">Select {departmentLabel}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Choose the department for your appointment
+                Choose the {departmentLabel.toLowerCase()} for your visit
               </p>
             </div>
             <div className="grid gap-4">
@@ -274,7 +278,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Back to Departments
+              Back to {departmentPluralLabel}
             </button>
           </div>
         )}
@@ -374,7 +378,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
         {step === 'info' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Your Information</h2>
+              <h2 className="text-3xl font-bold text-foreground">{customerLabel} Information</h2>
               <p className="mt-2 text-lg text-muted-foreground">
                 Please provide your details
               </p>
@@ -423,7 +427,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               onClick={handleCustomerInfo}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
-              Review Appointment
+              Review Visit
             </button>
             <button
               onClick={handleBack}
@@ -438,15 +442,15 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
         {step === 'confirm' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Confirm Appointment</h2>
+              <h2 className="text-3xl font-bold text-foreground">Confirm Visit</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Please review your appointment details
+                Please review your {visitTypeLabel} details
               </p>
             </div>
 
             <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="flex justify-between border-b border-border py-2">
-                <span className="text-muted-foreground">Department</span>
+                <span className="text-muted-foreground">{departmentLabel}</span>
                 <span className="font-medium text-foreground">{selectedDept?.name}</span>
               </div>
               <div className="flex justify-between border-b border-border py-2">
@@ -496,7 +500,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
                   Booking...
                 </span>
               ) : (
-                'Confirm Booking'
+                'Confirm Visit'
               )}
             </button>
             <button
@@ -518,10 +522,10 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               </div>
 
               <h2 className="text-2xl font-bold text-foreground">
-                Appointment Confirmed!
+                Visit Confirmed!
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Your appointment has been booked successfully.
+                Your {visitTypeLabel} has been booked successfully.
               </p>
 
               <div className="mt-6 rounded-xl bg-muted p-4">
@@ -566,7 +570,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               onClick={handleStartOver}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
-              Book Another Appointment
+              Book Another Visit
             </button>
           </div>
         )}

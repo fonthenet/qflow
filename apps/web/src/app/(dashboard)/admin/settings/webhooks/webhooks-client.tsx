@@ -1,8 +1,17 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Webhook, Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight } from 'lucide-react';
-import { createWebhookEndpoint, updateWebhookEndpoint, deleteWebhookEndpoint } from '@/lib/actions/webhook-actions';
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  Plus,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  Webhook,
+} from 'lucide-react';
+import { createWebhookEndpoint, deleteWebhookEndpoint, updateWebhookEndpoint } from '@/lib/actions/webhook-actions';
 
 const ALL_EVENTS = [
   'ticket.created',
@@ -54,16 +63,14 @@ export function WebhooksClient({ endpoints: initial }: { endpoints: Endpoint[] }
   function handleToggle(id: string, currentActive: boolean) {
     startTransition(async () => {
       await updateWebhookEndpoint(id, { is_active: !currentActive });
-      setEndpoints(endpoints.map(ep =>
-        ep.id === id ? { ...ep, is_active: !currentActive } : ep
-      ));
+      setEndpoints((prev) => prev.map((endpoint) => (endpoint.id === id ? { ...endpoint, is_active: !currentActive } : endpoint)));
     });
   }
 
   function handleDelete(id: string) {
     startTransition(async () => {
       await deleteWebhookEndpoint(id);
-      setEndpoints(endpoints.filter(ep => ep.id !== id));
+      setEndpoints((prev) => prev.filter((endpoint) => endpoint.id !== id));
     });
   }
 
@@ -75,176 +82,173 @@ export function WebhooksClient({ endpoints: initial }: { endpoints: Endpoint[] }
   }
 
   function toggleEvent(event: string) {
-    setNewEvents(prev =>
-      prev.includes(event) ? prev.filter(e => e !== event) : [...prev, event]
-    );
+    setNewEvents((prev) => (prev.includes(event) ? prev.filter((entry) => entry !== event) : [...prev, event]));
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Webhooks</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Receive real-time HTTP callbacks when events happen. Available on Growth plans and above.
-          </p>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Outbound automation</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Webhooks</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Push live ticket events into CRMs, warehouse jobs, automation tools, or partner systems as the command center changes state.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label="Endpoints" value={endpoints.length.toString()} helper="Saved destinations" />
+            <MetricCard label="Active" value={endpoints.filter((endpoint) => endpoint.is_active).length.toString()} helper="Ready to fire" />
+            <MetricCard label="Failures" value={endpoints.reduce((sum, endpoint) => sum + endpoint.failure_count, 0).toString()} helper="Recorded delivery issues" />
+          </div>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          disabled={isPending}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          Add Endpoint
-        </button>
-      </div>
+      </section>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      {error ? (
+        <div className="flex items-center gap-2 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           <AlertTriangle className="h-4 w-4" />
           {error}
         </div>
-      )}
+      ) : null}
 
-      {revealedSecret && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-900">
-            Copy your signing secret now. It won&apos;t be shown again.
-          </p>
-          <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-mono text-gray-900 border border-amber-200 break-all">
+      {revealedSecret ? (
+        <section className="rounded-[30px] border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-900">Copy this signing secret now. It will not be shown again.</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+            <code className="flex-1 rounded-[20px] border border-amber-200 bg-white px-4 py-3 text-sm font-mono text-slate-900 break-all">
               {revealedSecret}
             </code>
             <button
+              type="button"
               onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10292f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#173740]"
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Create an endpoint</p>
+            <p className="mt-1 text-sm text-slate-500">Choose the destination URL and limit events if you do not need the full live stream.</p>
+          </div>
           <button
-            onClick={() => setRevealedSecret(null)}
-            className="mt-2 text-xs text-amber-700 hover:text-amber-900"
+            type="button"
+            onClick={() => setShowCreate((current) => !current)}
+            disabled={isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-[#fbfaf8] px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:opacity-50"
           >
-            Dismiss
+            <Plus className="h-4 w-4" />
+            {showCreate ? 'Hide form' : 'Add endpoint'}
           </button>
         </div>
-      )}
 
-      {showCreate && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-900">New Webhook Endpoint</h3>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Endpoint URL</label>
+        {showCreate ? (
+          <div className="mt-5 space-y-4">
             <input
               type="url"
               value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
+              onChange={(event) => setNewUrl(event.target.value)}
               placeholder="https://your-server.com/webhook"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              className="w-full rounded-[20px] border border-slate-200 bg-[#fbfaf8] px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#10292f]"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-2">
-              Events (leave empty for all events)
-            </label>
             <div className="flex flex-wrap gap-2">
               {ALL_EVENTS.map((event) => (
                 <button
                   key={event}
+                  type="button"
                   onClick={() => toggleEvent(event)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                     newEvents.includes(event)
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-[#10292f] text-white'
+                      : 'border border-slate-200 bg-[#fbfaf8] text-slate-600 hover:border-slate-300'
                   }`}
                 >
                   {event}
                 </button>
               ))}
             </div>
-          </div>
-          <div className="flex gap-2">
             <button
+              type="button"
               onClick={handleCreate}
               disabled={isPending || !newUrl.trim()}
-              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              className="rounded-full bg-[#10292f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#173740] disabled:opacity-50"
             >
-              Create
-            </button>
-            <button
-              onClick={() => setShowCreate(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
+              Create webhook
             </button>
           </div>
-        </div>
-      )}
+        ) : null}
+      </section>
 
-      <div className="rounded-xl border border-gray-200 bg-white">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
         {endpoints.length === 0 ? (
-          <div className="p-8 text-center">
-            <Webhook className="mx-auto h-8 w-8 text-gray-300" />
-            <p className="mt-2 text-sm text-gray-500">No webhook endpoints</p>
-            <p className="text-xs text-gray-400">Add one to receive real-time event callbacks</p>
+          <div className="py-12 text-center">
+            <Webhook className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-900">No webhook endpoints yet.</p>
+            <p className="mt-1 text-sm text-slate-500">Add one to receive ticket lifecycle events in real time.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {endpoints.map((ep) => (
-              <div key={ep.id} className="px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
+          <div className="space-y-3">
+            {endpoints.map((endpoint) => (
+              <article key={endpoint.id} className="rounded-[24px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-start gap-3 min-w-0">
                     <button
-                      onClick={() => handleToggle(ep.id, ep.is_active)}
+                      type="button"
+                      onClick={() => handleToggle(endpoint.id, endpoint.is_active)}
                       disabled={isPending}
-                      title={ep.is_active ? 'Disable' : 'Enable'}
+                      title={endpoint.is_active ? 'Disable' : 'Enable'}
                     >
-                      {ep.is_active ? (
-                        <ToggleRight className="h-5 w-5 text-emerald-600" />
+                      {endpoint.is_active ? (
+                        <ToggleRight className="h-6 w-6 text-emerald-600" />
                       ) : (
-                        <ToggleLeft className="h-5 w-5 text-gray-300" />
+                        <ToggleLeft className="h-6 w-6 text-slate-300" />
                       )}
                     </button>
                     <div className="min-w-0">
-                      <p className={`text-sm font-mono truncate ${ep.is_active ? 'text-gray-900' : 'text-gray-400'}`}>
-                        {ep.url}
+                      <p className={`truncate font-mono text-sm ${endpoint.is_active ? 'text-slate-900' : 'text-slate-400'}`}>{endpoint.url}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {endpoint.events.length > 0 ? `${endpoint.events.length} selected events` : 'All events'}
+                        {endpoint.last_triggered_at ? ` · Last fired ${new Date(endpoint.last_triggered_at).toLocaleDateString()}` : ''}
+                        {endpoint.failure_count > 0 ? ` · ${endpoint.failure_count} failures` : ''}
                       </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {ep.events.length > 0 ? (
-                          <span className="text-[10px] text-gray-400">
-                            {ep.events.length} event{ep.events.length !== 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-gray-400">All events</span>
-                        )}
-                        {ep.failure_count > 0 && (
-                          <span className="text-[10px] text-amber-600">
-                            {ep.failure_count} failure{ep.failure_count !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {ep.last_triggered_at && (
-                          <span className="text-[10px] text-gray-400">
-                            Last fired {new Date(ep.last_triggered_at).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(ep.id)}
-                    disabled={isPending}
-                    className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${endpoint.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {endpoint.is_active ? 'Active' : 'Disabled'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(endpoint.id)}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
     </div>
   );
 }

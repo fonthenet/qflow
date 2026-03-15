@@ -152,17 +152,28 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage your organization, ticket, display, and language settings.
-        </p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Workspace controls</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Business settings</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Shape how arrivals are created, how the public experience looks, and how staff get alerted across every service flow.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label="Check-in mode" value={checkInMode.replace('_', ' ')} helper="Default arrival behavior" />
+            <MetricCard label="Display layout" value={displayLayout.replace('_', ' ')} helper="Public board default" />
+            <MetricCard label="Languages" value={supportedLanguages.length.toString()} helper="Enabled customer languages" />
+          </div>
+        </div>
+      </section>
 
       {/* ── Organization Settings ──────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <h2 className="text-lg font-semibold text-slate-950">
           Organization Settings
         </h2>
 
@@ -204,13 +215,13 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">
+            <h2 className="text-lg font-semibold text-slate-950">
               Priority Alerts
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-slate-500">
               Keep free push notifications as the primary path, and add SMS as an optional backup for customers who choose to enter a phone number.
             </p>
           </div>
@@ -309,8 +320,8 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
       </section>
 
       {/* ── Ticket Settings ────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <h2 className="text-lg font-semibold text-slate-950">
           Ticket Settings
         </h2>
 
@@ -377,8 +388,8 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
       </section>
 
       {/* ── Display Settings ───────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <h2 className="text-lg font-semibold text-slate-950">
           Display Settings
         </h2>
 
@@ -433,12 +444,12 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
       </section>
 
       {/* ── White-label Branding ─────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">
+          <h2 className="text-lg font-semibold text-slate-950">
             Branding
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-slate-500">
             Customize the look of public-facing pages (queue status, kiosk, display screens). Available on Pro plans and above.
           </p>
         </div>
@@ -536,8 +547,8 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
       </section>
 
       {/* ── Language Settings ──────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
+      <section className="space-y-4 rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
+        <h2 className="text-lg font-semibold text-slate-950">
           Language Settings
         </h2>
 
@@ -584,11 +595,11 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
       </section>
 
       {/* ── Save Button ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
         <button
           onClick={handleSave}
           disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 rounded-full bg-[#10292f] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#173740] disabled:opacity-50"
         >
           <Save className="h-4 w-4" />
           {isPending ? 'Saving...' : 'Save Settings'}
@@ -605,6 +616,16 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
           <span className="text-sm text-red-600">{errorMessage}</span>
         )}
       </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200 bg-[#fbfaf8] px-4 py-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{helper}</p>
     </div>
   );
 }
