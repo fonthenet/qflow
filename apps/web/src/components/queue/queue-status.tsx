@@ -814,9 +814,9 @@ export function QueueStatus({
               </span>
             </button>
           ) : (
-            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-5 py-3">
+            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-white/8 bg-white/5 px-5 py-3">
               <BellRing className="h-4 w-4 shrink-0 text-emerald-400" />
-              <span className="text-sm font-medium text-emerald-50">Alerts enabled \u2014 we\u2019ll notify you when it\u2019s your turn</span>
+              <span className="text-sm font-medium text-slate-300">{"Alerts enabled \u2014 we\u2019ll notify you when it\u2019s your turn"}</span>
             </div>
           )}
 
