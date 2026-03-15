@@ -809,11 +809,16 @@ export function QueueStatus({
               <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
               <span className="text-sm font-medium text-amber-50">
                 {isIos && !isInStandaloneMode
-                  ? 'Set up alerts — we\u2019ll notify you when it\u2019s your turn'
-                  : 'Enable alerts — we\u2019ll notify you when it\u2019s your turn'}
+                  ? 'Set up alerts \u2014 we\u2019ll notify you when it\u2019s your turn'
+                  : 'Enable alerts \u2014 we\u2019ll notify you when it\u2019s your turn'}
               </span>
             </button>
-          ) : null}
+          ) : (
+            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-5 py-3">
+              <BellRing className="h-4 w-4 shrink-0 text-emerald-400" />
+              <span className="text-sm font-medium text-emerald-50">Alerts enabled \u2014 we\u2019ll notify you when it\u2019s your turn</span>
+            </div>
+          )}
 
           <div className="mt-4 space-y-3">
             <EditCustomerData ticket={ticket} />
