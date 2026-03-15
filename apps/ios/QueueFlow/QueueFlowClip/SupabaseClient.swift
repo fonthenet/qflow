@@ -23,7 +23,7 @@ class SupabaseClient {
             return apiTicket
         }
 
-        let urlString = "\(baseURL)/rest/v1/tickets?qr_token=eq.\(token)&select=*,office:offices(name),department:departments(name,code),service:services(name),desk:desks(name,display_name)"
+        let urlString = "\(baseURL)/rest/v1/tickets?qr_token=eq.\(token)&select=*,office:offices(name,organization:organizations(name)),department:departments(name,code),service:services(name),desk:desks(name,display_name)"
         guard let url = URL(string: urlString) else {
             throw SupabaseError.invalidURL
         }
@@ -339,8 +339,13 @@ struct Ticket: Codable, Identifiable {
     let service: Service?
     let desk: Desk?
 
+    struct Organization: Codable {
+        let name: String
+    }
+
     struct Office: Codable {
         let name: String
+        let organization: Organization?
     }
 
     struct Department: Codable {

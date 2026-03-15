@@ -223,46 +223,48 @@ struct QueueView: View {
         }
     }
 
+    /// Organization name (business name) — top priority for display
     private func visitBusinessName(for ticket: Ticket) -> String {
+        if let orgName = ticket.office?.organization?.name, !orgName.isEmpty {
+            return orgName
+        }
         if let officeName = ticket.office?.name, !officeName.isEmpty {
             return officeName
         }
-
         if let departmentName = ticket.department?.name, !departmentName.isEmpty {
             return departmentName
         }
-
-        if let serviceName = ticket.service?.name, !serviceName.isEmpty {
-            return serviceName
-        }
-
         return "Business"
     }
 
-    private func visitDepartmentName(for ticket: Ticket) -> String? {
-        guard let departmentName = ticket.department?.name else { return nil }
-        if departmentName == ticket.office?.name {
-            return nil
+    /// Branch/office line — shown below business name when different
+    private func visitBranchLine(for ticket: Ticket) -> String? {
+        let businessName = visitBusinessName(for: ticket)
+        // If org name is shown as business, show office as branch
+        if let orgName = ticket.office?.organization?.name, !orgName.isEmpty,
+           let officeName = ticket.office?.name, !officeName.isEmpty,
+           officeName != orgName {
+            return officeName
         }
-        return departmentName
+        // Otherwise show department if different from business name
+        if let deptName = ticket.department?.name, !deptName.isEmpty, deptName != businessName {
+            return deptName
+        }
+        return nil
     }
 
     private func visitServiceName(for ticket: Ticket) -> String {
         ticket.service?.name
-            ?? visitDepartmentName(for: ticket)
-            ?? visitBusinessName(for: ticket)
-    }
-
-    private func visitHeaderName(for ticket: Ticket) -> String {
-        visitDepartmentName(for: ticket)
-            ?? ticket.service?.name
+            ?? ticket.department?.name
             ?? visitBusinessName(for: ticket)
     }
 
     private func visitHeaderSubtitle(for ticket: Ticket, includeSync: Bool = true) -> String {
         var parts: [String] = []
-        if let departmentName = visitDepartmentName(for: ticket) {
-            parts.append(departmentName)
+        if let branch = visitBranchLine(for: ticket) {
+            parts.append(branch)
+        } else if let serviceName = ticket.service?.name, !serviceName.isEmpty {
+            parts.append(serviceName)
         }
         if includeSync {
             parts.append(syncLabel)
@@ -439,8 +441,8 @@ struct QueueView: View {
         let statusText = position == 1
             ? "Almost there"
             : (position != nil && position! <= 3 ? "You are nearly up" : (position != nil ? "\(max(position! - 1, 0)) ahead of you" : "--"))
-        let businessLabel = visitBusinessName(for: ticket).uppercased()
-        let headerLabel = visitHeaderName(for: ticket)
+        let businessLabel = visitBusinessName(for: ticket)
+        let headerLabel = visitBranchLine(for: ticket) ?? visitServiceName(for: ticket)
         let headerSubtitle = syncLabel
         let accentLabel = ticket.status == "serving" ? "NOW AT DESK" : "WAITING IN LINE"
         let accentTextColor = ticket.status == "serving"
@@ -487,21 +489,23 @@ struct QueueView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     HStack(alignment: .top, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(businessLabel)
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .tracking(4.5)
-                                .foregroundStyle(Color.white.opacity(0.38))
-
-                            Text(headerLabel)
-                                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                                .font(.system(size: 24, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
-                                .tracking(-0.5)
-                                .lineLimit(3)
+                                .tracking(-0.3)
+                                .lineLimit(2)
+
+                            if !headerLabel.isEmpty && headerLabel != businessLabel {
+                                Text(headerLabel)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.65))
+                            }
 
                             Text(headerSubtitle)
-                                .font(.system(size: 14, weight: .regular, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.58))
+                                .font(.system(size: 12, weight: .regular, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.45))
+                                .padding(.top, 2)
                         }
 
                         Spacer(minLength: 0)
@@ -715,8 +719,8 @@ struct QueueView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
                     actionHeader(
-                        title: visitHeaderName(for: ticket),
-                        eyebrow: visitBusinessName(for: ticket),
+                        title: visitBusinessName(for: ticket),
+                        eyebrow: visitBranchLine(for: ticket) ?? visitServiceName(for: ticket),
                         section: nil,
                         subtitle: syncLabel,
                         accentText: "With staff now"
@@ -762,7 +766,7 @@ struct QueueView: View {
                                 visitMetricCard(
                                     title: "Business",
                                     value: visitBusinessName(for: ticket),
-                                    detail: visitDepartmentName(for: ticket) ?? "Current department",
+                                    detail: visitBranchLine(for: ticket) ?? ticket.service?.name ?? "Current service",
                                     accent: Color(red: 0.68, green: 0.76, blue: 0.99)
                                 )
                             }
@@ -1394,7 +1398,7 @@ struct QueueView: View {
                 "name": .string("APNs Test"),
                 "source": .string("preview")
             ],
-            office: Ticket.Office(name: "Alfabits"),
+            office: Ticket.Office(name: "Downtown Branch", organization: Ticket.Organization(name: "Alfabits")),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: nil
@@ -1428,7 +1432,7 @@ struct QueueView: View {
                 "name": .string("APNs Test"),
                 "source": .string("preview")
             ],
-            office: Ticket.Office(name: "Alfabits"),
+            office: Ticket.Office(name: "Downtown Branch", organization: Ticket.Organization(name: "Alfabits")),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: nil

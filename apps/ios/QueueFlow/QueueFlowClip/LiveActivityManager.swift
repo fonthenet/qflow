@@ -25,7 +25,7 @@ final class LiveActivityManager {
             ticketId: ticket.id,
             ticketNumber: ticket.ticket_number,
             qrToken: ticket.qr_token,
-            departmentName: ticket.department?.name ?? ticket.office?.name ?? "Current visit",
+            departmentName: ticket.office?.organization?.name ?? ticket.office?.name ?? ticket.department?.name ?? "Current visit",
             serviceName: ticket.service?.name ?? ticket.department?.name ?? ticket.office?.name ?? ""
         )
 

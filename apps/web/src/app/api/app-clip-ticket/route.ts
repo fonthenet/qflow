@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       estimated_wait_minutes,
       recall_count,
       customer_data,
-      office:offices(name),
+      office:offices(name, organization:organizations(name)),
       department:departments(name, code),
       service:services(name),
       desk:desks(name, display_name)

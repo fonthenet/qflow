@@ -87,7 +87,7 @@ enum CountdownPhase {
                 "full_name": .string("APNs Test"),
                 "phone_number": .string("07 123 456 78")
             ],
-            office: Ticket.Office(name: "Alfabits"),
+            office: Ticket.Office(name: "Downtown Branch", organization: Ticket.Organization(name: "Alfabits")),
             department: Ticket.Department(name: "Client Services", code: "CS"),
             service: Ticket.Service(name: "Mail & Packages"),
             desk: Ticket.Desk(name: "Counter 1", display_name: "Counter 1")
@@ -122,26 +122,35 @@ struct YourTurnView: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var businessName: String {
-        ticket.office?.name ?? ticket.department?.name ?? ticket.service?.name ?? "Business"
+        if let orgName = ticket.office?.organization?.name, !orgName.isEmpty {
+            return orgName
+        }
+        return ticket.office?.name ?? ticket.department?.name ?? ticket.service?.name ?? "Business"
     }
 
-    private var departmentName: String? {
-        guard let name = ticket.department?.name else { return nil }
-        return name == ticket.office?.name ? nil : name
-    }
-
-    private var headerName: String {
-        departmentName ?? ticket.service?.name ?? businessName
+    private var branchLine: String? {
+        let biz = businessName
+        // If org name shown, show office as branch
+        if let orgName = ticket.office?.organization?.name, !orgName.isEmpty,
+           let officeName = ticket.office?.name, !officeName.isEmpty,
+           officeName != orgName {
+            return officeName
+        }
+        // Otherwise show department if different
+        if let deptName = ticket.department?.name, !deptName.isEmpty, deptName != biz {
+            return deptName
+        }
+        return nil
     }
 
     private var serviceName: String {
-        ticket.service?.name ?? departmentName ?? businessName
+        ticket.service?.name ?? ticket.department?.name ?? businessName
     }
 
     private var headerSubtitle: String {
         let updateText = syncLabel.replacingOccurrences(of: "Updated", with: "Last update:")
-        if let departmentName {
-            return "\(departmentName) • \(updateText)"
+        if let branch = branchLine {
+            return "\(branch) • \(updateText)"
         }
         return updateText
     }
@@ -298,21 +307,21 @@ struct YourTurnView: View {
 
     private var topBar: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(businessName)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.80))
-                    .textCase(.uppercase)
-                    .tracking(4)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
                     .lineLimit(2)
 
-                Text(headerName)
-                    .font(.system(size: 17, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.92))
+                if let branch = branchLine {
+                    Text(branch)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.70))
+                }
 
                 Text(isRefreshing ? "Refreshing…" : headerSubtitle)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.58))
+                    .foregroundColor(.white.opacity(0.50))
             }
 
             Spacer(minLength: 0)

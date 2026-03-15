@@ -77,19 +77,29 @@ export default async function TicketStatusPage({ params }: PageProps) {
     .eq('id', ticket.office_id)
     .single();
 
+  // Fetch organization info
+  let organizationName = '';
   let priorityAlertConfig = null;
   if (office?.organization_id) {
     const { data: organization } = await supabase
       .from('organizations')
-      .select('settings')
+      .select('name, settings')
       .eq('id', office.organization_id)
       .single();
 
+    organizationName = organization?.name ?? '';
     priorityAlertConfig = getPriorityAlertConfig(
       (organization?.settings as Record<string, any> | null) ?? null,
       isSmsProviderConfigured()
     );
   }
+
+  // Fetch department info
+  const { data: department } = await supabase
+    .from('departments')
+    .select('name')
+    .eq('id', ticket.department_id)
+    .single();
 
   // Fetch service info
   const { data: service } = await supabase
@@ -110,9 +120,11 @@ export default async function TicketStatusPage({ params }: PageProps) {
   }
 
   const contextInfo = {
-    officeName: office?.name ?? 'Office',
+    organizationName,
+    officeName: office?.name ?? '',
     officeAddress: office?.address ?? '',
-    serviceName: service?.name ?? 'Service',
+    departmentName: department?.name ?? '',
+    serviceName: service?.name ?? '',
     serviceDescription: service?.description ?? '',
   };
 
@@ -137,7 +149,9 @@ export default async function TicketStatusPage({ params }: PageProps) {
     return (
       <QueueStatus
         ticket={ticket}
+        organizationName={contextInfo.organizationName}
         officeName={contextInfo.officeName}
+        departmentName={contextInfo.departmentName}
         serviceName={contextInfo.serviceName}
         priorityAlertConfig={priorityAlertConfig}
       />

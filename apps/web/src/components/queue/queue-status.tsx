@@ -22,7 +22,9 @@ type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 
 interface QueueStatusProps {
   ticket: Ticket;
+  organizationName?: string;
   officeName: string;
+  departmentName?: string;
   serviceName: string;
   priorityAlertConfig?: PriorityAlertConfig | null;
 }
@@ -155,10 +157,20 @@ function JourneyStep({
 
 export function QueueStatus({
   ticket: initialTicket,
+  organizationName = '',
   officeName,
+  departmentName = '',
   serviceName,
   priorityAlertConfig,
 }: QueueStatusProps) {
+  // Build display hierarchy: Organization > Office/Branch > Service
+  const businessName = organizationName || officeName || 'Business';
+  const branchLine = organizationName && officeName && officeName !== organizationName
+    ? officeName
+    : departmentName && departmentName !== businessName
+      ? departmentName
+      : '';
+  const serviceLabel = serviceName || departmentName || '';
   const {
     ticket,
     position,
@@ -565,8 +577,8 @@ export function QueueStatus({
         <YourTurn
           ticket={ticket}
           deskName={deskName ?? ''}
-          officeName={officeName}
-          serviceName={serviceName}
+          officeName={businessName}
+          serviceName={branchLine || serviceLabel}
           lastSyncedAt={lastSyncedAt}
           isRefreshing={isRefreshing}
           stopError={stopError}
@@ -590,8 +602,8 @@ export function QueueStatus({
     return (
       <FeedbackForm
         ticket={ticket}
-        officeName={officeName}
-        serviceName={serviceName}
+        officeName={businessName}
+        serviceName={branchLine || serviceLabel}
         onDone={handleFeedbackDone}
       />
     );
@@ -604,8 +616,8 @@ export function QueueStatus({
           <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
+                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-300">{branchLine}</p> : null}
                 <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -703,8 +715,8 @@ export function QueueStatus({
           <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-5 pt-5">
             <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">{officeName}</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
+              {branchLine ? <p className="mt-1 text-sm font-medium text-slate-400">{branchLine}</p> : null}
               <p className="mt-1 text-sm text-slate-400">{syncLabel}</p>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -738,7 +750,7 @@ export function QueueStatus({
                 <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
                   {ticket.ticket_number}
                 </p>
-                <p className="mt-2 text-sm font-medium text-slate-300">{serviceName}</p>
+                {serviceLabel ? <p className="mt-2 text-sm font-medium text-slate-300">{serviceLabel}</p> : null}
               </div>
 
               <div className="text-right">
