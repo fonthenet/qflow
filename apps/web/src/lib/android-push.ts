@@ -400,9 +400,12 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
   ]);
 
   let type: AndroidPushType = 'position_update';
-  const officeName = ticket.office?.name ?? null;
-  const departmentName = ticket.department?.name ?? null;
-  const serviceName = ticket.service?.name ?? departmentName ?? officeName ?? null;
+  const officeRaw = ticket.office;
+  const officeName = (Array.isArray(officeRaw) ? officeRaw[0]?.name : officeRaw?.name) ?? null;
+  const deptRaw = ticket.department;
+  const departmentName = (Array.isArray(deptRaw) ? deptRaw[0]?.name : deptRaw?.name) ?? null;
+  const svcRaw = ticket.service;
+  const serviceName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? departmentName ?? officeName ?? null;
   let title = serviceName ?? `Ticket ${ticket.ticket_number}`;
   let body = 'Waiting for your turn';
 
