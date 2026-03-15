@@ -800,47 +800,20 @@ export function QueueStatus({
               />
           </div>
 
-          <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 px-5 py-4 backdrop-blur">
-            <div className="grid gap-4">
-              <div className="flex items-center justify-between">
-                <p className="text-base font-semibold tracking-tight text-white">What happens next</p>
-                {!alertsEnabled ? (
-                  <QueueActionPill
-                    label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
-                    onClick={() => void handleEnableAlerts()}
-                    tone="primary"
-                  />
-                ) : null}
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
-                  <BellRing className="h-4 w-4 text-slate-200" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">We will alert you</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-400">When the desk calls your number, the screen and lock screen update immediately.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
-                  <RefreshCw className="h-4 w-4 text-slate-200" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">Refresh any time</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use Refresh whenever you want an instant sync, just like pull to refresh.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
-                  <XCircle className="h-4 w-4 text-slate-200" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">Finish when you are done</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use End to clear this visit once service is complete.</p>
-                </div>
-              </div>
-            </div>
-          </section>
+          {!alertsEnabled ? (
+            <button
+              type="button"
+              onClick={() => void handleEnableAlerts()}
+              className="mt-4 flex w-full items-center gap-3 rounded-full border border-amber-400/20 bg-amber-500/10 px-5 py-3 text-left transition hover:bg-amber-500/15"
+            >
+              <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
+              <span className="text-sm font-medium text-amber-50">
+                {isIos && !isInStandaloneMode
+                  ? 'Set up alerts — we\u2019ll notify you when it\u2019s your turn'
+                  : 'Enable alerts — we\u2019ll notify you when it\u2019s your turn'}
+              </span>
+            </button>
+          ) : null}
 
           <div className="mt-4 space-y-3">
             <EditCustomerData ticket={ticket} />
