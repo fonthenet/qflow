@@ -31,6 +31,12 @@ const STATUS_TO_WEBHOOK: Record<string, WebhookEvent> = {
   transferred: 'ticket.transferred',
 };
 
+function fireAndForget<T>(label: string, work: Promise<T>) {
+  void work.catch((error) => {
+    console.error(`[${label}]`, error);
+  });
+}
+
 async function dispatchTicketWebhook(
   supabase: Awaited<ReturnType<typeof createClient>>,
   ticket: { office_id: string; status: string; [key: string]: any }
@@ -288,7 +294,12 @@ export async function createTicket(
 
 export async function callNextTicket(deskId: string, staffId: string) {
   const supabase = await createClient();
-  let smsSent = false;
+  let delivery = {
+    pushSent: false,
+    apnsSent: false,
+    androidSent: false,
+    smsSent: false,
+  };
 
   const { data: ticketId, error } = await supabase.rpc('call_next_ticket', {
     p_desk_id: deskId,
@@ -316,66 +327,60 @@ export async function callNextTicket(deskId: string, staffId: string) {
 
   if (ticket) {
     const deskName = await getDeskName(supabase, ticket.desk_id);
-
-    // Web Push — rich typed notification
-    // On Vercel, pg_net trigger handles it via /api/push-send. On local, send directly.
-    if (!process.env.VERCEL) {
-      sendPushToTicket(ticketId, {
+    const customerEmail = ticket.customer_data?.email as string | undefined;
+    const customerName = (ticket.customer_data?.name as string) || 'Customer';
+    const [webPushSent, apnsSent, androidSent, smsResult] = await Promise.all([
+      !process.env.VERCEL
+        ? sendPushToTicket(ticketId, {
+            type: 'called',
+            title: "🔔 YOUR TURN!",
+            body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
+            tag: `qf-turn-${ticketId}`,
+            url: `/q/${ticket.qr_token}`,
+            ticketId,
+            ticketNumber: ticket.ticket_number,
+            deskName,
+          }).catch((err) => {
+            console.error('[CallNext] Push notification error:', err);
+            return false;
+          })
+        : Promise.resolve(false),
+      sendAPNsToTicket(ticketId, {
+        title: "It's Your Turn!",
+        body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+        url: `/q/${ticket.qr_token}`,
+        sound: 'default',
+        interruptionLevel: 'time-sensitive',
+        relevanceScore: 1,
+      }).catch((err) => {
+        console.error('[CallNext] APNs notification error:', err);
+        return false;
+      }),
+      sendAndroidToTicket(ticketId, {
         type: 'called',
-        title: "🔔 YOUR TURN!",
-        body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
-        tag: `qf-turn-${ticketId}`,
+        title: "It's Your Turn!",
+        body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
         url: `/q/${ticket.qr_token}`,
         ticketId,
         ticketNumber: ticket.ticket_number,
+        qrToken: ticket.qr_token,
         deskName,
-      }).catch((err) => console.error('[CallNext] Push notification error:', err));
-    }
+        status: ticket.status,
+        recallCount: ticket.recall_count ?? 0,
+      }).catch((err) => {
+        console.error('[CallNext] Android push error:', err);
+        return false;
+      }),
+      maybeSendPriorityAlertSms(supabase, {
+        ticket,
+        event: 'called',
+        deskName,
+      }).catch((err) => {
+        console.error('[CallNext] SMS notification error:', err);
+        return { sent: false, reason: String(err) };
+      }),
+    ]);
 
-    // APNs push for iOS App Clip users (always, regardless of env)
-    const apnsSent = await sendAPNsToTicket(ticketId, {
-      title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-      url: `/q/${ticket.qr_token}`,
-    }).catch((err) => {
-      console.error('[CallNext] APNs notification error:', err);
-      return false;
-    });
-
-    if (!apnsSent) {
-      console.warn('[CallNext] APNs notification was not sent for ticket:', ticketId);
-    }
-
-    const androidSent = await sendAndroidToTicket(ticketId, {
-      type: 'called',
-      title: "It's Your Turn!",
-      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-      url: `/q/${ticket.qr_token}`,
-      ticketId,
-      ticketNumber: ticket.ticket_number,
-      qrToken: ticket.qr_token,
-      deskName,
-      status: ticket.status,
-      recallCount: ticket.recall_count ?? 0,
-    }).catch((err) => {
-      console.error('[CallNext] Android push error:', err);
-      return false;
-    });
-
-    if (!androidSent) {
-      console.log('[CallNext] Android live update was not sent for ticket:', ticketId);
-    }
-
-    const smsResult = await maybeSendPriorityAlertSms(supabase, {
-      ticket,
-      event: 'called',
-      deskName,
-    });
-    smsSent = smsResult.sent;
-
-    // Email notification (if customer has email in customer_data)
-    const customerEmail = ticket.customer_data?.email as string | undefined;
-    const customerName = (ticket.customer_data?.name as string) || 'Customer';
     if (customerEmail) {
       const { officeName } = await getOfficeContext(supabase, ticket.office_id);
       sendTicketCalledEmail(customerEmail, {
@@ -386,7 +391,7 @@ export async function callNextTicket(deskId: string, staffId: string) {
       }).catch((err) => console.error('[CallNext] Email notification error:', err));
     }
 
-    await syncLiveActivityAfterAlert(ticketId, 'CallNext');
+    fireAndForget('CallNext live activity error:', syncLiveActivityAfterAlert(ticketId, 'CallNext'));
 
     // Notify all other waiting tickets — their position shifted
     notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
@@ -395,6 +400,12 @@ export async function callNextTicket(deskId: string, staffId: string) {
     notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[CallNext] notifyWaitingAndroidTickets error:', err)
     );
+    delivery = {
+      pushSent: webPushSent,
+      apnsSent,
+      androidSent,
+      smsSent: smsResult.sent,
+    };
   }
 
   // Dispatch webhook for ticket called
@@ -406,12 +417,11 @@ export async function callNextTicket(deskId: string, staffId: string) {
   }
 
   revalidatePath('/admin/queue');
-  return { data: ticket, smsSent };
+  return { data: ticket, delivery };
 }
 
 export async function callSpecificTicket(ticketId: string, deskId: string, staffId: string) {
   const supabase = await createClient();
-  let smsSent = false;
 
   const { data: currentTicket, error: currentTicketError } = await supabase
     .from('tickets')
@@ -456,62 +466,60 @@ export async function callSpecificTicket(ticketId: string, deskId: string, staff
   });
 
   const deskName = await getDeskName(supabase, ticket.desk_id);
-
-  if (!process.env.VERCEL) {
-    sendPushToTicket(ticketId, {
+  const customerEmail = ticket.customer_data?.email as string | undefined;
+  const customerName = (ticket.customer_data?.name as string) || 'Customer';
+  const [webPushSent, apnsSent, androidSent, smsResult] = await Promise.all([
+    !process.env.VERCEL
+      ? sendPushToTicket(ticketId, {
+          type: 'called',
+          title: '🔔 YOUR TURN!',
+          body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
+          tag: `qf-turn-${ticketId}`,
+          url: `/q/${ticket.qr_token}`,
+          ticketId,
+          ticketNumber: ticket.ticket_number,
+          deskName,
+        }).catch((err) => {
+          console.error('[CallSpecific] Push notification error:', err);
+          return false;
+        })
+      : Promise.resolve(false),
+    sendAPNsToTicket(ticketId, {
+      title: "It's Your Turn!",
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+      url: `/q/${ticket.qr_token}`,
+      sound: 'default',
+      interruptionLevel: 'time-sensitive',
+      relevanceScore: 1,
+    }).catch((err) => {
+      console.error('[CallSpecific] APNs notification error:', err);
+      return false;
+    }),
+    sendAndroidToTicket(ticketId, {
       type: 'called',
-      title: '🔔 YOUR TURN!',
-      body: `Ticket ${ticket.ticket_number} — Go to ${deskName}`,
-      tag: `qf-turn-${ticketId}`,
+      title: "It's Your Turn!",
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
       url: `/q/${ticket.qr_token}`,
       ticketId,
       ticketNumber: ticket.ticket_number,
+      qrToken: ticket.qr_token,
       deskName,
-    }).catch((err) => console.error('[CallSpecific] Push notification error:', err));
-  }
+      status: ticket.status,
+      recallCount: ticket.recall_count ?? 0,
+    }).catch((err) => {
+      console.error('[CallSpecific] Android push error:', err);
+      return false;
+    }),
+    maybeSendPriorityAlertSms(supabase, {
+      ticket,
+      event: 'called',
+      deskName,
+    }).catch((err) => {
+      console.error('[CallSpecific] SMS notification error:', err);
+      return { sent: false, reason: String(err) };
+    }),
+  ]);
 
-  const apnsSent = await sendAPNsToTicket(ticketId, {
-    title: "It's Your Turn!",
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
-  }).catch((err) => {
-    console.error('[CallSpecific] APNs notification error:', err);
-    return false;
-  });
-
-  if (!apnsSent) {
-    console.warn('[CallSpecific] APNs notification was not sent for ticket:', ticketId);
-  }
-
-  const androidSent = await sendAndroidToTicket(ticketId, {
-    type: 'called',
-    title: "It's Your Turn!",
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
-    ticketId,
-    ticketNumber: ticket.ticket_number,
-    qrToken: ticket.qr_token,
-    deskName,
-    status: ticket.status,
-    recallCount: ticket.recall_count ?? 0,
-  }).catch((err) => {
-    console.error('[CallSpecific] Android push error:', err);
-    return false;
-  });
-
-  if (!androidSent) {
-    console.log('[CallSpecific] Android live update was not sent for ticket:', ticketId);
-  }
-
-  const smsResult = await maybeSendPriorityAlertSms(supabase, {
-    ticket,
-    event: 'called',
-    deskName,
-  });
-  smsSent = smsResult.sent;
-
-  const customerEmail = ticket.customer_data?.email as string | undefined;
-  const customerName = (ticket.customer_data?.name as string) || 'Customer';
   if (customerEmail) {
     const { officeName } = await getOfficeContext(supabase, ticket.office_id);
     sendTicketCalledEmail(customerEmail, {
@@ -522,7 +530,7 @@ export async function callSpecificTicket(ticketId: string, deskId: string, staff
     }).catch((err) => console.error('[CallSpecific] Email notification error:', err));
   }
 
-  await syncLiveActivityAfterAlert(ticketId, 'CallSpecific');
+  fireAndForget('CallSpecific live activity error:', syncLiveActivityAfterAlert(ticketId, 'CallSpecific'));
 
   notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
     console.error('[CallSpecific] notifyWaitingTickets error:', err)
@@ -537,7 +545,15 @@ export async function callSpecificTicket(ticketId: string, deskId: string, staff
   }
 
   revalidatePath('/admin/queue');
-  return { data: ticket, smsSent };
+  return {
+    data: ticket,
+    delivery: {
+      pushSent: webPushSent,
+      apnsSent,
+      androidSent,
+      smsSent: smsResult.sent,
+    },
+  };
 }
 
 export async function startServing(ticketId: string, staffId: string) {
@@ -606,9 +622,11 @@ export async function startServing(ticketId: string, staffId: string) {
     );
   }
 
-  await syncLiveActivity(ticketId, 'StartServing');
+  fireAndForget('StartServing live activity error:', syncLiveActivity(ticketId, 'StartServing'));
 
-  if (ticket) dispatchTicketWebhook(supabase, ticket);
+  if (ticket) {
+    fireAndForget('StartServing webhook error:', dispatchTicketWebhook(supabase, ticket));
+  }
 
   revalidatePath('/admin/queue');
   return { data: ticket };
@@ -676,9 +694,11 @@ export async function markServed(ticketId: string, staffId: string) {
     );
   }
 
-  await syncLiveActivity(ticketId, 'MarkServed');
+  fireAndForget('MarkServed live activity error:', syncLiveActivity(ticketId, 'MarkServed'));
 
-  if (ticket) dispatchTicketWebhook(supabase, ticket);
+  if (ticket) {
+    fireAndForget('MarkServed webhook error:', dispatchTicketWebhook(supabase, ticket));
+  }
 
   revalidatePath('/admin/queue');
   return { data: ticket };
@@ -746,9 +766,11 @@ export async function markNoShow(ticketId: string, staffId: string) {
     );
   }
 
-  await syncLiveActivity(ticketId, 'MarkNoShow');
+  fireAndForget('MarkNoShow live activity error:', syncLiveActivity(ticketId, 'MarkNoShow'));
 
-  if (ticket) dispatchTicketWebhook(supabase, ticket);
+  if (ticket) {
+    fireAndForget('MarkNoShow webhook error:', dispatchTicketWebhook(supabase, ticket));
+  }
 
   revalidatePath('/admin/queue');
   return { data: ticket };
@@ -835,7 +857,7 @@ export async function transferTicket(
     },
   });
 
-  await syncLiveActivity(ticketId, 'TransferTicket');
+  fireAndForget('TransferTicket live activity error:', syncLiveActivity(ticketId, 'TransferTicket'));
 
   revalidatePath('/admin/queue');
   return { data: newTicket };
@@ -871,9 +893,9 @@ export async function recallTicket(ticketId: string) {
   }
 
   // Broadcast recall via Supabase Realtime REST API (server-side, no WebSocket)
-  await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`,
-    {
+  fireAndForget(
+    'Recall broadcast error:',
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`, {
       method: 'POST',
       headers: {
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -892,67 +914,68 @@ export async function recallTicket(ticketId: string) {
           },
         ],
       }),
-    }
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Broadcast failed with status ${response.status}`);
+      }
+    })
   );
 
   const deskName = await getDeskName(supabase, ticket.desk_id);
-
-  // Web Push — rich recall alert
-  if (!process.env.VERCEL) {
-    sendPushToTicket(ticketId, {
+  const [webPushSent, apnsSent, androidSent, smsResult] = await Promise.all([
+    !process.env.VERCEL
+      ? sendPushToTicket(ticketId, {
+          type: 'recall',
+          title: '⚠️ REMINDER — YOUR TURN!',
+          body: `Ticket ${ticket.ticket_number} — Go to ${deskName} NOW`,
+          tag: `qf-turn-${ticketId}`,
+          url: `/q/${ticket.qr_token}`,
+          ticketId,
+          ticketNumber: ticket.ticket_number,
+          deskName,
+          recallCount: newRecallCount,
+        }).catch((err) => {
+          console.error('[Recall] Push notification error:', err);
+          return false;
+        })
+      : Promise.resolve(false),
+    sendAPNsToTicket(ticketId, {
+      title: 'Reminder: Your Turn!',
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+      url: `/q/${ticket.qr_token}`,
+      sound: 'default',
+      interruptionLevel: 'time-sensitive',
+      relevanceScore: 1,
+    }).catch((err) => {
+      console.error('[Recall] APNs notification error:', err);
+      return false;
+    }),
+    sendAndroidToTicket(ticketId, {
       type: 'recall',
-      title: '⚠️ REMINDER — YOUR TURN!',
-      body: `Ticket ${ticket.ticket_number} — Go to ${deskName} NOW`,
-      tag: `qf-turn-${ticketId}`,
+      title: 'Reminder: Your Turn!',
+      body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
       url: `/q/${ticket.qr_token}`,
       ticketId,
       ticketNumber: ticket.ticket_number,
+      qrToken: ticket.qr_token,
       deskName,
+      status: ticket.status,
       recallCount: newRecallCount,
-    }).catch((err) => console.error('[Recall] Push notification error:', err));
-  }
+    }).catch((err) => {
+      console.error('[Recall] Android push error:', err);
+      return false;
+    }),
+    maybeSendPriorityAlertSms(supabase, {
+      ticket,
+      event: 'recall',
+      deskName,
+    }).catch((err) => {
+      console.error('[Recall] SMS notification error:', err);
+      return { sent: false, reason: String(err) };
+    }),
+  ]);
 
-  // APNs push for iOS App Clip users (always, regardless of env)
-  const apnsSent = await sendAPNsToTicket(ticketId, {
-    title: 'Reminder: Your Turn!',
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
-  }).catch((err) => {
-    console.error('[Recall] APNs notification error:', err);
-    return false;
-  });
-
-  if (!apnsSent) {
-    console.warn('[Recall] APNs notification was not sent for ticket:', ticketId);
-  }
-
-  const androidSent = await sendAndroidToTicket(ticketId, {
-    type: 'recall',
-    title: 'Reminder: Your Turn!',
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
-    ticketId,
-    ticketNumber: ticket.ticket_number,
-    qrToken: ticket.qr_token,
-    deskName,
-    status: ticket.status,
-    recallCount: newRecallCount,
-  }).catch((err) => {
-    console.error('[Recall] Android push error:', err);
-    return false;
-  });
-
-  if (!androidSent) {
-    console.log('[Recall] Android live update was not sent for ticket:', ticketId);
-  }
-
-  const smsResult = await maybeSendPriorityAlertSms(supabase, {
-    ticket,
-    event: 'recall',
-    deskName,
-  });
-
-  await syncLiveActivityAfterAlert(ticketId, 'Recall');
+  fireAndForget('Recall live activity error:', syncLiveActivityAfterAlert(ticketId, 'Recall'));
 
   // Log event
   await supabase.from('ticket_events').insert({
@@ -962,18 +985,34 @@ export async function recallTicket(ticketId: string) {
   });
 
   // Also insert a notification record
-  await supabase.from('notifications').insert({
-    ticket_id: ticketId,
-    type: 'recall',
-    channel: 'realtime',
-    payload: {
-      ticket_number: ticket.ticket_number,
-      desk_id: ticket.desk_id,
-    },
-    sent_at: new Date().toISOString(),
-  });
+  fireAndForget(
+    'Recall notification persistence error:',
+    (async () => {
+      await supabase.from('notifications').insert({
+        ticket_id: ticketId,
+        type: 'recall',
+        channel: 'realtime',
+        payload: {
+          ticket_number: ticket.ticket_number,
+          desk_id: ticket.desk_id,
+        },
+        sent_at: new Date().toISOString(),
+      });
+    })()
+  );
 
-  return { data: ticket };
+  revalidatePath('/admin/queue');
+  return {
+    data: {
+      ...ticket,
+      called_at: new Date().toISOString(),
+      recall_count: newRecallCount,
+    },
+    pushSent: webPushSent,
+    apnsSent,
+    androidSent,
+    smsSent: smsResult.sent,
+  };
 }
 
 export async function buzzTicket(ticketId: string) {
@@ -992,49 +1031,66 @@ export async function buzzTicket(ticketId: string) {
   }
 
   const deskName = await getDeskName(supabase, ticket.desk_id);
-
-  // Web Push — aggressive buzz notification
-  sendPushToTicket(ticketId, {
-    type: 'buzz',
-    title: '📳 BUZZ!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
-    tag: `qf-buzz-${ticketId}-${Date.now()}`, // unique tag forces new notification
-    url: `/q/${ticket.qr_token}`,
-    ticketId,
-    ticketNumber: ticket.ticket_number,
-    deskName,
-  }).catch((err) => console.error('[Buzz] Push error:', err));
-
-  // APNs for iOS
-  sendAPNsToTicket(ticketId, {
-    title: 'Buzz!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
-    url: `/q/${ticket.qr_token}`,
-  }).catch((err) => console.error('[Buzz] APNs error:', err));
-
-  sendAndroidToTicket(ticketId, {
-    type: 'buzz',
-    title: 'Buzz!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
-    url: `/q/${ticket.qr_token}`,
-    ticketId,
-    ticketNumber: ticket.ticket_number,
-    qrToken: ticket.qr_token,
-    deskName,
-    status: ticket.status,
-    recallCount: ticket.recall_count ?? 0,
-  }).catch((err) => console.error('[Buzz] Android push error:', err));
+  const [webPushSent, apnsSent, androidSent, smsResult] = await Promise.all([
+    sendPushToTicket(ticketId, {
+      type: 'buzz',
+      title: '📳 BUZZ!',
+      body: ticket.status === 'called'
+        ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+        : `Ticket ${ticket.ticket_number} — Attention needed`,
+      tag: `qf-buzz-${ticketId}-${Date.now()}`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      deskName,
+    }).catch((err) => {
+      console.error('[Buzz] Push error:', err);
+      return false;
+    }),
+    sendAPNsToTicket(ticketId, {
+      title: 'Buzz!',
+      body: ticket.status === 'called'
+        ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+        : `Ticket ${ticket.ticket_number} — Attention needed`,
+      url: `/q/${ticket.qr_token}`,
+      sound: 'default',
+      interruptionLevel: 'time-sensitive',
+      relevanceScore: 1,
+    }).catch((err) => {
+      console.error('[Buzz] APNs error:', err);
+      return false;
+    }),
+    sendAndroidToTicket(ticketId, {
+      type: 'buzz',
+      title: 'Buzz!',
+      body: ticket.status === 'called'
+        ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+        : `Ticket ${ticket.ticket_number} — Attention needed`,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      qrToken: ticket.qr_token,
+      deskName,
+      status: ticket.status,
+      recallCount: ticket.recall_count ?? 0,
+    }).catch((err) => {
+      console.error('[Buzz] Android push error:', err);
+      return false;
+    }),
+    maybeSendPriorityAlertSms(supabase, {
+      ticket,
+      event: 'buzz',
+      deskName,
+    }).catch((err) => {
+      console.error('[Buzz] SMS notification error:', err);
+      return { sent: false, reason: String(err) };
+    }),
+  ]);
 
   // Broadcast buzz via Supabase Realtime (triggers in-app alert too)
-  await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`,
-    {
+  fireAndForget(
+    'Buzz broadcast error:',
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`, {
       method: 'POST',
       headers: {
         apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -1053,53 +1109,115 @@ export async function buzzTicket(ticketId: string) {
           },
         ],
       }),
-    }
+    }).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Broadcast failed with status ${response.status}`);
+      }
+    })
   );
 
   // Log event
-  await supabase.from('ticket_events').insert({
-    ticket_id: ticketId,
-    event_type: 'buzz',
-    desk_id: ticket.desk_id,
-  });
-
-  const smsResult = await maybeSendPriorityAlertSms(supabase, {
-    ticket,
-    event: 'buzz',
-    deskName,
-  });
+  fireAndForget(
+    'Buzz event log error:',
+    (async () => {
+      await supabase.from('ticket_events').insert({
+        ticket_id: ticketId,
+        event_type: 'buzz',
+        desk_id: ticket.desk_id,
+      });
+    })()
+  );
 
   // Persist buzz so clients can detect missed events even if broadcast is dropped.
-  await supabase.from('notifications').insert({
-    ticket_id: ticketId,
-    type: 'buzz',
-    channel: 'realtime',
-    payload: {
-      ticket_number: ticket.ticket_number,
-      desk_id: ticket.desk_id,
-    },
-    sent_at: new Date().toISOString(),
-  });
+  fireAndForget(
+    'Buzz notification persistence error:',
+    (async () => {
+      await supabase.from('notifications').insert({
+        ticket_id: ticketId,
+        type: 'buzz',
+        channel: 'realtime',
+        payload: {
+          ticket_number: ticket.ticket_number,
+          desk_id: ticket.desk_id,
+        },
+        sent_at: new Date().toISOString(),
+      });
+    })()
+  );
 
-  return { data: ticket, smsSent: smsResult.sent };
+  revalidatePath('/admin/queue');
+  return {
+    data: ticket,
+    pushSent: webPushSent,
+    apnsSent,
+    androidSent,
+    smsSent: smsResult.sent,
+  };
 }
 
 export async function resetTicketToQueue(ticketId: string) {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data: existingTicket, error: existingTicketError } = await supabase
     .from('tickets')
-    .update({ status: 'waiting', desk_id: null, called_at: null })
+    .select('id, status, office_id, department_id, called_by_staff_id')
     .eq('id', ticketId)
-    .in('status', ['called', 'serving']);
+    .single();
+
+  if (existingTicketError || !existingTicket) {
+    return { error: existingTicketError?.message ?? 'Ticket not found' };
+  }
+
+  const { data: ticket, error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      serving_started_at: null,
+      completed_at: null,
+      called_by_staff_id: null,
+    })
+    .eq('id', ticketId)
+    .in('status', ['called', 'serving'])
+    .select()
+    .single();
 
   if (error) {
     return { error: 'Failed to reset ticket' };
   }
 
-  await syncLiveActivity(ticketId, 'ResetTicketToQueue');
+  if (!ticket) {
+    return { error: 'Ticket is no longer in a resettable state' };
+  }
 
-  return { data: true };
+  fireAndForget(
+    'ResetTicketToQueue event log error:',
+    (async () => {
+      await supabase.from('ticket_events').insert({
+        ticket_id: ticketId,
+        event_type: 'status_change',
+        from_status: existingTicket.status,
+        to_status: 'waiting',
+        staff_id: existingTicket.called_by_staff_id,
+      });
+    })()
+  );
+
+  fireAndForget('ResetTicketToQueue live activity error:', syncLiveActivity(ticketId, 'ResetTicketToQueue'));
+
+  fireAndForget(
+    'ResetTicketToQueue waiting push error:',
+    notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId)
+  );
+
+  fireAndForget(
+    'ResetTicketToQueue waiting Android push error:',
+    notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId)
+  );
+
+  revalidatePath('/admin/queue');
+  return { data: ticket };
 }
 
 export async function assignDesk(deskId: string, staffId: string) {

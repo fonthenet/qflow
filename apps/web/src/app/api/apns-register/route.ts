@@ -3,16 +3,25 @@ import { createClient } from '@supabase/supabase-js';
 
 function getTrimmedEnv(name: string): string | undefined {
   const value = process.env[name];
-  return typeof value === 'string' ? value.trim() : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
 }
 
 function encodeAPNsTarget(kind: unknown, environment: unknown, bundleId: unknown): string {
   const normalizedKind = kind === 'liveactivity' ? 'liveactivity' : 'alert';
   const normalizedEnvironment = environment === 'sandbox' ? 'sandbox' : 'production';
+  const defaultBundleId = getTrimmedEnv('APNS_BUNDLE_ID') || 'com.queueflow.app.QueueFlowClip';
   const normalizedBundleId =
     typeof bundleId === 'string' && bundleId.trim().length > 0
       ? bundleId.trim()
-      : '';
+      : defaultBundleId;
 
   return normalizedBundleId
     ? `${normalizedKind}|${normalizedEnvironment}|${normalizedBundleId}`

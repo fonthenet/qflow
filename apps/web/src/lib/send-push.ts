@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Configure web-push with VAPID keys (lazy for Vercel serverless compatibility)
 let vapidReady = false;
@@ -42,6 +42,22 @@ export interface PushPayload {
   silent?: boolean;
 }
 
+function createServiceSupabaseClient() {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[SendPush] Supabase credentials not configured');
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+}
+
 // FCM urgency mapping — controls Android battery optimization behavior
 function getUrgency(type?: string): 'very-low' | 'low' | 'normal' | 'high' {
   switch (type) {
@@ -74,7 +90,10 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
     return false;
   }
 
-  const supabase = await createClient();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return false;
+  }
 
   // Retry fetching subscriptions (race condition: subscription may still be saving)
   let subscriptions: { id: string; endpoint: string; p256dh: string; auth: string }[] = [];
@@ -175,7 +194,10 @@ const DEBOUNCE_MS = 10_000; // 10 seconds
 export async function sendPositionUpdatePush(ticketId: string): Promise<boolean> {
   if (!initVapid()) return false;
 
-  const supabase = await createClient();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return false;
+  }
 
   // Fetch ticket with related data
   const { data: ticket } = await supabase
@@ -263,7 +285,10 @@ export async function notifyWaitingTickets(
   excludeTicketId?: string
 ): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = createServiceSupabaseClient();
+    if (!supabase) {
+      return;
+    }
 
     // Find waiting tickets
     let query = supabase

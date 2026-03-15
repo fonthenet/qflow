@@ -45,9 +45,10 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const supabaseRef = useRef(createClient());
 
   const fetchQueue = useCallback(async () => {
-    const supabase = createClient();
+    const supabase = supabaseRef.current;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -100,7 +101,7 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
   }, [officeId, departmentId]);
 
   useEffect(() => {
-    const supabase = createClient();
+    const supabase = supabaseRef.current;
 
     setIsLoading(true);
     fetchQueue().finally(() => setIsLoading(false));
@@ -120,23 +121,44 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
             const changed = (payload.new ?? payload.old) as Database['public']['Tables']['tickets']['Row'] | undefined;
             if (changed && changed.department_id !== departmentId) return;
           }
-          fetchQueue();
+          void fetchQueue();
         }
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void fetchQueue();
+        }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[RealtimeQueue] Subscription degraded:', status, '— falling back to polling.');
+          void fetchQueue();
         }
       });
 
     channelRef.current = channel;
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        window.setTimeout(() => {
+          void fetchQueue();
+        }, 300);
+      }
+    };
+
+    const handleOnline = () => {
+      void fetchQueue();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+
     const pollInterval = setInterval(() => {
-      fetchQueue();
-    }, 3000);
+      void fetchQueue();
+    }, 2000);
 
     return () => {
       clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

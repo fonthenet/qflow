@@ -148,6 +148,33 @@ class SupabaseClient {
         }
     }
 
+    func fetchLatestNotificationId(ticketId: String, type: String) async -> String? {
+        let encodedType = type.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? type
+        let urlString = "\(baseURL)/rest/v1/notifications?ticket_id=eq.\(ticketId)&type=eq.\(encodedType)&select=id&order=sent_at.desc&limit=1"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return nil
+            }
+
+            struct NotificationRecord: Codable {
+                let id: String
+            }
+
+            let results = try JSONDecoder().decode([NotificationRecord].self, from: data)
+            return results.first?.id
+        } catch {
+            return nil
+        }
+    }
+
     func fetchExistingFeedback(ticketId: String) async -> Int? {
         let urlString = "\(baseURL)/rest/v1/feedback?ticket_id=eq.\(ticketId)&select=rating&limit=1"
         guard let url = URL(string: urlString) else { return nil }

@@ -290,6 +290,12 @@ struct YourTurnView: View {
         .onReceive(NotificationCenter.default.publisher(for: .queueFlowBuzz)) { _ in
             startBuzzStrobe()
         }
+        .onChange(of: ticket.called_at) { _ in
+            syncFromTicket()
+        }
+        .onChange(of: ticket.recall_count) { _ in
+            syncFromTicket()
+        }
     }
 
     private var topBar: some View {
@@ -497,6 +503,10 @@ struct YourTurnView: View {
     }
 
     private func setupInitialState() {
+        syncFromTicket()
+    }
+
+    private func syncFromTicket() {
         if let calledAtStr = ticket.called_at {
             calledAt = parseDate(calledAtStr) ?? Date()
         }

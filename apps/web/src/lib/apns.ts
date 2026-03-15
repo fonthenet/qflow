@@ -9,13 +9,23 @@ import { createClient } from '@supabase/supabase-js';
 
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.development.push.apple.com';
-const DEFAULT_APNS_BUNDLE_ID =
-  process.env.APNS_BUNDLE_ID?.trim() || 'com.queueflow.app.QueueFlowClip';
 const SWIFT_REFERENCE_DATE_UNIX_SECONDS = 978307200;
 
 function getTrimmedEnv(name: string): string | undefined {
   const value = process.env[name];
-  return typeof value === 'string' ? value.trim() : undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function getDefaultAPNsBundleId(): string {
+  return getTrimmedEnv('APNS_BUNDLE_ID') || 'com.queueflow.app.QueueFlowClip';
 }
 
 let cachedToken: { jwt: string; expiresAt: number } | null = null;
@@ -53,6 +63,8 @@ interface APNsPayload {
   body: string;
   sound?: string;
   url?: string;
+  interruptionLevel?: 'active' | 'passive' | 'time-sensitive';
+  relevanceScore?: number;
 }
 
 type APNsEnvironment = 'production' | 'sandbox';
@@ -148,7 +160,7 @@ function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
     return {
       kind: 'alert',
       environment: 'production',
-      bundleId: DEFAULT_APNS_BUNDLE_ID,
+      bundleId: getDefaultAPNsBundleId(),
     };
   }
 
@@ -159,7 +171,7 @@ function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
     return {
       kind: parts[0],
       environment: rawEnvironment === 'sandbox' ? 'sandbox' : 'production',
-      bundleId: rawBundleId?.trim() || DEFAULT_APNS_BUNDLE_ID,
+      bundleId: rawBundleId?.trim() || getDefaultAPNsBundleId(),
     };
   }
 
@@ -167,7 +179,7 @@ function parseAPNsTarget(rawTarget?: string | null): APNsTarget {
   return {
     kind: 'alert',
     environment: rawEnvironment === 'sandbox' ? 'sandbox' : 'production',
-    bundleId: rawBundleId?.trim() || DEFAULT_APNS_BUNDLE_ID,
+    bundleId: rawBundleId?.trim() || getDefaultAPNsBundleId(),
   };
 }
 
@@ -277,6 +289,10 @@ async function sendAlertNotification(
   target: APNsTarget
 ): Promise<APNsSendResult> {
   const invocationURL = buildInvocationURL(payload.url);
+  const normalizedRelevanceScore =
+    typeof payload.relevanceScore === 'number'
+      ? Math.max(0, Math.min(1, payload.relevanceScore))
+      : undefined;
 
   const apnsPayload = {
     aps: {
@@ -285,7 +301,8 @@ async function sendAlertNotification(
         body: payload.body,
       },
       sound: payload.sound || 'default',
-      'interruption-level': 'time-sensitive' as const,
+      'interruption-level': payload.interruptionLevel || ('time-sensitive' as const),
+      ...(normalizedRelevanceScore != null ? { 'relevance-score': normalizedRelevanceScore } : {}),
       'mutable-content': 1,
       ...(invocationURL ? { 'target-content-id': invocationURL } : {}),
     },
@@ -410,6 +427,7 @@ async function sendToTicketTokens(
 
   console.log(`[APNs] Sending ${kind} notification for ticket:`, ticketId);
   let anySent = false;
+  let invalidProviderTokenSeen = false;
 
   for (const token of matchingTokens) {
     const target = parseAPNsTarget(token.environment);
@@ -426,12 +444,25 @@ async function sendToTicketTokens(
       continue;
     }
 
+    if (result.reason === 'InvalidProviderToken') {
+      invalidProviderTokenSeen = true;
+      console.error(
+        `[APNs] Provider token rejected for ticket ${ticketId}. ` +
+          `Check APNS_KEY_ID, APNS_TEAM_ID, and APNS_KEY_P8 for bundle ${target.bundleId}.`
+      );
+      break;
+    }
+
     if (result.reason === 'BadDeviceToken' || result.reason === 'DeviceTokenNotForTopic') {
       console.warn(
         `[APNs] Preserving token ${token.id} after ${result.reason};` +
           ` verify APNs topic match (${buildAPNsTopic(target)})`
       );
     }
+  }
+
+  if (invalidProviderTokenSeen) {
+    return false;
   }
 
   return anySent;

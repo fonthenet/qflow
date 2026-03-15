@@ -262,16 +262,20 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
-      const smsSent = 'smsSent' in result && result.smsSent === true;
+      const reachedPhone =
+        ('pushSent' in result && result.pushSent === true) ||
+        ('apnsSent' in result && result.apnsSent === true) ||
+        ('androidSent' in result && result.androidSent === true) ||
+        ('smsSent' in result && result.smsSent === true);
       // Update local state so countdown resets
       setCurrentTicket((prev) =>
         prev ? { ...prev, called_at: new Date().toISOString() } : prev
       );
       addToast(
-        smsSent
-          ? 'Recall alert sent — timer reset and text backup delivered'
-          : 'Recall alert sent — timer reset',
-        'info'
+        reachedPhone
+          ? 'Recall alert sent to the phone and timer reset'
+          : 'Recall sent, but no phone delivery channel responded',
+        reachedPhone ? 'info' : 'error'
       );
     });
   };
@@ -284,12 +288,16 @@ export function DeskPanel({
         addToast(result.error, 'error');
         return;
       }
-      const smsSent = 'smsSent' in result && result.smsSent === true;
+      const reachedPhone =
+        ('pushSent' in result && result.pushSent === true) ||
+        ('apnsSent' in result && result.apnsSent === true) ||
+        ('androidSent' in result && result.androidSent === true) ||
+        ('smsSent' in result && result.smsSent === true);
       addToast(
-        smsSent
-          ? 'Buzz alert sent by push + text'
-          : 'Buzz alert sent',
-        'info'
+        reachedPhone
+          ? 'Buzz alert sent to the phone'
+          : 'Buzz sent, but no phone delivery channel responded',
+        reachedPhone ? 'info' : 'error'
       );
     });
   };

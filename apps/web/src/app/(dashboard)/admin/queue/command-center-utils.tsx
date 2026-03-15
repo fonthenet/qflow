@@ -1,7 +1,8 @@
 'use client';
 
+import { LoaderCircle } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { QueueTicket } from '@/lib/hooks/use-realtime-queue';
+import type { QueueData, QueueTicket } from '@/lib/hooks/use-realtime-queue';
 
 export type Ticket = QueueTicket & {
   service?: { name: string } | null;
@@ -56,7 +57,24 @@ export interface Toast {
   type: 'success' | 'error' | 'info';
 }
 
+export interface OperatorActionPulse {
+  label: string;
+  at: string;
+  tone: 'neutral' | 'success' | 'attention';
+}
+
 export type ViewMode = 'board' | 'history';
+export type TicketAction =
+  | 'call'
+  | 'serve'
+  | 'done'
+  | 'recall'
+  | 'noshow'
+  | 'buzz'
+  | 'reset'
+  | 'cancel'
+  | 'delete'
+  | 'transfer';
 
 export type ConfirmAction =
   | { id: string; type: 'cancel' }
@@ -211,6 +229,49 @@ export function sortRecentTickets(tickets: Ticket[]) {
   );
 }
 
+export function flattenQueueData(queue: QueueData): Ticket[] {
+  return [
+    ...queue.issued,
+    ...queue.waiting,
+    ...queue.called,
+    ...queue.serving,
+    ...queue.recentlyServed,
+    ...queue.cancelled,
+    ...queue.noShows,
+    ...queue.transferred,
+  ] as Ticket[];
+}
+
+export function bucketQueueTickets(tickets: Ticket[]): QueueData {
+  const byCompletedAtDesc = (left: Ticket, right: Ticket) =>
+    new Date(right.completed_at ?? 0).getTime() - new Date(left.completed_at ?? 0).getTime();
+
+  return {
+    issued: tickets.filter((ticket) => ticket.status === 'issued'),
+    waiting: tickets.filter((ticket) => ticket.status === 'waiting'),
+    called: tickets.filter((ticket) => ticket.status === 'called'),
+    serving: tickets.filter((ticket) => ticket.status === 'serving'),
+    recentlyServed: tickets.filter((ticket) => ticket.status === 'served').sort(byCompletedAtDesc).slice(0, 6),
+    cancelled: tickets.filter((ticket) => ticket.status === 'cancelled').sort(byCompletedAtDesc).slice(0, 6),
+    noShows: tickets.filter((ticket) => ticket.status === 'no_show').sort(byCompletedAtDesc).slice(0, 6),
+    transferred: tickets.filter((ticket) => ticket.status === 'transferred').sort(byCompletedAtDesc).slice(0, 6),
+  };
+}
+
+export function getTicketActionKey(ticketId: string, action: TicketAction) {
+  return `${ticketId}:${action}`;
+}
+
+export function formatRelativeActionTime(value: string) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 export function ToastContainer({ toasts }: { toasts: Toast[] }) {
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
@@ -222,7 +283,7 @@ export function ToastContainer({ toasts }: { toasts: Toast[] }) {
               ? 'bg-emerald-600 text-white'
               : toast.type === 'error'
                 ? 'bg-rose-600 text-white'
-                : 'bg-[#10292f] text-white'
+                : 'bg-[#3156a6] text-white'
           }`}
         >
           {toast.message}
@@ -255,26 +316,29 @@ export function ActionButton({
   icon,
   onClick,
   disabled,
+  loading = false,
   danger = false,
 }: {
   label: string;
   icon: ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  loading?: boolean;
   danger?: boolean;
 }) {
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={onClick}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+      aria-busy={loading}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-40 ${
         danger
           ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-          : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
+          : 'border-[#d7e4ff] bg-white text-[#3156a6] hover:border-[#a9c2f5] hover:bg-[#f7faff]'
       }`}
     >
-      {icon}
+      {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : icon}
       {label}
     </button>
   );

@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 async function getStaffOrg() {
@@ -58,6 +59,9 @@ export async function cancelVisit(ticketId: string) {
     event_type: 'status_change',
     data: { from_status: ticket.status, to_status: 'cancelled', source: 'admin' },
   });
+
+  revalidatePath('/admin/queue');
+  return { data: true };
 }
 
 export async function deleteVisit(ticketId: string) {
@@ -71,4 +75,7 @@ export async function deleteVisit(ticketId: string) {
   // Delete events first (FK constraint)
   await supabase.from('ticket_events').delete().eq('ticket_id', ticketId);
   await supabase.from('tickets').delete().eq('id', ticketId);
+
+  revalidatePath('/admin/queue');
+  return { data: true };
 }

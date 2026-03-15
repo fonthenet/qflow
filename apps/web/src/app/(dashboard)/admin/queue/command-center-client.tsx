@@ -21,14 +21,18 @@ import { cancelVisit, deleteVisit } from './actions';
 import { FocusPanel, StageColumn } from './command-center-panels';
 import {
   ConfirmAction,
-  MetricCard,
   QueueClientProps,
+  OperatorActionPulse,
   Ticket,
+  TicketAction,
   Toast,
   ToastContainer,
   ViewMode,
+  bucketQueueTickets,
+  flattenQueueData,
   formatClock,
   formatDuration,
+  getTicketActionKey,
   getCustomerName,
   getStatusMeta,
   matchesSearch,
@@ -42,7 +46,6 @@ import {
   Hourglass,
   PhoneCall,
   Search,
-  Workflow,
   X,
 } from 'lucide-react';
 
@@ -67,7 +70,7 @@ export function CommandCenterClient({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [isRefreshing, startTransition] = useTransition();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [transferDialogId, setTransferDialogId] = useState<string | null>(null);
@@ -77,7 +80,19 @@ export function CommandCenterClient({
   const [deskDisplayName, setDeskDisplayName] = useState<string | null>(assignedDesk?.display_name || assignedDesk?.name || null);
   const [deskSelectOpen, setDeskSelectOpen] = useState(false);
 
-  const { queue, isLoading: queueLoading } = useRealtimeQueue({ officeId: primaryOfficeId });
+  const { queue, isLoading: queueLoading, refetch } = useRealtimeQueue({ officeId: primaryOfficeId });
+  const [localQueue, setLocalQueue] = useState(queue);
+  const [localHistory, setLocalHistory] = useState(initialTickets);
+  const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
+  const [actionPulseByTicket, setActionPulseByTicket] = useState<Record<string, OperatorActionPulse>>({});
+
+  useEffect(() => {
+    setLocalQueue(queue);
+  }, [queue]);
+
+  useEffect(() => {
+    setLocalHistory(initialTickets);
+  }, [initialTickets]);
 
   function addToast(message: string, type: Toast['type'] = 'success') {
     const id = Date.now() + Math.floor(Math.random() * 1000);
@@ -87,16 +102,16 @@ export function CommandCenterClient({
     }, 3200);
   }
 
-  const backlogTickets = [...queue.issued, ...queue.waiting].filter((ticket) => matchesSearch(ticket, search));
-  const calledTickets = queue.called.filter((ticket) => matchesSearch(ticket, search));
-  const servingTickets = queue.serving.filter((ticket) => matchesSearch(ticket, search));
+  const backlogTickets = [...localQueue.issued, ...localQueue.waiting].filter((ticket) => matchesSearch(ticket, search));
+  const calledTickets = localQueue.called.filter((ticket) => matchesSearch(ticket, search));
+  const servingTickets = localQueue.serving.filter((ticket) => matchesSearch(ticket, search));
   const recentTickets = sortRecentTickets([
-    ...queue.recentlyServed,
-    ...queue.cancelled,
-    ...queue.noShows,
-    ...queue.transferred,
+    ...localQueue.recentlyServed,
+    ...localQueue.cancelled,
+    ...localQueue.noShows,
+    ...localQueue.transferred,
   ]).filter((ticket) => matchesSearch(ticket, search));
-  const historyTickets = initialTickets.filter((ticket) => matchesSearch(ticket, search));
+  const historyTickets = localHistory.filter((ticket) => matchesSearch(ticket, search));
   const boardTickets = [...servingTickets, ...calledTickets, ...backlogTickets, ...recentTickets];
 
   useEffect(() => {
@@ -115,34 +130,100 @@ export function CommandCenterClient({
       ? boardTickets.find((ticket) => ticket.id === selectedId) || null
       : historyTickets.find((ticket) => ticket.id === selectedId) || null;
 
-  const transferTicketRecord = boardTickets.find((ticket) => ticket.id === transferDialogId) || null;
+  const transferTicketRecord = [...boardTickets, ...historyTickets].find((ticket) => ticket.id === transferDialogId) || null;
   const filteredServices = transferDeptId
     ? services.filter((service) => service.department_id === transferDeptId)
     : services;
-  const intakeCount = queue.issued.length + queue.waiting.length;
+  const intakeCount = localQueue.issued.length + localQueue.waiting.length;
+  const calledCount = localQueue.called.length;
+  const servingCount = localQueue.serving.length;
+  const resolvedCount = recentTickets.length;
   const longestWaitSeconds = backlogTickets.reduce((max, ticket) => {
     if (!ticket.created_at) return max;
     const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ticket.created_at).getTime()) / 1000));
     return Math.max(max, elapsed);
   }, 0);
 
-  async function runTask(
-    work: () => Promise<{ error?: string | null } | void>,
-    successMessage: string
-  ) {
-    startTransition(async () => {
-      try {
-        const result = await work();
-        if (result && 'error' in result && result.error) {
-          addToast(result.error, 'error');
-          return;
-        }
-        addToast(successMessage);
-        router.refresh();
-      } catch (error) {
-        addToast(error instanceof Error ? error.message : 'Something went wrong.', 'error');
+  function setActionPending(ticketId: string, action: TicketAction, pending: boolean) {
+    const key = getTicketActionKey(ticketId, action);
+    setPendingActions((current) => {
+      if (!pending) {
+        const { [key]: _ignored, ...rest } = current;
+        return rest;
       }
+      return { ...current, [key]: true };
     });
+  }
+
+  function isActionPending(ticketId: string, action: TicketAction) {
+    return Boolean(pendingActions[getTicketActionKey(ticketId, action)]);
+  }
+
+  function setLivePulse(ticketId: string, pulse: OperatorActionPulse) {
+    setActionPulseByTicket((current) => ({
+      ...current,
+      [ticketId]: pulse,
+    }));
+  }
+
+  function getLivePulse(ticketId: string) {
+    return actionPulseByTicket[ticketId] || null;
+  }
+
+  function updateTicketLocally(ticketId: string, transform: (ticket: Ticket) => Ticket | null) {
+    setLocalQueue((current) => {
+      const nextTickets = flattenQueueData(current).flatMap((ticket) => {
+        if (ticket.id !== ticketId) return [ticket];
+        const nextTicket = transform(ticket);
+        return nextTicket ? [nextTicket] : [];
+      });
+      return bucketQueueTickets(nextTickets);
+    });
+
+    setLocalHistory((current) =>
+      current.flatMap((ticket) => {
+        if (ticket.id !== ticketId) return [ticket];
+        const nextTicket = transform(ticket);
+        return nextTicket ? [nextTicket] : [];
+      })
+    );
+  }
+
+  function refreshViews() {
+    void refetch();
+    startTransition(() => {
+      router.refresh();
+    });
+  }
+
+  async function runTask(
+    action: TicketAction,
+    ticketId: string,
+    work: () => Promise<{ error?: string | null; data?: unknown } | void>,
+    successMessage: string,
+    optimisticUpdate?: () => void,
+    onSuccess?: (result: { error?: string | null; data?: unknown } | void) => void
+  ) {
+    const queueSnapshot = localQueue;
+    const historySnapshot = localHistory;
+    setActionPending(ticketId, action, true);
+    if (optimisticUpdate) optimisticUpdate();
+
+    try {
+      const result = await work();
+      if (result && 'error' in result && result.error) {
+        throw new Error(result.error);
+      }
+      onSuccess?.(result);
+      addToast(successMessage);
+      refreshViews();
+    } catch (error) {
+      setLocalQueue(queueSnapshot);
+      setLocalHistory(historySnapshot);
+      addToast(error instanceof Error ? error.message : 'Something went wrong.', 'error');
+    } finally {
+      setActionPending(ticketId, action, false);
+    }
   }
 
   function handlePrimaryAction(ticket: Ticket) {
@@ -168,30 +249,153 @@ export function CommandCenterClient({
         addToast(`Assign a ${t.desk.toLowerCase()} before calling a visit.`, 'error');
         return;
       }
-      runTask(() => callSpecificTicket(ticket.id, deskId, staffId), `${ticket.ticket_number} called.`);
+      void runTask(
+        'call',
+        ticket.id,
+        () => callSpecificTicket(ticket.id, deskId, staffId),
+        `${ticket.ticket_number} called.`,
+        () => {
+          setLivePulse(ticket.id, {
+            label: 'Call sent',
+            at: new Date().toISOString(),
+            tone: 'success',
+          });
+          const calledAt = new Date().toISOString();
+          updateTicketLocally(ticket.id, (current) => ({
+            ...current,
+            status: 'called',
+            desk_id: deskId,
+            called_by_staff_id: staffId,
+            called_at: calledAt,
+          }));
+        }
+      );
       return;
     }
     if (action === 'serve') {
-      runTask(() => startServing(ticket.id, staffId), 'Visit moved into service.');
+      void runTask(
+        'serve',
+        ticket.id,
+        () => startServing(ticket.id, staffId),
+        'Visit moved into service.',
+        () => {
+          setLivePulse(ticket.id, {
+            label: 'Service started',
+            at: new Date().toISOString(),
+            tone: 'success',
+          });
+          const servingStartedAt = new Date().toISOString();
+          updateTicketLocally(ticket.id, (current) => ({
+            ...current,
+            status: 'serving',
+            serving_started_at: servingStartedAt,
+          }));
+        }
+      );
       return;
     }
     if (action === 'done') {
-      runTask(() => markServed(ticket.id, staffId), 'Visit completed.');
+      void runTask(
+        'done',
+        ticket.id,
+        () => markServed(ticket.id, staffId),
+        'Visit completed.',
+        () => {
+          setLivePulse(ticket.id, {
+            label: 'Visit completed',
+            at: new Date().toISOString(),
+            tone: 'success',
+          });
+          const completedAt = new Date().toISOString();
+          updateTicketLocally(ticket.id, (current) => ({
+            ...current,
+            status: 'served',
+            completed_at: completedAt,
+          }));
+        }
+      );
       return;
     }
     if (action === 'recall') {
-      runTask(() => recallTicket(ticket.id), 'Recall sent.');
+      void runTask(
+        'recall',
+        ticket.id,
+        () => recallTicket(ticket.id),
+        'Recall sent.',
+        () => {
+          const recalledAt = new Date().toISOString();
+          setLivePulse(ticket.id, {
+            label: `Recall #${(ticket.recall_count ?? 0) + 1} sent`,
+            at: recalledAt,
+            tone: 'attention',
+          });
+          updateTicketLocally(ticket.id, (current) => ({
+            ...current,
+            called_at: recalledAt,
+            recall_count: (current.recall_count ?? 0) + 1,
+          }));
+        }
+      );
       return;
     }
     if (action === 'noshow') {
-      runTask(() => markNoShow(ticket.id, staffId), 'Visit marked as no-show.');
+      void runTask(
+        'noshow',
+        ticket.id,
+        () => markNoShow(ticket.id, staffId),
+        'Visit marked as no-show.',
+        () => {
+          setLivePulse(ticket.id, {
+            label: 'Marked no-show',
+            at: new Date().toISOString(),
+            tone: 'attention',
+          });
+          const completedAt = new Date().toISOString();
+          updateTicketLocally(ticket.id, (current) => ({
+            ...current,
+            status: 'no_show',
+            completed_at: completedAt,
+          }));
+        }
+      );
       return;
     }
     if (action === 'buzz') {
-      runTask(() => buzzTicket(ticket.id), 'Buzz sent.');
+      void runTask(
+        'buzz',
+        ticket.id,
+        () => buzzTicket(ticket.id),
+        'Buzz sent.',
+        () => {
+          setLivePulse(ticket.id, {
+            label: 'Buzz sent',
+            at: new Date().toISOString(),
+            tone: 'attention',
+          });
+        }
+      );
       return;
     }
-    runTask(() => resetTicketToQueue(ticket.id), 'Visit reset to the queue.');
+    void runTask(
+      'reset',
+      ticket.id,
+      () => resetTicketToQueue(ticket.id),
+      'Visit reset to the queue.',
+      () => {
+        setLivePulse(ticket.id, {
+          label: 'Reset to queue',
+          at: new Date().toISOString(),
+          tone: 'neutral',
+        });
+        updateTicketLocally(ticket.id, (current) => ({
+          ...current,
+          status: 'waiting',
+          desk_id: null,
+          called_at: null,
+          serving_started_at: null,
+        }));
+      }
+    );
   }
 
   function handleCallNext() {
@@ -199,54 +403,160 @@ export function CommandCenterClient({
       addToast(`Assign a ${t.desk.toLowerCase()} before calling the next visit.`, 'error');
       return;
     }
-    runTask(() => callNextTicket(deskId, staffId), 'Next visit called.');
+    const nextTicket = backlogTickets[0];
+    if (!nextTicket) return;
+    void runTask(
+      'call',
+      nextTicket.id,
+      () => callNextTicket(deskId, staffId),
+      'Next visit called.',
+      () => {
+        const calledAt = new Date().toISOString();
+        setLivePulse(nextTicket.id, {
+          label: 'Call sent',
+          at: calledAt,
+          tone: 'success',
+        });
+        updateTicketLocally(nextTicket.id, (current) => ({
+          ...current,
+          status: 'called',
+          desk_id: deskId,
+          called_by_staff_id: staffId,
+          called_at: calledAt,
+        }));
+      }
+    );
   }
 
   function handleAssignDesk(nextDeskId: string) {
-    runTask(async () => {
-      const result = await assignDesk(nextDeskId, staffId);
-      if (result && 'error' in result && result.error) return result;
-      const desk = availableDesks.find((item) => item.id === nextDeskId) || null;
-      setDeskId(nextDeskId);
-      setDeskDisplayName(desk?.display_name || desk?.name || null);
-      setDeskSelectOpen(false);
-      return result;
-    }, `${t.desk} assigned.`);
+    const key = `desk:${nextDeskId}`;
+    setPendingActions((current) => ({ ...current, [key]: true }));
+    const previousDeskId = deskId;
+    const previousDeskLabel = deskDisplayName;
+    const desk = availableDesks.find((item) => item.id === nextDeskId) || null;
+    setDeskId(nextDeskId);
+    setDeskDisplayName(desk?.display_name || desk?.name || null);
+    setDeskSelectOpen(false);
+
+    void assignDesk(nextDeskId, staffId)
+      .then((result) => {
+        if (result && 'error' in result && result.error) {
+          throw new Error(result.error);
+        }
+        addToast(`${t.desk} assigned.`);
+        refreshViews();
+      })
+      .catch((error) => {
+        setDeskId(previousDeskId);
+        setDeskDisplayName(previousDeskLabel);
+        addToast(error instanceof Error ? error.message : 'Failed to assign desk.', 'error');
+      })
+      .finally(() => {
+        setPendingActions((current) => {
+          const { [key]: _ignored, ...rest } = current;
+          return rest;
+        });
+      });
   }
 
   function handleUnassignDesk() {
     if (!deskId) return;
-    runTask(async () => {
-      const result = await unassignDesk(deskId);
-      if (result && 'error' in result && result.error) return result;
-      setDeskId(null);
-      setDeskDisplayName(null);
-      return result;
-    }, `${t.desk} released.`);
+    const actionKey = `desk:${deskId}`;
+    setPendingActions((current) => ({ ...current, [actionKey]: true }));
+    const previousDeskId = deskId;
+    const previousDeskLabel = deskDisplayName;
+    setDeskId(null);
+    setDeskDisplayName(null);
+
+    void unassignDesk(deskId)
+      .then((result) => {
+        if (result && 'error' in result && result.error) {
+          throw new Error(result.error);
+        }
+        addToast(`${t.desk} released.`);
+        refreshViews();
+      })
+      .catch((error) => {
+        setDeskId(previousDeskId);
+        setDeskDisplayName(previousDeskLabel);
+        addToast(error instanceof Error ? error.message : 'Failed to release desk.', 'error');
+      })
+      .finally(() => {
+        setPendingActions((current) => {
+          const { [actionKey]: _ignored, ...rest } = current;
+          return rest;
+        });
+      });
   }
 
   function executeConfirm() {
     if (!confirmAction) return;
-    runTask(async () => {
-      if (confirmAction.type === 'cancel') {
-        await cancelVisit(confirmAction.id);
-      } else {
-        await deleteVisit(confirmAction.id);
+    const currentAction = confirmAction;
+    setConfirmAction(null);
+
+    if (currentAction.type === 'cancel') {
+      void runTask(
+        'cancel',
+        currentAction.id,
+        () => cancelVisit(currentAction.id),
+        'Visit cancelled.',
+        () => {
+          setLivePulse(currentAction.id, {
+            label: 'Visit cancelled',
+            at: new Date().toISOString(),
+            tone: 'attention',
+          });
+          const completedAt = new Date().toISOString();
+          updateTicketLocally(currentAction.id, (ticket) => ({
+            ...ticket,
+            status: 'cancelled',
+            completed_at: completedAt,
+          }));
+        }
+      );
+      return;
+    }
+
+    void runTask(
+      'delete',
+      currentAction.id,
+      () => deleteVisit(currentAction.id),
+      'Record deleted.',
+      () => {
+        setActionPulseByTicket((current) => {
+          const { [currentAction.id]: _ignored, ...rest } = current;
+          return rest;
+        });
+        updateTicketLocally(currentAction.id, () => null);
       }
-      setConfirmAction(null);
-    }, confirmAction.type === 'cancel' ? 'Visit cancelled.' : 'Record deleted.');
+    );
   }
 
   function handleTransfer() {
     if (!transferDialogId || !transferDeptId || !transferServiceId) return;
-    runTask(async () => {
-      const result = await transferTicket(transferDialogId, transferDeptId, transferServiceId);
-      if (result && 'error' in result && result.error) return result;
-      setTransferDialogId(null);
-      setTransferDeptId('');
-      setTransferServiceId('');
-      return result;
-    }, 'Visit transferred.');
+    const ticketId = transferDialogId;
+    setTransferDialogId(null);
+    setTransferDeptId('');
+    setTransferServiceId('');
+    void runTask(
+      'transfer',
+      ticketId,
+      () => transferTicket(ticketId, transferDeptId, transferServiceId),
+      'Visit transferred.',
+      () => {
+        setLivePulse(ticketId, {
+          label: 'Transferred',
+          at: new Date().toISOString(),
+          tone: 'success',
+        });
+        const completedAt = new Date().toISOString();
+        updateTicketLocally(ticketId, (ticket) => ({
+          ...ticket,
+          status: 'transferred',
+          completed_at: completedAt,
+        }));
+      }
+    );
   }
 
   function updateFilters(key: string, value: string) {
@@ -268,42 +578,81 @@ export function CommandCenterClient({
   }
 
   const totalPages = Math.ceil(totalCount / pageSize);
+  const nextTicket = backlogTickets[0] || null;
+  const activeDeskActionPending = Boolean(deskId && pendingActions[`desk:${deskId}`]);
+  const boardCount = backlogTickets.length + calledTickets.length + servingTickets.length;
+
+  function openDeskPickerForTicket(ticket: Ticket) {
+    setSelectedId(ticket.id);
+    if (availableDesks.length === 1) {
+      handleAssignDesk(availableDesks[0].id);
+      return;
+    }
+    setDeskSelectOpen(true);
+  }
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(20,27,26,0.04)] md:p-6">
-        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Operations system</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Command center built around live handoff, not just a queue list.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-              Assign your {t.desk.toLowerCase()}, select the exact {t.customer.toLowerCase()} you need, and run call, service,
-              recall, cancel, and transfer from one operational surface.
-            </p>
-          </div>
-
-          <div className="rounded-[28px] border border-[#d9ebe7] bg-[#f0f6f5] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#446068]">Operator dock</p>
-                <p className="mt-2 text-lg font-semibold text-[#10292f]">{staffName}</p>
-                <p className="mt-1 text-sm text-[#4b666d]">
-                  {deskId ? `Active on ${deskDisplayName || t.desk}` : `No ${t.desk.toLowerCase()} assigned yet`}
-                </p>
+      <section className="rounded-[32px] border border-[#dbe7ff] bg-white p-5 shadow-[0_18px_40px_rgba(44,85,160,0.08)] md:p-6">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5470a8]">
+                  Live board
+                </span>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                  {staffName}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                  {deskId ? deskDisplayName || t.desk : `No ${t.desk.toLowerCase()} assigned`}
+                </span>
               </div>
+              <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
+                Waiting tickets first, then called and in service.
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                {deskId
+                  ? nextTicket
+                    ? `${getCustomerName(nextTicket)} is next to call.`
+                    : `Your ${t.desk.toLowerCase()} is ready.`
+                  : `Assign a ${t.desk.toLowerCase()} from any waiting card or from the control bar.`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCallNext}
+                disabled={isRefreshing || !deskId || intakeCount === 0 || (nextTicket ? isActionPending(nextTicket.id, 'call') : false)}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#2f6fed] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#255fce] disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <PhoneCall className="h-4 w-4" />
+                Call next
+              </button>
+
               <div className="relative">
                 {deskId ? (
-                  <button type="button" onClick={handleUnassignDesk} disabled={isPending} className="rounded-full border border-[#b2d8d0] bg-white px-4 py-2 text-sm font-semibold text-[#10292f] transition hover:border-[#8cc7bc]">
-                    Release
+                  <button
+                    type="button"
+                    onClick={handleUnassignDesk}
+                    disabled={activeDeskActionPending}
+                    className="rounded-full border border-[#bfd0f8] bg-white px-4 py-3 text-sm font-semibold text-[#33539b] transition hover:border-[#8faef1] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Release {t.desk}
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setDeskSelectOpen((open) => !open)} className="rounded-full bg-[#10292f] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#18383f]">
+                  <button
+                    type="button"
+                    onClick={() => setDeskSelectOpen((open) => !open)}
+                    className="rounded-full border border-[#bfd0f8] bg-white px-4 py-3 text-sm font-semibold text-[#33539b] transition hover:border-[#8faef1]"
+                  >
                     Assign {t.desk}
                   </button>
                 )}
 
                 {deskSelectOpen ? (
-                  <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_18px_32px_rgba(20,27,26,0.12)]">
+                  <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-[22px] border border-[#d7e4ff] bg-white p-2 shadow-[0_18px_32px_rgba(44,85,160,0.14)]">
                     {availableDesks.length === 0 ? (
                       <p className="px-3 py-2 text-sm text-slate-500">No available {t.deskPlural.toLowerCase()}.</p>
                     ) : (
@@ -312,7 +661,7 @@ export function CommandCenterClient({
                           key={desk.id}
                           type="button"
                           onClick={() => handleAssignDesk(desk.id)}
-                          className="w-full rounded-[18px] px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+                          className="w-full rounded-[18px] px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-[#f5f8ff]"
                         >
                           {desk.display_name || desk.name}
                         </button>
@@ -322,38 +671,23 @@ export function CommandCenterClient({
                 ) : null}
               </div>
             </div>
+          </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={handleCallNext}
-                disabled={isPending || !deskId || intakeCount === 0}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10292f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#18383f] disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <PhoneCall className="h-4 w-4" />
-                Call next
-              </button>
-              <div className="rounded-[20px] border border-white/70 bg-white px-4 py-3 text-sm text-slate-600">
-                {intakeCount === 0 ? 'No backlog right now.' : `${intakeCount} visits waiting across intake.`}
-              </div>
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <CompactStat label="Waiting" value={intakeCount} tone="blue" />
+            <CompactStat label="Called" value={calledCount} tone="indigo" />
+            <CompactStat label="Serving" value={servingCount} tone="emerald" />
+            <CompactStat label="Live board" value={boardCount} tone="slate" />
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Intake backlog" value={intakeCount.toString()} helper="Issued and waiting visits" />
-        <MetricCard label="Called out" value={queue.called.length.toString()} helper="Need arrival or recall" />
-        <MetricCard label="In service" value={queue.serving.length.toString()} helper="Currently with staff" />
-        <MetricCard label="Longest wait" value={formatDuration(longestWaitSeconds)} helper="Across the live backlog" />
-      </div>
-
       <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-[0_14px_30px_rgba(20,27,26,0.04)] md:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-full border border-slate-200 bg-[#fbfaf8] p-1">
-              <button type="button" onClick={() => setViewMode('board')} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewMode === 'board' ? 'bg-[#10292f] text-white' : 'text-slate-500 hover:text-slate-900'}`}>Live board</button>
-              <button type="button" onClick={() => setViewMode('history')} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewMode === 'history' ? 'bg-[#10292f] text-white' : 'text-slate-500 hover:text-slate-900'}`}>History</button>
+            <div className="inline-flex rounded-full border border-[#dbe7ff] bg-[#f5f8ff] p-1">
+              <button type="button" onClick={() => setViewMode('board')} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewMode === 'board' ? 'bg-[#2f6fed] text-white shadow-[0_8px_16px_rgba(47,111,237,0.25)]' : 'text-slate-500 hover:text-slate-900'}`}>Live board</button>
+              <button type="button" onClick={() => setViewMode('history')} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${viewMode === 'history' ? 'bg-[#2f6fed] text-white shadow-[0_8px_16px_rgba(47,111,237,0.25)]' : 'text-slate-500 hover:text-slate-900'}`}>Visit records</button>
             </div>
 
             <div className="relative min-w-[240px] flex-1 xl:min-w-[300px]">
@@ -363,31 +697,26 @@ export function CommandCenterClient({
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={`Search ${t.customerPlural.toLowerCase()}, services, or ticket numbers`}
-                className="w-full rounded-full border border-slate-200 bg-[#fbfaf8] py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-[#10292f] focus:ring-2 focus:ring-[#10292f]/10"
+                className="w-full rounded-full border border-[#dbe7ff] bg-[#f8fbff] py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-[#2f6fed] focus:ring-2 focus:ring-[#2f6fed]/10"
               />
             </div>
           </div>
 
           {viewMode === 'history' ? (
-            <button type="button" onClick={() => setShowFilters((open) => !open)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${showFilters ? 'border-[#10292f] bg-[#10292f] text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'}`}>
+            <button type="button" onClick={() => setShowFilters((open) => !open)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${showFilters ? 'border-[#2f6fed] bg-[#2f6fed] text-white' : 'border-[#bfd0f8] bg-white text-[#33539b] hover:border-[#8faef1]'}`}>
               <Filter className="h-4 w-4" />
               Filters
             </button>
-          ) : (
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-[#fbfaf8] px-4 py-2 text-sm text-slate-600">
-              <Workflow className="h-4 w-4 text-slate-400" />
-              Category-aware labels adapt automatically to this workspace.
-            </div>
-          )}
+          ) : null}
         </div>
 
         {viewMode === 'history' && showFilters ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[24px] border border-slate-200 bg-[#fbfaf8] p-3">
-            <select value={filters.office} onChange={(event) => updateFilters('office', event.target.value)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none">
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[24px] border border-[#dbe7ff] bg-[#f8fbff] p-3">
+            <select value={filters.office} onChange={(event) => updateFilters('office', event.target.value)} className="rounded-full border border-[#dbe7ff] bg-white px-4 py-2 text-sm text-slate-700 outline-none">
               <option value="">All {t.officePlural}</option>
               {offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}
             </select>
-            <select value={filters.status} onChange={(event) => updateFilters('status', event.target.value)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none">
+            <select value={filters.status} onChange={(event) => updateFilters('status', event.target.value)} className="rounded-full border border-[#dbe7ff] bg-white px-4 py-2 text-sm text-slate-700 outline-none">
               <option value="all">All statuses</option>
               <option value="issued">Issued</option>
               <option value="waiting">Waiting</option>
@@ -398,7 +727,7 @@ export function CommandCenterClient({
               <option value="cancelled">Cancelled</option>
               <option value="transferred">Transferred</option>
             </select>
-            <input type="date" value={filters.date} onChange={(event) => updateFilters('date', event.target.value)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none" />
+            <input type="date" value={filters.date} onChange={(event) => updateFilters('date', event.target.value)} className="rounded-full border border-[#dbe7ff] bg-white px-4 py-2 text-sm text-slate-700 outline-none" />
             {(filters.office || filters.status !== 'all' || filters.date) ? (
               <button type="button" onClick={() => router.push('/admin/queue')} className="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-900">
                 <X className="h-4 w-4" />
@@ -410,22 +739,23 @@ export function CommandCenterClient({
 
         {viewMode === 'board' ? (
           <div className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_0.85fr]">
-            <div className="grid gap-4 2xl:grid-cols-2">
-              <StageColumn title="Intake queue" subtitle="Issued and waiting visits ready for the next operator move." tickets={backlogTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} />
-              <StageColumn title="Called" subtitle="Customers who need to arrive, respond, or be recalled." tickets={calledTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} />
-              <StageColumn title="Serving now" subtitle="Live service sessions and active handoffs." tickets={servingTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} />
-              <StageColumn title="Recently resolved" subtitle="Completed, cancelled, no-show, and transferred visits." tickets={recentTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} />
+            <div className="grid gap-4 xl:grid-cols-1 2xl:grid-cols-3">
+              <StageColumn title="Waiting to call" subtitle="These are the live tickets that still need the next operator move." tickets={backlogTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} getActionLoading={isActionPending} getLivePulse={getLivePulse} onAssignDesk={openDeskPickerForTicket} />
+              <StageColumn title="Called" subtitle="Called tickets waiting to arrive, be recalled, or be marked no-show." tickets={calledTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} getActionLoading={isActionPending} getLivePulse={getLivePulse} onAssignDesk={openDeskPickerForTicket} />
+              <StageColumn title="In service" subtitle="Tickets currently being handled by staff." tickets={servingTickets} terminology={t} selectedId={selectedId} deskId={deskId} onSelect={setSelectedId} onPrimaryAction={handlePrimaryAction} getActionLoading={isActionPending} getLivePulse={getLivePulse} onAssignDesk={openDeskPickerForTicket} />
             </div>
 
-            <FocusPanel ticket={selectedTicket} terminology={t} deskId={deskId} onAction={handleAction} onConfirm={setConfirmAction} onTransfer={(ticket) => { setTransferDialogId(ticket.id); setTransferDeptId(''); setTransferServiceId(''); }} />
+            <FocusPanel ticket={selectedTicket} terminology={t} deskId={deskId} onAction={handleAction} onConfirm={setConfirmAction} onTransfer={(ticket) => { setTransferDialogId(ticket.id); setTransferDeptId(''); setTransferServiceId(''); }} getActionLoading={isActionPending} livePulse={selectedTicket ? getLivePulse(selectedTicket.id) : null} />
           </div>
         ) : (
           <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[30px] border border-slate-200 bg-[#fbfaf8] p-4 shadow-[0_12px_24px_rgba(20,27,26,0.04)]">
+            <div className="rounded-[30px] border border-[#dbe7ff] bg-[#f8fbff] p-4 shadow-[0_12px_24px_rgba(44,85,160,0.06)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Visit history</h2>
-                  <p className="mt-1 text-sm text-slate-500">{historyTickets.length === 0 ? 'No matching visits.' : `${historyTickets.length} matching visits`}</p>
+                  <h2 className="text-lg font-semibold text-slate-950">Visit records</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {historyTickets.length === 0 ? 'No matching visits or reservations.' : `${historyTickets.length} matching visits or reservations`}
+                  </p>
                 </div>
               </div>
 
@@ -437,7 +767,7 @@ export function CommandCenterClient({
                     const meta = getStatusMeta(ticket.status);
                     const selected = selectedId === ticket.id;
                     return (
-                      <button key={ticket.id} type="button" onClick={() => setSelectedId(ticket.id)} className={`w-full rounded-[24px] border px-4 py-4 text-left transition ${selected ? 'border-[#10292f] bg-[#10292f] text-white' : `border-slate-200 bg-white hover:shadow-[0_12px_24px_rgba(20,27,26,0.06)]`}`}>
+                      <button key={ticket.id} type="button" onClick={() => setSelectedId(ticket.id)} className={`w-full rounded-[24px] border px-4 py-4 text-left transition ${selected ? 'border-[#2f6fed] bg-[#2f6fed] text-white shadow-[0_14px_26px_rgba(47,111,237,0.24)]' : 'border-[#dbe7ff] bg-white hover:shadow-[0_12px_24px_rgba(44,85,160,0.08)]'}`}>
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="flex items-center gap-2">
@@ -469,12 +799,12 @@ export function CommandCenterClient({
               ) : null}
             </div>
 
-            <FocusPanel ticket={selectedTicket} terminology={t} deskId={deskId} onAction={handleAction} onConfirm={setConfirmAction} onTransfer={(ticket) => { setTransferDialogId(ticket.id); setTransferDeptId(''); setTransferServiceId(''); }} />
+            <FocusPanel ticket={selectedTicket} terminology={t} deskId={deskId} onAction={handleAction} onConfirm={setConfirmAction} onTransfer={(ticket) => { setTransferDialogId(ticket.id); setTransferDeptId(''); setTransferServiceId(''); }} getActionLoading={isActionPending} livePulse={selectedTicket ? getLivePulse(selectedTicket.id) : null} />
           </div>
         )}
 
         {queueLoading && viewMode === 'board' ? (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#f6f7f4] px-4 py-2 text-sm text-slate-500">
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#f5f8ff] px-4 py-2 text-sm text-[#5470a8]">
             <Hourglass className="h-4 w-4" />
             Syncing live queue...
           </div>
@@ -490,7 +820,7 @@ export function CommandCenterClient({
             <div className="mt-5 space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">{t.department}</label>
-                <select value={transferDeptId} onChange={(event) => { setTransferDeptId(event.target.value); setTransferServiceId(''); }} className="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#10292f]">
+                <select value={transferDeptId} onChange={(event) => { setTransferDeptId(event.target.value); setTransferServiceId(''); }} className="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#2f6fed]">
                   <option value="">Select {t.department.toLowerCase()}</option>
                   {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
                 </select>
@@ -498,7 +828,7 @@ export function CommandCenterClient({
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">Service</label>
-                <select value={transferServiceId} onChange={(event) => setTransferServiceId(event.target.value)} disabled={!transferDeptId} className="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#10292f] disabled:cursor-not-allowed disabled:opacity-50">
+                <select value={transferServiceId} onChange={(event) => setTransferServiceId(event.target.value)} disabled={!transferDeptId} className="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#2f6fed] disabled:cursor-not-allowed disabled:opacity-50">
                   <option value="">Select service</option>
                   {filteredServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
                 </select>
@@ -513,7 +843,7 @@ export function CommandCenterClient({
 
             <div className="mt-6 flex gap-3">
               <button type="button" onClick={() => setTransferDialogId(null)} className="flex-1 rounded-full border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400">Cancel</button>
-              <button type="button" onClick={handleTransfer} disabled={isPending || !transferDeptId || !transferServiceId} className="flex-1 rounded-full bg-[#10292f] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#18383f] disabled:cursor-not-allowed disabled:bg-slate-300">Transfer</button>
+              <button type="button" onClick={handleTransfer} disabled={!transferDeptId || !transferServiceId || (transferDialogId ? isActionPending(transferDialogId, 'transfer') : false)} className="flex-1 rounded-full bg-[#2f6fed] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#255fce] disabled:cursor-not-allowed disabled:bg-slate-300">Transfer</button>
             </div>
           </div>
         </div>
@@ -534,13 +864,37 @@ export function CommandCenterClient({
 
             <div className="mt-6 flex gap-3">
               <button type="button" onClick={() => setConfirmAction(null)} className="flex-1 rounded-full border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400">Back</button>
-              <button type="button" onClick={executeConfirm} disabled={isPending} className="flex-1 rounded-full bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300">{confirmAction.type === 'cancel' ? 'Cancel visit' : 'Delete record'}</button>
+              <button type="button" onClick={executeConfirm} disabled={isActionPending(confirmAction.id, confirmAction.type)} className="flex-1 rounded-full bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300">{confirmAction.type === 'cancel' ? 'Cancel visit' : 'Delete record'}</button>
             </div>
           </div>
         </div>
       ) : null}
 
       <ToastContainer toasts={toasts} />
+    </div>
+  );
+}
+
+function CompactStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  tone: 'blue' | 'indigo' | 'emerald' | 'slate';
+}) {
+  const toneClass = {
+    blue: 'border-[#d7e4ff] bg-white',
+    indigo: 'border-[#ddd9ff] bg-[#fbfaff]',
+    emerald: 'border-[#d8efe6] bg-[#f9fdfb]',
+    slate: 'border-slate-200 bg-[#fbfcfe]',
+  }[tone];
+
+  return (
+    <div className={`rounded-[24px] border px-4 py-3 ${toneClass}`}>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
+      <span className="mt-2 block text-xl font-semibold text-slate-950">{value}</span>
     </div>
   );
 }

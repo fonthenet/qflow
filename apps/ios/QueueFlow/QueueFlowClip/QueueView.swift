@@ -26,6 +26,7 @@ struct QueueView: View {
     @State private var pollTimer: Timer?
     @State private var showBuzzFlash = false
     @State private var buzzFlashCount = 0
+    @State private var latestBuzzNotificationId: String?
     @State private var showStopConfirmation = false
     @State private var stopErrorMessage: String?
     @State private var showCustomerInfo = false
@@ -1255,6 +1256,9 @@ struct QueueView: View {
                 departmentId: fetchedTicket.department_id,
                 officeId: fetchedTicket.office_id
             )
+            let latestBuzzId = ["waiting", "called", "serving"].contains(fetchedTicket.status)
+                ? await SupabaseClient.shared.fetchLatestNotificationId(ticketId: fetchedTicket.id, type: "buzz")
+                : nil
 
             await LiveActivityManager.shared.sync(
                 ticket: fetchedTicket,
@@ -1284,14 +1288,25 @@ struct QueueView: View {
                 APNsManager.shared.registerForNotifications()
             }
 
+            let previousBuzzId = latestBuzzNotificationId
+            let shouldTriggerBuzz =
+                latestBuzzId != nil &&
+                previousBuzzId != nil &&
+                latestBuzzId != previousBuzzId
+
             await MainActor.run {
                 ticket = fetchedTicket
                 position = currentPosition
                 estimatedWait = currentWait
                 nowServing = currentServing
+                latestBuzzNotificationId = latestBuzzId
                 error = nil
                 isLoading = false
                 lastUpdatedAt = Date()
+
+                if shouldTriggerBuzz {
+                    startBuzzStrobe()
+                }
             }
         } catch {
             if let supabaseError = error as? SupabaseError, supabaseError == .ticketNotFound {
