@@ -19,6 +19,10 @@ class SupabaseClient {
 
     /// Fetch ticket by QR token from Supabase REST API.
     func fetchTicket(token: String) async throws -> Ticket {
+        if let apiTicket = try? await fetchTicketFromAppAPI(token: token) {
+            return apiTicket
+        }
+
         let urlString = "\(baseURL)/rest/v1/tickets?qr_token=eq.\(token)&select=*,office:offices(name),department:departments(name,code),service:services(name),desk:desks(name,display_name)"
         guard let url = URL(string: urlString) else {
             throw SupabaseError.invalidURL
@@ -41,6 +45,34 @@ class SupabaseClient {
         }
 
         return ticket
+    }
+
+    private func fetchTicketFromAppAPI(token: String) async throws -> Ticket {
+        guard
+            var components = URLComponents(string: "\(apiBaseURL)/api/app-clip-ticket")
+        else {
+            throw SupabaseError.invalidURL
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "token", value: token)
+        ]
+
+        guard let url = components.url else {
+            throw SupabaseError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw SupabaseError.fetchFailed
+        }
+
+        return try JSONDecoder().decode(Ticket.self, from: data)
     }
 
     /// Fetch queue position for a ticket via RPC.
