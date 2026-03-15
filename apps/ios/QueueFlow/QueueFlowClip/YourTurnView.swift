@@ -122,12 +122,16 @@ struct YourTurnView: View {
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var businessName: String {
-        ticket.office?.name ?? ticket.department?.name ?? "Current visit"
+        ticket.office?.name ?? ticket.department?.name ?? ticket.service?.name ?? "Business"
     }
 
     private var departmentName: String? {
         guard let name = ticket.department?.name else { return nil }
         return name == ticket.office?.name ? nil : name
+    }
+
+    private var headerName: String {
+        departmentName ?? ticket.service?.name ?? businessName
     }
 
     private var serviceName: String {
@@ -302,7 +306,7 @@ struct YourTurnView: View {
                     .tracking(4)
                     .lineLimit(2)
 
-                Text(serviceName)
+                Text(headerName)
                     .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.92))
 

@@ -224,9 +224,19 @@ struct QueueView: View {
     }
 
     private func visitBusinessName(for ticket: Ticket) -> String {
-        ticket.office?.name
-            ?? ticket.department?.name
-            ?? "Current visit"
+        if let officeName = ticket.office?.name, !officeName.isEmpty {
+            return officeName
+        }
+
+        if let departmentName = ticket.department?.name, !departmentName.isEmpty {
+            return departmentName
+        }
+
+        if let serviceName = ticket.service?.name, !serviceName.isEmpty {
+            return serviceName
+        }
+
+        return "Business"
     }
 
     private func visitDepartmentName(for ticket: Ticket) -> String? {
@@ -240,6 +250,12 @@ struct QueueView: View {
     private func visitServiceName(for ticket: Ticket) -> String {
         ticket.service?.name
             ?? visitDepartmentName(for: ticket)
+            ?? visitBusinessName(for: ticket)
+    }
+
+    private func visitHeaderName(for ticket: Ticket) -> String {
+        visitDepartmentName(for: ticket)
+            ?? ticket.service?.name
             ?? visitBusinessName(for: ticket)
     }
 
@@ -423,9 +439,9 @@ struct QueueView: View {
         let statusText = position == 1
             ? "Almost there"
             : (position != nil && position! <= 3 ? "You are nearly up" : (position != nil ? "\(max(position! - 1, 0)) ahead of you" : "--"))
-        let departmentLabel = visitBusinessName(for: ticket).uppercased()
-        let serviceLabel = visitServiceName(for: ticket)
-        let headerSubtitle = visitHeaderSubtitle(for: ticket)
+        let businessLabel = visitBusinessName(for: ticket).uppercased()
+        let headerLabel = visitHeaderName(for: ticket)
+        let headerSubtitle = syncLabel
         let accentLabel = ticket.status == "serving" ? "NOW AT DESK" : "WAITING IN LINE"
         let accentTextColor = ticket.status == "serving"
             ? Color(red: 0.78, green: 0.94, blue: 1.0)
@@ -472,12 +488,12 @@ struct QueueView: View {
                 VStack(spacing: 16) {
                     HStack(alignment: .top, spacing: 18) {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(departmentLabel)
+                            Text(businessLabel)
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .tracking(4.5)
                                 .foregroundStyle(Color.white.opacity(0.38))
 
-                            Text(serviceLabel)
+                            Text(headerLabel)
                                 .font(.system(size: 30, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .tracking(-0.5)
@@ -536,7 +552,7 @@ struct QueueView: View {
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.60)
 
-                                Text(serviceLabel)
+                                Text(headerLabel)
                                     .font(.system(size: 14, weight: .medium, design: .rounded))
                                     .foregroundStyle(Color.white.opacity(0.78))
                                     .lineLimit(1)
@@ -699,10 +715,10 @@ struct QueueView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
                     actionHeader(
-                        title: visitServiceName(for: ticket),
+                        title: visitHeaderName(for: ticket),
                         eyebrow: visitBusinessName(for: ticket),
-                        section: visitDepartmentName(for: ticket),
-                        subtitle: visitHeaderSubtitle(for: ticket),
+                        section: nil,
+                        subtitle: syncLabel,
                         accentText: "With staff now"
                     )
 
@@ -746,7 +762,7 @@ struct QueueView: View {
                                 visitMetricCard(
                                     title: "Business",
                                     value: visitBusinessName(for: ticket),
-                                    detail: visitDepartmentName(for: ticket) ?? "Current location",
+                                    detail: visitDepartmentName(for: ticket) ?? "Current department",
                                     accent: Color(red: 0.68, green: 0.76, blue: 0.99)
                                 )
                             }
