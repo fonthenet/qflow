@@ -40,11 +40,7 @@ export async function GET(request: NextRequest) {
       called_by_staff_id,
       estimated_wait_minutes,
       recall_count,
-      customer_data,
-      office:offices(name, organization:organizations(name)),
-      department:departments(name, code),
-      service:services(name),
-      desk:desks(name, display_name)
+      customer_data
     `
     )
     .eq('qr_token', token)
@@ -54,5 +50,43 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   }
 
-  return NextResponse.json(ticket);
+  const [
+    officeResult,
+    departmentResult,
+    serviceResult,
+    deskResult,
+  ] = await Promise.all([
+    supabase
+      .from('offices')
+      .select('name, organization:organizations(name)')
+      .eq('id', ticket.office_id)
+      .single(),
+    supabase
+      .from('departments')
+      .select('name, code')
+      .eq('id', ticket.department_id)
+      .single(),
+    supabase
+      .from('services')
+      .select('name')
+      .eq('id', ticket.service_id)
+      .single(),
+    ticket.desk_id
+      ? supabase
+          .from('desks')
+          .select('name, display_name')
+          .eq('id', ticket.desk_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const responsePayload = {
+    ...ticket,
+    office: officeResult.data ?? null,
+    department: departmentResult.data ?? null,
+    service: serviceResult.data ?? null,
+    desk: deskResult.data ?? null,
+  };
+
+  return NextResponse.json(responsePayload);
 }
