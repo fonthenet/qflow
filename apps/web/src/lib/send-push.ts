@@ -1,8 +1,13 @@
 import webpush from 'web-push';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Configure web-push with VAPID keys (lazy for Vercel serverless compatibility)
 let vapidReady = false;
+function getTrimmedEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
 function initVapid() {
   if (vapidReady) return true;
   const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -13,6 +18,22 @@ function initVapid() {
     return true;
   }
   return false;
+}
+
+function createServiceSupabaseClient() {
+  const supabaseUrl =
+    getTrimmedEnv('NEXT_PUBLIC_SUPABASE_URL') ||
+    getTrimmedEnv('SUPABASE_URL');
+  const supabaseKey =
+    getTrimmedEnv('SUPABASE_SERVICE_ROLE_KEY') ||
+    getTrimmedEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[SendPush] Supabase credentials not configured');
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
 }
 
 export interface PushPayload {
@@ -74,7 +95,10 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
     return false;
   }
 
-  const supabase = await createClient();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return false;
+  }
 
   // Retry fetching subscriptions (race condition: subscription may still be saving)
   let subscriptions: { id: string; endpoint: string; p256dh: string; auth: string }[] = [];
@@ -95,13 +119,13 @@ export async function sendPushToTicket(ticketId: string, payload: PushPayload): 
     }
 
     if (attempt === 0) {
-      console.log('[SendPush] No subscriptions yet, retrying in 1s...');
+      console.log('[SendPush] No web push subscriptions yet, retrying in 1s...');
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
 
   if (subscriptions.length === 0) {
-    console.warn('[SendPush] No subscriptions found for ticket:', ticketId);
+    console.log('[SendPush] No web push subscriptions for ticket:', ticketId);
     return false;
   }
 
@@ -175,7 +199,8 @@ const DEBOUNCE_MS = 10_000; // 10 seconds
 export async function sendPositionUpdatePush(ticketId: string): Promise<boolean> {
   if (!initVapid()) return false;
 
-  const supabase = await createClient();
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return false;
 
   // Fetch ticket with related data
   const { data: ticket } = await supabase
@@ -263,7 +288,8 @@ export async function notifyWaitingTickets(
   excludeTicketId?: string
 ): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = createServiceSupabaseClient();
+    if (!supabase) return;
 
     // Find waiting tickets
     let query = supabase

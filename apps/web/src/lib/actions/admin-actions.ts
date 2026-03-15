@@ -1,7 +1,22 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
+import { getPlanLimits, type PlanId } from '@/lib/plan-limits';
+
+let _adminSupabase: SupabaseClient | null = null;
+
+function getAdminSupabase() {
+  if (!_adminSupabase) {
+    _adminSupabase = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+
+  return _adminSupabase;
+}
 
 // ─── Helper: get org_id from authenticated user ────────────────────────────
 
@@ -244,6 +259,27 @@ export async function deleteDesk(id: string) {
 
 export async function createStaffMember(formData: FormData) {
   const { supabase, orgId } = await getOrgId();
+  const adminSupabase = getAdminSupabase();
+
+  // Check staff limit
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('plan_id')
+    .eq('id', orgId)
+    .single();
+
+  if (org) {
+    const limits = getPlanLimits(org.plan_id as PlanId);
+    const { count } = await supabase
+      .from('staff')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .eq('is_active', true);
+
+    if (limits.staff !== Infinity && (count || 0) >= limits.staff) {
+      return { error: 'Staff limit reached for your current plan. Please upgrade.' };
+    }
+  }
 
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
@@ -252,13 +288,14 @@ export async function createStaffMember(formData: FormData) {
   const officeId = (formData.get('office_id') as string) || null;
   const departmentId = (formData.get('department_id') as string) || null;
 
-  // Create auth user via Supabase admin API (invites user)
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  // Create auth user via service-role admin API so this does not disturb the current session.
+  const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
     email,
     password,
-    options: {
-      data: { full_name: fullName },
-    },
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName,
+    }
   });
 
   if (authError) return { error: authError.message };
@@ -278,6 +315,53 @@ export async function createStaffMember(formData: FormData) {
 
   if (staffError) return { error: staffError.message };
   revalidatePath('/admin/staff');
+  return { success: true };
+}
+
+export async function deleteStaffMember(id: string) {
+  const { supabase, userId } = await getOrgId();
+  const adminSupabase = getAdminSupabase();
+
+  const { data: targetStaff, error: targetError } = await supabase
+    .from('staff')
+    .select('id, auth_user_id')
+    .eq('id', id)
+    .single();
+
+  if (targetError || !targetStaff) {
+    return { error: 'Staff member not found' };
+  }
+
+  const { data: currentStaff } = await supabase
+    .from('staff')
+    .select('id')
+    .eq('auth_user_id', userId)
+    .single();
+
+  if (currentStaff?.id === id) {
+    return { error: 'You cannot remove your own account from the dashboard.' };
+  }
+
+  await supabase
+    .from('desks')
+    .update({ current_staff_id: null, status: 'closed' })
+    .eq('current_staff_id', id);
+
+  const { error } = await supabase
+    .from('staff')
+    .delete()
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+
+  if (targetStaff.auth_user_id) {
+    await adminSupabase.auth.admin.deleteUser(targetStaff.auth_user_id).catch(() => undefined);
+  }
+
+  revalidatePath('/admin/staff');
+  revalidatePath('/admin/desks');
+  revalidatePath('/admin/queue');
+  revalidatePath('/admin/visits');
   return { success: true };
 }
 

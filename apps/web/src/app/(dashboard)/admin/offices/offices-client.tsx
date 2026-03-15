@@ -3,11 +3,13 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { createOffice, updateOffice, deleteOffice } from '@/lib/actions/admin-actions';
+import { useTerminology } from '@/lib/terminology-context';
 import type { Database } from '@/lib/supabase/database.types';
 
 type Office = Database['public']['Tables']['offices']['Row'];
 
 export function OfficesClient({ offices }: { offices: Office[] }) {
+  const t = useTerminology();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Office | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -41,7 +43,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
   }
 
   function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this office?')) return;
+    if (!confirm(`Are you sure you want to delete this ${t.office.toLowerCase()}?`)) return;
     startTransition(async () => {
       const result = await deleteOffice(id);
       if (result?.error) setError(result.error);
@@ -52,16 +54,16 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Offices</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t.officePlural}</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your organization&apos;s office locations.
+            Manage your organization&apos;s {t.officePlural.toLowerCase()}.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Office
+          Add {t.office}
         </button>
       </div>
 
@@ -86,7 +88,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
             {offices.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  No offices found. Create your first office to get started.
+                  No {t.officePlural.toLowerCase()} found. Create your first {t.office.toLowerCase()} to get started.
                 </td>
               </tr>
             )}
@@ -112,7 +114,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                       href={`/admin/departments?office=${office.id}`}
                       className="rounded-md px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
                     >
-                      Departments
+                      {t.departmentPlural}
                     </Link>
                     <button
                       onClick={() => openEdit(office)}
@@ -144,7 +146,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
           />
           <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Office' : 'Create Office'}
+              {editing ? `Edit ${t.office}` : `Create ${t.office}`}
             </h2>
 
             {error && (

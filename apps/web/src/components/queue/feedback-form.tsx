@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
 
@@ -28,6 +28,7 @@ export function FeedbackForm({
   serviceName,
   onDone,
 }: FeedbackFormProps) {
+  const pageRef = useRef<HTMLDivElement | null>(null);
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -94,9 +95,23 @@ export function FeedbackForm({
 
   const ratingLabel = <RatingLabel rating={hoveredRating || rating} />;
 
+  const dismissKeyboard = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+
+    if (target.closest('textarea, input, button, label')) {
+      return;
+    }
+
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (activeElement && typeof activeElement.blur === 'function') {
+      activeElement.blur();
+    }
+  };
+
   if (isSubmitted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.20),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
+      <div ref={pageRef} onPointerDown={dismissKeyboard} className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.20),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
         <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-emerald-500/12 text-emerald-200">
             <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -143,7 +158,7 @@ export function FeedbackForm({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
+    <div ref={pageRef} onPointerDown={dismissKeyboard} className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)]">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-8">
         <div className="rounded-[34px] border border-white/10 bg-slate-950/80 p-7 shadow-[0_30px_110px_rgba(15,23,42,0.55)] backdrop-blur">
           <div className="flex items-start justify-between gap-4">

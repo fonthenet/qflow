@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createDesk, updateDesk, deleteDesk } from '@/lib/actions/admin-actions';
+import { useTerminology } from '@/lib/terminology-context';
 
 type Desk = {
   id: string;
@@ -43,6 +44,7 @@ export function DesksClient({
   currentOfficeFilter: string;
   currentDepartmentFilter: string;
 }) {
+  const t = useTerminology();
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Desk | null>(null);
@@ -76,7 +78,7 @@ export function DesksClient({
   }
 
   function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this desk?')) return;
+    if (!confirm(`Are you sure you want to delete this ${t.desk.toLowerCase()}?`)) return;
     startTransition(async () => {
       const result = await deleteDesk(id);
       if (result?.error) setError(result.error);
@@ -107,16 +109,16 @@ export function DesksClient({
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Desks</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t.deskPlural}</h1>
           <p className="text-sm text-muted-foreground">
-            Manage service desks across your offices.
+            Manage {t.deskPlural.toLowerCase()} across your {t.officePlural.toLowerCase()}.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Desk
+          Add {t.desk}
         </button>
       </div>
 
@@ -127,7 +129,7 @@ export function DesksClient({
           onChange={(e) => handleFilterChange('office', e.target.value)}
           className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="">All Offices</option>
+          <option value="">All {t.officePlural}</option>
           {offices.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -139,7 +141,7 @@ export function DesksClient({
           onChange={(e) => handleFilterChange('department', e.target.value)}
           className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="">All Departments</option>
+          <option value="">All {t.departmentPlural}</option>
           {departments.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name} {d.office ? `(${Array.isArray(d.office) ? d.office[0]?.name : d.office.name})` : ''}
@@ -170,7 +172,7 @@ export function DesksClient({
             {desks.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  No desks found.
+                  No {t.deskPlural.toLowerCase()} found.
                 </td>
               </tr>
             )}
@@ -232,7 +234,7 @@ export function DesksClient({
           />
           <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Desk' : 'Create Desk'}
+              {editing ? `Edit ${t.desk}` : `Create ${t.desk}`}
             </h2>
 
             {error && (
@@ -273,7 +275,7 @@ export function DesksClient({
                   defaultValue={editing?.office_id ?? currentOfficeFilter ?? ''}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select office...</option>
+                  <option value="">Select {t.office.toLowerCase()}...</option>
                   {offices.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}

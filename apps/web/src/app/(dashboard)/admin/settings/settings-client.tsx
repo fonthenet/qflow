@@ -77,6 +77,23 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
     settings.priority_alerts_phone_label ?? 'Mobile number'
   );
 
+  // White-label Branding (Pro+ plans)
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState<string>(
+    settings.brand_primary_color ?? '#111827'
+  );
+  const [brandAccentColor, setBrandAccentColor] = useState<string>(
+    settings.brand_accent_color ?? '#22c55e'
+  );
+  const [brandFont, setBrandFont] = useState<string>(
+    settings.brand_font ?? 'Inter'
+  );
+  const [brandHideQueueflow, setBrandHideQueueflow] = useState<boolean>(
+    settings.brand_hide_queueflow ?? false
+  );
+  const [brandCustomCss, setBrandCustomCss] = useState<string>(
+    settings.brand_custom_css ?? ''
+  );
+
   const languageOptions = [
     { code: 'en', label: 'English' },
     { code: 'fr', label: 'French' },
@@ -117,6 +134,11 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
           priority_alerts_sms_on_recall: priorityAlertsOnRecall,
           priority_alerts_sms_on_buzz: priorityAlertsOnBuzz,
           priority_alerts_phone_label: priorityAlertsPhoneLabel,
+          brand_primary_color: brandPrimaryColor,
+          brand_accent_color: brandAccentColor,
+          brand_font: brandFont,
+          brand_hide_queueflow: brandHideQueueflow,
+          brand_custom_css: brandCustomCss,
         },
       });
 
@@ -407,6 +429,109 @@ export function SettingsClient({ organization, smsProviderReady }: SettingsClien
               </div>
             </label>
           </div>
+        </div>
+      </section>
+
+      {/* ── White-label Branding ─────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Branding
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Customize the look of public-facing pages (queue status, kiosk, display screens). Available on Pro plans and above.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Primary Color
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={brandPrimaryColor}
+                onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                className="h-9 w-9 cursor-pointer rounded border border-border"
+              />
+              <input
+                type="text"
+                value={brandPrimaryColor}
+                onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Accent Color
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={brandAccentColor}
+                onChange={(e) => setBrandAccentColor(e.target.value)}
+                className="h-9 w-9 cursor-pointer rounded border border-border"
+              />
+              <input
+                type="text"
+                value={brandAccentColor}
+                onChange={(e) => setBrandAccentColor(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Font Family
+            </label>
+            <select
+              value={brandFont}
+              onChange={(e) => setBrandFont(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="Inter">Inter (Default)</option>
+              <option value="system-ui">System UI</option>
+              <option value="Georgia">Georgia (Serif)</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Poppins">Poppins</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={brandHideQueueflow}
+                onChange={(e) => setBrandHideQueueflow(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              />
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  Hide &quot;Powered by QueueFlow&quot;
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  Remove QueueFlow branding from public pages.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">
+            Custom CSS (advanced)
+          </label>
+          <textarea
+            value={brandCustomCss}
+            onChange={(e) => setBrandCustomCss(e.target.value)}
+            rows={4}
+            placeholder={".queue-page { background: #f0f0f0; }"}
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Applied to queue status, kiosk, and display screen pages.
+          </p>
         </div>
       </section>
 

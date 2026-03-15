@@ -335,28 +335,40 @@ export type Database = {
       }
       organizations: {
         Row: {
+          business_subtype: string | null
+          business_type: string | null
           created_at: string | null
           id: string
           logo_url: string | null
           name: string
+          onboarding_completed: boolean | null
+          onboarding_step: number | null
           settings: Json | null
           slug: string
           updated_at: string | null
         }
         Insert: {
+          business_subtype?: string | null
+          business_type?: string | null
           created_at?: string | null
           id?: string
           logo_url?: string | null
           name: string
+          onboarding_completed?: boolean | null
+          onboarding_step?: number | null
           settings?: Json | null
           slug: string
           updated_at?: string | null
         }
         Update: {
+          business_subtype?: string | null
+          business_type?: string | null
           created_at?: string | null
           id?: string
           logo_url?: string | null
           name?: string
+          onboarding_completed?: boolean | null
+          onboarding_step?: number | null
           settings?: Json | null
           slug?: string
           updated_at?: string | null

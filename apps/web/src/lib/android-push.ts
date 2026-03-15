@@ -61,6 +61,8 @@ interface AndroidTicketState {
   body: string;
 }
 
+type NamedRelation = { name: string | null } | { name: string | null }[] | null;
+
 interface GoogleServiceAccountConfig {
   projectId: string;
   clientEmail: string;
@@ -91,6 +93,14 @@ function createServiceSupabaseClient() {
   }
 
   return createClient(supabaseUrl, supabaseKey);
+}
+
+function readRelationName(relation: NamedRelation): string | null {
+  if (!relation) return null;
+  if (Array.isArray(relation)) {
+    return relation[0]?.name ?? null;
+  }
+  return relation.name ?? null;
 }
 
 function getGoogleServiceAccountConfig(): GoogleServiceAccountConfig | null {
@@ -365,6 +375,14 @@ async function getDeskNameForTicket(supabase: ReturnType<typeof createServiceSup
   return data?.display_name ?? data?.name ?? null;
 }
 
+function relationName(value: { name: string | null } | { name: string | null }[] | null | undefined) {
+  if (Array.isArray(value)) {
+    return value[0]?.name ?? null;
+  }
+
+  return value?.name ?? null;
+}
+
 export async function getAndroidTicketState(ticketId: string): Promise<AndroidTicketState | null> {
   const supabase = createServiceSupabaseClient();
   if (!supabase) return null;
@@ -400,12 +418,9 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
   ]);
 
   let type: AndroidPushType = 'position_update';
-  const officeRaw = ticket.office as unknown as { name: string } | { name: string }[] | null;
-  const officeName = (Array.isArray(officeRaw) ? officeRaw[0]?.name : officeRaw?.name) ?? null;
-  const deptRaw = ticket.department as unknown as { name: string } | { name: string }[] | null;
-  const departmentName = (Array.isArray(deptRaw) ? deptRaw[0]?.name : deptRaw?.name) ?? null;
-  const svcRaw = ticket.service as unknown as { name: string } | { name: string }[] | null;
-  const serviceName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? departmentName ?? officeName ?? null;
+  const officeName = readRelationName(ticket.office as NamedRelation);
+  const departmentName = readRelationName(ticket.department as NamedRelation);
+  const serviceName = readRelationName(ticket.service as NamedRelation) ?? departmentName ?? officeName ?? null;
   let title = serviceName ?? `Ticket ${ticket.ticket_number}`;
   let body = 'Waiting for your turn';
 

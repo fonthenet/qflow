@@ -22,9 +22,7 @@ type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 
 interface QueueStatusProps {
   ticket: Ticket;
-  organizationName?: string;
   officeName: string;
-  departmentName?: string;
   serviceName: string;
   priorityAlertConfig?: PriorityAlertConfig | null;
 }
@@ -157,20 +155,10 @@ function JourneyStep({
 
 export function QueueStatus({
   ticket: initialTicket,
-  organizationName = '',
   officeName,
-  departmentName = '',
   serviceName,
   priorityAlertConfig,
 }: QueueStatusProps) {
-  // Build display hierarchy: Organization > Office/Branch > Service
-  const businessName = organizationName || officeName || 'Business';
-  const branchLine = organizationName && officeName && officeName !== organizationName
-    ? officeName
-    : departmentName && departmentName !== businessName
-      ? departmentName
-      : '';
-  const serviceLabel = serviceName || departmentName || '';
   const {
     ticket,
     position,
@@ -577,8 +565,8 @@ export function QueueStatus({
         <YourTurn
           ticket={ticket}
           deskName={deskName ?? ''}
-          officeName={businessName}
-          serviceName={branchLine || serviceLabel}
+          officeName={officeName}
+          serviceName={serviceName}
           lastSyncedAt={lastSyncedAt}
           isRefreshing={isRefreshing}
           stopError={stopError}
@@ -602,8 +590,8 @@ export function QueueStatus({
     return (
       <FeedbackForm
         ticket={ticket}
-        officeName={businessName}
-        serviceName={branchLine || serviceLabel}
+        officeName={officeName}
+        serviceName={serviceName}
         onDone={handleFeedbackDone}
       />
     );
@@ -616,8 +604,8 @@ export function QueueStatus({
           <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
-                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-300">{branchLine}</p> : null}
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
+                <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
                 <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -715,8 +703,8 @@ export function QueueStatus({
           <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-5 pt-5">
             <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
-              {branchLine ? <p className="mt-1 text-sm font-medium text-slate-400">{branchLine}</p> : null}
+              <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500">{officeName}</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">{serviceName}</h1>
               <p className="mt-1 text-sm text-slate-400">{syncLabel}</p>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -750,7 +738,7 @@ export function QueueStatus({
                 <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
                   {ticket.ticket_number}
                 </p>
-                {serviceLabel ? <p className="mt-2 text-sm font-medium text-slate-300">{serviceLabel}</p> : null}
+                <p className="mt-2 text-sm font-medium text-slate-300">{serviceName}</p>
               </div>
 
               <div className="text-right">
@@ -800,25 +788,47 @@ export function QueueStatus({
               />
           </div>
 
-          {!alertsEnabled ? (
-            <button
-              type="button"
-              onClick={() => void handleEnableAlerts()}
-              className="mt-4 flex w-full items-center gap-3 rounded-full border border-amber-400/20 bg-amber-500/10 px-5 py-3 text-left transition hover:bg-amber-500/15"
-            >
-              <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
-              <span className="text-sm font-medium text-amber-50">
-                {isIos && !isInStandaloneMode
-                  ? 'Set up alerts \u2014 we\u2019ll notify you when it\u2019s your turn'
-                  : 'Enable alerts \u2014 we\u2019ll notify you when it\u2019s your turn'}
-              </span>
-            </button>
-          ) : (
-            <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-white/8 bg-white/5 px-5 py-3">
-              <BellRing className="h-4 w-4 shrink-0 text-emerald-400" />
-              <span className="text-sm font-medium text-slate-300">{"Alerts enabled \u2014 we\u2019ll notify you when it\u2019s your turn"}</span>
+          <section className="mt-4 rounded-[28px] border border-white/8 bg-white/5 px-5 py-4 backdrop-blur">
+            <div className="grid gap-4">
+              <div className="flex items-center justify-between">
+                <p className="text-base font-semibold tracking-tight text-white">What happens next</p>
+                {!alertsEnabled ? (
+                  <QueueActionPill
+                    label={isIos && !isInStandaloneMode ? 'Set up alerts' : 'Enable alerts'}
+                    onClick={() => void handleEnableAlerts()}
+                    tone="primary"
+                  />
+                ) : null}
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <BellRing className="h-4 w-4 text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">We will alert you</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">When the desk calls your number, the screen and lock screen update immediately.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <RefreshCw className="h-4 w-4 text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Refresh any time</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use Refresh whenever you want an instant sync, just like pull to refresh.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10">
+                  <XCircle className="h-4 w-4 text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Finish when you are done</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-400">Use End to clear this visit once service is complete.</p>
+                </div>
+              </div>
             </div>
-          )}
+          </section>
 
           <div className="mt-4 space-y-3">
             <EditCustomerData ticket={ticket} />

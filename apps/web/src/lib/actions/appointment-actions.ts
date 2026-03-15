@@ -121,7 +121,7 @@ export async function checkInAppointment(appointmentId: string) {
     return { error: updateError.message };
   }
 
-  revalidatePath('/desk');
+  revalidatePath('/admin/queue');
   return { data: { appointment, ticket } };
 }
 

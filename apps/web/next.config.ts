@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   ...(process.env.BUILD_STANDALONE === 'true' ? { output: 'standalone' as const } : {}),
   transpilePackages: ['@queueflow/shared', '@queueflow/ui'],
   // Allow access from Cloudflare tunnel and local network
-  allowedDevOrigins: ['*.trycloudflare.com', 'qflow.sihadz.com'],
+  allowedDevOrigins: ['*.trycloudflare.com', 'qflow.sihadz.com', '192.168.50.52', 'localhost'],
 
   // Ensure AASA file is served with correct content type for iOS App Clips
   async headers() {

@@ -26,6 +26,8 @@
     "qrcode": "^1.5",
     "react": "^19",
     "react-dom": "^19",
+    "resend": "^6.9.3",
+    "stripe": "^20.4.1",
     "tailwind-merge": "^2",
     "tailwindcss-animate": "^1",
     "web-push": "^3.6.7"

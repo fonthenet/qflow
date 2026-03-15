@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import {
   createStaffMember,
   updateStaffMember,
+  deleteStaffMember,
 } from '@/lib/actions/admin-actions';
 
 type StaffMember = {
@@ -64,6 +65,16 @@ export function StaffClient({
       } else {
         setShowModal(false);
         setEditing(null);
+      }
+    });
+  }
+
+  function handleDelete(id: string, name: string) {
+    if (!confirm(`Are you sure you want to remove ${name}?`)) return;
+    startTransition(async () => {
+      const result = await deleteStaffMember(id);
+      if (result?.error) {
+        setError(result.error);
       }
     });
   }
@@ -155,12 +166,21 @@ export function StaffClient({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => openEdit(member)}
-                    className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => openEdit(member)}
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(member.id, member.full_name)}
+                      disabled={isPending}
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

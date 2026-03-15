@@ -13,6 +13,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useTerminology } from '@/lib/terminology-context';
 
 interface Customer {
   id: string;
@@ -42,6 +43,7 @@ export function CustomersClient({
 }: {
   customers: Customer[];
 }) {
+  const t = useTerminology();
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [ticketHistory, setTicketHistory] = useState<
@@ -100,9 +102,9 @@ export function CustomersClient({
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Customers</h1>
+        <h1 className="text-2xl font-bold">{t.customerPlural}</h1>
         <p className="text-sm text-muted-foreground">
-          View registered customers and their visit history
+          View registered {t.customerPlural.toLowerCase()} and their visit history
         </p>
       </div>
 
@@ -122,7 +124,7 @@ export function CustomersClient({
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {/* Table Header */}
         <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border bg-muted/30 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          <div className="col-span-2">Customer</div>
+          <div className="col-span-2">{t.customer}</div>
           <div>Phone</div>
           <div>Email</div>
           <div className="text-center">Visits</div>
@@ -132,8 +134,8 @@ export function CustomersClient({
         {filtered.length === 0 ? (
           <div className="px-6 py-12 text-center text-sm text-muted-foreground">
             {search
-              ? 'No customers matching your search'
-              : 'No customers found'}
+              ? `No ${t.customerPlural.toLowerCase()} matching your search`
+              : `No ${t.customerPlural.toLowerCase()} found`}
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -151,7 +153,7 @@ export function CustomersClient({
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">
-                          {customer.name || 'Unnamed Customer'}
+                          {customer.name || `Unnamed ${t.customer}`}
                         </p>
                         <p className="text-xs text-muted-foreground sm:hidden">
                           {customer.phone || '--'}
@@ -279,7 +281,7 @@ export function CustomersClient({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {initialCustomers.length} customers
+        Showing {filtered.length} of {initialCustomers.length} {t.customerPlural.toLowerCase()}
       </p>
     </div>
   );
