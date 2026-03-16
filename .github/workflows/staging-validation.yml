@@ -1,0 +1,92 @@
+name: Staging Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      template_id:
+        description: 'Template used for seeded E2E validation'
+        required: true
+        default: 'bank-branch'
+        type: choice
+        options:
+          - public-service
+          - bank-branch
+          - clinic
+          - restaurant-waitlist
+          - barbershop
+
+concurrency:
+  group: staging-validation
+  cancel-in-progress: false
+
+jobs:
+  validate-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      QUEUEFLOW_E2E_EMAIL: ${{ secrets.QUEUEFLOW_E2E_EMAIL }}
+      QUEUEFLOW_E2E_PASSWORD: ${{ secrets.QUEUEFLOW_E2E_PASSWORD }}
+      QUEUEFLOW_E2E_ALLOW_MUTATIONS: 'true'
+      QUEUEFLOW_E2E_ORG_NAME: QueueFlow E2E
+      QUEUEFLOW_E2E_ORG_SLUG: queueflow-e2e
+      QUEUEFLOW_E2E_TEMPLATE_ID: ${{ github.event.inputs.template_id }}
+      QUEUEFLOW_E2E_OPERATING_MODEL: service_routing
+      QUEUEFLOW_E2E_BRANCH_TYPE: branch_office
+      QUEUEFLOW_E2E_OFFICE_NAME: E2E Main Branch
+      QUEUEFLOW_E2E_ASSIGN_ADMIN_OFFICE: 'true'
+      QUEUEFLOW_E2E_ASSIGN_ADMIN_DESK: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify required secrets exist
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL"
+          test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$QUEUEFLOW_E2E_EMAIL"
+          test -n "$QUEUEFLOW_E2E_PASSWORD"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @queueflow/web exec playwright install --with-deps chromium
+
+      - name: Seed validation tenant
+        run: pnpm --filter @queueflow/web e2e:seed
+
+      - name: Run platform tests
+        run: pnpm --filter @queueflow/web test:platform
+
+      - name: Build web app
+        run: pnpm --filter @queueflow/web build
+
+      - name: Run full browser validation
+        run: pnpm --filter @queueflow/web test:e2e
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-validation-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            apps/web/.e2e-state.json
+          retention-days: 7

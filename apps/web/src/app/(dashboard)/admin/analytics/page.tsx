@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { getStaffContext, requireAnalyticsAccess } from '@/lib/authz';
 import {
   getAnalyticsSummary,
   getTicketsByHour,
@@ -7,10 +8,19 @@ import {
   getStaffPerformance,
   getFeedbackSummary,
   getFilterOptions,
+  getTemplateHealthAnalytics,
+  getTemplatePerformanceAnalytics,
 } from '@/lib/actions/analytics-actions';
 import { AnalyticsDashboard } from './analytics-dashboard';
 
 export default async function AnalyticsPage() {
+  const context = await getStaffContext();
+  try {
+    requireAnalyticsAccess(context);
+  } catch {
+    redirect('/desk');
+  }
+
   const [
     summary,
     ticketsByHour,
@@ -18,6 +28,8 @@ export default async function AnalyticsPage() {
     waitTimeTrend,
     staffPerformance,
     feedbackSummary,
+    templateHealth,
+    templatePerformance,
     filterOptions,
   ] = await Promise.all([
     getAnalyticsSummary(),
@@ -26,6 +38,8 @@ export default async function AnalyticsPage() {
     getWaitTimeTrend(),
     getStaffPerformance(),
     getFeedbackSummary(),
+    getTemplateHealthAnalytics(),
+    getTemplatePerformanceAnalytics(),
     getFilterOptions(),
   ]);
 
@@ -37,6 +51,8 @@ export default async function AnalyticsPage() {
       initialWaitTimeTrend={waitTimeTrend}
       initialStaffPerformance={staffPerformance}
       initialFeedbackSummary={feedbackSummary}
+      initialTemplateHealth={templateHealth}
+      initialTemplatePerformance={templatePerformance}
       offices={filterOptions.offices}
       departments={filterOptions.departments}
     />

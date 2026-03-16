@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
+import { filterVisibleIntakeFields } from '@/lib/privacy';
+import { completePublicCheckIn, getPublicIntakeFields } from '@/lib/actions/public-ticket-actions';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type IntakeField = Database['public']['Tables']['intake_form_fields']['Row'];
@@ -24,18 +25,15 @@ export function CheckInForm({ ticket, officeName, serviceName }: CheckInFormProp
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fetchFields = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('intake_form_fields')
-      .select('*')
-      .eq('service_id', ticket.service_id)
-      .order('sort_order', { ascending: true });
+    const result = await getPublicIntakeFields(ticket.service_id);
+    const data = result.data ?? [];
 
     if (data && data.length > 0) {
-      setFields(data);
+      const visibleFields = filterVisibleIntakeFields(data, 'public');
+      setFields(visibleFields);
       // Initialize form data with empty values
       const initial: Record<string, string | boolean> = {};
-      data.forEach((field) => {
+      visibleFields.forEach((field) => {
         initial[field.field_name] = field.field_type === 'checkbox' ? false : '';
       });
       setFormData(initial);
@@ -92,17 +90,12 @@ export function CheckInForm({ ticket, officeName, serviceName }: CheckInFormProp
     setIsSubmitting(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('tickets')
-        .update({
-          customer_data: formData as unknown as Database['public']['Tables']['tickets']['Update']['customer_data'],
-          status: 'waiting',
-          checked_in_at: new Date().toISOString(),
-        })
-        .eq('id', ticket.id);
+      const result = await completePublicCheckIn(
+        ticket.id,
+        formData as Record<string, string | boolean>
+      );
 
-      if (error) throw error;
+      if (result.error) throw new Error(result.error);
 
       router.refresh();
     } catch {

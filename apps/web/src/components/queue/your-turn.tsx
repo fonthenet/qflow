@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Info, Contact, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
+import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import type { Database } from '@/lib/supabase/database.types';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
@@ -19,14 +20,13 @@ interface YourTurnProps {
   stopError?: string | null;
   onRefresh: () => Promise<void> | void;
   onStopTracking: () => void;
+  sandboxMode?: boolean;
 }
 
-const WAIT_SECONDS = 60;
-
 function calcRemaining(calledAt: string | null) {
-  if (!calledAt) return WAIT_SECONDS;
+  if (!calledAt) return CALL_WAIT_SECONDS;
   const elapsed = Math.floor((Date.now() - new Date(calledAt).getTime()) / 1000);
-  return Math.max(0, WAIT_SECONDS - elapsed);
+  return Math.max(0, CALL_WAIT_SECONDS - elapsed);
 }
 
 function formatSyncLabel(date: Date | null, isRefreshing: boolean) {
@@ -76,6 +76,7 @@ export function YourTurn({
   stopError,
   onRefresh,
   onStopTracking,
+  sandboxMode = false,
 }: YourTurnProps) {
   const [deskName, setDeskName] = useState(initialDeskName || 'your desk');
   const [countdown, setCountdown] = useState(() => calcRemaining(ticket.called_at));
@@ -191,6 +192,7 @@ export function YourTurn({
   };
 
   useEffect(() => {
+    if (sandboxMode) return;
     if (ticket.desk_id) {
       const supabase = createClient();
       supabase
@@ -204,18 +206,20 @@ export function YourTurn({
           }
         });
     }
-  }, [ticket.desk_id]);
+  }, [sandboxMode, ticket.desk_id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw-notify.js').catch(() => {});
     }
     if ('Notification' in window && Notification.permission === 'granted') {
       subscribeToPush(ticket.id).catch(() => {});
     }
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handleTouch = () => {
       let ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
       if (!ctx) {
@@ -254,9 +258,10 @@ export function YourTurn({
       document.removeEventListener('touchstart', handleTouch);
       document.removeEventListener('click', handleTouch);
     };
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const supabase = createClient();
     const channel = supabase
       .channel(`recall-${ticket.office_id}`)
@@ -271,9 +276,10 @@ export function YourTurn({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket.id, ticket.office_id]);
+  }, [sandboxMode, ticket.id, ticket.office_id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const supabase = createClient();
     const channel = supabase
       .channel(`buzz-${ticket.office_id}`)
@@ -287,9 +293,10 @@ export function YourTurn({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket.id, ticket.office_id]);
+  }, [sandboxMode, ticket.id, ticket.office_id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const supabase = createClient();
 
     const seedLatestBuzz = async () => {
@@ -332,9 +339,10 @@ export function YourTurn({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
         fireBuzz();
@@ -344,7 +352,7 @@ export function YourTurn({
     return () => {
       navigator.serviceWorker?.removeEventListener('message', handler);
     };
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
     return () => {
@@ -353,6 +361,7 @@ export function YourTurn({
   }, []);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
 
@@ -397,9 +406,10 @@ export function YourTurn({
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [ticket.id, ticket.ticket_number, deskName, calledAt]);
+  }, [sandboxMode, ticket.id, ticket.ticket_number, deskName, calledAt]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
 
@@ -421,13 +431,13 @@ export function YourTurn({
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
     const start = calledAt ? new Date(calledAt).getTime() : Date.now();
     const tick = () => {
       const elapsed = Math.floor((Date.now() - start) / 1000);
-      const remaining = Math.max(0, WAIT_SECONDS - elapsed);
+      const remaining = Math.max(0, CALL_WAIT_SECONDS - elapsed);
       setCountdown(remaining);
     };
 
@@ -437,6 +447,7 @@ export function YourTurn({
   }, [calledAt]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const ctx = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
     if (ctx) {
       if (ctx.state === 'running') {
@@ -447,9 +458,10 @@ export function YourTurn({
         }).catch(() => {});
       }
     }
-  }, []);
+  }, [sandboxMode]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     if (lastAlertedAt.current === calledAt) return;
     lastAlertedAt.current = calledAt;
 
@@ -481,7 +493,7 @@ export function YourTurn({
         }
       });
     }
-  }, [calledAt, ticket.ticket_number, ticket.id, deskName]);
+  }, [sandboxMode, calledAt, ticket.ticket_number, ticket.id, deskName]);
 
   const backgroundClass = {
     green: 'from-[#1f8758] via-[#1a6f49] to-[#0d4d32]',

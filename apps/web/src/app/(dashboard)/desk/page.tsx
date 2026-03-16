@@ -1,7 +1,10 @@
 import { redirect } from 'next/navigation';
+import { ADMIN_LIKE_ROLES, STAFF_ROLES } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { DeskPanel } from '@/components/desk/desk-panel';
 import { DeskSelector } from '@/components/desk/desk-selector';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 
 export default async function DeskPage() {
   const supabase = await createClient();
@@ -16,7 +19,7 @@ export default async function DeskPage() {
   // Get staff profile
   const { data: staff } = await supabase
     .from('staff')
-    .select('*')
+    .select('id, full_name, role, office_id, organization_id, auth_user_id')
     .eq('auth_user_id', user.id)
     .single();
 
@@ -78,9 +81,7 @@ export default async function DeskPage() {
     return (
       <DeskSelector
         desks={availableDesks ?? []}
-        staffId={staff.id}
         staffName={staff.full_name}
-        officeId={officeId}
       />
     );
   }
@@ -109,6 +110,61 @@ export default async function DeskPage() {
     .eq('is_active', true)
     .order('name');
 
+  const [{ data: organization }, { data: office }] = await Promise.all([
+    staff.organization_id
+      ? supabase
+          .from('organizations')
+          .select('settings')
+          .eq('id', staff.organization_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from('offices')
+      .select('settings')
+      .eq('id', assignedDesk.office_id)
+      .maybeSingle(),
+  ]);
+
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings:
+      (organization?.settings as Record<string, unknown> | null) ?? {},
+    officeSettings: (office?.settings as Record<string, unknown> | null) ?? {},
+  });
+
+  const restaurantTables =
+    platformConfig.selection.vertical === 'restaurant'
+      ? (
+          await createAdminClient()
+            .from('restaurant_tables')
+            .select('*')
+            .eq('office_id', assignedDesk.office_id)
+            .order('code')
+        ).data ?? []
+      : [];
+
+  const { data: priorityCategories } =
+    staff.organization_id
+      ? await supabase
+          .from('priority_categories')
+          .select('id, name, icon, color')
+          .eq('organization_id', staff.organization_id)
+          .eq('is_active', true)
+      : { data: [] as any[] };
+
+  const { data: currentTicketFields } = currentTicket
+    ? await supabase
+        .from('intake_form_fields')
+        .select('*')
+        .eq('service_id', currentTicket.service_id)
+        .order('sort_order', { ascending: true })
+    : { data: [] as any[] };
+
+  const customerDataScope = [...ADMIN_LIKE_ROLES, STAFF_ROLES.BRANCH_ADMIN].includes(
+    staff.role as (typeof STAFF_ROLES)[keyof typeof STAFF_ROLES]
+  )
+    ? 'admin'
+    : 'staff';
+
   return (
     <DeskPanel
       desk={{
@@ -118,11 +174,19 @@ export default async function DeskPage() {
         department_id: assignedDesk.department_id,
         office_id: assignedDesk.office_id,
       }}
-      staffId={staff.id}
       staffName={staff.full_name}
       departments={departments ?? []}
       services={services ?? []}
+      priorityCategories={priorityCategories ?? []}
+      currentTicketFields={currentTicketFields ?? []}
+      customerDataScope={customerDataScope}
       initialCurrentTicket={currentTicket ?? null}
+      restaurantTables={restaurantTables}
+      platformContext={{
+        vertical: platformConfig.selection.vertical,
+        vocabulary: platformConfig.experienceProfile.vocabulary,
+        officeSettings: platformConfig.officeSettings,
+      }}
     />
   );
 }

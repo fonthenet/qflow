@@ -1,19 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
-import { nanoid } from 'nanoid';
+import {
+  clearBookingEmailOtpVerification,
+  markBookingEmailOtpVerified,
+} from '@/lib/actions/appointment-actions';
+import { createPublicTicket, estimatePublicWaitTime } from '@/lib/actions/public-ticket-actions';
 
 interface RemoteJoinFormProps {
   virtualCode: any;
   office: any;
   organization?: any;
   department: any;
+  offices?: any[];
+  departments?: any[];
   services?: any[];
+  waitingTickets?: Array<{
+    id: string;
+    office_id: string;
+    department_id: string;
+    service_id: string;
+  }>;
   hasSpecificService?: boolean;
   estimatedWait?: number | null;
   service?: any;
+  publicJoinProfile?: PublicJoinProfile;
+  vocabulary?: TemplateVocabulary;
 }
 
 export function RemoteJoinForm({
@@ -21,45 +36,152 @@ export function RemoteJoinForm({
   office,
   organization,
   department,
+  offices = [],
+  departments = [],
   services = [],
+  waitingTickets = [],
   hasSpecificService = false,
   estimatedWait = null,
   service,
+  publicJoinProfile,
+  vocabulary,
 }: RemoteJoinFormProps) {
   const router = useRouter();
   // If a single service prop is passed (from simplified page), use it
   const resolvedServices = service ? [service] : services;
   const resolvedHasSpecific = service ? true : hasSpecificService;
 
+  const [selectedOfficeId, setSelectedOfficeId] = useState<string>(
+    virtualCode.office_id ?? office?.id ?? ''
+  );
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>(
+    virtualCode.department_id ?? department?.id ?? ''
+  );
   const [selectedServiceId, setSelectedServiceId] = useState<string>(
     resolvedHasSpecific && resolvedServices.length === 1 ? resolvedServices[0].id : ''
   );
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentWait, setCurrentWait] = useState<number | null>(estimatedWait);
   const [ticket, setTicket] = useState<{ ticket_number: string; qr_token: string } | null>(null);
+  const [sendingEmailOtp, setSendingEmailOtp] = useState(false);
+  const [verifyingEmailOtp, setVerifyingEmailOtp] = useState(false);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpVerified, setEmailOtpVerified] = useState(false);
+  const [emailOtpMessage, setEmailOtpMessage] = useState<string | null>(null);
+  const [emailOtpResendRemainingSeconds, setEmailOtpResendRemainingSeconds] =
+    useState(0);
+  const [supabase] = useState(() => createClient());
+
+  const officeLocked = !!virtualCode.office_id;
+  const departmentLocked = !!virtualCode.department_id;
+  const serviceLocked = !!virtualCode.service_id;
+  const emailOtpRequired = Boolean(
+    organization?.settings?.email_otp_enabled &&
+      organization?.settings?.email_otp_required_for_booking
+  );
+  const emailOtpExpiryMinutes = Number(
+    organization?.settings?.email_otp_code_expiry_minutes ?? 10
+  );
+  const emailOtpResendCooldownSeconds = Number(
+    organization?.settings?.email_otp_resend_cooldown_seconds ?? 60
+  );
+
+  const availableOffices = officeLocked
+    ? offices.filter((item: any) => item.id === selectedOfficeId)
+    : offices;
+  const availableDepartments = selectedOfficeId
+    ? departments.filter((item: any) => item.office_id === selectedOfficeId)
+    : [];
+  const availableServices = selectedDepartmentId
+    ? resolvedServices.filter((item: any) => item.department_id === selectedDepartmentId)
+    : resolvedServices;
+
+  useEffect(() => {
+    if (!officeLocked && availableOffices.length === 1 && !selectedOfficeId) {
+      setSelectedOfficeId(availableOffices[0].id);
+    }
+  }, [availableOffices, officeLocked, selectedOfficeId]);
+
+  useEffect(() => {
+    if (!selectedOfficeId) return;
+    if (!departmentLocked && availableDepartments.length === 1 && !selectedDepartmentId) {
+      setSelectedDepartmentId(availableDepartments[0].id);
+    }
+  }, [availableDepartments, departmentLocked, selectedDepartmentId, selectedOfficeId]);
+
+  useEffect(() => {
+    if (!selectedDepartmentId || serviceLocked) return;
+    if (availableServices.length === 1 && !selectedServiceId) {
+      const onlyServiceId = availableServices[0].id;
+      setSelectedServiceId(onlyServiceId);
+      handleServiceChange(onlyServiceId, selectedDepartmentId);
+    }
+  }, [availableServices, selectedDepartmentId, selectedServiceId, serviceLocked]);
+
+  useEffect(() => {
+    setEmailOtpSent(false);
+    setEmailOtpVerified(false);
+    setEmailOtpCode('');
+    setEmailOtpMessage(null);
+    setEmailOtpResendRemainingSeconds(0);
+  }, [customerEmail]);
+
+  useEffect(() => {
+    if (emailOtpResendRemainingSeconds <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setEmailOtpResendRemainingSeconds((current) =>
+        current <= 1 ? 0 : current - 1
+      );
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [emailOtpResendRemainingSeconds]);
 
   // Update wait estimate when service changes
-  async function handleServiceChange(serviceId: string) {
+  async function handleServiceChange(serviceId: string, departmentId = selectedDepartmentId) {
     setSelectedServiceId(serviceId);
-    if (serviceId) {
-      const supabase = createClient();
-      const { data: waitMinutes } = await supabase.rpc('estimate_wait_time', {
-        p_department_id: department.id,
-        p_service_id: serviceId,
-      });
-      setCurrentWait(waitMinutes ?? null);
+    if (serviceId && departmentId) {
+      const result = await estimatePublicWaitTime(departmentId, serviceId);
+      setCurrentWait(result.data ?? null);
+    } else {
+      setCurrentWait(null);
     }
   }
 
   async function handleJoinQueue(e: React.FormEvent) {
     e.preventDefault();
 
+    const officeToUse = selectedOfficeId || virtualCode.office_id;
+    const departmentToUse = selectedDepartmentId || virtualCode.department_id;
     const serviceToUse = selectedServiceId || virtualCode.service_id;
+    if (!officeToUse) {
+      setError('Please select a location');
+      return;
+    }
+    if (!departmentToUse) {
+      setError('Please select a department');
+      return;
+    }
     if (!serviceToUse) {
       setError('Please select a service');
+      return;
+    }
+    if (resolvedPublicJoin.requireCustomerName && !customerName.trim()) {
+      setError(`Please enter ${resolvedPublicJoin.namedPartyLabel.toLowerCase()}.`);
+      return;
+    }
+    if (emailOtpRequired && !customerEmail.trim()) {
+      setError('Please enter your email to verify before joining the queue.');
+      return;
+    }
+    if (emailOtpRequired && !emailOtpVerified) {
+      setError('Please verify your email before joining the queue.');
       return;
     }
 
@@ -67,50 +189,30 @@ export function RemoteJoinForm({
     setError(null);
 
     try {
-      const supabase = createClient();
-
-      // Generate ticket number via proper RPC
-      const { data: seqData, error: seqError } = await supabase.rpc(
-        'generate_daily_ticket_number',
-        { p_department_id: department.id }
-      );
-
-      if (seqError || !seqData?.[0]) {
-        setError('Failed to generate ticket. Please try again.');
-        setJoining(false);
-        return;
-      }
-
-      const { ticket_num, seq } = seqData[0];
-      const qrToken = nanoid(16);
-
       // Build customer data
       const customerData: Record<string, string> = {};
       if (customerName.trim()) customerData.name = customerName.trim();
       if (customerPhone.trim()) customerData.phone = customerPhone.trim();
+      if (customerEmail.trim()) customerData.email = customerEmail.trim().toLowerCase();
 
-      // Create ticket with is_remote flag
-      const { data: newTicket, error: ticketError } = await supabase
-        .from('tickets')
-        .insert({
-          office_id: virtualCode.office_id,
-          department_id: virtualCode.department_id,
-          service_id: serviceToUse,
-          ticket_number: ticket_num,
-          daily_sequence: seq,
-          qr_token: qrToken,
-          status: 'waiting',
-          is_remote: true,
-          checked_in_at: new Date().toISOString(),
-          customer_data: Object.keys(customerData).length > 0 ? customerData : null,
-          estimated_wait_minutes: currentWait,
-        })
-        .select('ticket_number, qr_token')
-        .single();
+      const result = await createPublicTicket({
+        officeId: officeToUse,
+        departmentId: departmentToUse,
+        serviceId: serviceToUse,
+        checkedInAt: new Date().toISOString(),
+        customerData: Object.keys(customerData).length > 0 ? customerData : null,
+        estimatedWaitMinutes: currentWait,
+        isRemote: true,
+      });
 
-      if (ticketError) throw ticketError;
+      if (result.error || !result.data) {
+        throw new Error(result.error ?? 'Failed to join queue. Please try again.');
+      }
 
-      setTicket(newTicket);
+      setTicket({
+        ticket_number: result.data.ticket_number,
+        qr_token: result.data.qr_token,
+      });
     } catch (err: any) {
       setError(err?.message ?? 'Failed to join queue. Please try again.');
     } finally {
@@ -118,9 +220,112 @@ export function RemoteJoinForm({
     }
   }
 
+  async function handleSendEmailOtp() {
+    const email = customerEmail.trim().toLowerCase();
+    if (!email) {
+      setError('Please enter your email to receive a verification code.');
+      return;
+    }
+
+    setSendingEmailOtp(true);
+    setError(null);
+    setEmailOtpMessage(null);
+
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+
+    if (otpError) {
+      setError(otpError.message);
+      setSendingEmailOtp(false);
+      return;
+    }
+
+    setEmailOtpSent(true);
+    setEmailOtpVerified(false);
+    setEmailOtpResendRemainingSeconds(emailOtpResendCooldownSeconds);
+    setEmailOtpMessage(
+      `Verification code sent. It stays valid for ${emailOtpExpiryMinutes} minutes.`
+    );
+    setSendingEmailOtp(false);
+  }
+
+  async function handleVerifyEmailOtp() {
+    const email = customerEmail.trim().toLowerCase();
+    if (!email) {
+      setError('Please enter your email first.');
+      return;
+    }
+
+    if (!emailOtpCode.trim()) {
+      setError('Enter the verification code from your email.');
+      return;
+    }
+
+    setVerifyingEmailOtp(true);
+    setError(null);
+    setEmailOtpMessage(null);
+
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token: emailOtpCode.trim(),
+      type: 'email',
+    });
+
+    if (verifyError) {
+      setError(verifyError.message);
+      setVerifyingEmailOtp(false);
+      return;
+    }
+
+    await markBookingEmailOtpVerified({
+      email,
+      officeId: selectedOfficeId || virtualCode.office_id,
+      expiresInMinutes: emailOtpExpiryMinutes,
+    });
+
+    await supabase.auth.signOut();
+
+    setEmailOtpVerified(true);
+    setEmailOtpMessage('Email verified. You can join the queue now.');
+    setVerifyingEmailOtp(false);
+  }
+
   const orgName = organization?.name || 'QueueFlow';
+  const resolvedVocabulary: TemplateVocabulary = vocabulary ?? {
+    officeLabel: 'Location',
+    departmentLabel: 'Department',
+    serviceLabel: 'Service',
+    deskLabel: 'Desk',
+    customerLabel: 'Customer',
+    bookingLabel: 'Booking',
+    queueLabel: 'Queue',
+  };
+  const resolvedPublicJoin = publicJoinProfile ?? {
+    headline: 'Join the Queue',
+    subheadline: 'Choose your location and service to get a live queue ticket.',
+    requireCustomerName: false,
+    namedPartyLabel: 'Name',
+  };
   const smsBackupEnabled = organization?.settings?.priority_alerts_sms_enabled === true;
-  const displayService = resolvedServices.length === 1 ? resolvedServices[0] : null;
+  const displayService = serviceLocked && resolvedServices.length === 1 ? resolvedServices[0] : null;
+  const displayOffice =
+    availableOffices.find((item: any) => item.id === selectedOfficeId) ?? office;
+  const displayDepartment =
+    availableDepartments.find((item: any) => item.id === selectedDepartmentId) ?? department;
+  const waitingCount = waitingTickets.filter((item) => {
+    const matchesOffice = selectedOfficeId ? item.office_id === selectedOfficeId : true;
+    const matchesDepartment = selectedDepartmentId ? item.department_id === selectedDepartmentId : true;
+    const matchesService = selectedServiceId ? item.service_id === selectedServiceId : true;
+    return matchesOffice && matchesDepartment && matchesService;
+  }).length;
+  const selectionCardClass =
+    'w-full rounded-[1.35rem] border p-4 text-left transition-all sm:p-5';
+  const selectionActiveClass = 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-[0_16px_40px_rgba(37,99,235,0.12)]';
+  const selectionIdleClass = 'border-border bg-card hover:border-primary/50 hover:shadow-sm';
 
   // Success state - show ticket and link to tracking
   if (ticket) {
@@ -162,12 +367,12 @@ export function RemoteJoinForm({
             <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-left text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Office</span>
-                <span className="font-medium text-foreground">{office?.name}</span>
+                <span className="font-medium text-foreground">{displayOffice?.name}</span>
               </div>
-              {department && (
+              {displayDepartment && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Department</span>
-                  <span className="font-medium text-foreground">{department.name}</span>
+                  <span className="font-medium text-foreground">{displayDepartment.name}</span>
                 </div>
               )}
               {displayService && (
@@ -194,18 +399,40 @@ export function RemoteJoinForm({
 
   // Join form
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-primary/5 via-background to-primary/10">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#eff6ff_24%,#ffffff_70%)]">
       {/* Header */}
-      <div className="bg-primary px-4 pb-8 pt-6 text-center text-primary-foreground">
-        <p className="text-sm font-medium opacity-80">{orgName}</p>
-        <h1 className="mt-1 text-2xl font-bold">{office?.name}</h1>
-        <div className="mx-auto mt-4 max-w-sm space-y-1 rounded-lg bg-white/15 px-4 py-3 text-sm">
-          {department && (
+      <div className="border-b border-border/70 bg-white/90 px-4 pb-8 pt-6 backdrop-blur sm:px-6">
+        <div className="mx-auto max-w-5xl">
+          <div className="flex flex-col items-center gap-4 text-center">
+            {organization?.logo_url ? (
+              <div className="flex h-20 w-20 items-center justify-center rounded-[1.75rem] border border-border bg-white shadow-sm sm:h-24 sm:w-24">
+                <img
+                  src={organization.logo_url}
+                  alt={`${orgName} logo`}
+                  className="max-h-14 w-auto max-w-[56px] object-contain sm:max-h-16 sm:max-w-[64px]"
+                />
+              </div>
+            ) : null}
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary/80">
+                {orgName}
+              </p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-5xl">
+                {resolvedPublicJoin.headline}
+              </h1>
+              <p className="mt-2 text-base text-slate-600 sm:text-lg">
+                {displayOffice?.name ?? resolvedPublicJoin.subheadline}
+              </p>
+            </div>
+          </div>
+
+          <div className="mx-auto mt-4 max-w-2xl space-y-1 rounded-[1.25rem] border border-primary/10 bg-primary/5 px-4 py-4 text-sm text-slate-700 shadow-sm">
+          {displayDepartment && (
             <div className="flex items-center gap-2">
               <svg className="h-4 w-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
-              <span>{department.name}</span>
+              <span>{displayDepartment.name}</span>
             </div>
           )}
           {displayService && (
@@ -216,47 +443,59 @@ export function RemoteJoinForm({
               <span>{displayService.name}</span>
             </div>
           )}
+          </div>
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-sm flex-1 px-4 py-6">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-6">
         {/* Estimated wait */}
-        {currentWait !== null && (
-          <div className="mb-6 rounded-xl bg-card p-4 text-center shadow-sm">
-            <p className="text-xs font-medium text-muted-foreground">Estimated Wait Time</p>
-            <p className="text-2xl font-bold text-primary">
-              {currentWait}
-              <span className="text-sm font-normal text-muted-foreground"> min</span>
-            </p>
+        {(currentWait !== null || waitingCount > 0) && (
+          <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+            <div className="grid gap-4 text-center sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Estimated Wait Time</p>
+                <p className="mt-1 text-3xl font-black text-primary sm:text-4xl">
+                  {currentWait ?? '--'}
+                  <span className="text-sm font-normal text-muted-foreground"> min</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">People Waiting</p>
+                <p className="mt-1 text-3xl font-black text-slate-950 sm:text-4xl">
+                  {waitingCount}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Service selection (if not specific) */}
-        {!resolvedHasSpecific && resolvedServices.length > 1 && (
-          <div className="mb-6 rounded-xl border border-border bg-card p-5 shadow-sm">
-            <label className="mb-3 block text-sm font-medium text-foreground">
-              Select a Service <span className="text-destructive">*</span>
+        {!officeLocked && availableOffices.length > 1 && (
+          <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+            <label className="mb-3 block text-base font-semibold text-foreground">
+              Select a {resolvedVocabulary.officeLabel} <span className="text-destructive">*</span>
             </label>
             <div className="space-y-2">
-              {resolvedServices.map((svc: any) => (
+              {availableOffices.map((item: any) => (
                 <button
-                  key={svc.id}
+                  key={item.id}
                   type="button"
-                  onClick={() => handleServiceChange(svc.id)}
-                  className={`w-full rounded-lg border p-4 text-left transition-all ${
-                    selectedServiceId === svc.id
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                      : 'border-border bg-background hover:border-primary/50'
+                  onClick={() => {
+                    setSelectedOfficeId(item.id);
+                    setSelectedDepartmentId('');
+                    setSelectedServiceId('');
+                    setCurrentWait(null);
+                  }}
+                  className={`${selectionCardClass} ${
+                    selectedOfficeId === item.id
+                      ? selectionActiveClass
+                      : selectionIdleClass
                   }`}
                 >
-                  <p className="font-medium text-foreground">{svc.name}</p>
-                  {svc.description && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">{svc.description}</p>
-                  )}
-                  {svc.estimated_service_time && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Est. {svc.estimated_service_time} min
-                    </p>
+                  <p className="text-lg font-semibold text-foreground">{item.name}</p>
+                  {item.address && (
+                    <p className="mt-1 text-sm text-muted-foreground">{item.address}</p>
                   )}
                 </button>
               ))}
@@ -264,24 +503,109 @@ export function RemoteJoinForm({
           </div>
         )}
 
-        <h2 className="mb-1 text-lg font-semibold text-foreground">Your Details</h2>
+        {!departmentLocked && availableDepartments.length > 0 && (
+          <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+            <label className="mb-3 block text-base font-semibold text-foreground">
+              Select a {resolvedVocabulary.departmentLabel} <span className="text-destructive">*</span>
+            </label>
+            <div className="space-y-2">
+              {availableDepartments.map((item: any) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDepartmentId(item.id);
+                    setSelectedServiceId('');
+                    setCurrentWait(null);
+                  }}
+                  className={`${selectionCardClass} ${
+                    selectedDepartmentId === item.id
+                      ? selectionActiveClass
+                      : selectionIdleClass
+                  }`}
+                >
+                  <p className="text-lg font-semibold text-foreground">{item.name}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!departmentLocked && selectedOfficeId && availableDepartments.length === 0 && (
+            <div className="mb-6 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            No active {resolvedVocabulary.departmentLabel.toLowerCase()}s are available for this {resolvedVocabulary.officeLabel.toLowerCase()} yet.
+          </div>
+        )}
+
+        {/* Service selection (if not specific) */}
+        {!resolvedHasSpecific && availableServices.length > 0 && (
+          <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+            <label className="mb-3 block text-base font-semibold text-foreground">
+              Select a {resolvedVocabulary.serviceLabel} <span className="text-destructive">*</span>
+            </label>
+            <div className="space-y-2">
+              {availableServices.map((svc: any) => (
+                <button
+                  key={svc.id}
+                  type="button"
+                  onClick={() => handleServiceChange(svc.id, selectedDepartmentId)}
+                  className={`${selectionCardClass} ${
+                    selectedServiceId === svc.id
+                      ? selectionActiveClass
+                      : selectionIdleClass
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-lg font-semibold text-foreground">{svc.name}</p>
+                  {svc.description && (
+                        <p className="mt-1 text-sm text-muted-foreground">{svc.description}</p>
+                  )}
+                  {svc.estimated_service_time && (
+                        <p className="mt-2 text-sm font-medium text-primary/80">
+                      Est. {svc.estimated_service_time} min
+                    </p>
+                  )}
+                    </div>
+                    <div className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                      Select
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!serviceLocked && selectedDepartmentId && availableServices.length === 0 && (
+          <div className="mb-6 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            No active {resolvedVocabulary.serviceLabel.toLowerCase()}s are available for this {resolvedVocabulary.departmentLabel.toLowerCase()} yet.
+          </div>
+        )}
+
+        <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+        <h2 className="mb-1 text-xl font-semibold text-foreground">Your Details</h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          Enter your information to join the queue.
+          Enter your information to join the {resolvedVocabulary.queueLabel.toLowerCase()}.
         </p>
 
         <form onSubmit={handleJoinQueue} className="space-y-5">
           <div>
             <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
-              Name <span className="text-muted-foreground font-normal">(optional)</span>
+              {resolvedPublicJoin.namedPartyLabel}{' '}
+              <span className="text-muted-foreground font-normal">
+                {resolvedPublicJoin.requireCustomerName ? '(required)' : '(optional)'}
+              </span>
             </label>
             <input
               id="name"
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Enter your name"
+              placeholder={`Enter ${resolvedPublicJoin.namedPartyLabel.toLowerCase()}`}
               autoComplete="name"
-              className="w-full rounded-lg border border-input bg-card px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              required={resolvedPublicJoin.requireCustomerName}
+              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
 
@@ -294,9 +618,9 @@ export function RemoteJoinForm({
               type="tel"
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
-              placeholder="+1 (555) 000-0000"
+              placeholder="Enter your phone number"
               autoComplete="tel"
-              className="w-full rounded-lg border border-input bg-card px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
             {smsBackupEnabled && (
               <p className="mt-1.5 text-xs text-muted-foreground">
@@ -304,6 +628,108 @@ export function RemoteJoinForm({
               </p>
             )}
           </div>
+
+          <div>
+            <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">
+              Email{' '}
+              {emailOtpRequired ? (
+                <span className="text-destructive">*</span>
+              ) : (
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              )}
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              placeholder="Enter your email address"
+              autoComplete="email"
+              className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+            {emailOtpRequired ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                This business requires email verification before customers can join the queue.
+              </p>
+            ) : null}
+          </div>
+
+          {emailOtpRequired ? (
+            <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Email verification</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Send a short code to your email, then enter it here to continue.
+                </p>
+              </div>
+
+              {emailOtpVerified ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  Email verified. You can join the queue now.
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <button
+                      type="button"
+                      onClick={handleSendEmailOtp}
+                      disabled={
+                        sendingEmailOtp ||
+                        !customerEmail.trim() ||
+                        emailOtpResendRemainingSeconds > 0
+                      }
+                      className="rounded-xl border border-primary/20 bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {sendingEmailOtp
+                        ? 'Sending code...'
+                        : emailOtpSent
+                          ? emailOtpResendRemainingSeconds > 0
+                            ? `Resend in ${emailOtpResendRemainingSeconds}s`
+                            : 'Resend code'
+                          : 'Send verification code'}
+                    </button>
+                    <p className="text-xs text-muted-foreground">
+                      Resend available after about {emailOtpResendCooldownSeconds} seconds.
+                    </p>
+                  </div>
+
+                  {emailOtpSent ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label
+                          htmlFor="email-otp"
+                          className="mb-1.5 block text-sm font-medium text-foreground"
+                        >
+                          Verification code
+                        </label>
+                        <input
+                          id="email-otp"
+                          type="text"
+                          inputMode="numeric"
+                          value={emailOtpCode}
+                          onChange={(e) => setEmailOtpCode(e.target.value.replace(/\s+/g, ''))}
+                          placeholder="Enter the code from your email"
+                          className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleVerifyEmailOtp}
+                        disabled={verifyingEmailOtp || !emailOtpCode.trim()}
+                        className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {verifyingEmailOtp ? 'Verifying...' : 'Verify email'}
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              {emailOtpMessage ? (
+                <p className="text-sm text-muted-foreground">{emailOtpMessage}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {error && (
             <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -313,8 +739,8 @@ export function RemoteJoinForm({
 
           <button
             type="submit"
-            disabled={joining || (!resolvedHasSpecific && !selectedServiceId)}
-            className="w-full rounded-xl bg-primary px-6 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={joining || (emailOtpRequired && !emailOtpVerified)}
+            className="w-full rounded-[1.1rem] bg-primary px-6 py-4 text-base font-semibold text-primary-foreground shadow-[0_18px_40px_rgba(37,99,235,0.22)] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {joining ? (
               <span className="flex items-center justify-center gap-2">
@@ -322,12 +748,50 @@ export function RemoteJoinForm({
                 Joining Queue...
               </span>
             ) : (
-              'Join Queue'
+              `Join ${resolvedVocabulary.queueLabel}`
             )}
           </button>
         </form>
+        </div>
 
-        <div className="mt-6 rounded-lg bg-muted/50 p-4">
+          </div>
+
+          <aside className="space-y-6">
+            <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
+                How it works
+              </p>
+              <div className="mt-4 space-y-4 text-sm text-slate-600">
+                <div>
+                  <p className="font-semibold text-slate-950">1. Choose your queue</p>
+                  <p className="mt-1">
+                    Pick the right {resolvedVocabulary.officeLabel.toLowerCase()},
+                    {' '}{resolvedVocabulary.departmentLabel.toLowerCase()}, and {resolvedVocabulary.serviceLabel.toLowerCase()} for your visit.
+                  </p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-950">2. Join remotely</p>
+                  <p className="mt-1">Get a live ticket without standing in line on site.</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-950">3. Track your turn</p>
+                  <p className="mt-1">Follow your ticket and come forward when you are called.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Before you join
+              </p>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                Use your normal phone number if you want alert backups. You can wait anywhere after joining and track your place live.
+              </p>
+            </div>
+          </aside>
+        </div>
+
+        <div className="mt-6 rounded-[1.25rem] border border-border/70 bg-white/70 p-4 shadow-sm">
           <p className="text-center text-xs text-muted-foreground">
             After joining, you&apos;ll receive a ticket to track your position.
             You can wait anywhere and come when it&apos;s almost your turn.

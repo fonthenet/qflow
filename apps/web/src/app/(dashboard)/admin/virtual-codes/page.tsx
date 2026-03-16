@@ -6,9 +6,7 @@ export default async function VirtualCodesPage() {
 
   const { data: codes, error } = await supabase
     .from('virtual_queue_codes')
-    .select(
-      '*, office:offices(name), department:departments(name), service:services(name)'
-    )
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -23,7 +21,7 @@ export default async function VirtualCodesPage() {
 
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name')
+    .select('id, name, organization_id')
     .order('name');
 
   const { data: departments } = await supabase
@@ -36,12 +34,28 @@ export default async function VirtualCodesPage() {
     .select('id, name, department_id')
     .order('name');
 
+  let organization: { id: string; name: string } | null = null;
+  const organizationId = offices?.[0]?.organization_id;
+
+  if (organizationId) {
+    const { data: organizationRow } = await supabase
+      .from('organizations')
+      .select('id, name')
+      .eq('id', organizationId)
+      .maybeSingle();
+
+    if (organizationRow) {
+      organization = organizationRow;
+    }
+  }
+
   return (
     <VirtualCodesClient
       codes={codes ?? []}
       offices={offices ?? []}
       departments={departments ?? []}
       services={services ?? []}
+      organization={organization}
     />
   );
 }

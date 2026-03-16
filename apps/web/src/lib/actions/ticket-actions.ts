@@ -1,5 +1,18 @@
 'use server';
 
+import { TICKET_EVENT_TYPES } from '@queueflow/shared';
+import { logAuditEvent } from '@/lib/audit';
+import {
+  getDeskById,
+  getDepartmentById,
+  getServiceById,
+  getStaffContext,
+  getTicketById,
+  requireDeskOperatorForDesk,
+  requireOfficeAccess,
+  requireOfficeMembership,
+} from '@/lib/authz';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
@@ -183,6 +196,38 @@ async function maybeSendPriorityAlertSms(
   return { sent: true };
 }
 
+async function getDeskOperationContext(deskId: string) {
+  const context = await getStaffContext();
+  const desk = await requireDeskOperatorForDesk(context, deskId);
+  return { context, desk };
+}
+
+async function releaseRestaurantTablesForTicket(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ticketId: string
+) {
+  await supabase
+    .from('restaurant_tables')
+    .update({
+      status: 'available',
+      current_ticket_id: null,
+      assigned_at: null,
+    })
+    .eq('current_ticket_id', ticketId);
+}
+
+async function getTicketOperationContext(ticketId: string) {
+  const context = await getStaffContext();
+  const ticket = await getTicketById(context, ticketId);
+
+  if (!ticket.desk_id) {
+    throw new Error('Ticket is not assigned to an active desk');
+  }
+
+  const desk = await requireDeskOperatorForDesk(context, ticket.desk_id);
+  return { context, ticket, desk };
+}
+
 export async function createTicket(
   officeId: string,
   departmentId: string,
@@ -231,17 +276,171 @@ export async function createTicket(
     return { error: error.message };
   }
 
+  if (ticket) {
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticket.id,
+      event_type: TICKET_EVENT_TYPES.JOINED,
+      to_status: ticket.status,
+      metadata: {
+        source: status === 'issued' ? 'issued' : 'queue_join',
+      },
+    });
+  }
+
   revalidatePath('/desk');
   return { data: ticket };
 }
 
-export async function callNextTicket(deskId: string, staffId: string) {
-  const supabase = await createClient();
+interface CreatePublicTicketInput {
+  officeId: string;
+  departmentId: string;
+  serviceId: string;
+  customerData?: Record<string, unknown> | null;
+  status?: 'issued' | 'waiting';
+  checkedInAt?: string;
+  estimatedWaitMinutes?: number | null;
+  isRemote?: boolean;
+  priority?: number | null;
+  priorityCategoryId?: string | null;
+  groupId?: string | null;
+}
+
+export async function getPublicIntakeFields(serviceId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('intake_form_fields')
+    .select('*')
+    .eq('service_id', serviceId)
+    .order('sort_order', { ascending: true });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { data: data ?? [] };
+}
+
+export async function estimatePublicWaitTime(departmentId: string, serviceId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc('estimate_wait_time', {
+    p_department_id: departmentId,
+    p_service_id: serviceId,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { data: data ?? null };
+}
+
+export async function createPublicTicket(input: CreatePublicTicketInput) {
+  const supabase = createAdminClient();
+  const status = input.status ?? 'waiting';
+
+  const { data: seqData, error: seqError } = await supabase.rpc(
+    'generate_daily_ticket_number',
+    { p_department_id: input.departmentId }
+  );
+
+  if (seqError || !seqData || seqData.length === 0) {
+    return { error: seqError?.message ?? 'Failed to generate ticket number' };
+  }
+
+  const { seq, ticket_num } = seqData[0];
+  const qrToken = nanoid(16);
+  const waitResult =
+    input.estimatedWaitMinutes !== undefined
+      ? { data: input.estimatedWaitMinutes }
+      : await estimatePublicWaitTime(input.departmentId, input.serviceId);
+
+  if ('error' in waitResult) {
+    return { error: waitResult.error };
+  }
+
+  const { data: ticket, error } = await supabase
+    .from('tickets')
+    .insert({
+      office_id: input.officeId,
+      department_id: input.departmentId,
+      service_id: input.serviceId,
+      ticket_number: ticket_num,
+      daily_sequence: seq,
+      qr_token: qrToken,
+      status,
+      checked_in_at: input.checkedInAt ?? new Date().toISOString(),
+      customer_data: (input.customerData ?? null) as any,
+      estimated_wait_minutes: waitResult.data ?? null,
+      is_remote: input.isRemote ?? false,
+      priority: input.priority ?? 0,
+      priority_category_id: input.priorityCategoryId ?? null,
+      group_id: input.groupId ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  if (ticket) {
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticket.id,
+      event_type: TICKET_EVENT_TYPES.JOINED,
+      to_status: ticket.status,
+      metadata: {
+        source: input.isRemote ? 'remote_join' : 'public_join',
+      },
+    });
+  }
+
+  revalidatePath('/desk');
+  return { data: ticket };
+}
+
+export async function completePublicCheckIn(
+  ticketId: string,
+  customerData: Record<string, string | boolean> | null
+) {
+  const supabase = createAdminClient();
+  const { data: ticket, error } = await supabase
+    .from('tickets')
+    .update({
+      customer_data: customerData as any,
+      status: 'waiting',
+      checked_in_at: new Date().toISOString(),
+    })
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  if (ticket) {
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticket.id,
+      event_type: TICKET_EVENT_TYPES.CHECKED_IN,
+      from_status: 'issued',
+      to_status: 'waiting',
+      metadata: {
+        source: 'public_check_in',
+      },
+    });
+  }
+
+  return { data: ticket };
+}
+
+export async function callNextTicket(deskId: string) {
+  const { context } = await getDeskOperationContext(deskId);
+  const supabase = context.supabase;
   let smsSent = false;
 
   const { data: ticketId, error } = await supabase.rpc('call_next_ticket', {
     p_desk_id: deskId,
-    p_staff_id: staffId,
+    p_staff_id: context.staff.id,
   });
 
   if (error) {
@@ -264,6 +463,15 @@ export async function callNextTicket(deskId: string, staffId: string) {
   }
 
   if (ticket) {
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticketId,
+      event_type: TICKET_EVENT_TYPES.CALLED,
+      from_status: 'waiting',
+      to_status: 'called',
+      staff_id: context.staff.id,
+      desk_id: ticket.desk_id,
+    });
+
     const deskName = await getDeskName(supabase, ticket.desk_id);
 
     // Web Push — rich typed notification
@@ -322,6 +530,18 @@ export async function callNextTicket(deskId: string, staffId: string) {
     });
     smsSent = smsResult.sent;
 
+    await logAuditEvent(context, {
+      actionType: 'ticket_called',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      officeId: ticket.office_id,
+      summary: `Called ticket ${ticket.ticket_number} to ${deskName}`,
+      metadata: {
+        deskId,
+        smsSent,
+      },
+    });
+
     await syncLiveActivityAfterAlert(ticketId, 'CallNext');
 
     // Notify all other waiting tickets — their position shifted
@@ -337,8 +557,139 @@ export async function callNextTicket(deskId: string, staffId: string) {
   return { data: ticket, smsSent };
 }
 
-export async function startServing(ticketId: string, staffId: string) {
-  const supabase = await createClient();
+export async function callSpecificTicket(deskId: string, ticketId: string) {
+  const { context, desk } = await getDeskOperationContext(deskId);
+  const supabase = context.supabase;
+  let smsSent = false;
+
+  const { data: ticket, error: fetchError } = await supabase
+    .from('tickets')
+    .select('*, department:departments(*), service:services(*)')
+    .eq('id', ticketId)
+    .eq('office_id', desk.office_id)
+    .eq('department_id', desk.department_id)
+    .eq('status', 'waiting')
+    .single();
+
+  if (fetchError || !ticket) {
+    return { error: fetchError?.message ?? 'Ticket is no longer waiting in this queue' };
+  }
+
+  const now = new Date().toISOString();
+  const { data: updatedTicket, error: updateError } = await supabase
+    .from('tickets')
+    .update({
+      status: 'called',
+      called_at: now,
+      called_by_staff_id: context.staff.id,
+      desk_id: deskId,
+      recall_count: 0,
+    })
+    .eq('id', ticketId)
+    .eq('status', 'waiting')
+    .select('*, department:departments(*), service:services(*)')
+    .single();
+
+  if (updateError || !updatedTicket) {
+    return { error: updateError?.message ?? 'Ticket could not be called' };
+  }
+
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: TICKET_EVENT_TYPES.CALLED,
+    from_status: 'waiting',
+    to_status: 'called',
+    staff_id: context.staff.id,
+    desk_id: deskId,
+    metadata: {
+      source: 'manual_queue_pick',
+    },
+  });
+
+  const deskName = await getDeskName(supabase, updatedTicket.desk_id);
+
+  if (!process.env.VERCEL) {
+    sendPushToTicket(ticketId, {
+      type: 'called',
+      title: "🔔 YOUR TURN!",
+      body: `Ticket ${updatedTicket.ticket_number} — Go to ${deskName}`,
+      tag: `qf-turn-${ticketId}`,
+      url: `/q/${updatedTicket.qr_token}`,
+      ticketId,
+      ticketNumber: updatedTicket.ticket_number,
+      deskName,
+    }).catch((err) => console.error('[CallSpecificTicket] Push notification error:', err));
+  }
+
+  const apnsSent = await sendAPNsToTicket(ticketId, {
+    title: "It's Your Turn!",
+    body: `Ticket ${updatedTicket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
+  }).catch((err) => {
+    console.error('[CallSpecificTicket] APNs notification error:', err);
+    return false;
+  });
+
+  if (!apnsSent) {
+    console.warn('[CallSpecificTicket] APNs notification was not sent for ticket:', ticketId);
+  }
+
+  const androidSent = await sendAndroidToTicket(ticketId, {
+    type: 'called',
+    title: "It's Your Turn!",
+    body: `Ticket ${updatedTicket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
+    ticketId,
+    ticketNumber: updatedTicket.ticket_number,
+    qrToken: updatedTicket.qr_token,
+    deskName,
+    status: updatedTicket.status,
+    recallCount: updatedTicket.recall_count ?? 0,
+  }).catch((err) => {
+    console.error('[CallSpecificTicket] Android push error:', err);
+    return false;
+  });
+
+  if (!androidSent) {
+    console.log('[CallSpecificTicket] Android live update was not sent for ticket:', ticketId);
+  }
+
+  const smsResult = await maybeSendPriorityAlertSms(supabase, {
+    ticket: updatedTicket,
+    event: 'called',
+    deskName,
+  });
+  smsSent = smsResult.sent;
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_called',
+    entityType: 'ticket',
+    entityId: updatedTicket.id,
+    officeId: updatedTicket.office_id,
+    summary: `Called specific ticket ${updatedTicket.ticket_number} to ${deskName}`,
+    metadata: {
+      deskId,
+      smsSent,
+      source: 'manual_queue_pick',
+    },
+  });
+
+  await syncLiveActivityAfterAlert(ticketId, 'CallSpecificTicket');
+
+  notifyWaitingTickets(updatedTicket.department_id, updatedTicket.office_id, ticketId).catch((err) =>
+    console.error('[CallSpecificTicket] notifyWaitingTickets error:', err)
+  );
+  notifyWaitingAndroidTickets(updatedTicket.department_id, updatedTicket.office_id, ticketId).catch((err) =>
+    console.error('[CallSpecificTicket] notifyWaitingAndroidTickets error:', err)
+  );
+
+  revalidatePath('/desk');
+  return { data: updatedTicket, smsSent };
+}
+
+export async function startServing(ticketId: string) {
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
     .from('tickets')
@@ -358,10 +709,10 @@ export async function startServing(ticketId: string, staffId: string) {
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'status_change',
+    event_type: TICKET_EVENT_TYPES.SERVING_STARTED,
     from_status: 'called',
     to_status: 'serving',
-    staff_id: staffId,
+    staff_id: context.staff.id,
   });
 
   if (ticket) {
@@ -394,6 +745,17 @@ export async function startServing(ticketId: string, staffId: string) {
       silent: true,
     }).catch((err) => console.error('[StartServing] Android push error:', err));
 
+    await logAuditEvent(context, {
+      actionType: 'ticket_serving_started',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      officeId: ticket.office_id,
+      summary: `Started serving ticket ${ticket.ticket_number}`,
+      metadata: {
+        deskId: ticket.desk_id,
+      },
+    });
+
     // Notify waiting tickets — "now serving" number changed
     notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[StartServing] notifyWaitingTickets error:', err)
@@ -409,8 +771,9 @@ export async function startServing(ticketId: string, staffId: string) {
   return { data: ticket };
 }
 
-export async function markServed(ticketId: string, staffId: string) {
-  const supabase = await createClient();
+export async function markServed(ticketId: string) {
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
     .from('tickets')
@@ -427,13 +790,15 @@ export async function markServed(ticketId: string, staffId: string) {
     return { error: error.message };
   }
 
+  await releaseRestaurantTablesForTicket(supabase, ticketId);
+
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'status_change',
+    event_type: TICKET_EVENT_TYPES.SERVED,
     from_status: 'serving',
     to_status: 'served',
-    staff_id: staffId,
+    staff_id: context.staff.id,
   });
 
   if (ticket) {
@@ -462,6 +827,17 @@ export async function markServed(ticketId: string, staffId: string) {
       silent: true,
     }).catch((err) => console.error('[MarkServed] Android push error:', err));
 
+    await logAuditEvent(context, {
+      actionType: 'ticket_served',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      officeId: ticket.office_id,
+      summary: `Completed ticket ${ticket.ticket_number}`,
+      metadata: {
+        deskId: ticket.desk_id,
+      },
+    });
+
     // Notify waiting tickets — positions shifted forward
     notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[MarkServed] notifyWaitingTickets error:', err)
@@ -477,8 +853,9 @@ export async function markServed(ticketId: string, staffId: string) {
   return { data: ticket };
 }
 
-export async function markNoShow(ticketId: string, staffId: string) {
-  const supabase = await createClient();
+export async function markNoShow(ticketId: string) {
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
     .from('tickets')
@@ -498,10 +875,10 @@ export async function markNoShow(ticketId: string, staffId: string) {
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'status_change',
+    event_type: TICKET_EVENT_TYPES.NO_SHOW,
     from_status: 'called',
     to_status: 'no_show',
-    staff_id: staffId,
+    staff_id: context.staff.id,
   });
 
   if (ticket) {
@@ -530,6 +907,17 @@ export async function markNoShow(ticketId: string, staffId: string) {
       silent: true,
     }).catch((err) => console.error('[MarkNoShow] Android push error:', err));
 
+    await logAuditEvent(context, {
+      actionType: 'ticket_no_show',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      officeId: ticket.office_id,
+      summary: `Marked ticket ${ticket.ticket_number} as no-show`,
+      metadata: {
+        deskId: ticket.desk_id,
+      },
+    });
+
     // Notify waiting tickets — positions shifted forward
     notifyWaitingTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[MarkNoShow] notifyWaitingTickets error:', err)
@@ -550,9 +938,11 @@ export async function transferTicket(
   targetDepartmentId: string,
   targetServiceId: string
 ) {
-  const supabase = await createClient();
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+  const targetDepartment = await getDepartmentById(context, targetDepartmentId);
+  const targetService = await getServiceById(context, targetServiceId);
 
-  // Fetch the original ticket
   const { data: originalTicket, error: fetchError } = await supabase
     .from('tickets')
     .select('*')
@@ -561,6 +951,14 @@ export async function transferTicket(
 
   if (fetchError || !originalTicket) {
     return { error: fetchError?.message ?? 'Ticket not found' };
+  }
+
+  if (targetDepartment.office_id !== originalTicket.office_id) {
+    return { error: 'Tickets can only be transferred within the same office' };
+  }
+
+  if (targetService.department_id !== targetDepartment.id) {
+    return { error: 'Selected service does not belong to the target department' };
   }
 
   // Generate new ticket number for target department
@@ -613,16 +1011,32 @@ export async function transferTicket(
     return { error: updateError.message };
   }
 
+  await releaseRestaurantTablesForTicket(supabase, ticketId);
+
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'transferred',
+    event_type: TICKET_EVENT_TYPES.TRANSFERRED,
     from_status: originalTicket.status,
     to_status: 'transferred',
+    staff_id: context.staff.id,
     metadata: {
       new_ticket_id: newTicket.id,
       target_department_id: targetDepartmentId,
       target_service_id: targetServiceId,
+    },
+  });
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_transferred',
+    entityType: 'ticket',
+    entityId: originalTicket.id,
+    officeId: originalTicket.office_id,
+    summary: `Transferred ticket ${originalTicket.ticket_number}`,
+    metadata: {
+      targetDepartmentId,
+      targetServiceId,
+      newTicketId: newTicket.id,
     },
   });
 
@@ -633,7 +1047,8 @@ export async function transferTicket(
 }
 
 export async function recallTicket(ticketId: string) {
-  const supabase = await createClient();
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   // Verify ticket is in 'called' status
   const { data: ticket, error: fetchError } = await supabase
@@ -748,8 +1163,9 @@ export async function recallTicket(ticketId: string) {
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'recall',
+    event_type: TICKET_EVENT_TYPES.RECALLED,
     desk_id: ticket.desk_id,
+    staff_id: context.staff.id,
   });
 
   // Also insert a notification record
@@ -764,11 +1180,129 @@ export async function recallTicket(ticketId: string) {
     sent_at: new Date().toISOString(),
   });
 
-  return { data: ticket };
+  await logAuditEvent(context, {
+    actionType: 'ticket_recalled',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Recalled ticket ${ticket.ticket_number}`,
+    metadata: {
+      deskId: ticket.desk_id,
+      recallCount: newRecallCount,
+      smsSent: smsResult.sent,
+    },
+  });
+
+  return { data: ticket, smsSent: smsResult.sent };
+}
+
+export async function callBackTicketToDesk(ticketId: string) {
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+
+  const { data: ticket, error: fetchError } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .in('status', ['serving', 'called'])
+    .single();
+
+  if (fetchError || !ticket) {
+    return { error: 'Ticket is not active anymore' };
+  }
+
+  const calledAt = new Date().toISOString();
+  const newRecallCount = (ticket.recall_count ?? 0) + 1;
+  const { data: updatedTicket, error: updateError } = await supabase
+    .from('tickets')
+    .update({
+      status: 'called',
+      called_at: calledAt,
+      serving_started_at: null,
+      recall_count: newRecallCount,
+      called_by_staff_id: context.staff.id,
+    })
+    .eq('id', ticketId)
+    .select('*')
+    .single();
+
+  if (updateError || !updatedTicket) {
+    return { error: updateError?.message ?? 'Failed to bring ticket back to the desk' };
+  }
+
+  const deskName = await getDeskName(supabase, updatedTicket.desk_id);
+
+  sendPushToTicket(ticketId, {
+    type: 'recall',
+    title: 'Please return to the host stand',
+    body: `Ticket ${updatedTicket.ticket_number} — Please return to ${deskName}`,
+    tag: `qf-turn-${ticketId}`,
+    url: `/q/${updatedTicket.qr_token}`,
+    ticketId,
+    ticketNumber: updatedTicket.ticket_number,
+    deskName,
+    recallCount: newRecallCount,
+  }).catch((err) => console.error('[CallBackTicketToDesk] Push notification error:', err));
+
+  sendAPNsToTicket(ticketId, {
+    title: 'Please return to the host stand',
+    body: `Ticket ${updatedTicket.ticket_number} — Please return to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
+  }).catch((err) => console.error('[CallBackTicketToDesk] APNs notification error:', err));
+
+  sendAndroidToTicket(ticketId, {
+    type: 'recall',
+    title: 'Please return to the host stand',
+    body: `Ticket ${updatedTicket.ticket_number} — Please return to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
+    ticketId,
+    ticketNumber: updatedTicket.ticket_number,
+    qrToken: updatedTicket.qr_token,
+    deskName,
+    status: updatedTicket.status,
+    recallCount: newRecallCount,
+  }).catch((err) => console.error('[CallBackTicketToDesk] Android push error:', err));
+
+  const smsResult = await maybeSendPriorityAlertSms(supabase, {
+    ticket: updatedTicket,
+    event: 'recall',
+    deskName,
+  });
+
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: TICKET_EVENT_TYPES.RECALLED,
+    from_status: ticket.status,
+    to_status: 'called',
+    desk_id: updatedTicket.desk_id,
+    staff_id: context.staff.id,
+    metadata: {
+      source: 'callback_to_desk',
+      previous_status: ticket.status,
+    },
+  });
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_recalled',
+    entityType: 'ticket',
+    entityId: updatedTicket.id,
+    officeId: updatedTicket.office_id,
+    summary: `Called back ticket ${updatedTicket.ticket_number} to ${deskName}`,
+    metadata: {
+      deskId: updatedTicket.desk_id,
+      previousStatus: ticket.status,
+      smsSent: smsResult.sent,
+    },
+  });
+
+  await syncLiveActivityAfterAlert(ticketId, 'CallBackTicketToDesk');
+  revalidatePath('/desk');
+  return { data: updatedTicket, smsSent: smsResult.sent };
 }
 
 export async function buzzTicket(ticketId: string) {
-  const supabase = await createClient();
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   // Fetch the ticket — works for any active status (waiting, called, serving)
   const { data: ticket, error: fetchError } = await supabase
@@ -850,8 +1384,9 @@ export async function buzzTicket(ticketId: string) {
   // Log event
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
-    event_type: 'buzz',
+    event_type: TICKET_EVENT_TYPES.BUZZED,
     desk_id: ticket.desk_id,
+    staff_id: context.staff.id,
   });
 
   const smsResult = await maybeSendPriorityAlertSms(supabase, {
@@ -872,11 +1407,25 @@ export async function buzzTicket(ticketId: string) {
     sent_at: new Date().toISOString(),
   });
 
+  await logAuditEvent(context, {
+    actionType: 'ticket_buzzed',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Buzzed ticket ${ticket.ticket_number}`,
+    metadata: {
+      deskId: ticket.desk_id,
+      status: ticket.status,
+      smsSent: smsResult.sent,
+    },
+  });
+
   return { data: ticket, smsSent: smsResult.sent };
 }
 
 export async function resetTicketToQueue(ticketId: string) {
-  const supabase = await createClient();
+  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
   const { error } = await supabase
     .from('tickets')
@@ -888,19 +1437,243 @@ export async function resetTicketToQueue(ticketId: string) {
     return { error: 'Failed to reset ticket' };
   }
 
+  await releaseRestaurantTablesForTicket(supabase, ticketId);
+
   await syncLiveActivity(ticketId, 'ResetTicketToQueue');
 
+  await logAuditEvent(context, {
+    actionType: 'ticket_reset_to_queue',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Reset ticket ${ticket.ticket_number} back to queue`,
+    metadata: {
+      previousStatus: ticket.status,
+      previousDeskId: ticket.desk_id,
+    },
+  });
+
+  revalidatePath('/desk');
   return { data: true };
 }
 
-export async function assignDesk(deskId: string, staffId: string) {
-  const supabase = await createClient();
+export async function assignRestaurantTable(ticketId: string, tableId: string) {
+  const { context } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
 
-  // Update desk with current staff
-  const { data: desk, error } = await supabase
+  const { data: ticket, error: ticketFetchError } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .single();
+
+  if (ticketFetchError || !ticket) {
+    return { error: ticketFetchError?.message ?? 'Ticket not found' };
+  }
+
+  const { data: table, error: tableError } = await supabase
+    .from('restaurant_tables')
+    .select('*')
+    .eq('id', tableId)
+    .eq('office_id', ticket.office_id)
+    .single();
+
+  if (tableError || !table) {
+    return { error: tableError?.message ?? 'Table not found' };
+  }
+
+  if (table.current_ticket_id && table.current_ticket_id !== ticketId) {
+    return { error: 'This table is already assigned to another party' };
+  }
+
+  if (table.status !== 'available' && table.current_ticket_id !== ticketId) {
+    return { error: `This table is currently ${table.status}` };
+  }
+
+  await releaseRestaurantTablesForTicket(supabase, ticketId);
+
+  const now = new Date().toISOString();
+  const { data: assignedTable, error: assignError } = await supabase
+    .from('restaurant_tables')
+    .update({
+      status: 'occupied',
+      current_ticket_id: ticketId,
+      assigned_at: now,
+    })
+    .eq('id', tableId)
+    .select()
+    .single();
+
+  if (assignError || !assignedTable) {
+    return { error: assignError?.message ?? 'Failed to assign table' };
+  }
+
+  const customerData =
+    ticket.customer_data && typeof ticket.customer_data === 'object' && !Array.isArray(ticket.customer_data)
+      ? (ticket.customer_data as Record<string, unknown>)
+      : {};
+  const nextStatus = ticket.status === 'called' ? 'serving' : ticket.status;
+  const nextServingStartedAt =
+    ticket.status === 'called' ? now : ticket.serving_started_at;
+
+  const { data: updatedTicket, error: ticketError } = await supabase
+    .from('tickets')
+    .update({
+      status: nextStatus,
+      serving_started_at: nextServingStartedAt,
+      customer_data: {
+        ...customerData,
+        assigned_table_code: assignedTable.code,
+        assigned_table_label: assignedTable.label,
+      } as any,
+    })
+    .eq('id', ticketId)
+    .select()
+    .single();
+
+  if (ticketError || !updatedTicket) {
+    return { error: ticketError?.message ?? 'Failed to update ticket' };
+  }
+
+  if (ticket.status === 'called') {
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticketId,
+      event_type: TICKET_EVENT_TYPES.SERVING_STARTED,
+      from_status: 'called',
+      to_status: 'serving',
+      staff_id: context.staff.id,
+      desk_id: ticket.desk_id,
+      metadata: {
+        table_code: assignedTable.code,
+        table_label: assignedTable.label,
+      },
+    });
+  }
+
+  await logAuditEvent(context, {
+    actionType: 'restaurant_table_assigned',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Assigned table ${assignedTable.code} to ticket ${ticket.ticket_number}`,
+    metadata: {
+      tableId: assignedTable.id,
+      tableCode: assignedTable.code,
+      tableLabel: assignedTable.label,
+      transitionedToServing: ticket.status === 'called',
+    },
+  });
+
+  revalidatePath('/desk');
+  return { data: { ticket: updatedTicket, table: assignedTable } };
+}
+
+export async function clearRestaurantTable(tableId: string) {
+  const context = await getStaffContext();
+  const supabase = context.supabase;
+
+  const { data: table, error: tableError } = await supabase
+    .from('restaurant_tables')
+    .select('*')
+    .eq('id', tableId)
+    .single();
+
+  if (tableError || !table) {
+    return { error: tableError?.message ?? 'Table not found' };
+  }
+
+  await requireOfficeMembership(context);
+  await requireOfficeAccess(context, table.office_id);
+
+  const currentTicketId = table.current_ticket_id;
+
+  const { data: clearedTable, error: clearError } = await supabase
+    .from('restaurant_tables')
+    .update({
+      status: 'available',
+      current_ticket_id: null,
+      assigned_at: null,
+    })
+    .eq('id', tableId)
+    .select()
+    .single();
+
+  if (clearError || !clearedTable) {
+    return { error: clearError?.message ?? 'Failed to clear table' };
+  }
+
+  let updatedTicket: Record<string, unknown> | null = null;
+
+  if (currentTicketId) {
+    const { data: ticket } = await supabase
+      .from('tickets')
+      .select('*')
+      .eq('id', currentTicketId)
+      .maybeSingle();
+
+    if (ticket) {
+      const customerData =
+        ticket.customer_data && typeof ticket.customer_data === 'object' && !Array.isArray(ticket.customer_data)
+          ? { ...(ticket.customer_data as Record<string, unknown>) }
+          : {};
+
+      delete customerData.assigned_table_code;
+      delete customerData.assigned_table_label;
+
+      const { data: ticketAfterClear } = await supabase
+        .from('tickets')
+        .update({
+          customer_data: customerData as any,
+        })
+        .eq('id', currentTicketId)
+        .select()
+        .single();
+
+      updatedTicket = ticketAfterClear as Record<string, unknown> | null;
+
+      await logAuditEvent(context, {
+        actionType: 'restaurant_table_cleared',
+        entityType: 'ticket',
+        entityId: ticket.id,
+        officeId: ticket.office_id,
+        summary: `Cleared table ${table.code} from ticket ${ticket.ticket_number}`,
+        metadata: {
+          tableId: table.id,
+          tableCode: table.code,
+          tableLabel: table.label,
+        },
+      });
+    }
+  }
+
+  revalidatePath('/desk');
+  return { data: { table: clearedTable, ticket: updatedTicket } };
+}
+
+export async function assignDesk(deskId: string) {
+  const context = await getStaffContext();
+  requireOfficeMembership(context);
+  const desk = await getDeskById(context, deskId);
+
+  if (desk.current_staff_id && desk.current_staff_id !== context.staff.id) {
+    return { error: 'This desk is already assigned to another staff member' };
+  }
+
+  const { data: existingDesk } = await context.supabase
+    .from('desks')
+    .select('id')
+    .eq('current_staff_id', context.staff.id)
+    .neq('id', deskId)
+    .maybeSingle();
+
+  if (existingDesk) {
+    return { error: 'You are already assigned to another desk' };
+  }
+
+  const { data: updatedDesk, error } = await context.supabase
     .from('desks')
     .update({
-      current_staff_id: staffId,
+      current_staff_id: context.staff.id,
       status: 'open',
     })
     .eq('id', deskId)
@@ -911,14 +1684,25 @@ export async function assignDesk(deskId: string, staffId: string) {
     return { error: error.message };
   }
 
+  await logAuditEvent(context, {
+    actionType: 'desk_assigned',
+    entityType: 'desk',
+    entityId: deskId,
+    officeId: desk.office_id,
+    summary: `Assigned ${context.staff.full_name} to desk ${updatedDesk.display_name ?? updatedDesk.name}`,
+    metadata: {
+      staffId: context.staff.id,
+    },
+  });
+
   revalidatePath('/desk');
-  return { data: desk };
+  return { data: updatedDesk };
 }
 
 export async function unassignDesk(deskId: string) {
-  const supabase = await createClient();
+  const { context, desk } = await getDeskOperationContext(deskId);
 
-  const { error } = await supabase
+  const { error } = await context.supabase
     .from('desks')
     .update({
       current_staff_id: null,
@@ -929,6 +1713,17 @@ export async function unassignDesk(deskId: string) {
   if (error) {
     return { error: error.message };
   }
+
+  await logAuditEvent(context, {
+    actionType: 'desk_unassigned',
+    entityType: 'desk',
+    entityId: deskId,
+    officeId: desk.office_id,
+    summary: `Unassigned desk ${deskId}`,
+    metadata: {
+      previousStaffId: desk.current_staff_id,
+    },
+  });
 
   revalidatePath('/desk');
   return { data: true };

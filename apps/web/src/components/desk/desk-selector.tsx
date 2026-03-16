@@ -20,12 +20,10 @@ interface Desk {
 
 interface DeskSelectorProps {
   desks: Desk[];
-  staffId: string;
   staffName: string;
-  officeId: string;
 }
 
-export function DeskSelector({ desks, staffId, staffName, officeId }: DeskSelectorProps) {
+export function DeskSelector({ desks, staffName }: DeskSelectorProps) {
   const [selectedDeskId, setSelectedDeskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +37,7 @@ export function DeskSelector({ desks, staffId, staffName, officeId }: DeskSelect
   const handleConfirm = () => {
     if (!selectedDeskId) return;
     startTransition(async () => {
-      const result = await assignDesk(selectedDeskId, staffId);
+      const result = await assignDesk(selectedDeskId);
       if (result.error) {
         setError(result.error);
         return;
@@ -98,6 +96,7 @@ export function DeskSelector({ desks, staffId, staffName, officeId }: DeskSelect
                     <button
                       key={desk.id}
                       onClick={() => handleSelectDesk(desk.id)}
+                      aria-label={`Select desk ${desk.display_name ?? desk.name} in ${desk.department?.name ?? 'Unknown Department'}`}
                       className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                         selectedDeskId === desk.id
                           ? 'border-primary bg-primary/5 ring-2 ring-primary/20'

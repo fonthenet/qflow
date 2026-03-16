@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import type { RoleDefinition } from '@queueflow/shared';
+import { STAFF_ROLE_LABELS, STAFF_ROLES } from '@queueflow/shared';
 import {
   createStaffMember,
+  sendStaffPasswordReset,
   updateStaffMember,
 } from '@/lib/actions/admin-actions';
 
@@ -25,32 +28,107 @@ type Office = { id: string; name: string };
 type Department = {
   id: string;
   name: string;
-  office: any;
+  office: { id: string; name: string } | null;
 };
+
+const roleBadgeColors: Record<string, string> = {
+  [STAFF_ROLES.ADMIN]: 'bg-primary/10 text-primary',
+  [STAFF_ROLES.MANAGER]: 'bg-warning/10 text-warning',
+  [STAFF_ROLES.BRANCH_ADMIN]: 'bg-blue-100 text-blue-700',
+  [STAFF_ROLES.DESK_OPERATOR]: 'bg-secondary text-secondary-foreground',
+  [STAFF_ROLES.RECEPTIONIST]: 'bg-accent text-accent-foreground',
+  [STAFF_ROLES.FLOOR_MANAGER]: 'bg-emerald-100 text-emerald-700',
+  [STAFF_ROLES.ANALYST]: 'bg-slate-200 text-slate-700',
+  [STAFF_ROLES.AGENT]: 'bg-secondary text-secondary-foreground',
+};
+
+function permissionSummary(roleDefinition?: RoleDefinition) {
+  if (!roleDefinition) {
+    return ['Desk access'];
+  }
+
+  const items = new Set<string>();
+
+  if (roleDefinition.adminAccess) items.add('Business setup');
+  if (roleDefinition.allowedNavigation.includes('/desk')) items.add('Desk');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/bookings'))) items.add('Bookings');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/analytics'))) items.add('Reports');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/kiosk'))) items.add('Kiosk');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/displays'))) items.add('Displays');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/staff'))) items.add('Team');
+  if (roleDefinition.allowedNavigation.some((entry) => entry.includes('/admin/customers'))) items.add('Customers');
+
+  return Array.from(items);
+}
+
+function roleHelpText(role: string) {
+  switch (role) {
+    case STAFF_ROLES.ADMIN:
+      return 'Full business control, including setup, team, reports, and live queue management.';
+    case STAFF_ROLES.MANAGER:
+      return 'Runs the business day to day, with setup access and reporting.';
+    case STAFF_ROLES.BRANCH_ADMIN:
+      return 'Manages one location and its service flow.';
+    case STAFF_ROLES.RECEPTIONIST:
+      return 'Checks customers in and helps at the front desk.';
+    case STAFF_ROLES.DESK_OPERATOR:
+      return 'Calls and serves customers at a desk or counter.';
+    case STAFF_ROLES.FLOOR_MANAGER:
+      return 'Supervises live operations and helps unblock queues.';
+    case STAFF_ROLES.ANALYST:
+      return 'Views reports, customer history, and business activity.';
+    case STAFF_ROLES.AGENT:
+      return 'Legacy basic desk access.';
+    default:
+      return 'Business access based on the assigned role.';
+  }
+}
 
 export function StaffClient({
   staff,
   offices,
   departments,
+  roleDefinitions,
 }: {
   staff: StaffMember[];
   offices: Office[];
   departments: Department[];
+  roleDefinitions: RoleDefinition[];
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isResetPending, startResetTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string>(STAFF_ROLES.DESK_OPERATOR);
+  const [selectedOfficeId, setSelectedOfficeId] = useState<string>('');
+
+  const availableDepartments = useMemo(
+    () =>
+      selectedOfficeId
+        ? departments.filter((department) => department.office?.id === selectedOfficeId)
+        : departments,
+    [departments, selectedOfficeId]
+  );
+
+  const selectedRoleDefinition = roleDefinitions.find((entry) => entry.role === selectedRole);
 
   function openCreate() {
     setEditing(null);
+    setSelectedRole(STAFF_ROLES.DESK_OPERATOR);
+    setSelectedOfficeId('');
     setError(null);
+    setSuccess(null);
     setShowModal(true);
   }
 
   function openEdit(member: StaffMember) {
     setEditing(member);
+    setSelectedRole(member.role);
+    setSelectedOfficeId(member.office_id ?? '');
     setError(null);
+    setSuccess(null);
     setShowModal(true);
   }
 
@@ -59,108 +137,142 @@ export function StaffClient({
       const result = editing
         ? await updateStaffMember(editing.id, formData)
         : await createStaffMember(formData);
+
       if (result?.error) {
         setError(result.error);
-      } else {
-        setShowModal(false);
-        setEditing(null);
+        return;
       }
+
+      setShowModal(false);
+      setEditing(null);
+      setSuccess(editing ? 'Team member updated.' : 'Team member added and login account created.');
     });
   }
 
-  const roleLabels: Record<string, string> = {
-    admin: 'Admin',
-    manager: 'Manager',
-    agent: 'Agent',
-    receptionist: 'Receptionist',
-  };
+  function handleSendReset(member: StaffMember) {
+    setError(null);
+    setSuccess(null);
 
-  const roleBadgeColors: Record<string, string> = {
-    admin: 'bg-primary/10 text-primary',
-    manager: 'bg-warning/10 text-warning',
-    agent: 'bg-secondary text-secondary-foreground',
-    receptionist: 'bg-accent text-accent-foreground',
-  };
+    startResetTransition(async () => {
+      const result = await sendStaffPasswordReset(member.id);
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+
+      setSuccess(`Password setup email sent to ${member.email}.`);
+    });
+  }
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Staff</h1>
+          <h1 className="text-2xl font-bold text-foreground">Team Access</h1>
           <p className="text-sm text-muted-foreground">
-            Manage staff members and their roles.
+            Add business users, choose what they can access, and keep each person tied to the right role.
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Staff Member
+          Add Team Member
         </button>
       </div>
 
-      {error && !showModal && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      {error && (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
+
+      {success && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {success}
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {roleDefinitions.map((roleDefinition) => (
+          <div key={roleDefinition.role} className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-semibold text-foreground">
+              {STAFF_ROLE_LABELS[roleDefinition.role] ?? roleDefinition.label}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{roleHelpText(roleDefinition.role)}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {permissionSummary(roleDefinition).map((item) => (
+                <span key={item} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 font-medium text-muted-foreground">Name</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">Email</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Team member</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Role</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">Office</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Location</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Login</th>
               <th className="px-4 py-3 font-medium text-muted-foreground text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {staff.length === 0 && (
+            {staff.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  No staff members found.
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  No team members yet.
                 </td>
               </tr>
-            )}
+            ) : null}
             {staff.map((member) => (
               <tr key={member.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 font-medium text-foreground">
-                  {member.full_name}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{member.email}</td>
                 <td className="px-4 py-3">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      roleBadgeColors[member.role] ?? 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {roleLabels[member.role] ?? member.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {member.office?.name ?? '---'}
+                  <p className="font-medium text-foreground">{member.full_name}</p>
+                  <p className="text-muted-foreground">{member.email}</p>
                 </td>
                 <td className="px-4 py-3">
                   <span
                     className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      member.is_active
-                        ? 'bg-success/10 text-success'
-                        : 'bg-muted text-muted-foreground'
+                      roleBadgeColors[member.role] ?? 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {member.is_active ? 'Active' : 'Inactive'}
+                    {STAFF_ROLE_LABELS[member.role as keyof typeof STAFF_ROLE_LABELS] ?? member.role}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => openEdit(member)}
-                    className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                <td className="px-4 py-3 text-muted-foreground">
+                  {member.office?.name ?? 'All locations'}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      member.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'
+                    }`}
                   >
-                    Edit
-                  </button>
+                    {member.is_active ? 'Can sign in' : 'Inactive'}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => handleSendReset(member)}
+                      disabled={isResetPending}
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+                    >
+                      Send setup email
+                    </button>
+                    <button
+                      onClick={() => openEdit(member)}
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -168,128 +280,156 @@ export function StaffClient({
         </table>
       </div>
 
-      {/* Modal */}
-      {showModal && (
+      {showModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="fixed inset-0 bg-black/50"
-            onClick={() => setShowModal(false)}
-          />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Staff Member' : 'Create Staff Member'}
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowModal(false)} />
+          <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold text-foreground">
+              {editing ? 'Edit team member' : 'Add team member'}
             </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {editing
+                ? 'Update this person’s role, location access, and active status.'
+                : 'Create a login for someone on your business team and choose what they can access.'}
+            </p>
 
-            {error && (
-              <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error ? (
+              <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 {error}
               </div>
-            )}
+            ) : null}
 
-            <form action={handleSubmit} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Full Name <span className="text-destructive">*</span>
-                </label>
-                <input
-                  name="full_name"
-                  required
-                  defaultValue={editing?.full_name ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Email <span className="text-destructive">*</span>
-                </label>
-                <input
-                  name="email"
-                  type="email"
-                  required
-                  defaultValue={editing?.email ?? ''}
-                  disabled={!!editing}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-not-allowed"
-                />
-              </div>
-
-              {/* Password only for new staff */}
-              {!editing && (
+            <form action={handleSubmit} className="mt-5 space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-foreground">
-                    Password <span className="text-destructive">*</span>
-                  </label>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Full name</label>
                   <input
-                    name="password"
-                    type="password"
+                    name="full_name"
                     required
-                    minLength={6}
+                    defaultValue={editing?.full_name ?? ''}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Minimum 6 characters. The user can change it later.
-                  </p>
                 </div>
-              )}
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Email</label>
+                  {editing && <input type="hidden" name="email" value={editing.email} />}
+                  <input
+                    name="email"
+                    type="email"
+                    required
+                    defaultValue={editing?.email ?? ''}
+                    disabled={!!editing}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Role <span className="text-destructive">*</span>
-                </label>
-                <select
-                  name="role"
-                  required
-                  defaultValue={editing?.role ?? 'agent'}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="admin">Admin</option>
-                  <option value="manager">Manager</option>
-                  <option value="agent">Agent</option>
-                  <option value="receptionist">Receptionist</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Office
-                </label>
-                <select
-                  name="office_id"
-                  defaultValue={editing?.office_id ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">No office assigned</option>
-                  {offices.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
-                  Department
-                </label>
-                <select
-                  name="department_id"
-                  defaultValue={editing?.department_id ?? ''}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">No department assigned</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} {d.office ? `(${d.office.name})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="is_active"
-                  value="true"
-                  defaultChecked={editing?.is_active ?? true}
-                  className="h-4 w-4 rounded border-input"
-                />
-                <label className="text-sm font-medium text-foreground">Active</label>
+              {!editing ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground">Temporary password</label>
+                    <input
+                      name="password"
+                      type="password"
+                      required
+                      minLength={6}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      They can use this right away, then change it later.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+                    <label className="inline-flex items-start gap-2 text-sm text-foreground">
+                      <input type="checkbox" name="send_setup_email" value="true" defaultChecked className="mt-0.5" />
+                      <span>
+                        <span className="font-medium">Send setup email</span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Sends a password setup email so they can sign in without you sharing the password.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-foreground">Role</label>
+                    <select
+                      name="role"
+                      required
+                      value={selectedRole}
+                      onChange={(event) => setSelectedRole(event.target.value)}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      {roleDefinitions.map((roleDefinition) => (
+                        <option key={roleDefinition.role} value={roleDefinition.role}>
+                          {STAFF_ROLE_LABELS[roleDefinition.role] ?? roleDefinition.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-foreground">Location</label>
+                      <select
+                        name="office_id"
+                        value={selectedOfficeId}
+                        onChange={(event) => setSelectedOfficeId(event.target.value)}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="">All locations</option>
+                        {offices.map((office) => (
+                          <option key={office.id} value={office.id}>
+                            {office.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-foreground">Department</label>
+                      <select
+                        name="department_id"
+                        defaultValue={editing?.department_id ?? ''}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="">No department limit</option>
+                        {availableDepartments.map((department) => (
+                          <option key={department.id} value={department.id}>
+                            {department.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      value="true"
+                      defaultChecked={editing?.is_active ?? true}
+                    />
+                    This person can sign in now
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                  <p className="text-sm font-semibold text-foreground">
+                    {STAFF_ROLE_LABELS[selectedRole as keyof typeof STAFF_ROLE_LABELS] ?? selectedRole}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">{roleHelpText(selectedRole)}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {permissionSummary(selectedRoleDefinition).map((item) => (
+                      <span key={item} className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -305,13 +445,13 @@ export function StaffClient({
                   disabled={isPending}
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isPending ? 'Saving...' : editing ? 'Update' : 'Create'}
+                  {isPending ? 'Saving...' : editing ? 'Save changes' : 'Create login'}
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

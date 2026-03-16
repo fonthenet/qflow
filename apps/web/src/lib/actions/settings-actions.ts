@@ -1,30 +1,8 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-
-// ─── Helper: get org_id from authenticated user ────────────────────────────
-
-async function getOrgId() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) throw new Error('Not authenticated');
-
-  const { data: staff } = await supabase
-    .from('staff')
-    .select('organization_id')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (!staff) throw new Error('Staff profile not found');
-
-  return { supabase, orgId: staff.organization_id };
-}
-
-// ─── Update Organization Settings ──────────────────────────────────────────
+import { logAuditEvent } from '@/lib/audit';
+import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 
 export async function updateOrganizationSettings(data: {
   orgId: string;
@@ -33,17 +11,17 @@ export async function updateOrganizationSettings(data: {
   logo_url: string | null;
   settings: Record<string, any>;
 }) {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getStaffContext();
+  await requireOrganizationAdmin(context);
 
-  // Ensure the user can only update their own org
-  if (data.orgId !== orgId) {
+  if (data.orgId !== context.staff.organization_id) {
     return { error: 'Unauthorized: organization mismatch' };
   }
 
-  const { data: organization, error: fetchError } = await supabase
+  const { data: organization, error: fetchError } = await context.supabase
     .from('organizations')
     .select('settings')
-    .eq('id', orgId)
+    .eq('id', context.staff.organization_id)
     .single();
 
   if (fetchError) return { error: fetchError.message };
@@ -54,7 +32,7 @@ export async function updateOrganizationSettings(data: {
     ...data.settings,
   };
 
-  const { error } = await supabase
+  const { error } = await context.supabase
     .from('organizations')
     .update({
       name: data.name,
@@ -62,9 +40,21 @@ export async function updateOrganizationSettings(data: {
       logo_url: data.logo_url,
       settings: mergedSettings,
     })
-    .eq('id', orgId);
+    .eq('id', context.staff.organization_id);
 
   if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'organization_settings_updated',
+    entityType: 'organization',
+    entityId: context.staff.organization_id,
+    summary: `Updated organization settings for ${data.name}`,
+    metadata: {
+      slug: data.slug,
+      logoUrl: data.logo_url,
+      updatedKeys: Object.keys(data.settings ?? {}),
+    },
+  });
 
   revalidatePath('/admin/settings');
   return { success: true };

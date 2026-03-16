@@ -183,10 +183,13 @@ export interface Feedback {
 
 export interface VirtualQueueCode {
   id: string;
-  office_id: string;
-  department_id: string;
+  organization_id: string;
+  office_id: string | null;
+  department_id: string | null;
   service_id: string | null;
   qr_token: string;
   is_active: boolean;
   created_at: string;
 }
+
+export * from './platform';

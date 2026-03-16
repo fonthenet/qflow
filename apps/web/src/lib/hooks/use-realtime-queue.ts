@@ -18,21 +18,34 @@ export interface QueueData {
 interface UseRealtimeQueueOptions {
   officeId: string;
   departmentId?: string;
+  disabled?: boolean;
+  initialQueue?: QueueData;
 }
 
-export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOptions) {
-  const [queue, setQueue] = useState<QueueData>({
+export function useRealtimeQueue({
+  officeId,
+  departmentId,
+  disabled = false,
+  initialQueue,
+}: UseRealtimeQueueOptions) {
+  const emptyQueue: QueueData = {
     waiting: [],
     called: [],
     serving: [],
     recentlyServed: [],
     cancelled: [],
-  });
-  const [isLoading, setIsLoading] = useState(true);
+  };
+  const [queue, setQueue] = useState<QueueData>(initialQueue ?? emptyQueue);
+  const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const fetchQueue = useCallback(async () => {
+    if (disabled) {
+      setQueue(initialQueue ?? emptyQueue);
+      setIsLoading(false);
+      return;
+    }
     const supabase = createClient();
 
     // Fetch today's active tickets
@@ -84,9 +97,14 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
         .slice(0, 5),
     });
     setError(null);
-  }, [officeId, departmentId]);
+  }, [departmentId, disabled, emptyQueue, initialQueue, officeId]);
 
   useEffect(() => {
+    if (disabled) {
+      setQueue(initialQueue ?? emptyQueue);
+      setIsLoading(false);
+      return;
+    }
     const supabase = createClient();
     let realtimeConnected = false;
 
@@ -138,7 +156,7 @@ export function useRealtimeQueue({ officeId, departmentId }: UseRealtimeQueueOpt
         channelRef.current = null;
       }
     };
-  }, [officeId, departmentId, fetchQueue]);
+  }, [departmentId, disabled, emptyQueue, fetchQueue, initialQueue, officeId]);
 
   return {
     queue,

@@ -1,6 +1,8 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import { KioskView } from '@/components/kiosk/kiosk-view';
+import { resolvePlatformConfig } from '@/lib/platform/config';
+import { matchesOfficePublicSlug } from '@/lib/office-links';
 
 interface KioskPageProps {
   params: Promise<{ officeSlug: string }>;
@@ -8,7 +10,7 @@ interface KioskPageProps {
 
 export default async function KioskPage({ params }: KioskPageProps) {
   const { officeSlug } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Find office by slug (we use office name slugified)
   const { data: offices } = await supabase
@@ -16,15 +18,13 @@ export default async function KioskPage({ params }: KioskPageProps) {
     .select('*, organization:organizations(*)')
     .eq('is_active', true);
 
-  const office = offices?.find(
-    (o) =>
-      o.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') === officeSlug
-  );
+  const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
 
   if (!office) notFound();
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: (office.organization as any)?.settings ?? {},
+    officeSettings: office.settings ?? {},
+  });
 
   // Get departments with services
   const { data: departments } = await supabase
@@ -42,19 +42,27 @@ export default async function KioskPage({ params }: KioskPageProps) {
     .eq('is_active', true)
     .order('weight', { ascending: false });
 
-  // Extract kiosk settings from org
+  // Extract kiosk settings from resolved platform config plus legacy overrides.
   const orgSettings = (office.organization as any)?.settings ?? {};
+  const organizationLogoUrl = (office.organization as any)?.logo_url ?? null;
+  const officeSettings = (office.settings as Record<string, any> | null) ?? {};
+  const profile = platformConfig.experienceProfile.kiosk;
   const kioskSettings = {
-    welcomeMessage: orgSettings.kiosk_welcome_message ?? 'Welcome',
-    headerText: orgSettings.kiosk_header_text ?? '',
-    themeColor: orgSettings.kiosk_theme_color ?? '',
-    showPriorities: orgSettings.kiosk_show_priorities ?? true,
-    showEstimatedTime: orgSettings.kiosk_show_estimated_time ?? true,
-    hiddenDepartments: orgSettings.kiosk_hidden_departments ?? [],
-    hiddenServices: orgSettings.kiosk_hidden_services ?? [],
-    lockedDepartmentId: orgSettings.kiosk_locked_department_id ?? null,
-    buttonLabel: orgSettings.kiosk_button_label ?? 'Get Ticket',
-    idleTimeout: orgSettings.kiosk_idle_timeout ?? 60,
+    welcomeMessage: orgSettings.kiosk_welcome_message ?? profile.welcomeMessage,
+    headerText: orgSettings.kiosk_header_text ?? profile.headerText,
+    themeColor: orgSettings.kiosk_theme_color ?? profile.themeColor,
+    logoUrl: orgSettings.kiosk_logo_url ?? organizationLogoUrl,
+    showLogo: orgSettings.kiosk_show_logo ?? Boolean(orgSettings.kiosk_logo_url ?? organizationLogoUrl),
+    showPriorities:
+      orgSettings.kiosk_show_priorities ??
+      (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities),
+    showEstimatedTime: orgSettings.kiosk_show_estimated_time ?? profile.showEstimatedTime,
+    hiddenDepartments: orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
+    hiddenServices: orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
+    lockedDepartmentId:
+      orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
+    buttonLabel: orgSettings.kiosk_button_label ?? profile.buttonLabel,
+    idleTimeout: orgSettings.kiosk_idle_timeout ?? profile.idleTimeoutSeconds,
   };
 
   // Filter out hidden departments and services

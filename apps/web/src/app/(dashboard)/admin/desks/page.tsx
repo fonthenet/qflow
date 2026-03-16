@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { DesksClient } from './desks-client';
 
 export default async function DesksPage({
@@ -6,40 +6,56 @@ export default async function DesksPage({
 }: {
   searchParams: Promise<{ office?: string; department?: string }>;
 }) {
-  const supabase = await createClient();
+  const context = await getStaffContext();
   const params = await searchParams;
+  const requestedOfficeIds = params.office
+    ? context.accessibleOfficeIds.includes(params.office)
+      ? [params.office]
+      : []
+    : context.accessibleOfficeIds;
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id, name')
-    .order('name');
+  const { data: offices } = requestedOfficeIds.length > 0
+    ? await context.supabase
+        .from('offices')
+        .select('id, name')
+        .in('id', requestedOfficeIds)
+        .order('name')
+    : { data: [] };
 
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, office_id, office:offices(id, name)')
-    .order('name');
+  const { data: departments } = requestedOfficeIds.length > 0
+    ? await context.supabase
+        .from('departments')
+        .select('id, name, office_id, office:offices(id, name)')
+        .in('office_id', requestedOfficeIds)
+        .order('name')
+    : { data: [] };
 
-  const { data: staffList } = await supabase
-    .from('staff')
-    .select('id, full_name, office_id')
-    .eq('is_active', true)
-    .order('full_name');
+  const { data: staffList } = requestedOfficeIds.length > 0
+    ? await context.supabase
+        .from('staff')
+        .select('id, full_name, office_id')
+        .eq('is_active', true)
+        .in('office_id', requestedOfficeIds)
+        .order('full_name')
+    : { data: [] };
 
-  let query = supabase
+  let desksQuery = context.supabase
     .from('desks')
     .select(
       '*, department:departments(id, name), office:offices(id, name), current_staff:staff(id, full_name)'
     )
     .order('name');
 
-  if (params.office) {
-    query = query.eq('office_id', params.office);
+  if (requestedOfficeIds.length > 0) {
+    desksQuery = desksQuery.in('office_id', requestedOfficeIds);
   }
   if (params.department) {
-    query = query.eq('department_id', params.department);
+    desksQuery = desksQuery.eq('department_id', params.department);
   }
 
-  const { data: desks, error } = await query;
+  const { data: desks, error } = requestedOfficeIds.length > 0
+    ? await desksQuery
+    : { data: [], error: null };
 
   if (error) {
     return (

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { CheckInForm } from '@/components/queue/check-in-form';
 import { QueueStatus } from '@/components/queue/queue-status';
 import { GroupStatus } from '@/components/queue/group-status';
@@ -12,7 +12,7 @@ interface PageProps {
 
 export default async function TicketStatusPage({ params }: PageProps) {
   const { token } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Fetch ticket with related data
   const { data: ticket, error } = await supabase

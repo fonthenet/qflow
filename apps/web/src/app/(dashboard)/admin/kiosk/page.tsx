@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { KioskSettings } from '@/components/admin/kiosk-settings';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 
 export default async function KioskAdminPage() {
   const supabase = await createClient();
@@ -26,11 +27,14 @@ export default async function KioskAdminPage() {
     .single();
 
   if (!organization) redirect('/login');
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: organization.settings ?? {},
+  });
 
   // Fetch offices for preview links
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, is_active')
+    .select('id, name, is_active, settings')
     .eq('organization_id', staff.organization_id)
     .order('name');
 
@@ -49,6 +53,8 @@ export default async function KioskAdminPage() {
       organization={organization}
       offices={offices ?? []}
       departments={departments ?? []}
+      templateDefaults={platformConfig.experienceProfile.kiosk}
+      priorityMode={platformConfig.queuePolicy.priorityMode}
     />
   );
 }

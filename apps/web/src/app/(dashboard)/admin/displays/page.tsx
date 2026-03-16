@@ -1,43 +1,29 @@
-import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { getStaffContext } from '@/lib/authz';
 import { DisplaysManager } from '@/components/admin/display-settings';
 
 export default async function DisplaysAdminPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const context = await getStaffContext();
 
-  if (!user) redirect('/login');
+  if (context.accessibleOfficeIds.length === 0) redirect('/desk');
 
-  const { data: staff } = await supabase
-    .from('staff')
-    .select('organization_id')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (!staff) redirect('/login');
-
-  // Fetch offices for this org
-  const { data: offices } = await supabase
+  const { data: offices } = await context.supabase
     .from('offices')
     .select('id, name, is_active')
-    .eq('organization_id', staff.organization_id)
+    .in('id', context.accessibleOfficeIds)
     .order('name');
 
-  // Fetch all display screens for this org's offices
   const officeIds = (offices ?? []).map((o) => o.id);
   const { data: screens } = officeIds.length > 0
-    ? await supabase
+    ? await context.supabase
         .from('display_screens')
         .select('*')
         .in('office_id', officeIds)
         .order('name')
     : { data: [] };
 
-  // Fetch departments for department filtering
   const { data: departments } = officeIds.length > 0
-    ? await supabase
+    ? await context.supabase
         .from('departments')
         .select('id, name, code, office_id, is_active')
         .in('office_id', officeIds)

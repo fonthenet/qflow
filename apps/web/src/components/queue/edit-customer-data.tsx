@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
+import { filterVisibleIntakeFields } from '@/lib/privacy';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type IntakeField = Database['public']['Tables']['intake_form_fields']['Row'];
+type EditableField = IntakeField & { id: string };
 
 interface EditCustomerDataProps {
   ticket: Ticket;
@@ -14,7 +16,7 @@ interface EditCustomerDataProps {
 
 export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [fields, setFields] = useState<IntakeField[]>([]);
+  const [fields, setFields] = useState<EditableField[]>([]);
   const [formData, setFormData] = useState<Record<string, string | boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -22,6 +24,48 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
   const [saved, setSaved] = useState(false);
 
   const customerData = (ticket.customer_data ?? {}) as Record<string, string | boolean>;
+
+  const baseContactFields: EditableField[] = [
+    {
+      id: 'base-name',
+      service_id: ticket.service_id,
+      field_name: 'name',
+      field_label: 'Name',
+      field_type: 'text',
+      is_required: false,
+      options: null,
+      sort_order: -3,
+      created_at: ticket.created_at,
+      consent_flag: null,
+      visibility: 'public',
+    },
+    {
+      id: 'base-phone',
+      service_id: ticket.service_id,
+      field_name: 'phone',
+      field_label: 'Phone',
+      field_type: 'phone',
+      is_required: false,
+      options: null,
+      sort_order: -2,
+      created_at: ticket.created_at,
+      consent_flag: null,
+      visibility: 'public',
+    },
+    {
+      id: 'base-email',
+      service_id: ticket.service_id,
+      field_name: 'email',
+      field_label: 'Email',
+      field_type: 'email',
+      is_required: false,
+      options: null,
+      sort_order: -1,
+      created_at: ticket.created_at,
+      consent_flag: null,
+      visibility: 'public',
+    },
+  ];
 
   const fetchFields = useCallback(async () => {
     const supabase = createClient();
@@ -32,10 +76,18 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       .order('sort_order', { ascending: true });
 
     if (data) {
-      setFields(data);
+      const visibleFields = filterVisibleIntakeFields(data, 'public');
+      const mergedFields = [
+        ...baseContactFields,
+        ...visibleFields.filter(
+          (field) =>
+            !baseContactFields.some((baseField) => baseField.field_name === field.field_name)
+        ),
+      ];
+      setFields(mergedFields);
       // Initialize with existing customer data
       const initial: Record<string, string | boolean> = {};
-      data.forEach((field) => {
+      mergedFields.forEach((field) => {
         initial[field.field_name] = customerData[field.field_name] ??
           (field.field_type === 'checkbox' ? false : '');
       });

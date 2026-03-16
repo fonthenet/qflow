@@ -95,14 +95,14 @@ export function ServicesClient({
         <div>
           <h1 className="text-2xl font-bold text-foreground">Services</h1>
           <p className="text-sm text-muted-foreground">
-            Manage the services offered by each department.
+            Set up the visit types and services customers can choose.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Service
+          New Service
         </button>
       </div>
 
@@ -144,7 +144,7 @@ export function ServicesClient({
             {services.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  No services found.
+                  No services yet. Add a service so customers know what they can request.
                 </td>
               </tr>
             )}
@@ -269,7 +269,7 @@ export function ServicesClient({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-foreground">
-                    Est. Time (min)
+                    Estimated time (min)
                   </label>
                   <input
                     name="estimated_service_time"

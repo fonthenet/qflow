@@ -20,25 +20,33 @@ import {
   MapPinned,
 } from 'lucide-react';
 import { useRealtimeQueue } from '@/lib/hooks/use-realtime-queue';
+import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import {
   callNextTicket,
+  callSpecificTicket,
   startServing,
   markServed,
   markNoShow,
   transferTicket,
   recallTicket,
   buzzTicket,
+  callBackTicketToDesk,
   resetTicketToQueue,
+  assignRestaurantTable,
+  clearRestaurantTable,
 } from '@/lib/actions/ticket-actions';
 import { CustomerDataCard } from '@/components/desk/customer-data-card';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 import type { Database } from '@/lib/supabase/database.types';
 import type { CustomerDataScope } from '@/lib/privacy';
+import type { QueueData } from '@/lib/hooks/use-realtime-queue';
+import type { IndustryVertical, TemplateVocabulary } from '@queueflow/shared';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type Department = Database['public']['Tables']['departments']['Row'];
 type Service = Database['public']['Tables']['services']['Row'];
 type IntakeField = Database['public']['Tables']['intake_form_fields']['Row'];
+type RestaurantTable = Database['public']['Tables']['restaurant_tables']['Row'];
 
 interface DeskPanelProps {
   desk: {
@@ -60,6 +68,16 @@ interface DeskPanelProps {
   currentTicketFields?: IntakeField[];
   customerDataScope?: CustomerDataScope;
   initialCurrentTicket?: Ticket | null;
+  restaurantTables?: RestaurantTable[];
+  platformContext?: {
+    vertical?: IndustryVertical;
+    vocabulary?: TemplateVocabulary;
+    officeSettings?: Record<string, unknown>;
+  };
+  sandbox?: {
+    enabled: boolean;
+    initialQueue: QueueData;
+  };
 }
 
 type ToastType = 'success' | 'error' | 'info';
@@ -68,6 +86,70 @@ interface Toast {
   id: number;
   message: string;
   type: ToastType;
+}
+
+interface RestaurantTablePreset {
+  code: string;
+  label: string;
+  zone?: string;
+  capacity?: number;
+  minPartySize?: number;
+  maxPartySize?: number;
+  reservable?: boolean;
+}
+
+interface RestaurantServiceArea {
+  id: string;
+  label: string;
+  type?: string;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function toTitleCase(value: string) {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function normalizeRestaurantLabel(value: string | null) {
+  if (!value) return null;
+  return value.replace(/^table\b/i, 'Party').replace(/^party of\b/i, 'Party of');
+}
+
+function mergeCustomerData(
+  customerData: Ticket['customer_data'],
+  patch: Record<string, unknown>
+) {
+  const base =
+    customerData && typeof customerData === 'object' && !Array.isArray(customerData)
+      ? (customerData as Record<string, unknown>)
+      : {};
+  return { ...base, ...patch };
+}
+
+function stripAssignedTable(customerData: Ticket['customer_data']) {
+  const base =
+    customerData && typeof customerData === 'object' && !Array.isArray(customerData)
+      ? { ...(customerData as Record<string, unknown>) }
+      : {};
+  delete base.assigned_table_code;
+  delete base.assigned_table_label;
+  return base;
 }
 
 function useServiceTimer(startTime: string | null) {
@@ -97,8 +179,6 @@ function useServiceTimer(startTime: string | null) {
     seconds,
   };
 }
-
-const CALL_WAIT_SECONDS = 60;
 
 function useCallCountdown(calledAt: string | null) {
   const [remaining, setRemaining] = useState(CALL_WAIT_SECONDS);
@@ -131,26 +211,93 @@ export function DeskPanel({
   currentTicketFields = [],
   customerDataScope = 'staff',
   initialCurrentTicket,
+  restaurantTables = [],
+  platformContext,
+  sandbox,
 }: DeskPanelProps) {
+  const sandboxMode = Boolean(sandbox?.enabled);
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(
     initialCurrentTicket ?? null
   );
+  const [sandboxQueue, setSandboxQueue] = useState<QueueData>(
+    sandbox?.initialQueue ?? {
+      waiting: [],
+      called: [],
+      serving: [],
+      recentlyServed: [],
+      cancelled: [],
+    }
+  );
+  const [tableState, setTableState] = useState<RestaurantTable[]>(restaurantTables);
   const [lastAction, setLastAction] = useState<{
     ticketNumber: string;
     action: 'served' | 'no_show' | 'cancelled' | 'transferred' | 'reset';
     time: Date;
   } | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [showTableAssignmentPanel, setShowTableAssignmentPanel] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState('');
   const [transferServiceId, setTransferServiceId] = useState('');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
 
-  const { queue, isLoading } = useRealtimeQueue({
+  const { queue: liveQueue, isLoading } = useRealtimeQueue({
     officeId: desk.office_id,
     departmentId: desk.department_id,
+    disabled: sandboxMode,
+    initialQueue: sandbox?.initialQueue,
   });
+  const queue = sandboxMode ? sandboxQueue : liveQueue;
+  useEffect(() => {
+    setTableState(restaurantTables);
+  }, [restaurantTables]);
+  useEffect(() => {
+    setShowTableAssignmentPanel(false);
+  }, [currentTicket?.id]);
+  const vocabulary = platformContext?.vocabulary;
+  const officeSettings = platformContext?.officeSettings ?? {};
+  const restaurantTablePresets = (
+    Array.isArray(officeSettings.platform_table_presets)
+      ? officeSettings.platform_table_presets
+      : []
+  )
+    .map((entry) => asRecord(entry))
+    .map(
+      (entry) =>
+        ({
+          code: asString(entry.code) ?? '',
+          label: asString(entry.label) ?? asString(entry.code) ?? 'Table',
+          zone: asString(entry.zone) ?? undefined,
+          capacity: asNumber(entry.capacity) ?? undefined,
+          minPartySize: asNumber(entry.minPartySize) ?? undefined,
+          maxPartySize: asNumber(entry.maxPartySize) ?? undefined,
+          reservable: asBoolean(entry.reservable) ?? undefined,
+        }) satisfies RestaurantTablePreset
+    )
+    .filter((entry) => entry.code.length > 0);
+  const restaurantAreas = (
+    Array.isArray(officeSettings.platform_service_areas)
+      ? officeSettings.platform_service_areas
+      : []
+  )
+    .map((entry) => asRecord(entry))
+    .map(
+      (entry) =>
+        ({
+          id: asString(entry.id) ?? '',
+          label: asString(entry.label) ?? 'Area',
+          type: asString(entry.type) ?? undefined,
+        }) satisfies RestaurantServiceArea
+    )
+    .filter((entry) => entry.id.length > 0);
+  const isRestaurantMode =
+    platformContext?.vertical === 'restaurant' || restaurantTablePresets.length > 0;
+  const customerLabel = vocabulary?.customerLabel ?? 'Customer';
+  const queueLabel = vocabulary?.queueLabel ?? 'Queue';
+  const serviceLabel = vocabulary?.serviceLabel ?? 'Service';
+  const deskLabel = vocabulary?.deskLabel ?? 'Desk';
+  const bookingLabel = vocabulary?.bookingLabel ?? 'Booking';
 
   const timer = useServiceTimer(
     currentTicket?.status === 'serving' ? currentTicket.serving_started_at : null
@@ -216,6 +363,29 @@ export function DeskPanel({
   }, []);
 
   const handleCallNext = () => {
+    if (sandboxMode) {
+      const nextTicket = queue.waiting[0];
+      if (!nextTicket) return;
+      const calledTicket = {
+        ...nextTicket,
+        status: 'called' as const,
+        called_at: new Date().toISOString(),
+        desk_id: desk.id,
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        waiting: current.waiting.filter((ticket) => ticket.id !== nextTicket.id),
+        called: [calledTicket, ...current.called.filter((ticket) => ticket.id !== nextTicket.id)],
+      }));
+      setCurrentTicket(calledTicket);
+      addToast(
+        isRestaurantMode
+          ? `Notified party ${calledTicket.ticket_number}`
+          : `Called ticket ${calledTicket.ticket_number}`,
+        'info'
+      );
+      return;
+    }
     startTransition(async () => {
       const result = await callNextTicket(desk.id);
       if (result.error) {
@@ -223,12 +393,37 @@ export function DeskPanel({
         return;
       }
       setCurrentTicket(result.data);
-      addToast(`Called ticket ${result.data.ticket_number}`, 'info');
+      addToast(
+        isRestaurantMode
+          ? `Notified party ${result.data.ticket_number}`
+          : `Called ticket ${result.data.ticket_number}`,
+        'info'
+      );
     });
   };
 
   const handleStartServing = () => {
     if (!currentTicket) return;
+    if (isRestaurantMode && currentTicket.status === 'called' && !currentAssignedTableCode) {
+      setShowTableAssignmentPanel(true);
+      addToast('Choose a table to seat this party.', 'info');
+      return;
+    }
+    if (sandboxMode) {
+      const servingTicket = {
+        ...currentTicket,
+        status: 'serving' as const,
+        serving_started_at: new Date().toISOString(),
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
+        serving: [servingTicket, ...current.serving.filter((ticket) => ticket.id !== currentTicket.id)],
+      }));
+      setCurrentTicket(servingTicket);
+      addToast(isRestaurantMode ? 'Party is now being seated' : 'Now serving customer');
+      return;
+    }
     startTransition(async () => {
       const result = await startServing(currentTicket.id);
       if (result.error) {
@@ -236,12 +431,36 @@ export function DeskPanel({
         return;
       }
       setCurrentTicket(result.data);
-      addToast('Now serving customer');
+      addToast(isRestaurantMode ? 'Party is now being seated' : 'Now serving customer');
     });
   };
 
   const handleMarkServed = () => {
     if (!currentTicket) return;
+    if (sandboxMode) {
+      const servedTicket = {
+        ...currentTicket,
+        status: 'served' as const,
+        completed_at: new Date().toISOString(),
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
+        serving: current.serving.filter((ticket) => ticket.id !== currentTicket.id),
+        recentlyServed: [servedTicket, ...current.recentlyServed].slice(0, 5),
+      }));
+      setTableState((current) =>
+        current.map((table) =>
+          table.current_ticket_id === currentTicket.id
+            ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
+            : table
+        )
+      );
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'served', time: new Date() });
+      setCurrentTicket(null);
+      addToast(isRestaurantMode ? 'Party closed and table finished' : 'Customer marked as served', 'success');
+      return;
+    }
     startTransition(async () => {
       const result = await markServed(currentTicket.id);
       if (result.error) {
@@ -250,12 +469,30 @@ export function DeskPanel({
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'served', time: new Date() });
       setCurrentTicket(null);
-      addToast('Customer marked as served', 'success');
+      addToast(isRestaurantMode ? 'Party closed and table finished' : 'Customer marked as served', 'success');
     });
   };
 
   const handleNoShow = () => {
     if (!currentTicket) return;
+    if (sandboxMode) {
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
+        serving: current.serving.filter((ticket) => ticket.id !== currentTicket.id),
+      }));
+      setTableState((current) =>
+        current.map((table) =>
+          table.current_ticket_id === currentTicket.id
+            ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
+            : table
+        )
+      );
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'no_show', time: new Date() });
+      setCurrentTicket(null);
+      addToast(isRestaurantMode ? 'Party marked as no-show' : 'Ticket marked as no-show', 'info');
+      return;
+    }
     startTransition(async () => {
       const result = await markNoShow(currentTicket.id);
       if (result.error) {
@@ -264,12 +501,24 @@ export function DeskPanel({
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'no_show', time: new Date() });
       setCurrentTicket(null);
-      addToast('Ticket marked as no-show', 'info');
+      addToast(isRestaurantMode ? 'Party marked as no-show' : 'Ticket marked as no-show', 'info');
     });
   };
 
   const handleRecall = () => {
     if (!currentTicket) return;
+    if (sandboxMode) {
+      const recalledTicket = { ...currentTicket, called_at: new Date().toISOString() };
+      setCurrentTicket(recalledTicket);
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.map((ticket) =>
+          ticket.id === currentTicket.id ? recalledTicket : ticket
+        ),
+      }));
+      addToast(isRestaurantMode ? 'Party notified again — timer reset' : 'Recall alert sent — timer reset', 'info');
+      return;
+    }
     startTransition(async () => {
       const result = await recallTicket(currentTicket.id);
       if (result.error) {
@@ -283,8 +532,12 @@ export function DeskPanel({
       );
       addToast(
         smsSent
-          ? 'Recall alert sent — timer reset and text backup delivered'
-          : 'Recall alert sent — timer reset',
+          ? isRestaurantMode
+            ? 'Party notified again — timer reset and text backup delivered'
+            : 'Recall alert sent — timer reset and text backup delivered'
+          : isRestaurantMode
+            ? 'Party notified again — timer reset'
+            : 'Recall alert sent — timer reset',
         'info'
       );
     });
@@ -292,6 +545,10 @@ export function DeskPanel({
 
   const handleBuzz = () => {
     if (!currentTicket) return;
+    if (sandboxMode) {
+      addToast(isRestaurantMode ? 'Ready alert sent to party' : 'Buzz alert sent', 'info');
+      return;
+    }
     startTransition(async () => {
       const result = await buzzTicket(currentTicket.id);
       if (result.error) {
@@ -301,8 +558,12 @@ export function DeskPanel({
       const smsSent = 'smsSent' in result && result.smsSent === true;
       addToast(
         smsSent
-          ? 'Buzz alert sent by push + text'
-          : 'Buzz alert sent',
+          ? isRestaurantMode
+            ? 'Ready alert sent by push + text'
+            : 'Buzz alert sent by push + text'
+          : isRestaurantMode
+            ? 'Ready alert sent'
+            : 'Buzz alert sent',
         'info'
       );
     });
@@ -310,6 +571,32 @@ export function DeskPanel({
 
   const handleResetToQueue = () => {
     if (!currentTicket) return;
+    if (sandboxMode) {
+      const resetTicket = {
+        ...currentTicket,
+        status: 'waiting' as const,
+        called_at: null,
+        serving_started_at: null,
+        desk_id: null,
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
+        serving: current.serving.filter((ticket) => ticket.id !== currentTicket.id),
+        waiting: [...current.waiting, resetTicket],
+      }));
+      setTableState((current) =>
+        current.map((table) =>
+          table.current_ticket_id === currentTicket.id
+            ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
+            : table
+        )
+      );
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
+      setCurrentTicket(null);
+      addToast(isRestaurantMode ? 'Party sent back to waitlist' : 'Ticket reset to queue', 'info');
+      return;
+    }
     startTransition(async () => {
       const result = await resetTicketToQueue(currentTicket.id);
       if (result.error) {
@@ -318,12 +605,46 @@ export function DeskPanel({
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
       setCurrentTicket(null);
-      addToast('Ticket reset to queue', 'info');
+      addToast(isRestaurantMode ? 'Party sent back to waitlist' : 'Ticket reset to queue', 'info');
     });
   };
 
   const handleTransfer = () => {
     if (!currentTicket || !transferDeptId || !transferServiceId) return;
+    if (sandboxMode) {
+      const transferredTicket = {
+        ...currentTicket,
+        status: 'waiting' as const,
+        department_id: transferDeptId,
+        service_id: transferServiceId,
+        desk_id: null,
+        called_at: null,
+        serving_started_at: null,
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
+        serving: current.serving.filter((ticket) => ticket.id !== currentTicket.id),
+        waiting: [...current.waiting, transferredTicket],
+      }));
+      setTableState((current) =>
+        current.map((table) =>
+          table.current_ticket_id === currentTicket.id
+            ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
+            : table
+        )
+      );
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'transferred', time: new Date() });
+      setCurrentTicket(null);
+      setShowTransferDialog(false);
+      setTransferDeptId('');
+      setTransferServiceId('');
+      addToast(
+        `${isRestaurantMode ? 'Moved to' : 'Transferred to'} ${departments.find((d) => d.id === transferDeptId)?.name ?? 'department'}`,
+        'success'
+      );
+      return;
+    }
     startTransition(async () => {
       const result = await transferTicket(
         currentTicket.id,
@@ -340,9 +661,269 @@ export function DeskPanel({
       setTransferDeptId('');
       setTransferServiceId('');
       addToast(
-        `Transferred to ${departments.find((d) => d.id === transferDeptId)?.name ?? 'department'}`,
+        `${isRestaurantMode ? 'Moved to' : 'Transferred to'} ${departments.find((d) => d.id === transferDeptId)?.name ?? 'department'}`,
         'success'
       );
+    });
+  };
+
+  const handleBuzzSpecificTicket = (ticket: Ticket) => {
+    if (sandboxMode) {
+      const now = new Date().toISOString();
+      const calledTicket = {
+        ...ticket,
+        status: 'called' as const,
+        called_at: now,
+        serving_started_at: null,
+        recall_count: (ticket.recall_count ?? 0) + 1,
+      };
+      setCurrentTicket(calledTicket);
+      setShowTableAssignmentPanel(false);
+      setSandboxQueue((current) => ({
+        ...current,
+        called: [calledTicket, ...current.called.filter((entry) => entry.id !== ticket.id)],
+        serving: current.serving.filter((entry) => entry.id !== ticket.id),
+      }));
+      addToast(
+        isRestaurantMode
+          ? `Brought ${getTicketCustomerName(ticket) ?? 'party'} back to the front host card`
+          : 'Buzz alert sent',
+        'info'
+      );
+      return;
+    }
+    startTransition(async () => {
+      const result = await callBackTicketToDesk(ticket.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      setCurrentTicket(result.data);
+      setShowTableAssignmentPanel(false);
+      const smsSent = 'smsSent' in result && result.smsSent === true;
+      addToast(
+        smsSent
+          ? isRestaurantMode
+            ? `Brought ${getTicketCustomerName(result.data) ?? 'party'} back to the front host card by push + text`
+            : 'Buzz alert sent by push + text'
+          : isRestaurantMode
+            ? `Brought ${getTicketCustomerName(result.data) ?? 'party'} back to the front host card`
+            : 'Buzz alert sent',
+        'info'
+      );
+    });
+  };
+
+  const handleResumeTicket = (ticket: Ticket) => {
+    setCurrentTicket(ticket);
+    setShowTableAssignmentPanel(false);
+    addToast(
+      isRestaurantMode
+        ? `Resumed ${getTicketCustomerName(ticket) ?? 'party'} on the host stand`
+        : `Resumed ticket ${ticket.ticket_number}`,
+      'info'
+    );
+  };
+
+  const handleCallWaitingTicket = (ticket: Ticket) => {
+    if (sandboxMode) {
+      const calledTicket = {
+        ...ticket,
+        status: 'called' as const,
+        called_at: new Date().toISOString(),
+        desk_id: desk.id,
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        waiting: current.waiting.filter((entry) => entry.id !== ticket.id),
+        called: [calledTicket, ...current.called.filter((entry) => entry.id !== ticket.id)],
+      }));
+      setCurrentTicket((current) =>
+        current?.status === 'serving' ? current : calledTicket
+      );
+      addToast(
+        isRestaurantMode
+          ? `Notified party ${calledTicket.ticket_number}`
+          : `Called ticket ${calledTicket.ticket_number}`,
+        'info'
+      );
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await callSpecificTicket(desk.id, ticket.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      if (!currentTicket || currentTicket.status !== 'serving') {
+        setCurrentTicket(result.data);
+      }
+      addToast(
+        isRestaurantMode
+          ? `Notified party ${result.data.ticket_number}`
+          : `Called ticket ${result.data.ticket_number}`,
+        'info'
+      );
+    });
+  };
+
+  const handleAssignRestaurantTable = (table: RestaurantTable) => {
+    if (!currentTicket) return;
+
+    if (sandboxMode) {
+      const now = new Date().toISOString();
+      const updatedTicket = {
+        ...currentTicket,
+        status: currentTicket.status === 'called' ? ('serving' as const) : currentTicket.status,
+        serving_started_at:
+          currentTicket.status === 'called'
+            ? now
+            : currentTicket.serving_started_at,
+        customer_data: mergeCustomerData(currentTicket.customer_data, {
+          assigned_table_code: table.code,
+          assigned_table_label: table.label,
+        }),
+      } as Ticket;
+      setTableState((current) =>
+        current.map((entry) =>
+          entry.id === table.id
+            ? {
+                ...entry,
+                status: 'occupied',
+                current_ticket_id: currentTicket.id,
+                assigned_at: now,
+              }
+            : entry.current_ticket_id === currentTicket.id
+              ? {
+                  ...entry,
+                  status: 'available',
+                  current_ticket_id: null,
+                  assigned_at: null,
+                }
+              : entry
+        )
+      );
+      setCurrentTicket(updatedTicket);
+      setSandboxQueue((current) => {
+        const nextCalled =
+          currentTicket.status === 'called'
+            ? current.called.filter((ticket) => ticket.id !== currentTicket.id)
+            : current.called.map((ticket) =>
+                ticket.id === currentTicket.id ? updatedTicket : ticket
+              );
+        const nextServing =
+          currentTicket.status === 'called'
+            ? [updatedTicket, ...current.serving.filter((ticket) => ticket.id !== currentTicket.id)]
+            : current.serving.map((ticket) =>
+                ticket.id === currentTicket.id ? updatedTicket : ticket
+              );
+
+        return {
+          ...current,
+          called: nextCalled,
+          serving: nextServing,
+        };
+      });
+      setShowTableAssignmentPanel(false);
+      addToast(`Assigned ${table.code} to ${getTicketCustomerName(updatedTicket) ?? 'party'}`);
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await assignRestaurantTable(currentTicket.id, table.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      if (!result.data) {
+        addToast('Table assignment did not return updated data', 'error');
+        return;
+      }
+      setCurrentTicket(result.data.ticket);
+      setTableState((current) =>
+        current.map((entry) =>
+          entry.id === result.data.table.id
+            ? result.data.table
+            : entry.current_ticket_id === result.data.ticket.id
+              ? {
+                  ...entry,
+                  status: 'available',
+                  current_ticket_id: null,
+                  assigned_at: null,
+                }
+              : entry
+        )
+      );
+      setShowTableAssignmentPanel(false);
+      addToast(`Assigned ${result.data.table.code} to ${getTicketCustomerName(result.data.ticket) ?? 'party'}`);
+    });
+  };
+
+  const handleClearRestaurantTable = (table: RestaurantTable) => {
+    if (sandboxMode) {
+      const ticketId = table.current_ticket_id;
+      setTableState((current) =>
+        current.map((entry) =>
+          entry.id === table.id
+            ? { ...entry, status: 'available', current_ticket_id: null, assigned_at: null }
+            : entry
+        )
+      );
+      if (ticketId) {
+        setSandboxQueue((current) => ({
+          ...current,
+          called: current.called.map((ticket) =>
+            ticket.id === ticketId
+              ? ({
+                  ...ticket,
+                  customer_data: stripAssignedTable(ticket.customer_data),
+                } as Ticket)
+              : ticket
+          ),
+          serving: current.serving.map((ticket) =>
+            ticket.id === ticketId
+              ? ({
+                  ...ticket,
+                  customer_data: stripAssignedTable(ticket.customer_data),
+                } as Ticket)
+              : ticket
+          ),
+        }));
+        setCurrentTicket((current) =>
+          current?.id === ticketId
+            ? ({
+                ...current,
+                customer_data: stripAssignedTable(current.customer_data),
+              } as Ticket)
+            : current
+        );
+      }
+      addToast(`Cleared ${table.code}`, 'success');
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await clearRestaurantTable(table.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      if (!result.data) {
+        addToast('Table clear did not return updated data', 'error');
+        return;
+      }
+      setTableState((current) =>
+        current.map((entry) => (entry.id === result.data.table.id ? result.data.table : entry))
+      );
+      setCurrentTicket((current) =>
+        current?.id === (result.data?.ticket as { id?: string } | null)?.id
+          ? ({
+              ...(result.data.ticket as Ticket),
+            } as Ticket)
+          : current
+      );
+      addToast(`Cleared ${result.data.table.code}`, 'success');
     });
   };
 
@@ -379,16 +960,80 @@ export function DeskPanel({
       return null;
     }
 
-    const candidate = (ticket.customer_data as Record<string, unknown>).name;
+    const data = ticket.customer_data as Record<string, unknown>;
+    const candidate =
+      asString(data.party_name) ??
+      asString(data.name) ??
+      asString(data.full_name);
     return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : null;
+  }, []);
+
+  const getRestaurantPartySize = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+
+    const data = ticket.customer_data as Record<string, unknown>;
+    const fromData = asNumber(data.party_size);
+    if (fromData) return fromData;
+
+    const serviceName = getTicketServiceName(ticket);
+    const match = serviceName.match(/(\d+)(?:\s*-\s*(\d+)|\+)?/);
+    if (!match) return null;
+    const maxValue = match[2] ? Number(match[2]) : Number(match[1]);
+    return Number.isFinite(maxValue) ? maxValue : null;
+  }, [getTicketServiceName]);
+
+  const getRestaurantSeatingPreference = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+
+    const data = ticket.customer_data as Record<string, unknown>;
+    const rawPreference = asString(data.seating_preference);
+    if (!rawPreference) return null;
+    return toTitleCase(rawPreference.replace(/-/g, ' '));
+  }, []);
+
+  const getReservationReference = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+    return asString((ticket.customer_data as Record<string, unknown>).reservation_reference);
+  }, []);
+
+  const getAssignedTableCode = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+    return asString((ticket.customer_data as Record<string, unknown>).assigned_table_code);
+  }, []);
+
+  const getAssignedTableLabel = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+    return asString((ticket.customer_data as Record<string, unknown>).assigned_table_label);
+  }, []);
+
+  const getRestaurantNeeds = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return [] as string[];
+    }
+
+    const data = ticket.customer_data as Record<string, unknown>;
+    const items: string[] = [];
+    if (asBoolean(data.accessibility_seating)) items.push('Accessible seating');
+    if (asBoolean(data.high_chair)) items.push('High chair');
+    return items;
   }, []);
 
   const getTicketSource = useCallback((ticket: Ticket | null | undefined) => {
     if (!ticket) return 'Unknown';
-    if (ticket.appointment_id) return 'Appointment';
-    if (ticket.is_remote) return 'Remote join';
-    return 'Walk-in';
-  }, []);
+    if (ticket.appointment_id) return isRestaurantMode ? bookingLabel : 'Appointment';
+    if (ticket.is_remote) return isRestaurantMode ? 'Remote waitlist' : 'Remote join';
+    return isRestaurantMode ? 'Walk-in party' : 'Walk-in';
+  }, [bookingLabel, isRestaurantMode]);
 
   const formatAbsoluteTime = useCallback((value: string | null | undefined) => {
     if (!value) return '--';
@@ -417,7 +1062,92 @@ export function DeskPanel({
     const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ticket.created_at).getTime()) / 60000));
     return Math.max(longest, elapsed);
   }, 0);
-  const queueStateLabel = isServing ? 'Serving now' : isCalled ? 'Waiting for customer' : 'Ready for next ticket';
+  const queueStateLabel = isRestaurantMode
+    ? isServing
+      ? 'Party seated now'
+      : isCalled
+        ? 'Waiting for party to arrive'
+        : 'Ready to notify the next party'
+    : isServing
+      ? 'Serving now'
+      : isCalled
+        ? 'Waiting for customer'
+        : 'Ready for next ticket';
+  const currentPartySize = getRestaurantPartySize(currentTicket);
+  const currentPreference = getRestaurantSeatingPreference(currentTicket);
+  const currentNeeds = getRestaurantNeeds(currentTicket);
+  const currentReservationReference = getReservationReference(currentTicket);
+  const currentAssignedTableCode = getAssignedTableCode(currentTicket);
+  const currentAssignedTableLabel = getAssignedTableLabel(currentTicket);
+  const currentServiceName = normalizeRestaurantLabel(getTicketServiceName(currentTicket)) ?? getTicketServiceName(currentTicket);
+  const getSuggestedTablesForTicket = useCallback(
+    (ticket: Ticket | null | undefined) => {
+      if (!isRestaurantMode || !ticket) return [] as RestaurantTablePreset[];
+      const partySize = getRestaurantPartySize(ticket) ?? 2;
+      const preference = getRestaurantSeatingPreference(ticket);
+      return restaurantTablePresets
+        .filter((table) => {
+          const meetsSize =
+            (!table.minPartySize || partySize >= table.minPartySize) &&
+            (!table.maxPartySize || partySize <= table.maxPartySize);
+          const preferenceMatches =
+            !preference ||
+            preference === 'First available' ||
+            !table.zone ||
+            restaurantAreas.find((area) => area.id === table.zone)?.label.toLowerCase().includes(preference.toLowerCase()) ||
+            table.zone.toLowerCase().includes(preference.toLowerCase());
+          return meetsSize && preferenceMatches;
+        })
+        .slice(0, 4);
+    },
+    [getRestaurantPartySize, getRestaurantSeatingPreference, isRestaurantMode, restaurantAreas, restaurantTablePresets]
+  );
+  const currentAssignedRestaurantTable =
+    tableState.find((table) => table.current_ticket_id === currentTicket?.id) ??
+    tableState.find((table) => table.code === currentAssignedTableCode) ??
+    null;
+  const suggestedTables = getSuggestedTablesForTicket(currentTicket);
+  const nextSuggestedTable = suggestedTables[0] ?? null;
+  const currentTableCardLabel = currentAssignedRestaurantTable
+    ? 'Assigned table'
+    : isServing
+      ? 'Seat this party at'
+      : 'Next table';
+  const availableRestaurantTables = tableState.filter(
+    (table) => table.status === 'available' && table.current_ticket_id == null
+  );
+  const occupiedRestaurantTables = tableState.filter(
+    (table) => table.status !== 'available' && table.current_ticket_id
+  );
+  const getTicketById = useCallback(
+    (ticketId: string | null | undefined) => {
+      if (!ticketId) return null;
+      const allTickets = [
+        ...(currentTicket ? [currentTicket] : []),
+        ...queue.waiting,
+        ...queue.called,
+        ...queue.serving,
+        ...queue.recentlyServed,
+        ...queue.cancelled,
+      ];
+      return allTickets.find((ticket) => ticket.id === ticketId) ?? null;
+    },
+    [currentTicket, queue]
+  );
+  const getRestaurantTableStatusTone = useCallback((status: string | null | undefined) => {
+    switch (status) {
+      case 'occupied':
+        return 'bg-rose-100 text-rose-700 border-rose-200';
+      case 'held':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'cleaning':
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'reserved_soon':
+        return 'bg-violet-100 text-violet-700 border-violet-200';
+      default:
+        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    }
+  }, []);
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -436,7 +1166,7 @@ export function DeskPanel({
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2">
             <Users className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold text-primary">
-              {queue.waiting.length} waiting
+              {queue.waiting.length} {isRestaurantMode ? 'parties waiting' : 'waiting'}
             </span>
           </div>
           <div className="hidden items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground md:flex">
@@ -458,7 +1188,7 @@ export function DeskPanel({
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
-        {/* Left Column: Current Ticket + Customer Data */}
+        {/* Left Column: Current Work Item */}
         <div className="lg:col-span-2 flex flex-col gap-5">
           {/* Current Ticket Card */}
           <div
@@ -517,12 +1247,16 @@ export function DeskPanel({
                       <Ticket className="h-10 w-10 text-muted-foreground" />
                     </div>
                     <h2 className="text-xl font-semibold text-foreground mb-1">
-                      No Active Ticket
+                      {isRestaurantMode ? 'No Active Party' : 'No Active Ticket'}
                     </h2>
                     <p className="text-sm text-muted-foreground mb-6">
                       {queue.waiting.length > 0
-                        ? `${queue.waiting.length} ticket${queue.waiting.length > 1 ? 's' : ''} waiting in queue`
-                        : 'Queue is empty'}
+                        ? isRestaurantMode
+                          ? `${queue.waiting.length} party${queue.waiting.length > 1 ? 'ies' : ''} waiting to be seated`
+                          : `${queue.waiting.length} ticket${queue.waiting.length > 1 ? 's' : ''} waiting in queue`
+                        : isRestaurantMode
+                          ? 'Waitlist is empty'
+                          : 'Queue is empty'}
                     </p>
                   </>
                 )}
@@ -536,7 +1270,13 @@ export function DeskPanel({
                   ) : (
                     <PhoneForwarded className="h-6 w-6" />
                   )}
-                  {queue.waiting.length > 0 ? `Call Next (${queue.waiting.length})` : 'Call Next'}
+                  {queue.waiting.length > 0
+                    ? isRestaurantMode
+                      ? `Notify Next Party (${queue.waiting.length})`
+                      : `Call Next (${queue.waiting.length})`
+                    : isRestaurantMode
+                      ? 'Notify Next Party'
+                      : 'Call Next'}
                 </button>
               </div>
             ) : (
@@ -556,7 +1296,7 @@ export function DeskPanel({
                           isServing ? 'bg-success' : 'bg-warning'
                         }`}
                       />
-                      {isServing ? 'Serving' : 'Called'}
+                      {isRestaurantMode ? (isServing ? 'Seated' : 'Notified') : isServing ? 'Serving' : 'Called'}
                     </span>
                     <PriorityBadge priorityCategory={getPriorityCategory(currentTicket)} />
                   </div>
@@ -606,38 +1346,256 @@ export function DeskPanel({
                 {/* Ticket Number - Large and prominent */}
                 <div className="text-center mb-5">
                   <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                    Ticket Number
+                    {isRestaurantMode ? `${customerLabel} ready to seat` : 'Ticket Number'}
                   </p>
                   <p className="text-6xl font-black text-foreground tracking-tight leading-none">
-                    {currentTicket.ticket_number}
+                    {isRestaurantMode
+                      ? getTicketCustomerName(currentTicket) ?? currentTicket.ticket_number
+                      : currentTicket.ticket_number}
                   </p>
+                  {isRestaurantMode && (
+                    <p className="mt-2 text-base font-semibold text-muted-foreground">
+                      Ref {currentTicket.ticket_number}
+                    </p>
+                  )}
                 </div>
 
                 <div className="mb-5 grid gap-3 md:grid-cols-4">
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Service</p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketServiceName(currentTicket)}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source</p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketSource(currentTicket)}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Checked in</p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{formatAbsoluteTime(currentTicket.checked_in_at)}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {isRestaurantMode ? serviceLabel : 'Service'}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {isRestaurantMode && currentPartySize ? `Party of ${currentPartySize}` : currentServiceName}
+                    </p>
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {isServing ? 'Started serving' : 'Called at'}
+                      {isRestaurantMode ? 'Arrival' : 'Source'}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketSource(currentTicket)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {isRestaurantMode ? currentTableCardLabel : 'Checked in'}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
-                      {isServing ? formatAbsoluteTime(currentTicket.serving_started_at) : formatAbsoluteTime(currentTicket.called_at)}
+                      {isRestaurantMode
+                        ? currentAssignedRestaurantTable
+                          ? `${currentAssignedRestaurantTable.code} · ${currentAssignedRestaurantTable.label}`
+                          : nextSuggestedTable
+                            ? `${nextSuggestedTable.code} · ${nextSuggestedTable.label}`
+                            : 'Choose table'
+                        : formatAbsoluteTime(currentTicket.checked_in_at)}
+                    </p>
+                    {isRestaurantMode && currentPreference && (
+                      <p className="mt-1 text-xs text-muted-foreground">{currentPreference}</p>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {isRestaurantMode
+                        ? currentReservationReference
+                          ? 'Reservation ref'
+                          : isServing
+                            ? 'Seated at'
+                            : 'Notified at'
+                        : isServing
+                          ? 'Started serving'
+                          : 'Called at'}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {isRestaurantMode && currentReservationReference
+                        ? currentReservationReference
+                        : isServing
+                          ? formatAbsoluteTime(currentTicket.serving_started_at)
+                          : formatAbsoluteTime(currentTicket.called_at)}
                     </p>
                   </div>
                 </div>
 
+                {isRestaurantMode && (
+                  <div className="mb-5 grid gap-3 lg:grid-cols-[1.35fr_0.95fr]">
+                    <div className="rounded-xl border border-border bg-card">
+                      <div className="border-b border-border px-4 py-3">
+                        <h3 className="text-sm font-semibold text-foreground">Party details</h3>
+                      </div>
+                      <div className="grid gap-3 p-4 md:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{customerLabel}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{getTicketCustomerName(currentTicket) ?? 'Walk-in party'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Party size</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{currentPartySize ? `${currentPartySize} guests` : 'Not collected'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Checked in</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{formatAbsoluteTime(currentTicket.checked_in_at)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Assigned table</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">
+                            {currentAssignedRestaurantTable
+                              ? `${currentAssignedRestaurantTable.code} · ${currentAssignedRestaurantTable.label}`
+                              : currentAssignedTableCode
+                                ? `${currentAssignedTableCode} · ${currentAssignedTableLabel ?? 'Assigned'}`
+                              : 'Not assigned yet'}
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Needs</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{currentNeeds.length > 0 ? currentNeeds.join(' · ') : 'No special seating needs'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card">
+                      <div className="border-b border-border px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-foreground">
+                              {currentAssignedRestaurantTable ? 'Change table' : 'Available tables'}
+                            </h3>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {currentAssignedRestaurantTable
+                                ? 'This party already has a table. Change it only if the host needs to move them.'
+                                : showTableAssignmentPanel
+                                  ? 'Pick a table to seat the current party.'
+                                  : 'Open seating options when you are ready to assign a table.'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowTableAssignmentPanel((current) => !current)}
+                            className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted"
+                          >
+                            {showTableAssignmentPanel
+                              ? 'Hide'
+                              : currentAssignedRestaurantTable
+                                ? 'Change table'
+                                : 'Choose table'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-2 p-4">
+                        {currentAssignedRestaurantTable && (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                                  Assigned table
+                                </p>
+                                <p className="mt-1 text-lg font-bold text-foreground">
+                                  {currentAssignedRestaurantTable.code}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {currentAssignedRestaurantTable.label}
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                  <span>
+                                    {restaurantAreas.find((area) => area.id === currentAssignedRestaurantTable.zone)?.label ??
+                                      (currentAssignedRestaurantTable.zone
+                                        ? toTitleCase(currentAssignedRestaurantTable.zone.replace(/-/g, ' '))
+                                        : 'Dining room')}
+                                  </span>
+                                  {currentAssignedRestaurantTable.capacity ? (
+                                    <span>Seats up to {currentAssignedRestaurantTable.capacity}</span>
+                                  ) : null}
+                                  {currentAssignedRestaurantTable.assigned_at ? (
+                                    <span>Selected {formatRelativeTime(currentAssignedRestaurantTable.assigned_at)}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleClearRestaurantTable(currentAssignedRestaurantTable)}
+                                disabled={isPending}
+                                className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-foreground hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                Unassign table
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {showTableAssignmentPanel && nextSuggestedTable && (
+                          <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Seat this party next at</p>
+                            <div className="mt-1 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-lg font-bold text-foreground">{nextSuggestedTable.code}</p>
+                                <p className="text-sm text-muted-foreground">{nextSuggestedTable.label}</p>
+                              </div>
+                              <span className="rounded-full bg-card px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm">
+                                {restaurantAreas.find((area) => area.id === nextSuggestedTable.zone)?.label ??
+                                  (nextSuggestedTable.zone ? toTitleCase(nextSuggestedTable.zone.replace(/-/g, ' ')) : 'Dining room')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        {showTableAssignmentPanel ? (
+                          availableRestaurantTables.length > 0 ? (
+                          availableRestaurantTables.map((table) => {
+                            const zoneLabel =
+                              restaurantAreas.find((area) => area.id === table.zone)?.label ??
+                              (table.zone ? toTitleCase(table.zone.replace(/-/g, ' ')) : 'Dining room');
+                            const isRecommended = suggestedTables.some(
+                              (suggested) => suggested.code === table.code
+                            );
+                            return (
+                              <div key={table.code} className={`rounded-xl border bg-background px-3 py-3 ${isRecommended ? 'border-primary/30' : 'border-border'}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-bold text-foreground">{table.label}</p>
+                                    <p className="text-xs text-muted-foreground">{zoneLabel} · Seats up to {table.capacity ?? table.max_party_size ?? 0}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {isRecommended && (
+                                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                        Best fit
+                                      </span>
+                                    )}
+                                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                                      {table.code}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between gap-3">
+                                  <span
+                                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getRestaurantTableStatusTone(table.status)}`}
+                                  >
+                                    {table.status === 'available' ? 'Available now' : toTitleCase(table.status ?? 'available')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAssignRestaurantTable(table)}
+                                    disabled={isPending}
+                                    className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                                  >
+                                    Assign
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                          ) : (
+                          <p className="text-sm text-muted-foreground">No available tables right now. Free up or turn a table before seating the next party.</p>
+                          )
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            {currentAssignedRestaurantTable ? (
+                              <>This party is already assigned to <span className="font-semibold text-foreground">{currentAssignedRestaurantTable.code}</span>. Use <span className="font-semibold text-foreground">Change table</span> only if you need to move them.</>
+                            ) : (
+                              <>Click <span className="font-semibold text-foreground">Choose table</span> when the host is ready to seat this party.</>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Customer Data */}
-                {currentTicket.customer_data ? (
+                {!isRestaurantMode && currentTicket.customer_data ? (
                   <CustomerDataCard
                     data={currentTicket.customer_data as Record<string, unknown> | null}
                     fields={currentTicketFields}
@@ -647,15 +1605,27 @@ export function DeskPanel({
                 ) : (
                   <div className="mb-5 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer</p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">{getTicketCustomerName(currentTicket) ?? 'No intake collected'}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Party' : 'Customer'}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {getTicketCustomerName(currentTicket) ?? (isRestaurantMode ? 'Walk-in party' : 'No intake collected')}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Department</p>
-                      <p className="mt-1 text-sm font-semibold text-foreground">{getTicketDepartmentName(currentTicket)}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Area' : 'Department'}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {isRestaurantMode
+                          ? currentPreference ?? getTicketDepartmentName(currentTicket)
+                          : getTicketDepartmentName(currentTicket)}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Estimated wait</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Wait quote' : 'Estimated wait'}
+                      </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {currentTicket.estimated_wait_minutes ? `${currentTicket.estimated_wait_minutes} min` : 'Not available'}
                       </p>
@@ -677,7 +1647,11 @@ export function DeskPanel({
                         ) : (
                           <Play className="h-4 w-4" />
                         )}
-                        Start Serving
+                        {isRestaurantMode
+                          ? currentAssignedTableCode
+                            ? 'Seat Party'
+                            : 'Choose Table to Seat'
+                          : 'Start Serving'}
                       </button>
                       <button
                         onClick={handleRecall}
@@ -685,7 +1659,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
                       >
                         <Volume2 className="h-4 w-4" />
-                        Recall
+                        {isRestaurantMode ? 'Notify Again' : 'Recall'}
                       </button>
                       <button
                         onClick={handleBuzz}
@@ -693,7 +1667,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-destructive/10 px-5 py-3 text-sm font-bold text-destructive hover:bg-destructive/20 disabled:opacity-50 transition-all"
                       >
                         <Smartphone className="h-4 w-4" />
-                        Buzz
+                        {isRestaurantMode ? 'Send Ready Alert' : 'Buzz'}
                       </button>
                       <button
                         onClick={handleNoShow}
@@ -701,7 +1675,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-warning/10 px-5 py-3 text-sm font-bold text-warning hover:bg-warning/20 disabled:opacity-50 transition-all"
                       >
                         <UserX className="h-4 w-4" />
-                        No Show
+                        {isRestaurantMode ? 'Party Left' : 'No Show'}
                       </button>
                       <button
                         onClick={handleResetToQueue}
@@ -709,7 +1683,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-gray-100 px-5 py-3 text-sm font-bold text-gray-600 hover:bg-gray-200 disabled:opacity-50 transition-all"
                       >
                         <ArrowRightLeft className="h-4 w-4" />
-                        Reset to Queue
+                        {isRestaurantMode ? 'Back to Waitlist' : 'Reset to Queue'}
                       </button>
                     </>
                   )}
@@ -726,7 +1700,7 @@ export function DeskPanel({
                         ) : (
                           <CheckCircle2 className="h-4 w-4" />
                         )}
-                        Mark Served
+                        {isRestaurantMode ? 'Close Party' : 'Mark Served'}
                       </button>
                       <button
                         onClick={() => setShowTransferDialog(true)}
@@ -734,7 +1708,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
                       >
                         <ArrowRightLeft className="h-4 w-4" />
-                        Transfer
+                        {isRestaurantMode ? 'Reassign Area' : 'Transfer'}
                       </button>
                     </>
                   )}
@@ -747,7 +1721,7 @@ export function DeskPanel({
                       className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm font-bold text-foreground hover:bg-muted disabled:opacity-50 transition-all ml-auto"
                     >
                       <PhoneForwarded className="h-4 w-4" />
-                      Call Next ({queue.waiting.length})
+                      {isRestaurantMode ? `Notify Next Party (${queue.waiting.length})` : `Call Next (${queue.waiting.length})`}
                     </button>
                   )}
                 </div>
@@ -758,7 +1732,9 @@ export function DeskPanel({
           {/* Queue Health */}
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Waiting</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {isRestaurantMode ? 'Parties waiting' : 'Waiting'}
+              </p>
               <p className="mt-2 text-3xl font-bold text-foreground">{queue.waiting.length}</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
@@ -783,9 +1759,13 @@ export function DeskPanel({
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">
-                  Queue
+                  {queueLabel}
                 </h3>
-                <p className="text-xs text-muted-foreground">Next people waiting for this desk&apos;s department</p>
+                <p className="text-xs text-muted-foreground">
+                  {isRestaurantMode
+                    ? `Next parties waiting for this ${deskLabel.toLowerCase()}'s area`
+                    : `Next people waiting for this ${deskLabel.toLowerCase()}'s department`}
+                </p>
               </div>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                 {queue.waiting.length}
@@ -794,15 +1774,42 @@ export function DeskPanel({
             <div className="border-b border-border px-4 py-3">
               {nextWaitingTicket ? (
                 <div className="rounded-xl bg-primary/5 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Up next</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <p className="text-lg font-bold text-foreground">{nextWaitingTicket.ticket_number}</p>
-                    <PriorityBadge priorityCategory={getPriorityCategory(nextWaitingTicket)} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Up next</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <p className="text-lg font-bold text-foreground">{nextWaitingTicket.ticket_number}</p>
+                        <PriorityBadge priorityCategory={getPriorityCategory(nextWaitingTicket)} />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCallWaitingTicket(nextWaitingTicket)}
+                      disabled={isPending}
+                      className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {isRestaurantMode ? 'Notify now' : 'Call now'}
+                    </button>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{getTicketServiceName(nextWaitingTicket)} · {formatRelativeTime(nextWaitingTicket.created_at)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {isRestaurantMode
+                      ? `${getTicketCustomerName(nextWaitingTicket) ?? 'Walk-in party'} · ${
+                          getRestaurantPartySize(nextWaitingTicket)
+                            ? `Party of ${getRestaurantPartySize(nextWaitingTicket)}`
+                          : normalizeRestaurantLabel(getTicketServiceName(nextWaitingTicket)) ?? getTicketServiceName(nextWaitingTicket)
+                        } · ${formatRelativeTime(nextWaitingTicket.created_at)}`
+                      : `${getTicketServiceName(nextWaitingTicket)} · ${formatRelativeTime(nextWaitingTicket.created_at)}`}
+                  </p>
+                  {isRestaurantMode && getSuggestedTablesForTicket(nextWaitingTicket)[0] && (
+                    <p className="mt-2 text-xs font-semibold text-foreground">
+                      Next table: {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.code} · {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.label}
+                    </p>
+                  )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No one is waiting right now.</p>
+                <p className="text-sm text-muted-foreground">
+                  {isRestaurantMode ? 'No parties are waiting right now.' : 'No one is waiting right now.'}
+                </p>
               )}
             </div>
             <div className="flex-1 overflow-y-auto p-2">
@@ -813,59 +1820,198 @@ export function DeskPanel({
               ) : queue.waiting.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
                   <Ticket className="mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="text-sm font-medium text-foreground">No tickets waiting</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {isRestaurantMode ? 'No parties waiting' : 'No tickets waiting'}
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    When new arrivals check in, they will appear here in queue order.
+                    {isRestaurantMode
+                      ? 'When new walk-ins or reservations arrive, they will appear here in waitlist order.'
+                      : 'When new arrivals check in, they will appear here in queue order.'}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {queue.waiting.map((ticket, index) => (
-                    <div
-                      key={ticket.id}
-                      className="rounded-xl border border-border px-3 py-3 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                          {index + 1}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-bold text-foreground">
-                              {ticket.ticket_number}
-                            </p>
-                            <PriorityBadge priorityCategory={getPriorityCategory(ticket)} className="shrink-0" />
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                              {getTicketSource(ticket)}
-                            </span>
+                    (() => {
+                      const rowSuggestedTable = isRestaurantMode ? getSuggestedTablesForTicket(ticket)[0] : null;
+                      return (
+                        <div
+                          key={ticket.id}
+                          className="rounded-xl border border-border px-3 py-3 transition-colors hover:bg-muted/30"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                              {index + 1}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-bold text-foreground">
+                                      {ticket.ticket_number}
+                                    </p>
+                                    <PriorityBadge priorityCategory={getPriorityCategory(ticket)} className="shrink-0" />
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                      {getTicketSource(ticket)}
+                                    </span>
+                                    {rowSuggestedTable && (
+                                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                        {rowSuggestedTable.code}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCallWaitingTicket(ticket)}
+                                  disabled={isPending}
+                                  className="shrink-0 rounded-lg border border-border bg-background px-3 py-2 text-[11px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                                >
+                                  {isRestaurantMode ? 'Notify' : 'Call'}
+                                </button>
+                              </div>
+                              <p className="mt-1 text-sm text-foreground/80">
+                                {isRestaurantMode
+                                  ? `${getTicketCustomerName(ticket) ?? 'Walk-in party'}${
+                                      getRestaurantPartySize(ticket) ? ` · Party of ${getRestaurantPartySize(ticket)}` : ''
+                                    }`
+                                  : getTicketServiceName(ticket)}
+                              </p>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                <span>
+                                  {isRestaurantMode
+                                    ? getRestaurantSeatingPreference(ticket) ?? 'First available'
+                                    : getTicketCustomerName(ticket) ?? 'No name provided'}
+                                </span>
+                                <span>{formatRelativeTime(ticket.created_at)}</span>
+                                <span>Checked in {formatAbsoluteTime(ticket.checked_in_at)}</span>
+                                {isRestaurantMode && rowSuggestedTable && (
+                                  <span>Next table {rowSuggestedTable.code}</span>
+                                )}
+                                {isRestaurantMode && getReservationReference(ticket) && (
+                                  <span>{getReservationReference(ticket)}</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <p className="mt-1 text-sm text-foreground/80">{getTicketServiceName(ticket)}</p>
-                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            <span>{getTicketCustomerName(ticket) ?? 'No name provided'}</span>
-                            <span>{formatRelativeTime(ticket.created_at)}</span>
-                            <span>Checked in {formatAbsoluteTime(ticket.checked_in_at)}</span>
-                          </div>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()
                   ))}
                 </div>
               )}
             </div>
           </div>
 
+          {isRestaurantMode && (
+            <div className="rounded-2xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h3 className="text-sm font-semibold text-foreground">Taken tables</h3>
+                <p className="text-xs text-muted-foreground">
+                  See which parties are seated now, then clear the table when it is ready again.
+                </p>
+              </div>
+              <div className="space-y-2 p-3">
+                {occupiedRestaurantTables.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">
+                    No tables are currently taken.
+                  </p>
+                ) : (
+                  occupiedRestaurantTables.map((table) => {
+                    const seatedTicket = getTicketById(table.current_ticket_id);
+                    const zoneLabel =
+                      restaurantAreas.find((area) => area.id === table.zone)?.label ??
+                      (table.zone ? toTitleCase(table.zone.replace(/-/g, ' ')) : 'Dining room');
+                    const seatedName = getTicketCustomerName(seatedTicket) ?? 'Unknown party';
+                    const partySize = getRestaurantPartySize(seatedTicket);
+
+                    return (
+                      <div
+                        key={table.id}
+                        className="rounded-xl border border-border bg-background px-3 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-foreground">{table.code}</p>
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${getRestaurantTableStatusTone(table.status)}`}
+                              >
+                                {toTitleCase(table.status ?? 'occupied')}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-foreground">
+                              {seatedName}
+                              {partySize ? ` · Party of ${partySize}` : ''}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span>{table.label}</span>
+                              <span>{zoneLabel}</span>
+                              {seatedTicket?.ticket_number ? (
+                                <span>{seatedTicket.ticket_number}</span>
+                              ) : null}
+                              {table.assigned_at ? (
+                                <span>Seated {formatRelativeTime(table.assigned_at)}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 flex-col gap-2">
+                            {seatedTicket && currentTicket?.id !== seatedTicket.id ? (
+                              <button
+                                type="button"
+                                onClick={() => handleResumeTicket(seatedTicket)}
+                                disabled={isPending}
+                                className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                              >
+                                Resume
+                              </button>
+                            ) : null}
+                            {seatedTicket ? (
+                              <button
+                                type="button"
+                                onClick={() => handleBuzzSpecificTicket(seatedTicket)}
+                                disabled={isPending}
+                                className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50"
+                              >
+                                Call back
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => handleClearRestaurantTable(table)}
+                              disabled={isPending}
+                              className="rounded-lg border border-border px-3 py-2 text-xs font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                            >
+                              Clear table
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Currently Called / Being Served by Others */}
           <div className="rounded-2xl border border-border bg-card">
             <div className="border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">
-                Active at Other Desks
+                {isRestaurantMode ? `Active at Other ${deskLabel}s` : 'Active at Other Desks'}
               </h3>
-              <p className="text-xs text-muted-foreground">Cross-desk visibility for called or serving tickets</p>
+              <p className="text-xs text-muted-foreground">
+                {isRestaurantMode
+                  ? 'See notified or seated parties at other host stands'
+                  : 'Cross-desk visibility for called or serving tickets'}
+              </p>
             </div>
             <div className="p-2 space-y-1 max-h-56 overflow-y-auto">
               {activeElsewhere.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-                  No other desks are actively calling or serving right now.
+                  {isRestaurantMode
+                    ? 'No other host stands are actively notifying or seating parties right now.'
+                    : 'No other desks are actively calling or serving right now.'}
                 </p>
               ) : (
                 activeElsewhere.map((ticket) => (
@@ -887,8 +2033,17 @@ export function DeskPanel({
                       </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span>{getTicketServiceName(ticket)}</span>
+                      <span>
+                        {isRestaurantMode
+                          ? `${getTicketCustomerName(ticket) ?? 'Party'}${
+                              getRestaurantPartySize(ticket) ? ` · Party of ${getRestaurantPartySize(ticket)}` : ''
+                            }`
+                          : getTicketServiceName(ticket)}
+                      </span>
                       <span>{getTicketSource(ticket)}</span>
+                      {isRestaurantMode && getRestaurantSeatingPreference(ticket) && (
+                        <span>{getRestaurantSeatingPreference(ticket)}</span>
+                      )}
                       <span>{formatRelativeTime(ticket.called_at ?? ticket.serving_started_at)}</span>
                     </div>
                   </div>
@@ -904,10 +2059,10 @@ export function DeskPanel({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-2xl">
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <ArrowRightLeft className="h-5 w-5 text-primary" />
-                Transfer Ticket
-              </h3>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <ArrowRightLeft className="h-5 w-5 text-primary" />
+                  {isRestaurantMode ? 'Move Party' : 'Transfer Ticket'}
+                </h3>
               <button
                 onClick={() => {
                   setShowTransferDialog(false);
@@ -922,7 +2077,7 @@ export function DeskPanel({
             <div className="p-6 space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground mb-2">
-                  Transferring ticket{' '}
+                  {isRestaurantMode ? 'Move party' : 'Transferring ticket'}{' '}
                   <span className="font-bold text-foreground">
                     {currentTicket?.ticket_number}
                   </span>
@@ -930,7 +2085,7 @@ export function DeskPanel({
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Department
+                  {isRestaurantMode ? 'Seating area' : 'Department'}
                 </label>
                 <select
                   value={transferDeptId}
@@ -940,7 +2095,7 @@ export function DeskPanel({
                   }}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 >
-                  <option value="">Select department...</option>
+                    <option value="">{isRestaurantMode ? 'Select seating area...' : 'Select department...'}</option>
                   {departments
                     .filter((d) => d.is_active && d.id !== desk.department_id)
                     .map((d) => (
@@ -953,14 +2108,14 @@ export function DeskPanel({
               {transferDeptId && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Service
+                  {isRestaurantMode ? serviceLabel : 'Service'}
                   </label>
                   <select
                     value={transferServiceId}
                     onChange={(e) => setTransferServiceId(e.target.value)}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
-                    <option value="">Select service...</option>
+                    <option value="">{isRestaurantMode ? `Select ${serviceLabel.toLowerCase()}...` : 'Select service...'}</option>
                     {transferableServices.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -991,7 +2146,7 @@ export function DeskPanel({
                       Transferring...
                     </span>
                   ) : (
-                    'Transfer'
+                    isRestaurantMode ? 'Move Party' : 'Transfer'
                   )}
                 </button>
               </div>

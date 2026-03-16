@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 import { RemoteJoinForm } from '@/components/queue/remote-join-form';
 
 interface PageProps {
@@ -8,7 +9,7 @@ interface PageProps {
 
 export default async function RemoteJoinPage({ params }: PageProps) {
   const { token } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Fetch the virtual queue code by qr_token
   const { data: virtualCode, error } = await supabase
@@ -54,64 +55,79 @@ export default async function RemoteJoinPage({ params }: PageProps) {
   }
 
   // Fetch related office info
-  const { data: office } = await supabase
+  const { data: organization } = await supabase
+    .from('organizations')
+    .select('id, name, logo_url, settings')
+    .eq('id', virtualCode.organization_id)
+    .single();
+
+  if (!organization) notFound();
+
+  const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, address, organization:organizations(name)')
-    .eq('id', virtualCode.office_id)
-    .single();
+    .select('id, name, address, settings')
+    .eq('organization_id', virtualCode.organization_id)
+    .eq('is_active', true)
+    .order('name');
 
-  if (!office) {
-    notFound();
-  }
-
-  // Fetch department info
-  const { data: department } = await supabase
+  const { data: departments } = await supabase
     .from('departments')
-    .select('id, name')
-    .eq('id', virtualCode.department_id)
-    .single();
+    .select('id, name, office_id')
+    .in('office_id', (offices ?? []).map((office) => office.id))
+    .eq('is_active', true)
+    .order('sort_order');
 
-  // Fetch services for the department
-  let services: any[] = [];
-  if (virtualCode.service_id) {
-    // Specific service
-    const { data: service } = await supabase
-      .from('services')
-      .select('id, name, description, estimated_service_time')
-      .eq('id', virtualCode.service_id)
-      .single();
-    if (service) services = [service];
-  } else {
-    // All services in department
-    const { data: deptServices } = await supabase
-      .from('services')
-      .select('id, name, description, estimated_service_time')
-      .eq('department_id', virtualCode.department_id)
-      .eq('is_active', true)
-      .order('sort_order');
-    services = deptServices ?? [];
-  }
+  const { data: services } = await supabase
+    .from('services')
+    .select('id, name, description, estimated_service_time, department_id')
+    .in('department_id', (departments ?? []).map((department) => department.id))
+    .eq('is_active', true)
+    .order('sort_order');
 
-  // Get estimated wait time
-  const serviceIdForWait = virtualCode.service_id || services[0]?.id;
+  const { data: waitingTickets } = await supabase
+    .from('tickets')
+    .select('id, office_id, department_id, service_id')
+    .in('office_id', (offices ?? []).map((item) => item.id))
+    .eq('status', 'waiting');
+
+  const office = virtualCode.office_id
+    ? (offices ?? []).find((item) => item.id === virtualCode.office_id) ?? null
+    : null;
+  const department = virtualCode.department_id
+    ? (departments ?? []).find((item) => item.id === virtualCode.department_id) ?? null
+    : null;
+  const service = virtualCode.service_id
+    ? (services ?? []).find((item) => item.id === virtualCode.service_id) ?? null
+    : null;
+
   let estimatedWait: number | null = null;
-  if (serviceIdForWait) {
+  if (department?.id && service?.id) {
     const { data: waitMinutes } = await supabase.rpc('estimate_wait_time', {
-      p_department_id: virtualCode.department_id,
-      p_service_id: serviceIdForWait,
+      p_department_id: department.id,
+      p_service_id: service.id,
     });
     estimatedWait = waitMinutes ?? null;
   }
+
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: organization.settings ?? {},
+    officeSettings: office?.settings ?? {},
+  });
 
   return (
     <RemoteJoinForm
       virtualCode={virtualCode}
       office={office}
-      organization={office.organization}
+      organization={organization}
       department={department}
-      services={services}
-      hasSpecificService={!!virtualCode.service_id}
+      services={service ? [service] : services ?? []}
+      hasSpecificService={!!service}
       estimatedWait={estimatedWait}
+      offices={offices ?? []}
+      departments={departments ?? []}
+      waitingTickets={waitingTickets ?? []}
+      publicJoinProfile={platformConfig.experienceProfile.publicJoin}
+      vocabulary={platformConfig.experienceProfile.vocabulary}
     />
   );
 }

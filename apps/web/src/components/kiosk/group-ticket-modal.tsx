@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 import { nanoid } from 'nanoid';
 import QRCode from 'qrcode';
+import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 
 interface PriorityCategory {
   id: string;
@@ -91,7 +91,6 @@ export function GroupTicketModal({
     }
 
     setLoading(true);
-    const supabase = createClient();
     const groupId = nanoid(16);
     const createdTickets: any[] = [];
 
@@ -100,54 +99,26 @@ export function GroupTicketModal({
 
     for (let i = 0; i < members.length; i++) {
       const member = members[i];
+      const result = await createPublicTicket({
+        officeId: office.id,
+        departmentId: department.id,
+        serviceId: member.serviceId,
+        checkedInAt: new Date().toISOString(),
+        customerData: member.name ? { name: member.name } : null,
+        groupId,
+        priority: selectedPriority?.weight ?? 0,
+        priorityCategoryId: selectedPriority?.id ?? null,
+      });
 
-      // Generate ticket number
-      const { data: seqData, error: seqError } = await supabase.rpc(
-        'generate_daily_ticket_number',
-        { p_department_id: department.id }
-      );
-
-      if (seqError || !seqData?.[0]) {
-        alert(`Error generating ticket number for person ${i + 1}. Please try again.`);
+      if (result.error || !result.data) {
+        alert(result.error ?? `Error creating ticket for person ${i + 1}. Please try again.`);
         setLoading(false);
         return;
       }
-
-      const { ticket_num, seq } = seqData[0];
-      const qrToken = nanoid(12);
+      const newTicket = result.data;
 
       if (i === 0) {
-        groupQrToken = qrToken;
-      }
-
-      const insertData: Record<string, unknown> = {
-        office_id: office.id,
-        department_id: department.id,
-        service_id: member.serviceId,
-        ticket_number: ticket_num,
-        daily_sequence: seq,
-        status: 'waiting',
-        qr_token: qrToken,
-        group_id: groupId,
-        checked_in_at: new Date().toISOString(),
-        customer_data: member.name ? { name: member.name } : null,
-      };
-
-      if (selectedPriority) {
-        insertData.priority_category_id = selectedPriority.id;
-        insertData.priority = selectedPriority.weight ?? 0;
-      }
-
-      const { data: newTicket, error: ticketError } = await supabase
-        .from('tickets')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (ticketError) {
-        alert(`Error creating ticket for person ${i + 1}. Please try again.`);
-        setLoading(false);
-        return;
+        groupQrToken = newTicket.qr_token;
       }
 
       createdTickets.push({

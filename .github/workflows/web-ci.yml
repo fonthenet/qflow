@@ -1,0 +1,95 @@
+name: Web CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - '.github/workflows/web-ci.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'supabase/**'
+      - '.github/workflows/web-ci.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+  workflow_dispatch:
+
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      QUEUEFLOW_E2E_EMAIL: ${{ secrets.QUEUEFLOW_E2E_EMAIL }}
+      QUEUEFLOW_E2E_PASSWORD: ${{ secrets.QUEUEFLOW_E2E_PASSWORD }}
+      QUEUEFLOW_E2E_ORG_NAME: QueueFlow E2E
+      QUEUEFLOW_E2E_ORG_SLUG: queueflow-e2e
+      QUEUEFLOW_E2E_TEMPLATE_ID: bank-branch
+      QUEUEFLOW_E2E_OPERATING_MODEL: service_routing
+      QUEUEFLOW_E2E_BRANCH_TYPE: branch_office
+      QUEUEFLOW_E2E_OFFICE_NAME: E2E Main Branch
+      QUEUEFLOW_E2E_ASSIGN_ADMIN_OFFICE: 'true'
+      QUEUEFLOW_E2E_ASSIGN_ADMIN_DESK: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run platform tests
+        run: pnpm --filter @queueflow/web test:platform
+
+      - name: Build web app
+        run: pnpm --filter @queueflow/web build
+
+      - name: Install Playwright browser
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
+        run: pnpm --filter @queueflow/web exec playwright install --with-deps chromium
+
+      - name: Seed E2E tenant
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
+        run: pnpm --filter @queueflow/web e2e:seed
+
+      - name: Run smoke E2E
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
+        run: pnpm --filter @queueflow/web test:e2e:smoke
+
+      - name: Upload Playwright report
+        if: ${{ always() && env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7

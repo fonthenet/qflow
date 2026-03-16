@@ -54,6 +54,45 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action_type: string
+          actor_staff_id: string | null
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          metadata: Json
+          office_id: string | null
+          organization_id: string
+          summary: string
+        }
+        Insert: {
+          action_type: string
+          actor_staff_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          metadata?: Json
+          office_id?: string | null
+          organization_id: string
+          summary: string
+        }
+        Update: {
+          action_type?: string
+          actor_staff_id?: string | null
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          metadata?: Json
+          office_id?: string | null
+          organization_id?: string
+          summary?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           created_at: string | null
@@ -227,6 +266,7 @@ export type Database = {
       }
       intake_form_fields: {
         Row: {
+          consent_flag: string | null
           created_at: string | null
           field_label: string
           field_name: string
@@ -236,8 +276,10 @@ export type Database = {
           options: Json | null
           service_id: string
           sort_order: number | null
+          visibility: string
         }
         Insert: {
+          consent_flag?: string | null
           created_at?: string | null
           field_label: string
           field_name: string
@@ -247,8 +289,10 @@ export type Database = {
           options?: Json | null
           service_id: string
           sort_order?: number | null
+          visibility?: string
         }
         Update: {
+          consent_flag?: string | null
           created_at?: string | null
           field_label?: string
           field_name?: string
@@ -258,6 +302,7 @@ export type Database = {
           options?: Json | null
           service_id?: string
           sort_order?: number | null
+          visibility?: string
         }
         Relationships: []
       }
@@ -396,6 +441,57 @@ export type Database = {
         }
         Relationships: []
       }
+      restaurant_tables: {
+        Row: {
+          assigned_at: string | null
+          capacity: number | null
+          code: string
+          created_at: string
+          current_ticket_id: string | null
+          id: string
+          label: string
+          max_party_size: number | null
+          min_party_size: number | null
+          office_id: string
+          reservable: boolean | null
+          status: string
+          updated_at: string
+          zone: string | null
+        }
+        Insert: {
+          assigned_at?: string | null
+          capacity?: number | null
+          code: string
+          created_at?: string
+          current_ticket_id?: string | null
+          id?: string
+          label: string
+          max_party_size?: number | null
+          min_party_size?: number | null
+          office_id: string
+          reservable?: boolean | null
+          status?: string
+          updated_at?: string
+          zone?: string | null
+        }
+        Update: {
+          assigned_at?: string | null
+          capacity?: number | null
+          code?: string
+          created_at?: string
+          current_ticket_id?: string | null
+          id?: string
+          label?: string
+          max_party_size?: number | null
+          min_party_size?: number | null
+          office_id?: string
+          reservable?: boolean | null
+          status?: string
+          updated_at?: string
+          zone?: string | null
+        }
+        Relationships: []
+      }
       services: {
         Row: {
           code: string
@@ -471,6 +567,72 @@ export type Database = {
           office_id?: string | null
           organization_id?: string
           role?: string
+        }
+        Relationships: []
+      }
+      template_health_snapshots: {
+        Row: {
+          actor_staff_id: string | null
+          applied_version: string
+          branch_alignment_percent: number
+          created_at: string
+          current_version_coverage_percent: number
+          id: string
+          latest_version: string
+          metadata: Json
+          office_count: number
+          office_drift_count: number
+          office_id: string | null
+          offices_behind_count: number
+          offices_current_count: number
+          offices_with_drift: number
+          organization_drift_count: number
+          organization_id: string
+          snapshot_scope: string
+          snapshot_type: string
+          template_id: string
+        }
+        Insert: {
+          actor_staff_id?: string | null
+          applied_version: string
+          branch_alignment_percent?: number
+          created_at?: string
+          current_version_coverage_percent?: number
+          id?: string
+          latest_version: string
+          metadata?: Json
+          office_count?: number
+          office_drift_count?: number
+          office_id?: string | null
+          offices_behind_count?: number
+          offices_current_count?: number
+          offices_with_drift?: number
+          organization_drift_count?: number
+          organization_id: string
+          snapshot_scope: string
+          snapshot_type: string
+          template_id: string
+        }
+        Update: {
+          actor_staff_id?: string | null
+          applied_version?: string
+          branch_alignment_percent?: number
+          created_at?: string
+          current_version_coverage_percent?: number
+          id?: string
+          latest_version?: string
+          metadata?: Json
+          office_count?: number
+          office_drift_count?: number
+          office_id?: string | null
+          offices_behind_count?: number
+          offices_current_count?: number
+          offices_with_drift?: number
+          organization_drift_count?: number
+          organization_id?: string
+          snapshot_scope?: string
+          snapshot_type?: string
+          template_id?: string
         }
         Relationships: []
       }
@@ -645,28 +807,31 @@ export type Database = {
       virtual_queue_codes: {
         Row: {
           created_at: string | null
-          department_id: string
+          department_id: string | null
           id: string
           is_active: boolean | null
-          office_id: string
+          office_id: string | null
+          organization_id: string
           qr_token: string
           service_id: string | null
         }
         Insert: {
           created_at?: string | null
-          department_id: string
+          department_id?: string | null
           id?: string
           is_active?: boolean | null
-          office_id: string
+          office_id?: string | null
+          organization_id: string
           qr_token: string
           service_id?: string | null
         }
         Update: {
           created_at?: string | null
-          department_id?: string
+          department_id?: string | null
           id?: string
           is_active?: boolean | null
-          office_id?: string
+          office_id?: string | null
+          organization_id?: string
           qr_token?: string
           service_id?: string | null
         }

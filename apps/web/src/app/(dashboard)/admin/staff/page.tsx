@@ -1,22 +1,41 @@
-import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 import { StaffClient } from './staff-client';
 
 export default async function StaffPage() {
-  const supabase = await createClient();
+  const context = await getStaffContext();
+  try {
+    await requireOrganizationAdmin(context);
+  } catch {
+    redirect('/desk');
+  }
 
-  const { data: offices } = await supabase
+  const { data: organization } = await context.supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', context.staff.organization_id)
+    .single();
+
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: organization?.settings ?? {},
+  });
+
+  const { data: offices } = await context.supabase
     .from('offices')
     .select('id, name')
+    .eq('organization_id', context.staff.organization_id)
     .order('name');
 
-  const { data: departments } = await supabase
+  const { data: departments } = await context.supabase
     .from('departments')
     .select('id, name, office:offices(id, name)')
     .order('name');
 
-  const { data: staff, error } = await supabase
+  const { data: staff, error } = await context.supabase
     .from('staff')
     .select('*, office:offices(id, name), department:departments(id, name)')
+    .eq('organization_id', context.staff.organization_id)
     .order('full_name');
 
   if (error) {
@@ -27,11 +46,17 @@ export default async function StaffPage() {
     );
   }
 
+  const normalizedDepartments = (departments ?? []).map((department) => ({
+    ...department,
+    office: Array.isArray(department.office) ? department.office[0] ?? null : department.office,
+  }));
+
   return (
     <StaffClient
       staff={staff ?? []}
       offices={offices ?? []}
-      departments={departments ?? []}
+      departments={normalizedDepartments}
+      roleDefinitions={platformConfig.rolePolicy.roles}
     />
   );
 }

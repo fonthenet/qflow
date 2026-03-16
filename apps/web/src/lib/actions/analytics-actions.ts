@@ -1,26 +1,25 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext, requireAnalyticsAccess, type StaffContext } from '@/lib/authz';
+import { resolvePlatformConfig } from '@/lib/platform/config';
+import { buildTemplateGovernanceReport } from '@/lib/platform/governance';
 
-// ─── Helper: get org_id from authenticated user ────────────────────────────
+async function getAnalyticsContext() {
+  const context = await getStaffContext();
+  requireAnalyticsAccess(context);
+  return context;
+}
 
-async function getOrgId() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+function getScopedOfficeIds(context: StaffContext, officeId?: string) {
+  if (officeId) {
+    if (!context.accessibleOfficeIds.includes(officeId)) {
+      throw new Error('You do not have access to this office');
+    }
 
-  if (!user) throw new Error('Not authenticated');
+    return [officeId];
+  }
 
-  const { data: staff } = await supabase
-    .from('staff')
-    .select('organization_id')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (!staff) throw new Error('Staff profile not found');
-
-  return { supabase, orgId: staff.organization_id };
+  return context.accessibleOfficeIds;
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -71,6 +70,104 @@ export interface FeedbackSummaryData {
   }[];
 }
 
+export interface TemplateHealthSummaryData {
+  templateId: string;
+  templateTitle: string;
+  appliedVersion: string;
+  latestVersion: string;
+  snapshotScope: 'organization' | 'office';
+  officeCount: number;
+  officesCurrentCount: number;
+  officesBehindCount: number;
+  officesWithDrift: number;
+  currentDriftCount: number;
+  currentVersionCoveragePercent: number;
+  branchAlignmentPercent: number;
+  organizationUpgradeCountInRange: number;
+  officeRolloutCountInRange: number;
+  driftSnapshotCountInRange: number;
+  totalOrganizationUpgradeCount: number;
+  totalOfficeRolloutCount: number;
+  lastMigrationAt: string | null;
+  lastOfficeRolloutAt: string | null;
+}
+
+export interface TemplateActivityPoint {
+  date: string;
+  organizationUpgrades: number;
+  officeRollouts: number;
+}
+
+export interface TemplateHealthOfficeRow {
+  office_id: string;
+  office_name: string;
+  applied_version: string;
+  latest_version: string;
+  is_current: boolean;
+  drift_count: number;
+  rollout_count: number;
+  last_rolled_out_at: string | null;
+}
+
+export interface TemplateDriftTrendPoint {
+  date: string;
+  driftCount: number;
+  coveragePercent: number;
+}
+
+export interface TemplateHealthAnalyticsData {
+  summary: TemplateHealthSummaryData;
+  activity: TemplateActivityPoint[];
+  driftTrend: TemplateDriftTrendPoint[];
+  officeStatuses: TemplateHealthOfficeRow[];
+}
+
+export interface TemplatePerformanceSummaryData {
+  primaryTemplateId: string;
+  primaryTemplateTitle: string;
+  primaryVertical: string;
+  templateCount: number;
+  officeCount: number;
+  totalTickets: number;
+  waitAccuracyPercent: number | null;
+  noShowRate: number | null;
+  completionRate: number | null;
+  avgServiceTime: number | null;
+}
+
+export interface TemplatePerformanceRow {
+  templateId: string;
+  templateTitle: string;
+  vertical: string;
+  officeCount: number;
+  totalTickets: number;
+  waitAccuracyPercent: number | null;
+  noShowRate: number | null;
+  completionRate: number | null;
+  avgWaitTime: number | null;
+  avgServiceTime: number | null;
+}
+
+export interface TemplateOfficeComparisonRow {
+  officeId: string;
+  officeName: string;
+  templateId: string;
+  templateTitle: string;
+  vertical: string;
+  totalTickets: number;
+  waitAccuracyPercent: number | null;
+  noShowRate: number | null;
+  completionRate: number | null;
+  avgWaitTime: number | null;
+  avgServiceTime: number | null;
+}
+
+export interface TemplatePerformanceAnalyticsData {
+  summary: TemplatePerformanceSummaryData;
+  templateRows: TemplatePerformanceRow[];
+  officeRows: TemplateOfficeComparisonRow[];
+}
+
 // ─── Date range helpers ────────────────────────────────────────────────────
 
 function getDateRange(dateRange?: string): { start: string; end: string } {
@@ -91,24 +188,194 @@ function getDateRange(dateRange?: string): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function isWithinRange(value: string | null, start: string, end: string) {
+  if (!value) {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return timestamp >= Date.parse(start) && timestamp <= Date.parse(end);
+}
+
+function getTimelineDays(start: string, end: string) {
+  const days: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+  const last = new Date(end);
+  last.setHours(0, 0, 0, 0);
+
+  while (cursor.getTime() <= last.getTime()) {
+    days.push(cursor.toISOString().split('T')[0]);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days;
+}
+
+function getDriftCountForScope(
+  snapshot: {
+    organization_drift_count: number;
+    office_drift_count: number;
+  },
+  scope: 'organization' | 'office'
+) {
+  return scope === 'organization' ? snapshot.organization_drift_count : snapshot.office_drift_count;
+}
+
+function roundMetric(value: number | null, digits: number = 1) {
+  if (value === null || Number.isNaN(value)) {
+    return null;
+  }
+
+  const multiplier = 10 ** digits;
+  return Math.round(value * multiplier) / multiplier;
+}
+
+type TicketMetricRow = {
+  office_id: string;
+  created_at: string;
+  serving_started_at: string | null;
+  completed_at: string | null;
+  estimated_wait_minutes: number | null;
+  status: string;
+};
+
+type TemplateMetricAccumulator = {
+  totalTickets: number;
+  completedTickets: number;
+  noShowTickets: number;
+  waitMinutes: number[];
+  serviceMinutes: number[];
+  waitAccuracyScores: number[];
+};
+
+function createMetricAccumulator(): TemplateMetricAccumulator {
+  return {
+    totalTickets: 0,
+    completedTickets: 0,
+    noShowTickets: 0,
+    waitMinutes: [],
+    serviceMinutes: [],
+    waitAccuracyScores: [],
+  };
+}
+
+function appendTicketMetrics(accumulator: TemplateMetricAccumulator, ticket: TicketMetricRow) {
+  accumulator.totalTickets += 1;
+
+  if (ticket.status === 'no_show') {
+    accumulator.noShowTickets += 1;
+  }
+
+  if (ticket.serving_started_at) {
+    const actualWaitMinutes =
+      (new Date(ticket.serving_started_at).getTime() - new Date(ticket.created_at).getTime()) / 60000;
+    accumulator.waitMinutes.push(actualWaitMinutes);
+
+    if (ticket.estimated_wait_minutes !== null) {
+      const estimateBaseline = Math.max(ticket.estimated_wait_minutes, 5);
+      const errorRatio = Math.abs(actualWaitMinutes - ticket.estimated_wait_minutes) / estimateBaseline;
+      accumulator.waitAccuracyScores.push(Math.max(0, 100 - errorRatio * 100));
+    }
+  }
+
+  if (ticket.serving_started_at && ticket.completed_at) {
+    accumulator.completedTickets += 1;
+    const serviceMinutes =
+      (new Date(ticket.completed_at).getTime() - new Date(ticket.serving_started_at).getTime()) / 60000;
+    accumulator.serviceMinutes.push(serviceMinutes);
+  }
+}
+
+function finalizeMetricAccumulator(accumulator: TemplateMetricAccumulator) {
+  return {
+    totalTickets: accumulator.totalTickets,
+    waitAccuracyPercent:
+      accumulator.waitAccuracyScores.length > 0
+        ? roundMetric(
+            accumulator.waitAccuracyScores.reduce((total, score) => total + score, 0) /
+              accumulator.waitAccuracyScores.length
+          )
+        : null,
+    noShowRate:
+      accumulator.totalTickets > 0
+        ? roundMetric((accumulator.noShowTickets / accumulator.totalTickets) * 100)
+        : null,
+    completionRate:
+      accumulator.totalTickets > 0
+        ? roundMetric((accumulator.completedTickets / accumulator.totalTickets) * 100)
+        : null,
+    avgWaitTime:
+      accumulator.waitMinutes.length > 0
+        ? roundMetric(
+            accumulator.waitMinutes.reduce((total, value) => total + value, 0) /
+              accumulator.waitMinutes.length
+          )
+        : null,
+    avgServiceTime:
+      accumulator.serviceMinutes.length > 0
+        ? roundMetric(
+            accumulator.serviceMinutes.reduce((total, value) => total + value, 0) /
+              accumulator.serviceMinutes.length
+          )
+        : null,
+  };
+}
+
+function buildDriftTrend(input: {
+  start: string;
+  end: string;
+  scope: 'organization' | 'office';
+  snapshots: {
+    created_at: string;
+    organization_drift_count: number;
+    office_drift_count: number;
+    current_version_coverage_percent: number;
+  }[];
+  baselineSnapshot?: {
+    created_at: string;
+    organization_drift_count: number;
+    office_drift_count: number;
+    current_version_coverage_percent: number;
+  } | null;
+}): TemplateDriftTrendPoint[] {
+  const snapshotsByDate = new Map<string, (typeof input.snapshots)[number]>();
+
+  for (const snapshot of input.snapshots) {
+    snapshotsByDate.set(snapshot.created_at.split('T')[0], snapshot);
+  }
+
+  let driftCount = input.baselineSnapshot
+    ? getDriftCountForScope(input.baselineSnapshot, input.scope)
+    : 0;
+  let coveragePercent = input.baselineSnapshot?.current_version_coverage_percent ?? 0;
+
+  return getTimelineDays(input.start, input.end).map((date) => {
+    const snapshot = snapshotsByDate.get(date);
+
+    if (snapshot) {
+      driftCount = getDriftCountForScope(snapshot, input.scope);
+      coveragePercent = snapshot.current_version_coverage_percent;
+    }
+
+    return {
+      date,
+      driftCount,
+      coveragePercent,
+    };
+  });
+}
+
 // ─── Analytics Summary ─────────────────────────────────────────────────────
 
 export async function getAnalyticsSummary(
   officeId?: string,
   dateRange?: string
 ): Promise<AnalyticsSummary> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
   const { start, end } = getDateRange(dateRange);
-
-  // Get offices for org to scope tickets
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) {
     return {
@@ -186,7 +453,8 @@ export async function getTicketsByHour(
   officeId?: string,
   date?: string
 ): Promise<HourlyTicket[]> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
 
   const targetDate = date ? new Date(date) : new Date();
   const start = new Date(targetDate);
@@ -194,14 +462,7 @@ export async function getTicketsByHour(
   const end = new Date(targetDate);
   end.setHours(23, 59, 59, 999);
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) {
     return Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }));
@@ -233,17 +494,10 @@ export async function getTicketsByDepartment(
   officeId?: string,
   dateRange?: string
 ): Promise<DepartmentTicket[]> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
   const { start, end } = getDateRange(dateRange);
-
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) return [];
 
@@ -285,7 +539,8 @@ export async function getWaitTimeTrend(
   officeId?: string,
   days: number = 7
 ): Promise<WaitTimeTrend[]> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
 
   const end = new Date();
   end.setHours(23, 59, 59, 999);
@@ -293,14 +548,7 @@ export async function getWaitTimeTrend(
   start.setDate(start.getDate() - (days - 1));
   start.setHours(0, 0, 0, 0);
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) return [];
 
@@ -351,17 +599,10 @@ export async function getStaffPerformance(
   officeId?: string,
   dateRange?: string
 ): Promise<StaffPerformanceRow[]> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
   const { start, end } = getDateRange(dateRange);
-
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) return [];
 
@@ -470,17 +711,10 @@ export async function getFeedbackSummary(
   officeId?: string,
   dateRange?: string
 ): Promise<FeedbackSummaryData> {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
   const { start, end } = getDateRange(dateRange);
-
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id')
-    .eq('organization_id', orgId);
-
-  const officeIds = officeId
-    ? [officeId]
-    : (offices ?? []).map((o: { id: string }) => o.id);
+  const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) {
     return {
@@ -542,22 +776,418 @@ export async function getFeedbackSummary(
 // ─── Offices and Departments for filters ───────────────────────────────────
 
 export async function getFilterOptions() {
-  const { supabase, orgId } = await getOrgId();
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const officeIds = getScopedOfficeIds(context);
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id, name')
-    .eq('organization_id', orgId)
-    .eq('is_active', true)
-    .order('name');
+  const { data: offices } = officeIds.length > 0
+    ? await supabase
+        .from('offices')
+        .select('id, name')
+        .in('id', officeIds)
+        .eq('is_active', true)
+        .order('name')
+    : { data: [] };
 
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, office_id')
-    .order('name');
+  const { data: departments } = officeIds.length > 0
+    ? await supabase
+        .from('departments')
+        .select('id, name, office_id')
+        .in('office_id', officeIds)
+        .order('name')
+    : { data: [] };
 
   return {
     offices: offices ?? [],
     departments: departments ?? [],
+  };
+}
+
+export async function getTemplateHealthAnalytics(
+  officeId?: string,
+  dateRange?: string
+): Promise<TemplateHealthAnalyticsData> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const officeIds = getScopedOfficeIds(context, officeId);
+  const { start, end } = getDateRange(dateRange);
+  const snapshotScope = officeId ? 'office' : 'organization';
+
+  if (officeIds.length === 0) {
+    return {
+      summary: {
+        templateId: 'public-service-standard',
+        templateTitle: 'QueueFlow Template',
+        appliedVersion: '1.0.0',
+        latestVersion: '1.0.0',
+        snapshotScope,
+        officeCount: 0,
+        officesCurrentCount: 0,
+        officesBehindCount: 0,
+        officesWithDrift: 0,
+        currentDriftCount: 0,
+        currentVersionCoveragePercent: 0,
+        branchAlignmentPercent: 0,
+        organizationUpgradeCountInRange: 0,
+        officeRolloutCountInRange: 0,
+        driftSnapshotCountInRange: 0,
+        totalOrganizationUpgradeCount: 0,
+        totalOfficeRolloutCount: 0,
+        lastMigrationAt: null,
+        lastOfficeRolloutAt: null,
+      },
+      activity: getTimelineDays(start, end).map((date) => ({
+        date,
+        organizationUpgrades: 0,
+        officeRollouts: 0,
+      })),
+      driftTrend: getTimelineDays(start, end).map((date) => ({
+        date,
+        driftCount: 0,
+        coveragePercent: 0,
+      })),
+      officeStatuses: [],
+    };
+  }
+
+  let snapshotRangeQuery = supabase
+    .from('template_health_snapshots')
+    .select(
+      'created_at, organization_drift_count, office_drift_count, current_version_coverage_percent'
+    )
+    .eq('organization_id', context.staff.organization_id)
+    .eq('snapshot_scope', snapshotScope)
+    .gte('created_at', start)
+    .lte('created_at', end)
+    .order('created_at', { ascending: true });
+
+  let snapshotBaselineQuery = supabase
+    .from('template_health_snapshots')
+    .select(
+      'created_at, organization_drift_count, office_drift_count, current_version_coverage_percent'
+    )
+    .eq('organization_id', context.staff.organization_id)
+    .eq('snapshot_scope', snapshotScope)
+    .lt('created_at', start)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (officeId) {
+    snapshotRangeQuery = snapshotRangeQuery.eq('office_id', officeId);
+    snapshotBaselineQuery = snapshotBaselineQuery.eq('office_id', officeId);
+  }
+
+  const [
+    { data: organization, error: organizationError },
+    { data: offices, error: officesError },
+    snapshotRangeResult,
+    snapshotBaselineResult,
+  ] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('settings')
+      .eq('id', context.staff.organization_id)
+      .single(),
+    supabase
+      .from('offices')
+      .select('id, name, settings')
+      .in('id', officeIds)
+      .order('name'),
+    snapshotRangeQuery,
+    snapshotBaselineQuery,
+  ]);
+
+  if (organizationError) {
+    throw new Error(organizationError.message);
+  }
+
+  if (officesError) {
+    throw new Error(officesError.message);
+  }
+
+  const snapshotRows =
+    snapshotRangeResult.error || !snapshotRangeResult.data ? [] : snapshotRangeResult.data;
+  const baselineSnapshot =
+    snapshotBaselineResult.error || !snapshotBaselineResult.data
+      ? null
+      : snapshotBaselineResult.data[0] ?? null;
+
+  const governanceReport = buildTemplateGovernanceReport({
+    organizationSettings: organization?.settings ?? {},
+    offices: offices ?? [],
+  });
+
+  const organizationUpgradeCountInRange = governanceReport.migrationHistory.filter((entry) =>
+    isWithinRange(entry.appliedAt, start, end)
+  ).length;
+  const officeRolloutCountInRange = governanceReport.officeRolloutHistory.filter((entry) =>
+    isWithinRange(entry.rolledOutAt, start, end)
+  ).length;
+
+  const activityByDate = new Map<string, TemplateActivityPoint>(
+    getTimelineDays(start, end).map((date) => [
+      date,
+      {
+        date,
+        organizationUpgrades: 0,
+        officeRollouts: 0,
+      },
+    ])
+  );
+
+  for (const entry of governanceReport.migrationHistory) {
+    if (!isWithinRange(entry.appliedAt, start, end)) {
+      continue;
+    }
+
+    const date = entry.appliedAt.split('T')[0];
+    const current = activityByDate.get(date);
+    if (current) {
+      current.organizationUpgrades += 1;
+    }
+  }
+
+  for (const entry of governanceReport.officeRolloutHistory) {
+    if (!isWithinRange(entry.rolledOutAt, start, end)) {
+      continue;
+    }
+
+    const date = entry.rolledOutAt.split('T')[0];
+    const current = activityByDate.get(date);
+    if (current) {
+      current.officeRollouts += 1;
+    }
+  }
+
+  const currentDriftCount = officeId
+    ? governanceReport.officeReports[0]?.driftCount ?? 0
+    : governanceReport.organizationDriftCount;
+  const driftTrend = buildDriftTrend({
+    start,
+    end,
+    scope: snapshotScope,
+    snapshots: snapshotRows,
+    baselineSnapshot,
+  });
+
+  return {
+    summary: {
+      templateId: governanceReport.templateId,
+      templateTitle: governanceReport.templateTitle,
+      appliedVersion: governanceReport.appliedVersion,
+      latestVersion: governanceReport.latestVersion,
+      snapshotScope,
+      officeCount: governanceReport.healthSummary.officeCount,
+      officesCurrentCount: governanceReport.healthSummary.officesCurrentCount,
+      officesBehindCount: governanceReport.healthSummary.officesBehindCount,
+      officesWithDrift: governanceReport.healthSummary.officesWithDrift,
+      currentDriftCount,
+      currentVersionCoveragePercent: governanceReport.healthSummary.currentVersionCoveragePercent,
+      branchAlignmentPercent: governanceReport.healthSummary.branchAlignmentPercent,
+      organizationUpgradeCountInRange,
+      officeRolloutCountInRange,
+      driftSnapshotCountInRange: snapshotRows.length,
+      totalOrganizationUpgradeCount: governanceReport.healthSummary.organizationMigrationCount,
+      totalOfficeRolloutCount: governanceReport.healthSummary.officeRolloutCount,
+      lastMigrationAt: governanceReport.healthSummary.lastMigrationAt,
+      lastOfficeRolloutAt: governanceReport.healthSummary.lastOfficeRolloutAt,
+    },
+    activity: Array.from(activityByDate.values()).sort((left, right) => left.date.localeCompare(right.date)),
+    driftTrend,
+    officeStatuses: governanceReport.officeReports.map((office) => ({
+      office_id: office.officeId,
+      office_name: office.officeName,
+      applied_version: office.appliedVersion,
+      latest_version: office.latestVersion,
+      is_current: !office.isUpgradeAvailable,
+      drift_count: office.driftCount,
+      rollout_count: office.rolloutCount,
+      last_rolled_out_at: office.lastRolledOutAt,
+    })),
+  };
+}
+
+export async function getTemplatePerformanceAnalytics(
+  officeId?: string,
+  dateRange?: string
+): Promise<TemplatePerformanceAnalyticsData> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const officeIds = getScopedOfficeIds(context, officeId);
+  const { start, end } = getDateRange(dateRange);
+
+  if (officeIds.length === 0) {
+    return {
+      summary: {
+        primaryTemplateId: 'public-service-standard',
+        primaryTemplateTitle: 'QueueFlow Template',
+        primaryVertical: 'public_service',
+        templateCount: 0,
+        officeCount: 0,
+        totalTickets: 0,
+        waitAccuracyPercent: null,
+        noShowRate: null,
+        completionRate: null,
+        avgServiceTime: null,
+      },
+      templateRows: [],
+      officeRows: [],
+    };
+  }
+
+  const [{ data: organization, error: organizationError }, { data: offices, error: officesError }, { data: tickets, error: ticketsError }] =
+    await Promise.all([
+      supabase
+        .from('organizations')
+        .select('settings')
+        .eq('id', context.staff.organization_id)
+        .single(),
+      supabase
+        .from('offices')
+        .select('id, name, settings')
+        .in('id', officeIds)
+        .order('name'),
+      supabase
+        .from('tickets')
+        .select('office_id, created_at, serving_started_at, completed_at, estimated_wait_minutes, status')
+        .in('office_id', officeIds)
+        .gte('created_at', start)
+        .lte('created_at', end),
+    ]);
+
+  if (organizationError) {
+    throw new Error(organizationError.message);
+  }
+
+  if (officesError) {
+    throw new Error(officesError.message);
+  }
+
+  if (ticketsError) {
+    throw new Error(ticketsError.message);
+  }
+
+  const organizationSettings = organization?.settings ?? {};
+  const officeMap = new Map(
+    (offices ?? []).map((office) => {
+      const resolved = resolvePlatformConfig({
+        organizationSettings,
+        officeSettings: office.settings ?? {},
+      });
+
+      return [
+        office.id,
+        {
+          officeId: office.id,
+          officeName: office.name,
+          templateId: resolved.template.id,
+          templateTitle: resolved.template.title,
+          vertical: resolved.selection.vertical,
+        },
+      ];
+    })
+  );
+
+  const officeAccumulators = new Map<string, TemplateMetricAccumulator>();
+  const templateAccumulators = new Map<
+    string,
+    {
+      templateId: string;
+      templateTitle: string;
+      vertical: string;
+      officeIds: Set<string>;
+      metrics: TemplateMetricAccumulator;
+    }
+  >();
+  const overallAccumulator = createMetricAccumulator();
+
+  for (const ticket of (tickets ?? []) as TicketMetricRow[]) {
+    const office = officeMap.get(ticket.office_id);
+    if (!office) {
+      continue;
+    }
+
+    appendTicketMetrics(overallAccumulator, ticket);
+
+    const officeAccumulator = officeAccumulators.get(office.officeId) ?? createMetricAccumulator();
+    appendTicketMetrics(officeAccumulator, ticket);
+    officeAccumulators.set(office.officeId, officeAccumulator);
+
+    const templateKey = `${office.templateId}:${office.vertical}`;
+    const templateEntry =
+      templateAccumulators.get(templateKey) ??
+      {
+        templateId: office.templateId,
+        templateTitle: office.templateTitle,
+        vertical: office.vertical,
+        officeIds: new Set<string>(),
+        metrics: createMetricAccumulator(),
+      };
+
+    templateEntry.officeIds.add(office.officeId);
+    appendTicketMetrics(templateEntry.metrics, ticket);
+    templateAccumulators.set(templateKey, templateEntry);
+  }
+
+  const officeRows = Array.from(officeMap.values())
+    .map((office) => {
+      const metrics = finalizeMetricAccumulator(
+        officeAccumulators.get(office.officeId) ?? createMetricAccumulator()
+      );
+
+      return {
+        officeId: office.officeId,
+        officeName: office.officeName,
+        templateId: office.templateId,
+        templateTitle: office.templateTitle,
+        vertical: office.vertical,
+        totalTickets: metrics.totalTickets,
+        waitAccuracyPercent: metrics.waitAccuracyPercent,
+        noShowRate: metrics.noShowRate,
+        completionRate: metrics.completionRate,
+        avgWaitTime: metrics.avgWaitTime,
+        avgServiceTime: metrics.avgServiceTime,
+      };
+    })
+    .sort((left, right) => right.totalTickets - left.totalTickets || left.officeName.localeCompare(right.officeName));
+
+  const templateRows = Array.from(templateAccumulators.values())
+    .map((entry) => {
+      const metrics = finalizeMetricAccumulator(entry.metrics);
+
+      return {
+        templateId: entry.templateId,
+        templateTitle: entry.templateTitle,
+        vertical: entry.vertical,
+        officeCount: entry.officeIds.size,
+        totalTickets: metrics.totalTickets,
+        waitAccuracyPercent: metrics.waitAccuracyPercent,
+        noShowRate: metrics.noShowRate,
+        completionRate: metrics.completionRate,
+        avgWaitTime: metrics.avgWaitTime,
+        avgServiceTime: metrics.avgServiceTime,
+      };
+    })
+    .sort((left, right) => right.totalTickets - left.totalTickets || left.templateTitle.localeCompare(right.templateTitle));
+
+  const overallMetrics = finalizeMetricAccumulator(overallAccumulator);
+  const primaryRow = templateRows[0];
+  const fallbackOffice = Array.from(officeMap.values())[0];
+
+  return {
+    summary: {
+      primaryTemplateId: primaryRow?.templateId ?? fallbackOffice?.templateId ?? 'public-service-standard',
+      primaryTemplateTitle: primaryRow?.templateTitle ?? fallbackOffice?.templateTitle ?? 'QueueFlow Template',
+      primaryVertical: primaryRow?.vertical ?? fallbackOffice?.vertical ?? 'public_service',
+      templateCount: templateRows.length,
+      officeCount: officeMap.size,
+      totalTickets: overallMetrics.totalTickets,
+      waitAccuracyPercent: overallMetrics.waitAccuracyPercent,
+      noShowRate: overallMetrics.noShowRate,
+      completionRate: overallMetrics.completionRate,
+      avgServiceTime: overallMetrics.avgServiceTime,
+    },
+    templateRows,
+    officeRows,
   };
 }

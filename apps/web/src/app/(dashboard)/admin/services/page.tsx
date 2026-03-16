@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { ServicesClient } from './services-client';
 
 export default async function ServicesPage({
@@ -6,24 +6,33 @@ export default async function ServicesPage({
 }: {
   searchParams: Promise<{ department?: string }>;
 }) {
-  const supabase = await createClient();
+  const context = await getStaffContext();
   const params = await searchParams;
+  const officeIds = context.accessibleOfficeIds;
 
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, office:offices(id, name)')
-    .order('name');
+  const { data: departments } = officeIds.length > 0
+    ? await context.supabase
+        .from('departments')
+        .select('id, name, office_id, office:offices(id, name)')
+        .in('office_id', officeIds)
+        .order('name')
+    : { data: [] };
 
-  let query = supabase
-    .from('services')
-    .select('*, department:departments(id, name, office:offices(id, name))')
-    .order('name');
+  const allowedDepartmentIds = (departments ?? []).map((department) => department.id);
 
-  if (params.department) {
-    query = query.eq('department_id', params.department);
-  }
+  const scopedDepartmentIds = params.department
+    ? allowedDepartmentIds.includes(params.department)
+      ? [params.department]
+      : []
+    : allowedDepartmentIds;
 
-  const { data: services, error } = await query;
+  const { data: services, error } = scopedDepartmentIds.length > 0
+    ? await context.supabase
+        .from('services')
+        .select('*, department:departments(id, name, office:offices(id, name))')
+        .in('department_id', scopedDepartmentIds)
+        .order('name')
+    : { data: [], error: null };
 
   if (error) {
     return (

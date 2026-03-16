@@ -52,16 +52,16 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Offices</h1>
+          <h1 className="text-2xl font-bold text-foreground">Locations</h1>
           <p className="text-sm text-muted-foreground">
-            Manage your organization&apos;s office locations.
+            Add and update the places where customers can be served.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Office
+          Add Location
         </button>
       </div>
 
@@ -76,6 +76,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 font-medium text-muted-foreground">Name</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Branch Type</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Address</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Timezone</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
@@ -85,14 +86,17 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
           <tbody>
             {offices.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  No offices found. Create your first office to get started.
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  No locations found. Add your first location to get started.
                 </td>
               </tr>
             )}
             {offices.map((office) => (
               <tr key={office.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                 <td className="px-4 py-3 font-medium text-foreground">{office.name}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {((office.settings as Record<string, any> | null)?.branch_type as string | undefined)?.replace(/_/g, ' ') ?? '---'}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">{office.address || '---'}</td>
                 <td className="px-4 py-3 text-muted-foreground">{office.timezone || '---'}</td>
                 <td className="px-4 py-3">
@@ -144,7 +148,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
           />
           <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Office' : 'Create Office'}
+              {editing ? 'Edit Location' : 'Create Location'}
             </h2>
 
             {error && (
@@ -185,6 +189,51 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                   placeholder="e.g. America/New_York"
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Branch Type
+                </label>
+                <select
+                  name="branch_type"
+                  defaultValue={((editing?.settings as Record<string, any> | null)?.branch_type as string | undefined) ?? ''}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Use template default</option>
+                  <option value="service_center">Service Center</option>
+                  <option value="branch_office">Branch Office</option>
+                  <option value="community_clinic">Community Clinic</option>
+                  <option value="restaurant_floor">Restaurant Floor</option>
+                  <option value="salon_shop">Salon Shop</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Operating Model
+                </label>
+                <select
+                  name="platform_operating_model"
+                  defaultValue={((editing?.settings as Record<string, any> | null)?.platform_operating_model as string | undefined) ?? ''}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">Use template default</option>
+                  <option value="department_first">Department First</option>
+                  <option value="service_routing">Service Routing</option>
+                  <option value="appointments_first">Appointments First</option>
+                  <option value="waitlist">Waitlist</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="privacy_safe_display"
+                  value="true"
+                  defaultChecked={((editing?.settings as Record<string, any> | null)?.privacy_safe_display as boolean | undefined) ?? false}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <label className="text-sm font-medium text-foreground">
+                  Privacy-safe display mode
+                </label>
               </div>
               <div className="flex items-center gap-2">
                 <input

@@ -16,3 +16,7 @@ apps/web/certificates/
 .claude/settings.local.json
 
 .vercel
+playwright-report
+test-results
+apps/web/.playwright
+apps/web/.e2e-state.json

@@ -1,21 +1,93 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Calendar, Clock, MapPin, Check } from 'lucide-react';
-import { createAppointment, getAvailableSlots } from '@/lib/actions/appointment-actions';
+import { createClient } from '@/lib/supabase/client';
+import {
+  clearBookingEmailOtpVerification,
+  createAppointment,
+  getAvailableSlots,
+  markBookingEmailOtpVerified,
+  updateAppointmentContact,
+} from '@/lib/actions/appointment-actions';
 
 interface BookingFormProps {
   office: any;
   organization: any;
   departments: any[];
+  initialDepartmentId?: string;
+  initialServiceId?: string;
+  platformContext?: {
+    vertical?: string;
+    vocabulary?: {
+      officeLabel?: string;
+      departmentLabel?: string;
+      serviceLabel?: string;
+      deskLabel?: string;
+      customerLabel?: string;
+      bookingLabel?: string;
+      queueLabel?: string;
+    };
+  };
+  sandbox?: {
+    enabled: boolean;
+    trackPath: string;
+    sampleSlots?: string[];
+  };
 }
 
 type Step = 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'done';
 
-export function BookingForm({ office, organization, departments }: BookingFormProps) {
-  const [step, setStep] = useState<Step>('department');
-  const [selectedDept, setSelectedDept] = useState<any>(null);
-  const [selectedService, setSelectedService] = useState<any>(null);
+export function BookingForm({
+  office,
+  organization,
+  departments,
+  initialDepartmentId,
+  initialServiceId,
+  platformContext,
+  sandbox,
+}: BookingFormProps) {
+  const sandboxMode = Boolean(sandbox?.enabled);
+  const vocabulary = {
+    officeLabel: platformContext?.vocabulary?.officeLabel ?? 'Location',
+    departmentLabel: platformContext?.vocabulary?.departmentLabel ?? 'Department',
+    serviceLabel: platformContext?.vocabulary?.serviceLabel ?? 'Service',
+    bookingLabel: platformContext?.vocabulary?.bookingLabel ?? 'Appointment',
+    customerLabel: platformContext?.vocabulary?.customerLabel ?? 'Customer',
+  };
+  const hasSingleDepartment = departments.length === 1;
+  const bookingLabelLower = vocabulary.bookingLabel.toLowerCase();
+  const departmentLabelLower = vocabulary.departmentLabel.toLowerCase();
+  const serviceLabelLower = vocabulary.serviceLabel.toLowerCase();
+  const bookingActionLabel =
+    vocabulary.bookingLabel === 'Appointment'
+      ? 'Book an Appointment'
+      : `Book a ${vocabulary.bookingLabel}`;
+  const officeSlug = office.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const resolvedInitialDepartment =
+    departments.find((department) => department.id === initialDepartmentId) ??
+    (hasSingleDepartment ? departments[0] : null) ??
+    departments.find((department) =>
+      department.services?.some((service: any) => service.id === initialServiceId)
+    ) ??
+    null;
+  const resolvedInitialService =
+    resolvedInitialDepartment?.services?.find((service: any) => service.id === initialServiceId) ??
+    null;
+  const initialStep: Step = resolvedInitialService
+    ? 'date'
+    : resolvedInitialDepartment
+      ? 'service'
+      : 'department';
+
+  const [step, setStep] = useState<Step>(initialStep);
+  const [selectedDept, setSelectedDept] = useState<any>(resolvedInitialDepartment);
+  const [selectedService, setSelectedService] = useState<any>(resolvedInitialService);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -26,12 +98,39 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [appointment, setAppointment] = useState<any>(null);
+  const [editingBookedInfo, setEditingBookedInfo] = useState(false);
+  const [savingBookedInfo, setSavingBookedInfo] = useState(false);
+  const [sendingEmailOtp, setSendingEmailOtp] = useState(false);
+  const [verifyingEmailOtp, setVerifyingEmailOtp] = useState(false);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpVerified, setEmailOtpVerified] = useState(false);
+  const [emailOtpMessage, setEmailOtpMessage] = useState<string | null>(null);
+  const [emailOtpResendRemainingSeconds, setEmailOtpResendRemainingSeconds] =
+    useState(0);
+  const [supabase] = useState(() => createClient());
 
   const today = new Date().toISOString().split('T')[0];
+  const orgSettings = organization?.settings ?? {};
+  const bookingEmailOtpEnabled = Boolean(orgSettings.email_otp_enabled);
+  const bookingEmailOtpRequired = Boolean(
+    orgSettings.email_otp_enabled && orgSettings.email_otp_required_for_booking
+  );
+  const bookingEmailOtpExpiryMinutes = Number(
+    orgSettings.email_otp_code_expiry_minutes ?? 10
+  );
+  const bookingEmailOtpResendCooldownSeconds = Number(
+    orgSettings.email_otp_resend_cooldown_seconds ?? 60
+  );
 
   // Fetch available slots when date changes
   useEffect(() => {
     if (!selectedDate || !selectedService) return;
+    if (sandboxMode) {
+      setAvailableSlots(sandbox?.sampleSlots ?? ['09:00', '09:30', '10:00', '10:30', '11:00']);
+      setLoadingSlots(false);
+      return;
+    }
     setLoadingSlots(true);
     setSelectedTime('');
     getAvailableSlots(office.id, selectedService.id, selectedDate).then((result) => {
@@ -43,7 +142,27 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
       }
       setLoadingSlots(false);
     });
-  }, [selectedDate, selectedService, office.id]);
+  }, [sandboxMode, sandbox?.sampleSlots, selectedDate, selectedService, office.id]);
+
+  useEffect(() => {
+    setEmailOtpSent(false);
+    setEmailOtpVerified(false);
+    setEmailOtpCode('');
+    setEmailOtpMessage(null);
+    setEmailOtpResendRemainingSeconds(0);
+  }, [customerEmail]);
+
+  useEffect(() => {
+    if (emailOtpResendRemainingSeconds <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setEmailOtpResendRemainingSeconds((current) =>
+        current <= 1 ? 0 : current - 1
+      );
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [emailOtpResendRemainingSeconds]);
 
   function handleSelectDepartment(dept: any) {
     setSelectedDept(dept);
@@ -75,15 +194,38 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
       setError('Please enter your name');
       return;
     }
+    if (bookingEmailOtpRequired && !customerEmail.trim()) {
+      setError('Please enter your email to verify this booking.');
+      return;
+    }
     setError(null);
     setStep('confirm');
   }
 
   async function handleConfirm() {
+    if (bookingEmailOtpRequired && !emailOtpVerified) {
+      setError('Please verify your email before confirming this booking.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
     const scheduledAt = `${selectedDate}T${selectedTime}:00`;
+
+    if (sandboxMode) {
+      setAppointment({
+        id: crypto.randomUUID(),
+        sandbox_reference: `SBX-${Math.floor(1000 + Math.random() * 8999)}`,
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim() || null,
+        customer_email: customerEmail.trim() || null,
+        scheduled_at: scheduledAt,
+      });
+      setStep('done');
+      setSubmitting(false);
+      return;
+    }
 
     const result = await createAppointment({
       officeId: office.id,
@@ -104,6 +246,104 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
     setAppointment(result.data);
     setStep('done');
     setSubmitting(false);
+  }
+
+  async function handleSendEmailOtp() {
+    const email = customerEmail.trim().toLowerCase();
+    if (!email) {
+      setError('Please enter your email to receive a verification code.');
+      return;
+    }
+
+    setSendingEmailOtp(true);
+    setError(null);
+    setEmailOtpMessage(null);
+
+    if (sandboxMode) {
+      setEmailOtpSent(true);
+      setEmailOtpVerified(false);
+      setEmailOtpResendRemainingSeconds(bookingEmailOtpResendCooldownSeconds);
+      setEmailOtpMessage(
+        `Sandbox code sent. Use 123456 to continue.`
+      );
+      setSendingEmailOtp(false);
+      return;
+    }
+
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+
+    if (otpError) {
+      setError(otpError.message);
+      setSendingEmailOtp(false);
+      return;
+    }
+
+    setEmailOtpSent(true);
+    setEmailOtpVerified(false);
+    setEmailOtpResendRemainingSeconds(bookingEmailOtpResendCooldownSeconds);
+    setEmailOtpMessage(
+      `Verification code sent. It stays valid for ${bookingEmailOtpExpiryMinutes} minutes.`
+    );
+    setSendingEmailOtp(false);
+  }
+
+  async function handleVerifyEmailOtp() {
+    const email = customerEmail.trim().toLowerCase();
+    if (!email) {
+      setError('Please enter your email first.');
+      return;
+    }
+
+    if (!emailOtpCode.trim()) {
+      setError('Enter the verification code from your email.');
+      return;
+    }
+
+    setVerifyingEmailOtp(true);
+    setError(null);
+    setEmailOtpMessage(null);
+
+    if (sandboxMode) {
+      if (emailOtpCode.trim() !== '123456') {
+        setError('Sandbox code is 123456.');
+        setVerifyingEmailOtp(false);
+        return;
+      }
+
+      setEmailOtpVerified(true);
+      setEmailOtpMessage('Email verified in sandbox mode.');
+      setVerifyingEmailOtp(false);
+      return;
+    }
+
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token: emailOtpCode.trim(),
+      type: 'email',
+    });
+
+    if (verifyError) {
+      setError(verifyError.message);
+      setVerifyingEmailOtp(false);
+      return;
+    }
+
+    await markBookingEmailOtpVerified({
+      email,
+      officeId: office.id,
+      expiresInMinutes: bookingEmailOtpExpiryMinutes,
+    });
+
+    await supabase.auth.signOut();
+
+    setEmailOtpVerified(true);
+    setEmailOtpMessage('Email verified. You can confirm the booking now.');
+    setVerifyingEmailOtp(false);
   }
 
   function handleBack() {
@@ -128,8 +368,8 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
   }
 
   function handleStartOver() {
-    setStep('department');
-    setSelectedDept(null);
+    setStep(hasSingleDepartment ? 'service' : 'department');
+    setSelectedDept(hasSingleDepartment ? departments[0] : null);
     setSelectedService(null);
     setSelectedDate('');
     setSelectedTime('');
@@ -137,7 +377,56 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
     setCustomerPhone('');
     setCustomerEmail('');
     setAppointment(null);
+    setEditingBookedInfo(false);
+    setEmailOtpCode('');
+    setEmailOtpSent(false);
+    setEmailOtpVerified(false);
+    setEmailOtpMessage(null);
+    setEmailOtpResendRemainingSeconds(0);
     setError(null);
+    if (!sandboxMode) {
+      void clearBookingEmailOtpVerification();
+    }
+  }
+
+  async function handleSaveBookedInfo() {
+    if (!appointment?.id) return;
+    if (!customerName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
+    setSavingBookedInfo(true);
+    setError(null);
+
+    if (sandboxMode) {
+      setAppointment((current: any) => ({
+        ...current,
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim() || null,
+        customer_email: customerEmail.trim() || null,
+      }));
+      setEditingBookedInfo(false);
+      setSavingBookedInfo(false);
+      return;
+    }
+
+    const result = await updateAppointmentContact({
+      appointmentId: appointment.id,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim() || undefined,
+      customerEmail: customerEmail.trim() || undefined,
+    });
+
+    if (result.error) {
+      setError(result.error);
+      setSavingBookedInfo(false);
+      return;
+    }
+
+    setAppointment(result.data);
+    setEditingBookedInfo(false);
+    setSavingBookedInfo(false);
   }
 
   const stepNumber = {
@@ -169,16 +458,30 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
+      {sandboxMode ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
+          Sandbox mode. This booking flow looks and behaves like the live page, but it never creates a real reservation or sends alerts.
+        </div>
+      ) : null}
       {/* Header */}
       <div className="border-b border-border bg-card px-6 py-4 text-center">
-        <h1 className="text-2xl font-bold text-foreground">
-          {organization?.name || 'QueueFlow'}
-        </h1>
+        <div className="flex flex-col items-center justify-center gap-3">
+          {organization?.logo_url ? (
+            <img
+              src={organization.logo_url}
+              alt={`${organization?.name || 'Business'} logo`}
+              className="max-h-24 w-auto max-w-[280px] object-contain"
+            />
+          ) : null}
+          <h1 className="text-2xl font-bold text-foreground">
+            {organization?.name || 'QueueFlow'}
+          </h1>
+        </div>
         <div className="mt-1 flex items-center justify-center gap-1.5 text-muted-foreground">
           <MapPin className="h-4 w-4" />
           <span>{office.name}</span>
         </div>
-        <p className="mt-1 text-sm font-medium text-primary">Book an Appointment</p>
+        <p className="mt-1 text-sm font-medium text-primary">{bookingActionLabel}</p>
       </div>
 
       {/* Progress bar */}
@@ -211,9 +514,9 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
         {step === 'department' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Select Department</h2>
+              <h2 className="text-3xl font-bold text-foreground">{`Select ${vocabulary.departmentLabel}`}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Choose the department for your appointment
+                {`Choose the ${departmentLabelLower} for your ${bookingLabelLower}`}
               </p>
             </div>
             <div className="grid gap-4">
@@ -241,7 +544,9 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-3xl font-bold text-foreground">{selectedDept.name}</h2>
-              <p className="mt-2 text-lg text-muted-foreground">Select a service</p>
+              <p className="mt-2 text-lg text-muted-foreground">
+                {`Select ${hasSingleDepartment ? serviceLabelLower : `a ${serviceLabelLower}`}`}
+              </p>
             </div>
             <div className="grid gap-4">
               {selectedDept.services
@@ -273,7 +578,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Back to Departments
+              {`Back to ${vocabulary.departmentLabel}s`}
             </button>
           </div>
         )}
@@ -285,7 +590,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               <Calendar className="mx-auto h-10 w-10 text-primary" />
               <h2 className="mt-3 text-3xl font-bold text-foreground">Choose a Date</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Select when you would like to visit
+                {`Select when you would like to visit for your ${bookingLabelLower}`}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
@@ -375,7 +680,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
             <div className="text-center">
               <h2 className="text-3xl font-bold text-foreground">Your Information</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Please provide your details
+                {`Please provide your details for this ${bookingLabelLower}`}
               </p>
             </div>
 
@@ -406,7 +711,12 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  Email <span className="text-xs text-muted-foreground">(optional)</span>
+                  Email{' '}
+                  {bookingEmailOtpRequired ? (
+                    <span className="text-destructive">*</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">(optional)</span>
+                  )}
                 </label>
                 <input
                   type="email"
@@ -415,6 +725,11 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
                   placeholder="Enter your email address"
                   className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
+                {bookingEmailOtpRequired ? (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    This business requires email verification before a booking is confirmed.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -422,7 +737,7 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               onClick={handleCustomerInfo}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
-              Review Appointment
+              {`Review ${vocabulary.bookingLabel}`}
             </button>
             <button
               onClick={handleBack}
@@ -437,19 +752,19 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
         {step === 'confirm' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Confirm Appointment</h2>
+              <h2 className="text-3xl font-bold text-foreground">{`Confirm ${vocabulary.bookingLabel}`}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                Please review your appointment details
+                {`Please review your ${bookingLabelLower} details`}
               </p>
             </div>
 
             <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="flex justify-between border-b border-border py-2">
-                <span className="text-muted-foreground">Department</span>
+                <span className="text-muted-foreground">{vocabulary.departmentLabel}</span>
                 <span className="font-medium text-foreground">{selectedDept?.name}</span>
               </div>
               <div className="flex justify-between border-b border-border py-2">
-                <span className="text-muted-foreground">Service</span>
+                <span className="text-muted-foreground">{vocabulary.serviceLabel}</span>
                 <span className="font-medium text-foreground">{selectedService?.name}</span>
               </div>
               <div className="flex items-center justify-between border-b border-border py-2">
@@ -484,18 +799,91 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               )}
             </div>
 
+            {bookingEmailOtpRequired ? (
+              <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-6">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Email verification</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {`We'll send a short code to ${customerEmail || 'your email'} before this ${bookingLabelLower} is created.`}
+                  </p>
+                </div>
+
+                {emailOtpVerified ? (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    {`Email verified. Your ${bookingLabelLower} is ready to confirm.`}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={handleSendEmailOtp}
+                        disabled={
+                          sendingEmailOtp ||
+                          !customerEmail.trim() ||
+                          emailOtpResendRemainingSeconds > 0
+                        }
+                        className="rounded-xl border border-primary/20 bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {sendingEmailOtp
+                          ? 'Sending code...'
+                          : emailOtpSent
+                            ? emailOtpResendRemainingSeconds > 0
+                              ? `Resend in ${emailOtpResendRemainingSeconds}s`
+                              : 'Resend code'
+                            : 'Send verification code'}
+                      </button>
+                      <p className="self-center text-xs text-muted-foreground">
+                        Resend available after about {bookingEmailOtpResendCooldownSeconds} seconds.
+                      </p>
+                    </div>
+
+                    {emailOtpSent ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-foreground">
+                            Verification code
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={emailOtpCode}
+                            onChange={(e) => setEmailOtpCode(e.target.value.replace(/\s+/g, ''))}
+                            placeholder="Enter the code from your email"
+                            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleVerifyEmailOtp}
+                          disabled={verifyingEmailOtp || !emailOtpCode.trim()}
+                          className="w-full rounded-xl border border-primary bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {verifyingEmailOtp ? 'Verifying...' : 'Verify email'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+
+                {emailOtpMessage ? (
+                  <p className="text-sm text-muted-foreground">{emailOtpMessage}</p>
+                ) : null}
+              </div>
+            ) : null}
+
             <button
               onClick={handleConfirm}
-              disabled={submitting}
+              disabled={submitting || (bookingEmailOtpRequired && !emailOtpVerified)}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  Booking...
+                  {`${vocabulary.bookingLabel}...`}
                 </span>
               ) : (
-                'Confirm Booking'
+                `Confirm ${vocabulary.bookingLabel}`
               )}
             </button>
             <button
@@ -517,10 +905,10 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
               </div>
 
               <h2 className="text-2xl font-bold text-foreground">
-                Appointment Confirmed!
+                {`${vocabulary.bookingLabel} Confirmed!`}
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Your appointment has been booked successfully.
+                {`Your ${bookingLabelLower} has been booked successfully.`}
               </p>
 
               <div className="mt-6 rounded-xl bg-muted p-4">
@@ -549,23 +937,133 @@ export function BookingForm({ office, organization, departments }: BookingFormPr
                   <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span>{formatTime(selectedTime)}</span>
                 </div>
+                <div className="flex items-center gap-3 text-sm text-foreground">
+                  <span className="w-4 shrink-0 text-center text-muted-foreground">N</span>
+                  <span>{customerName}</span>
+                </div>
+                {customerPhone && (
+                  <div className="flex items-center gap-3 text-sm text-foreground">
+                    <span className="w-4 shrink-0 text-center text-muted-foreground">P</span>
+                    <span>{customerPhone}</span>
+                  </div>
+                )}
+                {customerEmail && (
+                  <div className="flex items-center gap-3 text-sm text-foreground">
+                    <span className="w-4 shrink-0 text-center text-muted-foreground">@</span>
+                    <span>{customerEmail}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-sm font-medium text-primary">
-                  Please arrive a few minutes early to check in.
+                  {vocabulary.bookingLabel === 'Reservation'
+                    ? 'Please arrive a few minutes early so the host can seat your party smoothly.'
+                    : 'Please arrive a few minutes early to check in.'}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  You can check in at the kiosk or online when you arrive.
+                  {vocabulary.bookingLabel === 'Reservation'
+                    ? 'You can check in with the host stand or online when you arrive.'
+                    : 'You can check in at the kiosk or online when you arrive.'}
                 </p>
+              </div>
+
+              <div className="mt-6 rounded-xl border border-border bg-background p-4 text-left">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {vocabulary.bookingLabel === 'Reservation' ? 'Reservation details' : 'Visit details'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {`Update the contact info on this ${bookingLabelLower} if you need to correct it.`}
+                    </p>
+                  </div>
+                  {!editingBookedInfo ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingBookedInfo(true)}
+                      className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                    >
+                      Edit info
+                    </button>
+                  ) : null}
+                </div>
+
+                {editingBookedInfo ? (
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        Full Name <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        Phone Number
+                      </label>
+                      <input
+                        type="tel"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleSaveBookedInfo}
+                        disabled={savingBookedInfo}
+                        className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {savingBookedInfo ? 'Saving...' : 'Save changes'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingBookedInfo(false)}
+                        disabled={savingBookedInfo}
+                        className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
 
+            <Link
+              href={sandboxMode ? sandbox?.trackPath ?? `/book/${officeSlug}/checkin` : `/book/${officeSlug}/checkin`}
+              className="block w-full rounded-xl border border-border bg-card px-4 py-4 text-center text-lg font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              {sandboxMode
+                ? 'Open Queue Preview'
+                : vocabulary.bookingLabel === 'Reservation'
+                  ? 'Track or Check In Reservation'
+                  : 'Track or Check In Appointment'}
+            </Link>
             <button
               onClick={handleStartOver}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
-              Book Another Appointment
+              {vocabulary.bookingLabel === 'Reservation'
+                ? 'Book Another Reservation'
+                : 'Book Another Appointment'}
             </button>
           </div>
         )}

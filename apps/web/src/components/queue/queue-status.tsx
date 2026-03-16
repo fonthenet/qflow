@@ -27,6 +27,13 @@ interface QueueStatusProps {
   departmentName?: string;
   serviceName: string;
   priorityAlertConfig?: PriorityAlertConfig | null;
+  sandbox?: {
+    enabled: boolean;
+    initialPosition?: number | null;
+    initialEstimatedWait?: number | null;
+    nowServing?: string | null;
+    deskName?: string | null;
+  };
 }
 
 function formatSyncLabel(date: Date | null) {
@@ -162,7 +169,9 @@ export function QueueStatus({
   departmentName = '',
   serviceName,
   priorityAlertConfig,
+  sandbox,
 }: QueueStatusProps) {
+  const sandboxMode = Boolean(sandbox?.enabled);
   // Build display hierarchy: Organization > Office/Branch > Service
   const businessName = organizationName || officeName || 'Business';
   const branchLine = organizationName && officeName && officeName !== organizationName
@@ -182,10 +191,13 @@ export function QueueStatus({
     ticketId: initialTicket.id,
     qrToken: initialTicket.qr_token,
     initialData: initialTicket,
+    disabled: sandboxMode,
+    sandboxPosition: sandbox?.initialPosition ?? null,
+    sandboxEstimatedWait: sandbox?.initialEstimatedWait ?? null,
   });
 
-  const [nowServing, setNowServing] = useState<string | null>(null);
-  const [deskName, setDeskName] = useState<string | null>(null);
+  const [nowServing, setNowServing] = useState<string | null>(sandbox?.nowServing ?? null);
+  const [deskName, setDeskName] = useState<string | null>(sandbox?.deskName ?? null);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [showIosPrompt, setShowIosPrompt] = useState(false);
   const [showBuzzFlash, setShowBuzzFlash] = useState(false);
@@ -195,6 +207,7 @@ export function QueueStatus({
   const [trackingStopped, setTrackingStopped] = useState(false);
   const [stopOutcome, setStopOutcome] = useState<'left_queue' | 'cleared'>('left_queue');
   const [stopError, setStopError] = useState<string | null>(null);
+  const [hasMounted, setHasMounted] = useState(false);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -204,6 +217,7 @@ export function QueueStatus({
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches
   );
+  const shouldShowIosSetupLabel = hasMounted && isIos && !isInStandaloneMode;
 
   const syncLabel = useMemo(() => {
     if (isUpdating || isRefreshing) return 'Syncing now';
@@ -211,6 +225,7 @@ export function QueueStatus({
   }, [isRefreshing, isUpdating, lastSyncedAt]);
 
   const fireBuzz = () => {
+    if (sandboxMode) return;
     if ('vibrate' in navigator) {
       navigator.vibrate([800, 200, 800, 200, 800, 200, 800, 200, 800]);
     }
@@ -234,6 +249,10 @@ export function QueueStatus({
   };
 
   const fetchNowServing = async () => {
+    if (sandboxMode) {
+      setNowServing(sandbox?.nowServing ?? null);
+      return;
+    }
     const supabase = createClient();
     const { data } = await supabase
       .from('tickets')
@@ -249,6 +268,10 @@ export function QueueStatus({
   };
 
   const fetchDeskName = async () => {
+    if (sandboxMode) {
+      setDeskName(sandbox?.deskName ?? null);
+      return;
+    }
     if (!ticket.desk_id) {
       setDeskName(null);
       return;
@@ -267,6 +290,10 @@ export function QueueStatus({
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
+      if (sandboxMode) {
+        await Promise.resolve();
+        return;
+      }
       await Promise.all([
         refresh(),
         fetchNowServing(),
@@ -282,6 +309,11 @@ export function QueueStatus({
     setStopError(null);
 
     try {
+      if (sandboxMode) {
+        setStopOutcome('left_queue');
+        setTrackingStopped(true);
+        return;
+      }
       const result = await stopTicketTracking(ticket.id);
       if (!result) {
         setStopError('We could not leave the queue just yet. Please try again.');
@@ -301,6 +333,11 @@ export function QueueStatus({
   };
 
   useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (sandboxMode) return;
     const supabase = createClient();
     const channel = supabase
       .channel(`buzz-${ticket.office_id}`)
@@ -314,9 +351,10 @@ export function QueueStatus({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket.id, ticket.office_id]);
+  }, [sandboxMode, ticket.id, ticket.office_id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const supabase = createClient();
 
     const seedLatestBuzz = async () => {
@@ -359,9 +397,10 @@ export function QueueStatus({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'buzz' && event.data?.ticketId === ticket.id) {
         fireBuzz();
@@ -372,7 +411,7 @@ export function QueueStatus({
     return () => {
       navigator.serviceWorker?.removeEventListener('message', handler);
     };
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
     return () => {
@@ -381,18 +420,27 @@ export function QueueStatus({
   }, []);
 
   useEffect(() => {
+    if (sandboxMode) {
+      setNowServing(sandbox?.nowServing ?? null);
+      return;
+    }
     void fetchNowServing();
     const interval = setInterval(fetchNowServing, 15000);
     return () => clearInterval(interval);
-  }, [ticket.department_id, ticket.office_id]);
+  }, [sandboxMode, sandbox?.nowServing, ticket.department_id, ticket.office_id]);
 
   useEffect(() => {
+    if (sandboxMode) {
+      setDeskName(sandbox?.deskName ?? null);
+      return;
+    }
     if (ticket.status === 'called' && ticket.desk_id) {
       void fetchDeskName();
     }
-  }, [ticket.status, ticket.desk_id]);
+  }, [sandboxMode, sandbox?.deskName, ticket.status, ticket.desk_id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     if (!notificationRequested.current) {
       notificationRequested.current = true;
 
@@ -425,9 +473,10 @@ export function QueueStatus({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     if (!alertsEnabled) return;
 
     const handleVisibilityChange = () => {
@@ -444,9 +493,10 @@ export function QueueStatus({
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [alertsEnabled, ticket.id]);
+  }, [alertsEnabled, sandboxMode, ticket.id]);
 
   useEffect(() => {
+    if (sandboxMode) return;
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
 
@@ -468,10 +518,11 @@ export function QueueStatus({
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [ticket.id]);
+  }, [sandboxMode, ticket.id]);
 
   const lastResubscribeStatus = useRef<string | null>(null);
   useEffect(() => {
+    if (sandboxMode) return;
     if (
       ticket.status === 'called' &&
       lastResubscribeStatus.current !== 'called' &&
@@ -484,9 +535,13 @@ export function QueueStatus({
       });
     }
     lastResubscribeStatus.current = ticket.status;
-  }, [ticket.status, ticket.id, alertsEnabled]);
+  }, [alertsEnabled, sandboxMode, ticket.id, ticket.status]);
 
   const handleEnableAlerts = async () => {
+    if (sandboxMode) {
+      setAlertsEnabled(true);
+      return;
+    }
     if (isIos && !isInStandaloneMode) {
       setShowIosPrompt(true);
       return;
@@ -584,6 +639,7 @@ export function QueueStatus({
           stopError={stopError}
           onRefresh={handleManualRefresh}
           onStopTracking={() => setShowStopDialog(true)}
+          sandboxMode={sandboxMode}
         />
         <QueueStopDialog
           isOpen={showStopDialog}
@@ -808,7 +864,7 @@ export function QueueStatus({
             >
               <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
               <span className="text-sm font-medium text-amber-50">
-                {isIos && !isInStandaloneMode
+                {shouldShowIosSetupLabel
                   ? 'Set up alerts \u2014 we\u2019ll notify you when it\u2019s your turn'
                   : 'Enable alerts \u2014 we\u2019ll notify you when it\u2019s your turn'}
               </span>
@@ -820,10 +876,16 @@ export function QueueStatus({
             </div>
           )}
 
-          <div className="mt-4 space-y-3">
-            <EditCustomerData ticket={ticket} />
-            <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
-          </div>
+          {sandboxMode ? (
+            <div className="mt-4 rounded-2xl border border-sky-200/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+              Sandbox preview. Customer editing and live alert setup stay disabled here so the page never touches real data.
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <EditCustomerData ticket={ticket} />
+              <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
+            </div>
+          )}
 
           {stopError ? (
             <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">

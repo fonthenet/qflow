@@ -11,8 +11,14 @@ const navLinks = [
   { href: '/contact', label: 'Contact' },
 ];
 
-export function Navbar() {
+interface NavbarProps {
+  signedIn?: boolean;
+  organizationName?: string | null;
+}
+
+export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const signedInLabel = organizationName ? `Signed in to ${organizationName}` : 'Signed in';
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-lg">
@@ -42,18 +48,34 @@ export function Navbar() {
 
         {/* Desktop CTA */}
         <div className="hidden items-center gap-3 md:flex">
-          <Link
-            href="/login"
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
-          >
-            Get Started Free
-          </Link>
+          {signedIn ? (
+            <>
+              <span className="rounded-full border border-primary/15 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary">
+                {signedInLabel}
+              </span>
+              <Link
+                href="/admin/offices"
+                className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
+              >
+                Open Dashboard
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
+              >
+                Get Started Free
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile Menu Button */}
@@ -80,20 +102,37 @@ export function Navbar() {
               </Link>
             ))}
             <hr className="my-2 border-border" />
-            <Link
-              href="/login"
-              onClick={() => setMobileOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              onClick={() => setMobileOpen(false)}
-              className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
-            >
-              Get Started Free
-            </Link>
+            {signedIn ? (
+              <>
+                <div className="rounded-lg px-3 py-2 text-sm font-medium text-primary">
+                  {signedInLabel}
+                </div>
+                <Link
+                  href="/admin/offices"
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
+                >
+                  Open Dashboard
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
+                >
+                  Get Started Free
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

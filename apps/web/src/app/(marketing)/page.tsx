@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
 import {
   QrCode, Bell, Monitor, Clock, Users, Shield,
   Smartphone, BarChart3, Zap, Globe, Tablet, Calendar,
@@ -70,7 +71,41 @@ const steps = [
   { number: '03', title: 'Manage Your Queue', description: 'Call next, serve, track — all from your dashboard. Customers get notified instantly.' },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let staffOrganizationName: string | null = null;
+  let staffFirstName: string | null = null;
+
+  if (user) {
+    const { data: staff } = await supabase
+      .from('staff')
+      .select('full_name, organization_id')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (staff?.organization_id) {
+      const { data: organization } = await supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', staff.organization_id)
+        .single();
+
+      staffOrganizationName = organization?.name ?? null;
+    }
+    staffFirstName = staff?.full_name?.split(' ')[0] ?? null;
+  }
+
+  const signedInHeroTitle = staffOrganizationName
+    ? `You’re signed in to ${staffOrganizationName}`
+    : 'You’re signed in to QueueFlow';
+  const signedInHeroMessage = staffOrganizationName
+    ? `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your business dashboard to manage queues, desks, bookings, and customer flow for ${staffOrganizationName}.`
+    : `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your dashboard to manage queues, desks, bookings, and customer flow.`;
+
   return (
     <>
       {/* Hero Section */}
@@ -78,38 +113,74 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/10" />
         <div className="relative mx-auto max-w-7xl px-6 py-24 md:py-32">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
-              <Zap className="h-3.5 w-3.5" />
-              Unlimited free push notifications
-            </div>
-            <h1 className="text-5xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
-              Smart Queue Management for{' '}
-              <span className="bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
-                Modern Business
-              </span>
-            </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
-              Customers scan a QR code to join your queue, track their position in real-time, and get notified when it&apos;s their turn. No app download. No SMS fees.
-            </p>
-            <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-              <Link
-                href="/register"
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 hover:shadow-xl hover:-translate-y-0.5"
-              >
-                Get Started Free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/how-it-works"
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
-              >
-                See How It Works
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Free forever for up to 50 customers/month. No credit card required.
-            </p>
+            {user ? (
+              <>
+                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
+                  <Zap className="h-3.5 w-3.5" />
+                  Signed in
+                </div>
+                <h1 className="text-5xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
+                  {signedInHeroTitle}
+                </h1>
+                <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
+                  {signedInHeroMessage}
+                </p>
+                <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+                  <Link
+                    href="/admin/offices"
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 hover:shadow-xl hover:-translate-y-0.5"
+                  >
+                    Open Dashboard
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link
+                    href="/desk"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
+                  >
+                    Open Desk
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </div>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Use your dashboard to manage your business configuration, customer flow, and public pages.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
+                  <Zap className="h-3.5 w-3.5" />
+                  Unlimited free push notifications
+                </div>
+                <h1 className="text-5xl font-extrabold tracking-tight md:text-6xl lg:text-7xl">
+                  Smart Queue Management for{' '}
+                  <span className="bg-gradient-to-r from-primary to-blue-400 bg-clip-text text-transparent">
+                    Modern Business
+                  </span>
+                </h1>
+                <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
+                  Customers scan a QR code to join your queue, track their position in real-time, and get notified when it&apos;s their turn. No app download. No SMS fees.
+                </p>
+                <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+                  <Link
+                    href="/register"
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 hover:shadow-xl hover:-translate-y-0.5"
+                  >
+                    Get Started Free
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link
+                    href="/how-it-works"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
+                  >
+                    See How It Works
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </div>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Free forever for up to 50 customers/month. No credit card required.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </section>

@@ -2,11 +2,24 @@
   "name": "@queueflow/web",
   "version": "0.0.1",
   "private": true,
+  "engines": {
+    "node": ">=20 <24"
+  },
   "scripts": {
-    "dev": "next dev --turbopack --port 3000 --experimental-https --experimental-https-key certificates/localhost-key.pem --experimental-https-cert certificates/localhost.pem",
+    "dev": "node scripts/dev-stable.mjs",
+    "dev:experimental": "next dev --turbopack --port 3000 --experimental-https --experimental-https-key certificates/localhost-key.pem --experimental-https-cert certificates/localhost.pem",
+    "dev:stable": "node scripts/dev-stable.mjs",
+    "dev:e2e": "next dev --port 3100",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:platform": "vitest run src/lib/platform src/lib/privacy.test.ts src/lib/actions/platform-actions.test.ts \"src/app/(dashboard)/admin/onboarding/template-onboarding-client.test.tsx\" \"src/app/(dashboard)/admin/template-governance/template-governance-client.test.tsx\" \"src/app/(dashboard)/admin/analytics/analytics-dashboard.test.tsx\"",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test admin-smoke.spec.ts public-smoke.spec.ts",
+    "test:e2e:mutations": "playwright test admin-mutations.spec.ts operator-public-mutations.spec.ts",
+    "test:e2e:list": "playwright test --list",
+    "e2e:seed": "tsx scripts/e2e-seed.ts",
+    "e2e:reset": "tsx scripts/e2e-reset.ts",
     "ios:push-test": "node scripts/ios-push-test.mjs",
     "ios:clip-e2e": "node scripts/ios-clip-e2e.mjs",
     "ios:clip-e2e:auto": "node scripts/ios-clip-e2e.mjs",
@@ -31,14 +44,20 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22",
     "@types/qrcode": "^1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
+    "jsdom": "^26.1.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.21.0",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

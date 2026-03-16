@@ -2,10 +2,17 @@
 
 import { Mail, Phone, User, FileText, Hash, Calendar, MapPin } from 'lucide-react';
 import type { ReactNode } from 'react';
+import {
+  sanitizeCustomerData,
+  type CustomerDataScope,
+  type IntakeFieldPrivacyDefinition,
+} from '@/lib/privacy';
 
 interface CustomerDataCardProps {
   data: Record<string, unknown> | null | undefined;
   className?: string;
+  fields?: IntakeFieldPrivacyDefinition[];
+  scope?: CustomerDataScope;
 }
 
 const fieldIconMap: Record<string, ReactNode> = {
@@ -54,8 +61,15 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-export function CustomerDataCard({ data, className = '' }: CustomerDataCardProps) {
-  if (!data || Object.keys(data).length === 0) {
+export function CustomerDataCard({
+  data,
+  className = '',
+  fields = [],
+  scope = 'staff',
+}: CustomerDataCardProps) {
+  const visibleData = sanitizeCustomerData(data, fields, scope);
+
+  if (!visibleData || Object.keys(visibleData).length === 0) {
     return (
       <div className={`rounded-xl border border-border bg-card p-4 ${className}`}>
         <p className="text-sm text-muted-foreground text-center py-2">
@@ -65,7 +79,7 @@ export function CustomerDataCard({ data, className = '' }: CustomerDataCardProps
     );
   }
 
-  const entries = Object.entries(data).filter(
+  const entries = Object.entries(visibleData).filter(
     ([, value]) => value !== null && value !== undefined
   );
 

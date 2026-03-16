@@ -1,6 +1,7 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import { AppointmentCheckIn } from '@/components/appointments/appointment-checkin';
+import { matchesOfficePublicSlug } from '@/lib/office-links';
 
 interface CheckInPageProps {
   params: Promise<{ officeSlug: string }>;
@@ -8,7 +9,7 @@ interface CheckInPageProps {
 
 export default async function AppointmentCheckInPage({ params }: CheckInPageProps) {
   const { officeSlug } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Find office by slug
   const { data: offices } = await supabase
@@ -16,13 +17,7 @@ export default async function AppointmentCheckInPage({ params }: CheckInPageProp
     .select('*, organization:organizations(*)')
     .eq('is_active', true);
 
-  const office = offices?.find(
-    (o) =>
-      o.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') === officeSlug
-  );
+  const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
 
   if (!office) notFound();
 

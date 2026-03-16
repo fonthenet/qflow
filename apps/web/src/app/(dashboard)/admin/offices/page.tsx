@@ -1,13 +1,26 @@
-import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { getStaffContext, isStaffLinkError } from '@/lib/authz';
 import { OfficesClient } from './offices-client';
 
 export default async function OfficesPage() {
-  const supabase = await createClient();
+  let context;
+  try {
+    context = await getStaffContext();
+  } catch (error) {
+    if (isStaffLinkError(error)) {
+      redirect('/account-not-linked');
+    }
 
-  const { data: offices, error } = await supabase
-    .from('offices')
-    .select('*')
-    .order('name');
+    throw error;
+  }
+
+  const { data: offices, error } = context.accessibleOfficeIds.length > 0
+    ? await context.supabase
+        .from('offices')
+        .select('*')
+        .in('id', context.accessibleOfficeIds)
+        .order('name')
+    : { data: [], error: null };
 
   if (error) {
     return (

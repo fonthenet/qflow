@@ -1,39 +1,21 @@
-import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { SettingsClient } from './settings-client';
 import { isSmsProviderConfigured } from '@/lib/sms';
+import { resolvePlatformConfig, summarizeTemplate } from '@/lib/platform/config';
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return (
-      <div className="p-6 text-red-500">Not authenticated.</div>
-    );
+  const context = await getStaffContext();
+  try {
+    await requireOrganizationAdmin(context);
+  } catch {
+    redirect('/admin/offices');
   }
 
-  // Get the staff member's organization
-  const { data: staff, error: staffError } = await supabase
-    .from('staff')
-    .select('organization_id')
-    .eq('auth_user_id', user.id)
-    .single();
-
-  if (staffError || !staff) {
-    return (
-      <div className="p-6 text-red-500">
-        Failed to load organization settings.
-      </div>
-    );
-  }
-
-  const { data: organization, error: orgError } = await supabase
+  const { data: organization, error: orgError } = await context.supabase
     .from('organizations')
     .select('*')
-    .eq('id', staff.organization_id)
+    .eq('id', context.staff.organization_id)
     .single();
 
   if (orgError || !organization) {
@@ -43,11 +25,16 @@ export default async function SettingsPage() {
       </div>
     );
   }
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: organization.settings ?? {},
+  });
 
   return (
     <SettingsClient
       organization={organization}
       smsProviderReady={isSmsProviderConfigured()}
+      templateSummary={summarizeTemplate(platformConfig)}
+      templateConfigured={typeof (organization.settings as Record<string, unknown> | null)?.platform_template_id === 'string'}
     />
   );
 }

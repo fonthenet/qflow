@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { resolveStaffProfile } from '@/lib/authz';
 
 export async function login(formData: FormData) {
   const supabase = await createClient();
@@ -15,7 +16,16 @@ export async function login(formData: FormData) {
     return { error: error.message };
   }
 
-  redirect('/admin/offices');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: 'Signed in, but the user session could not be loaded.' };
+  }
+
+  const staff = await resolveStaffProfile(supabase, user);
+  redirect(staff ? '/admin/offices' : '/account-not-linked');
 }
 
 export async function register(formData: FormData) {

@@ -85,14 +85,14 @@ export function DepartmentsClient({
         <div>
           <h1 className="text-2xl font-bold text-foreground">Departments</h1>
           <p className="text-sm text-muted-foreground">
-            Manage departments across your offices.
+            Organize the main areas customers choose from at each location.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Department
+          New Department
         </button>
       </div>
 
@@ -103,7 +103,7 @@ export function DepartmentsClient({
           onChange={(e) => handleFilterChange(e.target.value)}
           className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="">All Offices</option>
+          <option value="">All Locations</option>
           {offices.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -133,7 +133,7 @@ export function DepartmentsClient({
             {departments.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                  No departments found.
+                  No departments yet. Add your first department to organize customer flow.
                 </td>
               </tr>
             )}
@@ -244,7 +244,7 @@ export function DepartmentsClient({
                   defaultValue={editing?.office_id ?? currentOfficeFilter ?? ''}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select office...</option>
+                  <option value="">Select location...</option>
                   {offices.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}

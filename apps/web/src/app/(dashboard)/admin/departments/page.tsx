@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { DepartmentsClient } from './departments-client';
 
 export default async function DepartmentsPage({
@@ -6,24 +6,30 @@ export default async function DepartmentsPage({
 }: {
   searchParams: Promise<{ office?: string }>;
 }) {
-  const supabase = await createClient();
+  const context = await getStaffContext();
   const params = await searchParams;
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id, name')
-    .order('name');
+  const officeIds = params.office
+    ? context.accessibleOfficeIds.includes(params.office)
+      ? [params.office]
+      : []
+    : context.accessibleOfficeIds;
 
-  let query = supabase
-    .from('departments')
-    .select('*, office:offices(id, name)')
-    .order('name');
+  const { data: offices } = officeIds.length > 0
+    ? await context.supabase
+        .from('offices')
+        .select('id, name')
+        .in('id', officeIds)
+        .order('name')
+    : { data: [] };
 
-  if (params.office) {
-    query = query.eq('office_id', params.office);
-  }
-
-  const { data: departments, error } = await query;
+  const { data: departments, error } = officeIds.length > 0
+    ? await context.supabase
+        .from('departments')
+        .select('*, office:offices(id, name)')
+        .in('office_id', officeIds)
+        .order('name')
+    : { data: [], error: null };
 
   if (error) {
     return (

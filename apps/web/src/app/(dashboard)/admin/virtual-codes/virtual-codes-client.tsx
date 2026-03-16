@@ -8,20 +8,19 @@ import QRCode from 'qrcode';
 
 interface VirtualCode {
   id: string;
+  organization_id: string;
   qr_token: string;
-  office_id: string;
-  department_id: string;
+  office_id: string | null;
+  department_id: string | null;
   service_id: string | null;
   is_active: boolean;
   created_at: string;
-  office: { name: string } | null;
-  department: { name: string } | null;
-  service: { name: string } | null;
 }
 
 interface Office {
   id: string;
   name: string;
+  organization_id: string;
 }
 
 interface Department {
@@ -41,6 +40,7 @@ interface VirtualCodesClientProps {
   offices: Office[];
   departments: Department[];
   services: Service[];
+  organization: { id: string; name: string } | null;
 }
 
 export function VirtualCodesClient({
@@ -48,6 +48,7 @@ export function VirtualCodesClient({
   offices,
   departments,
   services,
+  organization,
 }: VirtualCodesClientProps) {
   const router = useRouter();
   const [codes, setCodes] = useState(initialCodes);
@@ -58,6 +59,7 @@ export function VirtualCodesClient({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [scope, setScope] = useState<'business' | 'office' | 'department' | 'service'>('department');
   const [selectedOfficeId, setSelectedOfficeId] = useState('');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
@@ -69,12 +71,59 @@ export function VirtualCodesClient({
     (s) => s.department_id === selectedDepartmentId
   );
 
+  const scopeDescriptions: Record<typeof scope, string> = {
+    business: 'One public join link for the whole business. Customers choose the location, department, and service.',
+    office: 'One join link for a specific location. Customers choose the department and service.',
+    department: 'One join link for a specific department. Customers only choose the service.',
+    service: 'One direct join link for a single service.',
+  };
+
   function openCreate() {
     setError(null);
+    setScope('department');
     setSelectedOfficeId('');
     setSelectedDepartmentId('');
     setSelectedServiceId('');
     setShowModal(true);
+  }
+
+  function getOfficeName(officeId: string | null) {
+    if (!officeId) return 'Entire business';
+    return offices.find((office) => office.id === officeId)?.name ?? 'Unknown office';
+  }
+
+  function getDepartmentName(departmentId: string | null) {
+    if (!departmentId) return 'All departments';
+    return departments.find((department) => department.id === departmentId)?.name ?? 'Unknown department';
+  }
+
+  function getServiceName(serviceId: string | null) {
+    if (!serviceId) return 'All services';
+    return services.find((service) => service.id === serviceId)?.name ?? 'Unknown service';
+  }
+
+  function getScopeLabel(code: VirtualCode) {
+    if (code.service_id) return 'Service';
+    if (code.department_id) return 'Department';
+    if (code.office_id) return 'Office';
+    return 'Business';
+  }
+
+  function getScopeSummary(code: VirtualCode) {
+    if (code.service_id) {
+      return `${getOfficeName(code.office_id)} -> ${getDepartmentName(code.department_id)} -> ${getServiceName(code.service_id)}`;
+    }
+    if (code.department_id) {
+      return `${getOfficeName(code.office_id)} -> ${getDepartmentName(code.department_id)}`;
+    }
+    if (code.office_id) {
+      return `${getOfficeName(code.office_id)} -> All departments`;
+    }
+    return `${organization?.name ?? 'Business'} -> All locations`;
+  }
+
+  function handleOpenUrl(token: string) {
+    window.open(getJoinUrl(token), '_blank', 'noopener,noreferrer');
   }
 
   async function handleShowQr(code: VirtualCode) {
@@ -125,8 +174,23 @@ export function VirtualCodesClient({
       const departmentId = formData.get('department_id') as string;
       const serviceId = (formData.get('service_id') as string) || null;
 
-      if (!officeId || !departmentId) {
-        setError('Office and department are required');
+      if (!organization?.id) {
+        setError('Unable to identify the business for this code');
+        return;
+      }
+
+      if ((scope === 'office' || scope === 'department' || scope === 'service') && !officeId) {
+        setError('Office is required for this code scope');
+        return;
+      }
+
+      if ((scope === 'department' || scope === 'service') && !departmentId) {
+        setError('Department is required for this code scope');
+        return;
+      }
+
+      if (scope === 'service' && !serviceId) {
+        setError('Service is required for this code scope');
         return;
       }
 
@@ -134,20 +198,22 @@ export function VirtualCodesClient({
       const qrToken = nanoid(16);
 
       const insertData: any = {
-        office_id: officeId,
-        department_id: departmentId,
+        organization_id: organization.id,
+        office_id: scope === 'business' ? null : officeId,
+        department_id:
+          scope === 'department' || scope === 'service' ? departmentId : null,
         qr_token: qrToken,
         is_active: true,
       };
 
-      if (serviceId) {
+      if (scope === 'service' && serviceId) {
         insertData.service_id = serviceId;
       }
 
       const { data: newCode, error: insertError } = await supabase
         .from('virtual_queue_codes')
         .insert(insertData)
-        .select('*, office:offices(name), department:departments(name), service:services(name)')
+        .select('*')
         .single();
 
       if (insertError) {
@@ -210,17 +276,22 @@ export function VirtualCodesClient({
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Virtual Queue Codes
+            Join Links & QR
           </h1>
           <p className="text-sm text-muted-foreground">
-            Manage QR codes for remote queue joining. Customers scan these to join the queue from outside.
+            Create simple public links and QR codes so customers can join from outside.
           </p>
+          {organization && (
+            <p className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              {organization.name}
+            </p>
+          )}
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Create Code
+          New Link
         </button>
       </div>
 
@@ -230,6 +301,13 @@ export function VirtualCodesClient({
         </div>
       )}
 
+      <div className="mb-4 rounded-xl border border-border bg-muted/20 p-4">
+        <p className="text-sm font-medium text-foreground">How these links work</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Create one link for the whole business or a narrower link for one location, department, or service. Customers only see the choices they still need to make.
+        </p>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
@@ -237,6 +315,8 @@ export function VirtualCodesClient({
               <th className="px-4 py-3 font-medium text-muted-foreground">Office</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Department</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Service</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Scope</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">Join Path</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Created</th>
               <th className="px-4 py-3 font-medium text-muted-foreground text-right">Actions</th>
@@ -245,7 +325,7 @@ export function VirtualCodesClient({
           <tbody>
             {codes.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                   No virtual codes found. Create your first code to get started.
                 </td>
               </tr>
@@ -256,13 +336,24 @@ export function VirtualCodesClient({
                 className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
               >
                 <td className="px-4 py-3 font-medium text-foreground">
-                  {code.office?.name ?? '---'}
+                  {getOfficeName(code.office_id)}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {code.department?.name ?? '---'}
+                  {getDepartmentName(code.department_id)}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {code.service?.name ?? 'All services'}
+                  {getServiceName(code.service_id)}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  <div>
+                    <p className="font-medium text-foreground">{getScopeLabel(code)}</p>
+                    <p className="text-xs text-muted-foreground">{getScopeSummary(code)}</p>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  <code className="rounded bg-muted px-2 py-1 text-xs">
+                    /join/{code.qr_token}
+                  </code>
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -282,6 +373,13 @@ export function VirtualCodesClient({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => handleOpenUrl(code.qr_token)}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                      title="Open join page"
+                    >
+                      Open
+                    </button>
                     <button
                       onClick={() => handleShowQr(code)}
                       className="rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
@@ -326,7 +424,7 @@ export function VirtualCodesClient({
           />
           <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              Create Virtual Queue Code
+              Create Join Link
             </h2>
 
             {error && (
@@ -338,20 +436,47 @@ export function VirtualCodesClient({
             <form action={handleSubmit} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  Office <span className="text-destructive">*</span>
+                  Scope <span className="text-destructive">*</span>
+                </label>
+                <select
+                  name="scope"
+                  value={scope}
+                  onChange={(e) => {
+                    const nextScope = e.target.value as typeof scope;
+                    setScope(nextScope);
+                    setSelectedOfficeId('');
+                    setSelectedDepartmentId('');
+                    setSelectedServiceId('');
+                  }}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="business">Entire business</option>
+                  <option value="office">Specific office</option>
+                  <option value="department">Specific department</option>
+                  <option value="service">Specific service</option>
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {scopeDescriptions[scope]}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Office {scope !== 'business' ? <span className="text-destructive">*</span> : null}
                 </label>
                 <select
                   name="office_id"
-                  required
+                  required={scope !== 'business'}
                   value={selectedOfficeId}
                   onChange={(e) => {
                     setSelectedOfficeId(e.target.value);
                     setSelectedDepartmentId('');
                     setSelectedServiceId('');
                   }}
+                  disabled={scope === 'business'}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select an office</option>
+                  <option value="">{scope === 'business' ? 'Entire business' : 'Select an office'}</option>
                   {offices.map((office) => (
                     <option key={office.id} value={office.id}>
                       {office.name}
@@ -362,20 +487,24 @@ export function VirtualCodesClient({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  Department <span className="text-destructive">*</span>
+                  Department {scope === 'department' || scope === 'service' ? <span className="text-destructive">*</span> : null}
                 </label>
                 <select
                   name="department_id"
-                  required
+                  required={scope === 'department' || scope === 'service'}
                   value={selectedDepartmentId}
                   onChange={(e) => {
                     setSelectedDepartmentId(e.target.value);
                     setSelectedServiceId('');
                   }}
-                  disabled={!selectedOfficeId}
+                  disabled={!selectedOfficeId || scope === 'business' || scope === 'office'}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
-                  <option value="">Select a department</option>
+                  <option value="">
+                    {scope === 'business' || scope === 'office'
+                      ? 'All departments'
+                      : 'Select a department'}
+                  </option>
                   {filteredDepartments.map((dept) => (
                     <option key={dept.id} value={dept.id}>
                       {dept.name}
@@ -386,13 +515,18 @@ export function VirtualCodesClient({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  Service <span className="text-xs text-muted-foreground">(optional - leave blank for all services)</span>
+                  Service{' '}
+                  {scope === 'service' ? (
+                    <span className="text-destructive">*</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">(optional - leave blank for all services)</span>
+                  )}
                 </label>
                 <select
                   name="service_id"
                   value={selectedServiceId}
                   onChange={(e) => setSelectedServiceId(e.target.value)}
-                  disabled={!selectedDepartmentId}
+                  disabled={!selectedDepartmentId || scope !== 'service'}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
                   <option value="">All services in department</option>
@@ -437,8 +571,8 @@ export function VirtualCodesClient({
               Virtual Queue QR Code
             </h2>
             <p className="mb-4 text-xs text-muted-foreground text-center">
-              {qrPreviewCode.office?.name} - {qrPreviewCode.department?.name}
-              {qrPreviewCode.service?.name ? ` - ${qrPreviewCode.service.name}` : ''}
+              {getOfficeName(qrPreviewCode.office_id)} - {getDepartmentName(qrPreviewCode.department_id)}
+              {qrPreviewCode.service_id ? ` - ${getServiceName(qrPreviewCode.service_id)}` : ''}
             </p>
 
             <div className="flex justify-center rounded-lg bg-white p-4">

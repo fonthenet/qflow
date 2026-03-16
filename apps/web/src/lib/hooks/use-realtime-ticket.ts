@@ -17,6 +17,9 @@ interface UseRealtimeTicketOptions {
   ticketId: string;
   qrToken: string;
   initialData: Ticket;
+  disabled?: boolean;
+  sandboxPosition?: number | null;
+  sandboxEstimatedWait?: number | null;
 }
 
 interface UseRealtimeTicketReturn {
@@ -33,10 +36,13 @@ export function useRealtimeTicket({
   ticketId,
   qrToken,
   initialData,
+  disabled = false,
+  sandboxPosition = null,
+  sandboxEstimatedWait = null,
 }: UseRealtimeTicketOptions): UseRealtimeTicketReturn {
   const [ticket, setTicket] = useState<Ticket>(initialData);
-  const [position, setPosition] = useState<number | null>(null);
-  const [estimatedWait, setEstimatedWait] = useState<number | null>(null);
+  const [position, setPosition] = useState<number | null>(sandboxPosition);
+  const [estimatedWait, setEstimatedWait] = useState<number | null>(sandboxEstimatedWait);
   const [isUpdating, setIsUpdating] = useState(false);
   const [broadcast, setBroadcast] = useState<BroadcastPayload | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
@@ -75,6 +81,14 @@ export function useRealtimeTicket({
   }, []);
 
   const refresh = useCallback(async () => {
+    if (disabled) {
+      setTicket(initialData);
+      setPosition(sandboxPosition);
+      setEstimatedWait(sandboxEstimatedWait);
+      setLastSyncedAt(new Date());
+      return;
+    }
+
     const supabase = supabaseRef.current;
     const { data } = await supabase
       .from('tickets')
@@ -96,18 +110,28 @@ export function useRealtimeTicket({
       setPosition(null);
       setEstimatedWait(null);
     }
-  }, [ticketId, fetchPosition, fetchWaitTime]);
+  }, [disabled, fetchPosition, fetchWaitTime, initialData, sandboxEstimatedWait, sandboxPosition, ticketId]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setTicket(initialData);
+    setPosition(sandboxPosition);
+    setEstimatedWait(sandboxEstimatedWait);
+    setLastSyncedAt(new Date());
+  }, [disabled, initialData, sandboxEstimatedWait, sandboxPosition]);
 
   // Fetch initial position and wait time for waiting tickets
   useEffect(() => {
+    if (disabled) return;
     if (ticket.status === 'waiting') {
       fetchPosition();
       fetchWaitTime(ticket.department_id, ticket.service_id);
     }
-  }, [ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
+  }, [disabled, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
 
   // Refetch when page returns to foreground (mobile browsers suspend WebSockets when backgrounded)
   useEffect(() => {
+    if (disabled) return;
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         // Small delay to let network reconnect
@@ -119,10 +143,11 @@ export function useRealtimeTicket({
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [refresh]);
+  }, [disabled, refresh]);
 
   // Subscribe to realtime changes
   useEffect(() => {
+    if (disabled) return;
     const supabase = supabaseRef.current;
 
     // Channel 1: Listen for row-level changes on the tickets table
@@ -226,7 +251,7 @@ export function useRealtimeTicket({
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
       channelsRef.current = [];
     };
-  }, [ticketId, qrToken, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
+  }, [disabled, ticketId, qrToken, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
 
   return { ticket, position, estimatedWait, isUpdating, broadcast, lastSyncedAt, refresh };
 }

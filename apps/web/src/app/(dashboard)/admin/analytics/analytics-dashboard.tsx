@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import React, { useState, useTransition } from 'react';
 import {
   TicketCheck,
   Clock,
   Timer,
   Star,
   RefreshCw,
+  ShieldCheck,
+  GitBranchPlus,
+  Activity,
 } from 'lucide-react';
 import {
   getAnalyticsSummary,
@@ -15,12 +18,21 @@ import {
   getWaitTimeTrend,
   getStaffPerformance,
   getFeedbackSummary,
+  getTemplateHealthAnalytics,
+  getTemplatePerformanceAnalytics,
   type AnalyticsSummary,
   type HourlyTicket,
   type DepartmentTicket,
   type WaitTimeTrend,
   type StaffPerformanceRow,
   type FeedbackSummaryData,
+  type TemplateHealthAnalyticsData,
+  type TemplateActivityPoint,
+  type TemplateDriftTrendPoint,
+  type TemplateHealthOfficeRow,
+  type TemplatePerformanceAnalyticsData,
+  type TemplatePerformanceRow,
+  type TemplateOfficeComparisonRow,
 } from '@/lib/actions/analytics-actions';
 
 interface AnalyticsDashboardProps {
@@ -30,6 +42,8 @@ interface AnalyticsDashboardProps {
   initialWaitTimeTrend: WaitTimeTrend[];
   initialStaffPerformance: StaffPerformanceRow[];
   initialFeedbackSummary: FeedbackSummaryData;
+  initialTemplateHealth: TemplateHealthAnalyticsData;
+  initialTemplatePerformance: TemplatePerformanceAnalyticsData;
   offices: { id: string; name: string }[];
   departments: { id: string; name: string; office_id: string }[];
 }
@@ -41,6 +55,8 @@ export function AnalyticsDashboard({
   initialWaitTimeTrend,
   initialStaffPerformance,
   initialFeedbackSummary,
+  initialTemplateHealth,
+  initialTemplatePerformance,
   offices,
   departments,
 }: AnalyticsDashboardProps) {
@@ -56,6 +72,8 @@ export function AnalyticsDashboard({
   const [feedbackSummary, setFeedbackSummary] = useState(
     initialFeedbackSummary
   );
+  const [templateHealth, setTemplateHealth] = useState(initialTemplateHealth);
+  const [templatePerformance, setTemplatePerformance] = useState(initialTemplatePerformance);
 
   const [selectedOffice, setSelectedOffice] = useState<string>('');
   const [selectedDateRange, setSelectedDateRange] = useState<string>('today');
@@ -68,13 +86,15 @@ export function AnalyticsDashboard({
       const days =
         dateRange === 'last30' ? 30 : dateRange === 'last7' ? 7 : 7;
 
-      const [s, tbh, tbd, wtt, sp, fs] = await Promise.all([
+      const [s, tbh, tbd, wtt, sp, fs, th, tp] = await Promise.all([
         getAnalyticsSummary(officeId, dateRange),
         getTicketsByHour(officeId),
         getTicketsByDepartment(officeId, dateRange),
         getWaitTimeTrend(officeId, days),
         getStaffPerformance(officeId, dateRange),
         getFeedbackSummary(officeId, dateRange),
+        getTemplateHealthAnalytics(officeId, dateRange),
+        getTemplatePerformanceAnalytics(officeId, dateRange),
       ]);
 
       setSummary(s);
@@ -83,6 +103,8 @@ export function AnalyticsDashboard({
       setWaitTimeTrend(wtt);
       setStaffPerformance(sp);
       setFeedbackSummary(fs);
+      setTemplateHealth(th);
+      setTemplatePerformance(tp);
     });
   }
 
@@ -91,21 +113,11 @@ export function AnalyticsDashboard({
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
+          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
           <p className="text-sm text-muted-foreground">
-            Monitor your queue performance and staff metrics
+            See the most useful numbers for wait times, service flow, feedback, and team performance.
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isPending}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${isPending ? 'animate-spin' : ''}`}
-          />
-          Refresh
-        </button>
       </div>
 
       {/* Filters */}
@@ -113,6 +125,7 @@ export function AnalyticsDashboard({
         <select
           value={selectedDateRange}
           onChange={(e) => setSelectedDateRange(e.target.value)}
+          aria-label="Date Range"
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
         >
           <option value="today">Today</option>
@@ -123,9 +136,10 @@ export function AnalyticsDashboard({
         <select
           value={selectedOffice}
           onChange={(e) => setSelectedOffice(e.target.value)}
+          aria-label="Office Filter"
           className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
         >
-          <option value="">All Offices</option>
+          <option value="">All Locations</option>
           {offices.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -136,9 +150,10 @@ export function AnalyticsDashboard({
         <button
           onClick={handleRefresh}
           disabled={isPending}
+          aria-label="Apply Filters"
           className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
         >
-          Apply Filters
+          Update View
         </button>
       </div>
 
@@ -190,18 +205,153 @@ export function AnalyticsDashboard({
         />
       </div>
 
+      <section className="rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Setup Rollout</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Track how well your business setup has been rolled out across locations and where local changes exist.
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
+            <p className="font-semibold text-foreground">{templateHealth.summary.templateTitle}</p>
+            <p className="text-muted-foreground">
+              Applied v{templateHealth.summary.appliedVersion} · Latest v{templateHealth.summary.latestVersion}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard
+            label="Locations up to date"
+            value={`${templateHealth.summary.currentVersionCoveragePercent}%`}
+            subtitle={`${templateHealth.summary.officesCurrentCount} of ${templateHealth.summary.officeCount} offices current`}
+            icon={<ShieldCheck className="h-5 w-5" />}
+            iconBg="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+          />
+          <SummaryCard
+            label="Local changes"
+            value={templateHealth.summary.currentDriftCount.toString()}
+            subtitle={
+              templateHealth.summary.snapshotScope === 'office'
+                ? `${templateHealth.summary.driftSnapshotCountInRange} snapshots in range`
+                : `${templateHealth.summary.officesWithDrift} offices still drifted`
+            }
+            icon={<Activity className="h-5 w-5" />}
+            iconBg="bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-400"
+          />
+          <SummaryCard
+            label="Business updates"
+            value={templateHealth.summary.organizationUpgradeCountInRange.toString()}
+            subtitle={`${templateHealth.summary.totalOrganizationUpgradeCount} total · Last ${formatTimestamp(templateHealth.summary.lastMigrationAt)}`}
+            icon={<RefreshCw className="h-5 w-5" />}
+            iconBg="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400"
+          />
+          <SummaryCard
+            label="Location rollouts"
+            value={templateHealth.summary.officeRolloutCountInRange.toString()}
+            subtitle={`${templateHealth.summary.totalOfficeRolloutCount} total · Last ${formatTimestamp(templateHealth.summary.lastOfficeRolloutAt)}`}
+            icon={<GitBranchPlus className="h-5 w-5" />}
+            iconBg="bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400"
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.1fr,0.9fr]">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
+            <h4 className="mb-1 text-sm font-semibold text-foreground">Drift Trend</h4>
+            <p className="mb-4 text-xs text-muted-foreground">
+              {templateHealth.summary.snapshotScope === 'office'
+                ? 'Office-level drift captured when this branch is updated.'
+                : 'Organization drift snapshots captured during template changes and branch rollouts.'}
+            </p>
+            <TemplateDriftTrendChart
+              data={templateHealth.driftTrend}
+              scope={templateHealth.summary.snapshotScope}
+            />
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
+            <h4 className="mb-4 text-sm font-semibold text-foreground">Template Activity</h4>
+            <TemplateActivityChart data={templateHealth.activity} />
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
+            <h4 className="mb-4 text-sm font-semibold text-foreground">Office Version Status</h4>
+            <TemplateOfficeStatusTable data={templateHealth.officeStatuses} />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Business Performance</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Compare wait accuracy, no-shows, completion rate, and service time across your business types and locations.
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
+            <p className="font-semibold text-foreground">{formatVerticalLabel(templatePerformance.summary.primaryVertical)}</p>
+            <p className="text-muted-foreground">
+              {templatePerformance.summary.primaryTemplateTitle} · {templatePerformance.summary.templateCount} template group
+              {templatePerformance.summary.templateCount === 1 ? '' : 's'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard
+            label="Wait Accuracy"
+            value={formatPercentValue(templatePerformance.summary.waitAccuracyPercent)}
+            subtitle={`${templatePerformance.summary.totalTickets} tickets in scope`}
+            icon={<Clock className="h-5 w-5" />}
+            iconBg="bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400"
+          />
+          <SummaryCard
+            label="No-Show Rate"
+            value={formatPercentValue(templatePerformance.summary.noShowRate)}
+            subtitle={`${templatePerformance.summary.officeCount} office${templatePerformance.summary.officeCount === 1 ? '' : 's'} compared`}
+            icon={<Activity className="h-5 w-5" />}
+            iconBg="bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
+          />
+          <SummaryCard
+            label="Completion Rate"
+            value={formatPercentValue(templatePerformance.summary.completionRate)}
+            subtitle={`${templatePerformance.summary.templateCount} template group${templatePerformance.summary.templateCount === 1 ? '' : 's'}`}
+            icon={<TicketCheck className="h-5 w-5" />}
+            iconBg="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+          />
+          <SummaryCard
+            label="Avg Service Time"
+            value={formatMinutesValue(templatePerformance.summary.avgServiceTime)}
+            subtitle="serving to completed"
+            icon={<Timer className="h-5 w-5" />}
+            iconBg="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr,1.15fr]">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
+            <h4 className="mb-4 text-sm font-semibold text-foreground">Business Type Comparison</h4>
+            <TemplatePerformanceTable data={templatePerformance.templateRows} />
+          </div>
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
+            <h4 className="mb-4 text-sm font-semibold text-foreground">Location Comparison</h4>
+            <TemplateOfficeComparisonTable data={templatePerformance.officeRows} />
+          </div>
+        </div>
+      </section>
+
       {/* Charts Row 1: Tickets by Hour + Tickets by Department */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Tickets by Hour (Today)
+            Busy hours today
           </h3>
           <TicketsByHourChart data={ticketsByHour} />
         </div>
 
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Tickets by Department
+            Demand by department
           </h3>
           <DepartmentBarChart data={ticketsByDepartment} />
         </div>
@@ -211,7 +361,7 @@ export function AnalyticsDashboard({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Wait Time Trend
+            Wait time trend
           </h3>
           <WaitTimeTrendChart data={waitTimeTrend} />
         </div>
@@ -224,7 +374,7 @@ export function AnalyticsDashboard({
       {/* Staff Performance Table */}
       <div className="rounded-xl border border-border bg-card p-6">
         <h3 className="mb-4 text-sm font-semibold text-foreground">
-          Staff Performance
+          Team performance
         </h3>
         <StaffPerformanceTable data={staffPerformance} />
       </div>
@@ -233,7 +383,7 @@ export function AnalyticsDashboard({
       {feedbackSummary.recentComments.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Recent Feedback Comments
+            Recent customer comments
           </h3>
           <div className="space-y-3">
             {feedbackSummary.recentComments.map((c) => (
@@ -270,6 +420,32 @@ export function AnalyticsDashboard({
       )}
     </div>
   );
+}
+
+function formatTimestamp(value: string | null) {
+  if (!value) {
+    return 'not yet';
+  }
+
+  return new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatPercentValue(value: number | null) {
+  return value !== null ? `${value}%` : '--';
+}
+
+function formatMinutesValue(value: number | null) {
+  return value !== null ? `${value} min` : '--';
+}
+
+function formatVerticalLabel(value: string) {
+  return value
+    .split('_')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -443,6 +619,249 @@ function WaitTimeTrendChart({ data }: { data: WaitTimeTrend[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function TemplateActivityChart({ data }: { data: TemplateActivityPoint[] }) {
+  const maxCount = Math.max(
+    ...data.map((entry) => Math.max(entry.organizationUpgrades, entry.officeRollouts)),
+    1
+  );
+
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No template activity recorded for this range
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex h-56 items-end gap-2">
+        {data.map((entry) => {
+          const upgradePct = Math.max((entry.organizationUpgrades / maxCount) * 100, entry.organizationUpgrades > 0 ? 8 : 0);
+          const rolloutPct = Math.max((entry.officeRollouts / maxCount) * 100, entry.officeRollouts > 0 ? 8 : 0);
+          const dayLabel = new Date(`${entry.date}T00:00:00`).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          });
+
+          return (
+            <div key={entry.date} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex h-full w-full items-end justify-center gap-1">
+                <div
+                  className="w-full max-w-5 rounded-t bg-violet-500/80"
+                  style={{ height: `${upgradePct}%`, minHeight: entry.organizationUpgrades > 0 ? '10px' : '2px' }}
+                  title={`${entry.organizationUpgrades} org upgrades`}
+                />
+                <div
+                  className="w-full max-w-5 rounded-t bg-orange-500/80"
+                  style={{ height: `${rolloutPct}%`, minHeight: entry.officeRollouts > 0 ? '10px' : '2px' }}
+                  title={`${entry.officeRollouts} office rollouts`}
+                />
+              </div>
+              <span className="text-center text-[10px] leading-tight text-muted-foreground">{dayLabel}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+          Organization upgrades
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+          Office rollouts
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TemplateDriftTrendChart({
+  data,
+  scope,
+}: {
+  data: TemplateDriftTrendPoint[];
+  scope: 'organization' | 'office';
+}) {
+  const maxDrift = Math.max(...data.map((entry) => entry.driftCount), 1);
+  const hasRecordedSnapshots = data.some(
+    (entry) => entry.driftCount > 0 || entry.coveragePercent > 0
+  );
+
+  if (data.length === 0 || !hasRecordedSnapshots) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No persistent drift snapshots recorded for this range yet
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex h-56 items-end gap-2">
+        {data.map((entry) => {
+          const driftPct = Math.max((entry.driftCount / maxDrift) * 100, entry.driftCount > 0 ? 8 : 0);
+          const coveragePct = Math.max(entry.coveragePercent, entry.coveragePercent > 0 ? 8 : 0);
+          const dayLabel = new Date(`${entry.date}T00:00:00`).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          });
+
+          return (
+            <div key={entry.date} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex h-full w-full items-end justify-center gap-1">
+                <div
+                  className="w-full max-w-5 rounded-t bg-cyan-500/85"
+                  style={{ height: `${driftPct}%`, minHeight: entry.driftCount > 0 ? '10px' : '2px' }}
+                  title={`${entry.driftCount} ${scope} drift paths`}
+                />
+                <div
+                  className="w-full max-w-5 rounded-t bg-emerald-500/70"
+                  style={{ height: `${coveragePct}%`, minHeight: entry.coveragePercent > 0 ? '10px' : '2px' }}
+                  title={`${entry.coveragePercent}% current version coverage`}
+                />
+              </div>
+              <span className="text-center text-[10px] leading-tight text-muted-foreground">
+                {dayLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+          {scope === 'office' ? 'Office drift' : 'Organization drift'}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          Current version coverage
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TemplateOfficeStatusTable({ data }: { data: TemplateHealthOfficeRow[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No office status data available
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {data.slice(0, 8).map((office) => (
+        <div key={office.office_id} className="rounded-lg border border-border bg-background px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{office.office_name}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                v{office.applied_version} · Latest v{office.latest_version}
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                office.is_current ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              {office.is_current ? 'Current' : 'Behind'}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span>{office.drift_count} drift paths</span>
+            <span>{office.rollout_count} rollouts</span>
+            <span>Last rollout {formatTimestamp(office.last_rolled_out_at)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TemplatePerformanceTable({ data }: { data: TemplatePerformanceRow[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No template KPI data available
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left">
+            <th className="pb-3 pr-4 font-medium text-muted-foreground">Template</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Tickets</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Wait Accuracy</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">No-Show</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Completion</th>
+            <th className="pb-3 text-right font-medium text-muted-foreground">Avg Service</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {data.map((row) => (
+            <tr key={`${row.templateId}-${row.vertical}`} className="hover:bg-muted/30 transition-colors">
+              <td className="py-3 pr-4">
+                <p className="font-medium text-foreground">{row.templateTitle}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatVerticalLabel(row.vertical)} · {row.officeCount} office{row.officeCount === 1 ? '' : 's'}
+                </p>
+              </td>
+              <td className="py-3 pr-4 text-right text-foreground">{row.totalTickets}</td>
+              <td className="py-3 pr-4 text-right text-foreground">{formatPercentValue(row.waitAccuracyPercent)}</td>
+              <td className="py-3 pr-4 text-right text-foreground">{formatPercentValue(row.noShowRate)}</td>
+              <td className="py-3 pr-4 text-right text-foreground">{formatPercentValue(row.completionRate)}</td>
+              <td className="py-3 text-right text-foreground">{formatMinutesValue(row.avgServiceTime)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeComparisonRow[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No office comparison data available
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {data.slice(0, 8).map((row) => (
+        <div key={row.officeId} className="rounded-lg border border-border bg-background px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{row.officeName}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {row.templateTitle} · {formatVerticalLabel(row.vertical)}
+              </p>
+            </div>
+            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+              {row.totalTickets} tickets
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-4">
+            <span>Wait accuracy {formatPercentValue(row.waitAccuracyPercent)}</span>
+            <span>No-show {formatPercentValue(row.noShowRate)}</span>
+            <span>Completion {formatPercentValue(row.completionRate)}</span>
+            <span>Avg service {formatMinutesValue(row.avgServiceTime)}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

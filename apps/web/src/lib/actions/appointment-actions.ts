@@ -1,6 +1,12 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  clearBookingEmailOtpCookie,
+  hasVerifiedBookingEmail,
+  setBookingEmailOtpCookie,
+} from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 
@@ -15,7 +21,43 @@ interface CreateAppointmentData {
 }
 
 export async function createAppointment(data: CreateAppointmentData) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
+
+  const { data: office, error: officeError } = await supabase
+    .from('offices')
+    .select('id, organization:organizations(settings)')
+    .eq('id', data.officeId)
+    .single();
+
+  if (officeError || !office) {
+    return { error: officeError?.message ?? 'Office not found' };
+  }
+
+  const organizationSettings =
+    ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
+      | Record<string, unknown>
+      | undefined) ?? {};
+  const emailOtpEnabled = Boolean(organizationSettings.email_otp_enabled);
+  const emailOtpRequiredForBooking = Boolean(
+    organizationSettings.email_otp_required_for_booking
+  );
+
+  if (emailOtpEnabled && emailOtpRequiredForBooking) {
+    const customerEmail = data.customerEmail?.trim().toLowerCase();
+
+    if (!customerEmail) {
+      return { error: 'Email verification is required before booking this visit.' };
+    }
+
+    const verified = await hasVerifiedBookingEmail({
+      email: customerEmail,
+      officeId: data.officeId,
+    });
+
+    if (!verified) {
+      return { error: 'Please verify your email before confirming this booking.' };
+    }
+  }
 
   const { data: appointment, error } = await supabase
     .from('appointments')
@@ -36,11 +78,77 @@ export async function createAppointment(data: CreateAppointmentData) {
     return { error: error.message };
   }
 
+  await clearBookingEmailOtpCookie();
+
   return { data: appointment };
 }
 
+export async function markBookingEmailOtpVerified(data: {
+  email: string;
+  officeId: string;
+  expiresInMinutes: number;
+}) {
+  await setBookingEmailOtpCookie({
+    email: data.email,
+    officeId: data.officeId,
+    expiresInMinutes: data.expiresInMinutes,
+  });
+
+  return { success: true };
+}
+
+export async function clearBookingEmailOtpVerification() {
+  await clearBookingEmailOtpCookie();
+  return { success: true };
+}
+
+interface UpdateAppointmentContactData {
+  appointmentId: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+}
+
+export async function updateAppointmentContact(data: UpdateAppointmentContactData) {
+  const supabase = createAdminClient();
+
+  const { data: appointment, error: fetchError } = await supabase
+    .from('appointments')
+    .select('id, office_id, status')
+    .eq('id', data.appointmentId)
+    .single();
+
+  if (fetchError || !appointment) {
+    return { error: fetchError?.message ?? 'Appointment not found' };
+  }
+
+  if (appointment.status === 'cancelled') {
+    return { error: 'Cancelled appointments can no longer be updated' };
+  }
+
+  const { data: updated, error } = await supabase
+    .from('appointments')
+    .update({
+      customer_name: data.customerName.trim(),
+      customer_phone: data.customerPhone?.trim() || null,
+      customer_email: data.customerEmail?.trim() || null,
+    })
+    .eq('id', data.appointmentId)
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/admin/bookings');
+  revalidatePath('/desk');
+
+  return { data: updated };
+}
+
 export async function checkInAppointment(appointmentId: string) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Fetch the appointment
   const { data: appointment, error: fetchError } = await supabase
@@ -121,8 +229,18 @@ export async function checkInAppointment(appointmentId: string) {
     return { error: updateError.message };
   }
 
+  let priorityCategory = null;
+  if (ticket.priority_category_id) {
+    const { data } = await supabase
+      .from('priority_categories')
+      .select('id, name, icon, color')
+      .eq('id', ticket.priority_category_id)
+      .single();
+    priorityCategory = data ?? null;
+  }
+
   revalidatePath('/desk');
-  return { data: { appointment, ticket } };
+  return { data: { appointment, ticket: { ...ticket, priority_category: priorityCategory } } };
 }
 
 export async function cancelAppointment(appointmentId: string) {
@@ -169,7 +287,7 @@ export async function getAvailableSlots(
   serviceId: string,
   date: string
 ) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   // Fetch office operating hours
   const { data: office, error: officeError } = await supabase
@@ -255,7 +373,7 @@ function generateSlots(openTime: string, closeTime: string, date: string): strin
 }
 
 export async function findAppointment(officeId: string, searchTerm: string): Promise<{ data: any[]; error?: string }> {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const today = new Date().toISOString().split('T')[0];
   const startOfDay = `${today}T00:00:00`;

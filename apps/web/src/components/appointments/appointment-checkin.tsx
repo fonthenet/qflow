@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { findAppointment, checkInAppointment } from '@/lib/actions/appointment-actions';
+import { PriorityBadge } from '@/components/tickets/priority-badge';
 
 interface AppointmentCheckInProps {
   office: any;
@@ -117,10 +118,15 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
             </p>
             {success.ticket && (
               <div className="mt-4 rounded-lg bg-muted p-4">
-                <p className="text-sm text-muted-foreground">Your Ticket</p>
-                <p className="text-3xl font-bold text-primary">
-                  {success.ticket.ticket_number}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Your Ticket</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {success.ticket.ticket_number}
+                    </p>
+                  </div>
+                  <PriorityBadge priorityCategory={success.ticket.priority_category} />
+                </div>
               </div>
             )}
           </div>

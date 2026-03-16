@@ -1,30 +1,34 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import { BookingForm } from '@/components/appointments/booking-form';
+import { matchesOfficePublicSlug } from '@/lib/office-links';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 
 interface BookingPageProps {
   params: Promise<{ officeSlug: string }>;
+  searchParams?: Promise<{ departmentId?: string; serviceId?: string }>;
 }
 
-export default async function BookingPage({ params }: BookingPageProps) {
+export default async function BookingPage({ params, searchParams }: BookingPageProps) {
   const { officeSlug } = await params;
-  const supabase = await createClient();
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const supabase = createAdminClient();
 
   // Find office by slug (slugify office name and match)
   const { data: offices } = await supabase
     .from('offices')
-    .select('*, organization:organizations(*)')
+    .select('*')
     .eq('is_active', true);
 
-  const office = offices?.find(
-    (o) =>
-      o.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') === officeSlug
-  );
+  const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
 
   if (!office) notFound();
+
+  const { data: organization } = await supabase
+    .from('organizations')
+    .select('*')
+    .eq('id', office.organization_id)
+    .single();
 
   // Get departments with services
   const { data: departments } = await supabase
@@ -33,12 +37,22 @@ export default async function BookingPage({ params }: BookingPageProps) {
     .eq('office_id', office.id)
     .eq('is_active', true)
     .order('sort_order');
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: organization?.settings ?? {},
+    officeSettings: office.settings ?? {},
+  });
 
   return (
     <BookingForm
       office={office}
-      organization={office.organization}
+      organization={organization}
       departments={departments || []}
+      initialDepartmentId={resolvedSearchParams?.departmentId}
+      initialServiceId={resolvedSearchParams?.serviceId}
+      platformContext={{
+        vertical: platformConfig.template.vertical,
+        vocabulary: platformConfig.experienceProfile.vocabulary,
+      }}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { TICKET_EVENT_TYPES } from '@queueflow/shared';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushToTicket } from '@/lib/send-push';
 import { endLiveActivityForTicket } from '@/lib/apns';
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
       const { error: eventError } = await supabase.from('ticket_events').insert({
         ticket_id: ticketId,
-        event_type: 'status_change',
+        event_type: TICKET_EVENT_TYPES.CANCELLED,
         from_status: existingTicket.status,
         to_status: 'cancelled',
         metadata: {

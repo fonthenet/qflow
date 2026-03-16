@@ -109,14 +109,14 @@ export function DesksClient({
         <div>
           <h1 className="text-2xl font-bold text-foreground">Desks</h1>
           <p className="text-sm text-muted-foreground">
-            Manage service desks across your offices.
+            Set up the service points where staff call and serve customers.
           </p>
         </div>
         <button
           onClick={openCreate}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Add Desk
+          New Desk
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export function DesksClient({
           onChange={(e) => handleFilterChange('office', e.target.value)}
           className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="">All Offices</option>
+          <option value="">All Locations</option>
           {offices.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name}
@@ -170,7 +170,7 @@ export function DesksClient({
             {desks.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  No desks found.
+                  No desks yet. Add a desk so staff can start serving from this dashboard.
                 </td>
               </tr>
             )}
@@ -273,7 +273,7 @@ export function DesksClient({
                   defaultValue={editing?.office_id ?? currentOfficeFilter ?? ''}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select office...</option>
+                  <option value="">Select location...</option>
                   {offices.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
@@ -316,7 +316,7 @@ export function DesksClient({
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
-                  Assigned Staff
+                  Assigned team member
                 </label>
                 <select
                   name="current_staff_id"
