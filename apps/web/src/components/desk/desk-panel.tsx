@@ -16,6 +16,8 @@ import {
   Loader2,
   X,
   AlertCircle,
+  TimerReset,
+  MapPinned,
 } from 'lucide-react';
 import { useRealtimeQueue } from '@/lib/hooks/use-realtime-queue';
 import {
@@ -29,11 +31,14 @@ import {
   resetTicketToQueue,
 } from '@/lib/actions/ticket-actions';
 import { CustomerDataCard } from '@/components/desk/customer-data-card';
+import { PriorityBadge } from '@/components/tickets/priority-badge';
 import type { Database } from '@/lib/supabase/database.types';
+import type { CustomerDataScope } from '@/lib/privacy';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type Department = Database['public']['Tables']['departments']['Row'];
 type Service = Database['public']['Tables']['services']['Row'];
+type IntakeField = Database['public']['Tables']['intake_form_fields']['Row'];
 
 interface DeskPanelProps {
   desk: {
@@ -43,10 +48,17 @@ interface DeskPanelProps {
     department_id: string;
     office_id: string;
   };
-  staffId: string;
   staffName: string;
   departments: Department[];
   services: Service[];
+  priorityCategories?: Array<{
+    id: string;
+    name: string;
+    icon: string | null;
+    color: string | null;
+  }>;
+  currentTicketFields?: IntakeField[];
+  customerDataScope?: CustomerDataScope;
   initialCurrentTicket?: Ticket | null;
 }
 
@@ -112,10 +124,12 @@ function useCallCountdown(calledAt: string | null) {
 
 export function DeskPanel({
   desk,
-  staffId,
   staffName,
   departments,
   services,
+  priorityCategories = [],
+  currentTicketFields = [],
+  customerDataScope = 'staff',
   initialCurrentTicket,
 }: DeskPanelProps) {
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(
@@ -203,7 +217,7 @@ export function DeskPanel({
 
   const handleCallNext = () => {
     startTransition(async () => {
-      const result = await callNextTicket(desk.id, staffId);
+      const result = await callNextTicket(desk.id);
       if (result.error) {
         addToast(result.error, 'error');
         return;
@@ -216,7 +230,7 @@ export function DeskPanel({
   const handleStartServing = () => {
     if (!currentTicket) return;
     startTransition(async () => {
-      const result = await startServing(currentTicket.id, staffId);
+      const result = await startServing(currentTicket.id);
       if (result.error) {
         addToast(result.error, 'error');
         return;
@@ -229,7 +243,7 @@ export function DeskPanel({
   const handleMarkServed = () => {
     if (!currentTicket) return;
     startTransition(async () => {
-      const result = await markServed(currentTicket.id, staffId);
+      const result = await markServed(currentTicket.id);
       if (result.error) {
         addToast(result.error, 'error');
         return;
@@ -243,7 +257,7 @@ export function DeskPanel({
   const handleNoShow = () => {
     if (!currentTicket) return;
     startTransition(async () => {
-      const result = await markNoShow(currentTicket.id, staffId);
+      const result = await markNoShow(currentTicket.id);
       if (result.error) {
         addToast(result.error, 'error');
         return;
@@ -340,6 +354,70 @@ export function DeskPanel({
   const isIdle = !currentTicket;
   const isCalled = ticketStatus === 'called';
   const isServing = ticketStatus === 'serving';
+  const departmentMap = new Map(departments.map((department) => [department.id, department]));
+  const serviceMap = new Map(services.map((service) => [service.id, service]));
+  const getPriorityCategory = useCallback(
+    (ticket: Ticket | null | undefined) =>
+      priorityCategories.find((category) => category.id === ticket?.priority_category_id) ?? null,
+    [priorityCategories]
+  );
+
+  const getTicketServiceName = useCallback(
+    (ticket: Ticket | null | undefined) =>
+      (ticket?.service_id ? serviceMap.get(ticket.service_id)?.name : null) ?? 'Unknown service',
+    [serviceMap]
+  );
+
+  const getTicketDepartmentName = useCallback(
+    (ticket: Ticket | null | undefined) =>
+      (ticket?.department_id ? departmentMap.get(ticket.department_id)?.name : null) ?? 'Unknown department',
+    [departmentMap]
+  );
+
+  const getTicketCustomerName = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket?.customer_data || typeof ticket.customer_data !== 'object' || Array.isArray(ticket.customer_data)) {
+      return null;
+    }
+
+    const candidate = (ticket.customer_data as Record<string, unknown>).name;
+    return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : null;
+  }, []);
+
+  const getTicketSource = useCallback((ticket: Ticket | null | undefined) => {
+    if (!ticket) return 'Unknown';
+    if (ticket.appointment_id) return 'Appointment';
+    if (ticket.is_remote) return 'Remote join';
+    return 'Walk-in';
+  }, []);
+
+  const formatAbsoluteTime = useCallback((value: string | null | undefined) => {
+    if (!value) return '--';
+    return new Date(value).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, []);
+
+  const formatRelativeTime = useCallback((value: string | null | undefined) => {
+    if (!value) return '--';
+    const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+    if (elapsedMinutes < 1) return 'Just now';
+    if (elapsedMinutes === 1) return '1 min ago';
+    if (elapsedMinutes < 60) return `${elapsedMinutes} min ago`;
+    const hours = Math.floor(elapsedMinutes / 60);
+    const minutes = elapsedMinutes % 60;
+    return minutes === 0 ? `${hours}h ago` : `${hours}h ${minutes}m ago`;
+  }, []);
+
+  const waitingTickets = queue.waiting;
+  const activeElsewhere = [...queue.called, ...queue.serving].filter((ticket) => ticket.id !== currentTicket?.id);
+  const nextWaitingTicket = waitingTickets[0] ?? null;
+  const longestWaitingMinutes = waitingTickets.reduce((longest, ticket) => {
+    if (!ticket.created_at) return longest;
+    const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ticket.created_at).getTime()) / 60000));
+    return Math.max(longest, elapsed);
+  }, 0);
+  const queueStateLabel = isServing ? 'Serving now' : isCalled ? 'Waiting for customer' : 'Ready for next ticket';
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -352,6 +430,7 @@ export function DeskPanel({
           <p className="text-sm text-muted-foreground mt-0.5">
             Operator: {staffName}
           </p>
+          <p className="mt-2 text-sm font-medium text-foreground/80">{queueStateLabel}</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2">
@@ -359,6 +438,10 @@ export function DeskPanel({
             <span className="text-sm font-semibold text-primary">
               {queue.waiting.length} waiting
             </span>
+          </div>
+          <div className="hidden items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground md:flex">
+            <TimerReset className="h-4 w-4" />
+            Longest wait {longestWaitingMinutes}m
           </div>
           <div
             className={`h-3 w-3 rounded-full ${
@@ -460,20 +543,23 @@ export function DeskPanel({
               <div>
                 {/* Status Badge + Timer */}
                 <div className="flex items-center justify-between mb-4">
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
-                      isServing
-                        ? 'bg-success/15 text-success'
-                        : 'bg-warning/15 text-warning'
-                    }`}
-                  >
+                  <div className="flex items-center gap-2">
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        isServing ? 'bg-success' : 'bg-warning'
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
+                        isServing
+                          ? 'bg-success/15 text-success'
+                          : 'bg-warning/15 text-warning'
                       }`}
-                    />
-                    {isServing ? 'Serving' : 'Called'}
-                  </span>
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          isServing ? 'bg-success' : 'bg-warning'
+                        }`}
+                      />
+                      {isServing ? 'Serving' : 'Called'}
+                    </span>
+                    <PriorityBadge priorityCategory={getPriorityCategory(currentTicket)} />
+                  </div>
                   {isServing && (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Clock className="h-4 w-4" />
@@ -527,11 +613,55 @@ export function DeskPanel({
                   </p>
                 </div>
 
+                <div className="mb-5 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Service</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketServiceName(currentTicket)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Source</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketSource(currentTicket)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Checked in</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{formatAbsoluteTime(currentTicket.checked_in_at)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {isServing ? 'Started serving' : 'Called at'}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {isServing ? formatAbsoluteTime(currentTicket.serving_started_at) : formatAbsoluteTime(currentTicket.called_at)}
+                    </p>
+                  </div>
+                </div>
+
                 {/* Customer Data */}
-                <CustomerDataCard
-                  data={currentTicket.customer_data as Record<string, unknown> | null}
-                  className="mb-5"
-                />
+                {currentTicket.customer_data ? (
+                  <CustomerDataCard
+                    data={currentTicket.customer_data as Record<string, unknown> | null}
+                    fields={currentTicketFields}
+                    scope={customerDataScope}
+                    className="mb-5"
+                  />
+                ) : (
+                  <div className="mb-5 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">{getTicketCustomerName(currentTicket) ?? 'No intake collected'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Department</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">{getTicketDepartmentName(currentTicket)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Estimated wait</p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {currentTicket.estimated_wait_minutes ? `${currentTicket.estimated_wait_minutes} min` : 'Not available'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-3">
@@ -625,25 +755,23 @@ export function DeskPanel({
             )}
           </div>
 
-          {/* Quick Stats Row */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="rounded-xl border border-border bg-card p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{queue.waiting.length}</p>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Waiting</p>
+          {/* Queue Health */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Waiting</p>
+              <p className="mt-2 text-3xl font-bold text-foreground">{queue.waiting.length}</p>
             </div>
-            <div className="rounded-xl border border-border bg-card p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">{queue.serving.length}</p>
-              <p className="text-xs text-muted-foreground font-medium mt-1">
-                Being Served
-              </p>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Longest wait</p>
+              <p className="mt-2 text-3xl font-bold text-foreground">{longestWaitingMinutes}m</p>
             </div>
-            <div className="rounded-xl border border-border bg-card p-4 text-center">
-              <p className="text-2xl font-bold text-foreground">
-                {queue.recentlyServed.length}
-              </p>
-              <p className="text-xs text-muted-foreground font-medium mt-1">
-                Recently Served
-              </p>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active elsewhere</p>
+              <p className="mt-2 text-3xl font-bold text-foreground">{activeElsewhere.length}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recently served</p>
+              <p className="mt-2 text-3xl font-bold text-foreground">{queue.recentlyServed.length}</p>
             </div>
           </div>
         </div>
@@ -653,12 +781,29 @@ export function DeskPanel({
           {/* Waiting Queue */}
           <div className="rounded-2xl border border-border bg-card flex flex-col flex-1 min-h-0">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h3 className="text-sm font-semibold text-foreground">
-                Queue
-              </h3>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Queue
+                </h3>
+                <p className="text-xs text-muted-foreground">Next people waiting for this desk&apos;s department</p>
+              </div>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                 {queue.waiting.length}
               </span>
+            </div>
+            <div className="border-b border-border px-4 py-3">
+              {nextWaitingTicket ? (
+                <div className="rounded-xl bg-primary/5 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Up next</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-lg font-bold text-foreground">{nextWaitingTicket.ticket_number}</p>
+                    <PriorityBadge priorityCategory={getPriorityCategory(nextWaitingTicket)} />
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{getTicketServiceName(nextWaitingTicket)} · {formatRelativeTime(nextWaitingTicket.created_at)}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No one is waiting right now.</p>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto p-2">
               {isLoading ? (
@@ -666,40 +811,42 @@ export function DeskPanel({
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : queue.waiting.length === 0 ? (
-                <p className="text-center text-sm text-muted-foreground py-8">
-                  No tickets waiting
-                </p>
+                <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
+                  <Ticket className="mb-3 h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">No tickets waiting</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    When new arrivals check in, they will appear here in queue order.
+                  </p>
+                </div>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {queue.waiting.map((ticket, index) => (
                     <div
                       key={ticket.id}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                      className="rounded-xl border border-border px-3 py-3 transition-colors hover:bg-muted/30"
                     >
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-foreground">
-                          {ticket.ticket_number}
-                        </p>
-                        {ticket.customer_data &&
-                          typeof ticket.customer_data === 'object' &&
-                          !Array.isArray(ticket.customer_data) &&
-                          'name' in ticket.customer_data && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {String(ticket.customer_data.name)}
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                          {index + 1}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-bold text-foreground">
+                              {ticket.ticket_number}
                             </p>
-                          )}
+                            <PriorityBadge priorityCategory={getPriorityCategory(ticket)} className="shrink-0" />
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                              {getTicketSource(ticket)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-foreground/80">{getTicketServiceName(ticket)}</p>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>{getTicketCustomerName(ticket) ?? 'No name provided'}</span>
+                            <span>{formatRelativeTime(ticket.created_at)}</span>
+                            <span>Checked in {formatAbsoluteTime(ticket.checked_in_at)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {ticket.created_at
-                          ? new Date(ticket.created_at).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : ''}
-                      </span>
                     </div>
                   ))}
                 </div>
@@ -708,21 +855,25 @@ export function DeskPanel({
           </div>
 
           {/* Currently Called / Being Served by Others */}
-          {(queue.called.length > 0 || queue.serving.length > 0) && (
-            <div className="rounded-2xl border border-border bg-card">
-              <div className="border-b border-border px-4 py-3">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Active at Other Desks
-                </h3>
-              </div>
-              <div className="p-2 space-y-1 max-h-40 overflow-y-auto">
-                {[...queue.called, ...queue.serving]
-                  .filter((t) => t.id !== currentTicket?.id)
-                  .map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2"
-                    >
+          <div className="rounded-2xl border border-border bg-card">
+            <div className="border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                Active at Other Desks
+              </h3>
+              <p className="text-xs text-muted-foreground">Cross-desk visibility for called or serving tickets</p>
+            </div>
+            <div className="p-2 space-y-1 max-h-56 overflow-y-auto">
+              {activeElsewhere.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No other desks are actively calling or serving right now.
+                </p>
+              ) : (
+                activeElsewhere.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className="rounded-xl border border-border px-3 py-3"
+                  >
+                    <div className="flex items-center gap-3">
                       <span
                         className={`h-2 w-2 rounded-full flex-shrink-0 ${
                           ticket.status === 'serving' ? 'bg-success' : 'bg-warning'
@@ -731,14 +882,20 @@ export function DeskPanel({
                       <span className="text-sm font-bold text-foreground">
                         {ticket.ticket_number}
                       </span>
-                      <span className="text-xs text-muted-foreground capitalize ml-auto">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground ml-auto">
                         {ticket.status}
                       </span>
                     </div>
-                  ))}
-              </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>{getTicketServiceName(ticket)}</span>
+                      <span>{getTicketSource(ticket)}</span>
+                      <span>{formatRelativeTime(ticket.called_at ?? ticket.serving_started_at)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
