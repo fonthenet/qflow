@@ -36,7 +36,7 @@ function RootNavigator() {
     // But NOT if they're in the join or ticket flow (those are customer-facing)
     if (user && isStaff && inCustomerSection && !inJoinFlow && !hasRedirected.current) {
       hasRedirected.current = true;
-      if (staffRole === 'admin') {
+      if (staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin') {
         router.replace('/(admin)');
       } else {
         router.replace('/(auth)/role-select');

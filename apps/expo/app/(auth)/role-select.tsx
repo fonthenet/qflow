@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
@@ -44,7 +45,8 @@ interface StaffAssignment {
 
 export default function RoleSelectScreen() {
   const router = useRouter();
-  const { setSession } = useOperatorStore();
+  const { signOut } = useAuth();
+  const { setSession, clearSession } = useOperatorStore();
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -142,8 +144,9 @@ export default function RoleSelectScreen() {
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={async () => {
-            await supabase.auth.signOut();
-            router.replace('/(tabs)/profile');
+            clearSession();
+            await signOut();
+            // RootNavigator will redirect to /(tabs) once session clears
           }}
         >
           <Text style={styles.logoutText}>Sign Out</Text>

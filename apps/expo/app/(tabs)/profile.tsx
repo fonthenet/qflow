@@ -172,7 +172,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.proButton, { backgroundColor: colors.primary }]}
             onPress={() => {
-              if (staffRole === 'admin') {
+              if (staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin') {
                 router.replace('/(admin)');
               } else {
                 router.replace('/(auth)/role-select');
@@ -181,7 +181,9 @@ export default function ProfileScreen() {
           >
             <Ionicons name="arrow-forward-circle" size={20} color="#fff" />
             <Text style={styles.proButtonText}>
-              {staffRole === 'admin' ? 'Go to Admin Dashboard' : 'Go to Desk Panel'}
+              {staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin'
+                ? 'Go to Admin Dashboard'
+                : 'Go to Desk Panel'}
             </Text>
           </TouchableOpacity>
 

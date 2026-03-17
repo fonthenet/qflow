@@ -27,7 +27,7 @@ export default function LoginScreen() {
   // Auto-redirect if already logged in
   useEffect(() => {
     if (!authLoading && user && isStaff) {
-      if (staffRole === 'admin') {
+      if (staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin') {
         router.replace('/(admin)');
       } else {
         router.replace('/(auth)/role-select');
@@ -60,7 +60,8 @@ export default function LoginScreen() {
           .limit(1)
           .maybeSingle();
 
-        if (staff?.role === 'admin') {
+        const role = staff?.role;
+        if (role === 'admin' || role === 'manager' || role === 'branch_admin') {
           router.replace('/(admin)');
         } else {
           router.replace('/(auth)/role-select');
