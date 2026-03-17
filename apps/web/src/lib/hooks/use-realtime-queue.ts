@@ -40,10 +40,14 @@ export function useRealtimeQueue({
   const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const hasLoadedRef = useRef(false);
+  // Use a ref so initialQueue changes don't recreate fetchQueue
+  const initialQueueRef = useRef(initialQueue);
+  initialQueueRef.current = initialQueue;
 
   const fetchQueue = useCallback(async () => {
     if (disabled) {
-      setQueue(initialQueue ?? EMPTY_QUEUE);
+      setQueue(initialQueueRef.current ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
@@ -113,20 +117,25 @@ export function useRealtimeQueue({
         .slice(0, 5),
     });
     setError(null);
-  }, [departmentId, disabled, initialQueue, officeId]);
+  }, [departmentId, disabled, officeId]);
 
   useEffect(() => {
     if (disabled) {
-      setQueue(initialQueue ?? EMPTY_QUEUE);
+      setQueue(initialQueueRef.current ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
     const supabase = createClient();
     let realtimeConnected = false;
 
-    // Initial fetch
-    setIsLoading(true);
-    fetchQueue().finally(() => setIsLoading(false));
+    // Only show loading spinner on the very first fetch, not on re-subscriptions
+    if (!hasLoadedRef.current) {
+      setIsLoading(true);
+    }
+    fetchQueue().finally(() => {
+      setIsLoading(false);
+      hasLoadedRef.current = true;
+    });
 
     // Subscribe to realtime changes
     // Note: postgres_changes only supports filtering on ONE column.
@@ -172,7 +181,7 @@ export function useRealtimeQueue({
         channelRef.current = null;
       }
     };
-  }, [departmentId, disabled, fetchQueue, initialQueue, officeId]);
+  }, [departmentId, disabled, fetchQueue, officeId]);
 
   return {
     queue,
