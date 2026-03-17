@@ -3,12 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Building2,
-  Layers,
   Cog,
   Users,
   BarChart3,
-  Monitor,
   LogOut,
   TicketCheck,
   Grid3X3,
@@ -17,11 +14,10 @@ import {
   Contact,
   Tablet,
   Tv,
-  Sparkles,
   ScrollText,
-  GitBranchPlus,
   CalendarDays,
   House,
+  Map,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 
@@ -60,22 +56,18 @@ interface SidebarProps {
 }
 
 const adminNav = [
-  { href: '/admin/onboarding', label: 'Business Setup', icon: Sparkles, section: 'Setup' },
-  { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
-  { href: '/admin/offices', label: 'Locations', icon: Building2, section: 'Setup' },
-  { href: '/admin/departments', label: 'Departments', icon: Layers, section: 'Setup' },
-  { href: '/admin/services', label: 'Services', icon: Grid3X3, section: 'Setup' },
-  { href: '/admin/desks', label: 'Desks', icon: Monitor, section: 'Setup' },
-  { href: '/admin/staff', label: 'Team', icon: Users, section: 'Setup' },
-  { href: '/admin/priorities', label: 'Priority Rules', icon: Star, section: 'Setup' },
-  { href: '/admin/bookings', label: 'Bookings', icon: CalendarDays, section: 'Customers' },
+  { href: '/admin/overview', label: 'Overview', icon: Map, section: 'Business' },
+  { href: '/admin/staff', label: 'Team', icon: Users, section: 'Business' },
+  { href: '/admin/services', label: 'Services', icon: Grid3X3, section: 'Business' },
+  { href: '/admin/priorities', label: 'Priority Rules', icon: Star, section: 'Business' },
   { href: '/admin/customers', label: 'Customers', icon: Contact, section: 'Customers' },
+  { href: '/admin/bookings', label: 'Bookings', icon: CalendarDays, section: 'Customers' },
   { href: '/admin/virtual-codes', label: 'Join Links & QR', icon: QrCode, section: 'Channels' },
   { href: '/admin/kiosk', label: 'Lobby Kiosk', icon: Tablet, section: 'Channels' },
   { href: '/admin/displays', label: 'Display Screens', icon: Tv, section: 'Channels' },
   { href: '/admin/analytics', label: 'Reports', icon: BarChart3, section: 'Insights' },
   { href: '/admin/audit', label: 'Activity Log', icon: ScrollText, section: 'Insights' },
-  { href: '/admin/settings', label: 'Business Settings', icon: Cog, section: 'Insights' },
+  { href: '/admin/settings', label: 'Settings', icon: Cog, section: 'Insights' },
 ];
 
 const deskNav = [
@@ -93,17 +85,14 @@ function getLabelOverrides(templateSummary: SidebarProps['templateSummary']) {
     queueLabel: 'Queue',
   };
   return {
-    '/admin/offices': vocabulary.officeLabel,
-    '/admin/departments': `${vocabulary.departmentLabel}s`,
     '/admin/services': `${vocabulary.serviceLabel}s`,
-    '/admin/desks': `${vocabulary.deskLabel}s`,
     '/admin/customers': `${vocabulary.customerLabel}s`,
     '/admin/bookings': `${vocabulary.bookingLabel}s`,
     '/desk': `My ${vocabulary.deskLabel}`,
   } as Record<string, string>;
 }
 
-const sectionOrder = ['Work', 'Setup', 'Customers', 'Channels', 'Insights'] as const;
+const sectionOrder = ['Work', 'Business', 'Customers', 'Channels', 'Insights'] as const;
 
 export function Sidebar({
   staff,
@@ -113,17 +102,22 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const navItems = [...deskNav, ...adminNav]
-    .filter((item) => allowedNavigation.includes(item.href))
+    .filter((item) => item.href === '/admin/overview' ? allowedNavigation.some(n => n.startsWith('/admin/')) : allowedNavigation.includes(item.href))
     .sort((a, b) => {
       const desiredOrder = [
-        '/admin/onboarding',
-        '/admin/template-governance',
-        ...(templateSummary.defaultNavigation ?? []),
-        '/admin/bookings',
-        '/admin/audit',
-        '/admin/analytics',
-        '/admin/settings',
         '/desk',
+        '/admin/overview',
+        '/admin/staff',
+        '/admin/services',
+        '/admin/priorities',
+        '/admin/customers',
+        '/admin/bookings',
+        '/admin/virtual-codes',
+        '/admin/kiosk',
+        '/admin/displays',
+        '/admin/analytics',
+        '/admin/audit',
+        '/admin/settings',
       ];
       const ai = desiredOrder.indexOf(a.href);
       const bi = desiredOrder.indexOf(b.href);
@@ -144,7 +138,7 @@ export function Sidebar({
     <aside className="flex w-64 flex-col border-r border-border bg-card">
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-6">
-        <Link href="/admin/offices" className="text-xl font-bold">
+        <Link href="/admin/overview" className="text-xl font-bold">
           Queue<span className="text-primary">Flow</span>
         </Link>
       </div>

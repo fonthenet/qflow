@@ -108,20 +108,20 @@ export function CustomersClient({
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="Search by name, phone, or email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-border bg-card pl-10 pr-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          className="w-full rounded-xl border border-input bg-background pl-11 pr-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
       {/* Customers List */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-2xl border border-border bg-card overflow-hidden">
         {/* Table Header */}
-        <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border bg-muted/30 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border px-5 py-4 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
           <div className="col-span-2">Customer</div>
           <div>Phone</div>
           <div>Email</div>
@@ -130,10 +130,16 @@ export function CustomersClient({
         </div>
 
         {filtered.length === 0 ? (
-          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-            {search
-              ? 'No customers matching your search'
-              : 'No customers found'}
+          <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+            <User className="h-10 w-10 text-muted-foreground/40 mb-3" />
+            <p className="text-sm font-semibold text-foreground">
+              {search ? 'No results' : 'No customers yet'}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {search
+                ? 'No customers matching your search'
+                : 'Customers will appear here after their first visit'}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -218,14 +224,14 @@ export function CustomersClient({
                         {(ticketHistory[customer.id] ?? []).map((ticket) => (
                           <div
                             key={ticket.id}
-                            className="rounded-lg border border-border bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4"
+                            className="rounded-xl border border-border bg-card px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4"
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded shrink-0">
+                              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary shrink-0">
                                 #{ticket.ticket_number}
                               </span>
                               <span
-                                className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${
                                   ticket.status === 'completed'
                                     ? 'bg-green-100 text-green-700'
                                     : ticket.status === 'no_show'

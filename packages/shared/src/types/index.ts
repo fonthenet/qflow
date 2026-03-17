@@ -97,6 +97,7 @@ export interface Ticket {
   is_remote: boolean;
   checked_in_at: string | null;
   notes: string | null;
+  parked_at: string | null;
   created_at: string;
 }
 

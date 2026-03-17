@@ -26,13 +26,13 @@ describe('TemplateOnboardingClient', () => {
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={0}
         currentTemplate={{
-          id: 'public-service',
-          title: 'Public Service Branch',
-          vertical: 'public_service',
-          version: '1.1.0',
-          dashboardMode: 'public_service',
+          id: 'standard',
+          title: 'Standard Queue',
+          vertical: 'standard',
+          version: '1.2.0',
+          dashboardMode: 'standard',
           operatingModel: 'department_first',
-          branchType: 'service_center',
+          branchType: 'general_office',
           enabledModules: ['kiosk'],
           recommendedRoles: ['admin'],
         }}
@@ -52,13 +52,13 @@ describe('TemplateOnboardingClient', () => {
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={2}
         currentTemplate={{
-          id: 'public-service',
-          title: 'Public Service Branch',
-          vertical: 'public_service',
-          version: '1.1.0',
-          dashboardMode: 'public_service',
+          id: 'standard',
+          title: 'Standard Queue',
+          vertical: 'standard',
+          version: '1.2.0',
+          dashboardMode: 'standard',
           operatingModel: 'department_first',
-          branchType: 'service_center',
+          branchType: 'general_office',
           enabledModules: ['kiosk'],
           recommendedRoles: ['admin'],
         }}

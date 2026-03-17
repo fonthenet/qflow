@@ -715,6 +715,7 @@ export type Database = {
           priority: number | null
           priority_category_id: string | null
           qr_token: string
+          parked_at: string | null
           recall_count: number
           service_id: string
           serving_started_at: string | null
@@ -743,6 +744,7 @@ export type Database = {
           priority?: number | null
           priority_category_id?: string | null
           qr_token: string
+          parked_at?: string | null
           recall_count?: number
           service_id: string
           serving_started_at?: string | null
@@ -771,6 +773,7 @@ export type Database = {
           priority?: number | null
           priority_category_id?: string | null
           qr_token?: string
+          parked_at?: string | null
           recall_count?: number
           service_id?: string
           serving_started_at?: string | null

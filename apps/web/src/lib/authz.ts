@@ -263,7 +263,7 @@ export async function getDisplayById(context: StaffContext, displayId: string) {
 export async function getTicketById(context: StaffContext, ticketId: string) {
   const { data: ticket } = await context.supabase
     .from('tickets')
-    .select('id, office_id, desk_id, status, ticket_number')
+    .select('id, office_id, desk_id, status, ticket_number, parked_at')
     .eq('id', ticketId)
     .single();
 

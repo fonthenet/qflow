@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "QueueFlow",
+    "slug": "queueflow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "queueflow",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1d4ed8"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.queueflow.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "QueueFlow uses the camera to scan QR codes at service locations."
+      },
+      "associatedDomains": [
+        "applinks:qflow-sigma.vercel.app"
+      ]
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1d4ed8"
+      },
+      "package": "com.queueflow.mobile",
+      "permissions": [
+        "CAMERA",
+        "NOTIFICATIONS",
+        "POST_NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "qflow-sigma.vercel.app",
+              "pathPrefix": "/q/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "QueueFlow needs camera access to scan QR codes."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1d4ed8",
+          "defaultChannel": "queue-updates",
+          "sounds": []
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

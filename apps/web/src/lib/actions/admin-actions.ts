@@ -560,6 +560,8 @@ export async function createStaffMember(formData: FormData) {
     }
   }
 
+  // Try to create auth user; if already exists (e.g. from a prior failed attempt), reuse it.
+  let authUserId: string;
   const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
     email,
     password,
@@ -570,13 +572,47 @@ export async function createStaffMember(formData: FormData) {
     },
   });
 
-  if (authError) return { error: authError.message };
-  if (!authData.user) return { error: 'Failed to create auth user' };
+  if (authError) {
+    // Check if user already exists — reuse them if no staff row is linked
+    if (authError.message.toLowerCase().includes('already') || authError.status === 422) {
+      const { data: { users } } = await adminSupabase.auth.admin.listUsers();
+      const existing = users?.find((u) => u.email?.toLowerCase() === email);
+      if (!existing) return { error: authError.message };
+
+      // Verify no staff record already uses this auth user in this org
+      const { data: linkedStaff } = await context.supabase
+        .from('staff')
+        .select('id')
+        .eq('auth_user_id', existing.id)
+        .eq('organization_id', context.staff.organization_id)
+        .maybeSingle();
+
+      if (linkedStaff) return { error: 'A user with this email address has already been registered.' };
+
+      // Update auth user metadata and password for the new attempt
+      await adminSupabase.auth.admin.updateUserById(existing.id, {
+        password,
+        user_metadata: {
+          full_name: fullName,
+          organization_id: context.staff.organization_id,
+        },
+      });
+
+      authUserId = existing.id;
+    } else {
+      return { error: authError.message };
+    }
+  } else {
+    if (!authData.user) return { error: 'Failed to create auth user' };
+    authUserId = authData.user.id;
+  }
+
+  const deskId = (formData.get('desk_id') as string) || null;
 
   const { data: staffMember, error: staffError } = await context.supabase
     .from('staff')
     .insert({
-      auth_user_id: authData.user.id,
+      auth_user_id: authUserId,
       email,
       full_name: fullName,
       role,
@@ -589,6 +625,19 @@ export async function createStaffMember(formData: FormData) {
     .single();
 
   if (staffError) return { error: staffError.message };
+
+  // Assign desk to the new staff member if selected
+  if (deskId && staffMember) {
+    const { error: deskError } = await context.supabase
+      .from('desks')
+      .update({ current_staff_id: staffMember.id })
+      .eq('id', deskId)
+      .is('current_staff_id', null); // Only assign if not already taken
+
+    if (deskError) {
+      console.error('Failed to assign desk:', deskError.message);
+    }
+  }
 
   if (sendSetupEmail) {
     await adminSupabase.auth.resetPasswordForEmail(email, {
@@ -607,11 +656,13 @@ export async function createStaffMember(formData: FormData) {
       role,
       officeId,
       departmentId,
+      deskId,
       sendSetupEmail,
     },
   });
 
   revalidatePath('/admin/staff');
+  revalidatePath('/admin/desks');
   return { success: true };
 }
 

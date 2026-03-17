@@ -3,18 +3,19 @@
 import { useMemo, useState, useTransition } from 'react';
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   ExternalLink,
   Eye,
+  EyeOff,
   ImageIcon,
-  Layers3,
   Link2,
   Lock,
   Palette,
   RotateCcw,
   Save,
   Tablet,
-  Ticket,
 } from 'lucide-react';
 import { updateKioskSettings } from '@/lib/actions/admin-actions';
 import { buildBookingCheckInPath, buildBookingPath, buildKioskPath } from '@/lib/office-links';
@@ -66,18 +67,21 @@ interface KioskSettingsProps {
   priorityMode: string;
 }
 
-interface SwitchProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-  label: string;
-}
-
 function normalizeThemeColor(value: string, fallback: string) {
   return /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : fallback;
 }
 
-function Switch({ checked, onChange, disabled = false, label }: SwitchProps) {
+function Switch({
+  checked,
+  onChange,
+  disabled = false,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  label: string;
+}) {
   return (
     <button
       type="button"
@@ -99,29 +103,34 @@ function Switch({ checked, onChange, disabled = false, label }: SwitchProps) {
   );
 }
 
-function SectionHeader({
+function SectionCard({
   icon: Icon,
   title,
   description,
+  children,
 }: {
   icon: typeof Tablet;
   title: string;
   description: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="rounded-xl bg-primary/10 p-2 text-primary">
-        <Icon className="h-4 w-4" />
+    <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <div className="flex items-start gap-3 mb-5">
+        <div className="rounded-xl bg-primary/10 p-2 text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        </div>
       </div>
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
+      {children}
+    </section>
   );
 }
 
-function FieldBlock({
+function FieldRow({
   label,
   hint,
   children,
@@ -131,15 +140,17 @@ function FieldBlock({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-foreground">{label}</label>
+    <div>
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
       {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
 
-function InlineSwitchRow({
+function InlineToggle({
   title,
   description,
   checked,
@@ -147,16 +158,16 @@ function InlineSwitchRow({
   disabled = false,
 }: {
   title: string;
-  description: string;
+  description?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0">
         <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
       </div>
       <Switch checked={checked} onChange={onChange} disabled={disabled} label={title} />
     </div>
@@ -221,30 +232,21 @@ export function KioskSettings({
   const [idleTimeout, setIdleTimeout] = useState<number>(
     settings.kiosk_idle_timeout ?? templateDefaults.idleTimeoutSeconds
   );
+  const [showAppointmentCheckIn, setShowAppointmentCheckIn] = useState<boolean>(
+    settings.kiosk_show_appointment_checkin ?? true
+  );
+  const [showGroupTickets, setShowGroupTickets] = useState<boolean>(
+    settings.kiosk_show_group_tickets ?? true
+  );
+
+  const [expandedOffice, setExpandedOffice] = useState<string | null>(activeOffices[0]?.id ?? null);
 
   const availablePriorityFlow = priorityMode !== 'none';
-  const lockedDepartment = activeDepartments.find((department) => department.id === lockedDepartmentId);
-  const visibleDepartmentCount = activeDepartments.filter(
-    (department) => !hiddenDepartments.includes(department.id)
-  ).length;
-  const visibleServiceCount = activeDepartments.reduce((count, department) => {
-    if (hiddenDepartments.includes(department.id)) {
-      return count;
-    }
-
-    return (
-      count +
-      (department.services ?? []).filter(
-        (service) => service.is_active && !hiddenServices.includes(service.id)
-      ).length
-    );
-  }, 0);
 
   function setDepartmentVisibility(departmentId: string, visible: boolean) {
     setHiddenDepartments((current) =>
       visible ? current.filter((entry) => entry !== departmentId) : [...current, departmentId]
     );
-
     if (!visible && lockedDepartmentId === departmentId) {
       setLockedDepartmentId('');
     }
@@ -264,6 +266,8 @@ export function KioskSettings({
     setShowLogo(Boolean(organization.logo_url));
     setLogoUrl(organization.logo_url ?? '');
     setShowEstimatedTime(templateDefaults.showEstimatedTime);
+    setShowAppointmentCheckIn(true);
+    setShowGroupTickets(true);
     setHiddenDepartments([]);
     setHiddenServices([]);
     setLockedDepartmentId('');
@@ -296,6 +300,8 @@ export function KioskSettings({
         kiosk_locked_department_id: lockedDepartmentId || null,
         kiosk_button_label: buttonLabel.trim() || templateDefaults.buttonLabel,
         kiosk_idle_timeout: Math.min(Math.max(idleTimeout || 10, 10), 300),
+        kiosk_show_appointment_checkin: showAppointmentCheckIn,
+        kiosk_show_group_tickets: showGroupTickets,
       });
 
       if (result?.error) {
@@ -310,430 +316,374 @@ export function KioskSettings({
     });
   }
 
+  const inputClass =
+    'w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30 focus:border-primary/50';
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex flex-col gap-5 border-b border-border px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              <Tablet className="h-3.5 w-3.5" />
-              Kiosk
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Lobby Kiosk</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+            Configure the self-service screen customers use to join the queue.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          {successMessage && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {successMessage}
+            </span>
+          )}
+          {errorMessage && <span className="text-sm text-destructive">{errorMessage}</span>}
+          <button
+            type="button"
+            onClick={resetToDefaults}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3.5 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {isPending ? 'Saving...' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Messaging ──────────────────────────────────────── */}
+      <SectionCard
+        icon={Tablet}
+        title="Messaging"
+        description="Text displayed on the kiosk screen."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FieldRow label="Welcome message" hint="Shown above the first customer choice.">
+            <input
+              type="text"
+              value={welcomeMessage}
+              onChange={(e) => setWelcomeMessage(e.target.value)}
+              className={inputClass}
+            />
+          </FieldRow>
+          <FieldRow label="Header text">
+            <input
+              type="text"
+              value={headerText}
+              onChange={(e) => setHeaderText(e.target.value)}
+              className={inputClass}
+            />
+          </FieldRow>
+          <FieldRow label="Primary button label">
+            <input
+              type="text"
+              value={buttonLabel}
+              onChange={(e) => setButtonLabel(e.target.value)}
+              className={inputClass}
+            />
+          </FieldRow>
+        </div>
+      </SectionCard>
+
+      {/* ── Appearance ─────────────────────────────────────── */}
+      <SectionCard
+        icon={Palette}
+        title="Appearance"
+        description="Color and branding for the kiosk."
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={normalizeThemeColor(themeColor, templateDefaults.themeColor)}
+              onChange={(e) => setThemeColor(e.target.value)}
+              className="h-10 w-14 cursor-pointer rounded-lg border border-border bg-background"
+            />
+            <div className="flex-1">
+              <FieldRow label="Theme color">
+                <input
+                  type="text"
+                  value={themeColor}
+                  onChange={(e) => setThemeColor(e.target.value)}
+                  className={`${inputClass} font-mono`}
+                />
+              </FieldRow>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Kiosk Settings</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Clean up the customer-facing screen and control which services appear.
-            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {successMessage ? (
-              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                {successMessage}
-              </span>
-            ) : null}
-            {errorMessage ? <span className="text-sm text-destructive">{errorMessage}</span> : null}
-            <button
-              type="button"
-              onClick={resetToDefaults}
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          <div className="divide-y divide-border rounded-xl border border-border px-4">
+            <InlineToggle
+              title="Show business logo"
+              description="Display logo in the kiosk header."
+              checked={showLogo}
+              onChange={setShowLogo}
+            />
+          </div>
+
+          {showLogo && (
+            <FieldRow
+              label="Logo image URL"
+              hint={organization.logo_url ? `Falls back to organization logo.` : 'Paste a direct image URL.'}
             >
-              <RotateCcw className="h-4 w-4" />
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              {isPending ? 'Saving...' : 'Save changes'}
-            </button>
+              <div className="relative">
+                <ImageIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className={`${inputClass} pl-9`}
+                />
+              </div>
+            </FieldRow>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* ── Flow ───────────────────────────────────────────── */}
+      <SectionCard
+        icon={Lock}
+        title="Flow"
+        description="Control how the kiosk behaves for customers."
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldRow label="Starting department" hint="Skip department selection by locking to one.">
+              <select
+                value={lockedDepartmentId}
+                onChange={(e) => setLockedDepartmentId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Let customers choose</option>
+                {activeDepartments.map((dept) => (
+                  <option key={dept.id} value={dept.id}>
+                    {dept.name} ({dept.code})
+                  </option>
+                ))}
+              </select>
+            </FieldRow>
+            <FieldRow label="Idle reset" hint="Seconds before the kiosk resets to start.">
+              <div className="relative">
+                <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={idleTimeout}
+                  onChange={(e) => setIdleTimeout(Number(e.target.value))}
+                  className={`${inputClass} pl-9`}
+                />
+              </div>
+            </FieldRow>
+          </div>
+
+          <div className="divide-y divide-border rounded-xl border border-border px-4">
+            <InlineToggle
+              title="Show estimated wait times"
+              description="Display timing on service buttons."
+              checked={showEstimatedTime}
+              onChange={setShowEstimatedTime}
+            />
+            <InlineToggle
+              title="Show priority selection"
+              description={
+                availablePriorityFlow
+                  ? 'Let customers choose a priority category.'
+                  : 'Disabled — queue policy does not support priorities.'
+              }
+              checked={availablePriorityFlow && showPriorities}
+              onChange={setShowPriorities}
+              disabled={!availablePriorityFlow}
+            />
+            <InlineToggle
+              title="Appointment check-in"
+              description="Let customers search and check in for booked appointments."
+              checked={showAppointmentCheckIn}
+              onChange={setShowAppointmentCheckIn}
+            />
+            <InlineToggle
+              title="Group tickets"
+              description="Allow multiple tickets for a group in one transaction."
+              checked={showGroupTickets}
+              onChange={setShowGroupTickets}
+            />
           </div>
         </div>
+      </SectionCard>
 
-        <div className="grid gap-4 px-6 py-5 md:grid-cols-3">
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Tablet className="h-3.5 w-3.5" />
-              Active offices
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{activeOffices.length}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Layers3 className="h-3.5 w-3.5" />
-              Visible departments
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{visibleDepartmentCount}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Ticket className="h-3.5 w-3.5" />
-              Visible services
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{visibleServiceCount}</p>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Palette}
-              title="Customer Screen"
-              description="Core copy, color, and kiosk options."
-            />
-
-            <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="space-y-5">
-                <FieldBlock
-                  label="Welcome message"
-                  hint="This appears above the first customer choice."
-                >
-                  <input
-                    type="text"
-                    value={welcomeMessage}
-                    onChange={(event) => setWelcomeMessage(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-
-                <FieldBlock label="Header text">
-                  <input
-                    type="text"
-                    value={headerText}
-                    onChange={(event) => setHeaderText(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-
-                <FieldBlock label="Primary button label">
-                  <input
-                    type="text"
-                    value={buttonLabel}
-                    onChange={(event) => setButtonLabel(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-              </div>
-
-              <div className="space-y-4 rounded-xl border border-border bg-background p-4">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="h-12 w-12 rounded-xl border"
-                      style={{
-                        backgroundColor: themeColor,
-                        borderColor: `${themeColor}55`,
-                      }}
-                    />
-                    <div>
-                      <p className="font-medium text-foreground">Theme color</p>
-                      <p className="text-sm text-muted-foreground">Used for kiosk emphasis.</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <input
-                      type="color"
-                      value={normalizeThemeColor(themeColor, templateDefaults.themeColor)}
-                      onChange={(event) => setThemeColor(event.target.value)}
-                      className="h-11 w-16 cursor-pointer rounded-xl border border-border bg-background"
-                    />
-                    <input
-                      type="text"
-                      value={themeColor}
-                      onChange={(event) => setThemeColor(event.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-4 py-3 font-mono text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                </div>
-
-                <InlineSwitchRow
-                  title="Show business logo"
-                  description="Display the business logo in the kiosk header."
-                  checked={showLogo}
-                  onChange={setShowLogo}
-                />
-
-                <FieldBlock
-                  label="Logo image URL"
-                  hint={organization.logo_url ? `Organization logo available: ${organization.logo_url}` : 'Paste a direct image URL, or leave blank to use the organization logo if available.'}
-                >
-                  <div className="relative">
-                    <ImageIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type="url"
-                      value={logoUrl}
-                      onChange={(event) => setLogoUrl(event.target.value)}
-                      placeholder="https://example.com/logo.png"
-                      className="w-full rounded-xl border border-border bg-background px-10 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                </FieldBlock>
-
-                <InlineSwitchRow
-                  title="Show estimated wait times"
-                  description="Expose service timing on kiosk buttons."
-                  checked={showEstimatedTime}
-                  onChange={setShowEstimatedTime}
-                />
-
-                <InlineSwitchRow
-                  title="Show priority selection"
-                  description={
-                    availablePriorityFlow
-                      ? 'Let customers choose a priority category.'
-                      : 'Disabled because the active queue policy does not support priorities.'
-                  }
-                  checked={availablePriorityFlow && showPriorities}
-                  onChange={setShowPriorities}
-                  disabled={!availablePriorityFlow}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Lock}
-              title="Flow Behavior"
-              description="Where the kiosk starts and when it resets."
-            />
-
-            <div className="mt-6 grid gap-5 lg:grid-cols-2">
-              <FieldBlock
-                label="Starting department"
-                hint="Choose a department to skip the department selection screen."
-              >
-                <select
-                  value={lockedDepartmentId}
-                  onChange={(event) => setLockedDepartmentId(event.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Let customers choose a department</option>
-                  {activeDepartments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name} ({department.code})
-                    </option>
-                  ))}
-                </select>
-              </FieldBlock>
-
-              <FieldBlock
-                label="Idle reset time"
-                hint="Number of seconds before the kiosk resets back to the start."
-              >
-                <div className="relative">
-                  <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="number"
-                    min={10}
-                    max={300}
-                    value={idleTimeout}
-                    onChange={(event) => setIdleTimeout(Number(event.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-10 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-              </FieldBlock>
+      {/* ── Visibility ─────────────────────────────────────── */}
+      <SectionCard
+        icon={Eye}
+        title="Visibility"
+        description="Choose which departments and services appear on the kiosk."
+      >
+        {activeDepartments.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            No active departments. Add departments in the setup section.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <div className="grid grid-cols-[minmax(0,1fr)_80px] bg-muted/40 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <span>Department / Service</span>
+              <span className="text-right">Visible</span>
             </div>
 
-            <div className="mt-5 rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">Current setup:</span>{' '}
-              {lockedDepartment ? `Starts in ${lockedDepartment.name}` : 'Starts with department selection'}
-              {' · '}
-              {availablePriorityFlow && showPriorities ? 'priority step on' : 'priority step off'}
-              {' · '}
-              {showEstimatedTime ? 'wait times shown' : 'wait times hidden'}
-            </div>
-          </section>
+            <div className="divide-y divide-border">
+              {activeDepartments.map((department) => {
+                const departmentVisible = !hiddenDepartments.includes(department.id);
+                const activeServices = (department.services ?? [])
+                  .filter((service) => service.is_active)
+                  .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Eye}
-              title="Visibility"
-              description="Control exactly which departments and services appear on the kiosk."
-            />
-
-            <div className="mt-6 overflow-hidden rounded-xl border border-border">
-              <div className="grid grid-cols-[minmax(0,1fr)_120px] bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <span>Department / Service</span>
-                <span className="text-right">Visible</span>
-              </div>
-
-              <div className="divide-y divide-border">
-                {activeDepartments.map((department) => {
-                  const departmentVisible = !hiddenDepartments.includes(department.id);
-                  const activeServices = (department.services ?? [])
-                    .filter((service) => service.is_active)
-                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-                  return (
-                    <div key={department.id} className="bg-card">
-                      <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 px-4 py-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium text-foreground">{department.name}</p>
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                              {department.code}
-                            </span>
-                            {lockedDepartmentId === department.id ? (
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                Start here
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {departmentVisible ? 'Department visible on kiosk' : 'Department hidden from kiosk'}
-                          </p>
-                        </div>
-                        <div className="flex justify-end">
-                          <Switch
-                            checked={departmentVisible}
-                            onChange={(checked) => setDepartmentVisibility(department.id, checked)}
-                            label={`${department.name} visibility`}
-                          />
-                        </div>
+                return (
+                  <div key={department.id} className="bg-card">
+                    <div className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-4 px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-foreground">{department.name}</p>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          {department.code}
+                        </span>
+                        {lockedDepartmentId === department.id && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            Start here
+                          </span>
+                        )}
                       </div>
-
-                      {activeServices.length > 0 ? (
-                        <div className="border-t border-border bg-background/70">
-                          {activeServices.map((service) => {
-                            const serviceVisible =
-                              departmentVisible && !hiddenServices.includes(service.id);
-
-                            return (
-                              <div
-                                key={service.id}
-                                className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 px-4 py-3"
-                              >
-                                <div className="pl-4">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-medium text-foreground">{service.name}</p>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                                      {service.code}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex justify-end">
-                                  <Switch
-                                    checked={serviceVisible}
-                                    onChange={(checked) => setServiceVisibility(service.id, checked)}
-                                    disabled={!departmentVisible}
-                                    label={`${service.name} visibility`}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
+                      <div className="flex justify-end">
+                        <Switch
+                          checked={departmentVisible}
+                          onChange={(checked) => setDepartmentVisibility(department.id, checked)}
+                          label={`${department.name} visibility`}
+                        />
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {activeServices.length > 0 && (
+                      <div className="border-t border-border bg-muted/20">
+                        {activeServices.map((service) => {
+                          const serviceVisible =
+                            departmentVisible && !hiddenServices.includes(service.id);
+
+                          return (
+                            <div
+                              key={service.id}
+                              className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-4 px-4 py-2.5"
+                            >
+                              <div className="flex items-center gap-2 pl-5">
+                                {serviceVisible ? (
+                                  <Eye className="h-3.5 w-3.5 text-muted-foreground/60" />
+                                ) : (
+                                  <EyeOff className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                )}
+                                <p className={`text-sm ${serviceVisible ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                  {service.name}
+                                </p>
+                                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {service.code}
+                                </span>
+                              </div>
+                              <div className="flex justify-end">
+                                <Switch
+                                  checked={serviceVisible}
+                                  onChange={(checked) => setServiceVisibility(service.id, checked)}
+                                  disabled={!departmentVisible}
+                                  label={`${service.name} visibility`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          </section>
-        </div>
+          </div>
+        )}
+      </SectionCard>
 
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Link2}
-              title="Public Links"
-              description="Open or share the live kiosk and booking pages."
-            />
-
-            <div className="mt-6 space-y-4">
-              {activeOffices.map((office) => (
-                <div key={office.id} className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-foreground">{office.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Active office</p>
+      {/* ── Public Links ───────────────────────────────────── */}
+      {activeOffices.length > 0 && (
+        <SectionCard
+          icon={Link2}
+          title="Public Links"
+          description="Share the kiosk, booking, and check-in pages with customers."
+        >
+          <div className="space-y-2">
+            {activeOffices.map((office) => {
+              const isExpanded = expandedOffice === office.id;
+              return (
+                <div key={office.id} className="rounded-xl border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedOffice(isExpanded ? null : office.id)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="text-sm font-medium text-foreground">{office.name}</span>
                     </div>
                     <a
                       href={buildKioskPath(office)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                     >
-                      Open
-                      <ExternalLink className="h-4 w-4" />
+                      Open kiosk
+                      <ExternalLink className="h-3 w-3" />
                     </a>
-                  </div>
+                  </button>
 
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">Kiosk page</p>
-                      <PublicLinkActions
-                        path={buildKioskPath(office)}
-                        qrTitle={`${office.name} kiosk`}
-                        qrDescription="Scan to open the self-service kiosk."
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
-                      />
+                  {isExpanded && (
+                    <div className="border-t border-border bg-muted/10 px-4 py-4 space-y-4">
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Kiosk page</p>
+                        <PublicLinkActions
+                          path={buildKioskPath(office)}
+                          qrTitle={`${office.name} kiosk`}
+                          qrDescription="Scan to open the self-service kiosk."
+                          downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Booking page</p>
+                        <PublicLinkActions
+                          path={buildBookingPath(office)}
+                          qrTitle={`${office.name} booking`}
+                          qrDescription="Scan to open the booking page."
+                          downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Arrival check-in</p>
+                        <PublicLinkActions
+                          path={buildBookingCheckInPath(office)}
+                          qrTitle={`${office.name} arrival check-in`}
+                          qrDescription="Scan to look up and check in an appointment."
+                          downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">Booking page</p>
-                      <PublicLinkActions
-                        path={buildBookingPath(office)}
-                        qrTitle={`${office.name} booking`}
-                        qrDescription="Scan to open the booking page."
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
-                      />
-                    </div>
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">Arrival check-in</p>
-                      <PublicLinkActions
-                        path={buildBookingCheckInPath(office)}
-                        qrTitle={`${office.name} arrival check-in`}
-                        qrDescription="Scan to look up and check in an appointment."
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Tablet}
-              title="Snapshot"
-              description="Quick read of the kiosk behavior right now."
-            />
-
-            <div className="mt-6 space-y-3 rounded-xl border border-border bg-background p-4 text-sm text-muted-foreground">
-              <p>
-                <span className="font-medium text-foreground">Start screen:</span>{' '}
-                {lockedDepartment ? lockedDepartment.name : 'Department selection'}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Priority step:</span>{' '}
-                {availablePriorityFlow && showPriorities ? 'Shown' : 'Hidden'}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Logo:</span>{' '}
-                {showLogo ? (logoUrl.trim() || organization.logo_url ? 'Shown' : 'Enabled without image') : 'Hidden'}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Wait times:</span>{' '}
-                {showEstimatedTime ? 'Shown' : 'Hidden'}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Idle reset:</span> {idleTimeout}s
-              </p>
-              <p>
-                <span className="font-medium text-foreground">Theme:</span> {themeColor}
-              </p>
-            </div>
-          </section>
-        </div>
-      </div>
+              );
+            })}
+          </div>
+        </SectionCard>
+      )}
     </div>
   );
 }

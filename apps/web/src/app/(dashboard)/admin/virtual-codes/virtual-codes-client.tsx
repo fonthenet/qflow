@@ -272,13 +272,13 @@ export function VirtualCodesClient({
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Join Links & QR
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
             Create simple public links and QR codes so customers can join from outside.
           </p>
           {organization && (
@@ -289,34 +289,33 @@ export function VirtualCodesClient({
         </div>
         <button
           onClick={openCreate}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors"
         >
           New Link
         </button>
       </div>
 
       {error && !showModal && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      <div className="mb-4 rounded-xl border border-border bg-muted/20 p-4">
+      <div className="mb-4 rounded-2xl border border-border/60 bg-muted/20 p-4">
         <p className="text-sm font-medium text-foreground">How these links work</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Create one link for the whole business or a narrower link for one location, department, or service. Customers only see the choices they still need to make.
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-        <table className="w-full text-left text-sm">
+      <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[580px] text-left text-sm">
           <thead>
-            <tr className="border-b border-border bg-muted/50">
+            <tr className="border-b border-border/60 bg-muted/50">
               <th className="px-4 py-3 font-medium text-muted-foreground">Office</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Department</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Service</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Scope</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">Join Path</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">Created</th>
               <th className="px-4 py-3 font-medium text-muted-foreground text-right">Actions</th>
@@ -325,7 +324,7 @@ export function VirtualCodesClient({
           <tbody>
             {codes.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                   No virtual codes found. Create your first code to get started.
                 </td>
               </tr>
@@ -333,7 +332,7 @@ export function VirtualCodesClient({
             {codes.map((code) => (
               <tr
                 key={code.id}
-                className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+                className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors"
               >
                 <td className="px-4 py-3 font-medium text-foreground">
                   {getOfficeName(code.office_id)}
@@ -349,11 +348,6 @@ export function VirtualCodesClient({
                     <p className="font-medium text-foreground">{getScopeLabel(code)}</p>
                     <p className="text-xs text-muted-foreground">{getScopeSummary(code)}</p>
                   </div>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  <code className="rounded bg-muted px-2 py-1 text-xs">
-                    /join/{code.qr_token}
-                  </code>
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -372,40 +366,70 @@ export function VirtualCodesClient({
                     : '---'}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="inline-flex items-center rounded-xl border border-border/60 overflow-hidden divide-x divide-border/60 bg-background shadow-sm">
+                    {/* Open */}
                     <button
                       onClick={() => handleOpenUrl(code.qr_token)}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                       title="Open join page"
+                      className="px-2.5 py-1.5 hover:bg-muted transition-colors"
                     >
-                      Open
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
                     </button>
+                    {/* QR */}
                     <button
                       onClick={() => handleShowQr(code)}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
                       title="Show QR Code"
+                      className="px-2.5 py-1.5 hover:bg-primary/10 transition-colors"
                     >
-                      QR
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/>
+                      </svg>
                     </button>
+                    {/* Copy URL */}
                     <button
                       onClick={() => handleCopyUrl(code.qr_token, code.id)}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                      title="Copy join URL"
+                      className="px-2.5 py-1.5 hover:bg-muted transition-colors"
                     >
-                      {copiedId === code.id ? 'Copied!' : 'Copy URL'}
+                      {copiedId === code.id ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      )}
                     </button>
+                    {/* Toggle active */}
                     <button
                       onClick={() => handleToggle(code.id, code.is_active)}
                       disabled={isPending}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                      title={code.is_active ? 'Deactivate' : 'Activate'}
+                      className="px-2.5 py-1.5 hover:bg-muted transition-colors disabled:opacity-40"
                     >
-                      {code.is_active ? 'Deactivate' : 'Activate'}
+                      {code.is_active ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                        </svg>
+                      )}
                     </button>
+                    {/* Delete */}
                     <button
                       onClick={() => handleDelete(code.id)}
                       disabled={isPending}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      title="Delete"
+                      className="px-2.5 py-1.5 hover:bg-destructive/10 transition-colors disabled:opacity-40"
                     >
-                      Delete
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-destructive" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                      </svg>
                     </button>
                   </div>
                 </td>
@@ -419,23 +443,23 @@ export function VirtualCodesClient({
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="fixed inset-0 bg-black/50"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowModal(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-border/60 bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
               Create Join Link
             </h2>
 
             {error && (
-              <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 {error}
               </div>
             )}
 
             <form action={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Scope <span className="text-destructive">*</span>
                 </label>
                 <select
@@ -448,7 +472,7 @@ export function VirtualCodesClient({
                     setSelectedDepartmentId('');
                     setSelectedServiceId('');
                   }}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
                 >
                   <option value="business">Entire business</option>
                   <option value="office">Specific office</option>
@@ -461,7 +485,7 @@ export function VirtualCodesClient({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Office {scope !== 'business' ? <span className="text-destructive">*</span> : null}
                 </label>
                 <select
@@ -474,7 +498,7 @@ export function VirtualCodesClient({
                     setSelectedServiceId('');
                   }}
                   disabled={scope === 'business'}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
                 >
                   <option value="">{scope === 'business' ? 'Entire business' : 'Select an office'}</option>
                   {offices.map((office) => (
@@ -486,7 +510,7 @@ export function VirtualCodesClient({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Department {scope === 'department' || scope === 'service' ? <span className="text-destructive">*</span> : null}
                 </label>
                 <select
@@ -498,7 +522,7 @@ export function VirtualCodesClient({
                     setSelectedServiceId('');
                   }}
                   disabled={!selectedOfficeId || scope === 'business' || scope === 'office'}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all disabled:opacity-50"
                 >
                   <option value="">
                     {scope === 'business' || scope === 'office'
@@ -514,7 +538,7 @@ export function VirtualCodesClient({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Service{' '}
                   {scope === 'service' ? (
                     <span className="text-destructive">*</span>
@@ -527,7 +551,7 @@ export function VirtualCodesClient({
                   value={selectedServiceId}
                   onChange={(e) => setSelectedServiceId(e.target.value)}
                   disabled={!selectedDepartmentId || scope !== 'service'}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all disabled:opacity-50"
                 >
                   <option value="">All services in department</option>
                   {filteredServices.map((svc) => (
@@ -542,14 +566,14 @@ export function VirtualCodesClient({
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  className="rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
                   {isPending ? 'Creating...' : 'Create'}
                 </button>
@@ -563,10 +587,10 @@ export function VirtualCodesClient({
       {showQrModal && qrPreviewCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="fixed inset-0 bg-black/50"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowQrModal(false)}
           />
-          <div className="relative z-10 w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-xl">
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border/60 bg-card p-6 shadow-xl">
             <h2 className="mb-2 text-lg font-semibold text-foreground text-center">
               Virtual Queue QR Code
             </h2>
@@ -575,7 +599,7 @@ export function VirtualCodesClient({
               {qrPreviewCode.service_id ? ` - ${getServiceName(qrPreviewCode.service_id)}` : ''}
             </p>
 
-            <div className="flex justify-center rounded-lg bg-white p-4">
+            <div className="flex justify-center rounded-2xl bg-white p-4 shadow-sm">
               {qrDataUrl && (
                 <img
                   src={qrDataUrl}
@@ -592,7 +616,7 @@ export function VirtualCodesClient({
             <div className="mt-4 flex gap-3">
               <button
                 onClick={() => handleCopyUrl(qrPreviewCode.qr_token, qrPreviewCode.id)}
-                className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                className="flex-1 rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
               >
                 {copiedId === qrPreviewCode.id ? 'Copied!' : 'Copy URL'}
               </button>
@@ -604,7 +628,7 @@ export function VirtualCodesClient({
                   link.href = qrDataUrl;
                   link.click();
                 }}
-                className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors"
               >
                 Download QR
               </button>
@@ -612,7 +636,7 @@ export function VirtualCodesClient({
 
             <button
               onClick={() => setShowQrModal(false)}
-              className="mt-3 w-full rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              className="mt-3 w-full rounded-xl border border-border/60 px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
             >
               Close
             </button>

@@ -109,56 +109,61 @@ export function AnalyticsDashboard({
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            See the most useful numbers for wait times, service flow, feedback, and team performance.
-          </p>
+      <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-5 border-b border-border px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              <Activity className="h-3.5 w-3.5" />
+              Analytics
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Reports</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              See the most useful numbers for wait times, service flow, feedback, and team performance.
+            </p>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={selectedDateRange}
+              onChange={(e) => setSelectedDateRange(e.target.value)}
+              aria-label="Date Range"
+              className="rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="today">Today</option>
+              <option value="last7">Last 7 days</option>
+              <option value="last30">Last 30 days</option>
+            </select>
+
+            <select
+              value={selectedOffice}
+              onChange={(e) => setSelectedOffice(e.target.value)}
+              aria-label="Office Filter"
+              className="rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">All Locations</option>
+              {offices.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleRefresh}
+              disabled={isPending}
+              aria-label="Apply Filters"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              Update View
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={selectedDateRange}
-          onChange={(e) => setSelectedDateRange(e.target.value)}
-          aria-label="Date Range"
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
-        >
-          <option value="today">Today</option>
-          <option value="last7">Last 7 days</option>
-          <option value="last30">Last 30 days</option>
-        </select>
-
-        <select
-          value={selectedOffice}
-          onChange={(e) => setSelectedOffice(e.target.value)}
-          aria-label="Office Filter"
-          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
-        >
-          <option value="">All Locations</option>
-          {offices.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-
-        <button
-          onClick={handleRefresh}
-          disabled={isPending}
-          aria-label="Apply Filters"
-          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
-        >
-          Update View
-        </button>
-      </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           label="Total Tickets"
           value={summary.totalTicketsToday.toString()}
@@ -204,24 +209,27 @@ export function AnalyticsDashboard({
           iconBg="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/40 dark:text-yellow-400"
         />
       </div>
+      </section>
 
-      <section className="rounded-xl border border-border bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">Setup Rollout</h3>
+            <h3 className="text-base font-semibold text-foreground">Setup Rollout</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Track how well your business setup has been rolled out across locations and where local changes exist.
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
+          <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
             <p className="font-semibold text-foreground">{templateHealth.summary.templateTitle}</p>
             <p className="text-muted-foreground">
               Applied v{templateHealth.summary.appliedVersion} · Latest v{templateHealth.summary.latestVersion}
             </p>
           </div>
         </div>
+        </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
             label="Locations up to date"
             value={`${templateHealth.summary.currentVersionCoveragePercent}%`}
@@ -256,8 +264,8 @@ export function AnalyticsDashboard({
           />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.1fr,0.9fr]">
-          <div className="rounded-xl border border-border bg-muted/20 p-5">
+        <div className="grid grid-cols-1 gap-6 px-6 pb-6 xl:grid-cols-[1.1fr,1.1fr,0.9fr]">
+          <div className="rounded-xl border border-border bg-background p-5">
             <h4 className="mb-1 text-sm font-semibold text-foreground">Drift Trend</h4>
             <p className="mb-4 text-xs text-muted-foreground">
               {templateHealth.summary.snapshotScope === 'office'
@@ -269,26 +277,27 @@ export function AnalyticsDashboard({
               scope={templateHealth.summary.snapshotScope}
             />
           </div>
-          <div className="rounded-xl border border-border bg-muted/20 p-5">
+          <div className="rounded-xl border border-border bg-background p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Template Activity</h4>
             <TemplateActivityChart data={templateHealth.activity} />
           </div>
-          <div className="rounded-xl border border-border bg-muted/20 p-5">
+          <div className="rounded-xl border border-border bg-background p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Office Version Status</h4>
             <TemplateOfficeStatusTable data={templateHealth.officeStatuses} />
           </div>
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">Business Performance</h3>
+            <h3 className="text-base font-semibold text-foreground">Business Performance</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Compare wait accuracy, no-shows, completion rate, and service time across your business types and locations.
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
+          <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
             <p className="font-semibold text-foreground">{formatVerticalLabel(templatePerformance.summary.primaryVertical)}</p>
             <p className="text-muted-foreground">
               {templatePerformance.summary.primaryTemplateTitle} · {templatePerformance.summary.templateCount} template group
@@ -296,8 +305,9 @@ export function AnalyticsDashboard({
             </p>
           </div>
         </div>
+        </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
             label="Wait Accuracy"
             value={formatPercentValue(templatePerformance.summary.waitAccuracyPercent)}
@@ -328,12 +338,12 @@ export function AnalyticsDashboard({
           />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr,1.15fr]">
-          <div className="rounded-xl border border-border bg-muted/20 p-5">
+        <div className="grid grid-cols-1 gap-6 px-6 pb-6 xl:grid-cols-[1fr,1.15fr]">
+          <div className="rounded-xl border border-border bg-background p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Business Type Comparison</h4>
             <TemplatePerformanceTable data={templatePerformance.templateRows} />
           </div>
-          <div className="rounded-xl border border-border bg-muted/20 p-5">
+          <div className="rounded-xl border border-border bg-background p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Location Comparison</h4>
             <TemplateOfficeComparisonTable data={templatePerformance.officeRows} />
           </div>
@@ -342,54 +352,79 @@ export function AnalyticsDashboard({
 
       {/* Charts Row 1: Tickets by Hour + Tickets by Department */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Busy hours today
-          </h3>
-          <TicketsByHourChart data={ticketsByHour} />
+        <div className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h3 className="text-base font-semibold text-foreground">
+              Busy hours today
+            </h3>
+          </div>
+          <div className="p-5">
+            <TicketsByHourChart data={ticketsByHour} />
+          </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Demand by department
-          </h3>
-          <DepartmentBarChart data={ticketsByDepartment} />
+        <div className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h3 className="text-base font-semibold text-foreground">
+              Demand by department
+            </h3>
+          </div>
+          <div className="p-5">
+            <DepartmentBarChart data={ticketsByDepartment} />
+          </div>
         </div>
       </div>
 
       {/* Charts Row 2: Wait Time Trend + Feedback Distribution */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Wait time trend
-          </h3>
-          <WaitTimeTrendChart data={waitTimeTrend} />
+        <div className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h3 className="text-base font-semibold text-foreground">
+              Wait time trend
+            </h3>
+          </div>
+          <div className="p-5">
+            <WaitTimeTrendChart data={waitTimeTrend} />
+          </div>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-6">
-          <FeedbackDistribution data={feedbackSummary} />
+        <div className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h3 className="text-base font-semibold text-foreground">
+              Feedback Summary
+            </h3>
+          </div>
+          <div className="p-5">
+            <FeedbackDistribution data={feedbackSummary} />
+          </div>
         </div>
       </div>
 
       {/* Staff Performance Table */}
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="mb-4 text-sm font-semibold text-foreground">
-          Team performance
-        </h3>
-        <StaffPerformanceTable data={staffPerformance} />
+      <div className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="text-base font-semibold text-foreground">
+            Team performance
+          </h3>
+        </div>
+        <div className="p-5">
+          <StaffPerformanceTable data={staffPerformance} />
+        </div>
       </div>
 
       {/* Recent Feedback Comments */}
       {feedbackSummary.recentComments.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Recent customer comments
-          </h3>
-          <div className="space-y-3">
+        <div className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-5 py-4">
+            <h3 className="text-base font-semibold text-foreground">
+              Recent customer comments
+            </h3>
+          </div>
+          <div className="space-y-3 p-5">
             {feedbackSummary.recentComments.map((c) => (
               <div
                 key={c.id}
-                className="rounded-lg border border-border bg-muted/30 p-4"
+                className="rounded-xl border border-border bg-background p-4"
               >
                 <div className="mb-1 flex items-center gap-2">
                   <div className="flex gap-0.5">
@@ -466,10 +501,10 @@ function SummaryCard({
   iconBg: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-md">
+    <div className="rounded-xl border border-border bg-background p-4 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <div className={`rounded-lg p-2 ${iconBg}`}>{icon}</div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <div className={`rounded-xl p-2 ${iconBg}`}>{icon}</div>
       </div>
       <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
@@ -759,7 +794,7 @@ function TemplateOfficeStatusTable({ data }: { data: TemplateHealthOfficeRow[] }
   return (
     <div className="space-y-3">
       {data.slice(0, 8).map((office) => (
-        <div key={office.office_id} className="rounded-lg border border-border bg-background px-4 py-3">
+        <div key={office.office_id} className="rounded-xl border border-border bg-background px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">{office.office_name}</p>
@@ -842,7 +877,7 @@ function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeCompariso
   return (
     <div className="space-y-3">
       {data.slice(0, 8).map((row) => (
-        <div key={row.officeId} className="rounded-lg border border-border bg-background px-4 py-3">
+        <div key={row.officeId} className="rounded-xl border border-border bg-background px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">{row.officeName}</p>
@@ -850,7 +885,7 @@ function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeCompariso
                 {row.templateTitle} · {formatVerticalLabel(row.vertical)}
               </p>
             </div>
-            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
               {row.totalTickets} tickets
             </span>
           </div>
@@ -886,10 +921,6 @@ function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
 
   return (
     <div>
-      <h3 className="mb-4 text-sm font-semibold text-foreground">
-        Feedback Summary
-      </h3>
-
       <div className="flex gap-6">
         {/* Big average number */}
         <div className="flex flex-col items-center justify-center gap-1 min-w-[80px]">

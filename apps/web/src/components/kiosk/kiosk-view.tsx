@@ -3,13 +3,23 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
+  Accessibility,
   ArrowLeft,
+  Baby,
   CalendarClock,
   ChevronRight,
   Clock3,
+  ConciergeBell,
+  Crown,
+  Heart,
+  Layers,
+  Medal,
   Printer,
   Search,
+  Shield,
+  Star,
   Ticket,
+  UserCheck,
   Users,
 } from 'lucide-react';
 import { GroupTicketModal } from '@/components/kiosk/group-ticket-modal';
@@ -40,6 +50,33 @@ interface KioskSettingsType {
   lockedDepartmentId: string | null;
   buttonLabel: string;
   idleTimeout: number;
+  showAppointmentCheckIn?: boolean;
+  showGroupTickets?: boolean;
+}
+
+const PRIORITY_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  senior: Crown,
+  elderly: Crown,
+  accessible: Accessibility,
+  accessibility: Accessibility,
+  disabled: Accessibility,
+  handicap: Accessibility,
+  veteran: Medal,
+  military: Medal,
+  pregnant: Heart,
+  pregnancy: Heart,
+  vip: Star,
+  priority: Shield,
+  child: Baby,
+  infant: Baby,
+};
+
+function getPriorityIcon(name: string) {
+  const key = name.toLowerCase().trim();
+  for (const [keyword, Icon] of Object.entries(PRIORITY_ICON_MAP)) {
+    if (key.includes(keyword)) return Icon;
+  }
+  return UserCheck;
 }
 
 interface KioskViewProps {
@@ -48,6 +85,7 @@ interface KioskViewProps {
   departments: any[];
   priorityCategories?: PriorityCategory[];
   kioskSettings?: KioskSettingsType;
+  vertical?: 'standard' | 'public_service' | 'bank' | 'clinic' | 'restaurant' | 'barbershop' | null;
   sandbox?: {
     enabled: boolean;
     bookingPath: string;
@@ -72,6 +110,7 @@ export function KioskView({
   departments,
   priorityCategories = [],
   kioskSettings,
+  vertical,
   sandbox,
 }: KioskViewProps) {
   const sandboxMode = Boolean(sandbox?.enabled);
@@ -119,15 +158,75 @@ export function KioskView({
   const [searchError, setSearchError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#2563eb';
+  const verticalConfig = (() => {
+    switch (vertical) {
+      case 'restaurant':
+        return {
+          homeIcon: '🍽️',
+          homeSubtitle: 'Join the waitlist or check in for your reservation',
+          departmentLabel: 'Dining Area',
+          serviceLabel: 'Party Size',
+          appointmentLabel: 'Reservation',
+          ticketLabel: 'Waitlist Number',
+          queueMessage: 'Your table will be ready soon',
+          accentGradient: 'from-amber-50 to-orange-50',
+        };
+      case 'bank':
+        return {
+          homeIcon: '🏦',
+          homeSubtitle: 'Take a number for banking services',
+          departmentLabel: 'Service Counter',
+          serviceLabel: 'Transaction Type',
+          appointmentLabel: 'Scheduled Appointment',
+          ticketLabel: 'Queue Number',
+          queueMessage: 'Please wait for your number to be called',
+          accentGradient: 'from-blue-50 to-indigo-50',
+        };
+      case 'clinic':
+        return {
+          homeIcon: '🏥',
+          homeSubtitle: 'Check in for your visit or join the waiting list',
+          departmentLabel: 'Department',
+          serviceLabel: 'Visit Type',
+          appointmentLabel: 'Scheduled Appointment',
+          ticketLabel: 'Patient Number',
+          queueMessage: 'You will be called when the doctor is ready',
+          accentGradient: 'from-teal-50 to-cyan-50',
+        };
+      case 'barbershop':
+        return {
+          homeIcon: '💈',
+          homeSubtitle: 'Walk in or check in for your appointment',
+          departmentLabel: 'Service',
+          serviceLabel: 'Style',
+          appointmentLabel: 'Booked Appointment',
+          ticketLabel: 'Your Number',
+          queueMessage: 'Have a seat, we will call you when your stylist is ready',
+          accentGradient: 'from-violet-50 to-purple-50',
+        };
+      default: // public_service
+        return {
+          homeIcon: '🏛️',
+          homeSubtitle: 'Get a ticket and wait for your turn',
+          departmentLabel: 'Department',
+          serviceLabel: 'Service',
+          appointmentLabel: 'Appointment',
+          ticketLabel: 'Ticket Number',
+          queueMessage: 'Wait for your number to be displayed',
+          accentGradient: 'from-slate-50 to-gray-50',
+        };
+    }
+  })();
+
+  const themeColor = ks.themeColor && /^#[0-9a-fA-F]{6}$/.test(ks.themeColor) ? ks.themeColor : '#18181b';
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const visibleServiceCount = activeDepartments.reduce(
     (count: number, department: any) => count + department.services.length,
     0
   );
   const primaryCardStyle = {
-    borderColor: `${themeColor}22`,
-    boxShadow: `0 18px 40px ${themeColor}12`,
+    borderColor: '#e4e4e7',
+    boxShadow: '0 18px 40px rgba(0,0,0,0.06)',
   };
 
   function clearAppointmentSearch() {
@@ -388,7 +487,7 @@ export function KioskView({
     <div
       className="min-h-screen"
       style={{
-        background: `radial-gradient(circle at top left, ${themeColor}2b 0%, rgba(255,255,255,0.96) 28%, #f8fafc 58%, ${themeColor}14 100%)`,
+        background: '#f8fafc',
       }}
     >
       {sandboxMode ? (
@@ -400,7 +499,7 @@ export function KioskView({
         <div
           className="pointer-events-none absolute inset-x-0 -top-16 h-56 blur-3xl"
           style={{
-            background: `linear-gradient(90deg, ${themeColor}2a 0%, rgba(255,255,255,0) 75%)`,
+            background: 'linear-gradient(90deg, rgba(0,0,0,0.03) 0%, rgba(255,255,255,0) 75%)',
           }}
         />
         <div className="relative mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
@@ -429,61 +528,92 @@ export function KioskView({
 
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         {step === 'home' && (
-          <section className="rounded-[2rem] border bg-white/90 p-5 backdrop-blur sm:p-6" style={primaryCardStyle}>
-            <h2 className="text-center text-2xl font-bold text-slate-950 sm:text-3xl">
-              Choose an option
-            </h2>
-            <div className="mt-6 space-y-4">
+          <section className="rounded-[2rem] border bg-white/90 p-6 backdrop-blur sm:p-8" style={primaryCardStyle}>
+            <div className="mx-auto max-w-2xl text-center">
+              {ks.showLogo && ks.logoUrl ? (
+                <img
+                  src={ks.logoUrl}
+                  alt=""
+                  className="mx-auto mb-6 h-20 w-auto object-contain"
+                />
+              ) : (
+                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-slate-100 text-4xl">
+                  {verticalConfig.homeIcon}
+                </div>
+              )}
+              <h1 className="text-4xl font-black text-slate-950 sm:text-5xl">
+                {ks.welcomeMessage || organization?.name || 'Welcome'}
+              </h1>
+              {ks.headerText ? (
+                <p className="mt-3 text-lg text-slate-600">{ks.headerText}</p>
+              ) : (
+                <p className="mt-3 text-lg text-slate-600">{verticalConfig.homeSubtitle}</p>
+              )}
+            </div>
+
+            <div className="mx-auto mt-8 flex max-w-lg flex-col gap-4">
               <button
                 onClick={startWalkInFlow}
-                className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
+                disabled={loading}
+                className="group relative flex w-full items-center gap-5 rounded-[1.5rem] border-2 px-6 py-6 text-left shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50"
+                style={{
+                  borderColor: themeColor,
+                  backgroundColor: `${themeColor}08`,
+                }}
               >
                 <div
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white"
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-md"
                   style={{ backgroundColor: themeColor }}
                 >
                   <Ticket className="h-7 w-7" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">{ks.buttonLabel}</div>
-                  <div className="mt-1 text-sm text-slate-600">Join the queue now</div>
+                  <div className="text-xl font-bold text-slate-950">
+                    {ks.buttonLabel || (vertical === 'restaurant' ? 'Join Waitlist' : vertical === 'barbershop' ? 'Walk In' : 'Get Ticket')}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {vertical === 'restaurant'
+                      ? 'Add your party to the waitlist now'
+                      : vertical === 'clinic'
+                        ? 'Walk in without a prior appointment'
+                        : vertical === 'barbershop'
+                          ? 'No appointment? No problem'
+                          : vertical === 'bank'
+                            ? 'Take a number for counter service'
+                            : 'Join the queue and get your ticket number'}
+                  </div>
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
+                <ChevronRight className="h-6 w-6 text-slate-400 transition-transform group-hover:translate-x-1" />
               </button>
 
-              <button
-                onClick={() => {
-                  clearAppointmentSearch();
-                  setStep('appointment');
-                }}
-                className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                <div
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white"
-                  style={{ backgroundColor: themeColor }}
+              {ks.showAppointmentCheckIn !== false ? (
+                <button
+                  onClick={() => {
+                    clearAppointmentSearch();
+                    setStep('appointment');
+                  }}
+                  className="group flex w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:-translate-y-0.5"
                 >
-                  <CalendarClock className="h-7 w-7" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">Find my appointment</div>
-                  <div className="mt-1 text-sm text-slate-600">Search and check in</div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
-              </button>
-
-              <a
-                href={bookingPath}
-                className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-white"
-              >
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
-                  <Clock3 className="h-7 w-7" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">Book an appointment</div>
-                  <div className="mt-1 text-sm text-slate-600">Reserve a future time</div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
-              </a>
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                    <CalendarClock className="h-7 w-7" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xl font-bold text-slate-950">
+                      {verticalConfig.appointmentLabel} Check-in
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      {vertical === 'restaurant'
+                        ? 'Already have a reservation? Check in here'
+                        : vertical === 'clinic'
+                          ? 'Have a scheduled appointment? Check in here'
+                          : vertical === 'barbershop'
+                            ? 'Booked ahead? Let us know you are here'
+                            : 'Already booked? Find and confirm your appointment'}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-6 w-6 text-slate-400 transition-transform group-hover:translate-x-1" />
+                </button>
+              ) : null}
             </div>
           </section>
         )}
@@ -533,7 +663,7 @@ export function KioskView({
                 Walk-in check-in
               </p>
               <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                Choose your department
+                {verticalConfig.departmentLabel === 'Dining Area' ? 'Choose your dining area' : `Choose a ${verticalConfig.departmentLabel.toLowerCase()}`}
               </h2>
               <p className="mt-2 text-base text-slate-600">
                 Pick the area that best matches the help you need today.
@@ -551,10 +681,10 @@ export function KioskView({
                   className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
                 >
                   <div
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white"
                     style={{ backgroundColor: themeColor }}
                   >
-                    {department.code || 'D'}
+                    <Layers className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xl font-bold text-slate-950">{department.name}</div>
@@ -580,7 +710,7 @@ export function KioskView({
                     {selectedDept.name}
                   </h2>
                   <p className="mt-2 text-base text-slate-600">
-                    Select the service that best fits your visit.
+                    {vertical === 'restaurant' ? 'How many guests?' : vertical === 'barbershop' ? 'Choose your style' : `Select a ${verticalConfig.serviceLabel.toLowerCase()}`}
                   </p>
                 </div>
                 <div className="mx-auto mt-4 inline-flex rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -597,10 +727,10 @@ export function KioskView({
                     className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                   >
                     <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white"
                       style={{ backgroundColor: themeColor }}
                     >
-                      {service.code || 'S'}
+                      <ConciergeBell className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xl font-bold text-slate-950">{service.name}</div>
@@ -617,14 +747,16 @@ export function KioskView({
                   </button>
                 ))}
               </div>
-              <button
-                onClick={() => setShowGroupModal(true)}
-                disabled={loading}
-                className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-50"
-              >
-                <Users className="h-5 w-5" />
-                Group ticket
-              </button>
+              {ks.showGroupTickets !== false ? (
+                <button
+                  onClick={() => setShowGroupModal(true)}
+                  disabled={loading}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                >
+                  <Users className="h-5 w-5" />
+                  Group ticket
+                </button>
+              ) : null}
           </section>
         )}
 
@@ -648,8 +780,8 @@ export function KioskView({
                 disabled={loading}
                 className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-sm font-bold text-slate-700">
-                  STD
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                  <Users className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-xl font-bold text-slate-950">Standard</div>
@@ -665,15 +797,13 @@ export function KioskView({
                   key={category.id}
                   onClick={() => handlePrioritySelected(category)}
                   disabled={loading}
-                  className="flex w-full items-center gap-4 rounded-[1.5rem] border bg-white px-5 py-5 text-left shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50"
-                  style={{ borderColor: category.color ?? '#94a3b8' }}
+                  className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                 >
-                  <div
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-xl text-white shadow-sm"
-                    style={{ backgroundColor: category.color ?? '#64748b' }}
-                  >
-                    {category.icon || 'P'}
+                  {(() => { const Icon = getPriorityIcon(category.name); return (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                    <Icon className="h-5 w-5" />
                   </div>
+                  ); })()}
                   <div className="min-w-0 flex-1">
                     <div className="text-xl font-bold text-slate-950">{category.name}</div>
                     <div className="mt-1 text-sm text-slate-600">
@@ -808,7 +938,7 @@ export function KioskView({
                 You&apos;re in the queue
               </h2>
               <p className="mt-2 text-base text-slate-600 print:text-slate-700">
-                Keep this ticket and scan the QR code to follow your place in line.
+                {verticalConfig.queueMessage}
               </p>
               <div className="mt-4 flex justify-center">
                 <PriorityBadge priorityCategory={ticket.priority_category} />
@@ -817,11 +947,10 @@ export function KioskView({
 
             <div className="mt-8 rounded-[1.75rem] bg-slate-950 px-6 py-8 text-center text-white print:bg-white print:text-black">
               <p className="text-sm uppercase tracking-[0.24em] text-white/65 print:text-slate-500">
-                Ticket number
+                {verticalConfig.ticketLabel}
               </p>
               <p
-                className="mt-3 text-7xl font-black tracking-tight print:text-black sm:text-8xl"
-                style={{ color: themeColor }}
+                className="mt-3 text-7xl font-black tracking-tight text-white print:text-black sm:text-8xl"
               >
                 {ticket.ticket_number}
               </p>

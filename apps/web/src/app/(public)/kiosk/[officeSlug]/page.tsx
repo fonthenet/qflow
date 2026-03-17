@@ -63,6 +63,8 @@ export default async function KioskPage({ params }: KioskPageProps) {
       orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
     buttonLabel: orgSettings.kiosk_button_label ?? profile.buttonLabel,
     idleTimeout: orgSettings.kiosk_idle_timeout ?? profile.idleTimeoutSeconds,
+    showAppointmentCheckIn: orgSettings.kiosk_show_appointment_checkin ?? true,
+    showGroupTickets: orgSettings.kiosk_show_group_tickets ?? true,
   };
 
   // Filter out hidden departments and services
@@ -82,6 +84,7 @@ export default async function KioskPage({ params }: KioskPageProps) {
       departments={filteredDepartments}
       priorityCategories={kioskSettings.showPriorities ? (priorityCategories || []) : []}
       kioskSettings={kioskSettings}
+      vertical={platformConfig.selection.vertical}
     />
   );
 }
