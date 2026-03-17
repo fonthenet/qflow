@@ -273,6 +273,67 @@ export async function fetchQueueStatus(slug: string): Promise<QueueStatusRespons
   }
 }
 
+// ---------------------------------------------------------------------------
+// Booking / appointment
+// ---------------------------------------------------------------------------
+
+export interface BookingSlotsResponse {
+  officeId: string;
+  date: string;
+  slots: string[]; // HH:MM
+}
+
+export async function fetchBookingSlots(
+  slug: string,
+  serviceId: string,
+  date: string // YYYY-MM-DD
+): Promise<BookingSlotsResponse | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/booking-slots?slug=${encodeURIComponent(slug)}&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(date)}`
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as BookingSlotsResponse;
+  } catch {
+    return null;
+  }
+}
+
+export interface CreateBookingResult {
+  appointment: {
+    id: string;
+    office_id: string;
+    department_id: string;
+    service_id: string;
+    customer_name: string;
+    customer_phone: string | null;
+    scheduled_at: string;
+    status: string;
+  };
+}
+
+export async function createBooking(params: {
+  officeId: string;
+  departmentId: string;
+  serviceId: string;
+  customerName: string;
+  customerPhone?: string;
+  scheduledAt: string; // ISO string
+}): Promise<CreateBookingResult | { error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/book-appointment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data.error ?? 'Failed to book appointment' };
+    return data as CreateBookingResult;
+  } catch {
+    return { error: 'Network error. Please try again.' };
+  }
+}
+
 export async function stopTracking(ticketId: string): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/tracking-stop`, {

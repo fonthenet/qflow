@@ -213,14 +213,23 @@ export default function QueuePeekScreen() {
         </View>
       )}
 
-      {/* Join any queue CTA */}
+      {/* CTA row */}
       <TouchableOpacity
         style={[s.joinAnyBtn, { backgroundColor: colors.primary }]}
         onPress={handleJoinAny}
         activeOpacity={0.8}
       >
         <Ionicons name="ticket-outline" size={20} color="#fff" />
-        <Text style={s.joinAnyBtnText}>Get a Ticket</Text>
+        <Text style={s.joinAnyBtnText}>Get a Ticket Now</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[s.bookLaterBtn, { borderColor: colors.border }]}
+        onPress={() => router.push(`/book-appointment/${slug}` as any)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+        <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>Book for Later</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -422,5 +431,20 @@ const s = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '700',
     color: '#fff',
+  },
+
+  bookLaterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    marginTop: spacing.sm,
+  },
+  bookLaterBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
   },
 });

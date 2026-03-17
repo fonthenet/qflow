@@ -361,6 +361,17 @@ export default function KioskScreen() {
           )}
 
           <TouchableOpacity
+            style={[s.bookBtn, { borderColor: colors.border }]}
+            onPress={() => router.push(`/book-appointment/${slug}` as any)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={isTablet ? 20 : 16} color={colors.primary} />
+            <Text style={[s.bookBtnText, { color: colors.primary }, isTablet && { fontSize: fontSize.md }]}>
+              Book for Later
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={s.peekBtn}
             onPress={() => router.push(`/queue-peek/${slug}` as any)}
             activeOpacity={0.7}
@@ -782,6 +793,21 @@ const s = StyleSheet.create({
     fontWeight: '600',
     color: colors.textSecondary,
     textDecorationLine: 'underline',
+  },
+  bookBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    alignSelf: 'center',
+  },
+  bookBtnText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   peekBtn: {
     flexDirection: 'row',

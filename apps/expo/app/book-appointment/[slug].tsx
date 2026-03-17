@@ -1,0 +1,683 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import {
+  fetchKioskInfo,
+  fetchBookingSlots,
+  createBooking,
+  type KioskInfoResponse,
+} from '@/lib/api';
+import { useAppStore } from '@/lib/store';
+import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
+
+type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
+
+function nextNDays(n: number): string[] {
+  const days: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const today = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  if (dateStr === today) return 'Today';
+  if (dateStr === tomorrow) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function formatTime(slot: string): string {
+  const [h, m] = slot.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m === 0 ? '00' : m} ${ampm}`;
+}
+
+export default function BookAppointmentScreen() {
+  const { slug, deptId: initialDeptId, serviceId: initialServiceId } =
+    useLocalSearchParams<{ slug: string; deptId?: string; serviceId?: string }>();
+  const router = useRouter();
+  const { colors, isDark } = useTheme();
+  const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo } = useAppStore();
+
+  const [step, setStep] = useState<Step>('loading');
+  const [info, setInfo] = useState<KioskInfoResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Selections
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState('');
+
+  // Available slots
+  const [slots, setSlots] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+
+  // Customer info
+  const [name, setName] = useState(savedName);
+  const [phone, setPhone] = useState(savedPhone);
+
+  // Result
+  const [appointmentId, setAppointmentId] = useState('');
+  const [confirmedAt, setConfirmedAt] = useState('');
+
+  const availableDates = nextNDays(7);
+
+  const loadInfo = useCallback(async () => {
+    if (!slug) return;
+    setStep('loading');
+    const data = await fetchKioskInfo(slug);
+    if (!data) {
+      setErrorMsg('This business could not be found.');
+      setStep('error');
+      return;
+    }
+    setInfo(data);
+    // Pre-select dept if provided
+    if (initialDeptId && data.departments.some((d) => d.id === initialDeptId)) {
+      setSelectedDeptId(initialDeptId);
+      if (initialServiceId && data.services.some((s) => s.id === initialServiceId && s.department_id === initialDeptId)) {
+        setSelectedServiceId(initialServiceId);
+        setStep('date');
+      } else {
+        setStep('service');
+      }
+    } else {
+      setStep('department');
+    }
+  }, [slug, initialDeptId, initialServiceId]);
+
+  useEffect(() => {
+    loadInfo();
+  }, [loadInfo]);
+
+  const loadSlots = useCallback(async (date: string) => {
+    if (!slug || !selectedServiceId) return;
+    setSlotsLoading(true);
+    setSlots([]);
+    const result = await fetchBookingSlots(slug, selectedServiceId, date);
+    setSlotsLoading(false);
+    setSlots(result?.slots ?? []);
+  }, [slug, selectedServiceId]);
+
+  useEffect(() => {
+    if (step === 'time' && selectedDate) {
+      loadSlots(selectedDate);
+    }
+  }, [step, selectedDate, loadSlots]);
+
+  const handleSelectDept = (id: string) => {
+    Haptics.selectionAsync();
+    setSelectedDeptId(id);
+    setSelectedServiceId('');
+    setStep('service');
+  };
+
+  const handleSelectService = (id: string) => {
+    Haptics.selectionAsync();
+    setSelectedServiceId(id);
+    setStep('date');
+  };
+
+  const handleSelectDate = (date: string) => {
+    Haptics.selectionAsync();
+    setSelectedDate(date);
+    setSelectedSlot('');
+    setStep('time');
+  };
+
+  const handleSelectSlot = (slot: string) => {
+    Haptics.selectionAsync();
+    setSelectedSlot(slot);
+    setStep('info');
+  };
+
+  const handleSubmitInfo = () => {
+    if (!name.trim()) return;
+    setCustomerInfo(name.trim(), phone.trim());
+    setStep('confirm');
+  };
+
+  const handleConfirm = async () => {
+    if (!info || !selectedDeptId || !selectedServiceId || !selectedDate || !selectedSlot) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const scheduledAt = `${selectedDate}T${selectedSlot}:00`;
+
+    const result = await createBooking({
+      officeId: info.office.id,
+      departmentId: selectedDeptId,
+      serviceId: selectedServiceId,
+      customerName: name.trim(),
+      customerPhone: phone.trim() || undefined,
+      scheduledAt,
+    });
+
+    if ('error' in result) {
+      setErrorMsg(result.error);
+      setStep('error');
+      return;
+    }
+
+    setAppointmentId(result.appointment.id);
+    setConfirmedAt(result.appointment.scheduled_at);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setStep('success');
+  };
+
+  const dept = info?.departments.find((d) => d.id === selectedDeptId);
+  const service = info?.services.find((s) => s.id === selectedServiceId);
+  const deptServices = info?.services.filter((s) => s.department_id === selectedDeptId) ?? [];
+
+  // ---- LOADING ----
+  if (step === 'loading') {
+    return (
+      <View style={[s.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  // ---- ERROR ----
+  if (step === 'error') {
+    return (
+      <View style={[s.center, { backgroundColor: colors.background }]}>
+        <View style={[s.iconCircle, { backgroundColor: colors.error + '18' }]}>
+          <Ionicons name="alert-circle-outline" size={44} color={colors.error} />
+        </View>
+        <Text style={[s.errorTitle, { color: colors.text }]}>Booking Unavailable</Text>
+        <Text style={[s.errorSub, { color: colors.textSecondary }]}>{errorMsg}</Text>
+        <TouchableOpacity style={[s.outlineBtn, { borderColor: colors.border }]} onPress={() => router.back()}>
+          <Text style={[s.outlineBtnText, { color: colors.textSecondary }]}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ---- SUCCESS ----
+  if (step === 'success') {
+    const d = new Date(confirmedAt);
+    return (
+      <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={s.content}>
+        <View style={[s.successCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
+          <View style={[s.iconCircle, { backgroundColor: colors.success + '18' }]}>
+            <Ionicons name="checkmark-circle" size={56} color={colors.success} />
+          </View>
+          <Text style={[s.successTitle, { color: colors.text }]}>Appointment Booked!</Text>
+          <Text style={[s.successSub, { color: colors.textSecondary }]}>
+            Your appointment has been confirmed.
+          </Text>
+
+          <View style={[s.summaryBlock, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderLight }]}>
+            <Row label="Business" value={info?.office.name ?? ''} colors={colors} />
+            <Row label="Service" value={service?.name ?? ''} colors={colors} />
+            <Row label="Date" value={formatDate(selectedDate)} colors={colors} />
+            <Row label="Time" value={formatTime(selectedSlot)} colors={colors} />
+            <Row label="Name" value={name} colors={colors} />
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[s.primaryBtn, { backgroundColor: colors.primary }]}
+          onPress={() => router.replace('/' as any)}
+          activeOpacity={0.8}
+        >
+          <Text style={s.primaryBtnText}>Done</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {/* Back row */}
+        <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={20} color={colors.primary} />
+          <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
+        </TouchableOpacity>
+
+        {/* Header */}
+        <View style={s.header}>
+          <View style={[s.headerIcon, { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.infoLight }]}>
+            <Ionicons name="calendar-outline" size={26} color={colors.primary} />
+          </View>
+          <Text style={[s.pageTitle, { color: colors.text }]}>Book Appointment</Text>
+          {info && <Text style={[s.pageSub, { color: colors.textSecondary }]}>{info.office.name}</Text>}
+        </View>
+
+        {/* Progress */}
+        <StepProgress step={step} colors={colors} />
+
+        {/* ---- DEPARTMENT ---- */}
+        {step === 'department' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Department</Text>
+            {info?.departments.map((dept) => (
+              <TouchableOpacity
+                key={dept.id}
+                style={[s.choiceCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
+                onPress={() => handleSelectDept(dept.id)}
+                activeOpacity={0.75}
+              >
+                <View style={[s.choiceIcon, { backgroundColor: colors.primary + '15' }]}>
+                  <Ionicons name="people-outline" size={20} color={colors.primary} />
+                </View>
+                <Text style={[s.choiceName, { color: colors.text }]}>{dept.name}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* ---- SERVICE ---- */}
+        {step === 'service' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Service</Text>
+            <Text style={[s.sectionSub, { color: colors.textSecondary }]}>{dept?.name}</Text>
+            {deptServices.map((svc) => (
+              <TouchableOpacity
+                key={svc.id}
+                style={[s.choiceCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
+                onPress={() => handleSelectService(svc.id)}
+                activeOpacity={0.75}
+              >
+                <View style={[s.choiceIcon, { backgroundColor: colors.primary + '15' }]}>
+                  <Ionicons name="clipboard-outline" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.choiceName, { color: colors.text }]}>{svc.name}</Text>
+                  {svc.description ? (
+                    <Text style={[s.choiceDesc, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {svc.description}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={s.backLink} onPress={() => setStep('department')}>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change department</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ---- DATE ---- */}
+        {step === 'date' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Date</Text>
+            <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
+              {service?.name} · {dept?.name}
+            </Text>
+            <View style={s.dateGrid}>
+              {availableDates.map((date) => (
+                <TouchableOpacity
+                  key={date}
+                  style={[
+                    s.dateCard,
+                    { backgroundColor: colors.surface, borderColor: colors.borderLight },
+                    selectedDate === date && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                  onPress={() => handleSelectDate(date)}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      s.dateText,
+                      { color: selectedDate === date ? '#fff' : colors.text },
+                    ]}
+                  >
+                    {formatDate(date)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ---- TIME ---- */}
+        {step === 'time' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Time</Text>
+            <Text style={[s.sectionSub, { color: colors.textSecondary }]}>{formatDate(selectedDate)}</Text>
+            {slotsLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+            ) : slots.length === 0 ? (
+              <View style={[s.emptySlots, { borderColor: colors.borderLight }]}>
+                <Ionicons name="calendar-clear-outline" size={36} color={colors.textMuted} />
+                <Text style={[s.emptySlotsText, { color: colors.textSecondary }]}>
+                  No available slots on this day.
+                </Text>
+                <TouchableOpacity onPress={() => setStep('date')}>
+                  <Text style={[s.backLinkText, { color: colors.primary }]}>Choose another date</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={s.slotsGrid}>
+                {slots.map((slot) => (
+                  <TouchableOpacity
+                    key={slot}
+                    style={[
+                      s.slotChip,
+                      { backgroundColor: colors.surface, borderColor: colors.borderLight },
+                      selectedSlot === slot && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => handleSelectSlot(slot)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[s.slotText, { color: selectedSlot === slot ? '#fff' : colors.text }]}>
+                      {formatTime(slot)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity style={s.backLink} onPress={() => setStep('date')}>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change date</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ---- CUSTOMER INFO ---- */}
+        {step === 'info' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Your Details</Text>
+            <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
+              {formatDate(selectedDate)} at {formatTime(selectedSlot)}
+            </Text>
+
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Full Name *</Text>
+            <TextInput
+              style={[
+                s.textInput,
+                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+              ]}
+              value={name}
+              onChangeText={setName}
+              placeholder="Your full name"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+              returnKeyType="next"
+            />
+
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Phone (optional)</Text>
+            <TextInput
+              style={[
+                s.textInput,
+                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+              ]}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="+1 555 000 0000"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="phone-pad"
+              returnKeyType="done"
+            />
+
+            <TouchableOpacity
+              style={[
+                s.primaryBtn,
+                { backgroundColor: name.trim() ? colors.primary : colors.border },
+                { marginTop: spacing.lg },
+              ]}
+              onPress={handleSubmitInfo}
+              disabled={!name.trim()}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.primaryBtnText, { color: name.trim() ? '#fff' : colors.textMuted }]}>
+                Review Booking
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ---- CONFIRM ---- */}
+        {step === 'confirm' && (
+          <View>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Confirm Booking</Text>
+
+            <View style={[s.summaryBlock, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
+              <Row label="Business" value={info?.office.name ?? ''} colors={colors} />
+              <Row label="Department" value={dept?.name ?? ''} colors={colors} />
+              <Row label="Service" value={service?.name ?? ''} colors={colors} />
+              <Row label="Date" value={formatDate(selectedDate)} colors={colors} />
+              <Row label="Time" value={formatTime(selectedSlot)} colors={colors} />
+              <Row label="Name" value={name} colors={colors} />
+              {phone ? <Row label="Phone" value={phone} colors={colors} /> : null}
+            </View>
+
+            <TouchableOpacity
+              style={[s.primaryBtn, { backgroundColor: colors.primary, marginTop: spacing.lg }]}
+              onPress={handleConfirm}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+              <Text style={[s.primaryBtnText, { marginLeft: 6 }]}>Confirm Appointment</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.backLink} onPress={() => setStep('info')}>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Edit details</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function Row({
+  label,
+  value,
+  colors,
+}: {
+  label: string;
+  value: string;
+  colors: ReturnType<typeof useTheme>['colors'];
+}) {
+  return (
+    <View style={s.row}>
+      <Text style={[s.rowLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[s.rowValue, { color: colors.text }]}>{value}</Text>
+    </View>
+  );
+}
+
+function StepProgress({
+  step,
+  colors,
+}: {
+  step: Step;
+  colors: ReturnType<typeof useTheme>['colors'];
+}) {
+  const steps: Step[] = ['department', 'service', 'date', 'time', 'info', 'confirm'];
+  const idx = steps.indexOf(step);
+  if (idx < 0) return null;
+  return (
+    <View style={s.progressRow}>
+      {steps.map((s_, i) => (
+        <View
+          key={s_}
+          style={[
+            s.progressDot,
+            {
+              backgroundColor:
+                i < idx
+                  ? colors.success
+                  : i === idx
+                  ? colors.primary
+                  : colors.borderLight,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  errorTitle: { fontSize: fontSize.xl, fontWeight: '700' },
+  errorSub: { fontSize: fontSize.md, textAlign: 'center', maxWidth: 280, lineHeight: 22 },
+  outlineBtn: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+  },
+  outlineBtnText: { fontSize: fontSize.md, fontWeight: '600' },
+
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
+  backText: { fontSize: fontSize.md, fontWeight: '600' },
+
+  header: { alignItems: 'center', marginBottom: spacing.lg },
+  headerIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  pageTitle: { fontSize: fontSize.xl, fontWeight: '800' },
+  pageSub: { fontSize: fontSize.sm, marginTop: 2 },
+
+  progressRow: { flexDirection: 'row', gap: 6, justifyContent: 'center', marginBottom: spacing.lg },
+  progressDot: { width: 8, height: 8, borderRadius: 4 },
+
+  sectionTitle: { fontSize: fontSize.lg, fontWeight: '700', marginBottom: 2 },
+  sectionSub: { fontSize: fontSize.sm, marginBottom: spacing.md },
+
+  choiceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  choiceIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  choiceName: { flex: 1, fontSize: fontSize.md, fontWeight: '600' },
+  choiceDesc: { fontSize: fontSize.sm, marginTop: 2 },
+
+  backLink: { marginTop: spacing.md, alignItems: 'center' },
+  backLinkText: { fontSize: fontSize.sm },
+
+  dateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  dateCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  dateText: { fontSize: fontSize.sm, fontWeight: '600' },
+
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  slotChip: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  slotText: { fontSize: fontSize.sm, fontWeight: '600' },
+
+  emptySlots: {
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  emptySlotsText: { fontSize: fontSize.md, textAlign: 'center' },
+
+  fieldLabel: { fontSize: fontSize.sm, fontWeight: '600', marginBottom: 6, marginTop: spacing.md },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: fontSize.md,
+  },
+
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md + 2,
+    borderRadius: borderRadius.lg,
+  },
+  primaryBtnText: { fontSize: fontSize.lg, fontWeight: '700', color: '#fff' },
+
+  summaryBlock: {
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  rowLabel: { fontSize: fontSize.sm },
+  rowValue: { fontSize: fontSize.sm, fontWeight: '600', maxWidth: '60%', textAlign: 'right' },
+
+  successCard: {
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '800' },
+  successSub: { fontSize: fontSize.md, textAlign: 'center' },
+});
