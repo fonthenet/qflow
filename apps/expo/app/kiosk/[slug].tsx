@@ -25,9 +25,9 @@ type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'issued
 const IDLE_TIMEOUT_MS = 60_000;
 
 export default function KioskScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, deptId: initialDeptId } = useLocalSearchParams<{ slug: string; deptId?: string }>();
   const router = useRouter();
-  const { setActiveToken } = useAppStore();
+  const { setActiveToken, setActiveKioskSlug, recordPlace } = useAppStore();
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
@@ -90,8 +90,23 @@ export default function KioskScreen() {
       return;
     }
     setInfo(data);
-    setStep('home');
-  }, [slug]);
+
+    // Save this business to Places immediately on first scan
+    recordPlace({
+      id: data.office.id,
+      name: data.office.name,
+      address: data.office.address,
+      kioskSlug: slug,
+    });
+
+    // If a department was pre-selected (from queue peek), auto-jump to service step
+    if (initialDeptId && data.departments.some((d) => d.id === initialDeptId)) {
+      setSelectedDeptId(initialDeptId);
+      setStep('service');
+    } else {
+      setStep('home');
+    }
+  }, [slug, initialDeptId, recordPlace]);
 
   useEffect(() => {
     loadInfo();
@@ -184,6 +199,7 @@ export default function KioskScreen() {
 
   const handleTrack = () => {
     if (!ticket) return;
+    setActiveKioskSlug(slug ?? null);
     setActiveToken(ticket.qr_token);
     router.replace('/(tabs)');
   };
@@ -343,6 +359,17 @@ export default function KioskScreen() {
               </Text>
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity
+            style={s.peekBtn}
+            onPress={() => router.push(`/queue-peek/${slug}` as any)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="eye-outline" size={isTablet ? 20 : 16} color={colors.textMuted} />
+            <Text style={[s.peekBtnText, isTablet && { fontSize: fontSize.md }]}>
+              View current wait times
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -754,6 +781,19 @@ const s = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  peekBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  peekBtnText: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
     textDecorationLine: 'underline',
   },
 

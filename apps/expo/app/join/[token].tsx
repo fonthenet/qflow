@@ -20,7 +20,7 @@ type Step = 'loading' | 'select' | 'joining' | 'success' | 'error';
 export default function JoinScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
-  const { setActiveToken, customerName: savedName, customerPhone: savedPhone } = useAppStore();
+  const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
 
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<JoinInfoResponse | null>(null);
@@ -49,6 +49,16 @@ export default function JoinScreen() {
     }
     setInfo(data);
 
+    // Save each office in this join link to Places immediately
+    for (const office of data.offices) {
+      recordPlace({
+        id: office.id,
+        name: office.name,
+        address: office.address,
+        joinToken: token,
+      });
+    }
+
     // Auto-select locked values
     const officeId = data.virtualCode.office_id ?? '';
     const deptId = data.virtualCode.department_id ?? '';
@@ -69,7 +79,7 @@ export default function JoinScreen() {
     setSelectedDeptId(resolvedDept);
     setSelectedServiceId(resolvedService);
     setStep('select');
-  }, [token]);
+  }, [token, recordPlace]);
 
   useEffect(() => {
     loadInfo();
@@ -125,6 +135,7 @@ export default function JoinScreen() {
   };
 
   const handleTrack = () => {
+    setActiveJoinToken(token ?? null);
     setActiveToken(ticketToken);
     router.replace('/(tabs)');
   };
