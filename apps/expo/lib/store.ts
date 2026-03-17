@@ -10,22 +10,25 @@ interface HistoryEntry {
   serviceName: string;
   status: string;
   date: string;
-  /** Populated from ticket data so we can build favorites */
   officeId?: string;
   kioskSlug?: string;
+  joinToken?: string;
 }
 
-export interface FavoriteBusiness {
-  id: string; // unique key (officeId or slug-based)
+/** A business the user has discovered by scanning a QR code or opening a join link. */
+export interface SavedPlace {
+  id: string; // officeId
   name: string;
-  address?: string;
-  /** Kiosk slug for direct join — e.g. /kiosk/{slug} */
+  address?: string | null;
+  /** Kiosk slug — enables queue peek + kiosk flow */
   kioskSlug?: string;
-  /** Join token for virtual join — e.g. /join/{token} */
+  /** Virtual join token */
   joinToken?: string;
-  /** Last visited date */
-  lastVisited?: string;
-  /** Number of visits */
+  /** ISO timestamp of first scan */
+  firstSeenAt: string;
+  /** ISO timestamp of most recent scan */
+  lastSeenAt: string;
+  /** Total tickets taken at this place */
   visitCount: number;
 }
 
@@ -34,23 +37,29 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 interface AppState {
   activeToken: string | null;
   activeTicket: TicketResponse | null;
+  /** Kiosk slug active when the current ticket was issued */
+  activeKioskSlug: string | null;
+  /** Join token active when the current ticket was issued */
+  activeJoinToken: string | null;
   history: HistoryEntry[];
-  favorites: FavoriteBusiness[];
+  /** All businesses the user has ever scanned or joined — the Places tab source of truth */
+  savedPlaces: SavedPlace[];
   customerName: string;
   customerPhone: string;
   themeMode: ThemeMode;
 
   setActiveToken: (token: string | null) => void;
   setActiveTicket: (ticket: TicketResponse | null) => void;
+  setActiveKioskSlug: (slug: string | null) => void;
+  setActiveJoinToken: (token: string | null) => void;
   addToHistory: (entry: HistoryEntry) => void;
   clearActiveTicket: () => void;
   setCustomerInfo: (name: string, phone: string) => void;
   setThemeMode: (mode: ThemeMode) => void;
-  addFavorite: (biz: Omit<FavoriteBusiness, 'visitCount'>) => void;
-  removeFavorite: (id: string) => void;
-  isFavorite: (id: string) => boolean;
-  /** Increment visit count and update lastVisited for a business */
-  recordVisit: (id: string) => void;
+  /** Called when a business is first encountered (QR scan, join link). Creates or updates savedPlaces entry. */
+  recordPlace: (place: Omit<SavedPlace, 'firstSeenAt' | 'lastSeenAt' | 'visitCount'>) => void;
+  /** Remove a business from saved places */
+  removePlace: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -58,8 +67,10 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       activeToken: null,
       activeTicket: null,
+      activeKioskSlug: null,
+      activeJoinToken: null,
       history: [],
-      favorites: [],
+      savedPlaces: [],
       customerName: '',
       customerPhone: '',
       themeMode: 'dark' as ThemeMode,
@@ -67,6 +78,10 @@ export const useAppStore = create<AppState>()(
       setActiveToken: (token) => set({ activeToken: token }),
 
       setActiveTicket: (ticket) => set({ activeTicket: ticket }),
+
+      setActiveKioskSlug: (slug) => set({ activeKioskSlug: slug }),
+
+      setActiveJoinToken: (token) => set({ activeJoinToken: token }),
 
       addToHistory: (entry) => {
         const existing = get().history;
@@ -85,52 +100,60 @@ export const useAppStore = create<AppState>()(
             status: ticket.status,
             date: new Date().toISOString(),
             officeId: ticket.office?.id,
+            kioskSlug: get().activeKioskSlug ?? undefined,
+            joinToken: get().activeJoinToken ?? undefined,
           });
 
-          // Auto-track visited businesses for the Places tab
+          // Increment visit count on savedPlaces
           if (ticket.office?.id) {
-            const bizId = ticket.office.id;
-            const favs = get().favorites;
-            const existing = favs.find((f) => f.id === bizId);
+            const placeId = ticket.office.id;
+            const places = get().savedPlaces;
+            const existing = places.find((p) => p.id === placeId);
             if (existing) {
               set({
-                favorites: favs.map((f) =>
-                  f.id === bizId
-                    ? { ...f, visitCount: f.visitCount + 1, lastVisited: new Date().toISOString() }
-                    : f
+                savedPlaces: places.map((p) =>
+                  p.id === placeId
+                    ? { ...p, visitCount: p.visitCount + 1, lastSeenAt: new Date().toISOString() }
+                    : p
                 ),
               });
             }
-            // Don't auto-add to favorites — user chooses to favorite
           }
         }
-        set({ activeToken: null, activeTicket: null });
+        set({ activeToken: null, activeTicket: null, activeKioskSlug: null, activeJoinToken: null });
       },
 
       setCustomerInfo: (name, phone) => set({ customerName: name, customerPhone: phone }),
       setThemeMode: (mode) => set({ themeMode: mode }),
 
-      addFavorite: (biz) => {
-        const favs = get().favorites;
-        if (favs.some((f) => f.id === biz.id)) return;
-        set({ favorites: [{ ...biz, visitCount: biz.visitCount ?? 0 }, ...favs] });
+      recordPlace: (place) => {
+        const places = get().savedPlaces;
+        const existing = places.find((p) => p.id === place.id);
+        const now = new Date().toISOString();
+        if (existing) {
+          set({
+            savedPlaces: places.map((p) =>
+              p.id === place.id
+                ? {
+                    ...p,
+                    name: place.name,
+                    address: place.address ?? p.address,
+                    kioskSlug: place.kioskSlug ?? p.kioskSlug,
+                    joinToken: place.joinToken ?? p.joinToken,
+                    lastSeenAt: now,
+                  }
+                : p
+            ),
+          });
+        } else {
+          set({
+            savedPlaces: [{ ...place, firstSeenAt: now, lastSeenAt: now, visitCount: 0 }, ...places],
+          });
+        }
       },
 
-      removeFavorite: (id) => {
-        set({ favorites: get().favorites.filter((f) => f.id !== id) });
-      },
-
-      isFavorite: (id) => get().favorites.some((f) => f.id === id),
-
-      recordVisit: (id) => {
-        const favs = get().favorites;
-        set({
-          favorites: favs.map((f) =>
-            f.id === id
-              ? { ...f, visitCount: f.visitCount + 1, lastVisited: new Date().toISOString() }
-              : f
-          ),
-        });
+      removePlace: (id) => {
+        set({ savedPlaces: get().savedPlaces.filter((p) => p.id !== id) });
       },
     }),
     {
@@ -139,7 +162,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         activeToken: state.activeToken,
         history: state.history,
-        favorites: state.favorites,
+        savedPlaces: state.savedPlaces,
         customerName: state.customerName,
         customerPhone: state.customerPhone,
         themeMode: state.themeMode,

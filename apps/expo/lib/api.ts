@@ -243,6 +243,36 @@ export async function createKioskTicket(params: {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Queue status (peek) — read-only, no ticket required
+// ---------------------------------------------------------------------------
+
+export interface QueueStatusResponse {
+  office: { id: string; name: string; address: string | null };
+  departments: Array<{
+    id: string;
+    name: string;
+    code: string;
+    sort_order: number;
+    waiting: number;
+    called: number;
+    serving: number;
+    estimatedWaitMinutes: number;
+  }>;
+  totalWaiting: number;
+  totalServing: number;
+}
+
+export async function fetchQueueStatus(slug: string): Promise<QueueStatusResponse | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/queue-status?slug=${encodeURIComponent(slug)}`);
+    if (!res.ok) return null;
+    return (await res.json()) as QueueStatusResponse;
+  } catch {
+    return null;
+  }
+}
+
 export async function stopTracking(ticketId: string): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/tracking-stop`, {
