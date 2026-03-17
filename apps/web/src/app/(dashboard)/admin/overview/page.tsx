@@ -55,6 +55,14 @@ export default async function OverviewPage() {
   const accessibleDeptIds = new Set((departments ?? []).map((d) => d.id));
   const filteredServices = (services ?? []).filter((s) => accessibleDeptIds.has(s.department_id));
 
+  // Normalize current_staff: Supabase returns it as array from join, but it's a single FK
+  const normalizedDesks = (desks ?? []).map((d) => ({
+    ...d,
+    current_staff: Array.isArray(d.current_staff)
+      ? (d.current_staff[0] ?? null)
+      : (d.current_staff ?? null),
+  }));
+
   // Build tree structure
   const officeTree = (offices ?? []).map((office) => {
     const officeDepts = (departments ?? []).filter((d) => d.office_id === office.id);
@@ -62,7 +70,7 @@ export default async function OverviewPage() {
       ...office,
       departments: officeDepts.map((dept) => ({
         ...dept,
-        desks: (desks ?? []).filter((d) => d.department_id === dept.id),
+        desks: normalizedDesks.filter((d) => d.department_id === dept.id),
         services: filteredServices.filter((s) => s.department_id === dept.id),
       })),
     };
