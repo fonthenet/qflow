@@ -51,12 +51,22 @@ export default async function StaffPage() {
     office: Array.isArray(department.office) ? department.office[0] ?? null : department.office,
   }));
 
+  const vocabulary = platformConfig.experienceProfile.vocabulary;
+
   return (
     <StaffClient
       staff={staff ?? []}
       offices={offices ?? []}
       departments={normalizedDepartments}
       roleDefinitions={platformConfig.rolePolicy.roles}
+      vocabulary={{
+        deskLabel: vocabulary?.deskLabel ?? 'Desk',
+        departmentLabel: vocabulary?.departmentLabel ?? 'Department',
+        officeLabel: vocabulary?.officeLabel ?? 'Location',
+        serviceLabel: vocabulary?.serviceLabel ?? 'Service',
+        customerLabel: vocabulary?.customerLabel ?? 'Customer',
+        queueLabel: vocabulary?.queueLabel ?? 'Queue',
+      }}
     />
   );
 }

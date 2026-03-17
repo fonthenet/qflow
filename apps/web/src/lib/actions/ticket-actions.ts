@@ -1728,3 +1728,74 @@ export async function unassignDesk(deskId: string) {
   revalidatePath('/desk');
   return { data: true };
 }
+
+export async function parkTicket(ticketId: string) {
+  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+
+  // Guard: ticket must be called or serving
+  if (ticket.status !== 'called' && ticket.status !== 'serving') {
+    return { error: 'Only called or serving tickets can be parked' };
+  }
+  // Guard: not already parked
+  if (ticket.parked_at) {
+    return { error: 'Ticket is already parked' };
+  }
+
+  const now = new Date().toISOString();
+  const { data: updatedTicket, error: updateError } = await supabase
+    .from('tickets')
+    .update({ parked_at: now })
+    .eq('id', ticketId)
+    .select('*')
+    .single();
+
+  if (updateError || !updatedTicket) {
+    return { error: 'Failed to park ticket' };
+  }
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_parked',
+    entityType: 'ticket',
+    entityId: ticketId,
+    officeId: ticket.office_id,
+    summary: `Parked ticket ${ticket.ticket_number}`,
+    metadata: { ticket_number: ticket.ticket_number, previous_status: ticket.status },
+  });
+
+  revalidatePath('/desk');
+  return { data: updatedTicket };
+}
+
+export async function unparkTicket(ticketId: string) {
+  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+
+  // Guard: must be parked
+  if (!ticket.parked_at) {
+    return { error: 'Ticket is not parked' };
+  }
+
+  const { data: updatedTicket, error: updateError } = await supabase
+    .from('tickets')
+    .update({ parked_at: null })
+    .eq('id', ticketId)
+    .select('*')
+    .single();
+
+  if (updateError || !updatedTicket) {
+    return { error: 'Failed to unpark ticket' };
+  }
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_unparked',
+    entityType: 'ticket',
+    entityId: ticketId,
+    officeId: ticket.office_id,
+    summary: `Resumed parked ticket ${ticket.ticket_number}`,
+    metadata: { ticket_number: ticket.ticket_number, status: ticket.status },
+  });
+
+  revalidatePath('/desk');
+  return { data: updatedTicket };
+}

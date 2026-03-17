@@ -38,7 +38,23 @@ export default async function DeskPage() {
     // Fetch available desks for the staff member's office
     const officeId = staff.office_id;
 
+    // Resolve vocabulary for the selector UI
+    const [{ data: selectorOrg }, { data: selectorOffice }] = await Promise.all([
+      staff.organization_id
+        ? supabase.from('organizations').select('settings').eq('id', staff.organization_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      officeId
+        ? supabase.from('offices').select('settings').eq('id', officeId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const selectorConfig = resolvePlatformConfig({
+      organizationSettings: (selectorOrg?.settings as Record<string, unknown> | null) ?? {},
+      officeSettings: (selectorOffice?.settings as Record<string, unknown> | null) ?? {},
+    });
+    const selectorVocabulary = selectorConfig.experienceProfile.vocabulary;
+
     if (!officeId) {
+      const officeLabel = selectorVocabulary?.officeLabel ?? 'Office';
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md">
@@ -58,11 +74,11 @@ export default async function DeskPage() {
               </svg>
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">
-              No Office Assigned
+              No {officeLabel} Assigned
             </h2>
             <p className="text-muted-foreground">
-              You are not assigned to any office. Please contact your administrator
-              to assign you to an office.
+              You are not assigned to any {officeLabel.toLowerCase()}. Please contact your administrator
+              to assign you to one.
             </p>
           </div>
         </div>
@@ -82,6 +98,10 @@ export default async function DeskPage() {
       <DeskSelector
         desks={availableDesks ?? []}
         staffName={staff.full_name}
+        vocabulary={{
+          deskLabel: selectorVocabulary?.deskLabel,
+          departmentLabel: selectorVocabulary?.departmentLabel,
+        }}
       />
     );
   }

@@ -22,58 +22,74 @@ interface UseRealtimeQueueOptions {
   initialQueue?: QueueData;
 }
 
+const EMPTY_QUEUE: QueueData = {
+  waiting: [],
+  called: [],
+  serving: [],
+  recentlyServed: [],
+  cancelled: [],
+};
+
 export function useRealtimeQueue({
   officeId,
   departmentId,
   disabled = false,
   initialQueue,
 }: UseRealtimeQueueOptions) {
-  const emptyQueue: QueueData = {
-    waiting: [],
-    called: [],
-    serving: [],
-    recentlyServed: [],
-    cancelled: [],
-  };
-  const [queue, setQueue] = useState<QueueData>(initialQueue ?? emptyQueue);
+  const [queue, setQueue] = useState<QueueData>(initialQueue ?? EMPTY_QUEUE);
   const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const fetchQueue = useCallback(async () => {
     if (disabled) {
-      setQueue(initialQueue ?? emptyQueue);
+      setQueue(initialQueue ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
     const supabase = createClient();
 
-    // Fetch today's active tickets
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayIso = today.toISOString();
+    // Fetch active tickets — no date cutoff for waiting/called/serving so
+    // tickets from previous days still appear.  Only limit served/cancelled
+    // to the last 24 h so the list stays manageable.
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    let query = supabase
+    // 1) All currently-active tickets (no date filter)
+    let activeQuery = supabase
       .from('tickets')
       .select('*')
       .eq('office_id', officeId)
-      .gte('created_at', todayIso)
-      .in('status', ['waiting', 'called', 'serving', 'served', 'cancelled'])
+      .in('status', ['waiting', 'called', 'serving'])
       .order('priority', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true });
 
+    // 2) Recently-completed tickets (last 24 h only)
+    let completedQuery = supabase
+      .from('tickets')
+      .select('*')
+      .eq('office_id', officeId)
+      .in('status', ['served', 'cancelled'])
+      .gte('completed_at', yesterday)
+      .order('completed_at', { ascending: false })
+      .limit(20);
+
     if (departmentId) {
-      query = query.eq('department_id', departmentId);
+      activeQuery = activeQuery.eq('department_id', departmentId);
+      completedQuery = completedQuery.eq('department_id', departmentId);
     }
 
-    const { data, error: fetchError } = await query;
+    const [activeResult, completedResult] = await Promise.all([activeQuery, completedQuery]);
 
-    if (fetchError) {
-      setError(fetchError.message);
+    if (activeResult.error) {
+      setError(activeResult.error.message);
+      return;
+    }
+    if (completedResult.error) {
+      setError(completedResult.error.message);
       return;
     }
 
-    const tickets = data ?? [];
+    const tickets = [...(activeResult.data ?? []), ...(completedResult.data ?? [])];
 
     setQueue({
       waiting: tickets.filter((t) => t.status === 'waiting'),
@@ -97,11 +113,11 @@ export function useRealtimeQueue({
         .slice(0, 5),
     });
     setError(null);
-  }, [departmentId, disabled, emptyQueue, initialQueue, officeId]);
+  }, [departmentId, disabled, initialQueue, officeId]);
 
   useEffect(() => {
     if (disabled) {
-      setQueue(initialQueue ?? emptyQueue);
+      setQueue(initialQueue ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
@@ -156,7 +172,7 @@ export function useRealtimeQueue({
         channelRef.current = null;
       }
     };
-  }, [departmentId, disabled, emptyQueue, fetchQueue, initialQueue, officeId]);
+  }, [departmentId, disabled, fetchQueue, initialQueue, officeId]);
 
   return {
     queue,

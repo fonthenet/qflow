@@ -21,6 +21,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/onboarding',
           '/admin/template-governance',
           '/admin/offices',
@@ -47,6 +48,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/onboarding',
           '/admin/template-governance',
           '/admin/offices',
@@ -70,6 +72,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'office',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/offices',
           '/admin/departments',
           '/admin/services',
@@ -334,34 +337,50 @@ function versionMetadata(
 
 export const industryTemplates: IndustryTemplate[] = [
   {
-    id: 'public-service',
-    title: 'Public Service Branch',
-    vertical: 'public_service',
-    version: versionMetadata('1.1.0', ['1.0.0'], 'Canonical structured ticket flow with stronger self-service defaults.', [
+    id: 'standard',
+    title: 'Standard Queue',
+    vertical: 'standard',
+    version: versionMetadata('1.2.0', ['1.0.0', '1.1.0'], 'Universal template rebranded from public-service with flexible defaults for any business.', [
+      {
+        fromVersion: '1.1.0',
+        toVersion: '1.2.0',
+        releasedAt: '2026-03-16',
+        summary: 'Rebranded to Standard Queue with universal defaults.',
+        officeRolloutRecommended: true,
+        changes: [
+          migrationChange(
+            'standard-rebrand',
+            'experience_profile',
+            'safe',
+            'Universal vocabulary and branding',
+            'Template rebranded from Public Service to Standard Queue with neutral vocabulary defaults.'
+          ),
+        ],
+      },
       {
         fromVersion: '1.0.0',
         toVersion: '1.1.0',
         releasedAt: '2026-03-15',
-        summary: 'Improves queue resilience and kiosk pacing for public-service branches.',
+        summary: 'Improves queue resilience and kiosk pacing.',
         officeRolloutRecommended: true,
         changes: [
           migrationChange(
-            'public-service-kiosk-timeout',
+            'standard-kiosk-timeout',
             'experience_profile',
             'safe',
             'Longer kiosk idle timeout',
             'Kiosk idle timeout increases from 60 to 75 seconds to reduce unintended resets.'
           ),
           migrationChange(
-            'public-service-no-show-window',
+            'standard-no-show-window',
             'workflow_profile',
             'review_required',
             'Adjusted no-show timeout',
-            'The no-show timeout increases from 10 to 12 minutes to better match high-volume public counters.',
-            'Review whether branch staffing can tolerate the longer grace period.'
+            'The no-show timeout increases from 10 to 12 minutes to better match high-volume counters.',
+            'Review whether staffing can tolerate the longer grace period.'
           ),
           migrationChange(
-            'public-service-capacity',
+            'standard-capacity',
             'queue_policy',
             'safe',
             'Higher queue capacity default',
@@ -370,13 +389,13 @@ export const industryTemplates: IndustryTemplate[] = [
         ],
       },
     ]),
-    dashboardMode: 'public_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays', '/admin/kiosk', '/admin/bookings', '/admin/analytics', '/admin/settings', '/desk'],
+    dashboardMode: 'standard',
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays', '/admin/kiosk', '/admin/bookings', '/admin/analytics', '/admin/settings', '/desk'],
     enabledModules: ['kiosk', 'display_board', 'priority_categories', 'appointments', 'branch_comparison'],
     onboardingCopy: {
-      headline: 'Launch a public-service branch',
-      description: 'Department-first queue with ticket numbers, accessibility defaults, and display-heavy operations.',
-      reviewChecklist: ['Confirm branch timezone', 'Review department names', 'Enable accessibility languages'],
+      headline: 'Set up your queue',
+      description: 'Flexible department-based ticketing with priority support, display boards, and self-service kiosk. Works for any business.',
+      reviewChecklist: ['Confirm location timezone', 'Set up departments and services', 'Customize vocabulary labels'],
     },
     recommendedRoles: [...ADMIN_LIKE_ROLES, STAFF_ROLES.RECEPTIONIST, STAFF_ROLES.DESK_OPERATOR, STAFF_ROLES.FLOOR_MANAGER, STAFF_ROLES.ANALYST],
     defaultSlas: [
@@ -416,7 +435,7 @@ export const industryTemplates: IndustryTemplate[] = [
       remoteJoinNotice: 'Join remotely and arrive when your number is close.',
     },
     experienceProfile: {
-      dashboardMode: 'public_service',
+      dashboardMode: 'standard',
       kiosk: {
         welcomeMessage: 'Select a service',
         headerText: 'Take your ticket',
@@ -427,10 +446,10 @@ export const industryTemplates: IndustryTemplate[] = [
         idleTimeoutSeconds: 75,
       },
       publicJoin: {
-        headline: 'Track your ticket live',
+        headline: 'Track your visit live',
         subheadline: 'Use your QR code to follow your place in line from anywhere nearby.',
         requireCustomerName: false,
-        namedPartyLabel: 'Customer name',
+        namedPartyLabel: 'Your name',
       },
       display: {
         defaultLayout: 'department_split',
@@ -440,12 +459,12 @@ export const industryTemplates: IndustryTemplate[] = [
         showDepartmentBreakdown: true,
         announcementSound: true,
       },
-      messagingTone: 'institutional',
+      messagingTone: 'professional',
       supportedLanguages: ['en', 'es', 'fr', 'ar'],
       accessibility: { highContrast: true, bilingualSignage: true, speakAnnouncements: true },
       branding: { allowBusinessBranding: true, recommendedPrimaryColor: '#1d4ed8', allowWhiteLabel: false },
       vocabulary: templateVocabulary({
-        officeLabel: 'Branch',
+        officeLabel: 'Location',
         departmentLabel: 'Department',
         serviceLabel: 'Service',
         deskLabel: 'Counter',
@@ -456,72 +475,72 @@ export const industryTemplates: IndustryTemplate[] = [
     },
     rolePolicy: rolePolicy(['priority_override']),
     starterPriorities: [
-      { name: 'Senior', icon: '🧓', color: '#f97316', weight: 20 },
-      { name: 'Accessible', icon: '♿', color: '#0ea5e9', weight: 25 },
-      { name: 'Veteran', icon: '🎖️', color: '#22c55e', weight: 15 },
+      { name: 'Senior', icon: '', color: '#f97316', weight: 20 },
+      { name: 'Accessible', icon: '', color: '#0ea5e9', weight: 25 },
+      { name: 'Veteran', icon: '', color: '#22c55e', weight: 15 },
     ],
     starterOffices: [
       starterOffice(
-        'service_center',
-        'Main Branch',
+        'general_office',
+        'Main Location',
         [
           {
-            name: 'Mail & Parcels',
-            code: 'M',
+            name: 'General Services',
+            code: 'G',
             sortOrder: 1,
             services: [
-              { name: 'Drop-off', code: 'DROP', estimatedServiceTime: 6, sortOrder: 1 },
-              { name: 'Collection', code: 'COLLECT', estimatedServiceTime: 4, sortOrder: 2 },
-              { name: 'Registered Mail', code: 'REGMAIL', estimatedServiceTime: 9, sortOrder: 3 },
+              { name: 'Information', code: 'INFO', estimatedServiceTime: 5, sortOrder: 1 },
+              { name: 'Document Processing', code: 'DOC', estimatedServiceTime: 8, sortOrder: 2 },
+              { name: 'Pickup & Collection', code: 'PICK', estimatedServiceTime: 4, sortOrder: 3 },
             ],
           },
           {
-            name: 'Financial Services',
-            code: 'F',
+            name: 'Specialized Services',
+            code: 'S',
             sortOrder: 2,
             services: [
-              { name: 'Money Order', code: 'MONEY', estimatedServiceTime: 10, sortOrder: 1 },
-              { name: 'Bill Pay', code: 'BILL', estimatedServiceTime: 7, sortOrder: 2 },
-              { name: 'Identity Verification', code: 'VERIFY', estimatedServiceTime: 12, sortOrder: 3 },
+              { name: 'Consultation', code: 'CONSULT', estimatedServiceTime: 15, sortOrder: 1 },
+              { name: 'Application Review', code: 'APP', estimatedServiceTime: 12, sortOrder: 2 },
+              { name: 'Account Services', code: 'ACCT', estimatedServiceTime: 10, sortOrder: 3 },
             ],
           },
         ],
         {
           operatingHours: WEEKDAY_SERVICE_HOURS,
           desks: [
-            starterDesk('counter-1', 'M', ['DROP', 'COLLECT'], 'Counter 1'),
-            starterDesk('counter-2', 'M', ['DROP', 'REGMAIL'], 'Counter 2'),
-            starterDesk('counter-3', 'F', ['MONEY', 'BILL'], 'Counter 3'),
-            starterDesk('accessibility-desk', 'F', ['VERIFY', 'MONEY'], 'Accessibility Desk'),
+            starterDesk('counter-1', 'G', ['INFO', 'DOC'], 'Counter 1'),
+            starterDesk('counter-2', 'G', ['DOC', 'PICK'], 'Counter 2'),
+            starterDesk('counter-3', 'S', ['CONSULT', 'APP'], 'Counter 3'),
+            starterDesk('counter-4', 'S', ['ACCT', 'CONSULT'], 'Counter 4'),
           ],
           displayScreens: [
-            starterDisplay('Main Hall Screen', 'department_split', {
+            starterDisplay('Main Display', 'department_split', {
               theme: 'dark',
               show_clock: true,
               show_next_up: true,
-              zone: 'main_lobby',
+              zone: 'waiting_area',
             }),
-            starterDisplay('Parcel Pickup Screen', 'list', {
+            starterDisplay('Service Area Display', 'list', {
               theme: 'dark',
               show_department_breakdown: false,
-              zone: 'parcel_wall',
+              zone: 'service_area',
             }),
           ],
           officeSettings: {
             platform_service_areas: [
-              { id: 'lobby', label: 'Main Lobby', type: 'queue_zone' },
-              { id: 'parcel-wall', label: 'Parcel Wall', type: 'pickup_zone' },
-              { id: 'accessibility-lane', label: 'Accessibility Lane', type: 'priority_zone' },
+              { id: 'waiting-area', label: 'Waiting Area', type: 'queue_zone' },
+              { id: 'service-area', label: 'Service Area', type: 'service_zone' },
+              { id: 'priority-lane', label: 'Priority Lane', type: 'priority_zone' },
             ],
             platform_counter_map: [
-              { counter: 'Counter 1', departmentCode: 'M' },
-              { counter: 'Counter 2', departmentCode: 'M' },
-              { counter: 'Counter 3', departmentCode: 'F' },
-              { counter: 'Accessibility Desk', departmentCode: 'F' },
+              { counter: 'Counter 1', departmentCode: 'G' },
+              { counter: 'Counter 2', departmentCode: 'G' },
+              { counter: 'Counter 3', departmentCode: 'S' },
+              { counter: 'Counter 4', departmentCode: 'S' },
             ],
             platform_signage_messages: [
-              'Have your ID and forms ready.',
-              'Priority tickets are supported at all counters.',
+              'Please have your documents ready.',
+              'Priority service is available at all counters.',
             ],
           },
         }
@@ -529,10 +548,10 @@ export const industryTemplates: IndustryTemplate[] = [
     ],
     intakeSchemas: [
       {
-        serviceCode: 'DROP',
-        title: 'Package details',
+        serviceCode: 'DOC',
+        title: 'Document details',
         fields: [
-          { key: 'package_type', label: 'Package type', type: 'select', required: true, visibility: 'public', options: ['Letter', 'Parcel', 'Box'] },
+          { key: 'document_type', label: 'Document type', type: 'select', required: true, visibility: 'public', options: ['Application', 'Certificate', 'License', 'Other'] },
         ],
         complianceNotes: [],
       },
@@ -576,7 +595,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'bank',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/displays', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/displays', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'branch_comparison', 'vip_priority', 'customer_history', 'display_board'],
     onboardingCopy: {
       headline: 'Stand up a banking flow',
@@ -774,7 +793,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'clinic',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'intake_forms', 'display_board', 'priority_categories'],
     onboardingCopy: {
       headline: 'Launch a clinic flow',
@@ -980,7 +999,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'light_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/bookings', '/admin/analytics', '/admin/customers', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/bookings', '/admin/analytics', '/admin/customers', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
     onboardingCopy: {
       headline: 'Set up a host stand and waitlist',
@@ -1165,7 +1184,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'light_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/settings', '/desk'],
     enabledModules: ['virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
     onboardingCopy: {
       headline: 'Launch a client-first waitlist',
@@ -1296,7 +1315,9 @@ export const industryTemplates: IndustryTemplate[] = [
 ];
 
 export function getIndustryTemplateById(templateId: string | null | undefined) {
-  return industryTemplates.find((template) => template.id === templateId) ?? industryTemplates[0];
+  // Backward compat: 'public-service' resolves to the rebranded 'standard' template
+  const resolvedId = templateId === 'public-service' ? 'standard' : templateId;
+  return industryTemplates.find((template) => template.id === resolvedId) ?? industryTemplates[0];
 }
 
 export function getTemplateOptions() {

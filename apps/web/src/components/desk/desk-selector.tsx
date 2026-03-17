@@ -21,9 +21,15 @@ interface Desk {
 interface DeskSelectorProps {
   desks: Desk[];
   staffName: string;
+  vocabulary?: {
+    deskLabel?: string;
+    departmentLabel?: string;
+  };
 }
 
-export function DeskSelector({ desks, staffName }: DeskSelectorProps) {
+export function DeskSelector({ desks, staffName, vocabulary }: DeskSelectorProps) {
+  const deskLabel = vocabulary?.deskLabel ?? 'Desk';
+  const deptLabel = vocabulary?.departmentLabel ?? 'Department';
   const [selectedDeskId, setSelectedDeskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +56,7 @@ export function DeskSelector({ desks, staffName }: DeskSelectorProps) {
   const desksByDept = desks.reduce<Record<string, { deptName: string; desks: Desk[] }>>(
     (acc, desk) => {
       const deptId = desk.department_id;
-      const deptName = desk.department?.name ?? 'Unknown Department';
+      const deptName = desk.department?.name ?? `Unknown ${deptLabel}`;
       if (!acc[deptId]) {
         acc[deptId] = { deptName, desks: [] };
       }
@@ -68,19 +74,19 @@ export function DeskSelector({ desks, staffName }: DeskSelectorProps) {
             <Monitor className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-1">
-            Select Your Desk
+            Select Your {deskLabel}
           </h1>
           <p className="text-muted-foreground">
-            Welcome, {staffName}. Choose a desk to start operating.
+            Welcome, {staffName}. Choose a {deskLabel.toLowerCase()} to start operating.
           </p>
         </div>
 
         {desks.length === 0 ? (
           <div className="rounded-2xl border border-border bg-card p-8 text-center">
             <MapPin className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-foreground font-medium mb-1">No desks available</p>
+            <p className="text-foreground font-medium mb-1">No {deskLabel.toLowerCase()}s available</p>
             <p className="text-sm text-muted-foreground">
-              All desks are currently occupied or no desks are set up for your office.
+              All {deskLabel.toLowerCase()}s are currently occupied or none are set up for your location.
               Please contact your administrator.
             </p>
           </div>
@@ -96,7 +102,7 @@ export function DeskSelector({ desks, staffName }: DeskSelectorProps) {
                     <button
                       key={desk.id}
                       onClick={() => handleSelectDesk(desk.id)}
-                      aria-label={`Select desk ${desk.display_name ?? desk.name} in ${desk.department?.name ?? 'Unknown Department'}`}
+                      aria-label={`Select ${deskLabel.toLowerCase()} ${desk.display_name ?? desk.name} in ${desk.department?.name ?? `Unknown ${deptLabel}`}`}
                       className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                         selectedDeskId === desk.id
                           ? 'border-primary bg-primary/5 ring-2 ring-primary/20'

@@ -37,10 +37,13 @@ export async function GET(request: NextRequest) {
       desk_id,
       called_at,
       serving_started_at,
+      completed_at,
       called_by_staff_id,
       estimated_wait_minutes,
       recall_count,
-      customer_data
+      customer_data,
+      is_remote,
+      created_at
     `
     )
     .eq('qr_token', token)
@@ -50,42 +53,70 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   }
 
+  // Calculate queue position for waiting tickets
+  let position: number | null = null;
+  if (ticket.status === 'waiting') {
+    const { count } = await supabase
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('department_id', ticket.department_id)
+      .eq('office_id', ticket.office_id)
+      .eq('status', 'waiting')
+      .lte('created_at', ticket.created_at);
+
+    position = count ?? null;
+  }
+
   const [
     officeResult,
     departmentResult,
     serviceResult,
     deskResult,
+    nowServingResult,
   ] = await Promise.all([
     supabase
       .from('offices')
-      .select('name, organization:organizations(name)')
+      .select('id, name, organization_id')
       .eq('id', ticket.office_id)
       .single(),
     supabase
       .from('departments')
-      .select('name, code')
+      .select('id, name, code')
       .eq('id', ticket.department_id)
       .single(),
-    supabase
-      .from('services')
-      .select('name')
-      .eq('id', ticket.service_id)
-      .single(),
+    ticket.service_id
+      ? supabase
+          .from('services')
+          .select('id, name, code')
+          .eq('id', ticket.service_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
     ticket.desk_id
       ? supabase
           .from('desks')
-          .select('name, display_name')
+          .select('id, name, display_name')
           .eq('id', ticket.desk_id)
           .single()
       : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('department_id', ticket.department_id)
+      .eq('office_id', ticket.office_id)
+      .in('status', ['serving', 'called'])
+      .order('called_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const responsePayload = {
     ...ticket,
+    position,
     office: officeResult.data ?? null,
     department: departmentResult.data ?? null,
     service: serviceResult.data ?? null,
     desk: deskResult.data ?? null,
+    now_serving: nowServingResult.data?.ticket_number ?? null,
   };
 
   return NextResponse.json(responsePayload);

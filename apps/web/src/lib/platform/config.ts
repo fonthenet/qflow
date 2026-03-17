@@ -55,7 +55,7 @@ function readTemplateSelection(
       ? 'service_routing'
       : template.vertical === 'clinic'
         ? 'appointments_first'
-        : template.vertical === 'public_service'
+        : template.vertical === 'standard' || template.vertical === 'public_service'
           ? 'department_first'
           : 'waitlist');
   const branchType =

@@ -1019,9 +1019,9 @@ export async function getTemplatePerformanceAnalytics(
   if (officeIds.length === 0) {
     return {
       summary: {
-        primaryTemplateId: 'public-service-standard',
-        primaryTemplateTitle: 'QueueFlow Template',
-        primaryVertical: 'public_service',
+        primaryTemplateId: 'standard',
+        primaryTemplateTitle: 'Standard Queue',
+        primaryVertical: 'standard',
         templateCount: 0,
         officeCount: 0,
         totalTickets: 0,
@@ -1176,9 +1176,9 @@ export async function getTemplatePerformanceAnalytics(
 
   return {
     summary: {
-      primaryTemplateId: primaryRow?.templateId ?? fallbackOffice?.templateId ?? 'public-service-standard',
-      primaryTemplateTitle: primaryRow?.templateTitle ?? fallbackOffice?.templateTitle ?? 'QueueFlow Template',
-      primaryVertical: primaryRow?.vertical ?? fallbackOffice?.vertical ?? 'public_service',
+      primaryTemplateId: primaryRow?.templateId ?? fallbackOffice?.templateId ?? 'standard',
+      primaryTemplateTitle: primaryRow?.templateTitle ?? fallbackOffice?.templateTitle ?? 'Standard Queue',
+      primaryVertical: primaryRow?.vertical ?? fallbackOffice?.vertical ?? 'standard',
       templateCount: templateRows.length,
       officeCount: officeMap.size,
       totalTickets: overallMetrics.totalTickets,

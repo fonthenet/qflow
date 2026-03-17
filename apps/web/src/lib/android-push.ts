@@ -223,6 +223,17 @@ function getAndroidMessagePriority(type: AndroidPushType): 'HIGH' | 'NORMAL' {
   }
 }
 
+function getAndroidChannelId(type: AndroidPushType): string {
+  switch (type) {
+    case 'called':
+    case 'recall':
+    case 'buzz':
+      return 'queue-alerts';
+    default:
+      return 'queue-updates';
+  }
+}
+
 function serializePayload(payload: AndroidPushPayload): Record<string, string> {
   const entries: Record<string, string> = {
     type: payload.type,
@@ -269,11 +280,34 @@ async function sendFCMMessage(
       body: JSON.stringify({
         message: {
           token: deviceToken,
+          // data payload: available in foreground AND background handlers
           data: serializePayload(payload),
+          // notification block: shown by the OS when app is background or killed
+          ...(payload.silent
+            ? {}
+            : {
+                notification: {
+                  title: payload.title,
+                  body: payload.body,
+                },
+              }),
           android: {
             priority: getAndroidMessagePriority(payload.type),
             collapse_key: buildCollapseKey(payload),
             ttl: payload.type === 'position_update' ? '120s' : '30s',
+            notification: payload.silent
+              ? undefined
+              : {
+                  channel_id: getAndroidChannelId(payload.type),
+                  sound: 'default',
+                  notification_priority:
+                    getAndroidMessagePriority(payload.type) === 'HIGH'
+                      ? 'PRIORITY_MAX'
+                      : 'PRIORITY_DEFAULT',
+                  visibility: 'PUBLIC',
+                  // click_action wakes the app and delivers data to the response handler
+                  click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
           },
         },
       }),

@@ -97,36 +97,36 @@ export function BookingsHistory({
 
   return (
     <div className="space-y-6 p-6">
-      <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Bookings</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+      <section className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <h1 className="text-2xl font-bold text-foreground">Bookings</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Review recent appointment history by category and share the right booking link or QR code for each service.
             </p>
-          </div>
+        </div>
 
+        <div className="px-5 py-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="rounded-xl border border-border bg-background px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Recent bookings
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{totalAppointments}</p>
             </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="rounded-xl border border-border bg-background px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Pending
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{pendingAppointments}</p>
             </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="rounded-xl border border-border bg-background px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Checked in
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{checkedInAppointments}</p>
             </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="rounded-xl border border-border bg-background px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Cancelled
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{cancelledAppointments}</p>
@@ -142,10 +142,11 @@ export function BookingsHistory({
         const officeAppointments = appointments.filter((entry) => entry.office_id === office.id);
 
         return (
-          <section key={office.id} className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <section key={office.id} className="rounded-2xl border border-border bg-card shadow-sm">
+            <div className="border-b border-border px-5 py-4">
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <h2 className="text-2xl font-semibold text-foreground">{office.name}</h2>
+                <h2 className="text-base font-semibold text-foreground">{office.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {officeAppointments.length} recent appointment{officeAppointments.length === 1 ? '' : 's'} across all booking categories.
                 </p>
@@ -182,9 +183,10 @@ export function BookingsHistory({
                   </div>
                 </div>
               </div>
+              </div>
             </div>
 
-            <div className="mt-6 space-y-5">
+            <div className="space-y-5 px-5 py-4">
               {officeDepartments.map((department) => {
                 const departmentAppointments = officeAppointments.filter(
                   (entry) => entry.department_id === department.id
@@ -195,8 +197,8 @@ export function BookingsHistory({
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-xl font-semibold text-foreground">{department.name}</h3>
-                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          <h3 className="text-base font-semibold text-foreground">{department.name}</h3>
+                          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
                             {department.code}
                           </span>
                         </div>
@@ -242,7 +244,7 @@ export function BookingsHistory({
                                 <div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <h4 className="font-semibold text-foreground">{service.name}</h4>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
                                       {service.code}
                                     </span>
                                   </div>
@@ -251,10 +253,10 @@ export function BookingsHistory({
                                   </p>
                                 </div>
                                 <div className="flex gap-2 text-xs">
-                                  <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+                                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
                                     {servicePendingCount} pending
                                   </span>
-                                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
                                     {serviceCheckedInCount} checked in
                                   </span>
                                 </div>
@@ -285,15 +287,17 @@ export function BookingsHistory({
                                 </div>
 
                                 {serviceAppointments.length === 0 ? (
-                                  <div className="mt-3 rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                                    No recent bookings for this category.
+                                  <div className="mt-3 rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                                    <CalendarClock className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                                    <p className="mt-2 text-sm font-medium text-foreground">No recent bookings</p>
+                                    <p className="mt-1 text-sm text-muted-foreground">No recent bookings for this category.</p>
                                   </div>
                                 ) : (
                                   <div className="mt-3 space-y-2">
                                     {serviceAppointments.slice(0, 5).map((appointment) => (
                                       <div
                                         key={appointment.id}
-                                        className="rounded-2xl border border-border bg-background px-4 py-3"
+                                        className="rounded-xl border border-border bg-background px-4 py-4"
                                       >
                                         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                                           <div>
@@ -302,7 +306,7 @@ export function BookingsHistory({
                                                 {appointment.customer_name}
                                               </p>
                                               <span
-                                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClasses(
+                                                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${getStatusClasses(
                                                   appointment.status
                                                 )}`}
                                               >
@@ -346,8 +350,10 @@ export function BookingsHistory({
               })}
 
               {officeDepartments.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
-                  Add departments and services to create shareable booking categories for this office.
+                <div className="rounded-xl border border-dashed border-border bg-background px-4 py-8 text-center">
+                  <Users className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                  <p className="mt-2 text-sm font-medium text-foreground">No departments yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Add departments and services to create shareable booking categories for this office.</p>
                 </div>
               ) : null}
             </div>
@@ -356,8 +362,10 @@ export function BookingsHistory({
       })}
 
       {activeOffices.length === 0 ? (
-        <section className="rounded-3xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
-          There are no active offices yet, so booking categories and public QR links are not available.
+        <section className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center shadow-sm">
+          <CalendarClock className="mx-auto h-10 w-10 text-muted-foreground/50" />
+          <p className="mt-3 text-sm font-medium text-foreground">No active offices</p>
+          <p className="mt-1 text-sm text-muted-foreground">There are no active offices yet, so booking categories and public QR links are not available.</p>
         </section>
       ) : null}
     </div>

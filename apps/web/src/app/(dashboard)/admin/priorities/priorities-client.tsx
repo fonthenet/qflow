@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Star } from 'lucide-react';
 import {
   createPriorityCategory,
   updatePriorityCategory,
@@ -107,38 +107,38 @@ export function PrioritiesClient({
         </div>
         <button
           onClick={openCreate}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           Add Priority
         </button>
       </div>
 
       {error && !showModal && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm font-bold text-destructive">
           {error}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 font-medium text-muted-foreground">
+            <tr className="border-b border-border">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Preview
               </th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Name
               </th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Weight
               </th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Color
               </th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Status
               </th>
-              <th className="px-4 py-3 font-medium text-muted-foreground text-right">
+              <th className="px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">
                 Actions
               </th>
             </tr>
@@ -148,9 +148,13 @@ export function PrioritiesClient({
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-muted-foreground"
+                  className="px-6 py-16 text-center"
                 >
-                  No priority categories found. Create one to get started.
+                  <div className="flex flex-col items-center">
+                    <Star className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                    <p className="text-sm font-semibold text-foreground">No priority categories</p>
+                    <p className="text-sm text-muted-foreground mt-1">Create one to get started</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -159,7 +163,7 @@ export function PrioritiesClient({
                 key={cat.id}
                 className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
               >
-                <td className="px-4 py-3">
+                <td className="px-5 py-4">
                   <span
                     className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white"
                     style={{ backgroundColor: cat.color ?? '#6b7280' }}
@@ -168,13 +172,13 @@ export function PrioritiesClient({
                     {cat.name}
                   </span>
                 </td>
-                <td className="px-4 py-3 font-medium text-foreground">
+                <td className="px-5 py-4 font-medium text-foreground">
                   {cat.name}
                 </td>
-                <td className="px-4 py-3 text-foreground font-mono">
+                <td className="px-5 py-4 text-foreground font-mono">
                   {cat.weight}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-5 py-4">
                   <div className="flex items-center gap-2">
                     <span
                       className="inline-block h-4 w-4 rounded-full border border-border"
@@ -185,9 +189,9 @@ export function PrioritiesClient({
                     </span>
                   </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-5 py-4">
                   <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                       cat.is_active
                         ? 'bg-success/10 text-success'
                         : 'bg-muted text-muted-foreground'
@@ -196,18 +200,18 @@ export function PrioritiesClient({
                     {cat.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
+                <td className="px-5 py-4 text-right">
+                  <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => openEdit(cat)}
-                      className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                      className="rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted transition-colors"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(cat.id)}
                       disabled={isPending}
-                      className="rounded-md p-1.5 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      className="rounded-xl bg-destructive/10 p-2 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -226,20 +230,23 @@ export function PrioritiesClient({
             className="fixed inset-0 bg-black/50"
             onClick={() => setShowModal(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Priority Category' : 'Create Priority Category'}
-            </h2>
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-base font-semibold text-foreground">
+                {editing ? 'Edit Priority Category' : 'Create Priority Category'}
+              </h2>
+            </div>
 
+            <div className="p-6">
             {error && (
-              <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <div className="mb-4 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm font-bold text-destructive">
                 {error}
               </div>
             )}
 
             {/* Live Preview */}
-            <div className="mb-4 rounded-lg border border-border bg-muted/50 p-4 text-center">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
+            <div className="mb-4 rounded-xl border border-border bg-muted/50 p-4 text-center">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Badge Preview
               </p>
               <span
@@ -253,7 +260,7 @@ export function PrioritiesClient({
 
             <form action={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Name <span className="text-destructive">*</span>
                 </label>
                 <input
@@ -261,13 +268,13 @@ export function PrioritiesClient({
                   required
                   defaultValue={editing?.name ?? ''}
                   onChange={(e) => setPreviewName(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                   placeholder="e.g., VIP, Elderly, Disabled"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Icon
                 </label>
                 <div className="mb-2 flex flex-wrap gap-1.5">
@@ -276,7 +283,7 @@ export function PrioritiesClient({
                       key={icon}
                       type="button"
                       onClick={() => setSelectedIcon(icon)}
-                      className={`flex h-8 w-8 items-center justify-center rounded-md border text-base transition-colors ${
+                      className={`flex h-8 w-8 items-center justify-center rounded-xl border text-base transition-colors ${
                         selectedIcon === icon
                           ? 'border-primary bg-primary/10'
                           : 'border-border hover:bg-muted'
@@ -290,13 +297,13 @@ export function PrioritiesClient({
                   name="icon"
                   value={selectedIcon}
                   onChange={(e) => setSelectedIcon(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Emoji icon"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Color
                 </label>
                 <div className="mb-2 flex flex-wrap gap-1.5">
@@ -319,13 +326,13 @@ export function PrioritiesClient({
                   type="text"
                   value={selectedColor}
                   onChange={(e) => setSelectedColor(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring font-mono"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring font-mono"
                   placeholder="#ef4444"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Weight <span className="text-destructive">*</span>
                 </label>
                 <input
@@ -335,9 +342,9 @@ export function PrioritiesClient({
                   min={1}
                   max={100}
                   defaultValue={editing?.weight ?? 10}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1.5 text-xs text-muted-foreground">
                   Higher weight = higher priority. Normal tickets have weight 0.
                 </p>
               </div>
@@ -350,7 +357,7 @@ export function PrioritiesClient({
                   defaultChecked={editing?.is_active ?? true}
                   className="h-4 w-4 rounded border-input"
                 />
-                <label className="text-sm font-medium text-foreground">
+                <label className="text-sm font-semibold text-foreground">
                   Active
                 </label>
               </div>
@@ -359,19 +366,20 @@ export function PrioritiesClient({
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  className="rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
                   {isPending ? 'Saving...' : editing ? 'Update' : 'Create'}
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

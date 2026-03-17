@@ -1,0 +1,884 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import {
+  fetchKioskInfo,
+  createKioskTicket,
+  type KioskInfoResponse,
+  type KioskTicketResult,
+} from '@/lib/api';
+import { useAppStore } from '@/lib/store';
+import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+
+type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'issued' | 'error';
+
+const IDLE_TIMEOUT_MS = 60_000;
+
+export default function KioskScreen() {
+  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const router = useRouter();
+  const { setActiveToken } = useAppStore();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+
+  const [step, setStep] = useState<Step>('loading');
+  const [info, setInfo] = useState<KioskInfoResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Selections
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [selectedPriorityId, setSelectedPriorityId] = useState('');
+  const [selectedPriorityWeight, setSelectedPriorityWeight] = useState<number | undefined>();
+
+  // Result
+  const [ticket, setTicket] = useState<KioskTicketResult['ticket'] | null>(null);
+
+  // Idle timeout
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => {
+      // Only reset if not on loading/error
+      setStep((current) => {
+        if (current === 'loading' || current === 'error' || current === 'home') return current;
+        resetSelections();
+        return 'home';
+      });
+    }, IDLE_TIMEOUT_MS);
+  }, []);
+
+  const touchActivity = useCallback(() => {
+    resetIdleTimer();
+  }, [resetIdleTimer]);
+
+  useEffect(() => {
+    resetIdleTimer();
+    return () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
+  }, [resetIdleTimer]);
+
+  const resetSelections = () => {
+    setSelectedDeptId('');
+    setSelectedServiceId('');
+    setSelectedPriorityId('');
+    setSelectedPriorityWeight(undefined);
+    setTicket(null);
+    setErrorMsg('');
+  };
+
+  // Fetch kiosk info
+  const loadInfo = useCallback(async () => {
+    if (!slug) return;
+    setStep('loading');
+    const data = await fetchKioskInfo(slug);
+    if (!data) {
+      setStep('error');
+      setErrorMsg('This kiosk is unavailable or the office was not found.');
+      return;
+    }
+    setInfo(data);
+    setStep('home');
+  }, [slug]);
+
+  useEffect(() => {
+    loadInfo();
+  }, [loadInfo]);
+
+  // Derived data
+  const departments = info
+    ? [...info.departments].sort((a, b) => a.sort_order - b.sort_order)
+    : [];
+  const servicesForDept = info
+    ? [...info.services.filter((s) => s.department_id === selectedDeptId)].sort(
+        (a, b) => a.sort_order - b.sort_order
+      )
+    : [];
+  const priorities = info ? info.priorityCategories : [];
+  const selectedDept = departments.find((d) => d.id === selectedDeptId);
+  const selectedService = info?.services.find((s) => s.id === selectedServiceId);
+
+  // Navigation helpers
+  const goHome = () => {
+    touchActivity();
+    resetSelections();
+    setStep('home');
+  };
+
+  const goToDepartments = () => {
+    touchActivity();
+    // If only 1 department, skip to services
+    if (departments.length === 1) {
+      setSelectedDeptId(departments[0].id);
+      setStep('service');
+      return;
+    }
+    setStep('department');
+  };
+
+  const selectDepartment = (deptId: string) => {
+    touchActivity();
+    setSelectedDeptId(deptId);
+    setSelectedServiceId('');
+    setStep('service');
+  };
+
+  const selectService = (serviceId: string) => {
+    touchActivity();
+    setSelectedServiceId(serviceId);
+    if (priorities.length > 0) {
+      setStep('priority');
+    } else {
+      issueTicket(serviceId);
+    }
+  };
+
+  const selectPriority = (priorityId: string, weight: number) => {
+    touchActivity();
+    setSelectedPriorityId(priorityId);
+    setSelectedPriorityWeight(weight);
+    issueTicket(selectedServiceId, priorityId, weight);
+  };
+
+  const skipPriority = () => {
+    touchActivity();
+    issueTicket(selectedServiceId);
+  };
+
+  const issueTicket = async (
+    serviceId: string,
+    priorityCategoryId?: string,
+    priority?: number
+  ) => {
+    if (!info) return;
+    setStep('loading');
+    const result = await createKioskTicket({
+      officeId: info.office.id,
+      departmentId: selectedDeptId,
+      serviceId,
+      priorityCategoryId,
+      priority,
+    });
+    if ('error' in result) {
+      setErrorMsg(result.error);
+      setStep('home');
+      return;
+    }
+    setTicket(result.ticket);
+    setStep('issued');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    resetIdleTimer();
+  };
+
+  const handleTrack = () => {
+    if (!ticket) return;
+    setActiveToken(ticket.qr_token);
+    router.replace('/(tabs)');
+  };
+
+  const handleBack = () => {
+    touchActivity();
+    switch (step) {
+      case 'department':
+        goHome();
+        break;
+      case 'service':
+        if (departments.length <= 1) {
+          goHome();
+        } else {
+          setStep('department');
+        }
+        break;
+      case 'priority':
+        setStep('service');
+        break;
+      case 'issued':
+        goHome();
+        break;
+      default:
+        break;
+    }
+  };
+
+  // ---- Responsive style helpers ----
+  const containerMaxWidth = isTablet ? 700 : undefined;
+  const cardMinHeight = isTablet ? 72 : 60;
+  const gridColumns = isTablet ? 2 : 1;
+  const headingSize = isTablet ? 36 : fontSize.xxl;
+  const subheadingSize = isTablet ? fontSize.xl : fontSize.lg;
+  const bodySize = isTablet ? fontSize.lg : fontSize.md;
+  const containerPadding = isTablet ? spacing.xl : spacing.lg;
+
+  // ---- Loading ----
+  if (step === 'loading') {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={s.loadingText}>Loading kiosk...</Text>
+      </View>
+    );
+  }
+
+  // ---- Error (fatal) ----
+  if (step === 'error' && !info) {
+    return (
+      <View style={s.center}>
+        <View style={s.errorCircle}>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+        </View>
+        <Text style={s.errorTitle}>Kiosk Unavailable</Text>
+        <Text style={s.errorSub}>{errorMsg}</Text>
+        <TouchableOpacity style={s.outlineBtn} onPress={() => router.back()}>
+          <Text style={s.outlineBtnText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ---- Header ----
+  const Header = ({ showBack }: { showBack?: boolean }) => (
+    <View style={[s.header, { paddingHorizontal: containerPadding }]}>
+      {showBack && (
+        <TouchableOpacity style={s.backArrow} onPress={handleBack} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={isTablet ? 28 : 24} color={colors.text} />
+        </TouchableOpacity>
+      )}
+      <View style={s.headerCenter}>
+        <Text style={[s.orgName, isTablet && { fontSize: fontSize.md }]}>
+          {info?.organization.name}
+        </Text>
+        <Text style={[s.officeName, { fontSize: isTablet ? fontSize.lg : fontSize.md }]}>
+          {info?.office.name}
+        </Text>
+      </View>
+      <View style={s.backArrow} />
+    </View>
+  );
+
+  // ---- Grid renderer ----
+  const renderGrid = <T extends { id: string }>(
+    items: T[],
+    renderItem: (item: T) => React.ReactNode
+  ) => {
+    if (gridColumns === 1) {
+      return <View>{items.map((item) => renderItem(item))}</View>;
+    }
+    // 2-column grid
+    const rows: T[][] = [];
+    for (let i = 0; i < items.length; i += 2) {
+      rows.push(items.slice(i, i + 2));
+    }
+    return (
+      <View>
+        {rows.map((row, ri) => (
+          <View key={ri} style={s.gridRow}>
+            {row.map((item) => (
+              <View key={item.id} style={s.gridCell}>
+                {renderItem(item)}
+              </View>
+            ))}
+            {row.length === 1 && <View style={s.gridCell} />}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  // ---- Home step ----
+  if (step === 'home') {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header />
+        <View style={[s.centerContent, { maxWidth: containerMaxWidth }]}>
+          <View style={s.welcomeIcon}>
+            <Ionicons name="ticket-outline" size={isTablet ? 72 : 56} color={colors.primary} />
+          </View>
+          <Text style={[s.welcomeTitle, { fontSize: headingSize }]}>Welcome</Text>
+          <Text style={[s.welcomeSub, { fontSize: bodySize }]}>
+            Tap below to get your queue ticket
+          </Text>
+
+          {errorMsg ? (
+            <View style={s.errorBanner}>
+              <Ionicons name="warning-outline" size={16} color={colors.error} />
+              <Text style={s.errorBannerText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[s.primaryBtn, isTablet && s.primaryBtnTablet]}
+            onPress={goToDepartments}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="ticket" size={isTablet ? 26 : 22} color="#fff" />
+            <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
+              Get Ticket
+            </Text>
+          </TouchableOpacity>
+
+          {info?.settings?.appointments_enabled && (
+            <TouchableOpacity
+              style={[s.secondaryBtn, isTablet && s.secondaryBtnTablet]}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={isTablet ? 24 : 20}
+                color={colors.primary}
+              />
+              <Text style={[s.secondaryBtnText, isTablet && { fontSize: fontSize.lg }]}>
+                Check-in Appointment
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // ---- Department selection ----
+  if (step === 'department') {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header showBack />
+        <ScrollView
+          contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
+          style={s.scrollView}
+        >
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Department</Text>
+          <Text style={[s.stepSub, { fontSize: bodySize }]}>
+            Choose the department for your visit
+          </Text>
+
+          {renderGrid(departments, (dept) => (
+            <TouchableOpacity
+              key={dept.id}
+              style={[s.card, { minHeight: cardMinHeight }]}
+              onPress={() => selectDepartment(dept.id)}
+              activeOpacity={0.7}
+            >
+              <View style={s.cardIcon}>
+                <Ionicons name="business-outline" size={isTablet ? 28 : 24} color={colors.primary} />
+              </View>
+              <View style={s.cardBody}>
+                <Text style={[s.cardTitle, isTablet && { fontSize: fontSize.lg }]}>{dept.name}</Text>
+                <Text style={[s.cardCode, isTablet && { fontSize: fontSize.sm }]}>{dept.code}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ---- Service selection ----
+  if (step === 'service') {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header showBack />
+        <ScrollView
+          contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
+          style={s.scrollView}
+        >
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Service</Text>
+          {selectedDept && (
+            <Text style={[s.stepSub, { fontSize: bodySize }]}>
+              {selectedDept.name} department
+            </Text>
+          )}
+
+          {renderGrid(servicesForDept, (svc) => (
+            <TouchableOpacity
+              key={svc.id}
+              style={[s.card, { minHeight: cardMinHeight }]}
+              onPress={() => selectService(svc.id)}
+              activeOpacity={0.7}
+            >
+              <View style={s.cardIcon}>
+                <Ionicons name="document-text-outline" size={isTablet ? 28 : 24} color={colors.primary} />
+              </View>
+              <View style={s.cardBody}>
+                <Text style={[s.cardTitle, isTablet && { fontSize: fontSize.lg }]}>{svc.name}</Text>
+                {svc.description && (
+                  <Text style={[s.cardDesc, isTablet && { fontSize: fontSize.sm }]} numberOfLines={2}>
+                    {svc.description}
+                  </Text>
+                )}
+                {svc.estimated_service_time != null && (
+                  <Text style={s.cardEst}>~{svc.estimated_service_time} min</Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ---- Priority selection ----
+  if (step === 'priority') {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header showBack />
+        <ScrollView
+          contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
+          style={s.scrollView}
+        >
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Priority</Text>
+          <Text style={[s.stepSub, { fontSize: bodySize }]}>
+            Choose a priority level if applicable
+          </Text>
+
+          {renderGrid(priorities, (p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={[
+                s.card,
+                { minHeight: cardMinHeight },
+                p.color ? { borderLeftWidth: 4, borderLeftColor: p.color } : undefined,
+              ]}
+              onPress={() => selectPriority(p.id, p.weight)}
+              activeOpacity={0.7}
+            >
+              <View style={[s.cardIcon, p.color ? { backgroundColor: p.color + '18' } : undefined]}>
+                <Ionicons
+                  name={(p.icon as any) ?? 'flag-outline'}
+                  size={isTablet ? 28 : 24}
+                  color={p.color ?? colors.primary}
+                />
+              </View>
+              <View style={s.cardBody}>
+                <Text style={[s.cardTitle, isTablet && { fontSize: fontSize.lg }]}>{p.name}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity style={s.skipBtn} onPress={skipPriority} activeOpacity={0.7}>
+            <Text style={[s.skipBtnText, { fontSize: bodySize }]}>Skip - Standard Priority</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ---- Ticket issued ----
+  if (step === 'issued' && ticket) {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header />
+        <View style={[s.centerContent, { maxWidth: containerMaxWidth }]}>
+          <View style={s.successCircle}>
+            <Ionicons name="checkmark-circle" size={isTablet ? 80 : 64} color={colors.success} />
+          </View>
+
+          <Text style={[s.issuedLabel, { fontSize: bodySize }]}>Your Ticket Number</Text>
+          <Text style={[s.ticketNumber, { fontSize: isTablet ? 72 : 60 }]}>
+            {ticket.ticket_number}
+          </Text>
+
+          <View style={s.ticketMeta}>
+            {selectedDept && (
+              <View style={s.metaBadge}>
+                <Ionicons name="business-outline" size={14} color={colors.primary} />
+                <Text style={s.metaText}>{selectedDept.name}</Text>
+              </View>
+            )}
+            {selectedService && (
+              <View style={s.metaBadge}>
+                <Ionicons name="document-text-outline" size={14} color={colors.primary} />
+                <Text style={s.metaText}>{selectedService.name}</Text>
+              </View>
+            )}
+          </View>
+
+          {ticket.estimated_wait_minutes != null && (
+            <View style={s.waitBadge}>
+              <Ionicons name="time-outline" size={18} color={colors.warning} />
+              <Text style={[s.waitBadgeText, { fontSize: bodySize }]}>
+                Estimated wait: ~{ticket.estimated_wait_minutes} min
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[s.primaryBtn, isTablet && s.primaryBtnTablet]}
+            onPress={handleTrack}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="navigate" size={isTablet ? 24 : 20} color="#fff" />
+            <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
+              Track Your Position
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.secondaryBtn, isTablet && s.secondaryBtnTablet]}
+            onPress={goHome}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add-circle-outline" size={isTablet ? 24 : 20} color={colors.primary} />
+            <Text style={[s.secondaryBtnText, isTablet && { fontSize: fontSize.lg }]}>
+              Take Another Ticket
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Fallback
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Styles — light kiosk theme
+// ---------------------------------------------------------------------------
+const KIOSK_BG = '#f8fafc';
+const KIOSK_SURFACE = '#ffffff';
+
+const s = StyleSheet.create({
+  // Layout
+  screenContainer: {
+    flex: 1,
+    backgroundColor: KIOSK_BG,
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: KIOSK_BG,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    width: '100%',
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    alignSelf: 'center',
+    width: '100%',
+    paddingBottom: spacing.xxl,
+  },
+  loadingText: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.md,
+    backgroundColor: KIOSK_SURFACE,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  backArrow: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  orgName: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+  officeName: {
+    fontSize: fontSize.md,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+
+  // Error
+  errorCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: colors.error + '12',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  errorTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  errorSub: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.error + '10',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    width: '100%',
+    maxWidth: 400,
+  },
+  errorBannerText: {
+    fontSize: fontSize.sm,
+    color: colors.error,
+    flex: 1,
+  },
+
+  // Welcome / Home
+  welcomeIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.primary + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  welcomeTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  welcomeSub: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+
+  // Buttons
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md + 4,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.lg,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryBtnTablet: {
+    paddingVertical: spacing.lg,
+    maxWidth: 500,
+  },
+  primaryBtnText: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: KIOSK_SURFACE,
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: colors.primary + '30',
+    width: '100%',
+    maxWidth: 400,
+  },
+  secondaryBtnTablet: {
+    paddingVertical: spacing.md + 4,
+    maxWidth: 500,
+  },
+  secondaryBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  outlineBtn: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  outlineBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  skipBtn: {
+    alignSelf: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
+  skipBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
+
+  // Step titles
+  stepTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  stepSub: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+
+  // Cards
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: KIOSK_SURFACE,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    minHeight: 60,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.primary + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  cardBody: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  cardCode: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  cardDesc: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  cardEst: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.primary,
+    marginTop: 4,
+  },
+
+  // Grid
+  gridRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  gridCell: {
+    flex: 1,
+  },
+
+  // Ticket issued
+  successCircle: {
+    marginBottom: spacing.sm,
+  },
+  issuedLabel: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  ticketNumber: {
+    fontSize: 60,
+    fontWeight: '900',
+    color: colors.primary,
+    letterSpacing: 2,
+  },
+  ticketMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary + '10',
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+  },
+  metaText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  waitBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.warningLight,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.sm,
+  },
+  waitBadgeText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+});
