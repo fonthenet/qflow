@@ -111,8 +111,9 @@ export async function POST(request: NextRequest) {
       customer_phone: customerPhone?.trim() || null,
       scheduled_at: scheduledAt,
       status: 'pending',
+      notes: (notes as string)?.trim() || null,
     })
-    .select('id, office_id, department_id, service_id, customer_name, customer_phone, scheduled_at, status')
+    .select('id, office_id, department_id, service_id, customer_name, customer_phone, scheduled_at, status, notes')
     .single();
 
   if (error) {

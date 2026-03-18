@@ -572,6 +572,12 @@ export default function DeskScreen() {
         {activeTicket.customer_data?.name ? (
           <Text style={styles.metaName}>{activeTicket.customer_data.name}</Text>
         ) : null}
+        {activeTicket.customer_data?.phone ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="call-outline" size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary }}>{activeTicket.customer_data.phone}</Text>
+          </View>
+        ) : null}
         <Text style={styles.metaSub} numberOfLines={1}>
           {[
             activeTicket.service_id ? names.services[activeTicket.service_id] : null,

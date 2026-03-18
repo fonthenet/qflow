@@ -810,10 +810,24 @@ export function QueueStatus({
               </div>
 
               <div className="text-right">
-                <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
-                <p className="mt-2 text-sm leading-5 text-cyan-50/70">
-                  {position === 1 ? 'Almost there' : position && position <= 3 ? 'You are nearly up' : position ? `${position - 1} ahead of you` : '--'}
-                </p>
+                {position === 1 ? (
+                  <>
+                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-emerald-300 animate-pulse">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm font-bold">You&apos;re Next!</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-emerald-200/70">Get ready to be called</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
+                    <p className="mt-2 text-sm leading-5 text-cyan-50/70">
+                      {position && position <= 3 ? 'Almost there!' : position ? `${position - 1} ahead of you` : '--'}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -821,7 +835,7 @@ export function QueueStatus({
               <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
                 <span>Queue progress</span>
                 <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-400' : ''}>
-                  {ticket.status === 'serving' ? 'At the desk' : position ? `#${position} in line` : '--'}
+                  {ticket.status === 'serving' ? 'At the desk' : position === 1 ? "You're next!" : position ? `#${position} in line` : '--'}
                 </span>
               </div>
               <div className="h-3 rounded-full bg-white/8">
@@ -833,11 +847,23 @@ export function QueueStatus({
             </div>
           </section>
 
+          {position === 1 && (
+            <div className="mt-4 animate-pulse rounded-[24px] border border-emerald-400/30 bg-emerald-400/10 p-5 text-center shadow-[0_0_40px_rgba(16,185,129,0.15)]">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/20">
+                <svg className="h-7 w-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p className="mt-3 text-xl font-bold text-emerald-300">You&apos;re Next!</p>
+              <p className="mt-1 text-sm text-emerald-100/70">Get ready — you&apos;ll be called any moment</p>
+            </div>
+          )}
+
           <div className="mt-4 grid grid-cols-3 gap-3">
               <WaitingMetric
                 label="Wait"
-                value={estimatedWait != null ? `${estimatedWait} min` : '--'}
-                detail={estimatedWait != null ? 'Approximate timing' : 'Calculating time'}
+                value={position === 1 ? 'Now' : estimatedWait != null ? `${estimatedWait} min` : '--'}
+                detail={position === 1 ? 'Any moment now' : estimatedWait != null ? 'Approximate timing' : 'Calculating time'}
                 accentClass="text-sky-400"
               />
               <WaitingMetric

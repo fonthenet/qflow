@@ -206,6 +206,7 @@ export async function checkInAppointment(appointmentId: string) {
         name: appointment.customer_name,
         phone: appointment.customer_phone,
         email: appointment.customer_email,
+        notes: appointment.notes || null,
       },
       estimated_wait_minutes: waitMinutes ?? null,
     })

@@ -242,6 +242,21 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
   const isCalled   = ticket.status === 'called';
   const isServing  = ticket.status === 'serving';
   const isTerminal = ['served', 'no_show', 'cancelled'].includes(ticket.status);
+  const isNext = isWaiting && ticket.position === 1;
+
+  // Flashing animation for "You're Next!"
+  const flashAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isNext) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(flashAnim, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+        Animated.timing(flashAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isNext, flashAnim]);
 
   const accentColor = statusAccent(ticket.status, t);
   const serviceLabel = ticket.service?.name ?? ticket.department?.name ?? null;
@@ -277,16 +292,20 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
           </Text>
         </View>
         {isWaiting && ticket.position != null && (
-          <View
+          <Animated.View
             style={[
               layout.positionBadge,
-              { backgroundColor: t.accent + '20', borderColor: t.accent + '50' },
+              {
+                backgroundColor: isNext ? '#10b98120' : t.accent + '20',
+                borderColor: isNext ? '#10b98150' : t.accent + '50',
+                opacity: isNext ? flashAnim : 1,
+              },
             ]}
           >
-            <Text style={[layout.positionBadgeText, { color: t.accent }]}>
-              #{ticket.position}
+            <Text style={[layout.positionBadgeText, { color: isNext ? '#10b981' : t.accent }]}>
+              {isNext ? "You're Next!" : `#${ticket.position}`}
             </Text>
-          </View>
+          </Animated.View>
         )}
       </View>
 
@@ -296,21 +315,43 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
           <View style={layout.progressSection}>
             <View style={layout.progressLabelRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp.sm }}>
-                <PulseDot color={t.accent} />
-                <Text style={[layout.progressLabelText, { color: t.textSecondary }]}>In Queue</Text>
+                <PulseDot color={ticket.position === 1 ? '#10b981' : t.accent} />
+                <Text style={[layout.progressLabelText, { color: ticket.position === 1 ? '#10b981' : t.textSecondary }]}>
+                  {ticket.position === 1 ? "You're Next!" : ticket.position != null && ticket.position <= 3 ? 'Almost there!' : 'In Queue'}
+                </Text>
               </View>
               <Text style={[layout.progressPosition, { color: t.textMuted }]}>
-                #{ticket.position ?? '-'} of {(ticket.position ?? 0) + peopleAhead + 1}
+                {ticket.position === 1 ? 'Get ready!' : `#${ticket.position ?? '-'} of ${(ticket.position ?? 0) + peopleAhead + 1}`}
               </Text>
             </View>
             <ProgressBar position={ticket.position} t={t} />
           </View>
 
+          {isNext && (
+            <Animated.View style={{
+              backgroundColor: '#10b98118',
+              borderRadius: br.lg,
+              padding: sp.md,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#10b98130',
+              opacity: flashAnim,
+            }}>
+              <Ionicons name="checkmark-circle" size={28} color="#10b981" />
+              <Text style={{ color: '#10b981', fontSize: fs.lg, fontWeight: '800', marginTop: sp.xs }}>
+                You&apos;re Next!
+              </Text>
+              <Text style={{ color: t.textSecondary, fontSize: fs.sm, marginTop: 2 }}>
+                Get ready — you&apos;ll be called any moment
+              </Text>
+            </Animated.View>
+          )}
+
           <View style={layout.metricsRow}>
             <MetricCard
               icon="time-outline"
-              value={ticket.estimated_wait_minutes != null ? `${ticket.estimated_wait_minutes}m` : '--'}
-              label="Est. Wait"
+              value={ticket.position === 1 ? 'Now' : ticket.estimated_wait_minutes != null ? `${ticket.estimated_wait_minutes}m` : '--'}
+              label={ticket.position === 1 ? 'Any moment' : 'Est. Wait'}
               t={t}
             />
             <MetricCard
@@ -319,7 +360,12 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
               label="Position"
               t={t}
             />
-            <MetricCard icon="people-outline" value={peopleAhead} label="Ahead" t={t} />
+            <MetricCard
+              icon="people-outline"
+              value={peopleAhead}
+              label={peopleAhead === 0 ? 'No one ahead' : 'Ahead'}
+              t={t}
+            />
           </View>
 
           <View style={layout.syncRow}>
