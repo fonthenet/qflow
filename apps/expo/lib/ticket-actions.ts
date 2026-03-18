@@ -1,43 +1,70 @@
 import { supabase } from './supabase';
 
-// ── Call Next Ticket ─────────────────────────────────────────────
+// ── Call Next Ticket (with overflow + round-robin) ──────────────
 export async function callNextTicket(deskId: string, staffId: string) {
-  // Try the RPC first (filters by desk_services + department)
-  const { data, error } = await supabase.rpc('call_next_ticket', {
+  // Try round-robin first (alternates between desk's services)
+  const { data: rrData, error: rrError } = await supabase.rpc('call_next_ticket_round_robin', {
+    p_desk_id: deskId,
+    p_staff_id: staffId,
+  });
+  if (!rrError && rrData) return rrData;
+
+  // Fallback: overflow — pull from any service in dept, then any in office
+  const { data, error } = await supabase.rpc('call_next_ticket_with_overflow', {
     p_desk_id: deskId,
     p_staff_id: staffId,
   });
   if (error) throw new Error(error.message);
-  if (data) return data;
+  return data;
+}
 
-  // Fallback: pick any waiting ticket in the desk's office
-  const { data: desk } = await supabase
+// ── Safety: Requeue expired calls (called > 90s ago) ────────────
+export async function requeueExpiredCalls(timeoutSeconds = 90) {
+  const { data, error } = await supabase.rpc('requeue_expired_calls', {
+    p_timeout_seconds: timeoutSeconds,
+  });
+  if (error) console.warn('requeue_expired_calls error:', error.message);
+  return data ?? 0;
+}
+
+// ── Safety: Requeue tickets when desk goes offline ──────────────
+export async function requeueDeskTickets(deskId: string) {
+  const { data, error } = await supabase.rpc('requeue_desk_tickets', {
+    p_desk_id: deskId,
+  });
+  if (error) console.warn('requeue_desk_tickets error:', error.message);
+  return data ?? 0;
+}
+
+// ── Safety: Adjust booking priorities based on scheduled time ───
+export async function adjustBookingPriorities() {
+  const { data, error } = await supabase.rpc('adjust_booking_priorities');
+  if (error) console.warn('adjust_booking_priorities error:', error.message);
+  return data ?? 0;
+}
+
+// ── Safety: Clean up stale tickets from previous days ───────────
+export async function cleanupStaleTickets() {
+  const { data, error } = await supabase.rpc('cleanup_stale_tickets');
+  if (error) console.warn('cleanup_stale_tickets error:', error.message);
+  return data ?? 0;
+}
+
+// ── Safety: Park tickets on inactive desks ──────────────────────
+export async function parkInactiveDeskTickets(timeoutMinutes = 5) {
+  const { data, error } = await supabase.rpc('park_inactive_desk_tickets', {
+    p_timeout_minutes: timeoutMinutes,
+  });
+  if (error) console.warn('park_inactive_desk_tickets error:', error.message);
+  return data ?? 0;
+}
+
+// ── Desk heartbeat: ping to show desk is active ─────────────────
+export async function pingDeskHeartbeat(deskId: string) {
+  await supabase
     .from('desks')
-    .select('office_id')
-    .eq('id', deskId)
-    .single();
-  if (!desk) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const { data: ticket } = await supabase
-    .from('tickets')
-    .select('id')
-    .eq('office_id', desk.office_id)
-    .eq('status', 'waiting')
-    .is('parked_at', null)
-    .gte('created_at', today.toISOString())
-    .order('priority', { ascending: false, nullsFirst: true })
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single();
-
-  if (!ticket) return null;
-
-  // Call it to this desk
-  await callSpecificTicket(ticket.id, deskId, staffId);
-  return ticket.id;
+    .update({ last_active_at: new Date().toISOString() })
+    .eq('id', deskId);
 }
 
 // ── Call Specific Ticket ──────────────────────────────────────────

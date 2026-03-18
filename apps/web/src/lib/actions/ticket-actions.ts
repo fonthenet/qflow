@@ -438,13 +438,21 @@ export async function callNextTicket(deskId: string) {
   const supabase = context.supabase;
   let smsSent = false;
 
-  const { data: ticketId, error } = await supabase.rpc('call_next_ticket', {
+  // Try round-robin first, then overflow fallback
+  let ticketId: string | null = null;
+  const { data: rrData, error: rrError } = await supabase.rpc('call_next_ticket_round_robin', {
     p_desk_id: deskId,
     p_staff_id: context.staff.id,
   });
-
-  if (error) {
-    return { error: error.message };
+  if (!rrError && rrData) {
+    ticketId = rrData;
+  } else {
+    const { data: ovData, error: ovError } = await supabase.rpc('call_next_ticket_with_overflow', {
+      p_desk_id: deskId,
+      p_staff_id: context.staff.id,
+    });
+    if (ovError) return { error: ovError.message };
+    ticketId = ovData;
   }
 
   if (!ticketId) {
@@ -1798,4 +1806,22 @@ export async function unparkTicket(ticketId: string) {
 
   revalidatePath('/desk');
   return { data: updatedTicket };
+}
+
+// ── Safety Net Functions ──────────────────────────────────────────
+
+export async function runQueueSafetyChecks(deskId: string) {
+  const supabase = await createClient();
+  // 1. Requeue expired calls (90s timeout)
+  await supabase.rpc('requeue_expired_calls', { p_timeout_seconds: 90 });
+  // 2. Adjust booking priorities based on scheduled time
+  await supabase.rpc('adjust_booking_priorities');
+  // 3. Ping desk heartbeat
+  await supabase.from('desks').update({ last_active_at: new Date().toISOString() }).eq('id', deskId);
+}
+
+export async function runDailyCleanup() {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('cleanup_stale_tickets');
+  return data ?? 0;
 }

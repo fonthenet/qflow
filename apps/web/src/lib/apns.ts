@@ -107,6 +107,7 @@ interface TicketSnapshot {
   qr_token: string;
   office_id: string;
   department_id: string;
+  service_id: string;
   status: string;
   desk_id: string | null;
   called_at: string | null;
@@ -467,7 +468,7 @@ async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
   const { data: ticketData, error } = await supabase
     .from('tickets')
     .select(
-      'id, ticket_number, qr_token, office_id, department_id, status, desk_id, called_at, serving_started_at, estimated_wait_minutes, recall_count, department:departments(name), service:services(name), desk:desks(name, display_name)'
+      'id, ticket_number, qr_token, office_id, department_id, service_id, status, desk_id, called_at, serving_started_at, estimated_wait_minutes, recall_count, department:departments(name), service:services(name), desk:desks(name, display_name)'
     )
     .eq('id', ticketId)
     .single();

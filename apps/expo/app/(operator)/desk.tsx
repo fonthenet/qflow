@@ -283,6 +283,25 @@ export default function DeskScreen() {
   const screenWidth = useScreenWidth();
   const isWide = screenWidth > 768;
 
+  // ── Safety: heartbeat + periodic cleanup ─────────────────────────
+  useEffect(() => {
+    if (!deskId) return;
+    // Heartbeat: ping every 60s to show desk is active
+    Actions.pingDeskHeartbeat(deskId);
+    const heartbeat = setInterval(() => Actions.pingDeskHeartbeat(deskId), 60_000);
+    // Requeue expired calls every 30s
+    const cleanup = setInterval(() => {
+      Actions.requeueExpiredCalls(90);
+      Actions.adjustBookingPriorities();
+    }, 30_000);
+    // Cleanup stale tickets on mount (previous day leftovers)
+    Actions.cleanupStaleTickets();
+    return () => {
+      clearInterval(heartbeat);
+      clearInterval(cleanup);
+    };
+  }, [deskId]);
+
   // ── Derive desk-specific tickets ─────────────────────────────────
   const myCalledTickets = useMemo(
     () => queue.called.filter((t) => t.desk_id === deskId),

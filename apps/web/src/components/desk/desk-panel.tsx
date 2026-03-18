@@ -248,6 +248,22 @@ export function DeskPanel({
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
 
+  // Safety: periodic cleanup + heartbeat
+  const safetyRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (sandboxMode) return;
+    let mounted = true;
+    import('@/lib/actions/ticket-actions').then(({ runQueueSafetyChecks, runDailyCleanup }) => {
+      if (!mounted) return;
+      runDailyCleanup();
+      safetyRef.current = setInterval(() => runQueueSafetyChecks(desk.id), 30_000);
+    });
+    return () => {
+      mounted = false;
+      if (safetyRef.current) clearInterval(safetyRef.current);
+    };
+  }, [desk.id, sandboxMode]);
+
   const { queue: liveQueue, isLoading } = useRealtimeQueue({
     officeId: desk.office_id,
     departmentId: desk.department_id,
