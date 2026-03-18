@@ -3,6 +3,24 @@ import { networkInterfaces } from 'os';
 import { getDB, generateOfflineTicketNumber } from './db';
 import { randomUUID } from 'crypto';
 
+let isCloudReachable = false;
+const CLOUD_URL = 'https://qflow-sigma.vercel.app';
+
+// Check cloud connectivity every 15s
+setInterval(async () => {
+  try {
+    const res = await fetch(`${CLOUD_URL}/api/queue-status?slug=test`, { signal: AbortSignal.timeout(5000) });
+    isCloudReachable = res.status !== 0; // Any response = reachable (even 404)
+  } catch { isCloudReachable = false; }
+}, 15_000);
+// Initial check
+setTimeout(async () => {
+  try {
+    const res = await fetch(`${CLOUD_URL}/api/queue-status?slug=test`, { signal: AbortSignal.timeout(5000) });
+    isCloudReachable = res.status !== 0;
+  } catch { isCloudReachable = false; }
+}, 1000);
+
 let server: http.Server | null = null;
 let localPort = 3847;
 
@@ -43,7 +61,17 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
 
       // Route requests
       if (path === '/kiosk' && req.method === 'GET') {
-        serveKioskPage(res);
+        // Smart proxy: online → redirect to cloud kiosk, offline → local page
+        const db = getDB();
+        const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
+        const slug = office?.settings ? (JSON.parse(office.settings)?.platform_office_slug ?? '') : '';
+
+        if (isCloudReachable && slug) {
+          res.writeHead(302, { Location: `${CLOUD_URL}/kiosk/${slug}` });
+          res.end();
+        } else {
+          serveKioskPage(res);
+        }
       } else if (path === '/display' && req.method === 'GET') {
         serveDisplayPage(res);
       } else if (path.startsWith('/track/') && req.method === 'GET') {
@@ -246,79 +274,107 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
   }));
 }
 
-// ── Kiosk HTML Page ───────────────────────────────────────────────
+// ── Kiosk HTML Page (Offline Fallback — matches web kiosk design) ──
 
 function serveKioskPage(res: http.ServerResponse) {
   const ip = getLocalIP();
   const apiBase = `http://${ip}:${localPort}`;
+  const db = getDB();
+  const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
+  const officeName = office?.name ?? 'QueueFlow';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>QueueFlow Kiosk</title>
+  <title>${officeName} — Take a Ticket</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"><\/script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #0f172a; min-height: 100vh; }
 
-    .kiosk { display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 24px; }
-    .kiosk-header { text-align: center; margin-bottom: 32px; }
-    .kiosk-header h1 { font-size: 28px; font-weight: 800; color: #3b82f6; }
-    .kiosk-header .office-name { font-size: 20px; color: #475569; margin-top: 4px; }
-    .kiosk-header .status { font-size: 13px; padding: 4px 12px; border-radius: 20px; display: inline-block; margin-top: 8px; }
-    .kiosk-header .status.local { background: #fef3c7; color: #92400e; }
-    .kiosk-header .status.online { background: #d1fae5; color: #065f46; }
+    .kiosk { display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 32px 24px; }
 
-    .step { width: 100%; max-width: 600px; }
-    .step h2 { font-size: 22px; font-weight: 700; margin-bottom: 16px; text-align: center; }
+    .kiosk-header { text-align: center; margin-bottom: 40px; }
+    .kiosk-logo { width: 72px; height: 72px; background: white; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+    .kiosk-logo span { font-size: 36px; font-weight: 900; color: #3b82f6; }
+    .kiosk-header h1 { font-size: 28px; font-weight: 800; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .kiosk-header .subtitle { font-size: 16px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+    .offline-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-top: 10px; background: rgba(255,255,255,0.2); color: white; backdrop-filter: blur(4px); }
 
-    .dept-grid, .service-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-    .dept-card, .service-card {
-      background: white; border: 2px solid #e2e8f0; border-radius: 12px; padding: 24px 16px;
-      text-align: center; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.15s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    .step { width: 100%; max-width: 640px; }
+    .step-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; text-align: center; color: white; }
+
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+    .card {
+      background: white; border-radius: 16px; padding: 28px 20px; text-align: center;
+      font-size: 17px; font-weight: 700; color: #1e293b; cursor: pointer;
+      transition: all 0.2s; box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      border: 2px solid transparent;
     }
-    .dept-card:hover, .service-card:hover { border-color: #3b82f6; background: #eff6ff; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(59,130,246,0.15); }
-    .dept-card:active, .service-card:active { transform: translateY(0); }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-color: #3b82f6; }
+    .card:active { transform: translateY(0); }
+    .card-icon { font-size: 32px; margin-bottom: 8px; }
+    .card-count { font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
 
-    .form-step { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .form-card { background: white; border-radius: 20px; padding: 36px 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
     .form-group { margin-bottom: 20px; }
-    .form-group label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 6px; }
-    .form-group input { width: 100%; padding: 14px 16px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 16px; outline: none; transition: border-color 0.15s; }
-    .form-group input:focus { border-color: #3b82f6; }
+    .form-group label { display: block; font-size: 14px; font-weight: 600; color: #64748b; margin-bottom: 8px; }
+    .form-group input { width: 100%; padding: 16px 18px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 17px; outline: none; transition: border-color 0.15s; }
+    .form-group input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
 
-    .btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
-    .btn-primary { background: #3b82f6; color: white; }
-    .btn-primary:hover { background: #2563eb; }
-    .btn-secondary { background: #f1f5f9; color: #475569; margin-top: 12px; }
-    .btn-secondary:hover { background: #e2e8f0; }
+    .btn { display: block; width: 100%; padding: 18px; border: none; border-radius: 14px; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: #3b82f6; color: white; box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
+    .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: rgba(255,255,255,0.7); margin-top: 12px; border: 1px solid rgba(255,255,255,0.2); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.1); color: white; }
+    .btn-white { background: white; color: #3b82f6; margin-top: 16px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .ticket-result { text-align: center; background: white; border-radius: 20px; padding: 48px 32px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
-    .ticket-result .check { font-size: 64px; margin-bottom: 16px; }
-    .ticket-result .number { font-size: 56px; font-weight: 900; color: #3b82f6; letter-spacing: -2px; }
-    .ticket-result .position { font-size: 18px; color: #475569; margin-top: 8px; }
-    .ticket-result .info { font-size: 14px; color: #94a3b8; margin-top: 16px; }
+    .result-card { text-align: center; background: white; border-radius: 24px; padding: 48px 32px; box-shadow: 0 12px 48px rgba(0,0,0,0.12); }
+    .result-check { width: 72px; height: 72px; background: #22c55e; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+    .result-check svg { width: 36px; height: 36px; fill: white; }
+    .result-number { font-size: 64px; font-weight: 900; color: #1e293b; letter-spacing: -3px; line-height: 1; }
+    .result-position { font-size: 18px; color: #64748b; margin-top: 8px; font-weight: 600; }
+    .result-divider { height: 1px; background: #e2e8f0; margin: 24px 0; }
+    .qr-section { display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px; background: #f0f9ff; border-radius: 12px; }
+    .qr-section .qr-box { flex-shrink: 0; }
+    .qr-section .qr-text { font-size: 13px; color: #475569; }
+    .qr-section .qr-text strong { color: #1e40af; display: block; margin-bottom: 4px; }
+    .result-timer { font-size: 13px; color: #94a3b8; margin-top: 16px; }
 
-    .loading { text-align: center; padding: 48px; color: #94a3b8; font-size: 16px; }
-    .back-link { display: inline-block; margin-bottom: 16px; color: #3b82f6; font-weight: 600; cursor: pointer; font-size: 14px; }
+    .back-btn { display: inline-flex; align-items: center; gap: 6px; color: rgba(255,255,255,0.7); font-weight: 600; font-size: 14px; cursor: pointer; margin-bottom: 16px; }
+    .back-btn:hover { color: white; }
 
     @media (max-width: 480px) {
-      .kiosk { padding: 16px; }
-      .dept-grid, .service-grid { grid-template-columns: 1fr; }
-      .ticket-result .number { font-size: 44px; }
+      .kiosk { padding: 20px 16px; }
+      .card-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .card { padding: 20px 12px; font-size: 15px; }
+      .result-number { font-size: 48px; }
+      .qr-section { flex-direction: column; text-align: center; }
     }
   </style>
 </head>
 <body>
   <div class="kiosk" id="app">
-    <div class="loading">Connecting to QueueFlow Station...</div>
+    <div style="color:white;padding:48px;text-align:center">Loading...</div>
   </div>
 
   <script>
     const API = '${apiBase}';
+    const CLOUD = '${CLOUD_URL}';
     let state = { step: 'loading', office: null, departments: [], services: [], selectedDept: null, selectedService: null, ticket: null };
+    let resetTimer = null;
+
+    function makeQR(text, size) {
+      try {
+        var qr = qrcode(0, 'M');
+        qr.addData(text);
+        qr.make();
+        return qr.createSvgTag({ cellSize: size || 3, margin: 0 });
+      } catch { return ''; }
+    }
 
     async function init() {
       try {
@@ -328,133 +384,124 @@ function serveKioskPage(res: http.ServerResponse) {
         state.office = data.office;
         state.departments = data.departments;
         state.services = data.services;
-        state.step = 'department';
+        state.step = state.departments.length === 1 ? (function() { state.selectedDept = state.departments[0]; var svcs = state.services.filter(function(s){return s.department_id===state.departments[0].id}); return svcs.length === 1 ? (state.selectedService = svcs[0], 'customer') : 'service'; })() : 'department';
         render();
       } catch (err) {
-        document.getElementById('app').innerHTML = '<div class="loading">Cannot connect to QueueFlow Station.<br>Make sure the desktop app is running.</div>';
+        document.getElementById('app').innerHTML = '<div style="color:white;padding:48px;text-align:center;font-size:18px">Cannot connect to QueueFlow Station.<br><span style="font-size:14px;opacity:0.7;margin-top:8px;display:block">Make sure the desktop app is running on this network.</span></div>';
       }
     }
 
     function selectDept(dept) {
       state.selectedDept = dept;
-      const deptServices = state.services.filter(s => s.department_id === dept.id);
-      if (deptServices.length === 1) {
-        selectService(deptServices[0]);
-      } else {
-        state.step = 'service';
-        render();
-      }
-    }
-
-    function selectService(svc) {
-      state.selectedService = svc;
-      state.step = 'customer';
+      var deptServices = state.services.filter(function(s){return s.department_id === dept.id});
+      if (deptServices.length === 1) { state.selectedService = deptServices[0]; state.step = 'customer'; }
+      else { state.step = 'service'; }
       render();
     }
 
-    async function takeTicket() {
-      const nameInput = document.getElementById('cname');
-      const phoneInput = document.getElementById('cphone');
+    function selectService(svc) { state.selectedService = svc; state.step = 'customer'; render(); }
 
-      const btn = document.querySelector('.btn-primary');
-      btn.disabled = true;
-      btn.textContent = 'Creating ticket...';
-
+    async function takeTicket(skip) {
+      var nameInput = document.getElementById('cname');
+      var phoneInput = document.getElementById('cphone');
+      var btn = document.getElementById('submit-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
       try {
-        const res = await fetch(API + '/api/take-ticket', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        var res = await fetch(API + '/api/take-ticket', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            officeId: state.office.id,
-            departmentId: state.selectedDept.id,
+            officeId: state.office.id, departmentId: state.selectedDept.id,
             serviceId: state.selectedService.id,
-            customerName: nameInput?.value || '',
-            customerPhone: phoneInput?.value || '',
+            customerName: skip ? '' : (nameInput?.value || ''),
+            customerPhone: skip ? '' : (phoneInput?.value || ''),
           }),
         });
-        const data = await res.json();
+        var data = await res.json();
         if (data.error) throw new Error(data.error);
         state.ticket = data.ticket;
         state.step = 'done';
         render();
-
-        // Auto-reset after 15 seconds
-        setTimeout(reset, 15000);
+        resetTimer = setTimeout(reset, 20000);
       } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Get Ticket';
+        if (btn) { btn.disabled = false; btn.textContent = 'Get Ticket'; }
         alert('Error: ' + err.message);
       }
     }
 
     function reset() {
-      state.step = 'department';
-      state.selectedDept = null;
+      if (resetTimer) clearTimeout(resetTimer);
+      state.step = state.departments.length === 1 ? 'service' : 'department';
+      state.selectedDept = state.departments.length === 1 ? state.departments[0] : null;
       state.selectedService = null;
       state.ticket = null;
       render();
     }
 
     function render() {
-      const app = document.getElementById('app');
-      const officeName = state.office?.name ?? '';
+      var app = document.getElementById('app');
+      var name = state.office?.name ?? 'QueueFlow';
 
-      let header = '<div class="kiosk-header">' +
-        '<h1>QueueFlow</h1>' +
-        '<div class="office-name">' + officeName + '</div>' +
-        '<div class="status local">Local Kiosk Mode</div>' +
+      var header = '<div class="kiosk-header">' +
+        '<div class="kiosk-logo"><span>Q</span></div>' +
+        '<h1>' + name + '</h1>' +
+        '<div class="subtitle">Take a ticket to join the queue</div>' +
+        '<div class="offline-badge">Offline Mode — Connected locally</div>' +
         '</div>';
 
       if (state.step === 'department') {
-        let cards = state.departments.map(d =>
-          '<div class="dept-card" onclick="selectDept(' + JSON.stringify(d).replace(/"/g, '&quot;') + ')">' + d.name + '</div>'
-        ).join('');
-        app.innerHTML = header + '<div class="step"><h2>Select Department</h2><div class="dept-grid">' + cards + '</div></div>';
+        var cards = state.departments.map(function(d) {
+          return '<div class="card" onclick="selectDept(' + JSON.stringify(d).replace(/"/g, '&quot;') + ')">' +
+            '<div class="card-icon">🏥</div>' + d.name + '</div>';
+        }).join('');
+        app.innerHTML = header + '<div class="step"><div class="step-title">Select Department</div><div class="card-grid">' + cards + '</div></div>';
 
       } else if (state.step === 'service') {
-        let deptServices = state.services.filter(s => s.department_id === state.selectedDept.id);
-        let cards = deptServices.map(s =>
-          '<div class="service-card" onclick="selectService(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')">' + s.name + '</div>'
-        ).join('');
+        var svcs = state.services.filter(function(s){return s.department_id === state.selectedDept.id});
+        var cards = svcs.map(function(s) {
+          return '<div class="card" onclick="selectService(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')">' +
+            '<div class="card-icon">📋</div>' + s.name + '</div>';
+        }).join('');
         app.innerHTML = header + '<div class="step">' +
-          '<span class="back-link" onclick="state.step=\\'department\\';render();">← Back</span>' +
-          '<h2>Select Service</h2><div class="service-grid">' + cards + '</div></div>';
+          '<div class="back-btn" onclick="state.step=\\'department\\';render();">← Back</div>' +
+          '<div class="step-title">Select Service</div><div class="card-grid">' + cards + '</div></div>';
 
       } else if (state.step === 'customer') {
         app.innerHTML = header + '<div class="step">' +
-          '<span class="back-link" onclick="state.step=\\'service\\';render();">← Back</span>' +
-          '<div class="form-step">' +
-          '<h2>Your Information (Optional)</h2>' +
-          '<div class="form-group"><label>Name</label><input id="cname" placeholder="Your name" autocomplete="off"></div>' +
-          '<div class="form-group"><label>Phone</label><input id="cphone" placeholder="Phone number" type="tel" autocomplete="off"></div>' +
-          '<button class="btn btn-primary" onclick="takeTicket()">Get Ticket</button>' +
-          '<button class="btn btn-secondary" onclick="takeTicket()">Skip — Just Give Me a Number</button>' +
-          '</div></div>';
+          '<div class="back-btn" onclick="state.step=\\'service\\';render();">← Back</div>' +
+          '<div class="form-card">' +
+          '<div style="text-align:center;font-size:20px;font-weight:700;margin-bottom:24px">Your Information</div>' +
+          '<div class="form-group"><label>Name (optional)</label><input id="cname" placeholder="Enter your name" autocomplete="off"></div>' +
+          '<div class="form-group"><label>Phone (optional)</label><input id="cphone" placeholder="Phone number" type="tel" autocomplete="off"></div>' +
+          '<button id="submit-btn" class="btn btn-primary" onclick="takeTicket(false)">Get Ticket</button>' +
+          '</div>' +
+          '<button class="btn btn-ghost" onclick="takeTicket(true)">Skip — Just give me a number</button>' +
+          '</div>';
 
       } else if (state.step === 'done') {
-        const t = state.ticket;
-        const trackLocal = API + '/track/' + encodeURIComponent(t.ticket_number);
-        const trackCloud = 'https://qflow-sigma.vercel.app/ticket/' + t.id;
-        app.innerHTML = header + '<div class="step">' +
-          '<div class="ticket-result">' +
-          '<div class="check">✓</div>' +
-          '<div class="number">' + t.ticket_number + '</div>' +
-          '<div class="position">Position #' + t.position + ' in queue</div>' +
-          '<div style="margin-top:20px;padding:16px;background:#eff6ff;border-radius:12px;text-align:left">' +
-          '<div style="font-weight:700;color:#1e40af;margin-bottom:8px">Track Your Ticket</div>' +
-          '<div style="font-size:14px;color:#475569;margin-bottom:4px">On your phone, visit:</div>' +
-          '<div style="font-family:monospace;font-size:13px;color:#3b82f6;word-break:break-all;font-weight:600">' + trackCloud + '</div>' +
-          '<div style="font-size:12px;color:#94a3b8;margin-top:8px">Or scan the QR code at the entrance. You can track your position remotely from anywhere.</div>' +
+        var t = state.ticket;
+        var trackUrl = CLOUD + '/ticket/' + t.id;
+        var trackLocal = API + '/track/' + encodeURIComponent(t.ticket_number);
+        var qrHtml = makeQR(trackUrl, 3) || makeQR(trackLocal, 3);
+
+        app.innerHTML = header.replace('Take a ticket to join the queue', 'Your ticket is ready') + '<div class="step">' +
+          '<div class="result-card">' +
+          '<div class="result-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>' +
+          '<div class="result-number">' + t.ticket_number + '</div>' +
+          '<div class="result-position">#' + t.position + ' in queue</div>' +
+          '<div class="result-divider"></div>' +
+          '<div class="qr-section">' +
+          '<div class="qr-box">' + qrHtml + '</div>' +
+          '<div class="qr-text"><strong>Track on your phone</strong>Scan this QR code to track your position remotely from anywhere. You will be notified when it is your turn.</div>' +
           '</div>' +
-          '<div style="font-size:13px;color:#94a3b8;margin-top:12px">Please wait for your number to be called. This screen resets in 15 seconds.</div>' +
+          '<div class="result-timer">This screen resets automatically in 20 seconds</div>' +
           '</div>' +
-          '<button class="btn btn-secondary" onclick="reset()" style="margin-top:16px">Take Another Ticket</button>' +
+          '<button class="btn btn-white" onclick="reset()">Take Another Ticket</button>' +
           '</div>';
       }
     }
 
     init();
-  </script>
+  <\/script>
 </body>
 </html>`;
 
