@@ -752,45 +752,45 @@ function serveDisplayPage(res: http.ServerResponse) {
   <title>QueueFlow Display</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #f1f5f9; min-height: 100vh; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; overflow: hidden; }
 
     .display { display: flex; flex-direction: column; height: 100vh; }
-    .display-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 40px; background: #1e293b; }
+    .display-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; background: white; border-bottom: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
     .display-brand { font-size: 24px; font-weight: 800; color: #3b82f6; }
-    .display-office { font-size: 20px; font-weight: 600; color: #94a3b8; }
+    .display-office { font-size: 20px; font-weight: 600; color: #475569; }
     .display-stats { display: flex; gap: 24px; font-size: 16px; color: #64748b; }
     .display-stats span { font-weight: 700; }
-    .display-stats .num { color: #f1f5f9; }
+    .display-stats .num { color: #0f172a; font-size: 20px; }
 
     .display-body { flex: 1; display: flex; padding: 32px 40px; gap: 32px; overflow: hidden; }
 
     .now-serving { flex: 2; }
-    .now-serving h2 { font-size: 18px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; }
-    .serving-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-    .serving-card { background: #1e293b; border-radius: 16px; padding: 24px; border-left: 5px solid #22c55e; }
-    .serving-card.called { border-left-color: #3b82f6; }
-    .serving-number { font-size: 48px; font-weight: 900; letter-spacing: -2px; }
-    .serving-desk { font-size: 16px; color: #94a3b8; margin-top: 4px; }
-    .serving-status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }
-    .serving-status.called { color: #3b82f6; }
-    .serving-status.serving { color: #22c55e; }
+    .now-serving h2 { font-size: 16px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; }
+    .serving-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .serving-card { background: white; border-radius: 16px; padding: 28px; border-left: 6px solid #22c55e; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: opacity 0.3s; }
+    .serving-card.called { border-left-color: #3b82f6; background: #eff6ff; }
+    .serving-number { font-size: 56px; font-weight: 900; letter-spacing: -2px; color: #0f172a; }
+    .serving-desk { font-size: 16px; color: #64748b; margin-top: 4px; font-weight: 500; }
+    .serving-status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
+    .serving-status.called { color: #1e40af; background: #dbeafe; }
+    .serving-status.serving { color: #065f46; background: #d1fae5; }
 
-    .no-serving { color: #475569; font-size: 20px; padding: 40px; text-align: center; }
+    .no-serving { color: #94a3b8; font-size: 20px; padding: 60px; text-align: center; }
 
-    .display-footer { padding: 16px 40px; background: #1e293b; text-align: center; font-size: 14px; color: #475569; }
+    .display-footer { padding: 12px 40px; background: white; border-top: 1px solid #e2e8f0; text-align: center; font-size: 13px; color: #94a3b8; }
 
-    @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-    .serving-card { animation: slideIn 0.3s ease-out; }
+    .fade-update { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0.5; } to { opacity: 1; } }
   </style>
 </head>
 <body>
-  <div class="display" id="app">
+  <div class="display">
     <div class="display-header">
       <div class="display-brand">QueueFlow</div>
-      <div class="display-office" id="office-name">Loading...</div>
+      <div class="display-office" id="office-name"></div>
       <div class="display-stats">
-        <div>Waiting: <span class="num" id="stat-waiting">-</span></div>
-        <div>Served today: <span class="num" id="stat-served">-</span></div>
+        <div>Waiting: <span class="num" id="stat-waiting">0</span></div>
+        <div>Served today: <span class="num" id="stat-served">0</span></div>
       </div>
     </div>
     <div class="display-body">
@@ -802,42 +802,53 @@ function serveDisplayPage(res: http.ServerResponse) {
       </div>
     </div>
     <div class="display-footer">
-      <span id="time"></span> &middot; Auto-updating
+      <span id="time"></span>
     </div>
   </div>
   <script>
     const API = '${apiBase}';
+    let lastHash = '';
+
+    function updateText(id, val) {
+      var el = document.getElementById(id);
+      if (el && el.textContent !== String(val)) el.textContent = val;
+    }
+
+    function buildCardHTML(items) {
+      if (items.length === 0) return '<div class="no-serving">No customers being served</div>';
+      return items.map(function(t) {
+        return '<div class="serving-card ' + t.status + ' fade-update">' +
+          '<div class="serving-number">' + t.ticket_number + '</div>' +
+          '<div class="serving-desk">' + (t.desk_name || 'Desk') + '</div>' +
+          '<div class="serving-status ' + t.status + '">' + (t.status === 'called' ? 'Please proceed to desk' : 'Being served') + '</div>' +
+          '</div>';
+      }).join('');
+    }
 
     async function refresh() {
       try {
-        const res = await fetch(API + '/api/display-data');
-        const d = await res.json();
+        var res = await fetch(API + '/api/display-data');
+        var d = await res.json();
         if (d.error) return;
 
-        document.getElementById('office-name').textContent = d.office_name;
-        document.getElementById('stat-waiting').textContent = d.waiting_count;
-        document.getElementById('stat-served').textContent = d.served_count;
+        updateText('office-name', d.office_name);
+        updateText('stat-waiting', d.waiting_count);
+        updateText('stat-served', d.served_count);
 
-        const grid = document.getElementById('serving-grid');
-        if (d.now_serving.length === 0) {
-          grid.innerHTML = '<div class="no-serving">No customers being served</div>';
-        } else {
-          grid.innerHTML = d.now_serving.map(t =>
-            '<div class="serving-card ' + t.status + '">' +
-            '<div class="serving-number">' + t.ticket_number + '</div>' +
-            '<div class="serving-desk">' + (t.desk_name || 'Desk') + '</div>' +
-            '<div class="serving-status ' + t.status + '">' + (t.status === 'called' ? 'Please proceed' : 'Being served') + '</div>' +
-            '</div>'
-          ).join('');
+        // Only update grid if data changed (prevents flashing)
+        var hash = JSON.stringify(d.now_serving);
+        if (hash !== lastHash) {
+          lastHash = hash;
+          document.getElementById('serving-grid').innerHTML = buildCardHTML(d.now_serving);
         }
-      } catch {}
+      } catch (e) {}
 
-      document.getElementById('time').textContent = new Date().toLocaleTimeString();
+      updateText('time', new Date().toLocaleTimeString());
     }
 
     refresh();
     setInterval(refresh, 3000);
-  </script>
+  <\/script>
 </body>
 </html>`;
 
