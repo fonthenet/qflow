@@ -319,6 +319,22 @@ function registerIpcHandlers(): void {
       return { online: false };
     }
   });
+
+  // When user logs in on the web UI, cache office info for desktop registration
+  ipcMain.handle('desktop:set-office', async (_event, officeInfo) => {
+    try {
+      cacheConfig('current_office', officeInfo);
+      // Immediately ping with new office info
+      pingDesktopStatus(0, null);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('desktop:get-machine-info', async () => {
+    return { machineId, machineName, osInfo, appVersion, isPortable: portable };
+  });
 }
 
 async function main(): Promise<void> {
@@ -375,6 +391,40 @@ async function main(): Promise<void> {
   // Register IPC handlers
   registerIpcHandlers();
 
+  // ── Desktop registration with cloud ──────────────────────────────
+  const os = require('os');
+  const crypto = require('crypto');
+  const machineId = crypto.createHash('sha256').update(os.hostname() + os.platform() + os.arch()).digest('hex').slice(0, 32);
+  const machineName = os.hostname();
+  const osInfo = `${os.platform()} ${os.release()} (${os.arch()})`;
+  const appVersion = app.getVersion();
+
+  async function pingDesktopStatus(pendingSyncs = 0, lastSyncAt: string | null = null) {
+    const config = portable ? getPortableConfig() : null;
+    const supabaseUrl = config?.supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    // Get officeId and orgId from cached config or env
+    const cachedOffice = getCachedConfig('current_office');
+    const officeId = cachedOffice?.id || process.env.QUEUEFLOW_OFFICE_ID || '';
+    const orgId = cachedOffice?.organization_id || process.env.QUEUEFLOW_ORG_ID || '';
+
+    if (!supabaseUrl || !officeId || !orgId) return;
+
+    try {
+      const apiBase = supabaseUrl.replace('/rest/v1', '').replace('supabase.co', 'vercel.app');
+      const baseUrl = process.env.QUEUEFLOW_API_URL || 'https://qflow-sigma.vercel.app';
+      await fetch(`${baseUrl}/api/desktop-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          machineId, machineName, officeId, organizationId: orgId,
+          appVersion, osInfo, pendingSyncs, lastSyncAt,
+        }),
+      });
+    } catch {
+      // Offline — skip ping
+    }
+  }
+
   // Periodically check connection, notify renderer, and auto-sync
   let wasOffline = false;
   setInterval(async () => {
@@ -382,6 +432,9 @@ async function main(): Promise<void> {
       try {
         const status = await getConnectionStatus();
         mainWindow.webContents.send('connection-status', status);
+
+        // Ping desktop status to cloud
+        pingDesktopStatus(status.pendingSyncs, status.lastSync);
 
         // Auto-sync when coming back online
         if (status.online && wasOffline && status.pendingSyncs > 0) {

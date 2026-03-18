@@ -20,12 +20,14 @@ import {
   Map,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
+import { DesktopStatusBadge } from '@/components/desktop-status-badge';
 
 interface SidebarProps {
   staff: {
     id: string;
     full_name: string;
     role: string;
+    organization_id: string;
     organization: {
       name: string;
     };
@@ -196,6 +198,11 @@ export function Sidebar({
           </div>
         ))}
       </nav>
+
+      {/* Desktop Connection Status */}
+      <div className="border-t border-border px-2 py-2">
+        <DesktopStatusBadge organizationId={staff.organization_id} />
+      </div>
 
       {/* User */}
       <div className="border-t border-border p-4">

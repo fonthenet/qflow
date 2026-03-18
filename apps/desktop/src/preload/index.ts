@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getCachedConfig: (params: any) => ipcRenderer.invoke('offline:get-cached-config', params),
   },
 
+  // Desktop identity
+  desktop: {
+    setOffice: (officeInfo: any) => ipcRenderer.invoke('desktop:set-office', officeInfo),
+    getMachineInfo: () => ipcRenderer.invoke('desktop:get-machine-info'),
+  },
+
   // Event listeners
   onConnectionChange: (callback: (status: { online: boolean; pendingSyncs: number; lastSync: string | null }) => void) => {
     ipcRenderer.on('connection-status', (_event, status) => callback(status));
