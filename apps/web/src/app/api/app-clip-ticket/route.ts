@@ -54,16 +54,18 @@ export async function GET(request: NextRequest) {
   }
 
   // Calculate queue position for waiting tickets
-  // Position = 1 + count of tickets ahead (higher priority, or same priority but earlier)
+  // Position is service-scoped: only count tickets with the same service
+  // (different services go to different desks, so they're separate queues)
+  // Within a service: higher priority first, then FIFO
   let position: number | null = null;
   if (ticket.status === 'waiting') {
     const ticketPriority = ticket.priority ?? 0;
 
-    // Count tickets with strictly higher priority (they're always ahead)
+    // Count tickets with strictly higher priority in same service queue
     const { count: higherPriority } = await supabase
       .from('tickets')
       .select('id', { count: 'exact', head: true })
-      .eq('department_id', ticket.department_id)
+      .eq('service_id', ticket.service_id)
       .eq('office_id', ticket.office_id)
       .eq('status', 'waiting')
       .gt('priority', ticketPriority);
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
     const { count: samePriorityEarlier } = await supabase
       .from('tickets')
       .select('id', { count: 'exact', head: true })
-      .eq('department_id', ticket.department_id)
+      .eq('service_id', ticket.service_id)
       .eq('office_id', ticket.office_id)
       .eq('status', 'waiting')
       .eq('priority', ticketPriority)
@@ -115,7 +117,7 @@ export async function GET(request: NextRequest) {
     supabase
       .from('tickets')
       .select('ticket_number')
-      .eq('department_id', ticket.department_id)
+      .eq('service_id', ticket.service_id)
       .eq('office_id', ticket.office_id)
       .in('status', ['serving', 'called'])
       .order('called_at', { ascending: false })
