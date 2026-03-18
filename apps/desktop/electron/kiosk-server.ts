@@ -752,102 +752,324 @@ function serveDisplayPage(res: http.ServerResponse) {
   <title>QueueFlow Display</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f0f4f8; color: #0f172a; height: 100vh; overflow: hidden; }
 
     .display { display: flex; flex-direction: column; height: 100vh; }
-    .display-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; background: white; border-bottom: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .display-brand { font-size: 24px; font-weight: 800; color: #3b82f6; }
-    .display-office { font-size: 20px; font-weight: 600; color: #475569; }
-    .display-stats { display: flex; gap: 24px; font-size: 16px; color: #64748b; }
-    .display-stats span { font-weight: 700; }
-    .display-stats .num { color: #0f172a; font-size: 20px; }
 
-    .display-body { flex: 1; display: flex; padding: 32px 40px; gap: 32px; overflow: hidden; }
+    /* ── Header ── */
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: white; border-bottom: 2px solid #e2e8f0; }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .logo { width: 40px; height: 40px; background: #3b82f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 20px; }
+    .office-name { font-size: 22px; font-weight: 700; color: #1e293b; }
+    .header-right { text-align: right; }
+    .clock { font-size: 42px; font-weight: 800; color: #0f172a; letter-spacing: -1px; line-height: 1; }
+    .date { font-size: 15px; color: #64748b; font-weight: 500; margin-top: 2px; }
 
-    .now-serving { flex: 2; }
-    .now-serving h2 { font-size: 16px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px; }
-    .serving-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-    .serving-card { background: white; border-radius: 16px; padding: 28px; border-left: 6px solid #22c55e; box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: opacity 0.3s; }
-    .serving-card.called { border-left-color: #3b82f6; background: #eff6ff; }
-    .serving-number { font-size: 56px; font-weight: 900; letter-spacing: -2px; color: #0f172a; }
-    .serving-desk { font-size: 16px; color: #64748b; margin-top: 4px; font-weight: 500; }
-    .serving-status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
-    .serving-status.called { color: #1e40af; background: #dbeafe; }
-    .serving-status.serving { color: #065f46; background: #d1fae5; }
+    /* ── Stats strip ── */
+    .stats-strip { display: flex; gap: 0; background: white; border-bottom: 1px solid #e2e8f0; }
+    .stat-box { flex: 1; padding: 12px 24px; text-align: center; border-right: 1px solid #e2e8f0; }
+    .stat-box:last-child { border-right: none; }
+    .stat-num { font-size: 28px; font-weight: 800; }
+    .stat-num.waiting { color: #f59e0b; }
+    .stat-num.called { color: #3b82f6; }
+    .stat-num.serving { color: #22c55e; }
+    .stat-num.served { color: #64748b; }
+    .stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; margin-top: 2px; }
 
-    .no-serving { color: #94a3b8; font-size: 20px; padding: 60px; text-align: center; }
+    /* ── Main content ── */
+    .content { flex: 1; display: flex; gap: 0; overflow: hidden; }
 
-    .display-footer { padding: 12px 40px; background: white; border-top: 1px solid #e2e8f0; text-align: center; font-size: 13px; color: #94a3b8; }
+    /* ── Now Serving panel (left 55%) ── */
+    .now-serving-panel { flex: 55; display: flex; flex-direction: column; border-right: 2px solid #e2e8f0; background: white; }
+    .panel-title { padding: 16px 24px 12px; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; color: #64748b; border-bottom: 1px solid #f1f5f9; }
+    .serving-list { flex: 1; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 
-    .fade-update { animation: fadeIn 0.3s ease-out; }
-    @keyframes fadeIn { from { opacity: 0.5; } to { opacity: 1; } }
+    .serving-row { display: flex; align-items: center; padding: 16px 20px; border-radius: 14px; transition: all 0.4s ease; }
+    .serving-row.called { background: #eff6ff; border: 2px solid #bfdbfe; }
+    .serving-row.serving { background: #f0fdf4; border: 2px solid #bbf7d0; }
+    .serving-row .ticket-num { font-size: 48px; font-weight: 900; letter-spacing: -2px; min-width: 180px; }
+    .serving-row.called .ticket-num { color: #1e40af; }
+    .serving-row.serving .ticket-num { color: #166534; }
+    .serving-row .arrow { font-size: 28px; color: #94a3b8; margin: 0 16px; }
+    .serving-row .desk-info { flex: 1; }
+    .serving-row .desk-name { font-size: 22px; font-weight: 700; color: #334155; }
+    .serving-row .dept-name { font-size: 13px; color: #94a3b8; font-weight: 500; }
+    .serving-row .status-pill { padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+    .serving-row.called .status-pill { background: #3b82f6; color: white; animation: pulse 1.5s infinite; }
+    .serving-row.serving .status-pill { background: #22c55e; color: white; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+    .no-active { display: flex; align-items: center; justify-content: center; flex: 1; color: #cbd5e1; font-size: 22px; font-weight: 600; }
+
+    /* ── Queue panel (right 45%) ── */
+    .queue-panel { flex: 45; display: flex; flex-direction: column; background: #f8fafc; }
+    .queue-panel .panel-title { background: #f8fafc; }
+
+    /* ── Department tabs ── */
+    .dept-tabs { display: flex; gap: 0; padding: 0 16px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; overflow-x: auto; }
+    .dept-tab { padding: 10px 20px; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; }
+    .dept-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; background: white; }
+    .dept-tab .count { display: inline-block; min-width: 20px; text-align: center; padding: 1px 6px; border-radius: 10px; background: #e2e8f0; font-size: 11px; margin-left: 4px; }
+    .dept-tab.active .count { background: #dbeafe; color: #1e40af; }
+
+    /* ── Queue list ── */
+    .queue-list { flex: 1; overflow-y: auto; padding: 8px 16px; }
+    .queue-row { display: flex; align-items: center; padding: 10px 14px; border-radius: 10px; margin-bottom: 4px; background: white; border: 1px solid #e2e8f0; transition: all 0.3s; }
+    .queue-row.next { background: #fef9c3; border-color: #fde68a; }
+    .queue-row .pos { font-size: 14px; font-weight: 800; color: #94a3b8; min-width: 36px; text-align: center; }
+    .queue-row.next .pos { color: #92400e; }
+    .queue-row .q-ticket { font-size: 20px; font-weight: 800; color: #1e293b; min-width: 100px; }
+    .queue-row .q-name { flex: 1; font-size: 14px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-row .q-wait { font-size: 13px; color: #94a3b8; font-weight: 600; }
+    .queue-row .q-badge { padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; }
+    .queue-row .q-badge.priority { background: #fef3c7; color: #92400e; }
+    .queue-row .q-badge.booked { background: #dbeafe; color: #1e40af; }
+
+    .queue-empty { text-align: center; padding: 40px; color: #cbd5e1; font-size: 16px; }
+
+    /* ── New ticket animation ── */
+    .flash-new { animation: flashNew 0.6s ease-out; }
+    @keyframes flashNew { 0% { background: #fef08a; transform: scale(1.02); } 100% { background: white; transform: scale(1); } }
+
+    /* ── Audio chime (hidden) ── */
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
   </style>
 </head>
 <body>
   <div class="display">
-    <div class="display-header">
-      <div class="display-brand">QueueFlow</div>
-      <div class="display-office" id="office-name"></div>
-      <div class="display-stats">
-        <div>Waiting: <span class="num" id="stat-waiting">0</span></div>
-        <div>Served today: <span class="num" id="stat-served">0</span></div>
+    <div class="header">
+      <div class="header-left">
+        <div class="logo">Q</div>
+        <div class="office-name" id="office-name"></div>
+      </div>
+      <div class="header-right">
+        <div class="clock" id="clock"></div>
+        <div class="date" id="date"></div>
       </div>
     </div>
-    <div class="display-body">
-      <div class="now-serving">
-        <h2>Now Serving</h2>
-        <div class="serving-grid" id="serving-grid">
-          <div class="no-serving">No customers being served</div>
+
+    <div class="stats-strip">
+      <div class="stat-box"><div class="stat-num waiting" id="s-waiting">0</div><div class="stat-label">Waiting</div></div>
+      <div class="stat-box"><div class="stat-num called" id="s-called">0</div><div class="stat-label">Called</div></div>
+      <div class="stat-box"><div class="stat-num serving" id="s-serving">0</div><div class="stat-label">Serving</div></div>
+      <div class="stat-box"><div class="stat-num served" id="s-served">0</div><div class="stat-label">Served Today</div></div>
+    </div>
+
+    <div class="content">
+      <div class="now-serving-panel">
+        <div class="panel-title">Now Serving</div>
+        <div class="serving-list" id="serving-list">
+          <div class="no-active">Waiting for customers...</div>
+        </div>
+      </div>
+
+      <div class="queue-panel">
+        <div class="panel-title">Queue</div>
+        <div class="dept-tabs" id="dept-tabs"></div>
+        <div class="queue-list" id="queue-list">
+          <div class="queue-empty">No customers in queue</div>
         </div>
       </div>
     </div>
-    <div class="display-footer">
-      <span id="time"></span>
-    </div>
   </div>
+
   <script>
-    const API = '${apiBase}';
-    let lastHash = '';
+    var API = '${apiBase}';
+    var SUPABASE_URL = '${SUPABASE_URL}';
+    var SUPABASE_KEY = '${SUPABASE_KEY}';
+    var lastServingHash = '';
+    var lastQueueHash = '';
+    var activeDept = 'all';
+    var allTickets = [];
+    var departments = {};
+    var desks = {};
+    var chimeAudio = null;
+
+    // Simple chime via Web Audio API
+    function playChime() {
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } catch(e) {}
+    }
 
     function updateText(id, val) {
       var el = document.getElementById(id);
-      if (el && el.textContent !== String(val)) el.textContent = val;
+      if (el && el.textContent !== String(val)) el.textContent = String(val);
     }
 
-    function buildCardHTML(items) {
-      if (items.length === 0) return '<div class="no-serving">No customers being served</div>';
-      return items.map(function(t) {
-        return '<div class="serving-card ' + t.status + ' fade-update">' +
-          '<div class="serving-number">' + t.ticket_number + '</div>' +
-          '<div class="serving-desk">' + (t.desk_name || 'Desk') + '</div>' +
-          '<div class="serving-status ' + t.status + '">' + (t.status === 'called' ? 'Please proceed to desk' : 'Being served') + '</div>' +
+    function formatWait(created) {
+      var mins = Math.floor((Date.now() - new Date(created).getTime()) / 60000);
+      if (mins < 1) return '<1m';
+      if (mins < 60) return mins + 'm';
+      return Math.floor(mins/60) + 'h ' + (mins%60) + 'm';
+    }
+
+    function updateClock() {
+      var now = new Date();
+      updateText('clock', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      updateText('date', now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+    }
+
+    function renderServing(active) {
+      var hash = JSON.stringify(active);
+      if (hash === lastServingHash) return;
+      var hadPrev = lastServingHash !== '';
+      lastServingHash = hash;
+
+      var el = document.getElementById('serving-list');
+      if (active.length === 0) {
+        el.innerHTML = '<div class="no-active">Waiting for customers...</div>';
+        return;
+      }
+
+      // Check for newly called tickets
+      if (hadPrev) {
+        var newCalled = active.filter(function(t) { return t.status === 'called'; });
+        if (newCalled.length > 0) playChime();
+      }
+
+      el.innerHTML = active.map(function(t) {
+        var deskName = desks[t.desk_id] || t.desk_name || 'Desk';
+        var deptName = departments[t.department_id] || '';
+        return '<div class="serving-row ' + t.status + '">' +
+          '<div class="ticket-num">' + t.ticket_number + '</div>' +
+          '<div class="arrow">&rarr;</div>' +
+          '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
+          (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
+          '<div class="status-pill">' + (t.status === 'called' ? 'Please Proceed' : 'Serving') + '</div>' +
           '</div>';
       }).join('');
     }
 
-    async function refresh() {
-      try {
-        var res = await fetch(API + '/api/display-data');
-        var d = await res.json();
-        if (d.error) return;
+    function renderDeptTabs(waiting) {
+      var counts = { all: waiting.length };
+      waiting.forEach(function(t) {
+        var did = t.department_id || 'unknown';
+        counts[did] = (counts[did] || 0) + 1;
+      });
 
-        updateText('office-name', d.office_name);
-        updateText('stat-waiting', d.waiting_count);
-        updateText('stat-served', d.served_count);
+      var deptIds = Object.keys(counts).filter(function(k) { return k !== 'all'; });
+      if (deptIds.length <= 1) {
+        document.getElementById('dept-tabs').innerHTML = '';
+        activeDept = 'all';
+        return;
+      }
 
-        // Only update grid if data changed (prevents flashing)
-        var hash = JSON.stringify(d.now_serving);
-        if (hash !== lastHash) {
-          lastHash = hash;
-          document.getElementById('serving-grid').innerHTML = buildCardHTML(d.now_serving);
-        }
-      } catch (e) {}
-
-      updateText('time', new Date().toLocaleTimeString());
+      var tabs = '<div class="dept-tab ' + (activeDept === 'all' ? 'active' : '') + '" onclick="setDept(\\'all\\')">All<span class="count">' + counts.all + '</span></div>';
+      deptIds.forEach(function(did) {
+        var name = departments[did] || did.substring(0,8);
+        tabs += '<div class="dept-tab ' + (activeDept === did ? 'active' : '') + '" onclick="setDept(\\'' + did + '\\')">' + name + '<span class="count">' + (counts[did]||0) + '</span></div>';
+      });
+      document.getElementById('dept-tabs').innerHTML = tabs;
     }
 
-    refresh();
-    setInterval(refresh, 3000);
+    function setDept(d) { activeDept = d; renderQueue(allTickets.filter(function(t){return t.status==='waiting'})); }
+
+    function renderQueue(waiting) {
+      renderDeptTabs(waiting);
+
+      var filtered = activeDept === 'all' ? waiting : waiting.filter(function(t) { return t.department_id === activeDept; });
+      var hash = JSON.stringify(filtered.map(function(t){return t.id}));
+
+      var el = document.getElementById('queue-list');
+      if (filtered.length === 0) {
+        if (lastQueueHash !== hash) el.innerHTML = '<div class="queue-empty">No customers in queue</div>';
+        lastQueueHash = hash;
+        return;
+      }
+
+      if (hash === lastQueueHash) return;
+      lastQueueHash = hash;
+
+      el.innerHTML = filtered.map(function(t, i) {
+        var name = t.customer_data?.name || 'Walk-in';
+        var isNext = i === 0;
+        var badges = '';
+        if (t.priority > 1) badges += '<span class="q-badge priority">P' + t.priority + '</span> ';
+        if (t.appointment_id) badges += '<span class="q-badge booked">Booked</span>';
+        return '<div class="queue-row' + (isNext ? ' next' : '') + '">' +
+          '<div class="pos">#' + (i+1) + '</div>' +
+          '<div class="q-ticket">' + t.ticket_number + '</div>' +
+          '<div class="q-name">' + name + '</div>' +
+          badges +
+          '<div class="q-wait">' + formatWait(t.created_at) + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    async function fetchData() {
+      try {
+        // Try Supabase directly for real-time accuracy
+        var headers = { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY };
+        var today = new Date(); today.setHours(0,0,0,0);
+
+        var officeRes = await fetch(API + '/api/kiosk-info');
+        var officeData = await officeRes.json();
+        if (officeData.office) {
+          updateText('office-name', officeData.office.name);
+          (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
+        }
+
+        var ticketsRes = await fetch(SUPABASE_URL + '/rest/v1/tickets?office_id=eq.' + officeData.office.id + '&created_at=gte.' + today.toISOString() + '&order=priority.desc.nullsfirst,created_at.asc&limit=300', { headers: headers, signal: AbortSignal.timeout(5000) });
+
+        if (!ticketsRes.ok) throw new Error('API error');
+        var tickets = await ticketsRes.json();
+        allTickets = tickets;
+
+        // Parse customer_data
+        tickets.forEach(function(t) {
+          if (typeof t.customer_data === 'string') try { t.customer_data = JSON.parse(t.customer_data); } catch(e) { t.customer_data = {}; }
+        });
+
+        // Get desk names
+        var desksRes = await fetch(SUPABASE_URL + '/rest/v1/desks?office_id=eq.' + officeData.office.id + '&select=id,name', { headers: headers, signal: AbortSignal.timeout(5000) });
+        if (desksRes.ok) {
+          var deskList = await desksRes.json();
+          deskList.forEach(function(d) { desks[d.id] = d.name; });
+        }
+
+        var waiting = tickets.filter(function(t) { return t.status === 'waiting'; });
+        var called = tickets.filter(function(t) { return t.status === 'called'; });
+        var serving = tickets.filter(function(t) { return t.status === 'serving'; });
+        var served = tickets.filter(function(t) { return t.status === 'served'; });
+
+        updateText('s-waiting', waiting.length);
+        updateText('s-called', called.length);
+        updateText('s-serving', serving.length);
+        updateText('s-served', served.length);
+
+        renderServing([...called, ...serving]);
+        renderQueue(waiting);
+      } catch(e) {
+        // Fallback to local API
+        try {
+          var res = await fetch(API + '/api/display-data');
+          var d = await res.json();
+          if (!d.error) {
+            updateText('office-name', d.office_name);
+            updateText('s-waiting', d.waiting_count);
+            updateText('s-served', d.served_count);
+            renderServing(d.now_serving || []);
+          }
+        } catch(e2) {}
+      }
+    }
+
+    // Clock updates every second
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Data refresh every 2 seconds
+    fetchData();
+    setInterval(fetchData, 2000);
   <\/script>
 </body>
 </html>`;
