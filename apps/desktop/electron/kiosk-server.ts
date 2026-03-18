@@ -123,38 +123,38 @@ export function stopKioskServer() {
 
 // ── API Handlers ──────────────────────────────────────────────────
 
-function handleKioskInfo(url: URL, res: http.ServerResponse) {
+async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const db = getDB();
   const officeId = url.searchParams.get('officeId');
 
-  if (!officeId) {
-    // Return first office
-    const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
-    if (!office) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'No office configured' }));
-      return;
-    }
-    const departments = db.prepare('SELECT * FROM departments WHERE office_id = ?').all(office.id);
-    const services = db.prepare('SELECT * FROM services WHERE department_id IN (SELECT id FROM departments WHERE office_id = ?)').all(office.id);
+  const office = officeId
+    ? db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any
+    : db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ office, departments, services }));
-    return;
-  }
-
-  const office = db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
   if (!office) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Office not found' }));
+    res.end(JSON.stringify({ error: 'No office configured' }));
     return;
   }
 
   const departments = db.prepare('SELECT * FROM departments WHERE office_id = ?').all(office.id);
   const services = db.prepare('SELECT * FROM services WHERE department_id IN (SELECT id FROM departments WHERE office_id = ?)').all(office.id);
 
+  // Try to get org logo from Supabase
+  let logoUrl: string | null = null;
+  if (isCloudReachable && office.organization_id) {
+    try {
+      const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=settings`, { headers, signal: AbortSignal.timeout(3000) });
+      if (orgRes.ok) {
+        const orgs = await orgRes.json();
+        logoUrl = orgs[0]?.settings?.logo_url ?? null;
+      }
+    } catch { /* ignore */ }
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ office, departments, services }));
+  res.end(JSON.stringify({ office, departments, services, logo_url: logoUrl }));
 }
 
 function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -759,7 +759,8 @@ function serveDisplayPage(res: http.ServerResponse) {
     /* ── Header ── */
     .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: white; border-bottom: 2px solid #e2e8f0; }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .logo { width: 40px; height: 40px; background: #3b82f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 20px; }
+    .logo { width: 48px; height: 48px; background: #3b82f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 24px; overflow: hidden; }
+    .logo img { width: 100%; height: 100%; object-fit: contain; }
     .office-name { font-size: 22px; font-weight: 700; color: #1e293b; }
     .header-right { text-align: right; }
     .clock { font-size: 42px; font-weight: 800; color: #0f172a; letter-spacing: -1px; line-height: 1; }
@@ -844,7 +845,7 @@ function serveDisplayPage(res: http.ServerResponse) {
   <div class="display">
     <div class="header">
       <div class="header-left">
-        <div class="logo">Q</div>
+        <div class="logo" id="logo">Q</div>
         <div class="office-name" id="office-name"></div>
       </div>
       <div class="header-right">
@@ -1053,6 +1054,14 @@ function serveDisplayPage(res: http.ServerResponse) {
         if (officeData.office) {
           updateText('office-name', officeData.office.name);
           (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
+
+          // Set logo if available from org settings
+          if (officeData.logo_url) {
+            var logoEl = document.getElementById('logo');
+            if (logoEl && !logoEl.querySelector('img')) {
+              logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo">';
+            }
+          }
         }
 
         var ticketsRes = await fetch(SUPABASE_URL + '/rest/v1/tickets?office_id=eq.' + officeData.office.id + '&created_at=gte.' + today.toISOString() + '&order=priority.desc.nullsfirst,created_at.asc&limit=300', { headers: headers, signal: AbortSignal.timeout(5000) });
