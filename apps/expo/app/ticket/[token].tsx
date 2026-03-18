@@ -27,6 +27,8 @@ export default function TicketScreen() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
+  const prevCalledAtRef = useRef<string | null>(null);
+
   const poll = useCallback(async () => {
     if (!token) return;
     const data = await fetchTicket(token);
@@ -39,19 +41,34 @@ export default function TicketScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     }
+
+    // Detect recall: status is still 'called' but called_at changed
+    if (
+      data.status === 'called' &&
+      prevCalledAtRef.current &&
+      data.called_at &&
+      prevCalledAtRef.current !== data.called_at
+    ) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+
     prevStatusRef.current = data.status;
+    prevCalledAtRef.current = data.called_at;
     setTicket(data);
     setLoading(false);
   }, [token]);
 
+  // Poll faster when called (2s) vs normal (5s)
+  const pollInterval = ticket?.status === 'called' ? 2000 : 5000;
+
   useEffect(() => {
     if (!token) return;
     poll();
-    intervalRef.current = setInterval(poll, 5000);
+    intervalRef.current = setInterval(poll, pollInterval);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [token, poll]);
+  }, [token, poll, pollInterval]);
 
   const handleTrack = async () => {
     if (!ticket || !token) return;

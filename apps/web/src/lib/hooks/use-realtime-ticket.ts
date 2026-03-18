@@ -218,7 +218,7 @@ export function useRealtimeTicket({
 
     channelsRef.current = [ticketChannel, deptChannel, broadcastChannel];
 
-    // Polling fallback: refresh ticket + position every 5s to guarantee updates
+    // Polling fallback: refresh ticket + position every 3s to guarantee updates
     // even if realtime WebSocket is down (e.g., env vars not baked into client bundle)
     const pollInterval = setInterval(() => {
       supabase
@@ -244,7 +244,7 @@ export function useRealtimeTicket({
             }
           }
         });
-    }, 5000);
+    }, 3000);
 
     return () => {
       clearInterval(pollInterval);
