@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getQueuePosition } from '@/lib/queue-position';
 
 let _supabase: SupabaseClient | null = null;
 
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
       recall_count,
       customer_data,
       is_remote,
+      priority,
       created_at
     `
     )
@@ -53,42 +55,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   }
 
-  // Calculate queue position for waiting tickets
-  // Position is service-scoped: only count tickets with the same service
-  // (different services go to different desks, so they're separate queues)
-  // Within a service: higher priority first, then FIFO
-  let position: number | null = null;
-  if (ticket.status === 'waiting') {
-    const ticketPriority = ticket.priority ?? 0;
-
-    // Count tickets with strictly higher priority in same service queue
-    const { count: higherPriority } = await supabase
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('service_id', ticket.service_id)
-      .eq('office_id', ticket.office_id)
-      .eq('status', 'waiting')
-      .gt('priority', ticketPriority);
-
-    // Count tickets with same priority but created earlier (FIFO within same priority)
-    const { count: samePriorityEarlier } = await supabase
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('service_id', ticket.service_id)
-      .eq('office_id', ticket.office_id)
-      .eq('status', 'waiting')
-      .eq('priority', ticketPriority)
-      .lt('created_at', ticket.created_at);
-
-    position = 1 + (higherPriority ?? 0) + (samePriorityEarlier ?? 0);
-  }
+  // Use canonical queue position calculation (department-scoped, priority+FIFO)
+  const queueInfo = await getQueuePosition(ticket.id);
 
   const [
     officeResult,
     departmentResult,
     serviceResult,
     deskResult,
-    nowServingResult,
   ] = await Promise.all([
     supabase
       .from('offices')
@@ -114,25 +88,17 @@ export async function GET(request: NextRequest) {
           .eq('id', ticket.desk_id)
           .single()
       : Promise.resolve({ data: null, error: null }),
-    supabase
-      .from('tickets')
-      .select('ticket_number')
-      .eq('service_id', ticket.service_id)
-      .eq('office_id', ticket.office_id)
-      .in('status', ['serving', 'called'])
-      .order('called_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
   const responsePayload = {
     ...ticket,
-    position,
+    position: queueInfo.position,
+    estimated_wait_minutes: queueInfo.estimated_wait_minutes ?? ticket.estimated_wait_minutes,
     office: officeResult.data ?? null,
     department: departmentResult.data ?? null,
     service: serviceResult.data ?? null,
     desk: deskResult.data ?? null,
-    now_serving: nowServingResult.data?.ticket_number ?? null,
+    now_serving: queueInfo.now_serving,
   };
 
   return NextResponse.json(responsePayload);
