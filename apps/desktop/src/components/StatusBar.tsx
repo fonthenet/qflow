@@ -67,7 +67,7 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
       <div className="status-bar">
         <div className="status-bar-left">
           <span className="app-logo">Q</span>
-          <span className="app-name">QueueFlow Station</span>
+          <span className="app-name">{session?.office_name ?? 'QueueFlow Station'}</span>
         </div>
 
         <div className="status-bar-center">

@@ -140,21 +140,23 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const departments = db.prepare('SELECT * FROM departments WHERE office_id = ?').all(office.id);
   const services = db.prepare('SELECT * FROM services WHERE department_id IN (SELECT id FROM departments WHERE office_id = ?)').all(office.id);
 
-  // Try to get org logo from Supabase
+  // Try to get org name + logo from Supabase
   let logoUrl: string | null = null;
+  let orgName: string | null = null;
   if (isCloudReachable && office.organization_id) {
     try {
       const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=settings`, { headers, signal: AbortSignal.timeout(3000) });
+      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,settings`, { headers, signal: AbortSignal.timeout(3000) });
       if (orgRes.ok) {
         const orgs = await orgRes.json();
+        orgName = orgs[0]?.name ?? null;
         logoUrl = orgs[0]?.settings?.logo_url ?? null;
       }
     } catch { /* ignore */ }
   }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ office, departments, services, logo_url: logoUrl }));
+  res.end(JSON.stringify({ office, departments, services, logo_url: logoUrl, org_name: orgName }));
 }
 
 function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -366,7 +368,7 @@ function serveKioskPage(res: http.ServerResponse) {
   <script>
     const API = '${apiBase}';
     const CLOUD = '${CLOUD_URL}';
-    let state = { step: 'loading', office: null, departments: [], services: [], selectedDept: null, selectedService: null, ticket: null };
+    let state = { step: 'loading', office: null, orgName: null, departments: [], services: [], selectedDept: null, selectedService: null, ticket: null };
     let resetTimer = null;
 
     function makeQR(text, size) {
@@ -384,6 +386,7 @@ function serveKioskPage(res: http.ServerResponse) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         state.office = data.office;
+        state.orgName = data.org_name || null;
         state.departments = data.departments;
         state.services = data.services;
         state.step = state.departments.length === 1 ? (function() { state.selectedDept = state.departments[0]; var svcs = state.services.filter(function(s){return s.department_id===state.departments[0].id}); return svcs.length === 1 ? (state.selectedService = svcs[0], 'customer') : 'service'; })() : 'department';
@@ -445,8 +448,8 @@ function serveKioskPage(res: http.ServerResponse) {
 
       var header = '<div class="kiosk-header">' +
         '<div class="kiosk-logo"><span>Q</span></div>' +
-        '<h1>' + name + '</h1>' +
-        '<div class="subtitle">Take a ticket to join the queue</div>' +
+        '<h1>' + (state.orgName || name) + '</h1>' +
+        (state.orgName && state.orgName !== name ? '<div class="subtitle">' + name + '</div>' : '<div class="subtitle">Take a ticket to join the queue</div>') +
         '<div class="offline-badge">Offline Mode — Connected locally</div>' +
         '</div>';
 
@@ -762,6 +765,7 @@ function serveDisplayPage(res: http.ServerResponse) {
     .logo { width: 48px; height: 48px; background: #3b82f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 24px; overflow: hidden; }
     .logo img { width: 100%; height: 100%; object-fit: contain; }
     .office-name { font-size: 22px; font-weight: 700; color: #1e293b; }
+    .branch-name { font-size: 14px; color: #64748b; font-weight: 500; }
     .header-right { text-align: right; }
     .clock { font-size: 42px; font-weight: 800; color: #0f172a; letter-spacing: -1px; line-height: 1; }
     .date { font-size: 15px; color: #64748b; font-weight: 500; margin-top: 2px; }
@@ -846,7 +850,10 @@ function serveDisplayPage(res: http.ServerResponse) {
     <div class="header">
       <div class="header-left">
         <div class="logo" id="logo">Q</div>
-        <div class="office-name" id="office-name"></div>
+        <div>
+          <div class="office-name" id="office-name"></div>
+          <div class="branch-name" id="branch-name"></div>
+        </div>
       </div>
       <div class="header-right">
         <div class="clock" id="clock"></div>
@@ -1033,10 +1040,11 @@ function serveDisplayPage(res: http.ServerResponse) {
         var badges = '';
         if (t.priority > 1) badges += '<span class="q-badge priority">P' + t.priority + '</span> ';
         if (t.appointment_id) badges += '<span class="q-badge booked">Booked</span>';
+        var deptLabel = departments[t.department_id] || '';
         return '<div class="queue-row' + (isNext ? ' next' : '') + '">' +
           '<div class="pos">#' + (i+1) + '</div>' +
           '<div class="q-ticket">' + t.ticket_number + '</div>' +
-          '<div class="q-name">' + name + '</div>' +
+          '<div class="q-name">' + name + (deptLabel ? ' <span style="color:#94a3b8;font-size:13px">&middot; ' + deptLabel + '</span>' : '') + '</div>' +
           badges +
           '<div class="q-wait">' + formatWait(t.created_at) + '</div>' +
           '</div>';
@@ -1052,7 +1060,11 @@ function serveDisplayPage(res: http.ServerResponse) {
         var officeRes = await fetch(API + '/api/kiosk-info');
         var officeData = await officeRes.json();
         if (officeData.office) {
-          updateText('office-name', officeData.office.name);
+          // Show org name as primary, office/branch as secondary
+          var orgName = officeData.org_name || officeData.office.name;
+          var branchName = officeData.org_name ? officeData.office.name : '';
+          updateText('office-name', orgName);
+          updateText('branch-name', branchName);
           (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
 
           // Set logo if available from org settings
