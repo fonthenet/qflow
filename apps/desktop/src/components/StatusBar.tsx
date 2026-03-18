@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { StaffSession, SyncStatus } from '../lib/types';
 
 declare global {
@@ -25,6 +25,19 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch org logo and name from local kiosk server
+    fetch('http://localhost:3847/api/kiosk-info')
+      .then(r => r.json())
+      .then(d => {
+        if (d.logo_url) setLogoUrl(d.logo_url);
+        if (d.org_name) setOrgName(d.org_name);
+      })
+      .catch(() => {});
+  }, []);
 
   const openPanel = async () => {
     if (showPanel) { setShowPanel(false); return; }
@@ -66,8 +79,12 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
     <>
       <div className="status-bar">
         <div className="status-bar-left">
-          <span className="app-logo">Q</span>
-          <span className="app-name">{session?.office_name ?? 'QueueFlow Station'}</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} />
+          ) : (
+            <span className="app-logo">Q</span>
+          )}
+          <span className="app-name">{orgName ?? session?.office_name ?? 'QueueFlow Station'}</span>
         </div>
 
         <div className="status-bar-center">

@@ -1071,9 +1071,10 @@ function serveDisplayPage(res: http.ServerResponse) {
           // Set logo if available from org settings
           if (officeData.logo_url) {
             var logoEl = document.getElementById('logo');
-            if (logoEl && !logoEl.querySelector('img')) {
+            if (logoEl) {
               logoEl.className = 'logo';
-              logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo">';
+              logoEl.style.background = 'none';
+              logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo" onerror="this.parentElement.className=\\'logo fallback\\';this.parentElement.innerHTML=\\'Q\\'">';
             }
           }
         }
