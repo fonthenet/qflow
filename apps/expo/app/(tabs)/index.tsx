@@ -481,7 +481,7 @@ export default function HomeScreen() {
   const serviceLabel = t.service?.name ?? t.department?.name ?? '';
   const officeName = t.office?.name ?? 'Queue';
   const peopleAhead = t.position != null && t.position > 0 ? t.position - 1 : 0;
-  const positionText = t.position ? (t.position === 1 ? 'Almost there' : t.position <= 3 ? 'You are nearly up' : `${peopleAhead} ahead of you`) : '--';
+  const positionText = t.position ? (t.position === 1 ? "You're Next!" : t.position <= 3 ? 'Almost there!' : `${peopleAhead} ahead of you`) : '--';
   const deskName = t.desk?.name ?? 'your desk';
 
   // =======================================================================
@@ -706,8 +706,8 @@ export default function HomeScreen() {
             {serviceLabel ? <Text style={{ fontSize: 14, fontWeight: '500', color: '#cbd5e1', marginTop: 4 }}>{serviceLabel}</Text> : null}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 48, fontWeight: '700', color: '#fff', lineHeight: 52 }}>{t.position ? `#${t.position}` : '--'}</Text>
-            <Text style={{ fontSize: 13, color: 'rgba(34,211,238,0.7)', marginTop: 4 }}>{positionText}</Text>
+            <Text style={{ fontSize: 48, fontWeight: '700', color: t.position === 1 ? '#10b981' : '#fff', lineHeight: 52 }}>{t.position === 1 ? '🔔' : t.position ? `#${t.position}` : '--'}</Text>
+            <Text style={{ fontSize: 13, color: t.position === 1 ? '#10b981' : 'rgba(34,211,238,0.7)', fontWeight: t.position === 1 ? '700' : '400', marginTop: 4 }}>{positionText}</Text>
           </View>
         </View>
 
@@ -718,8 +718,8 @@ export default function HomeScreen() {
               <PulsingDot color="#22d3ee" />
               <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.2, textTransform: 'uppercase' }}>Queue progress</Text>
             </View>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: '#34d399', letterSpacing: 1.2 }}>
-              {t.position ? `#${t.position} in line` : '--'}
+            <Text style={{ fontSize: 11, fontWeight: '600', color: t.position === 1 ? '#10b981' : '#34d399', letterSpacing: 1.2 }}>
+              {t.position === 1 ? "You're Next!" : t.position ? `#${t.position} in line` : '--'}
             </Text>
           </View>
           <ProgressBar position={t.position} />
@@ -728,7 +728,7 @@ export default function HomeScreen() {
 
       {/* 3 Metric cards */}
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <MetricCard label="Wait" value={t.estimated_wait_minutes != null ? `${t.estimated_wait_minutes} min` : '--'} detail={t.estimated_wait_minutes != null ? 'Approximate timing' : 'Calculating time'} accentColor="#38bdf8" />
+        <MetricCard label="Wait" value={t.position === 1 ? 'Now' : t.estimated_wait_minutes != null ? `${t.estimated_wait_minutes} min` : '--'} detail={t.position === 1 ? 'Any moment now' : t.estimated_wait_minutes != null ? 'Approximate timing' : 'Calculating time'} accentColor="#38bdf8" />
         <MetricCard label="Now serving" value={t.now_serving ?? '--'} detail="Current desk activity" accentColor="#34d399" smallValue />
         <MetricCard label="Alerts" value="Ready" detail="Background alerts on" accentColor="#fbbf24" />
       </View>
