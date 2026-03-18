@@ -4,12 +4,12 @@
  * Single source of truth for queue position across the entire app.
  *
  * Rules:
- *   1. Position is DEPARTMENT-scoped (same office + same department)
+ *   1. Position is SERVICE-scoped (same office + same service)
  *   2. Only 'waiting' tickets count (parked tickets excluded)
  *   3. Ordering: priority DESC (higher number = served first), then created_at ASC (FIFO)
  *   4. Position is 1-based (1 = next to be called)
  *   5. Estimated wait = (position - 1) * avg service time
- *   6. Now serving = most recently called/serving ticket in the department
+ *   6. Now serving = most recently called/serving ticket for the same service
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -30,7 +30,7 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
   // 1. Get the ticket
   const { data: ticket, error } = await supabase
     .from('tickets')
-    .select('id, status, office_id, department_id, priority, created_at, parked_at')
+    .select('id, status, office_id, service_id, priority, created_at, parked_at')
     .eq('id', ticketId)
     .single();
 
@@ -45,8 +45,8 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
 
   const ticketPriority = ticket.priority ?? 0;
 
-  // 2. Count tickets AHEAD: higher priority, OR same priority + earlier created_at
-  //    Two queries because Supabase JS can't do OR conditions on different columns
+  // 2. Count tickets AHEAD: same office + same service
+  //    Higher priority, OR same priority + earlier created_at
   const [higherPriorityResult, samePriorityEarlierResult, totalResult, nowServingResult] =
     await Promise.all([
       // Tickets with strictly higher priority
@@ -54,7 +54,7 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
         .from('tickets')
         .select('id', { count: 'exact', head: true })
         .eq('office_id', ticket.office_id)
-        .eq('department_id', ticket.department_id)
+        .eq('service_id', ticket.service_id)
         .eq('status', 'waiting')
         .is('parked_at', null)
         .neq('id', ticketId)
@@ -65,28 +65,28 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
         .from('tickets')
         .select('id', { count: 'exact', head: true })
         .eq('office_id', ticket.office_id)
-        .eq('department_id', ticket.department_id)
+        .eq('service_id', ticket.service_id)
         .eq('status', 'waiting')
         .is('parked_at', null)
         .neq('id', ticketId)
         .eq('priority', ticketPriority)
         .lt('created_at', ticket.created_at),
 
-      // Total waiting in department (excluding parked)
+      // Total waiting for this service (excluding parked)
       supabase
         .from('tickets')
         .select('id', { count: 'exact', head: true })
         .eq('office_id', ticket.office_id)
-        .eq('department_id', ticket.department_id)
+        .eq('service_id', ticket.service_id)
         .eq('status', 'waiting')
         .is('parked_at', null),
 
-      // Currently serving/called ticket
+      // Currently serving/called ticket for same service
       supabase
         .from('tickets')
         .select('ticket_number')
         .eq('office_id', ticket.office_id)
-        .eq('department_id', ticket.department_id)
+        .eq('service_id', ticket.service_id)
         .in('status', ['serving', 'called'])
         .order('called_at', { ascending: false, nullsFirst: false })
         .limit(1)
@@ -96,17 +96,17 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
   const position = 1 + (higherPriorityResult.count ?? 0) + (samePriorityEarlierResult.count ?? 0);
   const totalWaiting = totalResult.count ?? 0;
 
-  // 3. Estimate wait time from recent service history
+  // 3. Estimate wait time from recent service history (same service)
   const { data: recentServed } = await supabase
     .from('tickets')
     .select('completed_at, serving_started_at')
     .eq('office_id', ticket.office_id)
-    .eq('department_id', ticket.department_id)
+    .eq('service_id', ticket.service_id)
     .eq('status', 'served')
     .not('completed_at', 'is', null)
     .not('serving_started_at', 'is', null)
     .order('completed_at', { ascending: false })
-    .limit(50);
+    .limit(20);
 
   let avgServiceTime = 5; // default 5 min per ticket
   if (recentServed && recentServed.length > 0) {

@@ -411,20 +411,14 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
 
   if (!ticket) return null;
 
-  const [positionResult, waitResult, servingResult, deskName] = await Promise.all([
+  const [queueResult, servingResult, deskName] = await Promise.all([
     ticket.status === 'waiting'
       ? supabase.rpc('get_queue_position', { p_ticket_id: ticket.id })
       : Promise.resolve({ data: null }),
-    ticket.status === 'waiting'
-      ? supabase.rpc('estimate_wait_time', {
-          p_department_id: ticket.department_id,
-          p_service_id: ticket.service_id,
-        })
-      : Promise.resolve({ data: ticket.estimated_wait_minutes ?? null }),
     supabase
       .from('tickets')
       .select('ticket_number')
-      .eq('department_id', ticket.department_id)
+      .eq('service_id', ticket.service_id)
       .eq('office_id', ticket.office_id)
       .in('status', ['called', 'serving'])
       .order('called_at', { ascending: false })
@@ -432,6 +426,11 @@ export async function getAndroidTicketState(ticketId: string): Promise<AndroidTi
       .maybeSingle(),
     getDeskNameForTicket(supabase, ticket.desk_id),
   ]);
+
+  // Extract position and wait from canonical jsonb response
+  const posObj = queueResult.data as Record<string, unknown> | null;
+  const positionResult = { data: typeof posObj?.position === 'number' ? posObj.position : null };
+  const waitResult = { data: typeof posObj?.estimated_wait_minutes === 'number' ? posObj.estimated_wait_minutes : null };
 
   let type: AndroidPushType = 'position_update';
   const officeRaw = ticket.office as unknown as { name: string } | { name: string }[] | null;

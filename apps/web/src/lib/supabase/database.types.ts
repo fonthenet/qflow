@@ -868,7 +868,7 @@ export type Database = {
         Returns: { seq: number; ticket_num: string }[]
       }
       get_my_org_id: { Args: never; Returns: string }
-      get_queue_position: { Args: { p_ticket_id: string }; Returns: number }
+      get_queue_position: { Args: { p_ticket_id: string }; Returns: Record<string, unknown> }
     }
     Enums: {
       [_ in never]: never

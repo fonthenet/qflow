@@ -186,28 +186,24 @@ export async function sendPositionUpdatePush(ticketId: string): Promise<boolean>
 
   if (!ticket || ticket.status !== 'waiting') return false;
 
-  // Get position and wait time
-  const [posResult, waitResult] = await Promise.all([
-    supabase.rpc('get_queue_position', { p_ticket_id: ticketId }),
-    supabase.rpc('estimate_wait_time', {
-      p_department_id: ticket.department_id,
-      p_service_id: ticket.service_id,
-    }),
-  ]);
+  // Get position, wait time, and now-serving from canonical function
+  const { data: queueData } = await supabase.rpc('get_queue_position', { p_ticket_id: ticketId });
 
-  // Get "now serving" ticket number
+  const posObj = queueData as Record<string, unknown> | null;
+  const position = typeof posObj?.position === 'number' ? posObj.position : null;
+  const estimatedWait = typeof posObj?.estimated_wait_minutes === 'number' ? posObj.estimated_wait_minutes : null;
+
+  // Get "now serving" ticket number for same service
   const { data: servingTicket } = await supabase
     .from('tickets')
     .select('ticket_number')
-    .eq('department_id', ticket.department_id)
+    .eq('service_id', ticket.service_id)
     .eq('office_id', ticket.office_id)
     .in('status', ['called', 'serving'])
     .order('called_at', { ascending: false })
     .limit(1)
     .single();
 
-  const position = posResult.data ?? null;
-  const estimatedWait = waitResult.data ?? null;
   const nowServing = servingTicket?.ticket_number ?? null;
 
   return sendPushToTicket(ticketId, {

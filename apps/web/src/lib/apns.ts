@@ -483,18 +483,21 @@ async function fetchLiveActivitySnapshot(ticketId: string): Promise<{
   let nowServing: string | null = null;
 
   if (ticket.status === 'waiting') {
-    const { data: queuePosition, error: positionError } = await supabase.rpc('get_queue_position', {
+    const { data: queueData, error: positionError } = await supabase.rpc('get_queue_position', {
       p_ticket_id: ticket.id,
     });
 
-    if (!positionError && typeof queuePosition === 'number' && queuePosition > 0) {
-      position = queuePosition;
+    if (!positionError && queueData && typeof queueData === 'object') {
+      const posObj = queueData as Record<string, unknown>;
+      if (typeof posObj.position === 'number' && posObj.position > 0) {
+        position = posObj.position;
+      }
     }
 
     const { data: activeTickets, error: activeError } = await supabase
       .from('tickets')
       .select('ticket_number')
-      .eq('department_id', ticket.department_id)
+      .eq('service_id', ticket.service_id)
       .eq('office_id', ticket.office_id)
       .in('status', ['serving', 'called'])
       .order('called_at', { ascending: false })
