@@ -51,4 +51,9 @@ contextBridge.exposeInMainWorld('qf', {
     getUrl: () => ipcRenderer.invoke('kiosk:url'),
     getLocalIP: () => ipcRenderer.invoke('kiosk:local-ip'),
   },
+
+  // Org branding
+  org: {
+    getBranding: () => ipcRenderer.invoke('org:branding'),
+  },
 });

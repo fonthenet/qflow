@@ -230,6 +230,26 @@ function setupIPC() {
 
   ipcMain.handle('kiosk:url', () => kioskUrl);
   ipcMain.handle('kiosk:local-ip', () => getLocalIP());
+
+  ipcMain.handle('org:branding', async () => {
+    // Try to get org name + logo from Supabase
+    try {
+      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+      if (!session?.office_ids?.length) return { orgName: null, logoUrl: null };
+
+      const office = db.prepare('SELECT organization_id FROM offices WHERE id = ?').get(session.office_ids[0]) as any;
+      if (!office?.organization_id) return { orgName: null, logoUrl: null };
+
+      const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url`, { headers, signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const orgs = await res.json();
+        return { orgName: orgs[0]?.name ?? null, logoUrl: orgs[0]?.logo_url ?? null };
+      }
+    } catch {}
+    return { orgName: null, logoUrl: null };
+  });
 }
 
 // ── App lifecycle ────────────────────────────────────────────────────

@@ -29,12 +29,10 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
   const [orgName, setOrgName] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fetch org logo and name from local kiosk server
-    fetch('http://localhost:3847/api/kiosk-info')
-      .then(r => r.json())
-      .then(d => {
-        if (d.logo_url) setLogoUrl(d.logo_url);
-        if (d.org_name) setOrgName(d.org_name);
+    window.qf.org?.getBranding?.()
+      .then((b: { orgName: string | null; logoUrl: string | null }) => {
+        if (b?.logoUrl) setLogoUrl(b.logoUrl);
+        if (b?.orgName) setOrgName(b.orgName);
       })
       .catch(() => {});
   }, []);
