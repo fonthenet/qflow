@@ -1,0 +1,50 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('qf', {
+  // Config
+  getConfig: () => ipcRenderer.invoke('get-config'),
+
+  // Database operations
+  db: {
+    getTickets: (officeId: string, statuses: string[]) =>
+      ipcRenderer.invoke('db:get-tickets', officeId, statuses),
+    createTicket: (ticket: any) =>
+      ipcRenderer.invoke('db:create-ticket', ticket),
+    updateTicket: (ticketId: string, updates: any) =>
+      ipcRenderer.invoke('db:update-ticket', ticketId, updates),
+    callNext: (officeId: string, deskId: string, staffId: string) =>
+      ipcRenderer.invoke('db:call-next', officeId, deskId, staffId),
+  },
+
+  // Sync
+  sync: {
+    getStatus: () => ipcRenderer.invoke('sync:status'),
+    forceSync: () => ipcRenderer.invoke('sync:force'),
+    onStatusChange: (callback: (status: string) => void) => {
+      const handler = (_: any, status: string) => callback(status);
+      ipcRenderer.on('sync:status-change', handler);
+      return () => ipcRenderer.removeListener('sync:status-change', handler);
+    },
+    onProgress: (callback: (count: number) => void) => {
+      const handler = (_: any, count: number) => callback(count);
+      ipcRenderer.on('sync:progress', handler);
+      return () => ipcRenderer.removeListener('sync:progress', handler);
+    },
+  },
+
+  // Session
+  session: {
+    save: (session: any) => ipcRenderer.invoke('session:save', session),
+    load: () => ipcRenderer.invoke('session:load'),
+    clear: () => ipcRenderer.invoke('session:clear'),
+  },
+
+  // Connection
+  isOnline: () => ipcRenderer.invoke('connection:status'),
+
+  // Kiosk
+  kiosk: {
+    getUrl: () => ipcRenderer.invoke('kiosk:url'),
+    getLocalIP: () => ipcRenderer.invoke('kiosk:local-ip'),
+  },
+});
