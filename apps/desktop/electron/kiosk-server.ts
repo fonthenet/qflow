@@ -4,6 +4,14 @@ import { getDB, generateOfflineTicketNumber } from './db';
 import { randomUUID } from 'crypto';
 
 let isCloudReachable = false;
+
+// ── Device tracking ───────────────────────────────────────────────
+interface DeviceInfo { id: string; type: string; name: string; lastPing: number; }
+const devices: Map<string, DeviceInfo> = new Map();
+// Station (this PC) is always present
+devices.set('station', { id: 'station', type: 'station', name: 'QueueFlow Station', lastPing: Date.now() });
+// Update station heartbeat every 10s
+setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.now(); }, 10000);
 const CLOUD_URL = 'https://qflow-sigma.vercel.app';
 const SUPABASE_URL = 'https://ofyyzuocifigyyhqxxqw.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
@@ -92,6 +100,10 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+      } else if (path === '/api/device-ping' && req.method === 'POST') {
+        handleDevicePing(req, res);
+      } else if (path === '/api/device-status' && req.method === 'GET') {
+        handleDeviceStatus(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -450,7 +462,7 @@ function serveKioskPage(res: http.ServerResponse) {
         '<div class="kiosk-logo"><span>Q</span></div>' +
         '<h1>' + (state.orgName || name) + '</h1>' +
         (state.orgName && state.orgName !== name ? '<div class="subtitle">' + name + '</div>' : '<div class="subtitle">Take a ticket to join the queue</div>') +
-        '<div class="offline-badge">Offline Mode — Connected locally</div>' +
+        '<div class="offline-badge" id="kiosk-conn">Local Mode — Tickets sync when online</div>' +
         '</div>';
 
       if (state.step === 'department') {
@@ -651,6 +663,38 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
 
 // ── Tracking Page ─────────────────────────────────────────────────
 
+// ── Device Ping/Status ────────────────────────────────────────────
+
+function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
+  let body = '';
+  req.on('data', (chunk) => { body += chunk; });
+  req.on('end', () => {
+    try {
+      const { id, type, name } = JSON.parse(body);
+      if (id && type) {
+        devices.set(id, { id, type, name: name ?? type, lastPing: Date.now() });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid body' }));
+    }
+  });
+}
+
+function handleDeviceStatus(res: http.ServerResponse) {
+  const now = Date.now();
+  const TIMEOUT = 30_000; // 30s = considered disconnected
+  const list = Array.from(devices.values()).map(d => ({
+    ...d,
+    connected: (now - d.lastPing) < TIMEOUT,
+    lastPing: new Date(d.lastPing).toISOString(),
+  }));
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ cloud: isCloudReachable, devices: list }));
+}
+
 function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
   const ip = getLocalIP();
   const apiBase = `http://${ip}:${localPort}`;
@@ -770,6 +814,13 @@ function serveDisplayPage(res: http.ServerResponse) {
     .header-right { text-align: right; }
     .clock { font-size: 42px; font-weight: 800; color: #0f172a; letter-spacing: -1px; line-height: 1; }
     .date { font-size: 15px; color: #64748b; font-weight: 500; margin-top: 2px; }
+    .conn-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .conn-badge.connected { background: #d1fae5; color: #065f46; }
+    .conn-badge.local { background: #fef3c7; color: #92400e; }
+    .conn-badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .conn-badge.connected .dot { background: #22c55e; animation: pulse-dot 2s infinite; }
+    .conn-badge.local .dot { background: #f59e0b; }
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
     /* ── Stats strip ── */
     .stats-strip { display: flex; gap: 0; background: white; border-bottom: 1px solid #e2e8f0; }
@@ -856,12 +907,16 @@ function serveDisplayPage(res: http.ServerResponse) {
           <div class="branch-name" id="branch-name"></div>
         </div>
       </div>
-      <div class="header-right">
-        <div class="clock" id="clock"></div>
-        <div class="date" id="date"></div>
+      <div class="header-right" style="display:flex;align-items:center;gap:16px">
+        <div class="conn-badge connected" id="conn-badge"><span class="dot"></span><span id="conn-text">Connected</span></div>
+        <div style="text-align:right">
+          <div class="clock" id="clock"></div>
+          <div class="date" id="date"></div>
+        </div>
       </div>
     </div>
 
+    <div id="device-warn" style="display:none;background:#fef3c7;color:#92400e;text-align:center;padding:8px;font-size:14px;font-weight:700"></div>
     <div class="stats-strip">
       <div class="stat-box"><div class="stat-num waiting" id="s-waiting">0</div><div class="stat-label">Waiting</div></div>
       <div class="stat-box"><div class="stat-num called" id="s-called">0</div><div class="stat-label">Called</div></div>
@@ -897,7 +952,15 @@ function serveDisplayPage(res: http.ServerResponse) {
     var allTickets = [];
     var departments = {};
     var desks = {};
-    var chimeAudio = null;
+    var isCloud = false;
+
+    function setConnStatus(online) {
+      isCloud = online;
+      var badge = document.getElementById('conn-badge');
+      var text = document.getElementById('conn-text');
+      if (badge) { badge.className = 'conn-badge ' + (online ? 'connected' : 'local'); }
+      if (text) { text.textContent = online ? 'Connected' : 'Local Mode'; }
+    }
 
     // Simple chime via Web Audio API
     function playChime() {
@@ -1110,8 +1173,10 @@ function serveDisplayPage(res: http.ServerResponse) {
         lastActive = [...called, ...serving];
         renderServing(lastActive);
         renderQueue(waiting);
+        setConnStatus(true);
       } catch(e) {
         // Fallback to local API
+        setConnStatus(false);
         try {
           var res = await fetch(API + '/api/display-data');
           var d = await res.json();
@@ -1126,23 +1191,46 @@ function serveDisplayPage(res: http.ServerResponse) {
       }
     }
 
+    // Device ping — register this display
+    var displayId = 'display-' + Math.random().toString(36).substr(2, 6);
+    function pingDevice() {
+      fetch(API + '/api/device-ping', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id: displayId, type: 'display', name: 'Waiting Room Display' })
+      }).catch(function(){});
+    }
+    pingDevice();
+    setInterval(pingDevice, 15000);
+
+    // Check device statuses and show disconnected warnings
+    async function checkDevices() {
+      try {
+        var res = await fetch(API + '/api/device-status');
+        var d = await res.json();
+        var disconnected = (d.devices || []).filter(function(dev) { return !dev.connected && dev.type !== 'display'; });
+        var el = document.getElementById('device-warn');
+        if (disconnected.length > 0) {
+          var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
+          if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
+        } else {
+          if (el) el.style.display = 'none';
+        }
+      } catch(e) {}
+    }
+    setInterval(checkDevices, 10000);
+
     // Clock + countdown updates every second
     var lastActive = [];
     function tick() {
       updateClock();
-      // Re-render serving panel for countdown updates
       if (lastActive.length > 0) renderServing(lastActive);
     }
     setInterval(tick, 1000);
     tick();
 
     // Data refresh every 2 seconds
-    var origFetch = fetchData;
-    async function fetchAndStore() {
-      await origFetch();
-    }
-    fetchAndStore();
-    setInterval(fetchAndStore, 2000);
+    fetchData();
+    setInterval(fetchData, 2000);
   <\/script>
 </body>
 </html>`;

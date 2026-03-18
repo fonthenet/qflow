@@ -213,9 +213,24 @@ export function Station({ session, isOnline }: Props) {
   // ── Derived data ────────────────────────────────────────────────
 
   const [kioskUrl, setKioskUrl] = useState<string | null>(null);
+  const [deviceStatuses, setDeviceStatuses] = useState<any[]>([]);
 
   useEffect(() => {
     window.qf.kiosk?.getUrl?.().then((url: string | null) => setKioskUrl(url));
+  }, []);
+
+  // Ping as station device + check all device statuses
+  useEffect(() => {
+    const checkDevices = async () => {
+      try {
+        const res = await fetch('http://localhost:3847/api/device-status');
+        const d = await res.json();
+        setDeviceStatuses(d.devices ?? []);
+      } catch {}
+    };
+    checkDevices();
+    const iv = setInterval(checkDevices, 10000);
+    return () => clearInterval(iv);
   }, []);
 
   const waiting = tickets.filter((t) => t.status === 'waiting' && !t.parked_at);
@@ -400,6 +415,30 @@ export function Station({ session, isOnline }: Props) {
             ))}
           </div>
         </div>
+
+        {/* Device Status */}
+        {deviceStatuses.length > 0 && (
+          <div className="sidebar-section">
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Devices
+            </div>
+            {deviceStatuses.map((d: any) => (
+              <div key={d.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
+                fontSize: 13, color: d.connected ? 'var(--text2)' : 'var(--danger)',
+              }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: 4, flexShrink: 0,
+                  background: d.connected ? '#22c55e' : '#ef4444',
+                }} />
+                <span style={{ flex: 1 }}>{d.name}</span>
+                <span style={{ fontSize: 11, color: d.connected ? 'var(--text3)' : 'var(--danger)' }}>
+                  {d.connected ? 'Online' : 'Offline'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Local Network URLs */}
         {kioskUrl && (
