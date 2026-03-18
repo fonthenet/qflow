@@ -228,11 +228,13 @@ export async function createDesk(data: {
   name: string;
   office_id: string;
   department_id?: string | null;
+  current_staff_id?: string | null;
 }) {
   const { error } = await supabase.from('desks').insert({
     name: data.name,
     office_id: data.office_id,
     department_id: data.department_id || null,
+    current_staff_id: data.current_staff_id || null,
     is_active: true,
     status: 'closed',
   });
@@ -242,6 +244,7 @@ export async function createDesk(data: {
 export async function updateDesk(deskId: string, data: {
   name?: string;
   department_id?: string | null;
+  current_staff_id?: string | null;
   is_active?: boolean;
   status?: string;
 }) {

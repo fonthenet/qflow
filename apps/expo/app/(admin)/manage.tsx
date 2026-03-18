@@ -45,6 +45,7 @@ interface DeskRow {
   department_id: string | null;
   offices: { name: string } | null;
   departments: { name: string } | null;
+  staff: { full_name: string } | null;
 }
 interface OfficeRow {
   id: string;
@@ -176,7 +177,7 @@ export default function ManageScreen() {
           if (officeIds.length === 0) break;
           const { data } = await supabase
             .from('desks')
-            .select('id, name, status, is_active, current_staff_id, office_id, department_id, offices:office_id(name), departments:department_id(name)')
+            .select('id, name, status, is_active, current_staff_id, office_id, department_id, offices:office_id(name), departments:department_id(name), staff:current_staff_id(full_name)')
             .in('office_id', officeIds)
             .order('name');
           setDeskList((data as unknown as DeskRow[]) ?? []);
@@ -362,6 +363,8 @@ export default function ManageScreen() {
           office_name: (item.offices as any)?.name || '',
           department_id: item.department_id || '',
           department_name: (item.departments as any)?.name || '',
+          current_staff_id: item.current_staff_id || '',
+          staff_name: (item.staff as any)?.full_name || '',
         });
         break;
       case 'departments': {
@@ -462,12 +465,14 @@ export default function ManageScreen() {
             await Actions.updateDesk(editingItem.id, {
               name: formData.name.trim(),
               department_id: formData.department_id || null,
+              current_staff_id: formData.current_staff_id || null,
             });
           } else {
             await Actions.createDesk({
               name: formData.name.trim(),
               office_id: formData.office_id,
               department_id: formData.department_id || null,
+              current_staff_id: formData.current_staff_id || null,
             });
           }
           break;
@@ -599,12 +604,18 @@ export default function ManageScreen() {
     setPickerField('department_id');
   };
 
+  const openStaffPicker = () => {
+    setPickerOptions(staffList.map((s) => ({ label: `${s.full_name} (${s.role.replace(/_/g, ' ')})`, value: s.id })));
+    setPickerField('current_staff_id');
+  };
+
   const handlePickerSelect = (value: string, label: string) => {
     if (!pickerField) return;
+    const nameKey = pickerField === 'current_staff_id' ? 'staff_name' : pickerField.replace('_id', '_name');
     setFormData((prev) => ({
       ...prev,
       [pickerField]: value,
-      [pickerField.replace('_id', '_name')]: label,
+      [nameKey]: label,
     }));
     setPickerField(null);
   };
@@ -621,6 +632,16 @@ export default function ManageScreen() {
       .order('name')
       .then(({ data }) => {
         if (data) setOfficeList(data as unknown as OfficeRow[]);
+      });
+    // Always keep staff list fresh for desk assignment picker
+    supabase
+      .from('staff')
+      .select('id, full_name, email, role, is_active, office_id, department_id, offices:office_id(name), departments:department_id(name)')
+      .eq('organization_id', orgId)
+      .eq('is_active', true)
+      .order('full_name')
+      .then(({ data }) => {
+        if (data) setStaffList(data as unknown as StaffRow[]);
       });
   }, [orgId]);
 
@@ -701,7 +722,7 @@ export default function ManageScreen() {
                       </Text>
                       <View style={styles.badges}>
                         <Badge label={item.status} color={statusColor} />
-                        {item.current_staff_id && <Badge label="Staffed" color={colors.success} />}
+                        {(item.staff as any)?.full_name ? <Badge label={(item.staff as any).full_name} color={colors.success} /> : item.current_staff_id ? <Badge label="Staffed" color={colors.success} /> : null}
                       </View>
                     </View>
                   </View>
@@ -1265,6 +1286,14 @@ export default function ManageScreen() {
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
+            <FormField label="Assigned Staff">
+              <TouchableOpacity style={styles.pickerButton} onPress={openStaffPicker}>
+                <Text style={formData.current_staff_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
+                  {formData.staff_name || 'No staff assigned'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </FormField>
           </>
         );
 
@@ -1488,7 +1517,9 @@ export default function ManageScreen() {
                       ? 'Select Role'
                       : pickerField === 'office_id'
                         ? 'Select Office'
-                        : 'Select Department'}
+                        : pickerField === 'current_staff_id'
+                          ? 'Assign Staff'
+                          : 'Select Department'}
                   </Text>
                   <View style={{ width: 60 }} />
                 </View>
@@ -1508,10 +1539,11 @@ export default function ManageScreen() {
                             department_name: '',
                           }));
                         } else {
+                          const nameKey = field === 'current_staff_id' ? 'staff_name' : field.replace('_id', '_name');
                           setFormData((prev) => ({
                             ...prev,
                             [field]: '',
-                            [field.replace('_id', '_name')]: '',
+                            [nameKey]: '',
                           }));
                         }
                         setPickerField(null);
@@ -1539,10 +1571,11 @@ export default function ManageScreen() {
                               department_name: '',
                             }));
                           } else {
+                            const nameKey = field === 'current_staff_id' ? 'staff_name' : field.replace('_id', '_name');
                             setFormData((prev) => ({
                               ...prev,
                               [field]: opt.value,
-                              [field.replace('_id', '_name')]: opt.label,
+                              [nameKey]: opt.label,
                             }));
                           }
                           setPickerField(null);
