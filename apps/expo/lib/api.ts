@@ -261,6 +261,7 @@ export interface QueueStatusResponse {
   }>;
   totalWaiting: number;
   totalServing: number;
+  bookingMode?: string;
 }
 
 export async function fetchQueueStatus(slug: string): Promise<QueueStatusResponse | null> {
@@ -281,6 +282,13 @@ export interface BookingSlotsResponse {
   officeId: string;
   date: string;
   slots: string[]; // HH:MM
+  meta?: {
+    booking_mode: string;
+    booking_horizon_days: number;
+    slot_duration_minutes: number;
+    slots_per_interval: number;
+    allow_cancellation: boolean;
+  };
 }
 
 export async function fetchBookingSlots(

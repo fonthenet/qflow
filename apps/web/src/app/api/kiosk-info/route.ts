@@ -100,6 +100,8 @@ export async function GET(request: NextRequest) {
       orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
     kiosk_hidden_services:
       orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
+    booking_mode: orgSettings.booking_mode ?? 'simple',
+    booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 7),
   };
 
   // Filter out hidden departments and services, flatten services

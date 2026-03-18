@@ -112,6 +112,13 @@ export function BookingForm({
 
   const today = new Date().toISOString().split('T')[0];
   const orgSettings = organization?.settings ?? {};
+  const bookingMode = orgSettings.booking_mode ?? 'simple';
+  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
+  const maxDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + bookingHorizonDays);
+    return d.toISOString().split('T')[0];
+  })();
   const bookingEmailOtpEnabled = Boolean(orgSettings.email_otp_enabled);
   const bookingEmailOtpRequired = Boolean(
     orgSettings.email_otp_enabled && orgSettings.email_otp_required_for_booking
@@ -456,6 +463,20 @@ export function BookingForm({
     });
   }
 
+  if (bookingMode === 'disabled') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
+        <div className="mx-auto max-w-lg px-4 py-20 text-center">
+          <Calendar className="mx-auto h-16 w-16 text-muted-foreground/50" />
+          <h2 className="mt-6 text-2xl font-bold text-foreground">Online Booking Unavailable</h2>
+          <p className="mt-3 text-muted-foreground">
+            This business does not currently accept online bookings. Please visit in person or contact them directly.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
       {sandboxMode ? (
@@ -597,6 +618,7 @@ export function BookingForm({
               <input
                 type="date"
                 min={today}
+                max={maxDate}
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"

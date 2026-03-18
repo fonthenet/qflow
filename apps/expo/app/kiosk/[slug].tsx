@@ -360,16 +360,18 @@ export default function KioskScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[s.bookBtn, { borderColor: colors.border }]}
-            onPress={() => router.push(`/book-appointment/${slug}` as any)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="calendar-outline" size={isTablet ? 20 : 16} color={colors.primary} />
-            <Text style={[s.bookBtnText, { color: colors.primary }, isTablet && { fontSize: fontSize.md }]}>
-              Book for Later
-            </Text>
-          </TouchableOpacity>
+          {info?.settings?.booking_mode !== 'disabled' && (
+            <TouchableOpacity
+              style={[s.bookBtn, { borderColor: colors.border }]}
+              onPress={() => router.push(`/book-appointment/${slug}` as any)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="calendar-outline" size={isTablet ? 20 : 16} color={colors.primary} />
+              <Text style={[s.bookBtnText, { color: colors.primary }, isTablet && { fontSize: fontSize.md }]}>
+                Book for Later
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={s.peekBtn}

@@ -223,14 +223,16 @@ export default function QueuePeekScreen() {
         <Text style={s.joinAnyBtnText}>Get a Ticket Now</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[s.bookLaterBtn, { borderColor: colors.border }]}
-        onPress={() => router.push(`/book-appointment/${slug}` as any)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-        <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>Book for Later</Text>
-      </TouchableOpacity>
+      {status?.bookingMode !== 'disabled' && (
+        <TouchableOpacity
+          style={[s.bookLaterBtn, { borderColor: colors.border }]}
+          onPress={() => router.push(`/book-appointment/${slug}` as any)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>Book for Later</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }

@@ -86,6 +86,7 @@ export default function MoreScreen() {
 
     if (orgData.data) {
       const d = orgData.data as any;
+      const jsonSettings = (d.settings as Record<string, any>) ?? {};
       setSettings({
         id: d.id,
         name: d.name ?? '',
@@ -98,7 +99,12 @@ export default function MoreScreen() {
         announcement_sound: d.announcement_sound ?? true,
         supported_languages: d.supported_languages ?? ['en'],
         default_language: d.default_language ?? 'en',
-      });
+        // Booking settings from jsonb
+        booking_mode: jsonSettings.booking_mode ?? 'simple',
+        booking_horizon_days: jsonSettings.booking_horizon_days ?? 7,
+        slot_duration_minutes: jsonSettings.slot_duration_minutes ?? 30,
+        slots_per_interval: jsonSettings.slots_per_interval ?? 1,
+      } as any);
     }
   };
 
@@ -108,6 +114,18 @@ export default function MoreScreen() {
     const updated = { ...settings, [field]: value } as OrgSettings;
     setSettings(updated);
     await supabase.from('organizations').update({ [field]: value }).eq('id', settings.id);
+    setSaving(false);
+  };
+
+  const updateSettingsJson = async (key: string, value: unknown) => {
+    if (!settings) return;
+    setSaving(true);
+    // Read current settings jsonb, merge new key, write back
+    const { data: org } = await supabase.from('organizations').select('settings').eq('id', settings.id).single();
+    const current = (org?.settings as Record<string, any>) ?? {};
+    const merged = { ...current, [key]: value };
+    await supabase.from('organizations').update({ settings: merged }).eq('id', settings.id);
+    setSettings({ ...settings, [key]: value } as any);
     setSaving(false);
   };
 
@@ -272,11 +290,88 @@ export default function MoreScreen() {
         </View>
       )}
 
+      {/* Booking & Scheduling */}
+      {settings && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Booking & Scheduling</Text>
+
+          <SettingRow label="Booking Mode" icon="calendar-outline">
+            <View style={styles.chipRow}>
+              {(['disabled', 'simple', 'advanced'] as const).map((mode) => {
+                const currentMode = (settings as any).booking_mode ?? 'simple';
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[styles.chip, currentMode === mode && styles.chipActive]}
+                    onPress={() => updateSettingsJson('booking_mode', mode)}
+                  >
+                    <Text style={[styles.chipText, currentMode === mode && styles.chipTextActive]}>
+                      {mode}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </SettingRow>
+
+          {((settings as any).booking_mode ?? 'simple') === 'advanced' && (
+            <>
+              <SettingRow label="Booking Horizon (days)" icon="calendar-outline">
+                <TextInput
+                  style={styles.input}
+                  value={String((settings as any).booking_horizon_days ?? 7)}
+                  onChangeText={(v) => {
+                    const n = parseInt(v) || 7;
+                    setSettings({ ...settings, booking_horizon_days: n } as any);
+                  }}
+                  onBlur={() => updateSettingsJson('booking_horizon_days', (settings as any).booking_horizon_days ?? 7)}
+                  keyboardType="number-pad"
+                  placeholder="7"
+                  placeholderTextColor={colors.textMuted}
+                />
+              </SettingRow>
+
+              <SettingRow label="Slot Duration (min)" icon="time-outline">
+                <View style={styles.chipRow}>
+                  {[15, 20, 30, 45, 60].map((d) => {
+                    const current = (settings as any).slot_duration_minutes ?? 30;
+                    return (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.chip, current === d && styles.chipActive]}
+                        onPress={() => updateSettingsJson('slot_duration_minutes', d)}
+                      >
+                        <Text style={[styles.chipText, current === d && styles.chipTextActive]}>{d}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </SettingRow>
+
+              <SettingRow label="Bookings per Slot" icon="people-outline">
+                <TextInput
+                  style={styles.input}
+                  value={String((settings as any).slots_per_interval ?? 1)}
+                  onChangeText={(v) => {
+                    const n = parseInt(v) || 1;
+                    setSettings({ ...settings, slots_per_interval: n } as any);
+                  }}
+                  onBlur={() => updateSettingsJson('slots_per_interval', (settings as any).slots_per_interval ?? 1)}
+                  keyboardType="number-pad"
+                  placeholder="1"
+                  placeholderTextColor={colors.textMuted}
+                />
+              </SettingRow>
+            </>
+          )}
+        </View>
+      )}
+
       {/* Features */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Features</Text>
 
-        <NavRow icon="calendar-outline" label="Bookings" subtitle="Manage appointments & check-ins" color={colors.waiting}
+        <NavRow icon="calendar-outline" label="Bookings" subtitle="View & manage appointments" color={colors.waiting}
           onPress={() => router.push('/admin/bookings')} />
 
         <NavRow icon="qr-code-outline" label="Virtual Codes" subtitle="QR codes for queue joining" color={colors.success}

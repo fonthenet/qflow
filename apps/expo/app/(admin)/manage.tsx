@@ -23,7 +23,7 @@ import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 // ── Types ────────────────────────────────────────────────────────────
 
-type ManageTab = 'offices' | 'staff' | 'desks' | 'departments' | 'services' | 'priorities' | 'customers';
+type ManageTab = 'offices' | 'staff' | 'desks' | 'departments' | 'services' | 'priorities' | 'customers' | 'bookings';
 
 interface StaffRow {
   id: string;
@@ -83,6 +83,19 @@ interface CustomerRow {
   last_visit: string | null;
 }
 
+interface AppointmentRow {
+  id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  scheduled_at: string;
+  status: string;
+  department_id: string;
+  service_id: string;
+  departments: { name: string } | null;
+  services: { name: string } | null;
+  ticket_id: string | null;
+}
+
 // ── Tab Configuration ────────────────────────────────────────────────
 
 const TABS: { key: ManageTab; label: string; icon: string }[] = [
@@ -93,6 +106,7 @@ const TABS: { key: ManageTab; label: string; icon: string }[] = [
   { key: 'services', label: 'Services', icon: 'layers' },
   { key: 'priorities', label: 'Priority', icon: 'flag' },
   { key: 'customers', label: 'Clients', icon: 'person-outline' },
+  { key: 'bookings', label: 'Bookings', icon: 'calendar' },
 ];
 
 const STAFF_ROLES = ['admin', 'manager', 'desk_operator', 'receptionist', 'floor_manager'] as const;
@@ -112,6 +126,10 @@ export default function ManageScreen() {
   const [priorityList, setPriorityList] = useState<PriorityRow[]>([]);
   const [customerList, setCustomerList] = useState<CustomerRow[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [appointmentList, setAppointmentList] = useState<AppointmentRow[]>([]);
+  const [bookingDateFilter, setBookingDateFilter] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('all');
+  const [bookingDeptFilter, setBookingDeptFilter] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   // Modal state
@@ -233,11 +251,37 @@ export default function ManageScreen() {
           setCustomerList(Array.from(grouped.values()).sort((a, b) => b.visit_count - a.visit_count));
           break;
         }
+        case 'bookings': {
+          if (officeIds.length === 0) break;
+          const bStart = `${bookingDateFilter}T00:00:00`;
+          const bEnd = `${bookingDateFilter}T23:59:59`;
+          let bQuery = supabase
+            .from('appointments')
+            .select('id, customer_name, customer_phone, scheduled_at, status, department_id, service_id, ticket_id, departments:department_id(name), services:service_id(name)')
+            .in('office_id', officeIds)
+            .gte('scheduled_at', bStart)
+            .lte('scheduled_at', bEnd)
+            .order('scheduled_at');
+          if (bookingStatusFilter !== 'all') bQuery = bQuery.eq('status', bookingStatusFilter);
+          if (bookingDeptFilter !== 'all') bQuery = bQuery.eq('department_id', bookingDeptFilter);
+          const { data } = await bQuery;
+          setAppointmentList((data as unknown as AppointmentRow[]) ?? []);
+          // Also load depts for filter chips if not already loaded
+          if (deptList.length === 0) {
+            const { data: depts } = await supabase
+              .from('departments')
+              .select('id, name, code, office_id')
+              .in('office_id', officeIds)
+              .order('name');
+            setDeptList((depts as unknown as DeptRow[]) ?? []);
+          }
+          break;
+        }
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to load data');
     }
-  }, [tab, orgId, officeIds, customerSearch]);
+  }, [tab, orgId, officeIds, customerSearch, bookingDateFilter, bookingStatusFilter, bookingDeptFilter]);
 
   // ── Toggle Helpers ───────────────────────────────────────────────
 
@@ -917,6 +961,190 @@ export default function ManageScreen() {
             />
           </View>
         );
+
+      case 'bookings': {
+        const formatBookingDate = (dateStr: string) => {
+          const d = new Date(dateStr + 'T12:00:00');
+          const today = new Date();
+          today.setHours(12, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          if (d.toDateString() === today.toDateString()) return 'Today';
+          if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+          return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        };
+
+        const navigateBookingDate = (delta: number) => {
+          const d = new Date(bookingDateFilter + 'T12:00:00');
+          d.setDate(d.getDate() + delta);
+          setBookingDateFilter(d.toISOString().split('T')[0]);
+        };
+
+        const formatTime12 = (isoStr: string) => {
+          const d = new Date(isoStr);
+          return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        };
+
+        const getBookingStatusColor = (status: string) => {
+          switch (status) {
+            case 'checked_in': return colors.success;
+            case 'cancelled': return colors.error;
+            case 'confirmed': return colors.info;
+            default: return colors.warning;
+          }
+        };
+
+        const handleCheckIn = (id: string, name: string) => {
+          Alert.alert('Check In', `Check in ${name}?`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Check In',
+              onPress: async () => {
+                await supabase.from('appointments').update({ status: 'checked_in' }).eq('id', id);
+                loadTab();
+              },
+            },
+          ]);
+        };
+
+        const handleCancelBooking = (id: string, name: string) => {
+          Alert.alert('Cancel Booking', `Cancel ${name}'s appointment?`, [
+            { text: 'Keep', style: 'cancel' },
+            {
+              text: 'Cancel Booking',
+              style: 'destructive',
+              onPress: async () => {
+                await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
+                loadTab();
+              },
+            },
+          ]);
+        };
+
+        const STATUS_CHIPS = [
+          { key: 'all', label: 'All' },
+          { key: 'pending', label: 'Pending' },
+          { key: 'confirmed', label: 'Confirmed' },
+          { key: 'checked_in', label: 'Checked In' },
+          { key: 'cancelled', label: 'Cancelled' },
+        ];
+
+        return (
+          <View style={{ flex: 1 }}>
+            {/* Date nav */}
+            <View style={bStyles.dateNav}>
+              <TouchableOpacity onPress={() => navigateBookingDate(-1)} style={bStyles.dateArrow}>
+                <Ionicons name="chevron-back" size={20} color={colors.text} />
+              </TouchableOpacity>
+              <Text style={bStyles.dateLabel}>{formatBookingDate(bookingDateFilter)}</Text>
+              <TouchableOpacity onPress={() => navigateBookingDate(1)} style={bStyles.dateArrow}>
+                <Ionicons name="chevron-forward" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Status chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={bStyles.chipRow} contentContainerStyle={bStyles.chipRowContent}>
+              {STATUS_CHIPS.map((c) => (
+                <TouchableOpacity
+                  key={c.key}
+                  style={[bStyles.chip, bookingStatusFilter === c.key && bStyles.chipActive]}
+                  onPress={() => setBookingStatusFilter(c.key)}
+                >
+                  <Text style={[bStyles.chipText, bookingStatusFilter === c.key && bStyles.chipTextActive]}>{c.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Department chips */}
+            {deptList.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={bStyles.chipRow} contentContainerStyle={bStyles.chipRowContent}>
+                <TouchableOpacity
+                  style={[bStyles.chip, bookingDeptFilter === 'all' && bStyles.chipActive]}
+                  onPress={() => setBookingDeptFilter('all')}
+                >
+                  <Text style={[bStyles.chipText, bookingDeptFilter === 'all' && bStyles.chipTextActive]}>All Depts</Text>
+                </TouchableOpacity>
+                {deptList.map((d) => (
+                  <TouchableOpacity
+                    key={d.id}
+                    style={[bStyles.chip, bookingDeptFilter === d.id && bStyles.chipActive]}
+                    onPress={() => setBookingDeptFilter(d.id)}
+                  >
+                    <Text style={[bStyles.chipText, bookingDeptFilter === d.id && bStyles.chipTextActive]}>{d.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Count */}
+            <View style={bStyles.countRow}>
+              <Text style={bStyles.countText}>
+                {appointmentList.length} booking{appointmentList.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+
+            {/* List */}
+            <FlatList
+              data={appointmentList}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.list}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
+              ListEmptyComponent={
+                <View style={{ alignItems: 'center', paddingTop: spacing.xxl * 2, gap: spacing.sm }}>
+                  <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
+                  <Text style={{ fontSize: fontSize.lg, fontWeight: '600', color: colors.textMuted }}>No bookings</Text>
+                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>No appointments for {formatBookingDate(bookingDateFilter)}</Text>
+                </View>
+              }
+              renderItem={({ item }) => {
+                const isPending = item.status === 'pending' || item.status === 'confirmed';
+                return (
+                  <View style={styles.card}>
+                    <View style={styles.cardMain}>
+                      <View style={[styles.avatar, { backgroundColor: getBookingStatusColor(item.status) + '18' }]}>
+                        <Ionicons name="calendar" size={20} color={getBookingStatusColor(item.status)} />
+                      </View>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitle}>{item.customer_name}</Text>
+                        <Text style={styles.cardSubtitle}>
+                          {formatTime12(item.scheduled_at)}
+                          {item.departments?.name ? ` · ${item.departments.name}` : ''}
+                          {item.services?.name ? ` · ${item.services.name}` : ''}
+                        </Text>
+                        {item.customer_phone && (
+                          <Text style={[styles.cardSubtitle, { fontSize: fontSize.xs }]}>{item.customer_phone}</Text>
+                        )}
+                        <View style={styles.badges}>
+                          <Badge label={item.status.replace('_', ' ')} color={getBookingStatusColor(item.status)} />
+                          {item.ticket_id && <Badge label="Has ticket" color={colors.info} />}
+                        </View>
+                      </View>
+                    </View>
+                    {isPending && (
+                      <View style={bStyles.actions}>
+                        <TouchableOpacity
+                          style={[bStyles.actionBtn, { borderColor: colors.success }]}
+                          onPress={() => handleCheckIn(item.id, item.customer_name)}
+                        >
+                          <Ionicons name="checkmark-circle-outline" size={14} color={colors.success} />
+                          <Text style={[bStyles.actionBtnText, { color: colors.success }]}>Check In</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[bStyles.actionBtn, { borderColor: colors.error }]}
+                          onPress={() => handleCancelBooking(item.id, item.customer_name)}
+                        >
+                          <Ionicons name="close-circle-outline" size={14} color={colors.error} />
+                          <Text style={[bStyles.actionBtnText, { color: colors.error }]}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+          </View>
+        );
+      }
     }
   };
 
@@ -1191,13 +1419,14 @@ export default function ManageScreen() {
       services: 'Service',
       priorities: 'Priority',
       customers: 'Customer',
+      bookings: 'Booking',
     };
     return `${action} ${entity[tab]}`;
   }, [tab, editingItem]);
 
   // ── Show FAB? ────────────────────────────────────────────────────
 
-  const showFab = tab !== 'customers';
+  const showFab = tab !== 'customers' && tab !== 'bookings';
 
   // ── Render ───────────────────────────────────────────────────────
 
@@ -1616,4 +1845,88 @@ const styles = StyleSheet.create({
   pickerItemTextSelected: { color: colors.primary, fontWeight: '600' },
   pickerEmpty: { padding: spacing.lg, alignItems: 'center' },
   pickerEmptyText: { fontSize: fontSize.md, color: colors.textMuted },
+});
+
+// ── Booking tab styles ────────────────────────────────────────────────
+
+const bStyles = StyleSheet.create({
+  dateNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dateArrow: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  dateLabel: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 120,
+    textAlign: 'center',
+  },
+  chipRow: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    maxHeight: 48,
+  },
+  chipRowContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+  },
+  chipText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  chipTextActive: {
+    color: '#fff',
+  },
+  countRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  countText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingLeft: 52,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  actionBtnText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
 });

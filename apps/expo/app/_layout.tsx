@@ -28,7 +28,7 @@ function RootNavigator() {
     // Only auto-redirect once on app start / auth change
     // Don't redirect if user is already in a pro section or deliberately navigated
     const currentGroup = segments[0] as string | undefined;
-    const inProSection = currentGroup === '(admin)' || currentGroup === '(operator)' || currentGroup === '(auth)';
+    const inProSection = currentGroup === '(admin)' || currentGroup === '(operator)';
     const inCustomerSection = currentGroup === '(tabs)' || !currentGroup;
     const inJoinFlow = currentGroup === 'join' || currentGroup === 'ticket';
 

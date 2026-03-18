@@ -146,7 +146,7 @@ export default function RoleSelectScreen() {
           onPress={async () => {
             clearSession();
             await signOut();
-            // RootNavigator will redirect to /(tabs) once session clears
+            router.replace('/(tabs)');
           }}
         >
           <Text style={styles.logoutText}>Sign Out</Text>

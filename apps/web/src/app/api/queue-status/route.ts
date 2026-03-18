@@ -61,8 +61,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Office not found' }, { status: 404 });
   }
 
-  // Fetch departments and active tickets in parallel
-  const [deptsResult, ticketsResult] = await Promise.all([
+  // Fetch org settings, departments, and active tickets in parallel
+  const [orgResult, deptsResult, ticketsResult] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('settings')
+      .eq('id', office.organization_id)
+      .single(),
     supabase
       .from('departments')
       .select('id, name, code, sort_order')
@@ -82,6 +87,8 @@ export async function GET(request: NextRequest) {
 
   const tickets = ticketsResult.data ?? [];
   const departments = deptsResult.data ?? [];
+  const orgSettings = (orgResult.data?.settings as Record<string, any> | null) ?? {};
+  const bookingMode = orgSettings.booking_mode ?? 'simple';
 
   // Build per-department stats
   const deptStats = departments.map((dept: any) => {
@@ -121,5 +128,6 @@ export async function GET(request: NextRequest) {
     departments: deptStats,
     totalWaiting,
     totalServing,
+    bookingMode,
   });
 }

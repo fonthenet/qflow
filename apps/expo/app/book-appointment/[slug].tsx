@@ -80,7 +80,8 @@ export default function BookAppointmentScreen() {
   const [appointmentId, setAppointmentId] = useState('');
   const [confirmedAt, setConfirmedAt] = useState('');
 
-  const availableDates = nextNDays(7);
+  const horizonDays = info?.settings?.booking_horizon_days ?? 7;
+  const availableDates = nextNDays(horizonDays);
 
   const loadInfo = useCallback(async () => {
     if (!slug) return;
@@ -88,6 +89,11 @@ export default function BookAppointmentScreen() {
     const data = await fetchKioskInfo(slug);
     if (!data) {
       setErrorMsg('This business could not be found.');
+      setStep('error');
+      return;
+    }
+    if (data.settings?.booking_mode === 'disabled') {
+      setErrorMsg('Online booking is not available for this business.');
       setStep('error');
       return;
     }

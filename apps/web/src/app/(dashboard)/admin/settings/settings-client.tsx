@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import {
   AlertTriangle,
   Bell,
+  CalendarDays,
   CheckCircle2,
   Globe,
   Layers,
@@ -140,6 +141,13 @@ export function SettingsClient({
   const [priorityAlertsOnBuzz, setPriorityAlertsOnBuzz] = useState<boolean>(settings.priority_alerts_sms_on_buzz ?? true);
   const [priorityAlertsPhoneLabel, setPriorityAlertsPhoneLabel] = useState<string>(settings.priority_alerts_phone_label ?? 'Mobile number');
 
+  // Booking & Scheduling
+  const [bookingMode, setBookingMode] = useState<string>(settings.booking_mode ?? 'simple');
+  const [bookingHorizonDays, setBookingHorizonDays] = useState<number>(settings.booking_horizon_days ?? 7);
+  const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(settings.slot_duration_minutes ?? 30);
+  const [slotsPerInterval, setSlotsPerInterval] = useState<number>(settings.slots_per_interval ?? 1);
+  const [allowCancellation, setAllowCancellation] = useState<boolean>(settings.allow_cancellation ?? false);
+
   // Email OTP
   const [emailOtpEnabled, setEmailOtpEnabled] = useState<boolean>(settings.email_otp_enabled ?? false);
   const [emailOtpRequiredForBooking, setEmailOtpRequiredForBooking] = useState<boolean>(settings.email_otp_required_for_booking ?? false);
@@ -190,6 +198,11 @@ export function SettingsClient({
           priority_alerts_sms_on_recall: priorityAlertsOnRecall,
           priority_alerts_sms_on_buzz: priorityAlertsOnBuzz,
           priority_alerts_phone_label: priorityAlertsPhoneLabel,
+          booking_mode: bookingMode,
+          booking_horizon_days: bookingHorizonDays,
+          slot_duration_minutes: slotDurationMinutes,
+          slots_per_interval: slotsPerInterval,
+          allow_cancellation: allowCancellation,
         },
       });
 
@@ -329,6 +342,111 @@ export function SettingsClient({
                 <input type="number" min={1} max={500} value={maxQueueSize} onChange={(e) => setMaxQueueSize(Number(e.target.value))} className={inputClass} />
                 <FieldHint>Stop accepting tickets when department queue reaches this limit.</FieldHint>
               </div>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Booking & Scheduling ─────────────────────────────────── */}
+        <SectionCard>
+          <SectionHeader
+            icon={CalendarDays}
+            title="Booking & Scheduling"
+            description="Control how customers book appointments online."
+          />
+          <div className="px-6 pb-6">
+            <div className="space-y-5">
+              {/* Booking Mode Toggle */}
+              <div>
+                <FieldLabel>Booking Mode</FieldLabel>
+                <div className="flex gap-2 mt-1">
+                  {[
+                    { value: 'disabled', label: 'Disabled' },
+                    { value: 'simple', label: 'Simple' },
+                    { value: 'advanced', label: 'Advanced' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setBookingMode(opt.value)}
+                      className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                        bookingMode === opt.value
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'border border-border bg-background text-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {bookingMode === 'disabled' && (
+                  <FieldHint>Online booking is turned off. Customers cannot book appointments.</FieldHint>
+                )}
+                {bookingMode === 'simple' && (
+                  <FieldHint>Customers can book up to 7 days ahead with 30-minute slots, 1 booking per slot.</FieldHint>
+                )}
+                {bookingMode === 'advanced' && (
+                  <FieldHint>Full scheduling with configurable horizon, slot duration, and capacity.</FieldHint>
+                )}
+              </div>
+
+              {/* Advanced mode fields */}
+              {bookingMode === 'advanced' && (
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel>Booking Horizon (days)</FieldLabel>
+                    <input
+                      type="number"
+                      min={7}
+                      max={90}
+                      value={bookingHorizonDays}
+                      onChange={(e) => setBookingHorizonDays(Number(e.target.value))}
+                      className={inputClass}
+                    />
+                    <FieldHint>How far ahead customers can book (7-90 days).</FieldHint>
+                  </div>
+                  <div>
+                    <FieldLabel>Slot Duration (minutes)</FieldLabel>
+                    <select
+                      value={slotDurationMinutes}
+                      onChange={(e) => setSlotDurationMinutes(Number(e.target.value))}
+                      className={selectClass}
+                    >
+                      <option value={15}>15 minutes</option>
+                      <option value={20}>20 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={45}>45 minutes</option>
+                      <option value={60}>60 minutes</option>
+                    </select>
+                    <FieldHint>Duration of each bookable time slot.</FieldHint>
+                  </div>
+                  <div>
+                    <FieldLabel>Bookings per Slot</FieldLabel>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={slotsPerInterval}
+                      onChange={(e) => setSlotsPerInterval(Number(e.target.value))}
+                      className={inputClass}
+                    />
+                    <FieldHint>Max concurrent appointments per time slot (based on desks/rooms).</FieldHint>
+                  </div>
+                  <div className="flex items-start">
+                    <label className={checkboxCardClass}>
+                      <input
+                        type="checkbox"
+                        checked={allowCancellation}
+                        onChange={(e) => setAllowCancellation(e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-foreground">Allow Cancellation</span>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Let customers cancel their bookings.</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </SectionCard>

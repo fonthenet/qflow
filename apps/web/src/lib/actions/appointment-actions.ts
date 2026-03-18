@@ -289,10 +289,10 @@ export async function getAvailableSlots(
 ) {
   const supabase = createAdminClient();
 
-  // Fetch office operating hours
+  // Fetch office operating hours + org settings
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('operating_hours')
+    .select('operating_hours, organization:organizations(settings)')
     .eq('id', officeId)
     .single();
 
@@ -300,23 +300,35 @@ export async function getAvailableSlots(
     return { error: officeError?.message ?? 'Office not found' };
   }
 
-  // Parse operating hours - expected format: { "monday": { "open": "08:00", "close": "17:00" }, ... }
+  const orgSettings =
+    ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
+      | Record<string, any>
+      | undefined) ?? {};
+
+  const bookingMode = orgSettings.booking_mode ?? 'simple';
+  if (bookingMode === 'disabled') return { data: [] };
+
+  const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
+  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
+  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
+
+  // Validate date within horizon (compare date strings to avoid timezone issues)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const maxD = new Date(todayStr + 'T12:00:00');
+  maxD.setDate(maxD.getDate() + bookingHorizonDays);
+  const maxDateStr = maxD.toISOString().split('T')[0];
+  if (date < todayStr || date > maxDateStr) return { data: [] };
+
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }>) ?? {};
   const dayOfWeek = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  const dayHours = operatingHours[dayOfWeek];
+  const dayHours = operatingHours[dayOfWeek] ?? { open: '08:00', close: '17:00' };
+  const allSlots = generateSlots(dayHours.open, dayHours.close, slotDurationMinutes);
 
-  if (!dayHours) {
-    // Fallback: default hours 08:00-17:00
-    return { data: generateSlots('08:00', '17:00', date) };
-  }
-
-  const allSlots = generateSlots(dayHours.open, dayHours.close, date);
-
-  // Fetch existing appointments for that date to exclude booked slots
+  // Fetch existing appointments
   const startOfDay = `${date}T00:00:00`;
   const endOfDay = `${date}T23:59:59`;
 
-  const { data: existingAppointments } = await supabase
+  const appointmentsResult = await supabase
     .from('appointments')
     .select('scheduled_at')
     .eq('office_id', officeId)
@@ -325,23 +337,35 @@ export async function getAvailableSlots(
     .gte('scheduled_at', startOfDay)
     .lte('scheduled_at', endOfDay);
 
-  const bookedTimes = new Set(
-    (existingAppointments ?? []).map((a) => {
-      const d = new Date(a.scheduled_at);
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    })
-  );
+  // Fetch blocked slots (graceful — table may not exist yet)
+  let blockedData: { start_time: string; end_time: string }[] = [];
+  try {
+    const blockedResult = await supabase
+      .from('blocked_slots')
+      .select('start_time, end_time')
+      .eq('office_id', officeId)
+      .eq('blocked_date', date);
+    blockedData = (blockedResult.data ?? []) as { start_time: string; end_time: string }[];
+  } catch {
+    // Table may not exist yet
+  }
 
-  // Filter out slots that are in the past (if date is today)
+  // Count bookings per slot time
+  const slotBookingCounts = new Map<string, number>();
+  for (const a of appointmentsResult.data ?? []) {
+    const d = new Date(a.scheduled_at);
+    const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
+  }
+
   const now = new Date();
-  const isToday = date === now.toISOString().split('T')[0];
+  const isToday = date === todayStr;
 
   const availableSlots = allSlots.filter((slot) => {
-    if (bookedTimes.has(slot)) return false;
+    if ((slotBookingCounts.get(slot) ?? 0) >= slotsPerInterval) return false;
+    if (blockedData.some((b) => slot >= b.start_time && slot < b.end_time)) return false;
     if (isToday) {
-      const [h, m] = slot.split(':').map(Number);
-      const slotTime = new Date(date + 'T12:00:00');
-      slotTime.setHours(h, m, 0, 0);
+      const slotTime = new Date(`${date}T${slot}:00`);
       if (slotTime <= now) return false;
     }
     return true;
@@ -350,7 +374,7 @@ export async function getAvailableSlots(
   return { data: availableSlots };
 }
 
-function generateSlots(openTime: string, closeTime: string, date: string): string[] {
+function generateSlots(openTime: string, closeTime: string, durationMinutes: number): string[] {
   const slots: string[] = [];
   const [openH, openM] = openTime.split(':').map(Number);
   const [closeH, closeM] = closeTime.split(':').map(Number);
@@ -362,10 +386,10 @@ function generateSlots(openTime: string, closeTime: string, date: string): strin
     slots.push(
       `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`
     );
-    currentM += 30;
+    currentM += durationMinutes;
     if (currentM >= 60) {
-      currentM -= 60;
-      currentH += 1;
+      currentH += Math.floor(currentM / 60);
+      currentM = currentM % 60;
     }
   }
 
