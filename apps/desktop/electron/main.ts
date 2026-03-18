@@ -183,6 +183,27 @@ function setupIPC() {
     await syncEngine?.syncNow();
   });
 
+  ipcMain.handle('sync:pending-details', () => {
+    return db.prepare(
+      "SELECT id, operation, table_name, record_id, attempts, last_error, created_at FROM sync_queue WHERE synced_at IS NULL ORDER BY created_at ASC"
+    ).all();
+  });
+
+  ipcMain.handle('sync:discard-item', (_e, id: string) => {
+    db.prepare("DELETE FROM sync_queue WHERE id = ?").run(id);
+    syncEngine?.updatePendingCount?.();
+  });
+
+  ipcMain.handle('sync:discard-all', () => {
+    db.prepare("DELETE FROM sync_queue WHERE synced_at IS NULL").run();
+    syncEngine?.updatePendingCount?.();
+  });
+
+  ipcMain.handle('sync:retry-item', async (_e, id: string) => {
+    db.prepare("UPDATE sync_queue SET attempts = 0, last_error = NULL WHERE id = ?").run(id);
+    await syncEngine?.syncNow();
+  });
+
   // ── Session ───────────────────────────────────────────────────────
 
   ipcMain.handle('session:save', (_e, session: any) => {

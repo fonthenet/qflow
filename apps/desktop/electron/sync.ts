@@ -74,7 +74,7 @@ export class SyncEngine {
     this.updatePendingCount();
   }
 
-  private updatePendingCount() {
+  public updatePendingCount() {
     const row = this.db.prepare(
       "SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL"
     ).get() as any;
@@ -120,6 +120,15 @@ export class SyncEngine {
     // Clean up old synced items (> 24h)
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     this.db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < ?").run(cutoff);
+
+    // Auto-discard items that failed 5+ times (unrecoverable)
+    const discarded = this.db.prepare(
+      "DELETE FROM sync_queue WHERE synced_at IS NULL AND attempts >= 5"
+    ).run();
+    if (discarded.changes > 0) {
+      console.warn(`Auto-discarded ${discarded.changes} sync items after 5 failed attempts`);
+      this.updatePendingCount();
+    }
   }
 
   private async replayMutation(item: any, authToken: string) {

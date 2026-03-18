@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('qf', {
   sync: {
     getStatus: () => ipcRenderer.invoke('sync:status'),
     forceSync: () => ipcRenderer.invoke('sync:force'),
+    getPendingDetails: () => ipcRenderer.invoke('sync:pending-details'),
+    discardItem: (id: string) => ipcRenderer.invoke('sync:discard-item', id),
+    discardAll: () => ipcRenderer.invoke('sync:discard-all'),
+    retryItem: (id: string) => ipcRenderer.invoke('sync:retry-item', id),
     onStatusChange: (callback: (status: string) => void) => {
       const handler = (_: any, status: string) => callback(status);
       ipcRenderer.on('sync:status-change', handler);
