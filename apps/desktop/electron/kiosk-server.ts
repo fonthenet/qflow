@@ -762,8 +762,9 @@ function serveDisplayPage(res: http.ServerResponse) {
     /* ── Header ── */
     .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: white; border-bottom: 2px solid #e2e8f0; }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .logo { width: 48px; height: 48px; background: #3b82f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 900; font-size: 24px; overflow: hidden; }
-    .logo img { width: 100%; height: 100%; object-fit: contain; }
+    .logo { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+    .logo.fallback { background: #3b82f6; border-radius: 14px; color: white; font-weight: 900; font-size: 28px; }
+    .logo img { height: 56px; width: auto; object-fit: contain; }
     .office-name { font-size: 22px; font-weight: 700; color: #1e293b; }
     .branch-name { font-size: 14px; color: #64748b; font-weight: 500; }
     .header-right { text-align: right; }
@@ -849,7 +850,7 @@ function serveDisplayPage(res: http.ServerResponse) {
   <div class="display">
     <div class="header">
       <div class="header-left">
-        <div class="logo" id="logo">Q</div>
+        <div class="logo fallback" id="logo">Q</div>
         <div>
           <div class="office-name" id="office-name"></div>
           <div class="branch-name" id="branch-name"></div>
@@ -1071,6 +1072,7 @@ function serveDisplayPage(res: http.ServerResponse) {
           if (officeData.logo_url) {
             var logoEl = document.getElementById('logo');
             if (logoEl && !logoEl.querySelector('img')) {
+              logoEl.className = 'logo';
               logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo">';
             }
           }
