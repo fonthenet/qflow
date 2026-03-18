@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as net from 'net';
+import * as os from 'os';
+import * as crypto from 'crypto';
 import { printTicket } from './printer';
 import { createTray } from './tray';
 import {
@@ -55,21 +57,64 @@ let portable = false;
 let restartCount = 0;
 const MAX_RESTARTS = 3;
 
+// Machine identity (module-level so IPC handlers can access)
+const machineId = crypto.createHash('sha256').update(os.hostname() + os.platform() + os.arch()).digest('hex').slice(0, 32);
+const machineName = os.hostname();
+const osInfoStr = `${os.platform()} ${os.release()} (${os.arch()})`;
+
+async function pingDesktopStatus(appVer: string, pendingSyncs = 0, lastSyncAt: string | null = null) {
+  const config = portable ? getPortableConfig() : null;
+  const cachedOffice = getCachedConfig('current_office');
+  const officeId = cachedOffice?.id || process.env.QUEUEFLOW_OFFICE_ID || '';
+  const orgId = cachedOffice?.organization_id || process.env.QUEUEFLOW_ORG_ID || '';
+
+  if (!officeId || !orgId) return;
+
+  try {
+    const baseUrl = process.env.QUEUEFLOW_API_URL || 'https://qflow-sigma.vercel.app';
+    await fetch(`${baseUrl}/api/desktop-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        machineId, machineName, officeId, organizationId: orgId,
+        appVersion: appVer, osInfo: osInfoStr, pendingSyncs, lastSyncAt,
+      }),
+    });
+  } catch {
+    // Offline — skip ping
+  }
+}
+
 const isDev = !app.isPackaged;
 
 function getWebDir(): string {
   if (isDev) {
-    return path.join(__dirname, '../../web');
+    // __dirname = apps/desktop/dist/main → go up to apps/desktop then into ../web
+    return path.join(__dirname, '../../../web');
   }
   return path.join(process.resourcesPath, 'nextjs');
 }
 
 function getNextBin(): string {
   if (isDev) {
-    // In dev, use the workspace's next JS entry point directly
-    return path.join(__dirname, '../../../node_modules/next/dist/bin/next');
+    // In dev with pnpm, resolve next from the web app's node_modules
+    const webDir = getWebDir();
+    const candidates = [
+      path.join(webDir, 'node_modules', '.bin', 'next'),
+      path.join(webDir, 'node_modules', 'next', 'dist', 'bin', 'next'),
+      // pnpm hoists to repo root .bin
+      path.join(webDir, '..', '..', 'node_modules', '.bin', 'next'),
+    ];
+    for (const c of candidates) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(c)) return c;
+      } catch { /* continue */ }
+    }
+    // Fallback: let the system find it
+    return 'next';
   }
-  // In production, point to the actual JS file (not .bin shell script)
+  // In production, point to the actual JS file
   return path.join(process.resourcesPath, 'nextjs', 'node_modules', 'next', 'dist', 'bin', 'next');
 }
 
@@ -83,15 +128,29 @@ async function startNextServer(port: number): Promise<void> {
     HOSTNAME: 'localhost',
   };
 
-  const nodeBin = portable ? getNodePath() : 'node';
-  const nextBin = getNextBin();
-  console.log(`Using node: ${nodeBin}, next: ${nextBin}`);
+  if (isDev) {
+    // In dev, use npx to resolve next correctly in pnpm monorepo
+    const isWin = process.platform === 'win32';
+    const npxCmd = isWin ? 'npx.cmd' : 'npx';
+    console.log(`Using npx to start Next.js in dev mode`);
 
-  nextjsProcess = spawn(nodeBin, [nextBin, 'start', '-p', String(port)], {
-    cwd: webDir,
-    env,
-    stdio: 'pipe',
-  });
+    nextjsProcess = spawn(npxCmd, ['next', 'start', '-p', String(port)], {
+      cwd: webDir,
+      env,
+      stdio: 'pipe',
+      shell: isWin,
+    });
+  } else {
+    const nodeBin = portable ? getNodePath() : 'node';
+    const nextBin = getNextBin();
+    console.log(`Using node: ${nodeBin}, next: ${nextBin}`);
+
+    nextjsProcess = spawn(nodeBin, [nextBin, 'start', '-p', String(port)], {
+      cwd: webDir,
+      env,
+      stdio: 'pipe',
+    });
+  }
 
   nextjsProcess.stdout?.on('data', (data: Buffer) => {
     console.log(`[Next.js] ${data.toString().trim()}`);
@@ -325,7 +384,7 @@ function registerIpcHandlers(): void {
     try {
       cacheConfig('current_office', officeInfo);
       // Immediately ping with new office info
-      pingDesktopStatus(0, null);
+      pingDesktopStatus(app.getVersion(), 0, null);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -333,7 +392,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('desktop:get-machine-info', async () => {
-    return { machineId, machineName, osInfo, appVersion, isPortable: portable };
+    return { machineId, machineName, osInfo: osInfoStr, appVersion: app.getVersion(), isPortable: portable };
   });
 }
 
@@ -391,39 +450,7 @@ async function main(): Promise<void> {
   // Register IPC handlers
   registerIpcHandlers();
 
-  // ── Desktop registration with cloud ──────────────────────────────
-  const os = require('os');
-  const crypto = require('crypto');
-  const machineId = crypto.createHash('sha256').update(os.hostname() + os.platform() + os.arch()).digest('hex').slice(0, 32);
-  const machineName = os.hostname();
-  const osInfo = `${os.platform()} ${os.release()} (${os.arch()})`;
   const appVersion = app.getVersion();
-
-  async function pingDesktopStatus(pendingSyncs = 0, lastSyncAt: string | null = null) {
-    const config = portable ? getPortableConfig() : null;
-    const supabaseUrl = config?.supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    // Get officeId and orgId from cached config or env
-    const cachedOffice = getCachedConfig('current_office');
-    const officeId = cachedOffice?.id || process.env.QUEUEFLOW_OFFICE_ID || '';
-    const orgId = cachedOffice?.organization_id || process.env.QUEUEFLOW_ORG_ID || '';
-
-    if (!supabaseUrl || !officeId || !orgId) return;
-
-    try {
-      const apiBase = supabaseUrl.replace('/rest/v1', '').replace('supabase.co', 'vercel.app');
-      const baseUrl = process.env.QUEUEFLOW_API_URL || 'https://qflow-sigma.vercel.app';
-      await fetch(`${baseUrl}/api/desktop-status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          machineId, machineName, officeId, organizationId: orgId,
-          appVersion, osInfo, pendingSyncs, lastSyncAt,
-        }),
-      });
-    } catch {
-      // Offline — skip ping
-    }
-  }
 
   // Periodically check connection, notify renderer, and auto-sync
   let wasOffline = false;
@@ -434,7 +461,7 @@ async function main(): Promise<void> {
         mainWindow.webContents.send('connection-status', status);
 
         // Ping desktop status to cloud
-        pingDesktopStatus(status.pendingSyncs, status.lastSync);
+        pingDesktopStatus(appVersion, status.pendingSyncs, status.lastSync);
 
         // Auto-sync when coming back online
         if (status.online && wasOffline && status.pendingSyncs > 0) {

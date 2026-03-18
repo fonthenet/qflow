@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Sidebar } from '@/components/layout/sidebar';
+import { DesktopAutoRegister } from '@/components/desktop-auto-register';
 import { resolveStaffProfile } from '@/lib/authz';
 import {
   getAllowedNavigation,
@@ -52,6 +53,10 @@ export default async function DashboardLayout({
         allowedNavigation={allowedNavigation}
         templateSummary={summarizeTemplate(platformConfig)}
         templateConfigured={templateConfigured}
+      />
+      <DesktopAutoRegister
+        officeId={staff.office_id}
+        organizationId={staff.organization_id}
       />
       <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
         {!templateConfigured ? (
