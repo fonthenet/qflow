@@ -4,7 +4,22 @@ import * as path from 'path';
 import * as net from 'net';
 import { printTicket } from './printer';
 import { createTray } from './tray';
-import { initOffline, getConnectionStatus, syncToServer } from './offline';
+import {
+  initOffline,
+  getConnectionStatus,
+  syncToServer,
+  createTicketOffline,
+  callNextOffline,
+  callTicketOffline,
+  serveTicketOffline,
+  completeTicketOffline,
+  noShowTicketOffline,
+  cancelTicketOffline,
+  getOfflineQueue,
+  cacheConfig,
+  getCachedConfig,
+  isOnline,
+} from './offline';
 import {
   isPortableMode,
   getPortableConfig,
@@ -198,11 +213,110 @@ function registerIpcHandlers(): void {
     try {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-      await syncToServer(supabaseUrl, supabaseKey);
-      return { success: true };
+      const result = await syncToServer(supabaseUrl, supabaseKey);
+      return { success: true, ...result };
     } catch (error) {
       console.error('Sync error:', error);
       return { success: false, error: String(error) };
+    }
+  });
+
+  // ── Offline Queue Operations ──────────────────────────────────
+  ipcMain.handle('offline:create-ticket', async (_event, params) => {
+    try {
+      const ticket = createTicketOffline(params);
+      return { success: true, ticket };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:call-next', async (_event, { officeId, deskId, staffId, departmentId }) => {
+    try {
+      const ticket = callNextOffline(officeId, deskId, staffId, departmentId);
+      return { success: true, ticket };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:call-ticket', async (_event, { ticketId, deskId, staffId }) => {
+    try {
+      callTicketOffline(ticketId, deskId, staffId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:serve', async (_event, { ticketId }) => {
+    try {
+      serveTicketOffline(ticketId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:complete', async (_event, { ticketId }) => {
+    try {
+      completeTicketOffline(ticketId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:no-show', async (_event, { ticketId }) => {
+    try {
+      noShowTicketOffline(ticketId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:cancel', async (_event, { ticketId }) => {
+    try {
+      cancelTicketOffline(ticketId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:get-queue', async (_event, { officeId }) => {
+    try {
+      const queue = getOfflineQueue(officeId);
+      return { success: true, queue };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:cache-config', async (_event, { key, value }) => {
+    try {
+      cacheConfig(key, value);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:get-cached-config', async (_event, { key }) => {
+    try {
+      const value = getCachedConfig(key);
+      return { success: true, value };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('offline:is-online', async () => {
+    try {
+      return { online: await isOnline() };
+    } catch {
+      return { online: false };
     }
   });
 }
@@ -261,17 +375,30 @@ async function main(): Promise<void> {
   // Register IPC handlers
   registerIpcHandlers();
 
-  // Periodically check connection and notify renderer
+  // Periodically check connection, notify renderer, and auto-sync
+  let wasOffline = false;
   setInterval(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       try {
         const status = await getConnectionStatus();
         mainWindow.webContents.send('connection-status', status);
+
+        // Auto-sync when coming back online
+        if (status.online && wasOffline && status.pendingSyncs > 0) {
+          console.log('Connection restored — auto-syncing pending items...');
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+          const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+          const result = await syncToServer(supabaseUrl, supabaseKey);
+          console.log(`Auto-sync complete: ${result.synced} synced, ${result.failed} failed`);
+          mainWindow.webContents.send('sync-complete', result);
+        }
+
+        wasOffline = !status.online;
       } catch {
-        // Ignore errors during status check
+        wasOffline = true;
       }
     }
-  }, 30000);
+  }, 15000); // Check every 15s
 }
 
 app.on('before-quit', () => {

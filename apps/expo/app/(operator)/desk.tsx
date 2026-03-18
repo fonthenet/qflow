@@ -20,6 +20,7 @@ import { useRealtimeQueue, QueueTicket } from '@/lib/use-realtime-queue';
 import { useNameLookup } from '@/lib/use-realtime-queue';
 import { useOrg } from '@/lib/use-org';
 import * as Actions from '@/lib/ticket-actions';
+import { sendHeartbeat, triggerRecovery } from '@/lib/api';
 import { useOperatorStore } from '@/lib/operator-store';
 import { supabase } from '@/lib/supabase';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -283,24 +284,45 @@ export default function DeskScreen() {
   const screenWidth = useScreenWidth();
   const isWide = screenWidth > 768;
 
+  // ── Offline detection ────────────────────────────────────────────
+  const [isOffline, setIsOffline] = useState(false);
+  const consecutiveFailsRef = useRef(0);
+
   // ── Safety: heartbeat + periodic cleanup ─────────────────────────
   useEffect(() => {
-    if (!deskId) return;
-    // Heartbeat: ping every 60s to show desk is active
-    Actions.pingDeskHeartbeat(deskId);
-    const heartbeat = setInterval(() => Actions.pingDeskHeartbeat(deskId), 60_000);
+    if (!deskId || !staffId) return;
+
+    const ping = async () => {
+      // Ping both local Supabase and cloud API
+      Actions.pingDeskHeartbeat(deskId);
+      const ok = await sendHeartbeat(deskId, staffId);
+      if (!ok) {
+        consecutiveFailsRef.current += 1;
+        if (consecutiveFailsRef.current >= 3) setIsOffline(true);
+      } else {
+        consecutiveFailsRef.current = 0;
+        setIsOffline(false);
+      }
+    };
+
+    ping(); // immediate first ping
+    const heartbeat = setInterval(ping, 30_000);
+
     // Requeue expired calls every 30s
     const cleanup = setInterval(() => {
       Actions.requeueExpiredCalls(90);
       Actions.adjustBookingPriorities();
     }, 30_000);
-    // Cleanup stale tickets on mount (previous day leftovers)
+
+    // Cleanup stale tickets on mount + trigger cloud recovery
     Actions.cleanupStaleTickets();
+    triggerRecovery();
+
     return () => {
       clearInterval(heartbeat);
       clearInterval(cleanup);
     };
-  }, [deskId]);
+  }, [deskId, staffId]);
 
   // ── Derive desk-specific tickets ─────────────────────────────────
   const myCalledTickets = useMemo(
@@ -918,8 +940,18 @@ export default function DeskScreen() {
     </View>
   );
 
+  const OfflineBanner = isOffline ? (
+    <View style={styles.offlineBanner}>
+      <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
+      <Text style={styles.offlineBannerText}>
+        Connection lost — working offline. Actions will sync when restored.
+      </Text>
+    </View>
+  ) : null;
+
   return (
     <>
+      {OfflineBanner}
       <ScrollView
         style={styles.container}
         contentContainerStyle={[
@@ -971,6 +1003,20 @@ export default function DeskScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#dc2626',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+  },
+  offlineBannerText: {
+    color: '#fff',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

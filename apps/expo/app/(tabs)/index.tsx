@@ -321,6 +321,7 @@ export default function HomeScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncLabel, setSyncLabel] = useState('Syncing...');
+  const [isOffline, setIsOffline] = useState(false);
   const failCountRef = useRef(0);
   const activeTicketRef = useRef(activeTicket);
   activeTicketRef.current = activeTicket;
@@ -331,11 +332,16 @@ export default function HomeScreen() {
     const ticket = await fetchTicket(activeToken);
     if (!ticket) {
       failCountRef.current += 1;
-      if (failCountRef.current >= 3 && !activeTicketRef.current) setLoadError('Could not find this ticket. The code may be invalid or expired.');
+      if (failCountRef.current >= 2) {
+        setIsOffline(true);
+        setSyncLabel('Offline — showing last known data');
+      }
+      if (failCountRef.current >= 5 && !activeTicketRef.current) setLoadError('Could not find this ticket. The code may be invalid or expired.');
       return;
     }
     failCountRef.current = 0;
     setLoadError(null);
+    setIsOffline(false);
     setSyncLabel(`Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
     if (prevStatusRef.current && prevStatusRef.current !== ticket.status) {
       if (ticket.status === 'called') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);

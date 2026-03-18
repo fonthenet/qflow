@@ -343,6 +343,37 @@ export async function createBooking(params: {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Desk heartbeat — operator pings every 30s
+// ---------------------------------------------------------------------------
+
+export async function sendHeartbeat(deskId: string, staffId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/desk-heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deskId, staffId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Queue recovery — trigger immediate cleanup of stuck tickets
+// ---------------------------------------------------------------------------
+
+export async function triggerRecovery(): Promise<any> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/queue-recovery`, { method: 'POST' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function stopTracking(ticketId: string): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/tracking-stop`, {
