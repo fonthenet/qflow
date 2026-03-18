@@ -88,6 +88,14 @@ export function YourTurn({
   const pendingAlert = useRef(true);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Sync calledAt from parent when ticket prop updates (e.g. from realtime/polling)
+  useEffect(() => {
+    if (ticket.called_at && ticket.called_at !== calledAt) {
+      setCalledAt(ticket.called_at);
+      setRecallCount(ticket.recall_count ?? 0);
+    }
+  }, [ticket.called_at, ticket.recall_count]);
+
   const phase = countdown > 30 ? 'green' : countdown > 10 ? 'yellow' : 'red';
   const syncLabel = useMemo(() => formatSyncLabel(lastSyncedAt, isRefreshing), [isRefreshing, lastSyncedAt]);
 
