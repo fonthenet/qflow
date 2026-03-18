@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -32,7 +31,9 @@ interface StaffRow {
   role: string;
   is_active: boolean;
   office_id: string | null;
+  department_id: string | null;
   offices: { name: string } | null;
+  departments: { name: string } | null;
 }
 interface DeskRow {
   id: string;
@@ -165,7 +166,7 @@ export default function ManageScreen() {
         case 'staff': {
           const { data } = await supabase
             .from('staff')
-            .select('id, full_name, email, role, is_active, office_id, offices:office_id(name)')
+            .select('id, full_name, email, role, is_active, office_id, department_id, offices:office_id(name), departments:department_id(name)')
             .eq('organization_id', orgId)
             .order('full_name');
           setStaffList((data as unknown as StaffRow[]) ?? []);
@@ -350,6 +351,8 @@ export default function ManageScreen() {
           role: item.role,
           office_id: item.office_id || '',
           office_name: (item.offices as any)?.name || '',
+          department_id: item.department_id || '',
+          department_name: (item.departments as any)?.name || '',
         });
         break;
       case 'desks':
@@ -361,8 +364,10 @@ export default function ManageScreen() {
           department_name: (item.departments as any)?.name || '',
         });
         break;
-      case 'departments':
-        setFormData({ name: item.name, code: item.code, office_id: item.office_id || '', office_name: '' });
+      case 'departments': {
+        const officeName = officeList.find((o) => o.id === item.office_id)?.name || '';
+        setFormData({ name: item.name, code: item.code, office_id: item.office_id || '', office_name: officeName });
+      }
         break;
       case 'services':
         setFormData({
@@ -430,15 +435,23 @@ export default function ManageScreen() {
               full_name: formData.full_name.trim(),
               role: formData.role,
               office_id: formData.office_id || null,
+              department_id: formData.department_id || null,
             });
           } else {
+            if (!formData.password || formData.password.length < 6) throw new Error('Password must be at least 6 characters');
             await Actions.createStaff({
               full_name: formData.full_name.trim(),
               email: formData.email.trim(),
+              password: formData.password,
               role: formData.role,
               organization_id: orgId,
               office_id: formData.office_id || null,
+              department_id: formData.department_id || null,
             });
+            Alert.alert(
+              'Staff Created',
+              `${formData.full_name.trim()} has been added.\n\nThey can log in with:\nEmail: ${formData.email.trim()}\nPassword: the one you just set`,
+            );
           }
           break;
         }
@@ -624,54 +637,6 @@ export default function ManageScreen() {
       });
   }, [officeIds.length]);
 
-  // ── Swipeable Desk Row ───────────────────────────────────────────
-
-  const DeskSwipeRow = ({ item, children }: { item: DeskRow; children: React.ReactNode }) => {
-    const translateX = useRef(new Animated.Value(0)).current;
-    const lastDx = useRef(0);
-
-    const onPanStart = () => {
-      lastDx.current = 0;
-    };
-
-    return (
-      <View style={styles.swipeContainer}>
-        <TouchableOpacity
-          style={styles.swipeDeleteBg}
-          onPress={() => confirmDeleteDesk(item.id, item.name)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="trash" size={22} color="#fff" />
-          <Text style={styles.swipeDeleteText}>Delete</Text>
-        </TouchableOpacity>
-        <Animated.View
-          style={{ transform: [{ translateX }] }}
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={(e) => {
-            return Math.abs(e.nativeEvent.locationX) > 5;
-          }}
-          onResponderGrant={onPanStart}
-          onResponderMove={(e) => {
-            const dx = e.nativeEvent.pageX - (e.nativeEvent.locationX + (lastDx.current || 0));
-            if (dx < 0) {
-              translateX.setValue(Math.max(dx, -100));
-            }
-          }}
-          onResponderRelease={() => {
-            const currentVal = (translateX as any)._value;
-            if (currentVal < -50) {
-              Animated.spring(translateX, { toValue: -90, useNativeDriver: true }).start();
-            } else {
-              Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-            }
-          }}
-        >
-          {children}
-        </Animated.View>
-      </View>
-    );
-  };
-
   // ── Render Tab Content ───────────────────────────────────────────
 
   const renderContent = () => {
@@ -694,16 +659,17 @@ export default function ManageScreen() {
                     <Text style={styles.cardTitle}>{item.full_name}</Text>
                     <Text style={styles.cardSubtitle}>{item.email}</Text>
                     <View style={styles.badges}>
-                      <Badge label={item.role} color={item.role === 'admin' ? colors.primary : colors.textMuted} />
+                      <Badge label={item.role.replace(/_/g, ' ')} color={item.role === 'admin' ? colors.primary : colors.textMuted} />
                       {item.offices && <Badge label={(item.offices as any).name} color={colors.textSecondary} />}
+                      {item.departments && <Badge label={(item.departments as any).name} color={colors.textSecondary} />}
                     </View>
                   </View>
                 </View>
                 <Switch
                   value={item.is_active}
                   onValueChange={() => toggleStaffActive(item.id, item.is_active)}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={item.is_active ? colors.primary : '#f4f3f4'}
+                  trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+                  thumbColor={item.is_active ? colors.primary : '#94a3b8'}
                 />
               </TouchableOpacity>
             )}
@@ -722,48 +688,38 @@ export default function ManageScreen() {
               const statusColor =
                 item.status === 'active' ? colors.serving : item.status === 'paused' ? colors.warning : colors.textMuted;
               return (
-                <View style={styles.swipeContainer}>
-                  <TouchableOpacity
-                    style={styles.swipeDeleteBg}
-                    onPress={() => confirmDeleteDesk(item.id, item.name)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="trash" size={22} color="#fff" />
-                    <Text style={styles.swipeDeleteText}>Delete</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.card} onPress={() => openEdit(item)} activeOpacity={0.7}>
-                    <View style={styles.cardMain}>
-                      <View style={[styles.avatar, { backgroundColor: statusColor + '18' }]}>
-                        <Ionicons name="desktop" size={20} color={statusColor} />
-                      </View>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardTitle}>{item.name}</Text>
-                        <Text style={styles.cardSubtitle}>
-                          {(item.offices as any)?.name ?? ''}
-                          {(item.departments as any)?.name ? ` · ${(item.departments as any).name}` : ''}
-                        </Text>
-                        <View style={styles.badges}>
-                          <Badge label={item.status} color={statusColor} />
-                          {item.current_staff_id && <Badge label="Staffed" color={colors.success} />}
-                        </View>
+                <TouchableOpacity style={styles.card} onPress={() => openEdit(item)} activeOpacity={0.7}>
+                  <View style={styles.cardMain}>
+                    <View style={[styles.avatar, { backgroundColor: statusColor + '18' }]}>
+                      <Ionicons name="desktop" size={20} color={statusColor} />
+                    </View>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardTitle}>{item.name}</Text>
+                      <Text style={styles.cardSubtitle}>
+                        {(item.offices as any)?.name ?? ''}
+                        {(item.departments as any)?.name ? ` · ${(item.departments as any).name}` : ''}
+                      </Text>
+                      <View style={styles.badges}>
+                        <Badge label={item.status} color={statusColor} />
+                        {item.current_staff_id && <Badge label="Staffed" color={colors.success} />}
                       </View>
                     </View>
-                    <View style={styles.cardActions}>
-                      <Switch
-                        value={item.is_active}
-                        onValueChange={() => toggleDeskActive(item.id, item.is_active)}
-                        trackColor={{ false: colors.border, true: colors.primaryLight }}
-                        thumbColor={item.is_active ? colors.primary : '#f4f3f4'}
-                      />
-                      <TouchableOpacity
-                        onPress={() => confirmDeleteDesk(item.id, item.name)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={colors.error} />
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                  <View style={styles.cardActions}>
+                    <Switch
+                      value={item.is_active}
+                      onValueChange={() => toggleDeskActive(item.id, item.is_active)}
+                      trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+                      thumbColor={item.is_active ? colors.primary : '#94a3b8'}
+                    />
+                    <TouchableOpacity
+                      onPress={() => confirmDeleteDesk(item.id, item.name)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
               );
             }}
           />
@@ -864,8 +820,8 @@ export default function ManageScreen() {
                 <Switch
                   value={item.is_active}
                   onValueChange={() => toggleOfficeActive(item.id, item.is_active)}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={item.is_active ? colors.primary : '#f4f3f4'}
+                  trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+                  thumbColor={item.is_active ? colors.primary : '#94a3b8'}
                 />
               </TouchableOpacity>
             )}
@@ -902,8 +858,8 @@ export default function ManageScreen() {
                   <Switch
                     value={item.is_active}
                     onValueChange={() => togglePriorityActive(item.id, item.is_active)}
-                    trackColor={{ false: colors.border, true: colors.primaryLight }}
-                    thumbColor={item.is_active ? colors.primary : '#f4f3f4'}
+                    trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+                    thumbColor={item.is_active ? colors.primary : '#94a3b8'}
                   />
                 </TouchableOpacity>
               );
@@ -1098,47 +1054,59 @@ export default function ManageScreen() {
               }
               renderItem={({ item }) => {
                 const isPending = item.status === 'pending' || item.status === 'confirmed';
+                const sColor = getBookingStatusColor(item.status);
+
+                const showDetails = () => {
+                  const lines = [
+                    `Time: ${formatTime12(item.scheduled_at)}`,
+                    item.departments?.name ? `Department: ${item.departments.name}` : '',
+                    item.services?.name ? `Service: ${item.services.name}` : '',
+                    item.customer_phone ? `Phone: ${item.customer_phone}` : '',
+                    `Status: ${item.status.replace('_', ' ')}`,
+                  ].filter(Boolean).join('\n');
+
+                  const buttons: any[] = [{ text: 'Close', style: 'cancel' }];
+                  if (isPending) {
+                    buttons.push({
+                      text: 'Check In',
+                      onPress: () => handleCheckIn(item.id, item.customer_name),
+                    });
+                    buttons.push({
+                      text: 'Cancel Booking',
+                      style: 'destructive',
+                      onPress: () => handleCancelBooking(item.id, item.customer_name),
+                    });
+                  }
+                  Alert.alert(item.customer_name, lines, buttons);
+                };
+
                 return (
-                  <View style={styles.card}>
-                    <View style={styles.cardMain}>
-                      <View style={[styles.avatar, { backgroundColor: getBookingStatusColor(item.status) + '18' }]}>
-                        <Ionicons name="calendar" size={20} color={getBookingStatusColor(item.status)} />
+                  <TouchableOpacity style={bStyles.bookingCard} onPress={showDetails} activeOpacity={0.7}>
+                    <View style={bStyles.bookingRow}>
+                      <View style={[bStyles.bookingAvatar, { backgroundColor: sColor + '18' }]}>
+                        <Ionicons name="person" size={16} color={sColor} />
                       </View>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardTitle}>{item.customer_name}</Text>
-                        <Text style={styles.cardSubtitle}>
+                      <View style={bStyles.bookingInfo}>
+                        <Text style={bStyles.bookingName} numberOfLines={1}>{item.customer_name}</Text>
+                        <Text style={bStyles.bookingMeta} numberOfLines={1}>
                           {formatTime12(item.scheduled_at)}
                           {item.departments?.name ? ` · ${item.departments.name}` : ''}
                           {item.services?.name ? ` · ${item.services.name}` : ''}
                         </Text>
-                        {item.customer_phone && (
-                          <Text style={[styles.cardSubtitle, { fontSize: fontSize.xs }]}>{item.customer_phone}</Text>
-                        )}
-                        <View style={styles.badges}>
-                          <Badge label={item.status.replace('_', ' ')} color={getBookingStatusColor(item.status)} />
-                          {item.ticket_id && <Badge label="Has ticket" color={colors.info} />}
+                      </View>
+                      <View style={bStyles.bookingRight}>
+                        <View style={[bStyles.bookingStatus, { backgroundColor: sColor + '18' }]}>
+                          <View style={[bStyles.bookingStatusDot, { backgroundColor: sColor }]} />
+                          <Text style={[bStyles.bookingStatusText, { color: sColor }]}>
+                            {item.status.replace('_', ' ')}
+                          </Text>
                         </View>
+                        {isPending && (
+                          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                        )}
                       </View>
                     </View>
-                    {isPending && (
-                      <View style={bStyles.actions}>
-                        <TouchableOpacity
-                          style={[bStyles.actionBtn, { borderColor: colors.success }]}
-                          onPress={() => handleCheckIn(item.id, item.customer_name)}
-                        >
-                          <Ionicons name="checkmark-circle-outline" size={14} color={colors.success} />
-                          <Text style={[bStyles.actionBtnText, { color: colors.success }]}>Check In</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[bStyles.actionBtn, { borderColor: colors.error }]}
-                          onPress={() => handleCancelBooking(item.id, item.customer_name)}
-                        >
-                          <Ionicons name="close-circle-outline" size={14} color={colors.error} />
-                          <Text style={[bStyles.actionBtnText, { color: colors.error }]}>Cancel</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                  </TouchableOpacity>
                 );
               }}
             />
@@ -1209,10 +1177,23 @@ export default function ManageScreen() {
                 editable={!editingItem}
               />
             </FormField>
+            {!editingItem && (
+              <FormField label="Password" required>
+                <TextInput
+                  style={styles.input}
+                  value={formData.password || ''}
+                  onChangeText={(v) => setFormData((p) => ({ ...p, password: v }))}
+                  placeholder="Min 6 characters"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </FormField>
+            )}
             <FormField label="Role" required>
               <TouchableOpacity style={styles.pickerButton} onPress={openRolePicker}>
                 <Text style={formData.role ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.role ? formData.role.replace('_', ' ') : 'Select role'}
+                  {formData.role ? formData.role.replace(/_/g, ' ') : 'Select role'}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1221,6 +1202,24 @@ export default function ManageScreen() {
               <TouchableOpacity style={styles.pickerButton} onPress={openOfficePicker}>
                 <Text style={formData.office_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
                   {formData.office_name || 'Select office (optional)'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            </FormField>
+            <FormField label="Department">
+              <TouchableOpacity
+                style={styles.pickerButton}
+                onPress={openDepartmentPicker}
+                disabled={!formData.office_id}
+              >
+                <Text
+                  style={
+                    formData.department_id
+                      ? styles.pickerButtonText
+                      : styles.pickerButtonPlaceholder
+                  }
+                >
+                  {formData.department_name || (formData.office_id ? 'Select department (optional)' : 'Select office first')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1476,120 +1475,121 @@ export default function ManageScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Form */}
-            <ScrollView
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalBodyContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {renderFormFields()}
-            </ScrollView>
+            {/* Form or Inline Picker */}
+            {pickerField ? (
+              <View style={{ flex: 1 }}>
+                <View style={styles.pickerHeader}>
+                  <TouchableOpacity onPress={() => setPickerField(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="arrow-back" size={20} color={colors.primary} />
+                    <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' }}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pickerTitle}>
+                    {pickerField === 'role'
+                      ? 'Select Role'
+                      : pickerField === 'office_id'
+                        ? 'Select Office'
+                        : 'Select Department'}
+                  </Text>
+                  <View style={{ width: 60 }} />
+                </View>
+                <ScrollView style={[styles.pickerList, { flex: 1 }]} keyboardShouldPersistTaps="handled">
+                  {/* Clear option for optional fields */}
+                  {pickerField !== 'role' && (
+                    <TouchableOpacity
+                      style={styles.pickerItem}
+                      onPress={() => {
+                        const field = pickerField!;
+                        if (field === 'office_id') {
+                          setFormData((prev) => ({
+                            ...prev,
+                            office_id: '',
+                            office_name: '',
+                            department_id: '',
+                            department_name: '',
+                          }));
+                        } else {
+                          setFormData((prev) => ({
+                            ...prev,
+                            [field]: '',
+                            [field.replace('_id', '_name')]: '',
+                          }));
+                        }
+                        setPickerField(null);
+                      }}
+                    >
+                      <Text style={[styles.pickerItemText, { color: colors.textMuted, fontStyle: 'italic' }]}>
+                        None
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {pickerOptions.map((opt) => {
+                    const isSelected = formData[pickerField!] === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={[styles.pickerItem, isSelected && styles.pickerItemSelected]}
+                        onPress={() => {
+                          const field = pickerField!;
+                          if (field === 'office_id') {
+                            setFormData((prev) => ({
+                              ...prev,
+                              office_id: opt.value,
+                              office_name: opt.label,
+                              department_id: '',
+                              department_name: '',
+                            }));
+                          } else {
+                            setFormData((prev) => ({
+                              ...prev,
+                              [field]: opt.value,
+                              [field.replace('_id', '_name')]: opt.label,
+                            }));
+                          }
+                          setPickerField(null);
+                        }}
+                      >
+                        <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextSelected]}>
+                          {opt.label}
+                        </Text>
+                        {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {pickerOptions.length === 0 && (
+                    <View style={styles.pickerEmpty}>
+                      <Text style={styles.pickerEmptyText}>No options available</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <ScrollView
+                  style={[styles.modalBody, { flex: 1 }]}
+                  contentContainerStyle={styles.modalBodyContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {renderFormFields()}
+                </ScrollView>
 
-            {/* Actions */}
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                onPress={handleSave}
-                disabled={saving}
-              >
-                <Text style={styles.saveButtonText}>{saving ? 'Saving...' : editingItem ? 'Update' : 'Create'}</Text>
-              </TouchableOpacity>
-            </View>
+                {/* Actions */}
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+                    onPress={handleSave}
+                    disabled={saving}
+                  >
+                    <Text style={styles.saveButtonText}>{saving ? 'Saving...' : editingItem ? 'Update' : 'Create'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Picker Sub-Modal */}
-      <Modal visible={!!pickerField} animationType="fade" transparent onRequestClose={() => setPickerField(null)}>
-        <TouchableOpacity
-          style={styles.pickerOverlay}
-          activeOpacity={1}
-          onPress={() => setPickerField(null)}
-        >
-          <View style={styles.pickerContainer}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>
-                {pickerField === 'role'
-                  ? 'Select Role'
-                  : pickerField === 'office_id'
-                    ? 'Select Office'
-                    : 'Select Department'}
-              </Text>
-              <TouchableOpacity onPress={() => setPickerField(null)}>
-                <Ionicons name="close" size={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
-              {/* Clear option for optional fields */}
-              {pickerField !== 'role' && (
-                <TouchableOpacity
-                  style={styles.pickerItem}
-                  onPress={() => {
-                    if (pickerField) {
-                      setFormData((prev) => ({
-                        ...prev,
-                        [pickerField]: '',
-                        [pickerField.replace('_id', '_name')]: '',
-                      }));
-                      // Reset dependent fields when office changes
-                      if (pickerField === 'office_id') {
-                        setFormData((prev) => ({
-                          ...prev,
-                          office_id: '',
-                          office_name: '',
-                          department_id: '',
-                          department_name: '',
-                        }));
-                      }
-                    }
-                    setPickerField(null);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: colors.textMuted, fontStyle: 'italic' }]}>
-                    None
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {pickerOptions.map((opt) => {
-                const isSelected = formData[pickerField!] === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.pickerItem, isSelected && styles.pickerItemSelected]}
-                    onPress={() => {
-                      handlePickerSelect(opt.value, opt.label);
-                      // Reset department when office changes
-                      if (pickerField === 'office_id') {
-                        setFormData((prev) => ({
-                          ...prev,
-                          office_id: opt.value,
-                          office_name: opt.label,
-                          department_id: '',
-                          department_name: '',
-                        }));
-                        setPickerField(null);
-                      }
-                    }}
-                  >
-                    <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextSelected]}>
-                      {opt.label}
-                    </Text>
-                    {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-              {pickerOptions.length === 0 && (
-                <View style={styles.pickerEmpty}>
-                  <Text style={styles.pickerEmptyText}>No options available</Text>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1692,22 +1692,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: fontSize.md, color: colors.text, paddingVertical: spacing.xs },
 
-  // Swipe
-  swipeContainer: { position: 'relative', overflow: 'hidden', borderRadius: borderRadius.lg },
-  swipeDeleteBg: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 90,
-    backgroundColor: colors.error,
-    borderRadius: borderRadius.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 2,
-  },
-  swipeDeleteText: { color: '#fff', fontSize: fontSize.xs, fontWeight: '700' },
-
   // FAB
   fab: {
     position: 'absolute',
@@ -1736,7 +1720,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    maxHeight: '85%',
+    height: '70%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1810,19 +1794,7 @@ const styles = StyleSheet.create({
   pickerButtonText: { fontSize: fontSize.md, color: colors.text },
   pickerButtonPlaceholder: { fontSize: fontSize.md, color: colors.textMuted },
 
-  // Picker modal
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  pickerContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    maxHeight: 400,
-    overflow: 'hidden',
-  },
+  // Picker (inline in modal)
   pickerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1910,23 +1882,62 @@ const bStyles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    paddingLeft: 52,
+  bookingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
   },
-  actionBtn: {
+  bookingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
+    gap: spacing.sm,
   },
-  actionBtnText: {
-    fontSize: fontSize.xs,
+  bookingAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookingInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  bookingName: {
+    fontSize: fontSize.md,
     fontWeight: '700',
+    color: colors.text,
+  },
+  bookingMeta: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+  },
+  bookingRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
+  },
+  bookingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+    gap: 4,
+  },
+  bookingStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  bookingStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+  bookingActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  bookingActionIcon: {
+    padding: 2,
   },
 });

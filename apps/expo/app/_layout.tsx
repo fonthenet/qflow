@@ -99,6 +99,7 @@ function RootNavigator() {
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          headerBackTitle: 'Back',
           contentStyle: { backgroundColor: colors.background },
         }}
       >
@@ -110,6 +111,7 @@ function RootNavigator() {
           name="admin/bookings"
           options={{
             title: 'Bookings',
+            headerBackTitle: 'Back',
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
           }}
@@ -118,6 +120,7 @@ function RootNavigator() {
           name="admin/virtual-codes"
           options={{
             title: 'Virtual Codes',
+            headerBackTitle: 'Back',
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
           }}
@@ -126,6 +129,7 @@ function RootNavigator() {
           name="ticket/[token]"
           options={{
             title: 'Your Ticket',
+            headerBackTitle: 'Back',
             presentation: 'modal',
           }}
         />
@@ -133,10 +137,13 @@ function RootNavigator() {
           name="join/[token]"
           options={{
             title: 'Join Queue',
+            headerBackTitle: 'Back',
             presentation: 'modal',
           }}
         />
         <Stack.Screen name="kiosk/[slug]" options={{ title: 'Kiosk', headerShown: false }} />
+        <Stack.Screen name="queue-peek/[slug]" options={{ headerShown: false }} />
+        <Stack.Screen name="book-appointment/[slug]" options={{ headerShown: false }} />
       </Stack>
     </>
   );

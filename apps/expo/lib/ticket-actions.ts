@@ -175,35 +175,48 @@ export async function transferTicket(
 // ── CRUD: Staff ───────────────────────────────────────────────────
 export async function createStaff(data: {
   email: string;
+  password: string;
   full_name: string;
   role: string;
   organization_id: string;
   office_id?: string | null;
+  department_id?: string | null;
 }) {
-  // Create auth user first
-  const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-    email: data.email,
-    password: Math.random().toString(36).slice(-12) + 'A1!',
-    email_confirm: true,
+  if (!data.password || data.password.length < 6) {
+    throw new Error('Password must be at least 6 characters');
+  }
+
+  // Get current user ID for authorization
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://qflow-sigma.vercel.app';
+  const res = await fetch(`${BASE_URL}/api/create-staff`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: data.email,
+      password: data.password,
+      full_name: data.full_name,
+      role: data.role,
+      organization_id: data.organization_id,
+      office_id: data.office_id || null,
+      department_id: data.department_id || null,
+      caller_user_id: user.id,
+    }),
   });
 
-  // If admin API not available, insert staff without auth link
-  const { error } = await supabase.from('staff').insert({
-    email: data.email,
-    full_name: data.full_name,
-    role: data.role,
-    organization_id: data.organization_id,
-    office_id: data.office_id || null,
-    is_active: true,
-    auth_user_id: authData?.user?.id || null,
-  });
-  if (error) throw new Error(error.message);
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Failed to create staff');
+
+  return result;
 }
 
 export async function updateStaff(staffId: string, data: {
   full_name?: string;
   role?: string;
   office_id?: string | null;
+  department_id?: string | null;
   is_active?: boolean;
 }) {
   const { error } = await supabase.from('staff').update(data).eq('id', staffId);

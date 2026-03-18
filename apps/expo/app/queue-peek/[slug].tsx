@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
@@ -19,6 +20,7 @@ export default function QueuePeekScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [status, setStatus] = useState<QueueStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,7 +65,7 @@ export default function QueuePeekScreen() {
   // ---- Loading ----
   if (loading) {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
+      <View style={[s.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading queue status...</Text>
       </View>
@@ -73,7 +75,7 @@ export default function QueuePeekScreen() {
   // ---- Error ----
   if (!status) {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
+      <View style={[s.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <View style={[s.iconCircle, { backgroundColor: colors.error + '15' }]}>
           <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
         </View>
@@ -102,7 +104,7 @@ export default function QueuePeekScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={s.content}
+      contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
   fetchKioskInfo,
@@ -56,7 +57,10 @@ export default function BookAppointmentScreen() {
     useLocalSearchParams<{ slug: string; deptId?: string; serviceId?: string }>();
   const router = useRouter();
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo } = useAppStore();
+  const scrollRef = useRef<ScrollView>(null);
+  const timeSlotsY = useRef(0);
 
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<KioskInfoResponse | null>(null);
@@ -123,10 +127,16 @@ export default function BookAppointmentScreen() {
     const result = await fetchBookingSlots(slug, selectedServiceId, date);
     setSlotsLoading(false);
     setSlots(result?.slots ?? []);
+    // Auto-scroll to time slots after loading
+    setTimeout(() => {
+      if (timeSlotsY.current > 0) {
+        scrollRef.current?.scrollTo({ y: timeSlotsY.current - 20, animated: true });
+      }
+    }, 100);
   }, [slug, selectedServiceId]);
 
   useEffect(() => {
-    if (step === 'time' && selectedDate) {
+    if (step === 'date' && selectedDate) {
       loadSlots(selectedDate);
     }
   }, [step, selectedDate, loadSlots]);
@@ -148,7 +158,7 @@ export default function BookAppointmentScreen() {
     Haptics.selectionAsync();
     setSelectedDate(date);
     setSelectedSlot('');
-    setStep('time');
+    // Stay on 'date' step — slots load inline below the calendar
   };
 
   const handleSelectSlot = (slot: string) => {
@@ -197,7 +207,7 @@ export default function BookAppointmentScreen() {
   // ---- LOADING ----
   if (step === 'loading') {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
+      <View style={[s.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -206,7 +216,7 @@ export default function BookAppointmentScreen() {
   // ---- ERROR ----
   if (step === 'error') {
     return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
+      <View style={[s.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <View style={[s.iconCircle, { backgroundColor: colors.error + '18' }]}>
           <Ionicons name="alert-circle-outline" size={44} color={colors.error} />
         </View>
@@ -223,7 +233,7 @@ export default function BookAppointmentScreen() {
   if (step === 'success') {
     const d = new Date(confirmedAt);
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={s.content}>
+      <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md }]}>
         <View style={[s.successCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
           <View style={[s.iconCircle, { backgroundColor: colors.success + '18' }]}>
             <Ionicons name="checkmark-circle" size={56} color={colors.success} />
@@ -258,7 +268,7 @@ export default function BookAppointmentScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md }]} keyboardShouldPersistTaps="handled">
         {/* Back row */}
         <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={20} color={colors.primary} />
@@ -331,77 +341,69 @@ export default function BookAppointmentScreen() {
         )}
 
         {/* ---- DATE ---- */}
+        {/* ---- DATE & TIME (combined) ---- */}
         {step === 'date' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Date</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Date & Time</Text>
             <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
               {service?.name} · {dept?.name}
             </Text>
-            <View style={s.dateGrid}>
-              {availableDates.map((date) => (
-                <TouchableOpacity
-                  key={date}
-                  style={[
-                    s.dateCard,
-                    { backgroundColor: colors.surface, borderColor: colors.borderLight },
-                    selectedDate === date && { backgroundColor: colors.primary, borderColor: colors.primary },
-                  ]}
-                  onPress={() => handleSelectDate(date)}
-                  activeOpacity={0.75}
-                >
-                  <Text
-                    style={[
-                      s.dateText,
-                      { color: selectedDate === date ? '#fff' : colors.text },
-                    ]}
-                  >
-                    {formatDate(date)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
+            <MiniCalendar
+              availableDates={availableDates}
+              selectedDate={selectedDate}
+              onSelect={handleSelectDate}
+              colors={colors}
+              isDark={isDark}
+            />
 
-        {/* ---- TIME ---- */}
-        {step === 'time' && (
-          <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Time</Text>
-            <Text style={[s.sectionSub, { color: colors.textSecondary }]}>{formatDate(selectedDate)}</Text>
-            {slotsLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
-            ) : slots.length === 0 ? (
-              <View style={[s.emptySlots, { borderColor: colors.borderLight }]}>
-                <Ionicons name="calendar-clear-outline" size={36} color={colors.textMuted} />
-                <Text style={[s.emptySlotsText, { color: colors.textSecondary }]}>
-                  No available slots on this day.
+            {/* Time slots appear inline after selecting a date */}
+            {selectedDate ? (
+              <View style={{ marginTop: spacing.md }} onLayout={(e) => { timeSlotsY.current = e.nativeEvent.layout.y; }}>
+                <Text style={[s.timeSectionLabel, { color: colors.text }]}>
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                  {'  '}Available times for {formatDate(selectedDate)}
                 </Text>
-                <TouchableOpacity onPress={() => setStep('date')}>
-                  <Text style={[s.backLinkText, { color: colors.primary }]}>Choose another date</Text>
-                </TouchableOpacity>
+                {slotsLoading ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg, marginBottom: spacing.md }} />
+                ) : slots.length === 0 ? (
+                  <View style={[s.emptySlots, { borderColor: colors.borderLight }]}>
+                    <Ionicons name="calendar-clear-outline" size={32} color={colors.textMuted} />
+                    <Text style={[s.emptySlotsText, { color: colors.textSecondary }]}>
+                      No available slots on this day.{'\n'}Try another date above.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={s.slotsGrid}>
+                    {slots.map((slot) => (
+                      <TouchableOpacity
+                        key={slot}
+                        style={[
+                          s.slotChip,
+                          { backgroundColor: colors.surface, borderColor: colors.borderLight },
+                          selectedSlot === slot && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        ]}
+                        onPress={() => handleSelectSlot(slot)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[s.slotText, { color: selectedSlot === slot ? '#fff' : colors.text }]}>
+                          {formatTime(slot)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             ) : (
-              <View style={s.slotsGrid}>
-                {slots.map((slot) => (
-                  <TouchableOpacity
-                    key={slot}
-                    style={[
-                      s.slotChip,
-                      { backgroundColor: colors.surface, borderColor: colors.borderLight },
-                      selectedSlot === slot && { backgroundColor: colors.primary, borderColor: colors.primary },
-                    ]}
-                    onPress={() => handleSelectSlot(slot)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[s.slotText, { color: selectedSlot === slot ? '#fff' : colors.text }]}>
-                      {formatTime(slot)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={[s.pickDateHint, { borderColor: colors.borderLight }]}>
+                <Ionicons name="hand-left-outline" size={22} color={colors.textMuted} />
+                <Text style={[s.pickDateHintText, { color: colors.textSecondary }]}>
+                  Tap a date above to see available times
+                </Text>
               </View>
             )}
-            <TouchableOpacity style={s.backLink} onPress={() => setStep('date')}>
-              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change date</Text>
+
+            <TouchableOpacity style={s.backLink} onPress={() => setStep('service')}>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change service</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -493,6 +495,217 @@ export default function BookAppointmentScreen() {
   );
 }
 
+/* ---- Mini Calendar Component ---- */
+function MiniCalendar({
+  availableDates,
+  selectedDate,
+  onSelect,
+  colors,
+  isDark,
+}: {
+  availableDates: string[];
+  selectedDate: string;
+  onSelect: (date: string) => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+  isDark: boolean;
+}) {
+  const availableSet = new Set(availableDates);
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Start with the month of the first available date
+  const initialMonth = availableDates[0]
+    ? new Date(availableDates[0] + 'T12:00:00')
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialMonth.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialMonth.getMonth());
+
+  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+
+  const monthLabel = new Date(viewYear, viewMonth).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  // Can navigate to prev/next only if there are available dates in that month
+  const canGoPrev = (() => {
+    const pm = viewMonth === 0 ? 11 : viewMonth - 1;
+    const py = viewMonth === 0 ? viewYear - 1 : viewYear;
+    return availableDates.some((d) => {
+      const dt = new Date(d + 'T12:00:00');
+      return dt.getFullYear() === py && dt.getMonth() === pm;
+    });
+  })();
+
+  const canGoNext = (() => {
+    const nm = viewMonth === 11 ? 0 : viewMonth + 1;
+    const ny = viewMonth === 11 ? viewYear + 1 : viewYear;
+    return availableDates.some((d) => {
+      const dt = new Date(d + 'T12:00:00');
+      return dt.getFullYear() === ny && dt.getMonth() === nm;
+    });
+  })();
+
+  const goPrev = () => {
+    if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11); }
+    else setViewMonth((m) => m - 1);
+  };
+  const goNext = () => {
+    if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0); }
+    else setViewMonth((m) => m + 1);
+  };
+
+  // Build grid rows (6 weeks max)
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDayOfWeek; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  const toDateStr = (day: number) => {
+    const mm = String(viewMonth + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${viewYear}-${mm}-${dd}`;
+  };
+
+  return (
+    <View style={[cs.container, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
+      {/* Month navigation */}
+      <View style={cs.monthHeader}>
+        <TouchableOpacity onPress={goPrev} disabled={!canGoPrev} activeOpacity={0.6} style={cs.navBtn}>
+          <Ionicons name="chevron-back" size={20} color={canGoPrev ? colors.text : colors.borderLight} />
+        </TouchableOpacity>
+        <Text style={[cs.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
+        <TouchableOpacity onPress={goNext} disabled={!canGoNext} activeOpacity={0.6} style={cs.navBtn}>
+          <Ionicons name="chevron-forward" size={20} color={canGoNext ? colors.text : colors.borderLight} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Weekday headers */}
+      <View style={cs.weekRow}>
+        {WEEKDAYS.map((wd) => (
+          <View key={wd} style={cs.dayCell}>
+            <Text style={[cs.weekdayText, { color: colors.textMuted }]}>{wd}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Day grid */}
+      {weeks.map((week, wi) => (
+        <View key={wi} style={cs.weekRow}>
+          {week.map((day, di) => {
+            if (day === null) {
+              return <View key={`e${di}`} style={cs.dayCell} />;
+            }
+            const dateStr = toDateStr(day);
+            const isAvailable = availableSet.has(dateStr);
+            const isSelected = dateStr === selectedDate;
+            const isToday = dateStr === todayStr;
+
+            return (
+              <TouchableOpacity
+                key={day}
+                style={cs.dayCell}
+                disabled={!isAvailable}
+                onPress={() => onSelect(dateStr)}
+                activeOpacity={0.6}
+              >
+                <View
+                  style={[
+                    cs.dayCircle,
+                    isSelected && { backgroundColor: colors.primary },
+                    isToday && !isSelected && {
+                      borderWidth: 2,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      cs.dayText,
+                      { color: isSelected ? '#fff' : isAvailable ? colors.text : colors.textMuted + '40' },
+                      isToday && !isSelected && { color: colors.primary, fontWeight: '700' },
+                      isSelected && { fontWeight: '700' },
+                    ]}
+                  >
+                    {day}
+                  </Text>
+                </View>
+                {isAvailable && !isSelected && (
+                  <View style={[cs.availDot, { backgroundColor: colors.success }]} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+
+      {/* Legend */}
+      <View style={cs.legend}>
+        <View style={cs.legendItem}>
+          <View style={[cs.legendDot, { backgroundColor: colors.success }]} />
+          <Text style={[cs.legendText, { color: colors.textMuted }]}>Available</Text>
+        </View>
+        <View style={cs.legendItem}>
+          <View style={[cs.legendDot, { backgroundColor: colors.primary }]} />
+          <Text style={[cs.legendText, { color: colors.textMuted }]}>Selected</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const cs = StyleSheet.create({
+  container: {
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    paddingHorizontal: 4,
+  },
+  navBtn: { padding: 6 },
+  monthLabel: { fontSize: fontSize.lg, fontWeight: '700' },
+  weekRow: { flexDirection: 'row' },
+  dayCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  weekdayText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  dayCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayText: { fontSize: fontSize.md, fontWeight: '500' },
+  availDot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+  legend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 11 },
+});
+
 function Row({
   label,
   value,
@@ -517,7 +730,7 @@ function StepProgress({
   step: Step;
   colors: ReturnType<typeof useTheme>['colors'];
 }) {
-  const steps: Step[] = ['department', 'service', 'date', 'time', 'info', 'confirm'];
+  const steps: Step[] = ['department', 'service', 'date', 'info', 'confirm'];
   const idx = steps.indexOf(step);
   if (idx < 0) return null;
   return (
@@ -610,16 +823,23 @@ const s = StyleSheet.create({
   backLink: { marginTop: spacing.md, alignItems: 'center' },
   backLinkText: { fontSize: fontSize.sm },
 
-  dateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  dateCard: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    minWidth: 90,
-    alignItems: 'center',
+  timeSectionLabel: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
   },
-  dateText: { fontSize: fontSize.sm, fontWeight: '600' },
+  pickDateHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingVertical: spacing.lg,
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    borderStyle: 'dashed',
+  },
+  pickDateHintText: { fontSize: fontSize.md },
 
   slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   slotChip: {

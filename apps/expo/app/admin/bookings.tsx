@@ -347,77 +347,62 @@ export default function BookingsScreen() {
 
           return (
             <View style={s.card}>
-              {/* Header */}
-              <View style={s.cardHeader}>
-                <View style={s.customerInfo}>
-                  <View style={[s.avatar, { backgroundColor: statusColor + '18' }]}>
-                    <Ionicons name="person" size={18} color={statusColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.customerName} numberOfLines={1}>{item.customer_name}</Text>
-                    {item.customer_phone && (
-                      <Text style={s.customerPhone}>{item.customer_phone}</Text>
+              {/* Top row: avatar + name + actions */}
+              <View style={s.cardTop}>
+                <View style={[s.avatar, { backgroundColor: statusColor + '18' }]}>
+                  <Ionicons name="person" size={16} color={statusColor} />
+                </View>
+                <View style={s.cardInfo}>
+                  <Text style={s.customerName} numberOfLines={1}>{item.customer_name}</Text>
+                  <View style={s.metaRow}>
+                    <View style={s.timeChip}>
+                      <Ionicons name="time-outline" size={12} color={colors.primary} />
+                      <Text style={s.timeText}>{formatTime12(item.scheduled_at)}</Text>
+                    </View>
+                    {names.departments[item.department_id] && (
+                      <View style={s.locChip}>
+                        <Text style={s.locText}>{names.departments[item.department_id]}</Text>
+                      </View>
+                    )}
+                    {names.services[item.service_id] && (
+                      <View style={s.locChip}>
+                        <Text style={s.locText}>{names.services[item.service_id]}</Text>
+                      </View>
                     )}
                   </View>
                 </View>
-                <View style={[s.statusBadge, { backgroundColor: statusColor + '18' }]}>
-                  <View style={[s.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[s.statusText, { color: statusColor }]}>
-                    {item.status.replace('_', ' ')}
-                  </Text>
+                {/* Right side: status + inline action icons */}
+                <View style={s.cardRight}>
+                  <View style={[s.statusBadge, { backgroundColor: statusColor + '18' }]}>
+                    <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+                    <Text style={[s.statusText, { color: statusColor }]}>
+                      {item.status.replace('_', ' ')}
+                    </Text>
+                  </View>
+                  {canAct && (
+                    <View style={s.inlineActions}>
+                      <TouchableOpacity
+                        style={s.actionIconBtn}
+                        onPress={() => handleCheckIn(item)}
+                        disabled={isActing}
+                      >
+                        {isActing ? (
+                          <ActivityIndicator size="small" color={colors.success} />
+                        ) : (
+                          <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={s.actionIconBtn}
+                        onPress={() => handleCancel(item)}
+                        disabled={isActing}
+                      >
+                        <Ionicons name="close-circle" size={28} color={colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               </View>
-
-              {/* Schedule + location */}
-              <View style={s.metaRow}>
-                <View style={s.timeChip}>
-                  <Ionicons name="time-outline" size={13} color={colors.primary} />
-                  <Text style={s.timeText}>{formatTime12(item.scheduled_at)}</Text>
-                </View>
-                {names.departments[item.department_id] && (
-                  <View style={s.locChip}>
-                    <Text style={s.locText}>{names.departments[item.department_id]}</Text>
-                  </View>
-                )}
-                {names.services[item.service_id] && (
-                  <View style={s.locChip}>
-                    <Text style={s.locText}>{names.services[item.service_id]}</Text>
-                  </View>
-                )}
-                {item.ticket_id && (
-                  <View style={[s.locChip, { backgroundColor: colors.infoLight }]}>
-                    <Text style={[s.locText, { color: colors.info }]}>Has ticket</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Actions */}
-              {canAct && (
-                <View style={s.actionsRow}>
-                  <TouchableOpacity
-                    style={s.checkInBtn}
-                    onPress={() => handleCheckIn(item)}
-                    disabled={isActing}
-                  >
-                    {isActing ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                        <Text style={s.checkInBtnText}>Check In</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={s.cancelBtn}
-                    onPress={() => handleCancel(item)}
-                    disabled={isActing}
-                  >
-                    <Ionicons name="close-circle-outline" size={16} color={colors.error} />
-                    <Text style={s.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
             </View>
           );
         }}
@@ -526,28 +511,24 @@ const s = StyleSheet.create({
   chipTextActive: { color: '#fff' },
 
   // List
-  listContent: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.sm },
+  listContent: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
   emptyContainer: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyState: { alignItems: 'center', gap: spacing.sm },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '600', color: colors.textMuted },
-  emptySubtitle: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.xl },
+  emptyState: { alignItems: 'center', gap: spacing.md, padding: spacing.xl },
+  emptyTitle: { fontSize: fontSize.xl, fontWeight: '700', color: colors.textMuted },
+  emptySubtitle: { fontSize: fontSize.md, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.lg, lineHeight: 22 },
 
   // Card
   card: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    gap: spacing.sm,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  customerInfo: {
+  cardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
     gap: spacing.sm,
   },
   avatar: {
@@ -557,70 +538,54 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  cardInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  cardRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+    flexShrink: 0,
+  },
   customerName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-  customerPhone: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 1 },
 
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 2,
     borderRadius: borderRadius.full,
     gap: 4,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: fontSize.xs, fontWeight: '600', textTransform: 'capitalize' },
+  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+
+  inlineActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  actionIconBtn: {
+    padding: 2,
+  },
 
   // Meta
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   timeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: 3,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 1,
     borderRadius: borderRadius.full,
     backgroundColor: colors.primaryLight + '15',
   },
   timeText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.primary },
   locChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs + 2,
+    paddingVertical: 1,
     borderRadius: borderRadius.full,
     backgroundColor: colors.surfaceSecondary,
   },
-  locText: { fontSize: fontSize.xs, color: colors.textSecondary },
-
-  // Actions
-  actionsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  checkInBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.success,
-  },
-  checkInBtnText: { fontSize: fontSize.sm, fontWeight: '600', color: '#fff' },
-  cancelBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.errorLight,
-    borderWidth: 1,
-    borderColor: colors.error + '30',
-  },
-  cancelBtnText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.error },
+  locText: { fontSize: 10, fontWeight: '500', color: colors.textSecondary },
 });

@@ -15,6 +15,8 @@ export default function OperatorLayout() {
         headerStyle: { backgroundColor: colors.primary },
         headerTintColor: '#fff',
         headerShadowVisible: false,
+        headerBackVisible: false,
+        headerLeft: () => null,
       }}
     >
       <Tabs.Screen

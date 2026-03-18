@@ -147,8 +147,8 @@ export default function ProfileScreen() {
           <Switch
             value={notificationsEnabled}
             onValueChange={handleToggleNotifications}
-            trackColor={{ false: colors.border, true: colors.primaryLight }}
-            thumbColor={notificationsEnabled ? colors.primary : isDark ? '#475569' : '#f4f3f4'}
+            trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
+            thumbColor={notificationsEnabled ? colors.primary : '#94a3b8'}
           />
         </View>
       </View>
