@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 
 let isCloudReachable = false;
 const CLOUD_URL = 'https://qflow-sigma.vercel.app';
+const SUPABASE_URL = 'https://ofyyzuocifigyyhqxxqw.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
 
 // Check cloud connectivity every 15s
 setInterval(async () => {
@@ -511,7 +513,7 @@ function serveKioskPage(res: http.ServerResponse) {
 
 // ── Track Ticket API ──────────────────────────────────────────────
 
-function handleTrackTicket(url: URL, res: http.ServerResponse) {
+async function handleTrackTicket(url: URL, res: http.ServerResponse) {
   const db = getDB();
   const ticketNumber = url.searchParams.get('number');
   const ticketId = url.searchParams.get('id');
@@ -562,7 +564,7 @@ function handleTrackTicket(url: URL, res: http.ServerResponse) {
 
 // ── Display Data API ──────────────────────────────────────────────
 
-function handleDisplayData(url: URL, res: http.ServerResponse) {
+async function handleDisplayData(url: URL, res: http.ServerResponse) {
   const db = getDB();
   const officeId = url.searchParams.get('officeId');
 
@@ -576,8 +578,48 @@ function handleDisplayData(url: URL, res: http.ServerResponse) {
     return;
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // When online, fetch live data from Supabase for real-time accuracy
+  if (isCloudReachable) {
+    try {
+      const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      const [ticketsRes, servedRes] = await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${office.id}&status=in.(called,serving,waiting)&created_at=gte.${todayISO}&order=called_at.desc`, { headers, signal: AbortSignal.timeout(5000) }),
+        fetch(`${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${office.id}&status=eq.served&created_at=gte.${todayISO}&select=id`, { headers, signal: AbortSignal.timeout(5000) }),
+      ]);
+
+      if (ticketsRes.ok && servedRes.ok) {
+        const tickets = await ticketsRes.json();
+        const served = await servedRes.json();
+
+        // Get desk names from local cache
+        const nowServing = tickets
+          .filter((t: any) => t.status === 'called' || t.status === 'serving')
+          .map((t: any) => {
+            const desk = t.desk_id ? db.prepare("SELECT name FROM desks WHERE id = ?").get(t.desk_id) as any : null;
+            return { ticket_number: t.ticket_number, status: t.status, desk_name: desk?.name ?? null };
+          });
+
+        const waitingCount = tickets.filter((t: any) => t.status === 'waiting').length;
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          office_name: office.name,
+          now_serving: nowServing,
+          waiting_count: waitingCount,
+          served_count: served.length,
+        }));
+        return;
+      }
+    } catch {
+      // Fall through to SQLite
+    }
+  }
+
+  // Offline fallback: use local SQLite
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayISO = today.toISOString();
 
   const nowServing = db.prepare(`
