@@ -599,7 +599,7 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
           .filter((t: any) => t.status === 'called' || t.status === 'serving')
           .map((t: any) => {
             const desk = t.desk_id ? db.prepare("SELECT name FROM desks WHERE id = ?").get(t.desk_id) as any : null;
-            return { ticket_number: t.ticket_number, status: t.status, desk_name: desk?.name ?? null };
+            return { id: t.id, ticket_number: t.ticket_number, status: t.status, desk_id: t.desk_id, desk_name: desk?.name ?? null, department_id: t.department_id, called_at: t.called_at };
           });
 
         const waitingCount = tickets.filter((t: any) => t.status === 'waiting').length;
@@ -797,6 +797,11 @@ function serveDisplayPage(res: http.ServerResponse) {
     .serving-row .status-pill { padding: 8px 20px; border-radius: 24px; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
     .serving-row.called .status-pill { background: #3b82f6; color: white; animation: pulse 1.5s infinite; }
     .serving-row.serving .status-pill { background: #22c55e; color: white; }
+    .countdown { font-size: 32px; font-weight: 900; min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
+    .countdown.urgent { color: #ef4444; }
+    .countdown.warning { color: #f59e0b; }
+    .countdown.normal { color: #3b82f6; }
+    .serving-row.expired { opacity: 0.3; transform: scale(0.97); }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 
     .no-active { display: flex; align-items: center; justify-content: center; flex: 1; color: #cbd5e1; font-size: 28px; font-weight: 600; }
@@ -918,33 +923,65 @@ function serveDisplayPage(res: http.ServerResponse) {
       updateText('date', now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     }
 
+    var CALL_TIMEOUT = 60;
+    var prevCalledIds = [];
+
+    function getCountdown(calledAt) {
+      if (!calledAt) return CALL_TIMEOUT;
+      var elapsed = Math.floor((Date.now() - new Date(calledAt).getTime()) / 1000);
+      return Math.max(0, CALL_TIMEOUT - elapsed);
+    }
+
     function renderServing(active) {
-      var hash = JSON.stringify(active);
-      if (hash === lastServingHash) return;
-      var hadPrev = lastServingHash !== '';
-      lastServingHash = hash;
+      // Check for newly called tickets (for chime)
+      var currentCalledIds = active.filter(function(t){return t.status==='called'}).map(function(t){return t.id});
+      var hasNew = currentCalledIds.some(function(id) { return prevCalledIds.indexOf(id) === -1; });
+      if (hasNew && prevCalledIds.length > 0) playChime();
+      prevCalledIds = currentCalledIds;
 
       var el = document.getElementById('serving-list');
       if (active.length === 0) {
         el.innerHTML = '<div class="no-active">Waiting for customers...</div>';
+        lastServingHash = '';
         return;
       }
 
-      // Check for newly called tickets
-      if (hadPrev) {
-        var newCalled = active.filter(function(t) { return t.status === 'called'; });
-        if (newCalled.length > 0) playChime();
+      // Filter out expired called tickets (countdown <= 0)
+      var visible = active.filter(function(t) {
+        if (t.status !== 'called') return true;
+        return getCountdown(t.called_at) > 0;
+      });
+
+      if (visible.length === 0) {
+        el.innerHTML = '<div class="no-active">Waiting for customers...</div>';
+        lastServingHash = '';
+        return;
       }
 
-      el.innerHTML = active.map(function(t) {
+      // Always re-render called tickets (countdown changes every second)
+      el.innerHTML = visible.map(function(t) {
         var deskName = desks[t.desk_id] || t.desk_name || 'Desk';
         var deptName = departments[t.department_id] || '';
-        return '<div class="serving-row ' + t.status + '">' +
+
+        if (t.status === 'called') {
+          var secs = getCountdown(t.called_at);
+          var urgency = secs <= 10 ? 'urgent' : secs <= 20 ? 'warning' : 'normal';
+          return '<div class="serving-row called">' +
+            '<div class="ticket-num">' + t.ticket_number + '</div>' +
+            '<div class="arrow">&rarr;</div>' +
+            '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
+            (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
+            '<div class="countdown ' + urgency + '">' + secs + 's</div>' +
+            '<div class="status-pill">Please Proceed</div>' +
+            '</div>';
+        }
+
+        return '<div class="serving-row serving">' +
           '<div class="ticket-num">' + t.ticket_number + '</div>' +
           '<div class="arrow">&rarr;</div>' +
           '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
           (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
-          '<div class="status-pill">' + (t.status === 'called' ? 'Please Proceed' : 'Serving') + '</div>' +
+          '<div class="status-pill">Serving</div>' +
           '</div>';
       }).join('');
     }
@@ -1046,7 +1083,8 @@ function serveDisplayPage(res: http.ServerResponse) {
         updateText('s-serving', serving.length);
         updateText('s-served', served.length);
 
-        renderServing([...called, ...serving]);
+        lastActive = [...called, ...serving];
+        renderServing(lastActive);
         renderQueue(waiting);
       } catch(e) {
         // Fallback to local API
@@ -1057,19 +1095,30 @@ function serveDisplayPage(res: http.ServerResponse) {
             updateText('office-name', d.office_name);
             updateText('s-waiting', d.waiting_count);
             updateText('s-served', d.served_count);
-            renderServing(d.now_serving || []);
+            lastActive = d.now_serving || [];
+            renderServing(lastActive);
           }
         } catch(e2) {}
       }
     }
 
-    // Clock updates every second
-    updateClock();
-    setInterval(updateClock, 1000);
+    // Clock + countdown updates every second
+    var lastActive = [];
+    function tick() {
+      updateClock();
+      // Re-render serving panel for countdown updates
+      if (lastActive.length > 0) renderServing(lastActive);
+    }
+    setInterval(tick, 1000);
+    tick();
 
     // Data refresh every 2 seconds
-    fetchData();
-    setInterval(fetchData, 2000);
+    var origFetch = fetchData;
+    async function fetchAndStore() {
+      await origFetch();
+    }
+    fetchAndStore();
+    setInterval(fetchAndStore, 2000);
   <\/script>
 </body>
 </html>`;
