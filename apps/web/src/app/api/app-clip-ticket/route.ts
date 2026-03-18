@@ -54,17 +54,31 @@ export async function GET(request: NextRequest) {
   }
 
   // Calculate queue position for waiting tickets
+  // Position = 1 + count of tickets ahead (higher priority, or same priority but earlier)
   let position: number | null = null;
   if (ticket.status === 'waiting') {
-    const { count } = await supabase
+    const ticketPriority = ticket.priority ?? 0;
+
+    // Count tickets with strictly higher priority (they're always ahead)
+    const { count: higherPriority } = await supabase
       .from('tickets')
       .select('id', { count: 'exact', head: true })
       .eq('department_id', ticket.department_id)
       .eq('office_id', ticket.office_id)
       .eq('status', 'waiting')
-      .lte('created_at', ticket.created_at);
+      .gt('priority', ticketPriority);
 
-    position = count ?? null;
+    // Count tickets with same priority but created earlier (FIFO within same priority)
+    const { count: samePriorityEarlier } = await supabase
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('department_id', ticket.department_id)
+      .eq('office_id', ticket.office_id)
+      .eq('status', 'waiting')
+      .eq('priority', ticketPriority)
+      .lt('created_at', ticket.created_at);
+
+    position = 1 + (higherPriority ?? 0) + (samePriorityEarlier ?? 0);
   }
 
   const [
