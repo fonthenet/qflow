@@ -146,11 +146,11 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   if (isCloudReachable && office.organization_id) {
     try {
       const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,settings`, { headers, signal: AbortSignal.timeout(3000) });
+      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url,settings`, { headers, signal: AbortSignal.timeout(3000) });
       if (orgRes.ok) {
         const orgs = await orgRes.json();
         orgName = orgs[0]?.name ?? null;
-        logoUrl = orgs[0]?.settings?.logo_url ?? null;
+        logoUrl = orgs[0]?.logo_url ?? orgs[0]?.settings?.logo_url ?? null;
       }
     } catch { /* ignore */ }
   }
