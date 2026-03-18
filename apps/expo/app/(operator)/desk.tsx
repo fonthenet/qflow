@@ -502,11 +502,9 @@ export default function DeskScreen() {
 
   const WaitingCountCard = (
     <View style={styles.waitingCard}>
-      <Text style={styles.waitingLabel}>Waiting</Text>
+      <Ionicons name="people-outline" size={18} color={colors.waiting} />
       <Text style={styles.waitingNumber}>{queue.waiting.length}</Text>
-      <Text style={styles.waitingSubtext}>
-        {queue.waiting.length === 1 ? 'customer' : 'customers'} in queue
-      </Text>
+      <Text style={styles.waitingSubtext}>waiting</Text>
     </View>
   );
 
@@ -519,6 +517,14 @@ export default function DeskScreen() {
   const priorityInfo = activeTicket?.priority_category_id
     ? names.priorities[activeTicket.priority_category_id]
     : null;
+
+  // Call elapsed seconds for countdown display
+  const calledElapsedSec = activeTicket?.called_at ? elapsedSeconds(activeTicket.called_at) : 0;
+  const CALL_TIMEOUT_SEC = 60; // 60 seconds to respond
+  const callRemainingPct = activeTicket?.status === 'called'
+    ? Math.max(0, 1 - calledElapsedSec / CALL_TIMEOUT_SEC)
+    : 0;
+  const isCallExpiring = activeTicket?.status === 'called' && calledElapsedSec > CALL_TIMEOUT_SEC * 0.75;
 
   const CurrentTicketCard = activeTicket ? (
     <View
@@ -561,146 +567,141 @@ export default function DeskScreen() {
         </View>
       </View>
 
-      {/* Details */}
-      {activeTicket.customer_data?.name ? (
-        <View style={styles.detailRow}>
-          <Ionicons name="person-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.detailText}>{activeTicket.customer_data.name}</Text>
-        </View>
-      ) : null}
-
-      {activeTicket.service_id && names.services[activeTicket.service_id] ? (
-        <View style={styles.detailRow}>
-          <Ionicons name="layers-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.detailText}>{names.services[activeTicket.service_id]}</Text>
-        </View>
-      ) : null}
-
-      {activeTicket.department_id && names.departments[activeTicket.department_id] ? (
-        <View style={styles.detailRow}>
-          <Ionicons name="business-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.detailText}>{names.departments[activeTicket.department_id]}</Text>
-        </View>
-      ) : null}
-
-      {priorityInfo ? (
-        <View style={styles.detailRow}>
-          <Ionicons
-            name="flag"
-            size={16}
-            color={priorityInfo.color ?? colors.warning}
-          />
-          <Text style={[styles.detailText, { color: priorityInfo.color ?? colors.warning, fontWeight: '600' }]}>
-            {priorityInfo.name}
-          </Text>
-        </View>
-      ) : null}
-
-      {/* Timers */}
-      <View style={styles.timerRow}>
-        {activeTicket.status === 'serving' && activeTicket.serving_started_at ? (
-          <View style={styles.timerBlock}>
-            <Text style={styles.timerLabel}>Service Time</Text>
-            <Text
-              style={[
-                styles.timerValue,
-                isServingOvertime && { color: colors.error },
-              ]}
-            >
-              {formatElapsed(activeTicket.serving_started_at)}
+      {/* Customer & meta — compact row */}
+      <View style={styles.metaCompact}>
+        {activeTicket.customer_data?.name ? (
+          <Text style={styles.metaName}>{activeTicket.customer_data.name}</Text>
+        ) : null}
+        <Text style={styles.metaSub} numberOfLines={1}>
+          {[
+            activeTicket.service_id ? names.services[activeTicket.service_id] : null,
+            activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
+          ].filter(Boolean).join(' · ')}
+        </Text>
+        {priorityInfo ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="flag" size={12} color={priorityInfo.color ?? colors.warning} />
+            <Text style={{ fontSize: fontSize.xs, fontWeight: '700', color: priorityInfo.color ?? colors.warning }}>
+              {priorityInfo.name}
             </Text>
           </View>
         ) : null}
-        {activeTicket.called_at ? (
-          <View style={styles.timerBlock}>
-            <Text style={styles.timerLabel}>Since Called</Text>
-            <Text style={styles.timerValue}>{formatElapsed(activeTicket.called_at)}</Text>
+        {(activeTicket.customer_data?.notes || activeTicket.notes) ? (
+          <View style={styles.notesBubble}>
+            <Ionicons name="chatbubble-outline" size={12} color={colors.info} />
+            <Text style={[styles.notesText, { color: colors.text }]} numberOfLines={3}>
+              {activeTicket.customer_data?.notes || activeTicket.notes}
+            </Text>
           </View>
         ) : null}
       </View>
 
-      {/* Action buttons */}
-      <View style={styles.actionGrid}>
-        {activeTicket.status === 'called' ? (
-          <>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-              onPress={handleStartServing}
-              disabled={actionLoading}
-            >
-              <Ionicons name="play" size={18} color="#fff" />
-              <Text style={styles.actionBtnTextLight}>Start Serving</Text>
+      {/* Called state: countdown bar + prominent Start Serving */}
+      {activeTicket.status === 'called' ? (
+        <>
+          {/* Call countdown */}
+          <View style={styles.countdownSection}>
+            <View style={styles.countdownRow}>
+              <Ionicons
+                name="timer-outline"
+                size={16}
+                color={isCallExpiring ? colors.error : colors.called}
+              />
+              <Text style={[styles.countdownText, isCallExpiring && { color: colors.error }]}>
+                {Math.max(0, CALL_TIMEOUT_SEC - calledElapsedSec)}s remaining
+              </Text>
+            </View>
+            <View style={styles.countdownBarBg}>
+              <View
+                style={[
+                  styles.countdownBarFill,
+                  {
+                    width: `${callRemainingPct * 100}%`,
+                    backgroundColor: isCallExpiring ? colors.error : colors.called,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+
+          {/* Primary: Start Serving */}
+          <TouchableOpacity
+            style={styles.primaryActionBtn}
+            onPress={handleStartServing}
+            disabled={actionLoading}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="play-circle" size={28} color="#fff" />
+            <Text style={styles.primaryActionText}>Start Serving</Text>
+          </TouchableOpacity>
+
+          {/* Secondary actions row */}
+          <View style={styles.secondaryRow}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleRecall} disabled={actionLoading}>
+              <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Recall</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.primaryLight }]}
-              onPress={handleRecall}
-              disabled={actionLoading}
-            >
-              <Ionicons name="volume-high" size={18} color="#fff" />
-              <Text style={styles.actionBtnTextLight}>Recall</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.errorLight }]}
-              onPress={handleNoShow}
-              disabled={actionLoading}
-            >
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleNoShow} disabled={actionLoading}>
               <Ionicons name="close-circle-outline" size={18} color={colors.error} />
-              <Text style={[styles.actionBtnTextDark, { color: colors.error }]}>No Show</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>No Show</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.surfaceSecondary }]}
-              onPress={handleBackToQueue}
-              disabled={actionLoading}
-            >
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleBackToQueue} disabled={actionLoading}>
               <Ionicons name="arrow-undo-outline" size={18} color={colors.textSecondary} />
-              <Text style={[styles.actionBtnTextDark, { color: colors.textSecondary }]}>Back to Queue</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>Requeue</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.warningLight }]}
-              onPress={handlePark}
-              disabled={actionLoading}
-            >
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handlePark} disabled={actionLoading}>
               <Ionicons name="pause-outline" size={18} color={colors.warning} />
-              <Text style={[styles.actionBtnTextDark, { color: colors.warning }]}>Park</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>Park</Text>
             </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.success }]}
-              onPress={handleMarkServed}
-              disabled={actionLoading}
-            >
-              <Ionicons name="checkmark-circle" size={18} color="#fff" />
-              <Text style={styles.actionBtnTextLight}>Mark Served</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.errorLight }]}
-              onPress={handleNoShow}
-              disabled={actionLoading}
-            >
+          </View>
+        </>
+      ) : (
+        <>
+          {/* Serving state: service timer */}
+          {activeTicket.serving_started_at ? (
+            <View style={styles.timerRow}>
+              <View style={styles.timerBlock}>
+                <Text style={styles.timerLabel}>Service Time</Text>
+                <Text
+                  style={[
+                    styles.timerValue,
+                    isServingOvertime && { color: colors.error },
+                  ]}
+                >
+                  {formatElapsed(activeTicket.serving_started_at)}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Primary: Mark Served */}
+          <TouchableOpacity
+            style={[styles.primaryActionBtn, { backgroundColor: colors.success }]}
+            onPress={handleMarkServed}
+            disabled={actionLoading}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="checkmark-circle" size={28} color="#fff" />
+            <Text style={styles.primaryActionText}>Mark Served</Text>
+          </TouchableOpacity>
+
+          {/* Secondary actions row */}
+          <View style={styles.secondaryRow}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleNoShow} disabled={actionLoading}>
               <Ionicons name="close-circle-outline" size={18} color={colors.error} />
-              <Text style={[styles.actionBtnTextDark, { color: colors.error }]}>No Show</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>No Show</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.primaryLight }]}
-              onPress={() => setTransferVisible(true)}
-              disabled={actionLoading}
-            >
-              <Ionicons name="swap-horizontal-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnTextLight}>Transfer</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setTransferVisible(true)} disabled={actionLoading}>
+              <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Transfer</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.warningLight }]}
-              onPress={handlePark}
-              disabled={actionLoading}
-            >
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handlePark} disabled={actionLoading}>
               <Ionicons name="pause-outline" size={18} color={colors.warning} />
-              <Text style={[styles.actionBtnTextDark, { color: colors.warning }]}>Park</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>Park</Text>
             </TouchableOpacity>
-          </>
-        )}
-      </View>
+          </View>
+        </>
+      )}
 
       {actionLoading && (
         <ActivityIndicator
@@ -781,41 +782,15 @@ export default function DeskScreen() {
       ) : (
         queue.waiting.map((ticket, idx) => (
           <View key={ticket.id} style={styles.queueItem}>
-            <View style={styles.queuePosition}>
-              <Text style={styles.queuePositionText}>{idx + 1}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.queueTicketNum}>{ticket.ticket_number}</Text>
-              <Text style={styles.queueDetail}>
-                {ticket.customer_data?.name ?? 'Walk-in'}
-                {ticket.service_id && names.services[ticket.service_id]
-                  ? ` \u00B7 ${names.services[ticket.service_id]}`
-                  : ''}
-              </Text>
-              <Text style={styles.queueWait}>
-                {formatElapsed(ticket.created_at)} waiting
-              </Text>
-            </View>
+            <Text style={styles.queuePos}>{idx + 1}</Text>
+            <Text style={styles.queueTicketNum}>{ticket.ticket_number}</Text>
+            <Text style={styles.queueName} numberOfLines={1}>
+              {ticket.customer_data?.name ?? 'Walk-in'}
+            </Text>
             {ticket.priority_category_id && names.priorities[ticket.priority_category_id] ? (
-              <View
-                style={[
-                  styles.priorityBadgeSmall,
-                  {
-                    backgroundColor:
-                      (names.priorities[ticket.priority_category_id].color ?? colors.warning) + '20',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.priorityBadgeSmallText,
-                    { color: names.priorities[ticket.priority_category_id].color ?? colors.warning },
-                  ]}
-                >
-                  {names.priorities[ticket.priority_category_id].name}
-                </Text>
-              </View>
+              <Ionicons name="flag" size={10} color={names.priorities[ticket.priority_category_id].color ?? colors.warning} />
             ) : null}
+            <Text style={styles.queueWait}>{formatElapsed(ticket.created_at)}</Text>
             <TouchableOpacity
               style={styles.callSpecificBtn}
               onPress={() => handleCallSpecific(ticket)}
@@ -823,17 +798,9 @@ export default function DeskScreen() {
             >
               <Ionicons
                 name="megaphone-outline"
-                size={16}
+                size={14}
                 color={hasActive ? colors.textMuted : colors.primary}
               />
-              <Text
-                style={[
-                  styles.callSpecificBtnText,
-                  hasActive && { color: colors.textMuted },
-                ]}
-              >
-                Call
-              </Text>
             </TouchableOpacity>
           </View>
         ))
@@ -1057,28 +1024,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Waiting count
+  // Waiting count — compact horizontal bar
   waitingCard: {
-    backgroundColor: colors.waitingBg,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-  },
-  waitingLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    color: colors.waiting,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
+    gap: spacing.sm,
+    backgroundColor: colors.waitingBg,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   waitingNumber: {
-    fontSize: fontSize.hero,
+    fontSize: fontSize.xl,
     fontWeight: '800',
     color: colors.primary,
   },
   waitingSubtext: {
     fontSize: fontSize.sm,
+    fontWeight: '600',
     color: colors.textSecondary,
   },
 
@@ -1117,14 +1080,83 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '700',
   },
-  detailRow: {
+  metaCompact: {
+    gap: 2,
+  },
+  metaName: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  metaSub: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  notesBubble: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    backgroundColor: colors.infoLight,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.xs,
+  },
+  notesText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontStyle: 'italic',
+  },
+  countdownSection: {
+    gap: spacing.xs,
+  },
+  countdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
-  detailText: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
+  countdownText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.called,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  countdownBarBg: {
+    height: 4,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  countdownBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  primaryActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.lg,
+    borderRadius: borderRadius.xl,
+  },
+  primaryActionText: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  secondaryBtn: {
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  secondaryBtnText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
   },
   timerRow: {
     flexDirection: 'row',
@@ -1149,34 +1181,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
-  // Action buttons grid
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.lg,
-    minWidth: '30%',
-    flexGrow: 1,
-  },
-  actionBtnTextLight: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  actionBtnTextDark: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: colors.text,
-  },
+  // (action grid removed — using primaryActionBtn + secondaryRow)
 
   // Call next button
   callNextButton: {
@@ -1256,63 +1261,41 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // Queue items
+  // Queue items — compact single row
   queueItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
-  queuePosition: {
-    width: 28,
-    height: 28,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  queuePositionText: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: colors.textSecondary,
+  queuePos: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.textMuted,
+    width: 16,
+    textAlign: 'center',
   },
   queueTicketNum: {
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     fontWeight: '700',
     color: colors.text,
   },
-  queueDetail: {
+  queueName: {
+    flex: 1,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
   },
   queueWait: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
-  },
-  priorityBadgeSmall: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  priorityBadgeSmallText: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
+    fontVariant: ['tabular-nums'] as any,
   },
   callSpecificBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: borderRadius.full,
     backgroundColor: colors.primaryLight + '15',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.lg,
-  },
-  callSpecificBtnText: {
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: colors.primary,
   },
 
   // Recently served

@@ -2,12 +2,42 @@ import { supabase } from './supabase';
 
 // ── Call Next Ticket ─────────────────────────────────────────────
 export async function callNextTicket(deskId: string, staffId: string) {
+  // Try the RPC first (filters by desk_services + department)
   const { data, error } = await supabase.rpc('call_next_ticket', {
     p_desk_id: deskId,
     p_staff_id: staffId,
   });
   if (error) throw new Error(error.message);
-  return data;
+  if (data) return data;
+
+  // Fallback: pick any waiting ticket in the desk's office
+  const { data: desk } = await supabase
+    .from('desks')
+    .select('office_id')
+    .eq('id', deskId)
+    .single();
+  if (!desk) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('id')
+    .eq('office_id', desk.office_id)
+    .eq('status', 'waiting')
+    .is('parked_at', null)
+    .gte('created_at', today.toISOString())
+    .order('priority', { ascending: false, nullsFirst: true })
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!ticket) return null;
+
+  // Call it to this desk
+  await callSpecificTicket(ticket.id, deskId, staffId);
+  return ticket.id;
 }
 
 // ── Call Specific Ticket ──────────────────────────────────────────
@@ -457,11 +487,18 @@ export async function createVirtualCode(data: {
   department_id?: string | null;
   service_id?: string | null;
 }) {
+  // Generate a unique qr_token (required by DB, no default)
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const token = 'vq_' + Array.from({ length: 12 }, () =>
+    chars.charAt(Math.floor(Math.random() * chars.length))
+  ).join('');
+
   const { error } = await supabase.from('virtual_queue_codes').insert({
     organization_id: data.organization_id,
     office_id: data.office_id || null,
     department_id: data.department_id || null,
     service_id: data.service_id || null,
+    qr_token: token,
     is_active: true,
   });
   if (error) throw new Error(error.message);

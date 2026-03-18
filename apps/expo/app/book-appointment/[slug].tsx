@@ -59,6 +59,7 @@ export default function BookAppointmentScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo } = useAppStore();
+  const [notes, setNotes] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const timeSlotsY = useRef(0);
 
@@ -186,6 +187,7 @@ export default function BookAppointmentScreen() {
       customerName: name.trim(),
       customerPhone: phone.trim() || undefined,
       scheduledAt,
+      notes: notes.trim() || undefined,
     });
 
     if ('error' in result) {
@@ -441,6 +443,21 @@ export default function BookAppointmentScreen() {
               placeholder="+1 555 000 0000"
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
+              returnKeyType="next"
+            />
+
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Notes (optional)</Text>
+            <TextInput
+              style={[
+                s.textInput,
+                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, minHeight: 72, textAlignVertical: 'top' },
+              ]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Reason for visit, symptoms, special requests..."
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={3}
               returnKeyType="done"
             />
 
@@ -474,6 +491,7 @@ export default function BookAppointmentScreen() {
               <Row label="Time" value={formatTime(selectedSlot)} colors={colors} />
               <Row label="Name" value={name} colors={colors} />
               {phone ? <Row label="Phone" value={phone} colors={colors} /> : null}
+              {notes.trim() ? <Row label="Notes" value={notes.trim()} colors={colors} /> : null}
             </View>
 
             <TouchableOpacity

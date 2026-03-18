@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, scheduledAt } =
+  const { officeId, departmentId, serviceId, customerName, customerPhone, scheduledAt, notes } =
     body as Record<string, string | undefined>;
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {

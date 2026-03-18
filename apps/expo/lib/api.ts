@@ -327,6 +327,7 @@ export async function createBooking(params: {
   customerName: string;
   customerPhone?: string;
   scheduledAt: string; // ISO string
+  notes?: string;
 }): Promise<CreateBookingResult | { error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/book-appointment`, {

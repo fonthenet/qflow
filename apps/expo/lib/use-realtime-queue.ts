@@ -5,7 +5,7 @@ export interface QueueTicket {
   id: string;
   ticket_number: string;
   status: string;
-  customer_data: { name?: string; phone?: string; email?: string } | null;
+  customer_data: { name?: string; phone?: string; email?: string; notes?: string } | null;
   priority_category_id: string | null;
   priority: number | null;
   created_at: string;

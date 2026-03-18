@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -127,6 +128,7 @@ export default function VirtualCodesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [qrModalCode, setQrModalCode] = useState<VirtualCode | null>(null);
 
   // Create modal state
   const [modalVisible, setModalVisible] = useState(false);
@@ -391,6 +393,17 @@ export default function VirtualCodesScreen() {
         {/* Scope detail */}
         <Text style={styles.scopeDetail}>{getScopeDetail(item, names)}</Text>
 
+        {/* Show QR button */}
+        <TouchableOpacity
+          style={styles.qrToggle}
+          onPress={() => setQrModalCode(item)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="qr-code-outline" size={16} color={colors.primary} />
+          <Text style={styles.qrToggleText}>Show QR Code</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+        </TouchableOpacity>
+
         {/* Join URL */}
         <View style={styles.urlRow}>
           <Ionicons name="link-outline" size={14} color={colors.textMuted} />
@@ -579,6 +592,61 @@ export default function VirtualCodesScreen() {
         </TouchableOpacity>
       )}
 
+      {/* QR Code Popup Modal */}
+      <Modal
+        visible={!!qrModalCode}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setQrModalCode(null)}
+      >
+        <TouchableOpacity
+          style={styles.qrOverlay}
+          activeOpacity={1}
+          onPress={() => setQrModalCode(null)}
+        >
+          <View style={styles.qrPopup}>
+            <View style={styles.qrPopupHeader}>
+              <Text style={styles.qrPopupTitle}>
+                {qrModalCode ? getScopeDetail(qrModalCode, names) : ''}
+              </Text>
+              <TouchableOpacity onPress={() => setQrModalCode(null)}>
+                <Ionicons name="close-circle" size={28} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {qrModalCode && (
+              <View style={styles.qrPopupBody}>
+                <Image
+                  source={{
+                    uri: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(`${JOIN_BASE_URL}/${qrModalCode.qr_token}`)}`,
+                  }}
+                  style={styles.qrPopupImage}
+                  resizeMode="contain"
+                />
+                <Text style={styles.qrPopupHint}>Scan to join queue</Text>
+                <Text style={styles.qrPopupUrl} numberOfLines={1} ellipsizeMode="middle">
+                  {JOIN_BASE_URL}/{qrModalCode.qr_token}
+                </Text>
+                <TouchableOpacity
+                  style={styles.qrPopupCopy}
+                  onPress={() => {
+                    handleCopy(qrModalCode);
+                  }}
+                >
+                  <Ionicons
+                    name={copiedId === qrModalCode.id ? 'checkmark-outline' : 'copy-outline'}
+                    size={18}
+                    color="#fff"
+                  />
+                  <Text style={styles.qrPopupCopyText}>
+                    {copiedId === qrModalCode.id ? 'Copied!' : 'Copy Link'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Create Modal */}
       <Modal
         visible={modalVisible}
@@ -754,6 +822,87 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     marginBottom: spacing.md,
+  },
+  qrToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  qrToggleText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.primary,
+    flex: 1,
+  },
+  // QR Popup Modal
+  qrOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  qrPopup: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    width: '100%',
+    maxWidth: 340,
+    overflow: 'hidden',
+  },
+  qrPopupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  qrPopupTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.text,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  qrPopupBody: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  qrPopupImage: {
+    width: 240,
+    height: 240,
+    backgroundColor: '#fff',
+    borderRadius: borderRadius.lg,
+  },
+  qrPopupHint: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  qrPopupUrl: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    maxWidth: '90%',
+  },
+  qrPopupCopy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.full,
+    marginTop: spacing.md,
+  },
+  qrPopupCopyText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: '#fff',
   },
   actionsRow: {
     flexDirection: 'row',

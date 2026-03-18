@@ -1,8 +1,26 @@
-import { Tabs } from 'expo-router';
+import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/lib/theme';
+import { useAuth } from '@/lib/auth-context';
+import { colors, fontSize, spacing, borderRadius } from '@/lib/theme';
 
 export default function OperatorLayout() {
+  const router = useRouter();
+  const { staffRole } = useAuth();
+  const isAdmin = staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin';
+
+  const backToAdmin = isAdmin
+    ? () => (
+        <TouchableOpacity
+          style={ls.backBtn}
+          onPress={() => router.navigate('/(admin)')}
+        >
+          <Ionicons name="arrow-back" size={18} color="#fff" />
+          <Text style={ls.backText}>Admin</Text>
+        </TouchableOpacity>
+      )
+    : () => null;
+
   return (
     <Tabs
       screenOptions={{
@@ -16,7 +34,7 @@ export default function OperatorLayout() {
         headerTintColor: '#fff',
         headerShadowVisible: false,
         headerBackVisible: false,
-        headerLeft: () => null,
+        headerLeft: backToAdmin,
       }}
     >
       <Tabs.Screen
@@ -49,3 +67,21 @@ export default function OperatorLayout() {
     </Tabs>
   );
 }
+
+const ls = StyleSheet.create({
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: spacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  backText: {
+    color: '#fff',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+  },
+});
