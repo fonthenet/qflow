@@ -340,7 +340,7 @@ export async function getAvailableSlots(
   // Fetch blocked slots (graceful — table may not exist yet)
   let blockedData: { start_time: string; end_time: string }[] = [];
   try {
-    const blockedResult = await supabase
+    const blockedResult = await (supabase as any)
       .from('blocked_slots')
       .select('start_time, end_time')
       .eq('office_id', officeId)

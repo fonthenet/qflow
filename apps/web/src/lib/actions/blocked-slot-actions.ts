@@ -6,7 +6,7 @@ import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 export async function getBlockedSlots(officeId: string, date: string) {
   const context = await getStaffContext();
 
-  const { data, error } = await context.supabase
+  const { data, error } = await (context.supabase as any)
     .from('blocked_slots')
     .select('id, office_id, blocked_date, start_time, end_time, reason, created_by, created_at')
     .eq('office_id', officeId)
@@ -20,7 +20,7 @@ export async function getBlockedSlots(officeId: string, date: string) {
 export async function getBlockedSlotsForRange(officeId: string, startDate: string, endDate: string) {
   const context = await getStaffContext();
 
-  const { data, error } = await context.supabase
+  const { data, error } = await (context.supabase as any)
     .from('blocked_slots')
     .select('id, office_id, blocked_date, start_time, end_time, reason, created_at')
     .eq('office_id', officeId)
@@ -53,7 +53,7 @@ export async function createBlockedSlot(data: {
   if (officeError || !office) return { error: 'Office not found' };
   if (office.organization_id !== context.staff.organization_id) return { error: 'Unauthorized' };
 
-  const { data: slot, error } = await context.supabase
+  const { data: slot, error } = await (context.supabase as any)
     .from('blocked_slots')
     .insert({
       office_id: data.officeId,
@@ -88,7 +88,7 @@ export async function deleteBlockedSlot(slotId: string) {
   const slotOrg = (slot as any).offices?.organization_id;
   if (slotOrg !== context.staff.organization_id) return { error: 'Unauthorized' };
 
-  const { error } = await context.supabase
+  const { error } = await (context.supabase as any)
     .from('blocked_slots')
     .delete()
     .eq('id', slotId);
