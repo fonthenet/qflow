@@ -87,15 +87,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'This time slot is currently blocked' }, { status: 409 });
   }
 
-  // Check capacity
-  const sameSlotCount = (appointmentsResult.data ?? []).filter((a: any) => {
-    // Count appointments at the exact same time slot
-    return true; // All appointments for this service on this date — we need to recount by time
-  }).length;
-
-  // More precise: count by matching time
-  const allAppointments = appointmentsResult.data ?? [];
-  // Re-fetch with scheduled_at to count per-slot
+  // Check capacity — count existing appointments at the same time slot
   const { data: slotAppointments } = await supabase
     .from('appointments')
     .select('id')
