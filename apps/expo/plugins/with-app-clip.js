@@ -1,12 +1,18 @@
 /**
  * Expo Config Plugin: Embed native App Clip + Live Activity into the Expo build.
  *
- * This plugin runs during `npx expo prebuild` and modifies the generated Xcode
- * project to include the QueueFlowClip (App Clip) and QueueFlowLiveActivity
- * (Widget Extension) targets alongside the main React Native app.
+ * Uses withDangerousMod to directly patch the .pbxproj file after prebuild,
+ * avoiding the buggy xcode npm library that doesn't support App Clip product types.
+ *
+ * Approach: read the generated pbxproj as text, inject target definitions using
+ * the same format Xcode uses. This is the most reliable method for custom targets.
  */
 
-const { withXcodeProject, withEntitlementsPlist, withInfoPlist } = require('expo/config-plugins');
+const {
+  withDangerousMod,
+  withEntitlementsPlist,
+  withInfoPlist,
+} = require('expo/config-plugins');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,134 +25,33 @@ const ASSOCIATED_DOMAIN = 'qflow-sigma.vercel.app';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function copyFolderToIos(srcDir, destDir) {
-  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  for (const item of fs.readdirSync(srcDir)) {
-    const srcPath = path.join(srcDir, item);
-    const destPath = path.join(destDir, item);
-    if (fs.statSync(srcPath).isDirectory()) {
-      copyFolderToIos(srcPath, destPath);
+function copyFolderSync(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  for (const item of fs.readdirSync(src)) {
+    const s = path.join(src, item);
+    const d = path.join(dest, item);
+    if (fs.statSync(s).isDirectory()) {
+      copyFolderSync(s, d);
     } else {
-      fs.copyFileSync(srcPath, destPath);
+      fs.copyFileSync(s, d);
     }
   }
 }
 
-function generateUuid() {
-  // Generate a 24-char hex UUID matching Xcode's format
-  return Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('');
-}
-
-/**
- * Manually add a native target to the pbxproj since the xcode library
- * doesn't support App Clip product types. This does what addTarget() does
- * but with a custom productType string.
- */
-function addNativeTarget(proj, name, productType, bundleId) {
-  const targetUuid = proj.generateUuid();
-  const productUuid = proj.generateUuid();
-  const buildConfigListUuid = proj.generateUuid();
-  const debugBcUuid = proj.generateUuid();
-  const releaseBcUuid = proj.generateUuid();
-
-  // Create build configurations
-  const buildConfigs = proj.pbxXCBuildConfigurationSection();
-  buildConfigs[debugBcUuid] = {
-    isa: 'XCBuildConfiguration',
-    buildSettings: {
-      PRODUCT_BUNDLE_IDENTIFIER: `"${bundleId}"`,
-      PRODUCT_NAME: `"$(TARGET_NAME)"`,
-      DEVELOPMENT_TEAM: TEAM_ID,
-      SWIFT_VERSION: '5.0',
-      IPHONEOS_DEPLOYMENT_TARGET: DEPLOYMENT_TARGET,
-      TARGETED_DEVICE_FAMILY: '"1,2"',
-      CODE_SIGN_STYLE: 'Automatic',
-    },
-    name: 'Debug',
-  };
-  buildConfigs[debugBcUuid + '_comment'] = name;
-
-  buildConfigs[releaseBcUuid] = {
-    isa: 'XCBuildConfiguration',
-    buildSettings: {
-      PRODUCT_BUNDLE_IDENTIFIER: `"${bundleId}"`,
-      PRODUCT_NAME: `"$(TARGET_NAME)"`,
-      DEVELOPMENT_TEAM: TEAM_ID,
-      SWIFT_VERSION: '5.0',
-      IPHONEOS_DEPLOYMENT_TARGET: DEPLOYMENT_TARGET,
-      TARGETED_DEVICE_FAMILY: '"1,2"',
-      CODE_SIGN_STYLE: 'Automatic',
-    },
-    name: 'Release',
-  };
-  buildConfigs[releaseBcUuid + '_comment'] = name;
-
-  // Create build configuration list
-  const configLists = proj.pbxXCConfigurationList();
-  configLists[buildConfigListUuid] = {
-    isa: 'XCConfigurationList',
-    buildConfigurations: [
-      { value: debugBcUuid, comment: 'Debug' },
-      { value: releaseBcUuid, comment: 'Release' },
-    ],
-    defaultConfigurationIsVisible: 0,
-    defaultConfigurationName: 'Release',
-  };
-  configLists[buildConfigListUuid + '_comment'] = `Build configuration list for PBXNativeTarget "${name}"`;
-
-  // Create native target
-  const targets = proj.pbxNativeTargetSection();
-  targets[targetUuid] = {
-    isa: 'PBXNativeTarget',
-    buildConfigurationList: buildConfigListUuid,
-    buildPhases: [],
-    buildRules: [],
-    dependencies: [],
-    name: `"${name}"`,
-    productName: `"${name}"`,
-    productReference: productUuid,
-    productType: `"${productType}"`,
-  };
-  targets[targetUuid + '_comment'] = name;
-
-  // Add product reference
-  const fileRefSection = proj.pbxFileReferenceSection();
-  fileRefSection[productUuid] = {
-    isa: 'PBXFileReference',
-    explicitFileType: productType === 'com.apple.product-type.application.on-demand-install-capable'
-      ? '"wrapper.application"'
-      : '"wrapper.app-extension"',
-    includeInIndex: 0,
-    path: `"${name}.app"`,
-    sourceTree: 'BUILT_PRODUCTS_DIR',
-  };
-  fileRefSection[productUuid + '_comment'] = `${name}.app`;
-
-  // Add to project's targets array
-  const projectObj = proj.getFirstProject().firstProject;
-  projectObj.targets.push({ value: targetUuid, comment: name });
-
-  return {
-    uuid: targetUuid,
-    productUuid,
-    debugBcUuid,
-    releaseBcUuid,
-    buildConfigListUuid,
-  };
+// Generate a 24-char hex UUID like Xcode does
+let uuidCounter = 0xAA0000000000;
+function uuid() {
+  return (uuidCounter++).toString(16).toUpperCase().padStart(24, '0');
 }
 
 // ── Main Plugin ──────────────────────────────────────────────────────
 
 function withAppClip(config) {
-  // Step 1: Add appclips associated domain to main app entitlements
+  // Step 1: Entitlements — add appclips domain
   config = withEntitlementsPlist(config, (mod) => {
     const domains = mod.modResults['com.apple.developer.associated-domains'] || [];
-    if (!domains.includes(`appclips:${ASSOCIATED_DOMAIN}`)) {
-      domains.push(`appclips:${ASSOCIATED_DOMAIN}`);
-    }
-    if (!domains.includes(`applinks:${ASSOCIATED_DOMAIN}`)) {
-      domains.push(`applinks:${ASSOCIATED_DOMAIN}`);
-    }
+    if (!domains.includes(`appclips:${ASSOCIATED_DOMAIN}`)) domains.push(`appclips:${ASSOCIATED_DOMAIN}`);
+    if (!domains.includes(`applinks:${ASSOCIATED_DOMAIN}`)) domains.push(`applinks:${ASSOCIATED_DOMAIN}`);
     mod.modResults['com.apple.developer.associated-domains'] = domains;
     return mod;
   });
@@ -157,164 +62,293 @@ function withAppClip(config) {
     return mod;
   });
 
-  // Step 3: Modify Xcode project
-  config = withXcodeProject(config, (mod) => {
-    const proj = mod.modResults;
-    const projectRoot = mod.modRequest.projectRoot;
-    const iosDir = path.join(projectRoot, 'ios');
-    const targetsDir = path.join(projectRoot, 'targets');
+  // Step 3: Dangerous mod — copy files + patch pbxproj
+  config = withDangerousMod(config, [
+    'ios',
+    async (modConfig) => {
+      const projectRoot = modConfig.modRequest.projectRoot;
+      const iosDir = path.join(projectRoot, 'ios');
+      const targetsDir = path.join(projectRoot, 'targets');
 
-    // Copy source files into ios/ build directory
-    const clipDestDir = path.join(iosDir, 'QueueFlowClip');
-    const sharedDestDir = path.join(iosDir, 'QueueFlowShared');
-    const liveActivityDestDir = path.join(iosDir, 'QueueFlowLiveActivity');
-
-    copyFolderToIos(path.join(targetsDir, 'QueueFlowClip'), clipDestDir);
-    copyFolderToIos(path.join(targetsDir, 'QueueFlowShared'), sharedDestDir);
-    copyFolderToIos(path.join(targetsDir, 'QueueFlowLiveActivity'), liveActivityDestDir);
-
-    // ── Add App Clip Target (custom product type) ──
-    const clipTarget = addNativeTarget(
-      proj,
-      'QueueFlowClip',
-      'com.apple.product-type.application.on-demand-install-capable',
-      CLIP_BUNDLE_ID
-    );
-
-    // Set App Clip specific build settings
-    const allConfigs = proj.pbxXCBuildConfigurationSection();
-    for (const bcUuid of [clipTarget.debugBcUuid, clipTarget.releaseBcUuid]) {
-      const bc = allConfigs[bcUuid];
-      if (bc) {
-        bc.buildSettings.ASSETCATALOG_COMPILER_APPICON_NAME = 'AppIcon';
-        bc.buildSettings.CODE_SIGN_ENTITLEMENTS = '"QueueFlowClip/QueueFlowClip.entitlements"';
-        bc.buildSettings.INFOPLIST_FILE = '"QueueFlowClip/Info.plist"';
-        bc.buildSettings.ENABLE_PREVIEWS = 'YES';
-        bc.buildSettings.SUPPORTS_MACCATALYST = 'NO';
-        bc.buildSettings.LD_RUNPATH_SEARCH_PATHS = '"$(inherited) @executable_path/Frameworks"';
+      // Find the .xcodeproj directory
+      const xcodeproj = fs.readdirSync(iosDir).find(f => f.endsWith('.xcodeproj'));
+      if (!xcodeproj) {
+        console.warn('[with-app-clip] No .xcodeproj found, skipping');
+        return modConfig;
       }
-    }
+      const pbxprojPath = path.join(iosDir, xcodeproj, 'project.pbxproj');
+      if (!fs.existsSync(pbxprojPath)) {
+        console.warn('[with-app-clip] No project.pbxproj found, skipping');
+        return modConfig;
+      }
 
-    // Add App Clip source files group
-    const mainGroupKey = proj.getFirstProject().firstProject.mainGroup;
+      // Copy native sources into ios/
+      console.log('[with-app-clip] Copying App Clip sources...');
+      copyFolderSync(path.join(targetsDir, 'QueueFlowClip'), path.join(iosDir, 'QueueFlowClip'));
+      copyFolderSync(path.join(targetsDir, 'QueueFlowShared'), path.join(iosDir, 'QueueFlowShared'));
+      copyFolderSync(path.join(targetsDir, 'QueueFlowLiveActivity'), path.join(iosDir, 'QueueFlowLiveActivity'));
 
-    const clipGroup = proj.addPbxGroup([], 'QueueFlowClip', 'QueueFlowClip');
-    proj.addToPbxGroup(clipGroup.uuid, mainGroupKey);
+      // Read and patch the pbxproj
+      console.log('[with-app-clip] Patching pbxproj...');
+      let pbx = fs.readFileSync(pbxprojPath, 'utf8');
 
-    const clipSwiftFiles = fs.readdirSync(clipDestDir).filter(f => f.endsWith('.swift'));
-    for (const file of clipSwiftFiles) {
-      proj.addSourceFile(`QueueFlowClip/${file}`, { target: clipTarget.uuid }, clipGroup.uuid);
-    }
-
-    // Add shared sources to clip target
-    const sharedGroup = proj.addPbxGroup([], 'QueueFlowShared', 'QueueFlowShared');
-    proj.addToPbxGroup(sharedGroup.uuid, mainGroupKey);
-
-    const sharedSwiftFiles = fs.readdirSync(sharedDestDir).filter(f => f.endsWith('.swift'));
-    for (const file of sharedSwiftFiles) {
-      proj.addSourceFile(`QueueFlowShared/${file}`, { target: clipTarget.uuid }, sharedGroup.uuid);
-    }
-
-    // Add assets to clip target — manual file ref since addResourceFile fails for custom targets
-    const assetUuid = proj.generateUuid();
-    const fileRefSection = proj.pbxFileReferenceSection();
-    fileRefSection[assetUuid] = {
-      isa: 'PBXFileReference',
-      lastKnownFileType: 'folder.assetcatalog',
-      path: '"QueueFlowClip/Assets.xcassets"',
-      sourceTree: '"<group>"',
-    };
-    fileRefSection[assetUuid + '_comment'] = 'Assets.xcassets';
-
-    // Add to resources build phase for clip target
-    const buildPhaseUuid = proj.generateUuid();
-    const buildFileUuid = proj.generateUuid();
-    const buildFileSection = proj.pbxBuildFileSection();
-    buildFileSection[buildFileUuid] = {
-      isa: 'PBXBuildFile',
-      fileRef: assetUuid,
-      fileRef_comment: 'Assets.xcassets',
-    };
-    buildFileSection[buildFileUuid + '_comment'] = 'Assets.xcassets in Resources';
-
-    // Find or create resources build phase for clip target
-    const nativeTargets = proj.pbxNativeTargetSection();
-    const clipNative = nativeTargets[clipTarget.uuid];
-    if (clipNative) {
-      const resourcesPhaseUuid = proj.generateUuid();
-      const resourcesPhase = proj.pbxResourcesBuildPhaseSection();
-      resourcesPhase[resourcesPhaseUuid] = {
-        isa: 'PBXResourcesBuildPhase',
-        buildActionMask: 2147483647,
-        files: [{ value: buildFileUuid, comment: 'Assets.xcassets in Resources' }],
-        runOnlyForDeploymentPostprocessing: 0,
+      // Generate all UUIDs we need
+      const ids = {
+        // App Clip
+        clipTarget: uuid(),
+        clipConfigList: uuid(),
+        clipDebugConfig: uuid(),
+        clipReleaseConfig: uuid(),
+        clipSourcesPhase: uuid(),
+        clipResourcesPhase: uuid(),
+        clipProduct: uuid(),
+        clipGroup: uuid(),
+        clipDependency: uuid(),
+        clipDependencyProxy: uuid(),
+        clipContainerProxy: uuid(),
+        clipEmbedPhase: uuid(),
+        clipEmbedBuildFile: uuid(),
+        // Live Activity
+        liveTarget: uuid(),
+        liveConfigList: uuid(),
+        liveDebugConfig: uuid(),
+        liveReleaseConfig: uuid(),
+        liveSourcesPhase: uuid(),
+        liveProduct: uuid(),
+        liveGroup: uuid(),
+        liveDependency: uuid(),
+        liveDependencyProxy: uuid(),
+        liveContainerProxy: uuid(),
+        liveEmbedPhase: uuid(),
+        liveEmbedBuildFile: uuid(),
+        // Shared
+        sharedGroup: uuid(),
       };
-      resourcesPhase[resourcesPhaseUuid + '_comment'] = 'Resources';
-      clipNative.buildPhases.push({ value: resourcesPhaseUuid, comment: 'Resources' });
-    }
 
-    // ── Add Live Activity Extension Target ──
-    const liveTarget = addNativeTarget(
-      proj,
-      'QueueFlowLiveActivity',
-      'com.apple.product-type.app-extension',
-      LIVE_ACTIVITY_BUNDLE_ID
-    );
+      // Collect source file UUIDs
+      const clipDir = path.join(iosDir, 'QueueFlowClip');
+      const sharedDir = path.join(iosDir, 'QueueFlowShared');
+      const liveDir = path.join(iosDir, 'QueueFlowLiveActivity');
 
-    // Live Activity specific build settings
-    for (const bcUuid of [liveTarget.debugBcUuid, liveTarget.releaseBcUuid]) {
-      const bc = allConfigs[bcUuid];
-      if (bc) {
-        bc.buildSettings.CODE_SIGN_ENTITLEMENTS = '"QueueFlowLiveActivity/QueueFlowLiveActivity.entitlements"';
-        bc.buildSettings.INFOPLIST_FILE = '"QueueFlowLiveActivity/Info.plist"';
-        bc.buildSettings.APPLICATION_EXTENSION_API_ONLY = 'YES';
-        bc.buildSettings.SKIP_INSTALL = 'YES';
-        bc.buildSettings.LD_RUNPATH_SEARCH_PATHS = '"$(inherited) @executable_path/../../Frameworks"';
+      const clipSwiftFiles = fs.readdirSync(clipDir).filter(f => f.endsWith('.swift'));
+      const sharedSwiftFiles = fs.readdirSync(sharedDir).filter(f => f.endsWith('.swift'));
+      const liveSwiftFiles = fs.readdirSync(liveDir).filter(f => f.endsWith('.swift'));
+
+      // Generate file ref + build file UUIDs for each source file
+      const clipFileRefs = clipSwiftFiles.map(f => ({ name: f, ref: uuid(), build: uuid() }));
+      const sharedClipFileRefs = sharedSwiftFiles.map(f => ({ name: f, ref: uuid(), build: uuid() }));
+      const sharedLiveFileRefs = sharedSwiftFiles.map(f => ({ name: f, ref: uuid(), build: uuid() }));
+      const liveFileRefs = liveSwiftFiles.map(f => ({ name: f, ref: uuid(), build: uuid() }));
+      const clipAssetRef = uuid();
+      const clipAssetBuild = uuid();
+
+      // ── Inject PBXBuildFile entries ──
+      const buildFileEntries = [
+        ...clipFileRefs.map(f => `\t\t${f.build} /* ${f.name} in Sources */ = {isa = PBXBuildFile; fileRef = ${f.ref} /* ${f.name} */; };`),
+        ...sharedClipFileRefs.map(f => `\t\t${f.build} /* ${f.name} in Sources */ = {isa = PBXBuildFile; fileRef = ${f.ref} /* ${f.name} */; };`),
+        ...liveFileRefs.map(f => `\t\t${f.build} /* ${f.name} in Sources */ = {isa = PBXBuildFile; fileRef = ${f.ref} /* ${f.name} */; };`),
+        ...sharedLiveFileRefs.map(f => `\t\t${f.build} /* ${f.name} in Sources */ = {isa = PBXBuildFile; fileRef = ${f.ref} /* ${f.name} */; };`),
+        `\t\t${clipAssetBuild} /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ${clipAssetRef} /* Assets.xcassets */; };`,
+        `\t\t${ids.clipEmbedBuildFile} /* QueueFlowClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = ${ids.clipProduct} /* QueueFlowClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };`,
+        `\t\t${ids.liveEmbedBuildFile} /* QueueFlowLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = ${ids.liveProduct} /* QueueFlowLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };`,
+      ].join('\n');
+
+      pbx = pbx.replace(
+        '/* End PBXBuildFile section */',
+        buildFileEntries + '\n/* End PBXBuildFile section */'
+      );
+
+      // ── Inject PBXFileReference entries ──
+      const fileRefEntries = [
+        ...clipFileRefs.map(f => `\t\t${f.ref} /* ${f.name} */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "${f.name}"; sourceTree = "<group>"; };`),
+        ...sharedClipFileRefs.map(f => `\t\t${f.ref} /* ${f.name} */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "${f.name}"; sourceTree = "<group>"; };`),
+        ...liveFileRefs.map(f => `\t\t${f.ref} /* ${f.name} */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "${f.name}"; sourceTree = "<group>"; };`),
+        `\t\t${clipAssetRef} /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };`,
+        `\t\t${ids.clipProduct} /* QueueFlowClip.app */ = {isa = PBXFileReference; explicitFileType = "wrapper.application"; includeInIndex = 0; path = QueueFlowClip.app; sourceTree = BUILT_PRODUCTS_DIR; };`,
+        `\t\t${ids.liveProduct} /* QueueFlowLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QueueFlowLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };`,
+      ].join('\n');
+
+      pbx = pbx.replace(
+        '/* End PBXFileReference section */',
+        fileRefEntries + '\n/* End PBXFileReference section */'
+      );
+
+      // ── Inject PBXGroup entries ──
+      const clipChildren = [
+        ...clipFileRefs.map(f => `\t\t\t\t${f.ref} /* ${f.name} */,`),
+        `\t\t\t\t${clipAssetRef} /* Assets.xcassets */,`,
+      ].join('\n');
+
+      const sharedChildren = sharedClipFileRefs.map(f => `\t\t\t\t${f.ref} /* ${f.name} */,`).join('\n');
+      const liveChildren = liveFileRefs.map(f => `\t\t\t\t${f.ref} /* ${f.name} */,`).join('\n');
+
+      const groupEntries = [
+        `\t\t${ids.clipGroup} /* QueueFlowClip */ = {\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = (\n${clipChildren}\n\t\t\t);\n\t\t\tpath = QueueFlowClip;\n\t\t\tsourceTree = "<group>";\n\t\t};`,
+        `\t\t${ids.sharedGroup} /* QueueFlowShared */ = {\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = (\n${sharedChildren}\n\t\t\t);\n\t\t\tpath = QueueFlowShared;\n\t\t\tsourceTree = "<group>";\n\t\t};`,
+        `\t\t${ids.liveGroup} /* QueueFlowLiveActivity */ = {\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = (\n${liveChildren}\n\t\t\t);\n\t\t\tpath = QueueFlowLiveActivity;\n\t\t\tsourceTree = "<group>";\n\t\t};`,
+      ].join('\n');
+
+      pbx = pbx.replace(
+        '/* End PBXGroup section */',
+        groupEntries + '\n/* End PBXGroup section */'
+      );
+
+      // Add groups to main group
+      pbx = pbx.replace(
+        /(\s+)(children = \(\s*\n(?:\s+[A-F0-9]+ \/\* .+ \*\/,\s*\n)*?)(\s+\);[\s\S]*?mainGroup)/,
+        (match, indent, children, rest) => {
+          const newChildren = `${indent}${children}\t\t\t\t${ids.clipGroup} /* QueueFlowClip */,\n\t\t\t\t${ids.sharedGroup} /* QueueFlowShared */,\n\t\t\t\t${ids.liveGroup} /* QueueFlowLiveActivity */,\n${indent}${rest}`;
+          return newChildren;
+        }
+      );
+
+      // ── Inject Sources + Resources build phases ──
+      const clipSourceFiles = [...clipFileRefs, ...sharedClipFileRefs].map(f => `\t\t\t\t${f.build} /* ${f.name} in Sources */,`).join('\n');
+      const liveSourceFiles = [...liveFileRefs, ...sharedLiveFileRefs].map(f => `\t\t\t\t${f.build} /* ${f.name} in Sources */,`).join('\n');
+
+      const sourcesPhaseEntries = [
+        `\t\t${ids.clipSourcesPhase} /* Sources */ = {\n\t\t\tisa = PBXSourcesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n${clipSourceFiles}\n\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};`,
+        `\t\t${ids.clipResourcesPhase} /* Resources */ = {\n\t\t\tisa = PBXResourcesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n\t\t\t\t${clipAssetBuild} /* Assets.xcassets in Resources */,\n\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};`,
+        `\t\t${ids.liveSourcesPhase} /* Sources */ = {\n\t\t\tisa = PBXSourcesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n${liveSourceFiles}\n\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};`,
+      ].join('\n');
+
+      // Insert before End PBXSourcesBuildPhase (or after it if resources are separate)
+      if (pbx.includes('/* End PBXSourcesBuildPhase section */')) {
+        pbx = pbx.replace(
+          '/* End PBXSourcesBuildPhase section */',
+          sourcesPhaseEntries + '\n/* End PBXSourcesBuildPhase section */'
+        );
       }
-    }
 
-    // Add Live Activity source files group
-    const liveGroup = proj.addPbxGroup([], 'QueueFlowLiveActivity', 'QueueFlowLiveActivity');
-    proj.addToPbxGroup(liveGroup.uuid, mainGroupKey);
+      // Insert resources phase
+      if (pbx.includes('/* End PBXResourcesBuildPhase section */')) {
+        // Already have a resources section, just add before the end marker
+        // (the clipResourcesPhase is already in sourcesPhaseEntries, but we need it in the right section)
+      }
 
-    const liveSwiftFiles = fs.readdirSync(liveActivityDestDir).filter(f => f.endsWith('.swift'));
-    for (const file of liveSwiftFiles) {
-      proj.addSourceFile(`QueueFlowLiveActivity/${file}`, { target: liveTarget.uuid }, liveGroup.uuid);
-    }
+      // ── Inject CopyFiles build phases for embedding ──
+      const copyFilesEntries = [
+        `\t\t${ids.clipEmbedPhase} /* Embed App Clips */ = {\n\t\t\tisa = PBXCopyFilesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tdstPath = "$(CONTENTS_FOLDER_PATH)/AppClips";\n\t\t\tdstSubfolderSpec = 16;\n\t\t\tfiles = (\n\t\t\t\t${ids.clipEmbedBuildFile} /* QueueFlowClip.app in Embed App Clips */,\n\t\t\t);\n\t\t\tname = "Embed App Clips";\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};`,
+        `\t\t${ids.liveEmbedPhase} /* Embed App Extensions */ = {\n\t\t\tisa = PBXCopyFilesBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tdstPath = "";\n\t\t\tdstSubfolderSpec = 13;\n\t\t\tfiles = (\n\t\t\t\t${ids.liveEmbedBuildFile} /* QueueFlowLiveActivity.appex in Embed App Extensions */,\n\t\t\t);\n\t\t\tname = "Embed App Extensions";\n\t\t\trunOnlyForDeploymentPostprocessing = 0;\n\t\t};`,
+      ].join('\n');
 
-    // Add shared sources to live activity target
-    for (const file of sharedSwiftFiles) {
-      proj.addSourceFile(`QueueFlowShared/${file}`, { target: liveTarget.uuid }, sharedGroup.uuid);
-    }
-
-    // ── Embed App Clip in main app ──
-    const mainTarget = proj.getFirstTarget();
-    if (mainTarget) {
-      // Embed App Clips build phase
-      proj.addBuildPhase(
-        [`${clipTarget.productUuid}`],
-        'PBXCopyFilesBuildPhase',
-        'Embed App Clips',
-        mainTarget.firstTarget.uuid,
-        'app_clip'
+      pbx = pbx.replace(
+        '/* End PBXCopyFilesBuildPhase section */',
+        copyFilesEntries + '\n/* End PBXCopyFilesBuildPhase section */'
       );
 
-      // Embed App Extensions for Live Activity
-      proj.addBuildPhase(
-        [`${liveTarget.productUuid}`],
-        'PBXCopyFilesBuildPhase',
-        'Embed App Extensions',
-        mainTarget.firstTarget.uuid,
-        'plugins'
+      // ── Inject Container Item Proxies + Target Dependencies ──
+      const proxyEntries = [
+        `\t\t${ids.clipContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.clipTarget};\n\t\t\tremoteInfo = QueueFlowClip;\n\t\t};`,
+        `\t\t${ids.liveContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.liveTarget};\n\t\t\tremoteInfo = QueueFlowLiveActivity;\n\t\t};`,
+      ].join('\n');
+
+      if (pbx.includes('/* End PBXContainerItemProxy section */')) {
+        pbx = pbx.replace(
+          '/* End PBXContainerItemProxy section */',
+          proxyEntries + '\n/* End PBXContainerItemProxy section */'
+        );
+      } else {
+        // Section doesn't exist yet, create it
+        pbx = pbx.replace(
+          '/* Begin PBXCopyFilesBuildPhase section */',
+          `/* Begin PBXContainerItemProxy section */\n${proxyEntries}\n/* End PBXContainerItemProxy section */\n\n/* Begin PBXCopyFilesBuildPhase section */`
+        );
+      }
+
+      const depEntries = [
+        `\t\t${ids.clipDependency} /* PBXTargetDependency */ = {\n\t\t\tisa = PBXTargetDependency;\n\t\t\ttarget = ${ids.clipTarget} /* QueueFlowClip */;\n\t\t\ttargetProxy = ${ids.clipContainerProxy} /* PBXContainerItemProxy */;\n\t\t};`,
+        `\t\t${ids.liveDependency} /* PBXTargetDependency */ = {\n\t\t\tisa = PBXTargetDependency;\n\t\t\ttarget = ${ids.liveTarget} /* QueueFlowLiveActivity */;\n\t\t\ttargetProxy = ${ids.liveContainerProxy} /* PBXContainerItemProxy */;\n\t\t};`,
+      ].join('\n');
+
+      if (pbx.includes('/* End PBXTargetDependency section */')) {
+        pbx = pbx.replace(
+          '/* End PBXTargetDependency section */',
+          depEntries + '\n/* End PBXTargetDependency section */'
+        );
+      } else {
+        pbx = pbx.replace(
+          '/* Begin PBXVariantGroup section */',
+          `/* Begin PBXTargetDependency section */\n${depEntries}\n/* End PBXTargetDependency section */\n\n/* Begin PBXVariantGroup section */`
+        );
+      }
+
+      // ── Inject Build Configurations ──
+      const buildSettingsClip = `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = QueueFlowClip/QueueFlowClip.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = ${TEAM_ID}; ENABLE_PREVIEWS = YES; INFOPLIST_FILE = QueueFlowClip/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = "${CLIP_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTS_MACCATALYST = NO; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
+      const buildSettingsLive = `APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = QueueFlowLiveActivity/QueueFlowLiveActivity.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = ${TEAM_ID}; INFOPLIST_FILE = QueueFlowLiveActivity/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = "${LIVE_ACTIVITY_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
+
+      const configEntries = [
+        `\t\t${ids.clipDebugConfig} /* Debug */ = {\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n\t\t\t\t${buildSettingsClip.split('; ').join(';\n\t\t\t\t')};\n\t\t\t};\n\t\t\tname = Debug;\n\t\t};`,
+        `\t\t${ids.clipReleaseConfig} /* Release */ = {\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n\t\t\t\t${buildSettingsClip.split('; ').join(';\n\t\t\t\t')};\n\t\t\t};\n\t\t\tname = Release;\n\t\t};`,
+        `\t\t${ids.liveDebugConfig} /* Debug */ = {\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n\t\t\t\t${buildSettingsLive.split('; ').join(';\n\t\t\t\t')};\n\t\t\t};\n\t\t\tname = Debug;\n\t\t};`,
+        `\t\t${ids.liveReleaseConfig} /* Release */ = {\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n\t\t\t\t${buildSettingsLive.split('; ').join(';\n\t\t\t\t')};\n\t\t\t};\n\t\t\tname = Release;\n\t\t};`,
+      ].join('\n');
+
+      pbx = pbx.replace(
+        '/* End XCBuildConfiguration section */',
+        configEntries + '\n/* End XCBuildConfiguration section */'
       );
 
-      // Add target dependencies
-      proj.addTargetDependency(mainTarget.firstTarget.uuid, [clipTarget.uuid]);
-      proj.addTargetDependency(mainTarget.firstTarget.uuid, [liveTarget.uuid]);
-    }
+      // ── Inject Config Lists ──
+      const configListEntries = [
+        `\t\t${ids.clipConfigList} /* Build configuration list for PBXNativeTarget "QueueFlowClip" */ = {\n\t\t\tisa = XCConfigurationList;\n\t\t\tbuildConfigurations = (\n\t\t\t\t${ids.clipDebugConfig} /* Debug */,\n\t\t\t\t${ids.clipReleaseConfig} /* Release */,\n\t\t\t);\n\t\t\tdefaultConfigurationIsVisible = 0;\n\t\t\tdefaultConfigurationName = Release;\n\t\t};`,
+        `\t\t${ids.liveConfigList} /* Build configuration list for PBXNativeTarget "QueueFlowLiveActivity" */ = {\n\t\t\tisa = XCConfigurationList;\n\t\t\tbuildConfigurations = (\n\t\t\t\t${ids.liveDebugConfig} /* Debug */,\n\t\t\t\t${ids.liveReleaseConfig} /* Release */,\n\t\t\t);\n\t\t\tdefaultConfigurationIsVisible = 0;\n\t\t\tdefaultConfigurationName = Release;\n\t\t};`,
+      ].join('\n');
 
-    return mod;
-  });
+      pbx = pbx.replace(
+        '/* End XCConfigurationList section */',
+        configListEntries + '\n/* End XCConfigurationList section */'
+      );
+
+      // ── Inject Native Targets ──
+      const nativeTargetEntries = [
+        `\t\t${ids.clipTarget} /* QueueFlowClip */ = {\n\t\t\tisa = PBXNativeTarget;\n\t\t\tbuildConfigurationList = ${ids.clipConfigList} /* Build configuration list for PBXNativeTarget "QueueFlowClip" */;\n\t\t\tbuildPhases = (\n\t\t\t\t${ids.clipSourcesPhase} /* Sources */,\n\t\t\t\t${ids.clipResourcesPhase} /* Resources */,\n\t\t\t);\n\t\t\tbuildRules = (\n\t\t\t);\n\t\t\tdependencies = (\n\t\t\t);\n\t\t\tname = QueueFlowClip;\n\t\t\tproductName = QueueFlowClip;\n\t\t\tproductReference = ${ids.clipProduct} /* QueueFlowClip.app */;\n\t\t\tproductType = "com.apple.product-type.application.on-demand-install-capable";\n\t\t};`,
+        `\t\t${ids.liveTarget} /* QueueFlowLiveActivity */ = {\n\t\t\tisa = PBXNativeTarget;\n\t\t\tbuildConfigurationList = ${ids.liveConfigList} /* Build configuration list for PBXNativeTarget "QueueFlowLiveActivity" */;\n\t\t\tbuildPhases = (\n\t\t\t\t${ids.liveSourcesPhase} /* Sources */,\n\t\t\t);\n\t\t\tbuildRules = (\n\t\t\t);\n\t\t\tdependencies = (\n\t\t\t);\n\t\t\tname = QueueFlowLiveActivity;\n\t\t\tproductName = QueueFlowLiveActivity;\n\t\t\tproductReference = ${ids.liveProduct} /* QueueFlowLiveActivity.appex */;\n\t\t\tproductType = "com.apple.product-type.app-extension";\n\t\t};`,
+      ].join('\n');
+
+      pbx = pbx.replace(
+        '/* End PBXNativeTarget section */',
+        nativeTargetEntries + '\n/* End PBXNativeTarget section */'
+      );
+
+      // ── Add targets to project object + dependencies + embed phases to main target ──
+      // Find the main target UUID and add dependencies + embed phases
+      const mainTargetMatch = pbx.match(/([A-F0-9]{24}) \/\* QueueFlow \*\/ = \{\s*isa = PBXNativeTarget;/);
+      if (mainTargetMatch) {
+        const mainTargetUuid = mainTargetMatch[1];
+
+        // Add target dependencies to main target
+        pbx = pbx.replace(
+          new RegExp(`(${mainTargetUuid} \\/\\* QueueFlow \\*\\/ = \\{[\\s\\S]*?dependencies = \\()([\\s\\S]*?)(\\);)`),
+          `$1$2\t\t\t\t${ids.clipDependency} /* PBXTargetDependency */,\n\t\t\t\t${ids.liveDependency} /* PBXTargetDependency */,\n$3`
+        );
+
+        // Add embed phases to main target's buildPhases
+        pbx = pbx.replace(
+          new RegExp(`(${mainTargetUuid} \\/\\* QueueFlow \\*\\/ = \\{[\\s\\S]*?buildPhases = \\([\\s\\S]*?)(\\);\\s*buildRules)`),
+          `$1\t\t\t\t${ids.clipEmbedPhase} /* Embed App Clips */,\n\t\t\t\t${ids.liveEmbedPhase} /* Embed App Extensions */,\n\t\t\t$2`
+        );
+      }
+
+      // Add targets to project's targets list
+      pbx = pbx.replace(
+        /(targets = \(\s*\n(?:\s+[A-F0-9]+ \/\* .+ \*\/,?\s*\n)*?)(\s+\);)/,
+        `$1\t\t\t\t${ids.clipTarget} /* QueueFlowClip */,\n\t\t\t\t${ids.liveTarget} /* QueueFlowLiveActivity */,\n$2`
+      );
+
+      // Add products to Products group
+      pbx = pbx.replace(
+        /(\/\* Products \*\/ = \{\s*isa = PBXGroup;\s*children = \(\s*\n(?:\s+[A-F0-9]+ \/\* .+ \*\/,?\s*\n)*?)(\s+\);)/,
+        `$1\t\t\t\t${ids.clipProduct} /* QueueFlowClip.app */,\n\t\t\t\t${ids.liveProduct} /* QueueFlowLiveActivity.appex */,\n$2`
+      );
+
+      // Write patched pbxproj
+      fs.writeFileSync(pbxprojPath, pbx, 'utf8');
+      console.log('[with-app-clip] Successfully patched pbxproj with App Clip + Live Activity targets');
+
+      return modConfig;
+    },
+  ]);
 
   return config;
 }
