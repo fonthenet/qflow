@@ -71,7 +71,7 @@ export function DisplayBoard({
         servingBorder: accentColor,
         calledText: '#166534',
         servingText: '#1d4ed8',
-        waitingCount: '#92400e',
+        waitingCount: '#2563eb',
         badgeBg: 'rgba(15,23,42,0.08)',
         badgeText: '#0f172a',
         announceBg: 'rgba(255,255,255,0.96)',
