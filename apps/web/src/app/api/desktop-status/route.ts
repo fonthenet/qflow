@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+let _sb: SupabaseClient | null = null;
+function getSb() {
+  if (!_sb) _sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  return _sb;
+}
 
 // POST /api/desktop-status — desktop app registers/pings
 export async function POST(req: NextRequest) {
-  const supabase = createAdminClient();
+  const supabase = getSb();
   try {
     const body = await req.json();
     const {
@@ -58,6 +64,7 @@ export async function POST(req: NextRequest) {
 
 // GET /api/desktop-status?organizationId=xxx — get all desktop connections for an org
 export async function GET(req: NextRequest) {
+  const supabase = getSb();
   const orgId = req.nextUrl.searchParams.get('organizationId');
   if (!orgId) {
     return NextResponse.json({ error: 'organizationId required' }, { status: 400 });

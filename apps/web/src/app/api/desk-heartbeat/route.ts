@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+let _sb: SupabaseClient | null = null;
+function getSb() {
+  if (!_sb) _sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  return _sb;
+}
 
 // POST /api/desk-heartbeat — operator desk pings every 30s
 export async function POST(req: NextRequest) {
-  const supabase = createAdminClient();
+  const supabase = getSb();
   try {
     const { deskId, staffId } = await req.json();
 
@@ -11,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'deskId and staffId required' }, { status: 400 });
     }
 
-    const { error } = await supabase.rpc('desk_heartbeat', {
+    const { error } = await supabase.rpc('desk_heartbeat' as any, {
       p_desk_id: deskId,
       p_staff_id: staffId,
     });
@@ -29,6 +35,7 @@ export async function POST(req: NextRequest) {
 
 // GET /api/desk-heartbeat?officeId=xxx — get online/offline status of all desks
 export async function GET(req: NextRequest) {
+  const supabase = getSb();
   const officeId = req.nextUrl.searchParams.get('officeId');
   if (!officeId) {
     return NextResponse.json({ error: 'officeId required' }, { status: 400 });
