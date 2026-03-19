@@ -19,8 +19,8 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
-        "applinks:qflow-sigma.vercel.app",
-        "appclips:qflow-sigma.vercel.app"
+        "applinks:qflo.net",
+        "appclips:qflo.net"
       ]
     },
     "android": {
@@ -45,7 +45,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "qflow-sigma.vercel.app",
+              "host": "qflo.net",
               "pathPrefix": "/q/"
             }
           ],

@@ -44,7 +44,7 @@ targets:
       path: QueueFlow/QueueFlow.entitlements
       properties:
         com.apple.developer.associated-domains:
-          - appclips:qflow-sigma.vercel.app
+          - appclips:qflo.net
     dependencies:
       - target: QueueFlowClip
         embed: true
@@ -82,7 +82,7 @@ targets:
       path: QueueFlowClip/QueueFlowClip.entitlements
       properties:
         com.apple.developer.associated-domains:
-          - appclips:qflow-sigma.vercel.app
+          - appclips:qflo.net
         com.apple.developer.parent-application-identifiers:
           - $(AppIdentifierPrefix)com.queueflow.app
         aps-environment: development
@@ -121,5 +121,5 @@ schemes:
     run:
       environmentVariables:
         - variable: _XCAppClipURL
-          value: "https://qflow-sigma.vercel.app/q/test-token"
+          value: "https://qflo.net/q/test-token"
           isEnabled: true

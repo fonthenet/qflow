@@ -1,6 +1,6 @@
 {
   "packageId": "com.queueflow.app",
-  "host": "qflow-sigma.vercel.app",
+  "host": "qflo.net",
   "name": "Qflo",
   "launcherName": "Qflo",
   "display": "standalone",
@@ -13,8 +13,8 @@
   "backgroundColor": "#ffffff",
   "enableNotifications": true,
   "startUrl": "/",
-  "iconUrl": "https://qflow-sigma.vercel.app/icon-512x512.png",
-  "maskableIconUrl": "https://qflow-sigma.vercel.app/icon-maskable-512x512.png",
+  "iconUrl": "https://qflo.net/icon-512x512.png",
+  "maskableIconUrl": "https://qflo.net/icon-maskable-512x512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "./android.keystore",
@@ -24,12 +24,12 @@
   "appVersionName": "1.1.0",
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://qflow-sigma.vercel.app/manifest.json",
+  "webManifestUrl": "https://qflo.net/manifest.json",
   "fallbackType": "customtabs",
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://qflow-sigma.vercel.app/",
+  "fullScopeUrl": "https://qflo.net/",
   "minSdkVersion": 21,
   "fingerprints": [],
   "additionalTrustedOrigins": []

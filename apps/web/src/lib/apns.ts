@@ -137,7 +137,7 @@ function buildInvocationURL(urlPath?: string): string | undefined {
   const baseURL = (
     process.env.APP_CLIP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflow-sigma.vercel.app'
+    'https://qflo.net'
   ).replace(/\/+$/, '');
 
   const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;

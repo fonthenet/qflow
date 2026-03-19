@@ -21,7 +21,7 @@ const TEAM_ID = 'W69MRY2826';
 const CLIP_BUNDLE_ID = 'com.queueflow.app.QueueFlowClip';
 const LIVE_ACTIVITY_BUNDLE_ID = 'com.queueflow.app.QueueFlowClip.LiveActivity';
 const DEPLOYMENT_TARGET = '16.4';
-const ASSOCIATED_DOMAIN = 'qflow-sigma.vercel.app';
+const ASSOCIATED_DOMAIN = 'qflo.net';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

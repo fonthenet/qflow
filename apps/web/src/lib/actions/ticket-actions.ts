@@ -105,7 +105,7 @@ function buildAbsoluteTicketUrl(qrToken: string): string {
   const baseUrl = (
     process.env.APP_CLIP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflow-sigma.vercel.app'
+    'https://qflo.net'
   ).replace(/\/+$/, '');
 
   return `${baseUrl}/q/${qrToken}`;

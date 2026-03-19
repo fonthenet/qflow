@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
     // Strip any padding = from VAPID keys (must be URL-safe Base64 without padding)
     webpush.setVapidDetails(
-      'mailto:noreply@queueflow.app',
+      'mailto:noreply@qflo.net',
       vapidPublic.replace(/=+$/, ''),
       vapidPrivate.replace(/=+$/, '')
     );

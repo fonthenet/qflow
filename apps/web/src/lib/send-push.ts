@@ -8,7 +8,7 @@ function initVapid() {
   const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const priv = process.env.VAPID_PRIVATE_KEY;
   if (pub && priv) {
-    webpush.setVapidDetails('mailto:noreply@queueflow.app', pub, priv);
+    webpush.setVapidDetails('mailto:noreply@qflo.net', pub, priv);
     vapidReady = true;
     return true;
   }

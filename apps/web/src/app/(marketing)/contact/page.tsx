@@ -156,7 +156,7 @@ export default function ContactPage() {
                   <div>
                     <h3 className="font-semibold">Email</h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      support@queueflow.com
+                      support@qflo.net
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Response within 24 hours

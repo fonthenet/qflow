@@ -77,7 +77,7 @@ function requireEnv(name, value) {
 }
 
 function getAppURL() {
-  return (process.env.APP_URL ?? 'https://qflow-sigma.vercel.app').trim();
+  return (process.env.APP_URL ?? 'https://qflo.net').trim();
 }
 
 function getSupabaseURL() {

@@ -39,7 +39,7 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">4. Your Rights</h2>
-          <p>You can request deletion of your data at any time by contacting us at <a href="mailto:support@queueflow.com" className="text-primary underline">support@queueflow.com</a>. If you are in the EU, you have additional rights under GDPR including access, rectification, and portability.</p>
+          <p>You can request deletion of your data at any time by contacting us at <a href="mailto:support@qflo.net" className="text-primary underline">support@qflo.net</a>. If you are in the EU, you have additional rights under GDPR including access, rectification, and portability.</p>
         </section>
 
         <section>
@@ -49,7 +49,7 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">6. Contact</h2>
-          <p>For privacy questions, contact us at <a href="mailto:support@queueflow.com" className="text-primary underline">support@queueflow.com</a>.</p>
+          <p>For privacy questions, contact us at <a href="mailto:support@qflo.net" className="text-primary underline">support@qflo.net</a>.</p>
         </section>
       </div>
     </div>

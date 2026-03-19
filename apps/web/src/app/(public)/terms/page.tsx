@@ -47,7 +47,7 @@ export default function TermsPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">7. Account Deletion</h2>
-          <p>You can request deletion of your account and data at any time by contacting <a href="mailto:support@queueflow.com" className="text-primary underline">support@queueflow.com</a>. We will process deletion requests within 30 days.</p>
+          <p>You can request deletion of your account and data at any time by contacting <a href="mailto:support@qflo.net" className="text-primary underline">support@qflo.net</a>. We will process deletion requests within 30 days.</p>
         </section>
 
         <section>
@@ -57,7 +57,7 @@ export default function TermsPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">9. Contact</h2>
-          <p>For questions about these terms, contact us at <a href="mailto:support@queueflow.com" className="text-primary underline">support@queueflow.com</a>.</p>
+          <p>For questions about these terms, contact us at <a href="mailto:support@qflo.net" className="text-primary underline">support@qflo.net</a>.</p>
         </section>
       </div>
     </div>
