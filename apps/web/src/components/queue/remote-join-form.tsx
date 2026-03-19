@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import QRCode from 'qrcode';
 import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
+import { SendTicketLink } from '@/components/kiosk/send-ticket-link';
 import {
   clearBookingEmailOtpVerification,
   markBookingEmailOtpVerified,
@@ -327,15 +329,34 @@ export function RemoteJoinForm({
   const selectionActiveClass = 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-[0_16px_40px_rgba(37,99,235,0.12)]';
   const selectionIdleClass = 'border-border bg-card hover:border-primary/50 hover:shadow-sm';
 
-  // Success state - show ticket and link to tracking
+  // Generate QR code when ticket is created
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const trackingUrl = ticket
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/q/${ticket.qr_token}`
+    : '';
+
+  useEffect(() => {
+    if (!ticket) return;
+    const url = `${window.location.origin}/q/${ticket.qr_token}`;
+    QRCode.toDataURL(url, {
+      width: 200,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    })
+      .then((dataUrl: string) => setQrDataUrl(dataUrl))
+      .catch(() => {});
+  }, [ticket]);
+
+  // Success state - show ticket QR code, tracking link, and share options
   if (ticket) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
         <div className="w-full max-w-sm text-center">
           <div className="rounded-xl border border-border bg-card p-8 shadow-lg">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
               <svg
-                className="h-8 w-8 text-primary"
+                className="h-8 w-8 text-emerald-600"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -348,14 +369,15 @@ export function RemoteJoinForm({
                 />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground">
+            <h1 className="mb-1 text-2xl font-bold text-foreground">
               You&apos;re in the Queue!
             </h1>
-            <p className="mb-6 text-sm text-muted-foreground">
-              You have successfully joined the queue remotely.
+            <p className="mb-5 text-sm text-muted-foreground">
+              Save or screenshot this page to track your ticket.
             </p>
 
-            <div className="mb-6 rounded-lg bg-muted p-4">
+            {/* Ticket number */}
+            <div className="mb-5 rounded-lg bg-muted p-4">
               <p className="text-sm font-medium text-muted-foreground">
                 Your Ticket Number
               </p>
@@ -364,7 +386,26 @@ export function RemoteJoinForm({
               </p>
             </div>
 
-            <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-left text-sm">
+            {/* QR Code */}
+            {qrDataUrl && (
+              <div className="mb-5">
+                <div className="mx-auto inline-block rounded-xl border-2 border-dashed border-primary/20 bg-white p-3">
+                  <img
+                    src={qrDataUrl}
+                    alt={`QR code for ticket ${ticket.ticket_number}`}
+                    width={200}
+                    height={200}
+                    className="rounded-lg"
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Scan this QR code to track your position
+                </p>
+              </div>
+            )}
+
+            {/* Office / Department / Service info */}
+            <div className="mb-5 space-y-2 rounded-lg bg-muted/50 p-4 text-left text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Office</span>
                 <span className="font-medium text-foreground">{displayOffice?.name}</span>
@@ -383,12 +424,26 @@ export function RemoteJoinForm({
               )}
             </div>
 
+            {/* Track button */}
             <a
               href={`/q/${ticket.qr_token}`}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98]"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98]"
             >
-              Track Your Position
+              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              Track My Ticket Live
             </a>
+          </div>
+
+          {/* Share / Send ticket link */}
+          <div className="mt-4">
+            <SendTicketLink
+              ticketUrl={trackingUrl}
+              ticketNumber={ticket.ticket_number}
+              officeName={displayOffice?.name ?? ''}
+            />
           </div>
 
           <p className="mt-4 text-xs text-muted-foreground">Powered by QueueFlow</p>
