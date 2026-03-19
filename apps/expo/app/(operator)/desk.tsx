@@ -308,19 +308,25 @@ export default function DeskScreen() {
     ping(); // immediate first ping
     const heartbeat = setInterval(ping, 30_000);
 
-    // Requeue expired calls every 30s
+    // Requeue expired calls every 30s + auto-resolve stale tickets every 60s
     const cleanup = setInterval(() => {
       Actions.requeueExpiredCalls(90);
       Actions.adjustBookingPriorities();
     }, 30_000);
 
-    // Cleanup stale tickets on mount + trigger cloud recovery
+    const autoResolve = setInterval(() => {
+      Actions.autoResolveTickets();
+    }, 60_000);
+
+    // Cleanup stale tickets on mount + trigger cloud recovery + auto-resolve
     Actions.cleanupStaleTickets();
+    Actions.autoResolveTickets();
     triggerRecovery();
 
     return () => {
       clearInterval(heartbeat);
       clearInterval(cleanup);
+      clearInterval(autoResolve);
     };
   }, [deskId, staffId]);
 

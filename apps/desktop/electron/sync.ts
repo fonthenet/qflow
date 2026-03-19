@@ -50,6 +50,8 @@ export class SyncEngine {
   private realtimeWs: WebSocket | null = null;
   private realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private autoResolveInterval: ReturnType<typeof setInterval> | null = null;
+
   start() {
     // Check connectivity every 10s
     this.healthInterval = setInterval(() => this.checkHealth(), 10_000);
@@ -62,12 +64,18 @@ export class SyncEngine {
     this.pullInterval = setInterval(() => {
       if (this.isOnline) this.pullLatest();
     }, 5_000);
+
+    // Auto-resolve stale tickets every 60s (server-side cleanup runs too, this is belt-and-suspenders)
+    this.autoResolveInterval = setInterval(() => {
+      if (this.isOnline) this.triggerAutoResolve();
+    }, 60_000);
   }
 
   stop() {
     if (this.interval) clearInterval(this.interval);
     if (this.healthInterval) clearInterval(this.healthInterval);
     if (this.pullInterval) clearInterval(this.pullInterval);
+    if (this.autoResolveInterval) clearInterval(this.autoResolveInterval);
     this.disconnectRealtime();
   }
 
@@ -713,6 +721,37 @@ export class SyncEngine {
       this.onDataPulled();
     } catch (err: any) {
       console.error('[sync:pullLatest] Error:', err?.message ?? err);
+    }
+  }
+
+  // ── Commercial-grade auto-resolve: call the DB function that cleans up stale tickets ──
+  private async triggerAutoResolve() {
+    try {
+      const token = await this.ensureFreshToken();
+      const res = await fetch(`${this.supabaseUrl}/rest/v1/rpc/auto_resolve_tickets`, {
+        method: 'POST',
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        const total = (result.requeued_called ?? 0) + (result.noshow_called ?? 0) +
+          (result.cancelled_waiting ?? 0) + (result.completed_serving ?? 0) +
+          (result.cancelled_yesterday ?? 0) + (result.completed_yesterday ?? 0);
+        if (total > 0) {
+          console.log(`[sync:autoResolve] Resolved ${total} stale tickets:`, result);
+          // Pull fresh data since tickets changed
+          await this.pullLatest();
+        }
+      }
+    } catch (err: any) {
+      // Non-critical — cron on Supabase handles this too
+      console.log('[sync:autoResolve] Skipped:', err?.message ?? err);
     }
   }
 }

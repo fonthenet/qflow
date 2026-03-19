@@ -50,6 +50,15 @@ export async function cleanupStaleTickets() {
   return data ?? 0;
 }
 
+// ── Commercial-grade auto-resolve: cancel/complete stale tickets ──
+// Called > 5min → requeue, Called > 15min → no-show, Waiting > 4h → cancel,
+// Serving > 3h → auto-complete, Yesterday's tickets → force resolve
+export async function autoResolveTickets() {
+  const { data, error } = await supabase.rpc('auto_resolve_tickets');
+  if (error) console.warn('auto_resolve_tickets error:', error.message);
+  return data ?? {};
+}
+
 // ── Safety: Park tickets on inactive desks ──────────────────────
 export async function parkInactiveDeskTickets(timeoutMinutes = 5) {
   const { data, error } = await supabase.rpc('park_inactive_desk_tickets', {

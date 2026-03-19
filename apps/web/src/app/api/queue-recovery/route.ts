@@ -7,19 +7,30 @@ function getSb() {
   return _sb;
 }
 
-// POST /api/queue-recovery — trigger immediate recovery sweep
-// Called on app startup or when operator detects issues
+// POST /api/queue-recovery — trigger immediate recovery + auto-resolve sweep
+// Called on app startup, periodically by station, or when operator detects issues
+// This runs BOTH legacy recovery AND the new commercial-grade auto-resolve
 export async function POST() {
   try {
     const supabase = getSb();
-    const { data, error } = await supabase.rpc('recover_stuck_tickets' as any);
 
-    if (error) {
-      console.error('Recovery error:', error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // Run both in parallel — auto_resolve_tickets is the comprehensive one
+    const [recovery, autoResolve] = await Promise.all([
+      supabase.rpc('recover_stuck_tickets' as any),
+      supabase.rpc('auto_resolve_tickets' as any),
+    ]);
+
+    if (recovery.error) {
+      console.error('Recovery error:', recovery.error.message);
+    }
+    if (autoResolve.error) {
+      console.error('Auto-resolve error:', autoResolve.error.message);
     }
 
-    return NextResponse.json({ result: data });
+    return NextResponse.json({
+      recovery: recovery.data ?? null,
+      autoResolve: autoResolve.data ?? null,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? 'Internal error' }, { status: 500 });
   }
