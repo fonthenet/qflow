@@ -79,6 +79,30 @@ export function RemoteJoinForm({
     useState(0);
   const [supabase] = useState(() => createClient());
 
+  // Check localStorage for an existing active ticket from this browser
+  const [existingTicket, setExistingTicket] = useState<{
+    qr_token: string;
+    ticket_number: string;
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('qf_active_ticket');
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      // Only show if created within the last 12 hours
+      const createdAt = new Date(parsed.created_at).getTime();
+      const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+      if (createdAt > twelveHoursAgo && parsed.qr_token) {
+        setExistingTicket({ qr_token: parsed.qr_token, ticket_number: parsed.ticket_number });
+      } else {
+        localStorage.removeItem('qf_active_ticket');
+      }
+    } catch {
+      localStorage.removeItem('qf_active_ticket');
+    }
+  }, []);
+
   const officeLocked = !!virtualCode.office_id;
   const departmentLocked = !!virtualCode.department_id;
   const serviceLocked = !!virtualCode.service_id;
@@ -329,6 +353,43 @@ export function RemoteJoinForm({
   const selectionActiveClass = 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-[0_16px_40px_rgba(37,99,235,0.12)]';
   const selectionIdleClass = 'border-border bg-card hover:border-primary/50 hover:shadow-sm';
 
+  // When ticket is created: save to localStorage, update URL, and auto-redirect
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
+
+  useEffect(() => {
+    if (!ticket) return;
+
+    // 1. Save active ticket to localStorage so the customer can always recover it
+    try {
+      localStorage.setItem(
+        'qf_active_ticket',
+        JSON.stringify({
+          qr_token: ticket.qr_token,
+          ticket_number: ticket.ticket_number,
+          created_at: new Date().toISOString(),
+        })
+      );
+    } catch {}
+
+    // 2. Replace browser URL to the tracking page — so bookmark/refresh = tracking page
+    const trackingPath = `/q/${ticket.qr_token}`;
+    window.history.replaceState({}, '', trackingPath);
+
+    // 3. Auto-redirect countdown to the full tracking page
+    const timer = setInterval(() => {
+      setRedirectCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          router.replace(trackingPath);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [ticket, router]);
+
   // Generate QR code when ticket is created
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const trackingUrl = ticket
@@ -373,7 +434,7 @@ export function RemoteJoinForm({
               You&apos;re in the Queue!
             </h1>
             <p className="mb-5 text-sm text-muted-foreground">
-              Save or screenshot this page to track your ticket.
+              Redirecting to live tracking in {redirectCountdown}s...
             </p>
 
             {/* Ticket number */}
@@ -399,7 +460,7 @@ export function RemoteJoinForm({
                   />
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Scan this QR code to track your position
+                  Scan or screenshot this QR to track from any device
                 </p>
               </div>
             )}
@@ -424,7 +485,7 @@ export function RemoteJoinForm({
               )}
             </div>
 
-            {/* Track button */}
+            {/* Track button — skip the countdown */}
             <a
               href={`/q/${ticket.qr_token}`}
               className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98]"
@@ -455,6 +516,40 @@ export function RemoteJoinForm({
   // Join form
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#eff6ff_24%,#ffffff_70%)]">
+      {/* Active ticket recovery banner */}
+      {existingTicket && (
+        <div className="border-b border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-foreground">
+              <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+              </svg>
+              <span>
+                You already have ticket <strong>{existingTicket.ticket_number}</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href={`/q/${existingTicket.qr_token}`}
+                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90"
+              >
+                Track Ticket
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem('qf_active_ticket');
+                  setExistingTicket(null);
+                }}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-border/70 bg-white/90 px-4 pb-8 pt-6 backdrop-blur sm:px-6">
         <div className="mx-auto max-w-5xl">

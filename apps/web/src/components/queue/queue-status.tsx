@@ -336,6 +336,13 @@ export function QueueStatus({
     setHasMounted(true);
   }, []);
 
+  // Clear localStorage active ticket when ticket reaches a terminal state
+  useEffect(() => {
+    if (['served', 'cancelled', 'no_show', 'transferred'].includes(ticket.status)) {
+      try { localStorage.removeItem('qf_active_ticket'); } catch {}
+    }
+  }, [ticket.status]);
+
   useEffect(() => {
     if (sandboxMode) return;
     const supabase = createClient();
