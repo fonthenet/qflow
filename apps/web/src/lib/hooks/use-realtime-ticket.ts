@@ -55,18 +55,27 @@ export function useRealtimeTicket({
       const { data } = await supabase.rpc('get_queue_position', {
         p_ticket_id: ticketId,
       });
-      if (data && typeof data === 'object') {
-        // New jsonb return: { position, total_waiting, estimated_wait_minutes, status }
-        const pos = (data as Record<string, unknown>).position;
-        const wait = (data as Record<string, unknown>).estimated_wait_minutes;
-        if (typeof pos === 'number') setPosition(pos);
-        if (typeof wait === 'number') setEstimatedWait(wait);
-        setLastSyncedAt(new Date());
-      } else if (typeof data === 'number') {
-        // Legacy: plain integer return
-        setPosition(data);
-        setLastSyncedAt(new Date());
+
+      // Extract position + wait from whatever format the RPC returns:
+      // - JSONB object: { position: N, estimated_wait_minutes: N, ... }
+      // - Plain integer: N (legacy)
+      // - String-wrapped number: "3" (edge case)
+      let pos: number | null = null;
+      let wait: number | null = null;
+
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const obj = data as Record<string, unknown>;
+        const rawPos = obj.position;
+        const rawWait = obj.estimated_wait_minutes;
+        if (rawPos != null && !isNaN(Number(rawPos))) pos = Number(rawPos);
+        if (rawWait != null && !isNaN(Number(rawWait))) wait = Number(rawWait);
+      } else if (data != null && !isNaN(Number(data))) {
+        pos = Number(data);
       }
+
+      if (pos !== null) setPosition(pos);
+      if (wait !== null) setEstimatedWait(wait);
+      setLastSyncedAt(new Date());
     } catch {
       // Silently handle - position will remain stale
     }
