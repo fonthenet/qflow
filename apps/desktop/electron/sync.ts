@@ -698,6 +698,34 @@ export class SyncEngine {
           upsertBatch(histTickets);
         }
 
+        // ── Reconcile: mark local "active" tickets as cancelled if cloud says they're gone ──
+        // If a ticket is waiting/called/serving in SQLite but NOT in the cloud active set,
+        // it was resolved elsewhere (served, cancelled, auto-resolved). Update SQLite to match.
+        if (activeTickets !== null) {
+          const cloudActiveIds = new Set(activeTickets.map((t: any) => t.id));
+          const localActive = this.db.prepare(
+            "SELECT id, ticket_number, status FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
+          ).all(officeId) as any[];
+
+          for (const local of localActive) {
+            if (cloudActiveIds.has(local.id)) continue; // still active in cloud — fine
+            if (locallyModifiedIds.has(local.id)) continue; // we have a pending local change — don't overwrite
+
+            // This ticket is active locally but gone from cloud — check history pull
+            const inHistory = (histTickets ?? []).find((t: any) => t.id === local.id);
+            if (inHistory) {
+              // Cloud has it as served/cancelled — adopt that status
+              console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cloud=${inHistory.status}`);
+            } else {
+              // Not in cloud at all (auto-resolved or deleted) — mark as cancelled locally
+              console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cancelled (not in cloud)`);
+              this.db.prepare(
+                "UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ?"
+              ).run(new Date().toISOString(), local.id);
+            }
+          }
+        }
+
         // ── Clean up L- prefixed local tickets that now have a cloud equivalent ──
         // Only remove L- local copies, NOT cloud-to-cloud duplicates (those have the same ticket_number
         // across active+historical pulls and must coexist)
