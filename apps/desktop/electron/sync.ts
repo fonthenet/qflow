@@ -40,6 +40,9 @@ export class SyncEngine {
     this.onDataPulled = onDataPulled;
   }
 
+  private realtimeWs: WebSocket | null = null;
+  private realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
   start() {
     // Check connectivity every 10s
     this.healthInterval = setInterval(() => this.checkHealth(), 10_000);
@@ -48,7 +51,7 @@ export class SyncEngine {
     // Try to sync pending items every 15s
     this.interval = setInterval(() => this.syncNow(), 15_000);
 
-    // Pull cloud data every 5s when online to keep SQLite fresh
+    // Pull cloud data every 5s when online to keep SQLite fresh (fallback for when Realtime is down)
     this.pullInterval = setInterval(() => {
       if (this.isOnline) this.pullLatest();
     }, 5_000);
@@ -58,6 +61,86 @@ export class SyncEngine {
     if (this.interval) clearInterval(this.interval);
     if (this.healthInterval) clearInterval(this.healthInterval);
     if (this.pullInterval) clearInterval(this.pullInterval);
+    this.disconnectRealtime();
+  }
+
+  // ── Supabase Realtime: instant cloud→station push ──────────────
+  // When mobile/web updates a ticket in Supabase, the station hears it immediately
+  // via WebSocket instead of waiting for the next 5s poll.
+
+  private connectRealtime() {
+    if (this.realtimeWs) return; // already connected
+
+    const sessionRow = this.db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+    if (!session?.office_ids?.length) return;
+
+    const wsUrl = this.supabaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const token = session.access_token ?? this.supabaseKey;
+
+    try {
+      const ws = new WebSocket(
+        `${wsUrl}/realtime/v1/websocket?apikey=${this.supabaseKey}&vsn=1.0.0`
+      );
+
+      ws.onopen = () => {
+        console.log('[realtime] Connected to Supabase Realtime');
+        // Join the tickets channel for our offices
+        const joinMsg = JSON.stringify({
+          topic: `realtime:public:tickets`,
+          event: 'phx_join',
+          payload: { config: { broadcast: { self: false }, postgres_changes: [
+            { event: '*', schema: 'public', table: 'tickets', filter: `office_id=in.(${session.office_ids.join(',')})` }
+          ] } },
+          ref: '1',
+        });
+        ws.send(joinMsg);
+
+        // Heartbeat every 30s to keep connection alive
+        const hb = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: 'hb' }));
+          } else {
+            clearInterval(hb);
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(String(event.data));
+          if (msg.event === 'postgres_changes' || msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE') {
+            console.log(`[realtime] Ticket change detected: ${msg.event}`);
+            // Immediately pull + notify
+            this.pullLatest();
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      ws.onclose = () => {
+        console.log('[realtime] Disconnected, will retry in 5s');
+        this.realtimeWs = null;
+        this.realtimeRetryTimer = setTimeout(() => {
+          if (this.isOnline) this.connectRealtime();
+        }, 5000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      this.realtimeWs = ws;
+    } catch (err: any) {
+      console.warn('[realtime] Failed to connect:', err?.message);
+    }
+  }
+
+  private disconnectRealtime() {
+    if (this.realtimeRetryTimer) clearTimeout(this.realtimeRetryTimer);
+    if (this.realtimeWs) {
+      try { this.realtimeWs.close(); } catch { /* ignore */ }
+      this.realtimeWs = null;
+    }
   }
 
   // Track when we last refreshed the token to avoid hammering the auth endpoint
@@ -85,12 +168,21 @@ export class SyncEngine {
         await this.syncNow();   // Push offline changes to cloud
         await this.pullLatest(); // Pull cloud state into SQLite (merges, doesn't overwrite)
         await this.pullLatest(); // Second pull catches any reprocessed data
+        this.connectRealtime(); // Subscribe to live cloud changes
+      }
+
+      // Ensure Realtime is connected when online
+      if (this.isOnline && !this.realtimeWs) {
+        this.connectRealtime();
+      } else if (!this.isOnline && this.realtimeWs) {
+        this.disconnectRealtime();
       }
 
       this.onStatus(this.isOnline ? 'online' : 'offline');
     } catch {
       this.isOnline = false;
       this.onStatus('offline');
+      this.disconnectRealtime();
     }
 
     this.updatePendingCount();
