@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/queue-recovery — trigger immediate recovery sweep
 // Called on app startup or when operator detects issues
 export async function POST() {
   try {
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('recover_stuck_tickets');
 
     if (error) {
