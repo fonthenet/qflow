@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CountdownTimer } from './CountdownTimer';
 import type { TicketResponse } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
+import { API_BASE_URL } from '@/lib/config';
 
 // ---------------------------------------------------------------------------
 // Spacing / sizing constants (layout only — no colors)
@@ -234,9 +235,32 @@ function MetricCard({
 // QueueCard
 // ---------------------------------------------------------------------------
 
-export function QueueCard({ ticket }: { ticket: TicketResponse }) {
+export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse; onTicketUpdated?: () => void }) {
   const { isDark } = useTheme();
   const t = isDark ? darkPalette : lightPalette;
+
+  // Edit state
+  const [editVisible, setEditVisible] = useState(false);
+  const [editName, setEditName] = useState(ticket.customer_data?.name ?? '');
+  const [editPhone, setEditPhone] = useState(ticket.customer_data?.phone ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE_URL}/api/ticket-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: ticket.qr_token, name: editName.trim(), phone: editPhone.trim() }),
+      });
+      setEditVisible(false);
+      onTicketUpdated?.();
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const isWaiting  = ticket.status === 'waiting';
   const isCalled   = ticket.status === 'called';
@@ -292,20 +316,19 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
           </Text>
         </View>
         {isWaiting && ticket.position != null && (
-          <Animated.View
+          <View
             style={[
               layout.positionBadge,
               {
                 backgroundColor: isNext ? '#10b98120' : t.accent + '20',
                 borderColor: isNext ? '#10b98150' : t.accent + '50',
-                opacity: isNext ? flashAnim : 1,
               },
             ]}
           >
             <Text style={[layout.positionBadgeText, { color: isNext ? '#10b981' : t.accent }]}>
-              {isNext ? "You're Next!" : `#${ticket.position}`}
+              #{ticket.position}
             </Text>
-          </Animated.View>
+          </View>
         )}
       </View>
 
@@ -317,7 +340,7 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp.sm }}>
                 <PulseDot color={ticket.position === 1 ? '#10b981' : t.accent} />
                 <Text style={[layout.progressLabelText, { color: ticket.position === 1 ? '#10b981' : t.textSecondary }]}>
-                  {ticket.position === 1 ? "You're Next!" : ticket.position != null && ticket.position <= 3 ? 'Almost there!' : 'In Queue'}
+                  {ticket.position === 1 ? 'Get ready!' : ticket.position != null && ticket.position <= 3 ? 'Almost there!' : 'In Queue'}
                 </Text>
               </View>
               <Text style={[layout.progressPosition, { color: t.textMuted }]}>
@@ -372,8 +395,57 @@ export function QueueCard({ ticket }: { ticket: TicketResponse }) {
             <Ionicons name="sync-outline" size={12} color={t.textMuted} />
             <Text style={[layout.syncText, { color: t.textMuted }]}>Synced {syncedAt}</Text>
           </View>
+
+          <TouchableOpacity
+            style={[layout.editButton, { borderColor: t.cardBorder }]}
+            onPress={() => {
+              setEditName(ticket.customer_data?.name ?? '');
+              setEditPhone(ticket.customer_data?.phone ?? '');
+              setEditVisible(true);
+            }}
+          >
+            <Ionicons name="pencil-outline" size={14} color={t.textMuted} />
+            <Text style={[layout.editButtonText, { color: t.textMuted }]}>Edit my info</Text>
+          </TouchableOpacity>
         </>
       )}
+
+      {/* Edit Modal */}
+      <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
+        <View style={layout.modalOverlay}>
+          <View style={[layout.modalCard, { backgroundColor: t.cardBg, borderColor: t.cardBorder }]}>
+            <Text style={[layout.modalTitle, { color: t.textPrimary }]}>Edit Visit Info</Text>
+
+            <Text style={[layout.modalLabel, { color: t.textMuted }]}>Name</Text>
+            <TextInput
+              style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your name"
+              placeholderTextColor={t.textMuted}
+            />
+
+            <Text style={[layout.modalLabel, { color: t.textMuted }]}>Phone</Text>
+            <TextInput
+              style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
+              value={editPhone}
+              onChangeText={setEditPhone}
+              placeholder="Your phone"
+              placeholderTextColor={t.textMuted}
+              keyboardType="phone-pad"
+            />
+
+            <View style={layout.modalButtons}>
+              <TouchableOpacity style={[layout.modalCancel, { borderColor: t.cardBorder }]} onPress={() => setEditVisible(false)}>
+                <Text style={[layout.modalCancelText, { color: t.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[layout.modalSave, { backgroundColor: t.accent }]} onPress={saveEdit} disabled={saving}>
+                <Text style={layout.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* CALLED */}
       {isCalled && ticket.called_at && (
@@ -511,4 +583,39 @@ const layout = StyleSheet.create({
   terminalSection: { borderRadius: br.lg, padding: sp.lg, alignItems: 'center', gap: sp.sm },
   terminalTitle: { fontSize: fs.xl, fontWeight: '700' },
   terminalDuration: { fontSize: fs.sm },
+
+  // Edit button
+  editButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: sp.xs, paddingVertical: sp.sm, borderRadius: br.md,
+    borderWidth: 1,
+  },
+  editButtonText: { fontSize: fs.xs, fontWeight: '500' },
+
+  // Edit modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    borderTopLeftRadius: br.xl, borderTopRightRadius: br.xl,
+    borderWidth: 1, padding: sp.lg, gap: sp.md,
+  },
+  modalTitle: { fontSize: fs.lg, fontWeight: '700', marginBottom: sp.xs },
+  modalLabel: { fontSize: fs.sm, fontWeight: '500', marginBottom: 2 },
+  modalInput: {
+    borderWidth: 1, borderRadius: br.md,
+    paddingHorizontal: sp.md, paddingVertical: sp.sm,
+    fontSize: fs.md,
+  },
+  modalButtons: { flexDirection: 'row', gap: sp.sm, marginTop: sp.xs },
+  modalCancel: {
+    flex: 1, paddingVertical: sp.md, borderRadius: br.md,
+    borderWidth: 1, alignItems: 'center',
+  },
+  modalCancelText: { fontSize: fs.md, fontWeight: '600' },
+  modalSave: {
+    flex: 1, paddingVertical: sp.md, borderRadius: br.md, alignItems: 'center',
+  },
+  modalSaveText: { fontSize: fs.md, fontWeight: '600', color: '#fff' },
 });
