@@ -138,6 +138,10 @@ function setupIPC() {
     })();
 
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
+
+    // Immediately push to cloud so web/mobile displays update within 1-2s
+    syncEngine?.pushImmediate(ticket.id + '-create');
+
     return ticket;
   });
 
@@ -163,6 +167,9 @@ function setupIPC() {
       INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
       VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
     `).run(syncId, ticketId, JSON.stringify(updates), new Date().toISOString());
+
+    // Immediately push to cloud so web/mobile displays update within 1-2s
+    syncEngine?.pushImmediate(syncId);
 
     // Push typed SSE event based on status change
     if (updates.status === 'served' || updates.status === 'no_show') {
@@ -196,10 +203,12 @@ function setupIPC() {
 
   ipcMain.handle('db:call-next', (_e, officeId: string, deskId: string, staffId: string) => {
     const now = new Date().toISOString();
+    const callTs = Date.now();
 
     // ATOMIC: single UPDATE...RETURNING prevents two desks calling the same ticket
     // Transaction wraps both the ticket update and sync queue insert (crash-safe)
     let ticket: any = null;
+    let syncId = '';
     db.transaction(() => {
       ticket = db.prepare(`
         UPDATE tickets
@@ -214,14 +223,18 @@ function setupIPC() {
       `).get(deskId, staffId, now, officeId) as any;
 
       if (ticket) {
+        syncId = `${ticket.id}-call-${callTs}`;
         db.prepare(`
           INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
           VALUES (?, 'CALL', 'tickets', ?, ?, ?)
-        `).run(`${ticket.id}-call-${Date.now()}`, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+        `).run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
       }
     })();
 
     if (!ticket) return null;
+
+    // Immediately push to cloud so web/mobile displays update within 1-2s
+    syncEngine?.pushImmediate(syncId);
 
     const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
     notifyDisplays({

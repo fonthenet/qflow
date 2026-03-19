@@ -88,18 +88,23 @@ export default function AdminQueueScreen() {
   const fetchAllTickets = useCallback(async () => {
     if (officeIds.length === 0) return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
-
     const statuses = statusesForFilter(filter);
 
-    const { data, error } = await supabase
+    // For active tickets: NEVER filter by date — a waiting ticket must always show
+    // For done/historical tickets: filter to today only to avoid loading thousands
+    let query = supabase
       .from('tickets')
       .select(TICKET_COLUMNS)
       .in('office_id', officeIds)
-      .in('status', statuses)
-      .gte('created_at', todayISO)
+      .in('status', statuses);
+
+    if (filter === 'done') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      query = query.gte('created_at', today.toISOString());
+    }
+
+    const { data, error } = await query
       .order('priority', { ascending: false, nullsFirst: true })
       .order('created_at', { ascending: true })
       .limit(200);

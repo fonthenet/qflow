@@ -53,30 +53,48 @@ export function useRealtimeQueue({ officeId, departmentId, enabled = true }: Use
   const fetchQueue = useCallback(async () => {
     if (!officeId) return;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    // Pull ALL active tickets (no date filter — a waiting/called/serving ticket must always show)
+    // Only pull recent completed tickets (last 24h) for the served/cancelled lists
+    const activeStatuses = ['waiting', 'called', 'serving'];
+    const doneStatuses = ['served', 'no_show', 'cancelled'];
 
-    let query = supabase
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    let activeQuery = supabase
       .from('tickets')
       .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
       .eq('office_id', officeId)
-      .gte('created_at', todayISO)
-      .in('status', ['waiting', 'called', 'serving', 'served', 'no_show', 'cancelled'])
+      .in('status', activeStatuses)
       .order('priority', { ascending: false, nullsFirst: true })
       .order('created_at', { ascending: true });
 
+    let doneQuery = supabase
+      .from('tickets')
+      .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
+      .eq('office_id', officeId)
+      .in('status', doneStatuses)
+      .gte('created_at', yesterday)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
     if (departmentId) {
-      query = query.eq('department_id', departmentId);
+      activeQuery = activeQuery.eq('department_id', departmentId);
+      doneQuery = doneQuery.eq('department_id', departmentId);
     }
 
-    const { data, error } = await query;
-    if (error) {
-      console.warn('fetchQueue error:', error.message);
+    const [activeResult, doneResult] = await Promise.all([activeQuery, doneQuery]);
+    if (activeResult.error) {
+      console.warn('fetchQueue active error:', activeResult.error.message);
       return;
     }
+    if (doneResult.error) {
+      console.warn('fetchQueue done error:', doneResult.error.message);
+    }
 
-    const tickets = (data ?? []) as QueueTicket[];
+    const tickets = [
+      ...((activeResult.data ?? []) as QueueTicket[]),
+      ...((doneResult.data ?? []) as QueueTicket[]),
+    ];
 
     const waiting = tickets.filter(t => t.status === 'waiting' && !t.parked_at);
     const called = tickets.filter(t => t.status === 'called' && !t.parked_at);

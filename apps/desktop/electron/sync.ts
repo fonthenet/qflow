@@ -22,6 +22,13 @@ export class SyncEngine {
   public lastSyncAt: string | null = null;
   public pendingCount = 0;
 
+  // ── Token management ──────────────────────────────────────────────
+  // Single source of truth for the current valid access token
+  private cachedAccessToken: string | null = null;
+  private lastTokenRefreshAt = 0;
+  private tokenRefreshInFlight: Promise<string | null> | null = null;
+  private consecutiveRefreshFailures = 0;
+
   constructor(
     db: Database.Database,
     supabaseUrl: string,
@@ -143,14 +150,10 @@ export class SyncEngine {
     }
   }
 
-  // Track when we last refreshed the token to avoid hammering the auth endpoint
-  private lastTokenRefreshAt = 0;
-
   private async checkHealth() {
     // Proactively refresh token every 50 minutes (JWT expires at 60 min by default)
     if (this.isOnline && Date.now() - this.lastTokenRefreshAt > 50 * 60 * 1000) {
-      const newToken = await this.refreshAccessToken();
-      if (newToken) this.lastTokenRefreshAt = Date.now();
+      await this.ensureFreshToken();
     }
 
     try {
@@ -191,6 +194,10 @@ export class SyncEngine {
   /** Suppress auth-error events for a period (call after login to prevent stale-session race) */
   public suppressAuthErrors(durationMs = 15000) {
     this.authErrorSuppressedUntil = Date.now() + durationMs;
+    this.consecutiveRefreshFailures = 0;
+    // Invalidate cached token so next sync picks up the fresh login token
+    this.cachedAccessToken = null;
+    this.lastTokenRefreshAt = 0;
   }
 
   public updatePendingCount() {
@@ -201,15 +208,36 @@ export class SyncEngine {
     this.onProgress(this.pendingCount);
   }
 
-  // Refresh the access token using the stored refresh_token
+  // ── Bulletproof Token Management ─────────────────────────────────
+  // Decodes JWT to check if it's expired (with 60s safety buffer)
+  private isTokenExpired(token: string): boolean {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      // Expired if exp is in the past (with 60s buffer for clock drift)
+      return !payload.exp || (payload.exp * 1000) < (Date.now() + 60000);
+    } catch {
+      return true; // can't decode = treat as expired
+    }
+  }
+
+  // Read session from DB
+  private getSessionFromDB(): any {
+    const row = this.db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    return row ? JSON.parse(row.value) : null;
+  }
+
+  // Core refresh — calls Supabase auth endpoint with refresh_token
   private async refreshAccessToken(): Promise<string | null> {
-    const sessionRow = this.db.prepare(
-      "SELECT value FROM session WHERE key = 'current'"
-    ).get() as any;
-    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
-    if (!session?.refresh_token) return null;
+    const session = this.getSessionFromDB();
+    if (!session?.refresh_token) {
+      console.warn('[sync:token] No refresh_token in session — user must re-login');
+      return null;
+    }
 
     try {
+      console.log('[sync:token] Refreshing access token...');
       const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: {
@@ -219,28 +247,120 @@ export class SyncEngine {
         body: JSON.stringify({ refresh_token: session.refresh_token }),
         signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) return null;
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.warn(`[sync:token] Refresh failed (${res.status}): ${body.slice(0, 200)}`);
+        // If refresh_token itself is expired/revoked, Supabase returns 400 or 401
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          this.consecutiveRefreshFailures++;
+          if (this.consecutiveRefreshFailures >= 3 && Date.now() > this.authErrorSuppressedUntil) {
+            console.error('[sync:token] Refresh token is dead after 3 attempts — prompting re-login');
+            this.onAuthError();
+          }
+        }
+        return null;
+      }
+
       const data = await res.json();
       if (!data.access_token) return null;
 
-      // Persist the new tokens
-      const updated = { ...session, access_token: data.access_token, refresh_token: data.refresh_token ?? session.refresh_token };
+      // Persist both new access_token AND new refresh_token to session
+      const updated = {
+        ...session,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token ?? session.refresh_token,
+      };
       this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
-      console.log('[sync] Access token refreshed');
+
+      // Update in-memory cache
+      this.cachedAccessToken = data.access_token;
+      this.lastTokenRefreshAt = Date.now();
+      this.consecutiveRefreshFailures = 0;
+
+      console.log('[sync:token] ✓ Access token refreshed successfully');
       return data.access_token;
     } catch (err: any) {
-      console.warn('[sync] Token refresh failed:', err?.message ?? err);
+      console.warn('[sync:token] Token refresh network error:', err?.message ?? err);
       return null;
     }
   }
 
-  // Get a valid auth token — refreshes if expired (checks JWT exp claim)
-  private getAuthToken(): string {
-    const sessionRow = this.db.prepare(
-      "SELECT value FROM session WHERE key = 'current'"
-    ).get() as any;
-    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
-    return session?.access_token ?? this.supabaseKey;
+  // Ensures we have a non-expired access token. Deduplicates concurrent calls.
+  private async ensureFreshToken(): Promise<string> {
+    // 1. Check cached token first
+    if (this.cachedAccessToken && !this.isTokenExpired(this.cachedAccessToken)) {
+      return this.cachedAccessToken;
+    }
+
+    // 2. Check session DB (login may have stored a fresh token)
+    const session = this.getSessionFromDB();
+    const dbToken = session?.access_token;
+    if (dbToken && !this.isTokenExpired(dbToken)) {
+      this.cachedAccessToken = dbToken;
+      return dbToken;
+    }
+
+    // 3. Token is expired — need to refresh
+    // Deduplicate: if a refresh is already in flight, wait for it
+    if (this.tokenRefreshInFlight) {
+      const result = await this.tokenRefreshInFlight;
+      if (result) return result;
+      // Refresh in flight failed — fall through to return best effort
+    } else {
+      // Start a refresh
+      this.tokenRefreshInFlight = this.refreshAccessToken().finally(() => {
+        this.tokenRefreshInFlight = null;
+      });
+      const result = await this.tokenRefreshInFlight;
+      if (result) return result;
+    }
+
+    // 4. Refresh failed — return whatever we have (will 401, handled by caller)
+    console.warn('[sync:token] Could not get fresh token — sync will likely fail');
+    return dbToken ?? this.supabaseKey;
+  }
+
+  /**
+   * Fire-and-forget: immediately push a specific sync_queue item to Supabase.
+   * Called right after a local mutation to minimize cloud display lag.
+   * If it fails, the regular syncNow() timer picks it up later.
+   */
+  async pushImmediate(syncQueueId: string) {
+    if (!this.isOnline) return;
+
+    const item = this.db.prepare(
+      "SELECT * FROM sync_queue WHERE id = ? AND synced_at IS NULL"
+    ).get(syncQueueId) as any;
+    if (!item) return;
+
+    try {
+      const authToken = await this.ensureFreshToken();
+      const result = await this.replayMutation(item, authToken);
+
+      if (result.status === 0) {
+        this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+          .run(new Date().toISOString(), item.id);
+        this.updatePendingCount();
+        console.log(`[sync:pushImmediate] ✓ Pushed ${item.operation} on ${item.table_name}/${item.record_id}`);
+      } else if (result.status === 401) {
+        // Token expired — force refresh and retry once
+        this.cachedAccessToken = null;
+        const newToken = await this.refreshAccessToken();
+        if (newToken) {
+          const retry = await this.replayMutation(item, newToken);
+          if (retry.status === 0) {
+            this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+              .run(new Date().toISOString(), item.id);
+            this.updatePendingCount();
+            console.log(`[sync:pushImmediate] ✓ Pushed after token refresh`);
+          }
+        }
+      }
+      // Any other failure is silently ignored — syncNow() will retry later
+    } catch (err: any) {
+      console.log(`[sync:pushImmediate] Will retry later: ${err?.message ?? err}`);
+    }
   }
 
   async syncNow() {
@@ -255,21 +375,69 @@ export class SyncEngine {
 
     this.onStatus('syncing');
 
-    // Get session for auth token — refresh if needed
-    let authToken = this.getAuthToken();
-    if (Date.now() - this.lastTokenRefreshAt > 50 * 60 * 1000) {
-      const newToken = await this.refreshAccessToken();
-      if (newToken) { authToken = newToken; this.lastTokenRefreshAt = Date.now(); }
+    // ── BULLETPROOF: Get a verified-fresh token before replaying anything ──
+    let authToken = await this.ensureFreshToken();
+    let tokenIsVerified = !this.isTokenExpired(authToken);
+
+    if (!tokenIsVerified) {
+      console.warn('[sync:syncNow] Token is expired and refresh failed — will attempt mutations anyway');
     }
+
+    let had401 = false;
+    let successCount = 0;
 
     for (const item of pending) {
       try {
-        await this.replayMutation(item, authToken);
+        const result = await this.replayMutation(item, authToken);
+
+        if (result.status === 401) {
+          // ── 401: Token died mid-sync — refresh once and retry this item ──
+          if (!had401) {
+            had401 = true;
+            console.log('[sync:syncNow] Got 401 — forcing token refresh and retrying...');
+            // Force refresh (bypass cache)
+            this.cachedAccessToken = null;
+            const newToken = await this.refreshAccessToken();
+            if (newToken) {
+              authToken = newToken;
+              // Retry this item with fresh token
+              const retry = await this.replayMutation(item, authToken);
+              if (retry.status === 0) {
+                this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+                  .run(new Date().toISOString(), item.id);
+                successCount++;
+                continue;
+              }
+            }
+            // Refresh failed or retry still 401 — mark as auth error, don't waste more attempts
+            const newAttempts = (item.attempts ?? 0) + 1;
+            this.db.prepare(
+              "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
+            ).run(newAttempts, 'AUTH_EXPIRED: token refresh failed — re-login required', new Date(Date.now() + 60000).toISOString(), item.id);
+
+            // Fire auth error so UI can prompt re-login (but only if not suppressed)
+            if (Date.now() > this.authErrorSuppressedUntil) {
+              this.onAuthError();
+            }
+            // Skip remaining items — they'll all 401 too
+            break;
+          } else {
+            // Already tried refresh once this cycle — skip remaining
+            break;
+          }
+        }
+
+        if (result.status !== 0) {
+          throw new Error(`${item.operation} failed: ${result.status}`);
+        }
+
+        // ✓ Success
         this.db.prepare(
-          "UPDATE sync_queue SET synced_at = ? WHERE id = ?"
+          "UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?"
         ).run(new Date().toISOString(), item.id);
+        successCount++;
       } catch (err: any) {
-        // Exponential backoff: 15s → 30s → 60s → 120s → 240s, cap at 5min
+        // Non-auth error: exponential backoff
         const newAttempts = (item.attempts ?? 0) + 1;
         const delayMs = Math.min(15000 * Math.pow(2, newAttempts - 1), 300000);
         const nextRetry = new Date(Date.now() + delayMs).toISOString();
@@ -277,6 +445,10 @@ export class SyncEngine {
           "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
         ).run(newAttempts, err.message ?? 'Unknown error', nextRetry, item.id);
       }
+    }
+
+    if (successCount > 0) {
+      console.log(`[sync:syncNow] ✓ Successfully synced ${successCount}/${pending.length} items`);
     }
 
     this.lastSyncAt = new Date().toISOString();
@@ -293,7 +465,18 @@ export class SyncEngine {
       "DELETE FROM sync_queue WHERE synced_at IS NULL AND attempts >= 5 AND operation != 'INSERT'"
     ).run();
     if (discarded.changes > 0) {
-      console.warn(`Auto-discarded ${discarded.changes} stale UPDATE/CALL sync items after 5 failed attempts`);
+      console.warn(`[sync] Auto-discarded ${discarded.changes} stale UPDATE/CALL sync items after 5 failed attempts`);
+      this.updatePendingCount();
+    }
+
+    // Auto-discard stale UPDATE/CALL items older than 1 hour — the cloud state has moved on
+    // (e.g., a "call" action from an hour ago is meaningless now)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const staleDiscarded = this.db.prepare(
+      "DELETE FROM sync_queue WHERE synced_at IS NULL AND operation != 'INSERT' AND created_at < ?"
+    ).run(oneHourAgo);
+    if (staleDiscarded.changes > 0) {
+      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale sync items older than 1 hour`);
       this.updatePendingCount();
     }
 
@@ -306,7 +489,9 @@ export class SyncEngine {
     }
   }
 
-  private async replayMutation(item: any, authToken: string) {
+  // Returns { status: 0 } on success, { status: httpCode } on failure
+  // 401 is returned separately so the caller can refresh token and retry
+  private async replayMutation(item: any, authToken: string): Promise<{ status: number }> {
     const payload = JSON.parse(item.payload);
     const headers: Record<string, string> = {
       apikey: this.supabaseKey,
@@ -317,33 +502,35 @@ export class SyncEngine {
 
     const baseUrl = `${this.supabaseUrl}/rest/v1/${item.table_name}`;
 
+    let res: Response;
     switch (item.operation) {
       case 'INSERT': {
-        const res = await fetch(baseUrl, {
+        res = await fetch(baseUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(10000),
         });
-        if (!res.ok && res.status !== 409) {
-          throw new Error(`INSERT failed: ${res.status}`);
-        }
-        break;
+        if (res.ok || res.status === 409) return { status: 0 };
+        if (res.status === 401 || res.status === 403) return { status: 401 };
+        throw new Error(`INSERT failed: ${res.status}`);
       }
 
       case 'UPDATE':
       case 'CALL': {
-        const res = await fetch(`${baseUrl}?id=eq.${item.record_id}`, {
+        res = await fetch(`${baseUrl}?id=eq.${item.record_id}`, {
           method: 'PATCH',
           headers,
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(10000),
         });
-        if (!res.ok && res.status !== 409) {
-          throw new Error(`UPDATE failed: ${res.status}`);
-        }
-        break;
+        if (res.ok || res.status === 409) return { status: 0 };
+        if (res.status === 401 || res.status === 403) return { status: 401 };
+        throw new Error(`UPDATE failed: ${res.status}`);
       }
+
+      default:
+        throw new Error(`Unknown operation: ${item.operation}`);
     }
   }
 
@@ -361,15 +548,11 @@ export class SyncEngine {
     }
     console.log('[sync:pullLatest] Pulling for offices:', session.office_ids);
 
-    // Try user token first, fall back to anon key if token is expired/invalid
-    const userToken = session.access_token;
-    const anonHeaders: Record<string, string> = {
-      apikey: this.supabaseKey,
-      Authorization: `Bearer ${this.supabaseKey}`,
-    };
+    // Get a verified-fresh token (will refresh if expired)
+    const freshToken = await this.ensureFreshToken();
     const headers: Record<string, string> = {
       apikey: this.supabaseKey,
-      Authorization: `Bearer ${userToken ?? this.supabaseKey}`,
+      Authorization: `Bearer ${freshToken}`,
     };
 
     try {
@@ -473,14 +656,20 @@ export class SyncEngine {
         const activeUrl = `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(waiting,called,serving)&order=created_at.asc`;
         let activeTickets = await fetchTickets(headers, activeUrl);
         if (activeTickets === null) {
-          // Token expired — try to refresh and retry once
-          console.log('[sync:pullLatest] Token expired, attempting refresh...');
+          // Token expired — force refresh (bypass cache) and retry once
+          console.log('[sync:pullLatest] Token expired, forcing refresh...');
+          this.cachedAccessToken = null;
           const newToken = await this.refreshAccessToken();
           if (newToken) {
-            this.lastTokenRefreshAt = Date.now();
             headers.Authorization = `Bearer ${newToken}`;
             console.log('[sync:pullLatest] Token refreshed, retrying...');
             activeTickets = await fetchTickets(headers, activeUrl);
+          }
+          // If still null, try anon key as last resort (read-only but better than nothing)
+          if (activeTickets === null) {
+            console.log('[sync:pullLatest] Trying anon key as fallback...');
+            const anonHeaders = { apikey: this.supabaseKey, Authorization: `Bearer ${this.supabaseKey}` };
+            activeTickets = await fetchTickets(anonHeaders, activeUrl);
           }
         }
 
