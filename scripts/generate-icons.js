@@ -5,14 +5,13 @@ const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
 
 function iconSvg(size, flat = false) {
-  // Blue gradient background with large "Q" and smaller "flo" on same line
-  const qSize = Math.round(size * 0.45);
-  const floSize = Math.round(size * 0.24);
-  const y = Math.round(size * 0.54);
-  // Position Q and flo side by side — Q is left of center, flo right with gap
-  const qX = Math.round(size * 0.30);
-  const floX = Math.round(size * 0.61);
-  const floY = y + Math.round(qSize * 0.05); // slight baseline alignment
+  // Blue gradient background with large "Q" centered, "flo" below it
+  const qSize = Math.round(size * 0.65);
+  const floSize = Math.round(size * 0.12);
+  const centerX = Math.round(size * 0.50);
+  const qY = Math.round(size * 0.44);
+  const floX = Math.round(size * 0.51);
+  const floY = Math.round(size * 0.74);
 
   const gradient = !flat;
   return `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
@@ -23,13 +22,13 @@ function iconSvg(size, flat = false) {
     </linearGradient>
   </defs>` : ''}
   <rect width="${size}" height="${size}" fill="${gradient ? 'url(#bg)' : '#2563eb'}"/>
-  <text x="${qX}" y="${y}" text-anchor="middle" dominant-baseline="central"
+  <text x="${centerX}" y="${qY}" text-anchor="middle" dominant-baseline="central"
         font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
         font-weight="700" font-size="${qSize}" fill="white">Q</text>
   <text x="${floX}" y="${floY}" text-anchor="middle" dominant-baseline="central"
         font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
-        font-weight="600" font-size="${floSize}" fill="white"
-        letter-spacing="1">flo</text>
+        font-weight="500" font-size="${floSize}" fill="white"
+        letter-spacing="${Math.round(size * 0.015)}">flo</text>
 </svg>`;
 }
 

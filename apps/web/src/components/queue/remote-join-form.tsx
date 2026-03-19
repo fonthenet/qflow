@@ -353,9 +353,7 @@ export function RemoteJoinForm({
   const selectionActiveClass = 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-[0_16px_40px_rgba(37,99,235,0.12)]';
   const selectionIdleClass = 'border-border bg-card hover:border-primary/50 hover:shadow-sm';
 
-  // When ticket is created: save to localStorage, update URL, and auto-redirect
-  const [redirectCountdown, setRedirectCountdown] = useState(5);
-
+  // When ticket is created: save to localStorage and update URL
   useEffect(() => {
     if (!ticket) return;
 
@@ -374,21 +372,7 @@ export function RemoteJoinForm({
     // 2. Replace browser URL to the tracking page — so bookmark/refresh = tracking page
     const trackingPath = `/q/${ticket.qr_token}`;
     window.history.replaceState({}, '', trackingPath);
-
-    // 3. Auto-redirect countdown to the full tracking page
-    const timer = setInterval(() => {
-      setRedirectCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          router.replace(trackingPath);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [ticket, router]);
+  }, [ticket]);
 
   // Generate QR code when ticket is created
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -434,7 +418,7 @@ export function RemoteJoinForm({
               You&apos;re in the Queue!
             </h1>
             <p className="mb-5 text-sm text-muted-foreground">
-              Redirecting to live tracking in {redirectCountdown}s...
+              Save your QR code or tap below to track your ticket
             </p>
 
             {/* Ticket number */}
