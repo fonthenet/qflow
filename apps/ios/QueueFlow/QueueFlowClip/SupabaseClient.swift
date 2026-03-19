@@ -76,6 +76,7 @@ class SupabaseClient {
     }
 
     /// Fetch queue position for a ticket via RPC.
+    /// The RPC returns JSONB: {"position": N, "total_waiting": N, "estimated_wait_minutes": N, ...}
     func fetchQueuePosition(ticketId: String) async throws -> Int {
         let urlString = "\(baseURL)/rest/v1/rpc/get_queue_position"
         guard let url = URL(string: urlString) else {
@@ -91,10 +92,16 @@ class SupabaseClient {
 
         let (data, _) = try await URLSession.shared.data(for: request)
 
+        // Try JSONB object format first (current RPC returns {"position": N, ...})
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let pos = json["position"] as? Int {
+            return pos
+        }
+        // Fallback: plain integer return (legacy format)
         if let position = try? JSONDecoder().decode(Int.self, from: data) {
             return position
         }
-        return 0
+        return 1 // Default to position 1, not 0 (0 means "your turn")
     }
 
     /// Fetch estimated wait time for a department/service.
