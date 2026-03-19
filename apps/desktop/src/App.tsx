@@ -16,7 +16,7 @@ export function App() {
 
   // Load saved session on mount
   useEffect(() => {
-    window.qf.session.load().then((s) => {
+    window.qf.session.load().then((s: StaffSession | null) => {
       setSession(s);
       setLoading(false);
     });
@@ -24,10 +24,10 @@ export function App() {
 
   // Listen for sync status changes
   useEffect(() => {
-    const unsub1 = window.qf.sync.onStatusChange((status) => {
+    const unsub1 = window.qf.sync.onStatusChange((status: string) => {
       setSyncStatus((prev) => ({ ...prev, isOnline: status === 'online' || status === 'syncing' }));
     });
-    const unsub2 = window.qf.sync.onProgress((count) => {
+    const unsub2 = window.qf.sync.onProgress((count: number) => {
       setSyncStatus((prev) => ({ ...prev, pendingCount: count }));
     });
 
@@ -40,11 +40,22 @@ export function App() {
   const handleLogin = useCallback(async (s: StaffSession) => {
     await window.qf.session.save(s);
     setSession(s);
+    // Immediately pull cloud data into SQLite after login
+    window.qf.sync.forceSync();
   }, []);
 
   const handleLogout = useCallback(async () => {
     await window.qf.session.clear();
     setSession(null);
+  }, []);
+
+  // Force re-login when the sync engine can't refresh an expired token
+  useEffect(() => {
+    const unsub = window.qf.auth?.onSessionExpired?.(() => {
+      window.qf.session.clear();
+      setSession(null);
+    });
+    return () => unsub?.();
   }, []);
 
   if (loading) {

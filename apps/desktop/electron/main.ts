@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, getLocalIP } from './kiosk-server';
+import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, type SSEEvent } from './kiosk-server';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -105,12 +105,17 @@ function setupIPC() {
 
   // ── Offline Queue Operations ──────────────────────────────────────
 
-  ipcMain.handle('db:get-tickets', (_e, officeId: string, statuses: string[]) => {
-    const placeholders = statuses.map(() => '?').join(',');
-    return db.prepare(
-      `SELECT * FROM tickets WHERE office_id = ? AND status IN (${placeholders})
+  ipcMain.handle('db:get-tickets', (_e, officeIdOrIds: string | string[], statuses: string[]) => {
+    const ids = Array.isArray(officeIdOrIds) ? officeIdOrIds : [officeIdOrIds];
+    if (!ids.length) return [];
+    const officePlaceholders = ids.map(() => '?').join(',');
+    const statusPlaceholders = statuses.map(() => '?').join(',');
+    // NEVER filter active tickets by date — if it's waiting, show it
+    const result = db.prepare(
+      `SELECT * FROM tickets WHERE office_id IN (${officePlaceholders}) AND status IN (${statusPlaceholders})
        ORDER BY priority DESC, created_at ASC`
-    ).all(officeId, ...statuses);
+    ).all(...ids, ...statuses);
+    return result;
   });
 
   ipcMain.handle('db:create-ticket', (_e, ticket: any) => {
@@ -125,6 +130,7 @@ function setupIPC() {
       VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
     `).run(ticket.id + '-create', ticket.id, JSON.stringify(ticket), new Date().toISOString());
 
+    notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
     return ticket;
   });
 
@@ -143,24 +149,53 @@ function setupIPC() {
       VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
     `).run(syncId, ticketId, JSON.stringify(updates), new Date().toISOString());
 
+    // Push typed SSE event based on status change
+    if (updates.status === 'served' || updates.status === 'no_show') {
+      notifyDisplays({ type: 'ticket_served', timestamp: new Date().toISOString() });
+    } else if (updates.status === 'cancelled') {
+      notifyDisplays({ type: 'ticket_cancelled', timestamp: new Date().toISOString() });
+    } else if (updates.status === 'called') {
+      const dsk = updates.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(updates.desk_id) as any : null;
+      const tk = db.prepare('SELECT ticket_number FROM tickets WHERE id = ?').get(ticketId) as any;
+      notifyDisplays({ type: 'ticket_called', ticket_number: tk?.ticket_number, desk_name: dsk?.name, timestamp: new Date().toISOString() });
+    } else {
+      notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
+    }
     return { id: ticketId, ...updates };
   });
 
+  ipcMain.handle('db:query', (_e, table: string, officeIds: string[]) => {
+    if (!officeIds?.length) return [];
+    const placeholders = officeIds.map(() => '?').join(',');
+    switch (table) {
+      case 'departments':
+        return db.prepare(`SELECT id, name FROM departments WHERE office_id IN (${placeholders})`).all(...officeIds);
+      case 'services':
+        return db.prepare(`SELECT id, name, department_id FROM services`).all();
+      case 'desks':
+        return db.prepare(`SELECT id, name FROM desks WHERE office_id IN (${placeholders})`).all(...officeIds);
+      default:
+        return [];
+    }
+  });
+
   ipcMain.handle('db:call-next', (_e, officeId: string, deskId: string, staffId: string) => {
+    const now = new Date().toISOString();
+
+    // ATOMIC: single UPDATE...RETURNING prevents two desks calling the same ticket
     const ticket = db.prepare(`
-      SELECT * FROM tickets
-      WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
-      ORDER BY priority DESC, created_at ASC
-      LIMIT 1
-    `).get(officeId) as any;
+      UPDATE tickets
+      SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
+      WHERE id = (
+        SELECT id FROM tickets
+        WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
+        ORDER BY priority DESC, created_at ASC
+        LIMIT 1
+      )
+      RETURNING *
+    `).get(deskId, staffId, now, officeId) as any;
 
     if (!ticket) return null;
-
-    const now = new Date().toISOString();
-    db.prepare(`
-      UPDATE tickets SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
-      WHERE id = ?
-    `).run(deskId, staffId, now, ticket.id);
 
     // Queue sync
     db.prepare(`
@@ -168,7 +203,15 @@ function setupIPC() {
       VALUES (?, 'CALL', 'tickets', ?, ?, ?)
     `).run(`${ticket.id}-call-${Date.now()}`, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
 
-    return { ...ticket, status: 'called', desk_id: deskId, called_at: now };
+    // Instant push with typed event
+    const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
+    notifyDisplays({
+      type: 'ticket_called',
+      ticket_number: ticket.ticket_number,
+      desk_name: desk?.name ?? deskId,
+      timestamp: now,
+    });
+    return ticket;
   });
 
   // ── Sync Status ───────────────────────────────────────────────────
@@ -181,6 +224,8 @@ function setupIPC() {
 
   ipcMain.handle('sync:force', async () => {
     await syncEngine?.syncNow();
+    await syncEngine?.pullLatest();
+    notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
   });
 
   ipcMain.handle('sync:pending-details', () => {
@@ -200,7 +245,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('sync:retry-item', async (_e, id: string) => {
-    db.prepare("UPDATE sync_queue SET attempts = 0, last_error = NULL WHERE id = ?").run(id);
+    db.prepare("UPDATE sync_queue SET attempts = 0, last_error = NULL, next_retry_at = NULL WHERE id = ?").run(id);
     await syncEngine?.syncNow();
   });
 
@@ -220,6 +265,28 @@ function setupIPC() {
 
   ipcMain.handle('session:clear', () => {
     db.prepare("DELETE FROM session WHERE key = 'current'").run();
+  });
+
+  // ── Debug ───────────────────────────────────────────────────────
+  ipcMain.handle('debug:db-stats', () => {
+    const tickets = db.prepare("SELECT COUNT(*) as c FROM tickets").get() as any;
+    const offices = db.prepare("SELECT COUNT(*) as c FROM offices").get() as any;
+    const depts = db.prepare("SELECT COUNT(*) as c FROM departments").get() as any;
+    const svcs = db.prepare("SELECT COUNT(*) as c FROM services").get() as any;
+    const desks = db.prepare("SELECT COUNT(*) as c FROM desks").get() as any;
+    const syncQ = db.prepare("SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL").get() as any;
+    const waitingTickets = db.prepare("SELECT ticket_number, office_id, status FROM tickets WHERE status = 'waiting' LIMIT 10").all();
+    const allTickets = db.prepare("SELECT ticket_number, office_id, status FROM tickets LIMIT 20").all();
+    return {
+      tickets: tickets?.c ?? 0,
+      offices: offices?.c ?? 0,
+      departments: depts?.c ?? 0,
+      services: svcs?.c ?? 0,
+      desks: desks?.c ?? 0,
+      pendingSync: syncQ?.c ?? 0,
+      waitingTickets,
+      allTickets,
+    };
   });
 
   // ── Connection status ─────────────────────────────────────────────
@@ -276,6 +343,13 @@ app.whenReady().then(async () => {
     },
     (count) => {
       mainWindow?.webContents.send('sync:progress', count);
+    },
+    () => {
+      // Token expired and refresh failed — tell renderer to show re-login
+      mainWindow?.webContents.send('auth:session-expired');
+    },
+    () => {
+      notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     }
   );
   syncEngine.start();

@@ -40,60 +40,58 @@ export function Station({ session, isOnline }: Props) {
 
   // ── Fetch tickets ────────────────────────────────────────────────
 
+  // ALWAYS read from SQLite — the sync engine keeps it up to date
   const fetchTickets = useCallback(async () => {
-    if (isOnline) {
-      try {
-        const supabase = await getSupabase();
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        const { data } = await supabase
-          .from('tickets')
-          .select('*')
-          .eq('office_id', session.office_id)
-          .in('status', ['waiting', 'called', 'serving'])
-          .gte('created_at', today.toISOString())
-          .order('priority', { ascending: false, nullsFirst: true })
-          .order('created_at', { ascending: true })
-          .limit(200);
-
-        if (data) setTickets(data as Ticket[]);
-      } catch {
-        // Fall back to local
-        const local = await window.qf.db.getTickets(
-          session.office_id,
-          ['waiting', 'called', 'serving']
-        );
-        setTickets(local.map(parseLocalTicket));
-      }
-    } else {
-      const local = await window.qf.db.getTickets(
-        session.office_id,
-        ['waiting', 'called', 'serving']
-      );
-      setTickets(local.map(parseLocalTicket));
-    }
-  }, [isOnline, session.office_id]);
+    const officeIds = session.office_ids?.length ? session.office_ids : [session.office_id];
+    console.log('[Station] Fetching tickets for offices:', officeIds);
+    const local = await window.qf.db.getTickets(
+      officeIds,
+      ['waiting', 'called', 'serving']
+    );
+    console.log('[Station] Got', local.length, 'tickets from SQLite', local.map((t: any) => `${t.ticket_number}(${t.status})`));
+    setTickets(local.map(parseLocalTicket));
+  }, [session.office_id, session.office_ids]);
 
   // ── Load names for departments, services, desks ─────────────────
 
+  // Debug: log session and DB state on mount
   useEffect(() => {
-    if (!isOnline) return;
-    (async () => {
-      const supabase = await getSupabase();
-      const [depts, svcs, desks] = await Promise.all([
-        supabase.from('departments').select('id, name').in('office_id', session.office_ids),
-        supabase.from('services').select('id, name'),
-        supabase.from('desks').select('id, name').in('office_id', session.office_ids),
-      ]);
+    console.log('[Station] Session:', JSON.stringify({
+      office_id: session.office_id,
+      office_ids: session.office_ids,
+      desk_id: session.desk_id,
+      staff_id: session.staff_id,
+    }));
+    // Check what's actually in SQLite
+    const checkDB = async () => {
+      const stats = await window.qf.debug?.dbStats?.();
+      console.log('[Station] SQLite DB Stats:', JSON.stringify(stats, null, 2));
+    };
+    checkDB();
+    // Re-check every 10s
+    const iv = setInterval(checkDB, 10000);
+    return () => clearInterval(iv);
+  }, [session]);
 
-      setNames({
-        departments: Object.fromEntries((depts.data ?? []).map((d: any) => [d.id, d.name])),
-        services: Object.fromEntries((svcs.data ?? []).map((s: any) => [s.id, s.name])),
-        desks: Object.fromEntries((desks.data ?? []).map((d: any) => [d.id, d.name])),
-      });
+  // Load names from SQLite (sync engine keeps them fresh)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [depts, svcs, desks] = await Promise.all([
+          window.qf.db.query?.('departments', session.office_ids) ?? [],
+          window.qf.db.query?.('services', session.office_ids) ?? [],
+          window.qf.db.query?.('desks', session.office_ids) ?? [],
+        ]);
+        setNames({
+          departments: Object.fromEntries((depts ?? []).map((d: any) => [d.id, d.name])),
+          services: Object.fromEntries((svcs ?? []).map((s: any) => [s.id, s.name])),
+          desks: Object.fromEntries((desks ?? []).map((d: any) => [d.id, d.name])),
+        });
+      } catch {
+        // Names will be empty until sync pulls data
+      }
     })();
-  }, [isOnline, session.office_ids]);
+  }, [session.office_ids]);
 
   // ── Polling ─────────────────────────────────────────────────────
 
@@ -135,57 +133,19 @@ export function Station({ session, isOnline }: Props) {
 
   // ── Actions ─────────────────────────────────────────────────────
 
+  // ALWAYS write to SQLite first — sync engine pushes to cloud
   const callNext = async () => {
-    if (isOnline) {
-      try {
-        const supabase = await getSupabase();
-        const { data } = await supabase.rpc('call_next_ticket', {
-          p_desk_id: session.desk_id,
-          p_staff_id: session.staff_id,
-        });
-        if (!data) {
-          // Fallback: any waiting ticket in office
-          const { data: fallback } = await supabase
-            .from('tickets')
-            .select('id')
-            .eq('office_id', session.office_id)
-            .eq('status', 'waiting')
-            .is('parked_at', null)
-            .order('priority', { ascending: false, nullsFirst: true })
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .single();
-
-          if (fallback) {
-            await supabase.from('tickets').update({
-              status: 'called',
-              desk_id: session.desk_id,
-              called_by_staff_id: session.staff_id,
-              called_at: new Date().toISOString(),
-            }).eq('id', fallback.id);
-          }
-        }
-      } catch {
-        await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
-      }
-    } else {
-      await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
-    }
+    await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
     fetchTickets();
+    // Trigger immediate sync if online
+    window.qf.sync?.force?.();
   };
 
   const updateTicketStatus = async (ticketId: string, updates: Record<string, any>) => {
-    if (isOnline) {
-      try {
-        const supabase = await getSupabase();
-        await supabase.from('tickets').update(updates).eq('id', ticketId);
-      } catch {
-        await window.qf.db.updateTicket(ticketId, updates);
-      }
-    } else {
-      await window.qf.db.updateTicket(ticketId, updates);
-    }
+    await window.qf.db.updateTicket(ticketId, updates);
     fetchTickets();
+    // Trigger immediate sync if online
+    window.qf.sync?.force?.();
   };
 
   const startServing = (id: string) =>

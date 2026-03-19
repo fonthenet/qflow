@@ -135,6 +135,10 @@ export function initDB() {
     CREATE INDEX IF NOT EXISTS idx_sync_queue_pending ON sync_queue(synced_at) WHERE synced_at IS NULL;
   `);
 
+  // ── Safe schema migrations (idempotent) ──
+  try { db.exec(`ALTER TABLE offices ADD COLUMN timezone TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT`); } catch { /* already exists */ }
+
   return db;
 }
 
@@ -143,11 +147,28 @@ export function getDB(): Database.Database {
   return db;
 }
 
-// Generate offline ticket number: L-{DEPT_CODE}-{COUNTER}
-export function generateOfflineTicketNumber(officeId: string, deptCode: string): string {
-  const today = new Date().toISOString().split('T')[0];
+// ── Timezone-aware local date ──────────────────────────────────────
+// Returns YYYY-MM-DD in the office's configured timezone (falls back to system local)
+export function getLocalDate(officeId?: string, dbInstance?: Database.Database): string {
+  const d = dbInstance ?? db;
+  if (officeId) {
+    const office = d.prepare('SELECT timezone FROM offices WHERE id = ?').get(officeId) as any;
+    if (office?.timezone) {
+      return new Date().toLocaleDateString('en-CA', { timeZone: office.timezone }); // YYYY-MM-DD
+    }
+  }
+  // Fallback: system local date (NOT UTC)
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
 
-  const row = db.prepare(`
+// Generate offline ticket number: L-{DEPT_CODE}-{COUNTER}
+// Counter resets daily in the office's local timezone
+export function generateOfflineTicketNumber(officeId: string, deptCode: string, dbInstance?: Database.Database): string {
+  const d = dbInstance ?? db;
+  const today = getLocalDate(officeId, d);
+
+  const row = d.prepare(`
     INSERT INTO ticket_counter (office_id, dept_code, counter, date)
     VALUES (?, ?, 1, ?)
     ON CONFLICT (office_id, dept_code, date)

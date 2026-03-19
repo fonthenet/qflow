@@ -5,6 +5,42 @@ import { randomUUID } from 'crypto';
 
 let isCloudReachable = false;
 
+// ── SSE: push instant updates to all connected displays/kiosks ───
+const sseClients: Set<http.ServerResponse> = new Set();
+
+export interface SSEEvent {
+  type: 'ticket_called' | 'ticket_created' | 'ticket_served' | 'ticket_cancelled' | 'data_refreshed';
+  ticket_number?: string;
+  desk_name?: string;
+  timestamp: string;
+}
+
+/** Call this whenever a ticket changes — every connected display refreshes instantly */
+export function notifyDisplays(event?: SSEEvent) {
+  const dead: http.ServerResponse[] = [];
+  for (const client of sseClients) {
+    try {
+      if (event) {
+        client.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+      client.write('data: update\n\n'); // always send generic for backward compat
+    } catch { dead.push(client); }
+  }
+  for (const c of dead) sseClients.delete(c);
+}
+
+function handleSSE(_req: http.IncomingMessage, res: http.ServerResponse) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.write('data: connected\n\n');
+  sseClients.add(res);
+  _req.on('close', () => sseClients.delete(res));
+}
+
 // ── Device tracking ───────────────────────────────────────────────
 interface DeviceInfo { id: string; type: string; name: string; lastPing: number; }
 const devices: Map<string, DeviceInfo> = new Map();
@@ -97,6 +133,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleTrackTicket(url, res);
       } else if (path === '/api/display-data' && req.method === 'GET') {
         handleDisplayData(url, res);
+      } else if (path === '/api/events' && req.method === 'GET') {
+        handleSSE(req, res);
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
@@ -226,6 +264,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         }),
         now
       );
+
+      notifyDisplays({ type: 'ticket_created', ticket_number: ticketNumber, timestamp: now });
 
       // Count position
       const position = db.prepare(`
@@ -593,60 +633,33 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     return;
   }
 
-  // When online, fetch live data from Supabase for real-time accuracy
-  if (isCloudReachable) {
-    try {
-      const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
-
-      const [ticketsRes, servedRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${office.id}&status=in.(called,serving,waiting)&created_at=gte.${todayISO}&order=called_at.desc`, { headers, signal: AbortSignal.timeout(5000) }),
-        fetch(`${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${office.id}&status=eq.served&created_at=gte.${todayISO}&select=id`, { headers, signal: AbortSignal.timeout(5000) }),
-      ]);
-
-      if (ticketsRes.ok && servedRes.ok) {
-        const tickets = await ticketsRes.json();
-        const served = await servedRes.json();
-
-        // Get desk names from local cache
-        const nowServing = tickets
-          .filter((t: any) => t.status === 'called' || t.status === 'serving')
-          .map((t: any) => {
-            const desk = t.desk_id ? db.prepare("SELECT name FROM desks WHERE id = ?").get(t.desk_id) as any : null;
-            return { id: t.id, ticket_number: t.ticket_number, status: t.status, desk_id: t.desk_id, desk_name: desk?.name ?? null, department_id: t.department_id, called_at: t.called_at };
-          });
-
-        const waitingCount = tickets.filter((t: any) => t.status === 'waiting').length;
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          office_name: office.name,
-          now_serving: nowServing,
-          waiting_count: waitingCount,
-          served_count: served.length,
-        }));
-        return;
-      }
-    } catch {
-      // Fall through to SQLite
-    }
-  }
-
-  // Offline fallback: use local SQLite
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayISO = today.toISOString();
+  // ALWAYS read from SQLite — sync engine keeps it up to date
+  // Active tickets (called/serving/waiting) never filtered by date — they must always appear
+  // Historical (served) filtered to today only
 
   const nowServing = db.prepare(`
-    SELECT t.ticket_number, t.status, d.name as desk_name
-    FROM tickets t LEFT JOIN desks d ON d.id = t.desk_id
-    WHERE t.office_id = ? AND t.status IN ('called', 'serving') AND t.created_at >= ?
+    SELECT t.id, t.ticket_number, t.status, t.desk_id, t.department_id, t.called_at,
+           d.name as desk_name, dep.name as department_name
+    FROM tickets t
+    LEFT JOIN desks d ON d.id = t.desk_id
+    LEFT JOIN departments dep ON dep.id = t.department_id
+    WHERE t.office_id = ? AND t.status IN ('called', 'serving')
     ORDER BY t.called_at DESC
-  `).all(office.id, todayISO) as any[];
+  `).all(office.id) as any[];
 
-  const waitingCount = db.prepare(
-    "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting' AND created_at >= ?"
-  ).get(office.id, todayISO) as any;
+  const waitingTickets = db.prepare(`
+    SELECT t.id, t.ticket_number, t.status, t.priority, t.created_at, t.service_id,
+           t.department_id, t.customer_data, t.appointment_id,
+           dep.name as department_name, s.name as service_name
+    FROM tickets t
+    LEFT JOIN departments dep ON dep.id = t.department_id
+    LEFT JOIN services s ON s.id = t.service_id
+    WHERE t.office_id = ? AND t.status = 'waiting' AND t.parked_at IS NULL
+    ORDER BY t.priority DESC, t.created_at ASC
+  `).all(office.id) as any[];
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayISO = today.toISOString();
 
   const servedCount = db.prepare(
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'served' AND created_at >= ?"
@@ -655,8 +668,12 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     office_name: office.name,
+    cloud_connected: isCloudReachable,
     now_serving: nowServing,
-    waiting_count: waitingCount?.c ?? 0,
+    waiting: waitingTickets,
+    waiting_count: waitingTickets.length,
+    called_count: nowServing.filter((t: any) => t.status === 'called').length,
+    serving_count: nowServing.filter((t: any) => t.status === 'serving').length,
     served_count: servedCount?.c ?? 0,
   }));
 }
@@ -776,6 +793,10 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
     }
 
     load();
+    // Live updates via SSE
+    var es = new EventSource(API + '/api/events');
+    es.onmessage = function(e) { if (e.data === 'update') load(); };
+    es.onerror = function() { es.close(); setTimeout(function(){ es = new EventSource(API + '/api/events'); es.onmessage = function(e){ if(e.data==='update') load(); }; }, 3000); };
     setInterval(load, 5000);
   </script>
 </body>
@@ -944,8 +965,6 @@ function serveDisplayPage(res: http.ServerResponse) {
 
   <script>
     var API = '${apiBase}';
-    var SUPABASE_URL = '${SUPABASE_URL}';
-    var SUPABASE_KEY = '${SUPABASE_KEY}';
     var lastServingHash = '';
     var lastQueueHash = '';
     var activeDept = 'all';
@@ -1116,22 +1135,23 @@ function serveDisplayPage(res: http.ServerResponse) {
     }
 
     async function fetchData() {
+      // ALWAYS read from local SQLite via the kiosk-server API.
+      // The station's sync engine keeps SQLite in sync with the cloud.
+      // Reading Supabase directly from the display caused stale-data bugs:
+      // the station updates SQLite instantly on call/serve, but those
+      // changes only reach Supabase after sync — so the display would
+      // show the old cloud state instead of the real local state.
       try {
-        // Try Supabase directly for real-time accuracy
-        var headers = { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY };
-        var today = new Date(); today.setHours(0,0,0,0);
-
+        // Fetch office info (includes logo + org name)
         var officeRes = await fetch(API + '/api/kiosk-info');
         var officeData = await officeRes.json();
         if (officeData.office) {
-          // Show org name as primary, office/branch as secondary
           var orgName = officeData.org_name || officeData.office.name;
           var branchName = officeData.org_name ? officeData.office.name : '';
           updateText('office-name', orgName);
           updateText('branch-name', branchName);
           (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
 
-          // Set logo if available from org settings
           if (officeData.logo_url) {
             var logoEl = document.getElementById('logo');
             if (logoEl) {
@@ -1142,52 +1162,38 @@ function serveDisplayPage(res: http.ServerResponse) {
           }
         }
 
-        var ticketsRes = await fetch(SUPABASE_URL + '/rest/v1/tickets?office_id=eq.' + officeData.office.id + '&created_at=gte.' + today.toISOString() + '&order=priority.desc.nullsfirst,created_at.asc&limit=300', { headers: headers, signal: AbortSignal.timeout(5000) });
+        // Fetch live queue data from local SQLite (always instant, always fresh)
+        var res = await fetch(API + '/api/display-data');
+        var d = await res.json();
+        if (d.error) throw new Error(d.error);
 
-        if (!ticketsRes.ok) throw new Error('API error');
-        var tickets = await ticketsRes.json();
-        allTickets = tickets;
+        setConnStatus(d.cloud_connected);
+
+        updateText('s-waiting', d.waiting_count);
+        updateText('s-called', d.called_count);
+        updateText('s-serving', d.serving_count);
+        updateText('s-served', d.served_count);
 
         // Parse customer_data
-        tickets.forEach(function(t) {
-          if (typeof t.customer_data === 'string') try { t.customer_data = JSON.parse(t.customer_data); } catch(e) { t.customer_data = {}; }
+        (d.waiting || []).forEach(function(t) {
+          if (typeof t.customer_data === 'string') { try { t.customer_data = JSON.parse(t.customer_data); } catch(ex) { t.customer_data = {}; } }
         });
 
-        // Get desk names
-        var desksRes = await fetch(SUPABASE_URL + '/rest/v1/desks?office_id=eq.' + officeData.office.id + '&select=id,name', { headers: headers, signal: AbortSignal.timeout(5000) });
-        if (desksRes.ok) {
-          var deskList = await desksRes.json();
-          deskList.forEach(function(d) { desks[d.id] = d.name; });
-        }
+        // Cache desk + department names from the response
+        (d.now_serving || []).forEach(function(t) {
+          if (t.desk_id && t.desk_name) desks[t.desk_id] = t.desk_name;
+          if (t.department_id && t.department_name) departments[t.department_id] = t.department_name;
+        });
+        (d.waiting || []).forEach(function(t) {
+          if (t.department_id && t.department_name) departments[t.department_id] = t.department_name;
+        });
 
-        var waiting = tickets.filter(function(t) { return t.status === 'waiting'; });
-        var called = tickets.filter(function(t) { return t.status === 'called'; });
-        var serving = tickets.filter(function(t) { return t.status === 'serving'; });
-        var served = tickets.filter(function(t) { return t.status === 'served'; });
-
-        updateText('s-waiting', waiting.length);
-        updateText('s-called', called.length);
-        updateText('s-serving', serving.length);
-        updateText('s-served', served.length);
-
-        lastActive = [...called, ...serving];
+        allTickets = [...(d.now_serving || []), ...(d.waiting || [])];
+        lastActive = d.now_serving || [];
         renderServing(lastActive);
-        renderQueue(waiting);
-        setConnStatus(true);
+        renderQueue(d.waiting || []);
       } catch(e) {
-        // Fallback to local API
-        setConnStatus(false);
-        try {
-          var res = await fetch(API + '/api/display-data');
-          var d = await res.json();
-          if (!d.error) {
-            updateText('office-name', d.office_name);
-            updateText('s-waiting', d.waiting_count);
-            updateText('s-served', d.served_count);
-            lastActive = d.now_serving || [];
-            renderServing(lastActive);
-          }
-        } catch(e2) {}
+        console.error('Display fetch error:', e);
       }
     }
 
@@ -1228,9 +1234,45 @@ function serveDisplayPage(res: http.ServerResponse) {
     setInterval(tick, 1000);
     tick();
 
-    // Data refresh every 2 seconds
+    // ── Live updates via SSE — instant push from station ──
+    var evtSource = null;
+    function connectSSE() {
+      if (evtSource) { try { evtSource.close(); } catch(e){} }
+      evtSource = new EventSource(API + '/api/events');
+      evtSource.onmessage = function(e) {
+        if (e.data === 'update' || e.data === 'connected') {
+          fetchData();
+          return;
+        }
+        try {
+          var evt = JSON.parse(e.data);
+          if (evt.type === 'ticket_called' && evt.ticket_number) {
+            playChime();
+            // Flash the called ticket in NOW SERVING after data refresh
+            fetchData().then(function() {
+              var rows = document.querySelectorAll('.serving-row');
+              rows.forEach(function(row) {
+                if (row.querySelector('.ticket-num') && row.querySelector('.ticket-num').textContent.trim() === evt.ticket_number) {
+                  row.style.animation = 'none'; row.offsetHeight; row.style.animation = 'flashNew 1.5s ease-out';
+                }
+              });
+            });
+          } else {
+            fetchData();
+          }
+        } catch(ex) { fetchData(); }
+      };
+      evtSource.onerror = function() {
+        // Reconnect after 3s on disconnect
+        try { evtSource.close(); } catch(e){}
+        setTimeout(connectSSE, 3000);
+      };
+    }
+    connectSSE();
+
+    // Fallback poll every 5s in case SSE drops silently
     fetchData();
-    setInterval(fetchData, 2000);
+    setInterval(fetchData, 5000);
   <\/script>
 </body>
 </html>`;

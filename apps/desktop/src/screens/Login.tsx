@@ -78,6 +78,7 @@ export function Login({ onLogin }: Props) {
         desk_name: desk?.name ?? undefined,
         office_ids: officeIds,
         access_token: auth.session?.access_token,
+        refresh_token: auth.session?.refresh_token,
       };
 
       onLogin(session);

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:update-ticket', ticketId, updates),
     callNext: (officeId: string, deskId: string, staffId: string) =>
       ipcRenderer.invoke('db:call-next', officeId, deskId, staffId),
+    query: (table: string, officeIds: string[]) =>
+      ipcRenderer.invoke('db:query', table, officeIds),
   },
 
   // Sync
@@ -45,6 +47,20 @@ contextBridge.exposeInMainWorld('qf', {
 
   // Connection
   isOnline: () => ipcRenderer.invoke('connection:status'),
+
+  // Auth events
+  auth: {
+    onSessionExpired: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('auth:session-expired', handler);
+      return () => ipcRenderer.removeListener('auth:session-expired', handler);
+    },
+  },
+
+  // Debug
+  debug: {
+    dbStats: () => ipcRenderer.invoke('debug:db-stats'),
+  },
 
   // Kiosk
   kiosk: {

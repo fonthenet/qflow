@@ -40,31 +40,12 @@ export interface StaffSession {
   desk_name?: string;
   office_ids: string[];
   access_token?: string;
+  refresh_token?: string;
 }
 
-// Extend window with our IPC bridge
+// Extend window with our IPC bridge — keep in sync with preload.ts
 declare global {
   interface Window {
-    qf: {
-      getConfig: () => Promise<{ supabaseUrl: string; supabaseAnonKey: string }>;
-      db: {
-        getTickets: (officeId: string, statuses: string[]) => Promise<any[]>;
-        createTicket: (ticket: any) => Promise<any>;
-        updateTicket: (ticketId: string, updates: any) => Promise<any>;
-        callNext: (officeId: string, deskId: string, staffId: string) => Promise<any>;
-      };
-      sync: {
-        getStatus: () => Promise<SyncStatus>;
-        forceSync: () => Promise<void>;
-        onStatusChange: (cb: (status: string) => void) => () => void;
-        onProgress: (cb: (count: number) => void) => () => void;
-      };
-      session: {
-        save: (session: any) => Promise<void>;
-        load: () => Promise<StaffSession | null>;
-        clear: () => Promise<void>;
-      };
-      isOnline: () => Promise<boolean>;
-    };
+    qf: any; // typed loosely so each screen can use its own sub-APIs
   }
 }
