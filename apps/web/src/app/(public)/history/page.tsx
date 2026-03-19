@@ -98,7 +98,7 @@ export default async function HistoryPage({ searchParams }: HistoryPageProps) {
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-4">
           <h1 className="text-xl font-bold text-slate-900">
-            Queue<span className="text-blue-600">Flow</span>
+            Q<span className="text-blue-600">flo</span>
           </h1>
           <p className="text-sm text-slate-500">Visit History Lookup</p>
         </div>
