@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.queueflow.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "QueueFlow uses the camera to scan QR codes at service locations."
+        "NSCameraUsageDescription": "QueueFlow uses the camera to scan QR codes at service locations.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
         "applinks:qflow-sigma.vercel.app"
@@ -34,7 +35,9 @@
         "NOTIFICATIONS",
         "POST_NOTIFICATIONS",
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "intentFilters": [
         {
@@ -47,7 +50,10 @@
               "pathPrefix": "/q/"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -81,7 +87,9 @@
               "NSPrivacyAccessedAPITypes": [
                 {
                   "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-                  "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+                  "NSPrivacyAccessedAPITypeReasons": [
+                    "CA92.1"
+                  ]
                 }
               ]
             }
@@ -91,6 +99,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a1ab8ab-1344-43ec-bdd5-2f4b991f7b1f"
+      }
+    },
+    "owner": "f.onthenet"
   }
 }
