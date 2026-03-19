@@ -697,9 +697,36 @@ export class SyncEngine {
         ).all(twoMinAgo) as any[]).map((r: any) => r.record_id)
       );
 
+      // Status progression rank — higher = more advanced in the lifecycle
+      // A cloud pull should NEVER downgrade a local ticket to an earlier status
+      const statusRank: Record<string, number> = {
+        waiting: 0, called: 1, serving: 2, served: 3, no_show: 3, cancelled: 3, transferred: 3,
+      };
+
+      const checkPending = this.db.prepare(
+        "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND record_id = ? AND table_name = 'tickets'"
+      );
+      const getLocalStatus = this.db.prepare(
+        "SELECT status FROM tickets WHERE id = ?"
+      );
+
       const upsertBatch = this.db.transaction((rows: any[]) => {
         for (const t of rows) {
-          if (locallyModifiedIds.has(t.id)) continue; // our local change is pending — don't overwrite
+          // Check at upsert time (not start of pull) to avoid race with call-next
+          const pending = checkPending.get(t.id) as any;
+          if (pending?.c > 0) continue; // has pending sync — don't overwrite local changes
+
+          // Never downgrade status (e.g., don't overwrite local "called" with cloud "waiting")
+          const local = getLocalStatus.get(t.id) as any;
+          if (local) {
+            const localRank = statusRank[local.status] ?? 0;
+            const cloudRank = statusRank[t.status] ?? 0;
+            if (cloudRank < localRank) {
+              console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank})`);
+              continue;
+            }
+          }
+
           upsert.run(
             t.id, t.ticket_number, t.office_id, t.department_id, t.service_id,
             t.desk_id, t.status, t.priority ?? 0,
