@@ -223,6 +223,7 @@ function setupIPC() {
   }));
 
   ipcMain.handle('sync:force', async () => {
+    syncEngine?.suppressAuthErrors(); // prevent stale-session race from kicking user out
     await syncEngine?.syncNow();
     await syncEngine?.pullLatest();
     notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });

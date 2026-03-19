@@ -14,6 +14,7 @@ export class SyncEngine {
   private onAuthError: AuthErrorCallback;
   private onDataPulled: DataPulledCallback;
   private lastPulledAt: string | null = null;
+  private authErrorSuppressedUntil = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -93,6 +94,11 @@ export class SyncEngine {
     }
 
     this.updatePendingCount();
+  }
+
+  /** Suppress auth-error events for a period (call after login to prevent stale-session race) */
+  public suppressAuthErrors(durationMs = 15000) {
+    this.authErrorSuppressedUntil = Date.now() + durationMs;
   }
 
   public updatePendingCount() {
@@ -395,9 +401,14 @@ export class SyncEngine {
           this.lastPulledAt = new Date().toISOString();
           console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)${useIncremental ? ' [incremental]' : ' [full]'}`);
         } else {
+          // Don't fire auth error if suppressed (e.g., user just logged in — old session's failure arriving late)
+          if (Date.now() < this.authErrorSuppressedUntil) {
+            console.log('[sync:pullLatest] Auth error suppressed (recent login), skipping');
+            return;
+          }
           console.error(`[sync:pullLatest] Could not fetch active tickets for office ${officeId} — token expired and refresh failed. Prompting re-login.`);
           this.onAuthError();
-          return; // stop pulling — user must re-login
+          return;
         }
 
         // 2. Recent historical tickets — date-filtered (last 48h, avoids clock-drift issues)
