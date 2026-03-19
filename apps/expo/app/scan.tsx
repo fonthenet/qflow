@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useAppStore } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
-const BASE_URL = 'https://qflow-sigma.vercel.app';
+import { API_BASE_URL as BASE_URL } from '@/lib/config';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FRAME_SIZE = 260;

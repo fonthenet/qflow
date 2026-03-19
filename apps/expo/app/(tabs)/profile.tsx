@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Alert,
+  Linking,
   ScrollView,
   StyleSheet,
   Switch,
@@ -9,13 +10,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAppStore, type ThemeMode } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
 import { requestPermissions } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
 import { useTheme, type ThemeColors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { SUPPORT_EMAIL, PRIVACY_URL, TERMS_URL } from '@/lib/config';
 
 const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'light', label: 'Light', icon: 'sunny-outline' },
@@ -55,6 +59,38 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!user?.email) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: 'queueflow://reset-password',
+    });
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      Alert.alert('Check Your Email', `A password reset link has been sent to ${user.email}.`);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account',
+          style: 'destructive',
+          onPress: () => {
+            Linking.openURL(
+              `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Account Deletion Request')}&body=${encodeURIComponent(`Please delete my account.\nEmail: ${user?.email ?? 'N/A'}`)}`
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
   const ds = dynamicStyles(colors, isDark);
 
   return (
@@ -187,6 +223,27 @@ export default function ProfileScreen() {
             </Text>
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.row} onPress={handleChangePassword}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="key-outline" size={22} color={colors.text} />
+              <View>
+                <Text style={ds.rowTitle}>Change Password</Text>
+                <Text style={ds.rowSubtitle}>Send a password reset email</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="trash-outline" size={22} color={colors.error} />
+              <View>
+                <Text style={[ds.rowTitle, { color: colors.error }]}>Delete Account</Text>
+                <Text style={ds.rowSubtitle}>Request permanent account deletion</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.row}
             onPress={() => {
@@ -240,20 +297,55 @@ export default function ProfileScreen() {
             <Ionicons name="information-circle-outline" size={22} color={colors.text} />
             <View>
               <Text style={ds.rowTitle}>Version</Text>
-              <Text style={ds.rowSubtitle}>1.0.0</Text>
+              <Text style={ds.rowSubtitle}>{appVersion}</Text>
             </View>
           </View>
         </View>
+      </View>
 
-        <View style={styles.row}>
+      {/* Support & Legal */}
+      <View style={ds.section}>
+        <Text style={ds.sectionTitle}>Support & Legal</Text>
+
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
+        >
           <View style={styles.rowLeft}>
-            <Ionicons name="shield-checkmark-outline" size={22} color={colors.text} />
+            <Ionicons name="mail-outline" size={22} color={colors.text} />
             <View>
-              <Text style={ds.rowTitle}>Privacy</Text>
-              <Text style={ds.rowSubtitle}>Your data stays on your device</Text>
+              <Text style={ds.rowTitle}>Contact Support</Text>
+              <Text style={ds.rowSubtitle}>{SUPPORT_EMAIL}</Text>
             </View>
           </View>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => Linking.openURL(PRIVACY_URL)}
+        >
+          <View style={styles.rowLeft}>
+            <Ionicons name="document-text-outline" size={22} color={colors.text} />
+            <View>
+              <Text style={ds.rowTitle}>Privacy Policy</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => Linking.openURL(TERMS_URL)}
+        >
+          <View style={styles.rowLeft}>
+            <Ionicons name="document-outline" size={22} color={colors.text} />
+            <View>
+              <Text style={ds.rowTitle}>Terms of Service</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );

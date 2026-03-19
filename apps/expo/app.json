@@ -72,6 +72,21 @@
           "defaultChannel": "queue-updates",
           "sounds": []
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "privacyManifests": {
+              "NSPrivacyAccessedAPITypes": [
+                {
+                  "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+                  "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+                }
+              ]
+            }
+          }
+        }
       ]
     ],
     "experiments": {

@@ -1,4 +1,4 @@
-const BASE_URL = 'https://qflow-sigma.vercel.app';
+import { API_BASE_URL as BASE_URL } from './config';
 
 export interface TicketResponse {
   id: string;

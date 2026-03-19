@@ -247,7 +247,7 @@ export async function createStaff(data: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://qflow-sigma.vercel.app';
+  const { API_BASE_URL: BASE_URL } = require('./config');
   const res = await fetch(`${BASE_URL}/api/create-staff`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

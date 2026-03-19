@@ -35,8 +35,9 @@ export async function updateSession(request: NextRequest) {
   const publicPrefixes = [
     '/q/', '/display/', '/kiosk/', '/join/', '/book/',
     '/login', '/register', '/history', '/api/',
-    // Marketing pages
+    // Marketing & legal pages
     '/solutions', '/pricing', '/how-it-works', '/contact', '/docs',
+    '/privacy', '/terms',
   ];
 
   const isPublicRoute =

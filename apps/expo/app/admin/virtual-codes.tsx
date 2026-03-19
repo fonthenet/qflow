@@ -58,7 +58,8 @@ interface ServiceOption {
   name: string;
 }
 
-const JOIN_BASE_URL = 'https://qflow-sigma.vercel.app/join';
+import { API_BASE_URL } from '@/lib/config';
+const JOIN_BASE_URL = `${API_BASE_URL}/join`;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@ import { useAppStore } from '@/lib/store';
 import { fetchTicket, stopTracking } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
-const WEB_BASE = 'https://qflow-sigma.vercel.app';
+import { API_BASE_URL as WEB_BASE } from '@/lib/config';
 const CALL_WAIT_SECONDS = 60;
 
 // ===========================================================================
