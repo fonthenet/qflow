@@ -20,9 +20,6 @@ on:
 jobs:
   build-and-submit:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/expo
 
     steps:
       - name: Checkout
@@ -32,10 +29,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Setup EAS
         uses: expo/expo-github-action@v8
@@ -44,7 +43,9 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Build iOS
+        working-directory: apps/expo
         run: eas build --platform ios --profile ${{ github.event.inputs.profile || 'production' }} --non-interactive --wait
 
       - name: Submit to TestFlight
+        working-directory: apps/expo
         run: eas submit --platform ios --latest --non-interactive
