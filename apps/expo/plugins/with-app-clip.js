@@ -215,8 +215,43 @@ function withAppClip(config) {
       proj.addSourceFile(`QueueFlowShared/${file}`, { target: clipTarget.uuid }, sharedGroup.uuid);
     }
 
-    // Add assets to clip target
-    proj.addResourceFile('QueueFlowClip/Assets.xcassets', { target: clipTarget.uuid }, clipGroup.uuid);
+    // Add assets to clip target — manual file ref since addResourceFile fails for custom targets
+    const assetUuid = proj.generateUuid();
+    const fileRefSection = proj.pbxFileReferenceSection();
+    fileRefSection[assetUuid] = {
+      isa: 'PBXFileReference',
+      lastKnownFileType: 'folder.assetcatalog',
+      path: '"QueueFlowClip/Assets.xcassets"',
+      sourceTree: '"<group>"',
+    };
+    fileRefSection[assetUuid + '_comment'] = 'Assets.xcassets';
+
+    // Add to resources build phase for clip target
+    const buildPhaseUuid = proj.generateUuid();
+    const buildFileUuid = proj.generateUuid();
+    const buildFileSection = proj.pbxBuildFileSection();
+    buildFileSection[buildFileUuid] = {
+      isa: 'PBXBuildFile',
+      fileRef: assetUuid,
+      fileRef_comment: 'Assets.xcassets',
+    };
+    buildFileSection[buildFileUuid + '_comment'] = 'Assets.xcassets in Resources';
+
+    // Find or create resources build phase for clip target
+    const nativeTargets = proj.pbxNativeTargetSection();
+    const clipNative = nativeTargets[clipTarget.uuid];
+    if (clipNative) {
+      const resourcesPhaseUuid = proj.generateUuid();
+      const resourcesPhase = proj.pbxResourcesBuildPhaseSection();
+      resourcesPhase[resourcesPhaseUuid] = {
+        isa: 'PBXResourcesBuildPhase',
+        buildActionMask: 2147483647,
+        files: [{ value: buildFileUuid, comment: 'Assets.xcassets in Resources' }],
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      resourcesPhase[resourcesPhaseUuid + '_comment'] = 'Resources';
+      clipNative.buildPhases.push({ value: resourcesPhaseUuid, comment: 'Resources' });
+    }
 
     // ── Add Live Activity Extension Target ──
     const liveTarget = addNativeTarget(
