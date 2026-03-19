@@ -689,8 +689,8 @@ export default function ManageScreen() {
                 <Switch
                   value={item.is_active}
                   onValueChange={() => toggleStaffActive(item.id, item.is_active)}
-                  trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                  thumbColor={item.is_active ? colors.primary : '#94a3b8'}
+                  trackColor={{ false: '#e2e8f0', true: colors.primary }}
+                  thumbColor="#fff"
                 />
               </TouchableOpacity>
             )}
@@ -730,8 +730,8 @@ export default function ManageScreen() {
                     <Switch
                       value={item.is_active}
                       onValueChange={() => toggleDeskActive(item.id, item.is_active)}
-                      trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                      thumbColor={item.is_active ? colors.primary : '#94a3b8'}
+                      trackColor={{ false: '#e2e8f0', true: colors.primary }}
+                      thumbColor="#fff"
                     />
                     <TouchableOpacity
                       onPress={() => confirmDeleteDesk(item.id, item.name)}
@@ -841,8 +841,8 @@ export default function ManageScreen() {
                 <Switch
                   value={item.is_active}
                   onValueChange={() => toggleOfficeActive(item.id, item.is_active)}
-                  trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                  thumbColor={item.is_active ? colors.primary : '#94a3b8'}
+                  trackColor={{ false: '#e2e8f0', true: colors.primary }}
+                  thumbColor="#fff"
                 />
               </TouchableOpacity>
             )}
@@ -879,8 +879,8 @@ export default function ManageScreen() {
                   <Switch
                     value={item.is_active}
                     onValueChange={() => togglePriorityActive(item.id, item.is_active)}
-                    trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                    thumbColor={item.is_active ? colors.primary : '#94a3b8'}
+                    trackColor={{ false: '#e2e8f0', true: colors.primary }}
+                    thumbColor="#fff"
                   />
                 </TouchableOpacity>
               );

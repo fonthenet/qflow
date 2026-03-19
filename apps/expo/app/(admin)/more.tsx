@@ -322,8 +322,8 @@ export default function MoreScreen() {
               <Switch
                 value={settings.announcement_sound}
                 onValueChange={(v) => updateSetting('announcement_sound', v)}
-                trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                thumbColor={settings.announcement_sound ? colors.primary : '#94a3b8'}
+                trackColor={{ false: '#e2e8f0', true: colors.primary }}
+                thumbColor="#fff"
               />
             </SettingRow>
 
