@@ -57,6 +57,11 @@ export class SyncEngine {
     this.healthInterval = setInterval(() => this.checkHealth(), 10_000);
     this.checkHealth();
 
+    // ── STARTUP: Force token refresh immediately ──
+    // When the station restarts, the cached token is likely expired.
+    // Proactively refresh so the first sync/call doesn't fail with 401.
+    this.refreshOnStartup();
+
     // Try to sync pending items every 15s
     this.interval = setInterval(() => this.syncNow(), 15_000);
 
@@ -69,6 +74,31 @@ export class SyncEngine {
     this.autoResolveInterval = setInterval(() => {
       if (this.isOnline) this.triggerAutoResolve();
     }, 60_000);
+  }
+
+  private async refreshOnStartup() {
+    try {
+      // Wait a moment for connectivity check to complete
+      await new Promise((r) => setTimeout(r, 2000));
+      if (!this.isOnline) return;
+
+      const session = this.getSessionFromDB();
+      if (!session?.refresh_token) return;
+
+      console.log('[sync:startup] Proactively refreshing access token...');
+      this.cachedAccessToken = null; // force fresh
+      const token = await this.refreshAccessToken();
+      if (token) {
+        console.log('[sync:startup] ✓ Token refreshed — station is ready');
+        // Immediately sync pending items with fresh token
+        this.syncNow();
+        this.pullLatest();
+      } else {
+        console.warn('[sync:startup] Token refresh failed — user may need to re-login');
+      }
+    } catch (err: any) {
+      console.warn('[sync:startup] Startup refresh error:', err?.message);
+    }
   }
 
   stop() {
@@ -417,11 +447,26 @@ export class SyncEngine {
                 continue;
               }
             }
-            // Refresh failed or retry still 401 — mark as auth error, don't waste more attempts
-            const newAttempts = (item.attempts ?? 0) + 1;
-            this.db.prepare(
-              "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
-            ).run(newAttempts, 'AUTH_EXPIRED: token refresh failed — re-login required', new Date(Date.now() + 60000).toISOString(), item.id);
+            // Refresh failed or retry still 401 — auto-discard non-INSERT items (they're stale anyway)
+            // Only INSERT items (new ticket creation) are worth keeping for retry after re-login
+            const authFailPending = this.db.prepare(
+              "SELECT id, operation FROM sync_queue WHERE synced_at IS NULL"
+            ).all() as any[];
+            let authDiscardCount = 0;
+            for (const p of authFailPending) {
+              if (p.operation !== 'INSERT') {
+                this.db.prepare("DELETE FROM sync_queue WHERE id = ?").run(p.id);
+                authDiscardCount++;
+              } else {
+                this.db.prepare(
+                  "UPDATE sync_queue SET last_error = ? WHERE id = ?"
+                ).run('AUTH_EXPIRED: re-login required', p.id);
+              }
+            }
+            if (authDiscardCount > 0) {
+              console.warn(`[sync] Auth expired — auto-discarded ${authDiscardCount} stale UPDATE/CALL items`);
+            }
+            this.updatePendingCount();
 
             // Fire auth error so UI can prompt re-login (but only if not suppressed)
             if (Date.now() > this.authErrorSuppressedUntil) {
@@ -467,13 +512,26 @@ export class SyncEngine {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     this.db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < ?").run(cutoff);
 
-    // Auto-discard UPDATE/CALL items that failed 5+ times — but NEVER discard INSERTs
+    // Auto-discard UPDATE/CALL items that failed 3+ times — but NEVER discard INSERTs
     // A customer's ticket creation must never be silently lost
     const discarded = this.db.prepare(
-      "DELETE FROM sync_queue WHERE synced_at IS NULL AND attempts >= 5 AND operation != 'INSERT'"
+      "DELETE FROM sync_queue WHERE synced_at IS NULL AND attempts >= 3 AND operation != 'INSERT'"
     ).run();
     if (discarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${discarded.changes} stale UPDATE/CALL sync items after 5 failed attempts`);
+      console.warn(`[sync] Auto-discarded ${discarded.changes} stale UPDATE/CALL sync items after 3 failed attempts`);
+      this.updatePendingCount();
+    }
+
+    // Auto-discard sync items for tickets that are no longer active locally
+    // (e.g., ticket was cancelled/resolved — no point pushing a stale "call" action)
+    const orphanDiscarded = this.db.prepare(`
+      DELETE FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation != 'INSERT'
+      AND record_id NOT IN (
+        SELECT id FROM tickets WHERE status IN ('waiting', 'called', 'serving')
+      )
+    `).run();
+    if (orphanDiscarded.changes > 0) {
+      console.warn(`[sync] Auto-discarded ${orphanDiscarded.changes} sync items for resolved/cancelled tickets`);
       this.updatePendingCount();
     }
 
