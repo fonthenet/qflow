@@ -35,7 +35,9 @@ export function Station({ session, isOnline }: Props) {
     departments: {}, services: {}, desks: {},
   });
   const [callCountdown, setCallCountdown] = useState(0);
+  const [servingElapsed, setServingElapsed] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const servingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const CALL_TIMEOUT = 60;
 
   // ── Fetch tickets ────────────────────────────────────────────────
@@ -129,6 +131,23 @@ export function Station({ session, isOnline }: Props) {
       setCallCountdown(0);
       if (countdownRef.current) clearInterval(countdownRef.current);
     }
+
+    // Elapsed timer for serving tickets
+    if (mine?.status === 'serving' && mine.serving_started_at) {
+      const updateElapsed = () => {
+        setServingElapsed(Math.floor((Date.now() - new Date(mine.serving_started_at!).getTime()) / 1000));
+      };
+      updateElapsed();
+      if (servingTimerRef.current) clearInterval(servingTimerRef.current);
+      servingTimerRef.current = setInterval(updateElapsed, 1000);
+    } else {
+      setServingElapsed(0);
+      if (servingTimerRef.current) clearInterval(servingTimerRef.current);
+    }
+
+    return () => {
+      if (servingTimerRef.current) clearInterval(servingTimerRef.current);
+    };
   }, [tickets, session.desk_id]);
 
   // ── Actions ─────────────────────────────────────────────────────
@@ -273,6 +292,25 @@ export function Station({ session, isOnline }: Props) {
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? 'Service'} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? 'Dept'}
+                </div>
+
+                {/* Serving elapsed timer */}
+                <div className="serving-timer" style={{
+                  margin: '1rem auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  fontSize: '2rem',
+                  fontWeight: 700,
+                  fontVariantNumeric: 'tabular-nums',
+                  color: servingElapsed > 1800 ? '#ef4444' : servingElapsed > 900 ? '#f59e0b' : '#22c55e',
+                }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  {Math.floor(servingElapsed / 60).toString().padStart(2, '0')}:{(servingElapsed % 60).toString().padStart(2, '0')}
                 </div>
 
                 <div className="active-actions">

@@ -208,6 +208,7 @@ export function QueueStatus({
   const [stopOutcome, setStopOutcome] = useState<'left_queue' | 'cleared'>('left_queue');
   const [stopError, setStopError] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
+  const [servingElapsed, setServingElapsed] = useState(0);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -342,6 +343,20 @@ export function QueueStatus({
       try { localStorage.removeItem('qf_active_ticket'); } catch {}
     }
   }, [ticket.status]);
+
+  // Serving elapsed timer
+  useEffect(() => {
+    if (ticket.status === 'serving' && ticket.serving_started_at) {
+      const update = () => {
+        setServingElapsed(Math.floor((Date.now() - new Date(ticket.serving_started_at!).getTime()) / 1000));
+      };
+      update();
+      const timer = setInterval(update, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setServingElapsed(0);
+    }
+  }, [ticket.status, ticket.serving_started_at]);
 
   useEffect(() => {
     if (sandboxMode) return;
@@ -707,21 +722,37 @@ export function QueueStatus({
               </div>
 
               <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">You are being served</h2>
+
+              {/* Serving elapsed timer */}
+              <div className="mx-auto mt-4 flex items-center justify-center gap-2 text-3xl font-bold tabular-nums text-sky-300">
+                <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                {Math.floor(servingElapsed / 60).toString().padStart(2, '0')}:{(servingElapsed % 60).toString().padStart(2, '0')}
+              </div>
+
               <p className="mt-3 text-sm leading-6 text-slate-300">
                 Stay with the staff member at {deskName ?? 'your desk'}. You can finish this visit after your service is complete.
               </p>
 
-              <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <div className="mt-7 grid gap-3 sm:grid-cols-3">
                 <WaitingMetric
                   label="Ticket"
                   value={ticket.ticket_number}
-                  detail="Keep this visible in case the team asks for your number again."
+                  detail="Keep this visible if asked."
                   accentClass="bg-sky-400/15 text-sky-100"
+                />
+                <WaitingMetric
+                  label="Time"
+                  value={servingElapsed < 60 ? `${servingElapsed}s` : `${Math.floor(servingElapsed / 60)}m`}
+                  detail="Service duration"
+                  accentClass="bg-amber-400/15 text-amber-100"
                 />
                 <WaitingMetric
                   label="Desk"
                   value={deskName ?? 'Assigned'}
-                  detail="This is the current service point handling your visit."
+                  detail="Your service point."
                   accentClass="bg-emerald-400/15 text-emerald-100"
                 />
               </div>
