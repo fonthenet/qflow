@@ -295,7 +295,7 @@ export class SyncEngine {
   }
 
   // Ensures we have a non-expired access token. Deduplicates concurrent calls.
-  private async ensureFreshToken(): Promise<string> {
+  async ensureFreshToken(): Promise<string> {
     // 1. Check cached token first
     if (this.cachedAccessToken && !this.isTokenExpired(this.cachedAccessToken)) {
       return this.cachedAccessToken;
@@ -526,14 +526,25 @@ export class SyncEngine {
 
       case 'UPDATE':
       case 'CALL': {
+        const patchHeaders = { ...headers, Prefer: 'return=representation' };
         res = await fetch(`${baseUrl}?id=eq.${item.record_id}`, {
           method: 'PATCH',
-          headers,
+          headers: patchHeaders,
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(10000),
         });
-        if (res.ok || res.status === 409) return { status: 0 };
         if (res.status === 401 || res.status === 403) return { status: 401 };
+        if (res.ok) {
+          // Check if Supabase actually updated any rows (RLS or status conflict = empty array)
+          const body = await res.json().catch(() => []);
+          if (Array.isArray(body) && body.length === 0) {
+            console.warn(`[sync:replay] PATCH returned 0 rows for ${item.operation} on ${item.record_id} — row was likely changed/deleted remotely`);
+            // Still mark as synced to avoid infinite retries on a conflict
+            return { status: 0 };
+          }
+          return { status: 0 };
+        }
+        if (res.status === 409) return { status: 0 };
         throw new Error(`UPDATE failed: ${res.status}`);
       }
 

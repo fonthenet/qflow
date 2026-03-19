@@ -201,35 +201,79 @@ function setupIPC() {
     }
   });
 
-  ipcMain.handle('db:call-next', (_e, officeId: string, deskId: string, staffId: string) => {
+  ipcMain.handle('db:call-next', async (_e, officeId: string, deskId: string, staffId: string) => {
     const now = new Date().toISOString();
     const callTs = Date.now();
+
+    // ── CLOUD PRE-CHECK: verify which tickets are truly still waiting in Supabase ──
+    // This prevents calling tickets that were cancelled/resolved remotely by customers
+    let cloudWaitingIds: Set<string> | null = null;
+    if (syncEngine?.isOnline) {
+      try {
+        const token = await syncEngine.ensureFreshToken();
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&status=eq.waiting&select=id`,
+          {
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(3000),
+          }
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          cloudWaitingIds = new Set(rows.map((r: any) => r.id));
+        }
+      } catch {
+        // Cloud check failed — proceed with local data (offline-first)
+      }
+    }
 
     // ATOMIC: single UPDATE...RETURNING prevents two desks calling the same ticket
     // Transaction wraps both the ticket update and sync queue insert (crash-safe)
     let ticket: any = null;
     let syncId = '';
-    db.transaction(() => {
-      ticket = db.prepare(`
-        UPDATE tickets
-        SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
-        WHERE id = (
-          SELECT id FROM tickets
-          WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
-          ORDER BY priority DESC, created_at ASC
-          LIMIT 1
-        )
-        RETURNING *
-      `).get(deskId, staffId, now, officeId) as any;
+    let skippedCount = 0;
 
-      if (ticket) {
-        syncId = `${ticket.id}-call-${callTs}`;
-        db.prepare(`
-          INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-          VALUES (?, 'CALL', 'tickets', ?, ?, ?)
-        `).run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+    db.transaction(() => {
+      // Get candidates ordered by priority, then created_at
+      const candidates = db.prepare(`
+        SELECT id FROM tickets
+        WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
+        ORDER BY priority DESC, created_at ASC
+        LIMIT 10
+      `).all(officeId) as any[];
+
+      for (const candidate of candidates) {
+        // If cloud check succeeded, skip tickets not confirmed waiting in cloud
+        if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id)) {
+          // This ticket was cancelled/resolved remotely — mark it locally too
+          db.prepare("UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ? AND status = 'waiting'")
+            .run(now, candidate.id);
+          skippedCount++;
+          continue;
+        }
+
+        // Call this ticket
+        ticket = db.prepare(`
+          UPDATE tickets
+          SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
+          WHERE id = ? AND status = 'waiting'
+          RETURNING *
+        `).get(deskId, staffId, now, candidate.id) as any;
+
+        if (ticket) {
+          syncId = `${ticket.id}-call-${callTs}`;
+          db.prepare(`
+            INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+            VALUES (?, 'CALL', 'tickets', ?, ?, ?)
+          `).run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+          break;
+        }
       }
     })();
+
+    if (skippedCount > 0) {
+      console.log(`[call-next] Skipped ${skippedCount} ticket(s) cancelled remotely`);
+    }
 
     if (!ticket) return null;
 
