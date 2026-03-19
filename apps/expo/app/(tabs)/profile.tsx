@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -10,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -38,6 +40,18 @@ export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Read actual OS permission status on mount and when app comes back to foreground
+  useEffect(() => {
+    const checkPermissions = async () => {
+      const { status } = await Notifications.getPermissionsAsync();
+      setNotificationsEnabled(status === 'granted');
+    };
+    checkPermissions();
+
+    const sub = Notifications.addNotificationReceivedListener(() => {});
+    return () => sub.remove();
+  }, []);
+
   const handleSave = () => {
     setCustomerInfo(name, phone);
     setSaved(true);
@@ -46,23 +60,78 @@ export default function ProfileScreen() {
 
   const handleToggleNotifications = async (value: boolean) => {
     if (value) {
+      const { status: existing } = await Notifications.getPermissionsAsync();
+
+      if (existing === 'denied') {
+        // Already denied — iOS/Android won't show dialog again, send to Settings
+        Alert.alert(
+          'Enable Notifications',
+          'Notifications are blocked. Open Settings to enable them.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              },
+            },
+          ]
+        );
+        setNotificationsEnabled(false);
+        return;
+      }
+
       const granted = await requestPermissions();
       setNotificationsEnabled(granted);
       if (!granted) {
         Alert.alert(
           'Notifications Disabled',
-          'Enable notifications in your device settings to receive queue updates.'
+          'Enable notifications in your device settings to receive queue alerts.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openSettings();
+                }
+              },
+            },
+          ]
         );
       }
     } else {
-      setNotificationsEnabled(false);
+      // Can't programmatically revoke — direct to settings
+      Alert.alert(
+        'Turn Off Notifications',
+        'To disable notifications, go to your device Settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              } else {
+                Linking.openSettings();
+              }
+            },
+          },
+        ]
+      );
     }
   };
 
   const handleChangePassword = async () => {
     if (!user?.email) return;
     const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-      redirectTo: 'queueflow://reset-password',
+      redirectTo: 'qflo://reset-password',
     });
     if (error) {
       Alert.alert('Error', error.message);
@@ -95,39 +164,109 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={ds.container} contentContainerStyle={styles.content}>
-      {/* Appearance */}
-      <View style={ds.section}>
-        <Text style={ds.sectionTitle}>Appearance</Text>
-        <View style={styles.themeRow}>
-          {THEME_OPTIONS.map((opt) => {
-            const active = themeMode === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[ds.themeOption, active && ds.themeOptionActive]}
-                onPress={() => setThemeMode(opt.value)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={opt.icon}
-                  size={20}
-                  color={active ? colors.primary : colors.textMuted}
-                />
-                <Text style={[ds.themeLabel, active && ds.themeLabelActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
 
-      {/* Personal Info */}
+      {/* ── Staff Section (top) ─────────────────────────────── */}
+      {user && isStaff ? (
+        <View style={ds.section}>
+          <View style={styles.staffHeader}>
+            <View style={[styles.staffAvatar, { backgroundColor: colors.primary + '20' }]}>
+              <Ionicons name="person-circle" size={36} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ds.sectionTitle}>{user.email}</Text>
+              <Text style={ds.rowSubtitle}>
+                {staffRole === 'admin' ? 'Administrator' : staffRole === 'manager' ? 'Manager' : 'Operator'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.proButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              if (staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin') {
+                router.replace('/(admin)');
+              } else {
+                router.replace('/(auth)/role-select');
+              }
+            }}
+          >
+            <Ionicons name="arrow-forward-circle" size={20} color="#fff" />
+            <Text style={styles.proButtonText}>
+              {staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin'
+                ? 'Open Admin Dashboard'
+                : 'Open Desk Panel'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <TouchableOpacity style={styles.row} onPress={handleChangePassword}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="key-outline" size={20} color={colors.text} />
+              <View>
+                <Text style={ds.rowTitle}>Change Password</Text>
+                <Text style={ds.rowSubtitle}>Send a password reset email</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="trash-outline" size={20} color={colors.error} />
+              <View>
+                <Text style={[ds.rowTitle, { color: colors.error }]}>Delete Account</Text>
+                <Text style={ds.rowSubtitle}>Request permanent deletion</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              Alert.alert('Sign Out', 'Sign out of your staff account?', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign Out',
+                  style: 'destructive',
+                  onPress: async () => {
+                    clearSession();
+                    await signOut();
+                  },
+                },
+              ]);
+            }}
+          >
+            <View style={styles.rowLeft}>
+              <Ionicons name="log-out-outline" size={20} color={colors.error} />
+              <View>
+                <Text style={[ds.rowTitle, { color: colors.error }]}>Sign Out</Text>
+                <Text style={ds.rowSubtitle}>Return to customer mode</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[ds.section, styles.staffLoginBanner]}
+          onPress={() => router.push('/(auth)/login')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.staffLoginIcon, { backgroundColor: colors.primary + '15' }]}>
+            <Ionicons name="briefcase" size={24} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>Staff Login</Text>
+            <Text style={ds.rowSubtitle}>Access the operator or admin dashboard</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      )}
+
+      {/* ── Personal Information ─────────────────────────────── */}
       <View style={ds.section}>
         <Text style={ds.sectionTitle}>Personal Information</Text>
-        <Text style={ds.sectionSubtitle}>
-          Used to identify you when joining a queue
-        </Text>
+        <Text style={ds.sectionSubtitle}>Used to identify you when joining a queue</Text>
 
         <View style={styles.inputGroup}>
           <Text style={ds.label}>Name</Text>
@@ -168,16 +307,18 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Notifications */}
+      {/* ── Notifications ────────────────────────────────────── */}
       <View style={ds.section}>
         <Text style={ds.sectionTitle}>Notifications</Text>
 
         <View style={styles.row}>
           <View style={styles.rowLeft}>
-            <Ionicons name="notifications-outline" size={22} color={colors.text} />
+            <Ionicons name="notifications" size={20} color={notificationsEnabled ? colors.primary : colors.textMuted} />
             <View>
               <Text style={ds.rowTitle}>Push Notifications</Text>
-              <Text style={ds.rowSubtitle}>Get notified when it's your turn</Text>
+              <Text style={ds.rowSubtitle}>
+                {notificationsEnabled ? 'You\'ll be alerted when it\'s your turn' : 'Tap to enable queue alerts'}
+              </Text>
             </View>
           </View>
           <Switch
@@ -189,130 +330,52 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Staff / Pro Section */}
-      {user && isStaff ? (
-        <View style={ds.section}>
-          <Text style={ds.sectionTitle}>Staff Account</Text>
-          <View style={styles.row}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="person-circle-outline" size={22} color={colors.primary} />
-              <View>
-                <Text style={ds.rowTitle}>{user.email}</Text>
-                <Text style={ds.rowSubtitle}>
-                  {staffRole === 'admin' ? 'Administrator' : 'Operator'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.proButton, { backgroundColor: colors.primary }]}
-            onPress={() => {
-              if (staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin') {
-                router.replace('/(admin)');
-              } else {
-                router.replace('/(auth)/role-select');
-              }
-            }}
-          >
-            <Ionicons name="arrow-forward-circle" size={20} color="#fff" />
-            <Text style={styles.proButtonText}>
-              {staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin'
-                ? 'Go to Admin Dashboard'
-                : 'Go to Desk Panel'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.row} onPress={handleChangePassword}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="key-outline" size={22} color={colors.text} />
-              <View>
-                <Text style={ds.rowTitle}>Change Password</Text>
-                <Text style={ds.rowSubtitle}>Send a password reset email</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.row} onPress={handleDeleteAccount}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="trash-outline" size={22} color={colors.error} />
-              <View>
-                <Text style={[ds.rowTitle, { color: colors.error }]}>Delete Account</Text>
-                <Text style={ds.rowSubtitle}>Request permanent account deletion</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => {
-              Alert.alert('Sign Out', 'Sign out of your staff account?', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Sign Out',
-                  style: 'destructive',
-                  onPress: async () => {
-                    clearSession();
-                    await signOut();
-                  },
-                },
-              ]);
-            }}
-          >
-            <View style={styles.rowLeft}>
-              <Ionicons name="log-out-outline" size={22} color={colors.error} />
-              <View>
-                <Text style={[ds.rowTitle, { color: colors.error }]}>Sign Out</Text>
-                <Text style={ds.rowSubtitle}>Return to customer-only mode</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={ds.section}>
-          <Text style={ds.sectionTitle}>Staff</Text>
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => router.push('/(auth)/login')}
-          >
-            <View style={styles.rowLeft}>
-              <Ionicons name="briefcase-outline" size={22} color={colors.primary} />
-              <View>
-                <Text style={ds.rowTitle}>Staff Login</Text>
-                <Text style={ds.rowSubtitle}>Access the operator dashboard</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* About */}
+      {/* ── Appearance ───────────────────────────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>About</Text>
-
-        <View style={styles.row}>
-          <View style={styles.rowLeft}>
-            <Ionicons name="information-circle-outline" size={22} color={colors.text} />
-            <View>
-              <Text style={ds.rowTitle}>Version</Text>
-              <Text style={ds.rowSubtitle}>{appVersion}</Text>
-            </View>
-          </View>
+        <Text style={ds.sectionTitle}>Appearance</Text>
+        <View style={styles.themeRow}>
+          {THEME_OPTIONS.map((opt) => {
+            const active = themeMode === opt.value;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[ds.themeOption, active && ds.themeOptionActive]}
+                onPress={() => setThemeMode(opt.value)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={opt.icon}
+                  size={20}
+                  color={active ? colors.primary : colors.textMuted}
+                />
+                <Text style={[ds.themeLabel, active && ds.themeLabelActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Support & Legal */}
+      {/* ── About, Support & Legal (combined) ────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>Support & Legal</Text>
+        <Text style={ds.sectionTitle}>About & Support</Text>
 
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}
-        >
+        <View style={styles.row}>
           <View style={styles.rowLeft}>
-            <Ionicons name="mail-outline" size={22} color={colors.text} />
+            <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
+            <View>
+              <Text style={ds.rowTitle}>Version</Text>
+              <Text style={ds.rowSubtitle}>Qflo {appVersion}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+        <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="mail-outline" size={20} color={colors.text} />
             <View>
               <Text style={ds.rowTitle}>Contact Support</Text>
               <Text style={ds.rowSubtitle}>{SUPPORT_EMAIL}</Text>
@@ -321,32 +384,23 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => Linking.openURL(PRIVACY_URL)}
-        >
+        <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
           <View style={styles.rowLeft}>
-            <Ionicons name="document-text-outline" size={22} color={colors.text} />
-            <View>
-              <Text style={ds.rowTitle}>Privacy Policy</Text>
-            </View>
+            <Ionicons name="document-text-outline" size={20} color={colors.text} />
+            <Text style={ds.rowTitle}>Privacy Policy</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => Linking.openURL(TERMS_URL)}
-        >
+        <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(TERMS_URL)}>
           <View style={styles.rowLeft}>
-            <Ionicons name="document-outline" size={22} color={colors.text} />
-            <View>
-              <Text style={ds.rowTitle}>Terms of Service</Text>
-            </View>
+            <Ionicons name="document-outline" size={20} color={colors.text} />
+            <Text style={ds.rowTitle}>Terms of Service</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
+
     </ScrollView>
   );
 }
@@ -477,5 +531,33 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '700',
     color: '#fff',
+  },
+  staffHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  staffAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  staffLoginBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  staffLoginIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  divider: {
+    height: 1,
+    marginVertical: spacing.xs,
   },
 });
