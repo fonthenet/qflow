@@ -12,12 +12,18 @@
  *   6. Now serving = most recently called/serving ticket for the same service
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+  }
+  return _supabase;
+}
 
 export interface QueuePositionResult {
   position: number | null;
@@ -28,6 +34,7 @@ export interface QueuePositionResult {
 
 export async function getQueuePosition(ticketId: string): Promise<QueuePositionResult> {
   // 1. Get the ticket
+  const supabase = getSupabase();
   const { data: ticket, error } = await supabase
     .from('tickets')
     .select('id, status, office_id, service_id, priority, created_at, parked_at')
