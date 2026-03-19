@@ -275,7 +275,7 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${import.meta.env?.EXPO_PUBLIC_API_URL ?? ''}/api/tickets/${t.id}/customer-data`, {
+      const res = await fetch(`${WEB_BASE}/api/tickets/${t.id}/customer-data`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customer_data: { ...cd, ...draft } }),
