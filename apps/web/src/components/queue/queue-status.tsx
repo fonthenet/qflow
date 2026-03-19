@@ -688,17 +688,26 @@ export function QueueStatus({
   }
 
   if (ticket.status === 'serving') {
+    const timerMm = Math.floor(servingElapsed / 60).toString().padStart(2, '0');
+    const timerSs = (servingElapsed % 60).toString().padStart(2, '0');
+
     return (
       <>
-        <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
+        <div className="flex min-h-[100dvh] flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
           <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
+            {/* ── Action Header (matches App Clip actionHeader) ── */}
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
-                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-300">{branchLine}</p> : null}
-                <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
+              <div className="min-w-0 flex-1">
+                {branchLine ? (
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300/70">{branchLine}</p>
+                ) : null}
+                <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">{businessName}</h1>
+                <p className="mt-1.5 text-xs text-slate-400">{syncLabel}</p>
+                <div className="mt-3 inline-flex rounded-full bg-sky-400/12 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+                  With staff now
+                </div>
               </div>
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-col items-end gap-2 pt-1">
                 <QueueActionPill
                   label="Refresh"
                   onClick={() => void handleManualRefresh()}
@@ -710,50 +719,56 @@ export function QueueStatus({
               </div>
             </div>
 
-            <div className="mt-8 rounded-[34px] border border-white/10 bg-slate-950/82 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-100 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
-                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            {/* ── Glass Card (matches App Clip glassCard) ── */}
+            <div className="mt-8 rounded-[30px] border border-white/10 bg-white/[0.08] p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur-xl">
+              {/* Person icon */}
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-200 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
 
-              <div className="mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-sky-100">
-                With staff now
-              </div>
+              {/* Title */}
+              <h2 className="mt-6 text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[30px]">
+                You are being served
+              </h2>
 
-              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">You are being served</h2>
-
-              {/* Serving elapsed timer */}
-              <div className="mx-auto mt-4 flex items-center justify-center gap-2 text-3xl font-bold tabular-nums text-sky-300">
-                <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-                {Math.floor(servingElapsed / 60).toString().padStart(2, '0')}:{(servingElapsed % 60).toString().padStart(2, '0')}
-              </div>
-
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                Stay with the staff member at {deskName ?? 'your desk'}. You can finish this visit after your service is complete.
+              {/* Desk subtitle */}
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                {deskName ? `At ${deskName}` : 'Stay with your staff member'}
               </p>
 
-              <div className="mt-7 grid gap-3 sm:grid-cols-3">
+              {/* ── 2×2 Metric Cards Grid (matches App Clip visitMetricCard layout) ── */}
+              <div className="mt-7 grid grid-cols-2 gap-3">
+                {/* Ticket — sky blue accent */}
                 <WaitingMetric
                   label="Ticket"
                   value={ticket.ticket_number}
-                  detail="Keep this visible if asked."
-                  accentClass="bg-sky-400/15 text-sky-100"
+                  detail="Your ticket number"
+                  accentClass="bg-sky-400/15 text-[rgb(100,194,253)]"
                 />
-                <WaitingMetric
-                  label="Time"
-                  value={servingElapsed < 60 ? `${servingElapsed}s` : `${Math.floor(servingElapsed / 60)}m`}
-                  detail="Service duration"
-                  accentClass="bg-amber-400/15 text-amber-100"
-                />
+                {/* Desk — emerald accent */}
                 <WaitingMetric
                   label="Desk"
                   value={deskName ?? 'Assigned'}
-                  detail="Your service point."
-                  accentClass="bg-emerald-400/15 text-emerald-100"
+                  detail="Your service point"
+                  accentClass="bg-emerald-400/15 text-[rgb(125,219,161)]"
+                />
+                {/* With staff for — amber accent (live timer) */}
+                <WaitingMetric
+                  label="With staff for"
+                  value={`${timerMm}:${timerSs}`}
+                  detail="Elapsed time"
+                  accentClass="bg-amber-400/15 text-[rgb(250,199,79)]"
+                  valueClass="tabular-nums"
+                />
+                {/* Business — lavender accent */}
+                <WaitingMetric
+                  label="Business"
+                  value={businessName}
+                  detail={branchLine || serviceLabel}
+                  accentClass="bg-indigo-400/15 text-[rgb(174,194,253)]"
+                  valueClass="text-lg sm:text-xl"
                 />
               </div>
             </div>

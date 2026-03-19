@@ -1,89 +1,50 @@
 name: Deploy iOS to TestFlight
 
 on:
-  workflow_dispatch:  # Manual trigger only — you control when to deploy
+  push:
+    branches: [main]
+    paths:
+      - 'apps/expo/**'
+      - 'packages/**'
+  workflow_dispatch:
     inputs:
-      lane:
-        description: 'Fastlane lane to run'
+      profile:
+        description: 'EAS build profile'
         required: true
-        default: 'beta'
+        default: 'production'
         type: choice
         options:
-          - sync_certs  # Initialize/sync certificates (run first!)
-          - beta        # Upload to TestFlight
-          - release     # Submit to App Store review
+          - production
+          - preview
 
 jobs:
-  deploy:
-    runs-on: macos-14  # M1 Mac runner
+  build-and-submit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/expo
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$XCODE_PATH" ]; then
-            XCODE_PATH="/Applications/Xcode.app"
-          fi
-          echo "Using: $XCODE_PATH"
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-
-      - name: Install XcodeGen
-        run: brew install xcodegen || brew upgrade xcodegen
-
-      - name: Install Ruby & Bundler
-        run: |
-          # Use system Ruby on macOS runners
-          gem install bundler --no-document
-
-      - name: Install Fastlane Dependencies
-        working-directory: apps/ios/QueueFlow
-        run: bundle install
-
-      - name: Install Apple WWDR Certificates
-        run: |
-          # Download and install Apple WWDR intermediate certificates
-          # Required for code signing on CI where system keychain may not have them
-          curl -sL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o /tmp/AppleWWDRCAG3.cer
-          curl -sL https://www.apple.com/certificateauthority/AppleRootCA-G3.cer -o /tmp/AppleRootCA-G3.cer
-          sudo security import /tmp/AppleWWDRCAG3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A || true
-          sudo security import /tmp/AppleRootCA-G3.cer -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A || true
-
-      - name: Generate Xcode Project
-        working-directory: apps/ios/QueueFlow
-        run: xcodegen generate
-
-      - name: Deploy to ${{ github.event.inputs.lane }}
-        working-directory: apps/ios/QueueFlow
-        env:
-          # Apple credentials for App Store Connect API
-          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.ASC_API_KEY_P8 }}
-
-          # Match (code signing)
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_AUTH }}
-
-          # Keychain
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-
-          # App identifiers
-          APP_APPLE_ID: ${{ secrets.APP_APPLE_ID }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          ITC_TEAM_ID: ${{ secrets.ITC_TEAM_ID }}
-
-        run: bundle exec fastlane ${{ github.event.inputs.lane }}
-
-      - name: Upload Build Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          name: build-output
-          path: |
-            apps/ios/QueueFlow/build/*.ipa
-            apps/ios/QueueFlow/fastlane/report.xml
-          retention-days: 7
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build iOS
+        run: eas build --platform ios --profile ${{ github.event.inputs.profile || 'production' }} --non-interactive --wait
+
+      - name: Submit to TestFlight
+        run: eas submit --platform ios --latest --non-interactive
