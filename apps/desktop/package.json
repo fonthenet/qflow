@@ -7,10 +7,12 @@
   "license": "PROPRIETARY",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "tsc && vite build && electron-builder --win --dir",
     "build:vite": "tsc && vite build",
     "start": "electron dist-electron/main.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "posttest": "cd ../../node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3 && npx --yes prebuild-install --runtime=electron --target=35.7.5 --arch=x64"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",

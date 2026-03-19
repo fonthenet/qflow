@@ -139,18 +139,18 @@ export function initDB() {
   try { db.exec(`ALTER TABLE offices ADD COLUMN timezone TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT`); } catch { /* already exists */ }
 
-  // ── One-time cleanup: remove duplicate ticket_number rows, keep the one with synced_at (cloud version) ──
-  const dupeCleanup = db.prepare(`
-    DELETE FROM tickets WHERE id IN (
+  // ── One-time cleanup: remove L- prefixed local tickets that have a cloud equivalent ──
+  const lCleanup = db.prepare(`
+    DELETE FROM tickets WHERE ticket_number LIKE 'L-%' AND id IN (
       SELECT t1.id FROM tickets t1
       INNER JOIN tickets t2 ON t1.office_id = t2.office_id
-        AND t1.ticket_number = t2.ticket_number
+        AND ('L-' || t2.ticket_number) = t1.ticket_number
         AND t1.id != t2.id
-      WHERE t1.synced_at IS NULL AND t2.synced_at IS NOT NULL
+      WHERE t1.ticket_number LIKE 'L-%' AND t2.ticket_number NOT LIKE 'L-%'
     )
   `).run();
-  if (dupeCleanup.changes > 0) {
-    console.log(`[db] Cleaned up ${dupeCleanup.changes} duplicate ticket rows`);
+  if (lCleanup.changes > 0) {
+    console.log(`[db] Cleaned up ${lCleanup.changes} L-prefixed duplicate ticket rows`);
   }
 
   return db;

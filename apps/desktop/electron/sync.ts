@@ -13,7 +13,6 @@ export class SyncEngine {
   private onProgress: ProgressCallback;
   private onAuthError: AuthErrorCallback;
   private onDataPulled: DataPulledCallback;
-  private lastPulledAt: string | null = null;
   private authErrorSuppressedUntil = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
@@ -83,7 +82,6 @@ export class SyncEngine {
       if (wasOffline && this.isOnline) {
         // CRITICAL: Push local changes first, then pull, then notify online
         this.onStatus('syncing');
-        this.lastPulledAt = null; // force full pull on reconnect
         await this.syncNow();   // Push offline changes to cloud
         await this.pullLatest(); // Pull cloud state into SQLite (merges, doesn't overwrite)
         await this.pullLatest(); // Second pull catches any reprocessed data
@@ -378,14 +376,9 @@ export class SyncEngine {
           return r.json() as Promise<any[]>;
         };
 
-        // 1. Active tickets — use incremental cursor when possible
-        const cursorStaleMs = 60 * 60 * 1000; // 1 hour
-        const useIncremental = this.lastPulledAt &&
-          (Date.now() - new Date(this.lastPulledAt).getTime()) < cursorStaleMs;
-        let activeUrl = `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(waiting,called,serving)&order=created_at.asc`;
-        if (useIncremental) {
-          activeUrl += `&updated_at=gte.${this.lastPulledAt}`;
-        }
+        // 1. Active tickets — always pull ALL active tickets (no incremental cursor)
+        // The tickets table has no updated_at column, and active ticket count is small enough
+        const activeUrl = `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(waiting,called,serving)&order=created_at.asc`;
         let activeTickets = await fetchTickets(headers, activeUrl);
         if (activeTickets === null) {
           // Token expired — try to refresh and retry once
@@ -400,9 +393,9 @@ export class SyncEngine {
         }
 
         if (activeTickets !== null) {
+          console.log(`[sync:pullLatest] Upserting ${activeTickets.length} active tickets. locallyModified: ${locallyModifiedIds.size}, tickets: ${activeTickets.map((t:any) => `${t.ticket_number}(${t.status})`).join(', ')}`);
           upsertBatch(activeTickets);
-          this.lastPulledAt = new Date().toISOString();
-          console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)${useIncremental ? ' [incremental]' : ' [full]'}`);
+          console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)`);
         } else {
           console.warn(`[sync:pullLatest] Could not fetch active tickets for office ${officeId}`);
           continue; // skip this office, try the next one
@@ -416,27 +409,21 @@ export class SyncEngine {
           upsertBatch(histTickets);
         }
 
-        // ── Deduplicate: when cloud ticket matches a local ticket by number+office, keep cloud version ──
+        // ── Clean up L- prefixed local tickets that now have a cloud equivalent ──
+        // Only remove L- local copies, NOT cloud-to-cloud duplicates (those have the same ticket_number
+        // across active+historical pulls and must coexist)
         const allPulled = [...(activeTickets ?? []), ...(histTickets ?? [])];
+        const pulledIds = new Set(allPulled.map((t: any) => t.id));
         for (const t of allPulled) {
-          if (!t.ticket_number || !t.id) continue;
-
-          const dupes = this.db.prepare(
+          if (!t.ticket_number || !t.id || t.ticket_number.startsWith('L-')) continue;
+          // Only remove L- prefixed LOCAL copies (offline-created tickets that synced to cloud)
+          const lDupes = this.db.prepare(
             "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
-          ).all(t.office_id, t.ticket_number, t.id) as any[];
-          for (const dupe of dupes) {
-            this.db.prepare("DELETE FROM tickets WHERE id = ?").run(dupe.id);
-            this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(dupe.id);
-          }
-
-          if (!t.ticket_number.startsWith('L-')) {
-            const lPrefixed = this.db.prepare(
-              "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
-            ).all(t.office_id, `L-${t.ticket_number}`, t.id) as any[];
-            for (const lp of lPrefixed) {
-              this.db.prepare("DELETE FROM tickets WHERE id = ?").run(lp.id);
-              this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(lp.id);
-            }
+          ).all(t.office_id, `L-${t.ticket_number}`, t.id) as any[];
+          for (const lp of lDupes) {
+            if (pulledIds.has(lp.id)) continue; // don't delete something we just pulled
+            this.db.prepare("DELETE FROM tickets WHERE id = ?").run(lp.id);
+            this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(lp.id);
           }
         }
       }
