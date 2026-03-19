@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -266,39 +266,77 @@ function VisitDetailsGrid({ ticket: t }: { ticket: import('@/lib/api').TicketRes
 // ---------------------------------------------------------------------------
 function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketResponse }) {
   const cd = t.customer_data;
+  const [draft, setDraft] = React.useState({ name: cd?.name ?? '', phone: cd?.phone ?? '', email: cd?.email ?? '' });
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
   const hasData = cd && (cd.name || cd.phone || cd.email);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${import.meta.env?.EXPO_PUBLIC_API_URL ?? ''}/api/tickets/${t.id}/customer-data`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_data: { ...cd, ...draft } }),
+      });
+      if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    } catch {}
+    setSaving(false);
+  };
+
   return (
     <View style={s.customerCard}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Ionicons name="person-circle-outline" size={18} color="#94a3b8" />
-        <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>Customer</Text>
-      </View>
-      {!hasData ? (
-        <Text style={{ fontSize: 14, color: '#475569', fontStyle: 'italic' }}>No intake collected</Text>
-      ) : (
-        <>
-          {cd?.name ? (
-            <View style={s.customerRow}>
-              <Ionicons name="person-outline" size={15} color="#94a3b8" />
-              <Text style={s.customerLabel}>Name</Text>
-              <Text style={s.customerValue}>{cd.name}</Text>
+      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="person-circle-outline" size={18} color="#94a3b8" />
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>My Information</Text>
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#64748b" />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={{ marginTop: 14, gap: 12 }}>
+          {[
+            { key: 'name', label: 'Name', icon: 'person-outline', keyboard: 'default' },
+            { key: 'phone', label: 'Phone', icon: 'call-outline', keyboard: 'phone-pad' },
+            { key: 'email', label: 'Email', icon: 'mail-outline', keyboard: 'email-address' },
+          ].map(({ key, label, icon, keyboard }) => (
+            <View key={key} style={{ gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name={icon as any} size={13} color="#64748b" />
+                <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600', letterSpacing: 1 }}>{label.toUpperCase()}</Text>
+              </View>
+              <TextInput
+                value={draft[key as keyof typeof draft]}
+                onChangeText={v => setDraft(d => ({ ...d, [key]: v }))}
+                keyboardType={keyboard as any}
+                autoCapitalize={key === 'email' ? 'none' : 'words'}
+                placeholder={`Enter ${label.toLowerCase()}`}
+                placeholderTextColor="#475569"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#f1f5f9' }}
+              />
             </View>
-          ) : null}
-          {cd?.phone ? (
-            <View style={s.customerRow}>
-              <Ionicons name="call-outline" size={15} color="#94a3b8" />
-              <Text style={s.customerLabel}>Phone</Text>
-              <Text style={s.customerValue}>{cd.phone}</Text>
-            </View>
-          ) : null}
-          {cd?.email ? (
-            <View style={s.customerRow}>
-              <Ionicons name="mail-outline" size={15} color="#94a3b8" />
-              <Text style={s.customerLabel}>Email</Text>
-              <Text style={s.customerValue}>{cd.email}</Text>
-            </View>
-          ) : null}
-        </>
+          ))}
+          <TouchableOpacity
+            onPress={handleSave}
+            disabled={saving}
+            style={{ backgroundColor: saving ? '#334155' : '#1d4ed8', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 4 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{saved ? '✓ Saved' : saving ? 'Saving...' : 'Save Changes'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!expanded && hasData && (
+        <View style={{ marginTop: 10, gap: 6 }}>
+          {cd?.name ? <View style={s.customerRow}><Ionicons name="person-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Name</Text><Text style={s.customerValue}>{cd.name}</Text></View> : null}
+          {cd?.phone ? <View style={s.customerRow}><Ionicons name="call-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Phone</Text><Text style={s.customerValue}>{cd.phone}</Text></View> : null}
+          {cd?.email ? <View style={s.customerRow}><Ionicons name="mail-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Email</Text><Text style={s.customerValue}>{cd.email}</Text></View> : null}
+        </View>
+      )}
+      {!expanded && !hasData && (
+        <Text style={{ fontSize: 14, color: '#475569', fontStyle: 'italic', marginTop: 10 }}>Tap to add your information</Text>
       )}
     </View>
   );
@@ -712,7 +750,7 @@ export default function HomeScreen() {
             {serviceLabel ? <Text style={{ fontSize: 14, fontWeight: '500', color: '#cbd5e1', marginTop: 4 }}>{serviceLabel}</Text> : null}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 48, fontWeight: '700', color: t.position === 1 ? '#10b981' : '#fff', lineHeight: 52 }}>{t.position === 1 ? '🔔' : t.position ? `#${t.position}` : '--'}</Text>
+            <Text style={{ fontSize: 48, fontWeight: '700', color: t.position === 1 ? '#10b981' : '#fff', lineHeight: 52 }}>{t.position ? `#${t.position}` : '--'}</Text>
             <Text style={{ fontSize: 13, color: t.position === 1 ? '#10b981' : 'rgba(34,211,238,0.7)', fontWeight: t.position === 1 ? '700' : '400', marginTop: 4 }}>{positionText}</Text>
           </View>
         </View>
@@ -725,7 +763,7 @@ export default function HomeScreen() {
               <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.2, textTransform: 'uppercase' }}>Queue progress</Text>
             </View>
             <Text style={{ fontSize: 11, fontWeight: '600', color: t.position === 1 ? '#10b981' : '#34d399', letterSpacing: 1.2 }}>
-              {t.position === 1 ? "You're Next!" : t.position ? `#${t.position} in line` : '--'}
+              {t.position ? `#${t.position} in line` : '--'}
             </Text>
           </View>
           <ProgressBar position={t.position} />
