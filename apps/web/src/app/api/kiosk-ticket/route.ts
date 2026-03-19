@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
+import { getQueuePosition } from '@/lib/queue-position';
 
 let _supabase: SupabaseClient | null = null;
 
@@ -102,13 +103,17 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Get queue position for the newly created ticket
+  const queueInfo = await getQueuePosition(ticket.id);
+
   return NextResponse.json({
     ticket: {
       id: ticket.id,
       qr_token: ticket.qr_token,
       ticket_number: ticket.ticket_number,
       status: ticket.status,
-      estimated_wait_minutes: ticket.estimated_wait_minutes,
+      estimated_wait_minutes: queueInfo.estimated_wait_minutes ?? ticket.estimated_wait_minutes,
+      position: queueInfo.position,
     },
   });
 }

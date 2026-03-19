@@ -38,7 +38,22 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
     return { position: null, total_waiting: 0, estimated_wait_minutes: null, now_serving: null };
   }
 
-  // Non-waiting tickets have no position
+  // Called/serving tickets are at position 0 (your turn)
+  if (ticket.status === 'called' || ticket.status === 'serving') {
+    // Get now_serving for context
+    const { data: nowServing } = await supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('office_id', ticket.office_id)
+      .eq('service_id', ticket.service_id)
+      .in('status', ['serving', 'called'])
+      .order('called_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    return { position: 0, total_waiting: 0, estimated_wait_minutes: 0, now_serving: nowServing?.ticket_number ?? null };
+  }
+
+  // Completed tickets have no position
   if (ticket.status !== 'waiting') {
     return { position: null, total_waiting: 0, estimated_wait_minutes: null, now_serving: null };
   }
