@@ -70,7 +70,7 @@ export default async function IndustryPage({ params }: IndustryPageProps) {
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold">The Problem</h2>
             <p className="mt-4 text-muted-foreground">
-              Sound familiar? QueueFlow solves all of these.
+              Sound familiar? Qflo solves all of these.
             </p>
           </div>
           <div className="mx-auto mt-12 grid max-w-3xl gap-4 md:grid-cols-2">

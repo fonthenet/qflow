@@ -338,7 +338,7 @@ export function GroupStatus({
 
       {/* Footer */}
       <div className="px-4 pb-6 pt-4 text-center">
-        <p className="text-xs text-muted-foreground">Powered by QueueFlow</p>
+        <p className="text-xs text-muted-foreground">Powered by Qflo</p>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ export async function GET() {
 button{font-size:18px;padding:12px 24px;margin:8px;background:#333;color:#fff;border:1px solid #555;border-radius:8px}
 pre{white-space:pre-wrap;word-break:break-all;background:#222;padding:8px;border-radius:4px}
 </style></head><body>
-<h2>QueueFlow Push Debug</h2>
+<h2>Qflo Push Debug</h2>
 <div id="log"></div>
 <button onclick="testPush()">Send Test Push</button>
 <button onclick="resubscribe()">Re-subscribe Push</button>

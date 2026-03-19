@@ -1,6 +1,6 @@
 # Android Live Updates Setup
 
-QueueFlow's Android wrapper now supports native queue live updates on top of the TWA experience.
+Qflo's Android wrapper now supports native queue live updates on top of the TWA experience.
 
 ## 1. Firebase client config for the Android app
 

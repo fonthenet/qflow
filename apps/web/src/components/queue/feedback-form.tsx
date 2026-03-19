@@ -135,7 +135,7 @@ export function FeedbackForm({
           </button>
 
           <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">
-            {officeName} · QueueFlow
+            {officeName} · Qflo
           </p>
         </div>
       </div>
@@ -236,7 +236,7 @@ export function FeedbackForm({
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · QueueFlow</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · Qflo</p>
         </div>
       </div>
     </div>

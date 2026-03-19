@@ -82,7 +82,7 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
       {/* Header */}
       <div className="bg-card border-b border-border px-6 py-4 text-center">
         <h1 className="text-2xl font-bold">
-          {organization?.name || 'QueueFlow'}
+          {organization?.name || 'Qflo'}
         </h1>
         <p className="text-muted-foreground">{office.name}</p>
         <p className="mt-1 text-sm text-primary font-medium">Appointment Check-In</p>
@@ -247,7 +247,7 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
 
       {/* Footer */}
       <div className="px-4 pb-6 text-center">
-        <p className="text-xs text-muted-foreground">Powered by QueueFlow</p>
+        <p className="text-xs text-muted-foreground">Powered by Qflo</p>
       </div>
     </div>
   );

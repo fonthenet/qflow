@@ -142,7 +142,7 @@ export default function LoginScreen() {
           <View style={styles.logoCircle}>
             <Text style={styles.logoText}>Q</Text>
           </View>
-          <Text style={styles.title}>QueueFlow</Text>
+          <Text style={styles.title}>Qflo</Text>
           <Text style={styles.subtitle}>Staff Portal</Text>
         </View>
 

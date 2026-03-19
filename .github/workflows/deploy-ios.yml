@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/expo/**'
       - 'packages/**'
+      - '.github/workflows/deploy-ios.yml'
   workflow_dispatch:
     inputs:
       profile:

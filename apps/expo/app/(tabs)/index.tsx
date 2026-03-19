@@ -566,7 +566,7 @@ export default function HomeScreen() {
 
         <CustomerInfoCard ticket={t} />
 
-        <Text style={s.footer}>Powered by QueueFlow</Text>
+        <Text style={s.footer}>Powered by Qflo</Text>
       </ScrollView>
       </Animated.View>
     );
@@ -623,7 +623,7 @@ export default function HomeScreen() {
 
         <CustomerInfoCard ticket={t} />
 
-        <Text style={s.footer}>QueueFlow</Text>
+        <Text style={s.footer}>Qflo</Text>
       </ScrollView>
       </Animated.View>
     );
@@ -669,7 +669,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={s.footer}>QueueFlow</Text>
+        <Text style={s.footer}>Qflo</Text>
       </ScrollView>
     );
   }
@@ -751,7 +751,7 @@ export default function HomeScreen() {
         <Text style={{ fontSize: 13, fontWeight: '500', color: '#cbd5e1', flex: 1 }}>Alerts enabled — we'll notify you when it's your turn</Text>
       </View>
 
-      <Text style={s.footer}>QueueFlow</Text>
+      <Text style={s.footer}>Qflo</Text>
     </ScrollView>
     </Animated.View>
   );

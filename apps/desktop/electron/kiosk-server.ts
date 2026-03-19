@@ -47,7 +47,7 @@ function handleSSE(_req: http.IncomingMessage, res: http.ServerResponse) {
 interface DeviceInfo { id: string; type: string; name: string; lastPing: number; }
 const devices: Map<string, DeviceInfo> = new Map();
 // Station (this PC) is always present
-devices.set('station', { id: 'station', type: 'station', name: 'QueueFlow Station', lastPing: Date.now() });
+devices.set('station', { id: 'station', type: 'station', name: 'Qflo Station', lastPing: Date.now() });
 // Update station heartbeat every 10s
 setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.now(); }, 10000);
 const CLOUD_URL = 'https://qflow-sigma.vercel.app';
@@ -340,7 +340,7 @@ function serveKioskPage(res: http.ServerResponse) {
   const apiBase = `http://${ip}:${localPort}`;
   const db = getDB();
   const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
-  const officeName = office?.name ?? 'QueueFlow';
+  const officeName = office?.name ?? 'Qflo';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -447,7 +447,7 @@ function serveKioskPage(res: http.ServerResponse) {
         state.step = state.departments.length === 1 ? (function() { state.selectedDept = state.departments[0]; var svcs = state.services.filter(function(s){return s.department_id===state.departments[0].id}); return svcs.length === 1 ? (state.selectedService = svcs[0], 'customer') : 'service'; })() : 'department';
         render();
       } catch (err) {
-        document.getElementById('app').innerHTML = '<div style="color:white;padding:48px;text-align:center;font-size:18px">Cannot connect to QueueFlow Station.<br><span style="font-size:14px;opacity:0.7;margin-top:8px;display:block">Make sure the desktop app is running on this network.</span></div>';
+        document.getElementById('app').innerHTML = '<div style="color:white;padding:48px;text-align:center;font-size:18px">Cannot connect to Qflo Station.<br><span style="font-size:14px;opacity:0.7;margin-top:8px;display:block">Make sure the desktop app is running on this network.</span></div>';
       }
     }
 
@@ -499,7 +499,7 @@ function serveKioskPage(res: http.ServerResponse) {
 
     function render() {
       var app = document.getElementById('app');
-      var name = state.office?.name ?? 'QueueFlow';
+      var name = state.office?.name ?? 'Qflo';
 
       var header = '<div class="kiosk-header">' +
         '<div class="kiosk-logo"><span>Q</span></div>' +
@@ -724,7 +724,7 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Track Ticket — QueueFlow</title>
+  <title>Track Ticket — Qflo</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -748,7 +748,7 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
 </head>
 <body>
   <div class="card" id="app">
-    <div class="brand">QueueFlow</div>
+    <div class="brand">Qflo</div>
     <div style="color:#94a3b8">Loading...</div>
   </div>
   <script>
@@ -778,7 +778,7 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
         }
 
         document.getElementById('app').innerHTML =
-          '<div class="brand">QueueFlow</div>' +
+          '<div class="brand">Qflo</div>' +
           '<div class="number">' + d.ticket_number + '</div>' +
           '<div class="status-badge ' + statusClass + '">' + statusText + '</div>' +
           posHtml +
@@ -789,9 +789,9 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
           '<div class="refresh">Auto-refreshes every 5 seconds</div>';
       } catch (err) {
         document.getElementById('app').innerHTML =
-          '<div class="brand">QueueFlow</div>' +
+          '<div class="brand">Qflo</div>' +
           '<div style="color:#ef4444;font-weight:600">Ticket not found</div>' +
-          '<div style="color:#94a3b8;font-size:13px;margin-top:8px">Make sure you\\'re on the same network as the QueueFlow station.</div>';
+          '<div style="color:#94a3b8;font-size:13px;margin-top:8px">Make sure you\\'re on the same network as the Qflo station.</div>';
       }
     }
 
@@ -820,7 +820,7 @@ function serveDisplayPage(res: http.ServerResponse) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QueueFlow Display</title>
+  <title>Qflo Display</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f0f4f8; color: #0f172a; height: 100vh; overflow: hidden; }

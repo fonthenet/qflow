@@ -26,7 +26,7 @@ struct ContentView: View {
                         .font(.system(size: 64))
                         .foregroundColor(.white)
 
-                    Text("QueueFlow")
+                    Text("Qflo")
                         .font(.system(size: 36, weight: .heavy, design: .rounded))
                         .foregroundColor(.white)
 
@@ -56,7 +56,7 @@ struct ContentView: View {
                 } label: {
                     HStack {
                         Image(systemName: "safari")
-                        Text("Open QueueFlow")
+                        Text("Open Qflo")
                     }
                     .font(.headline)
                     .foregroundColor(Color(red: 0.145, green: 0.388, blue: 0.922))
@@ -68,7 +68,7 @@ struct ContentView: View {
                     )
                 }
 
-                Text("Manage your business queues at queueflow.app")
+                Text("Manage your business queues at qflo.app")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.5))
                     .padding(.bottom, 16)

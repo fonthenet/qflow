@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "QueueFlow",
+    "name": "Qflo",
     "slug": "queueflow",
     "version": "1.1.0",
     "orientation": "portrait",
@@ -17,7 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.queueflow.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "QueueFlow uses the camera to scan QR codes at service locations.",
+        "NSCameraUsageDescription": "Qflo uses the camera to scan QR codes at service locations.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
@@ -68,7 +68,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "QueueFlow needs camera access to scan QR codes."
+          "cameraPermission": "Qflo needs camera access to scan QR codes."
         }
       ],
       [

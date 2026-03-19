@@ -1,4 +1,4 @@
-# QueueFlow iOS App Clip — Xcode Setup Guide
+# Qflo iOS App Clip — Xcode Setup Guide
 
 ## Prerequisites
 - macOS with Xcode 15+
@@ -10,7 +10,7 @@
 1. Open Xcode → File → New → Project
 2. Select **App** → Next
 3. Configure:
-   - Product Name: `QueueFlow`
+   - Product Name: `Qflo`
    - Team: Select your team
    - Organization Identifier: `com.queueflow`
    - Interface: **SwiftUI**
@@ -99,7 +99,7 @@ APNS_KEY_P8=-----BEGIN PRIVATE KEY-----\nYOUR_KEY_CONTENT\n-----END PRIVATE KEY-
 1. Connect your iPhone
 2. Select it as the run destination
 3. Build and run the QueueFlowClip scheme
-4. Scan a QueueFlow QR code with the Camera app
+4. Scan a Qflo QR code with the Camera app
 
 ## Step 10: Submit to App Store
 
@@ -107,7 +107,7 @@ APNS_KEY_P8=-----BEGIN PRIVATE KEY-----\nYOUR_KEY_CONTENT\n-----END PRIVATE KEY-
 2. Add an **App Clip Experience**:
    - URL: `https://yourdomain.com/q/`
    - Action: Open
-   - Title: "QueueFlow"
+   - Title: "Qflo"
    - Subtitle: "Track your queue position"
 3. Upload both the app and App Clip via Xcode → Product → Archive
 4. Submit for review

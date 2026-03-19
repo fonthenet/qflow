@@ -29,7 +29,7 @@ export const plans: Plan[] = [
     name: 'Free',
     price: 0,
     yearlyPrice: 0,
-    description: 'Perfect for trying out QueueFlow',
+    description: 'Perfect for trying out Qflo',
     cta: 'Get Started Free',
     limits: { customersPerMonth: 50, locations: 1, staff: 2 },
     features: [

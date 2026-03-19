@@ -8,6 +8,13 @@ dist
 
 # Desktop build output
 apps/desktop/out/
+apps/desktop/dist-electron/
+apps/desktop/release/
+
+# Icon generation temp files
+scripts/fonts/
+scripts/font-previews/
+scripts/generate-font-preview*.js
 
 # Certificates
 apps/web/certificates/

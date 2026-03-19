@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/mcp-server-supabase",
+        "--access-token",
+        "sbp_a46eba8c99057b00a226b93d6e87d004ac228ab5"
+      ]
+    }
+  }
+}

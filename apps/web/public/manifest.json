@@ -1,6 +1,6 @@
 {
-  "name": "QueueFlow",
-  "short_name": "QueueFlow",
+  "name": "Qflo",
+  "short_name": "Qflo",
   "description": "Smart queue management system",
   "start_url": "/",
   "display": "standalone",

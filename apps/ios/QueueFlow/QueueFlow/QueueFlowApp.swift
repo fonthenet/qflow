@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// QueueFlow companion app.
+/// Qflo companion app.
 /// Required by Apple for App Clip submission.
 /// Directs users to the web app for full functionality.
 @main

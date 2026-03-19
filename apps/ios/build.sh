@@ -1,5 +1,5 @@
 #!/bin/bash
-# QueueFlow iOS App Clip — One-command build script
+# Qflo iOS App Clip — One-command build script
 # Run this on any Mac with Xcode 15+ installed:
 #   cd apps/ios && chmod +x build.sh && ./build.sh
 #
@@ -19,7 +19,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}🏗️  QueueFlow iOS Build${NC}"
+echo -e "${BLUE}🏗️  Qflo iOS Build${NC}"
 echo ""
 
 # Step 1: Install XcodeGen if needed

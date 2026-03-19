@@ -817,7 +817,7 @@ export async function getTemplateHealthAnalytics(
     return {
       summary: {
         templateId: 'public-service-standard',
-        templateTitle: 'QueueFlow Template',
+        templateTitle: 'Qflo Template',
         appliedVersion: '1.0.0',
         latestVersion: '1.0.0',
         snapshotScope,

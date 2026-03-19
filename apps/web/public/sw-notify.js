@@ -1,4 +1,4 @@
-// QueueFlow Service Worker — Premium Live Notification Engine
+// Qflo Service Worker — Premium Live Notification Engine
 // Handles typed push notifications: position updates, call alerts, recalls, status transitions
 // Uses tag-based replacement for silent live updates (Android "ongoing notification" feel)
 
@@ -26,7 +26,7 @@ function buildNotification(data) {
       if (!bodyParts.length) bodyParts.push('Waiting for your turn');
 
       return {
-        title: position ? `QueueFlow · #${position} in line` : 'QueueFlow · In queue',
+        title: position ? `Qflo · #${position} in line` : 'Qflo · In queue',
         options: {
           body: bodyParts.join(' · '),
           icon: '/icon-192x192.png',
@@ -174,7 +174,7 @@ function buildNotification(data) {
     // ── Legacy fallback (backward compatible with old payloads) ──
     default: {
       return {
-        title: data.title || 'QueueFlow',
+        title: data.title || 'Qflo',
         options: {
           body: data.body || 'You have a notification',
           icon: '/icon-192x192.png',

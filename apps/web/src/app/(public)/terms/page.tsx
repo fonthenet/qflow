@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service — QueueFlow',
+  title: 'Terms of Service — Qflo',
 };
 
 export default function TermsPage() {
@@ -13,12 +13,12 @@ export default function TermsPage() {
       <div className="space-y-6 text-sm leading-relaxed text-muted-foreground">
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">1. Acceptance</h2>
-          <p>By using QueueFlow, you agree to these terms. If you do not agree, do not use the service.</p>
+          <p>By using Qflo, you agree to these terms. If you do not agree, do not use the service.</p>
         </section>
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">2. Service Description</h2>
-          <p>QueueFlow is a queue management platform that allows businesses to manage customer queues and allows customers to join queues, track their position, and receive notifications. The service is provided as-is.</p>
+          <p>Qflo is a queue management platform that allows businesses to manage customer queues and allows customers to join queues, track their position, and receive notifications. The service is provided as-is.</p>
         </section>
 
         <section>
@@ -26,7 +26,7 @@ export default function TermsPage() {
           <ul className="list-disc space-y-1 pl-5">
             <li>Staff accounts are created by organization administrators</li>
             <li>You are responsible for keeping your credentials secure</li>
-            <li>Customers can use QueueFlow without creating an account</li>
+            <li>Customers can use Qflo without creating an account</li>
           </ul>
         </section>
 
@@ -37,12 +37,12 @@ export default function TermsPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">5. Data & Privacy</h2>
-          <p>Your use of QueueFlow is also governed by our <a href="/privacy" className="text-primary underline">Privacy Policy</a>. We handle your data responsibly and never sell it to third parties.</p>
+          <p>Your use of Qflo is also governed by our <a href="/privacy" className="text-primary underline">Privacy Policy</a>. We handle your data responsibly and never sell it to third parties.</p>
         </section>
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">6. Limitation of Liability</h2>
-          <p>QueueFlow is provided as-is without warranty. We are not liable for missed notifications, incorrect wait times, or service interruptions. We do our best to maintain high availability but cannot guarantee uninterrupted service.</p>
+          <p>Qflo is provided as-is without warranty. We are not liable for missed notifications, incorrect wait times, or service interruptions. We do our best to maintain high availability but cannot guarantee uninterrupted service.</p>
         </section>
 
         <section>

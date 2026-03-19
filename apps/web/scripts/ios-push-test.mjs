@@ -124,7 +124,7 @@ function printUsage() {
 Optional flags:
   --department "Client Services"
   --service "Mail & Packages"
-  --title "QueueFlow Test"
+  --title "Qflo Test"
   --body "Locked iPhone test"
 
 Required environment:
@@ -288,7 +288,7 @@ async function sendPush() {
     throw new Error(`No saved test state found. Run "create" first. Expected ${statePath}`);
   }
 
-  const title = getArg('--title', 'QueueFlow Test');
+  const title = getArg('--title', 'Qflo Test');
   const body = getArg('--body', 'Locked iPhone test');
   const response = await postJSON('/api/apns-send', {
     ticketId: state.ticketId,

@@ -94,7 +94,7 @@ export function Login({ onLogin }: Props) {
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">Q</div>
-          <h1>QueueFlow Station</h1>
+          <h1>Qflo Station</h1>
           <p>Sign in to your operator account</p>
         </div>
 

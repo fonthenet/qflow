@@ -41,7 +41,7 @@ export function QueueSessionEnded({
           </button>
         ) : null}
 
-        <p className="mt-5 text-xs uppercase tracking-[0.24em] text-slate-500">QueueFlow</p>
+        <p className="mt-5 text-xs uppercase tracking-[0.24em] text-slate-500">Qflo</p>
       </div>
     </div>
   );

@@ -58,4 +58,4 @@ jobs:
             | tail -20
 
       - name: Build Success
-        run: echo "✅ Both QueueFlow app and App Clip built successfully!"
+        run: echo "✅ Both Qflo app and App Clip built successfully!"

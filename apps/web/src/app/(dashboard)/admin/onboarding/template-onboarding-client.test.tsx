@@ -23,7 +23,7 @@ describe('TemplateOnboardingClient', () => {
   it('prefills the first office name for new organizations', () => {
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
+        organization={{ id: 'org-1', name: 'Qflo' }}
         existingOfficeCount={0}
         currentTemplate={{
           id: 'standard',
@@ -40,7 +40,7 @@ describe('TemplateOnboardingClient', () => {
     );
 
     expect((screen.getByLabelText('Starter Office Name') as HTMLInputElement).value).toBe(
-      'QueueFlow Main Location'
+      'Qflo Main Location'
     );
   });
 
@@ -49,7 +49,7 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
+        organization={{ id: 'org-1', name: 'Qflo' }}
         existingOfficeCount={2}
         currentTemplate={{
           id: 'standard',
@@ -93,7 +93,7 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
+        organization={{ id: 'org-1', name: 'Qflo' }}
         existingOfficeCount={1}
         currentTemplate={{
           id: 'clinic',
@@ -137,7 +137,7 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
+        organization={{ id: 'org-1', name: 'Qflo' }}
         existingOfficeCount={1}
         currentTemplate={{
           id: 'bank-branch',

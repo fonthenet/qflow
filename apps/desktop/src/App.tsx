@@ -57,7 +57,7 @@ export function App() {
     return (
       <div className="app-loading">
         <div className="spinner" />
-        <p>Loading QueueFlow Station...</p>
+        <p>Loading Qflo Station...</p>
       </div>
     );
   }

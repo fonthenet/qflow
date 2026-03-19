@@ -9,7 +9,7 @@ export async function GET() {
   return NextResponse.json({
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    appName: process.env.QUEUEFLOW_APP_NAME || 'QueueFlow',
+    appName: process.env.QUEUEFLOW_APP_NAME || 'Qflo',
     offlineOnly: process.env.QUEUEFLOW_OFFLINE_ONLY === 'true',
     isPortable: process.env.QUEUEFLOW_PORTABLE === 'true',
   });

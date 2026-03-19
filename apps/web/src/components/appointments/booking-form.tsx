@@ -495,7 +495,7 @@ export function BookingForm({
             />
           ) : null}
           <h1 className="text-2xl font-bold text-foreground">
-            {organization?.name || 'QueueFlow'}
+            {organization?.name || 'Qflo'}
           </h1>
         </div>
         <div className="mt-1 flex items-center justify-center gap-1.5 text-muted-foreground">
@@ -1093,7 +1093,7 @@ export function BookingForm({
 
       {/* Footer */}
       <div className="px-4 pb-6 text-center">
-        <p className="text-xs text-muted-foreground">Powered by QueueFlow</p>
+        <p className="text-xs text-muted-foreground">Powered by Qflo</p>
       </div>
     </div>
   );

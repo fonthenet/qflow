@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     await sendPushToTicket(ticketId, {
       title: 'Test Push',
-      body: 'This is a test notification from QueueFlow',
+      body: 'This is a test notification from Qflo',
       tag: 'test',
     });
 

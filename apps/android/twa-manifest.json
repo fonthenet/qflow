@@ -1,8 +1,8 @@
 {
   "packageId": "com.queueflow.app",
   "host": "qflow-sigma.vercel.app",
-  "name": "QueueFlow",
-  "launcherName": "QueueFlow",
+  "name": "Qflo",
+  "launcherName": "Qflo",
   "display": "standalone",
   "themeColor": "#2563eb",
   "themeColorDark": "#1e40af",

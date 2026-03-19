@@ -256,7 +256,7 @@ struct LoadingView: View {
                 }
 
                 VStack(spacing: 10) {
-                    Text("QueueFlow")
+                    Text("Qflo")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 

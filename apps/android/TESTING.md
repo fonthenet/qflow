@@ -6,7 +6,7 @@ Use this checklist after the Firebase and server credentials in `SETUP.md` are c
 
 1. From `apps/android`, run `./gradlew assembleDebug`.
 2. Install `app/build/outputs/apk/debug/app-debug.apk` on a physical Android device.
-3. Confirm the app opens the QueueFlow TWA home page successfully.
+3. Confirm the app opens the Qflo TWA home page successfully.
 
 ## Initial registration
 

@@ -289,7 +289,7 @@ export function DisplayBoard({
           ) : null}
           <div>
             <h1 className={`${headingClass} font-bold`}>
-              {office.organization?.name || 'QueueFlow'}
+              {office.organization?.name || 'Qflo'}
             </h1>
             <p className="mt-1 text-2xl font-medium" style={{ color: colors.textMuted }}>{office.name}</p>
           </div>

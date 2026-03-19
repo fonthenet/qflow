@@ -126,7 +126,7 @@ export function DesktopStatusBadge({ organizationId }: { organizationId: string 
           </div>
           {!hasConnections && (
             <p className="text-xs text-gray-500 text-center py-2">
-              No desktop app installed. Install the QueueFlow desktop app for offline support.
+              No desktop app installed. Install the Qflo desktop app for offline support.
             </p>
           )}
         </div>
@@ -135,7 +135,7 @@ export function DesktopStatusBadge({ organizationId }: { organizationId: string 
       {expanded && connections.length === 0 && (
         <div className="absolute bottom-full left-0 mb-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3">
           <p className="text-xs text-gray-500 text-center">
-            No desktop app detected. Install the QueueFlow desktop app for offline queue management.
+            No desktop app detected. Install the Qflo desktop app for offline queue management.
           </p>
         </div>
       )}

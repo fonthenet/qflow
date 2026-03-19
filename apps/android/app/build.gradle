@@ -50,7 +50,7 @@ android {
         manifestPlaceholders = [
             hostName: "qflow-sigma.vercel.app",
             defaultUrl: "https://qflow-sigma.vercel.app/",
-            launcherName: "QueueFlow",
+            launcherName: "Qflo",
             assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"],' +
                 ' "target": { "namespace": "web", "site": "https://qflow-sigma.vercel.app" } }]'
         ]

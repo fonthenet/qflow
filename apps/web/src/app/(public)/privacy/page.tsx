@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — QueueFlow',
+  title: 'Privacy Policy — Qflo',
 };
 
 export default function PrivacyPage() {
@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <div className="space-y-6 text-sm leading-relaxed text-muted-foreground">
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">1. What We Collect</h2>
-          <p>QueueFlow collects only what is necessary to manage your queue experience:</p>
+          <p>Qflo collects only what is necessary to manage your queue experience:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             <li><strong>Ticket data</strong> — ticket number, status, position, timestamps</li>
             <li><strong>Optional contact info</strong> — name, phone, or email if you provide them</li>
@@ -28,7 +28,7 @@ export default function PrivacyPage() {
             <li>To manage your position in the queue and notify you when it is your turn</li>
             <li>To display your ticket on waiting room screens</li>
             <li>To send push notifications about your queue status (opt-in only)</li>
-            <li>To generate anonymous statistics for businesses using QueueFlow</li>
+            <li>To generate anonymous statistics for businesses using Qflo</li>
           </ul>
         </section>
 
@@ -44,7 +44,7 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="mb-2 text-lg font-semibold text-foreground">5. Cookies & Tracking</h2>
-          <p>QueueFlow does not use third-party tracking cookies. We use essential cookies only for authentication and session management.</p>
+          <p>Qflo does not use third-party tracking cookies. We use essential cookies only for authentication and session management.</p>
         </section>
 
         <section>

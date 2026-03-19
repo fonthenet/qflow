@@ -71,7 +71,7 @@ export default function SolutionsPage() {
         <div className="mx-auto max-w-3xl px-6 text-center">
           <h2 className="text-3xl font-bold">Don&apos;t See Your Industry?</h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            QueueFlow works for any business with a queue. Start with a blank template and customize everything.
+            Qflo works for any business with a queue. Start with a blank template and customize everything.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link

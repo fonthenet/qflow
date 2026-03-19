@@ -9,13 +9,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'QueueFlow - Smart Queue Management',
+  title: 'Qflo - Smart Queue Management',
   description: 'Modern queue and ticketing management system for businesses',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'QueueFlow',
+    title: 'Qflo',
     startupImage: '/icon-512x512.png',
   },
   icons: {

@@ -5,16 +5,14 @@ const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
 
 function iconSvg(size, flat = false) {
-  // Blue gradient background with Q and flow text
-  // Q: 55% of canvas height, flow: 15% of canvas height
-  // Positioned so the pair is vertically centered
-  const qFontSize = Math.round(size * 0.65);
-  const flowFontSize = Math.round(size * 0.16);
-  const gap = Math.round(size * 0.01);
-
-  // Center of Q, flow sits just below with minimal gap
-  const qY = Math.round(size * 0.44);
-  const flowY = qY + Math.round(qFontSize * 0.32) + gap + Math.round(flowFontSize * 0.6);
+  // Blue gradient background with large "Q" and smaller "flo" on same line
+  const qSize = Math.round(size * 0.45);
+  const floSize = Math.round(size * 0.24);
+  const y = Math.round(size * 0.54);
+  // Position Q and flo side by side — Q is left of center, flo right with gap
+  const qX = Math.round(size * 0.30);
+  const floX = Math.round(size * 0.61);
+  const floY = y + Math.round(qSize * 0.05); // slight baseline alignment
 
   const gradient = !flat;
   return `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
@@ -25,14 +23,13 @@ function iconSvg(size, flat = false) {
     </linearGradient>
   </defs>` : ''}
   <rect width="${size}" height="${size}" fill="${gradient ? 'url(#bg)' : '#2563eb'}"/>
-  <text x="50%" y="${qY}" text-anchor="middle" dominant-baseline="central"
+  <text x="${qX}" y="${y}" text-anchor="middle" dominant-baseline="central"
         font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
-        font-weight="700" font-size="${qFontSize}" fill="white"
-        letter-spacing="-2">Q</text>
-  <text x="50%" y="${flowY}" text-anchor="middle" dominant-baseline="central"
+        font-weight="700" font-size="${qSize}" fill="white">Q</text>
+  <text x="${floX}" y="${floY}" text-anchor="middle" dominant-baseline="central"
         font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif"
-        font-weight="600" font-size="${flowFontSize}" fill="white"
-        letter-spacing="1">flow</text>
+        font-weight="600" font-size="${floSize}" fill="white"
+        letter-spacing="1">flo</text>
 </svg>`;
 }
 

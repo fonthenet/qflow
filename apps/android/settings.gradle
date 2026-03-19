@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "QueueFlow"
+rootProject.name = "Qflo"
 include ':app'

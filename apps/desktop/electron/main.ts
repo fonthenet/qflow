@@ -19,7 +19,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'QueueFlow Station',
+    title: 'Qflo Station',
     icon: path.join(__dirname, '../assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -74,7 +74,7 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   };
 
   const menu = Menu.buildFromTemplate([
-    { label: 'QueueFlow Station v1.0.0', enabled: false },
+    { label: 'Qflo Station v1.0.0', enabled: false },
     { type: 'separator' },
     { label: statusLabels[status], enabled: false },
     { type: 'separator' },
@@ -85,7 +85,7 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   ]);
 
   tray.setContextMenu(menu);
-  tray.setToolTip(`QueueFlow Station — ${status}`);
+  tray.setToolTip(`Qflo Station — ${status}`);
 }
 
 // ── IPC Handlers ──────────────────────────────────────────────────────
@@ -445,13 +445,13 @@ app.whenReady().then(async () => {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', () => {
     new Notification({
-      title: 'QueueFlow Update',
+      title: 'Qflo Update',
       body: 'A new version is downloading...',
     }).show();
   });
   autoUpdater.on('update-downloaded', () => {
     new Notification({
-      title: 'QueueFlow Update Ready',
+      title: 'Qflo Update Ready',
       body: 'Restart to apply the update.',
     }).show();
   });

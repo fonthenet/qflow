@@ -73,7 +73,7 @@ async function getOfficeContext(
 
   return {
     organizationId: data?.organization_id ?? null,
-    officeName: data?.name ?? 'QueueFlow',
+    officeName: data?.name ?? 'Qflo',
   };
 }
 
@@ -89,15 +89,15 @@ function buildPriorityAlertMessage(params: {
 
   switch (event) {
     case 'called':
-      return `QueueFlow: Ticket ${ticketNumber} is now called at ${officeName}. Go to ${deskName}. Track: ${trackUrl}`;
+      return `Qflo: Ticket ${ticketNumber} is now called at ${officeName}. Go to ${deskName}. Track: ${trackUrl}`;
     case 'recall':
-      return `QueueFlow reminder: Ticket ${ticketNumber} is still waiting for you at ${deskName}. Track: ${trackUrl}`;
+      return `Qflo reminder: Ticket ${ticketNumber} is still waiting for you at ${deskName}. Track: ${trackUrl}`;
     case 'buzz':
       return status === 'called'
-        ? `QueueFlow buzz: Ticket ${ticketNumber}, please go to ${deskName} now. Track: ${trackUrl}`
-        : `QueueFlow buzz: Staff is trying to reach ticket ${ticketNumber}. Open your queue page: ${trackUrl}`;
+        ? `Qflo buzz: Ticket ${ticketNumber}, please go to ${deskName} now. Track: ${trackUrl}`
+        : `Qflo buzz: Staff is trying to reach ticket ${ticketNumber}. Open your queue page: ${trackUrl}`;
     default:
-      return `QueueFlow update for ticket ${ticketNumber}: ${trackUrl}`;
+      return `Qflo update for ticket ${ticketNumber}: ${trackUrl}`;
   }
 }
 

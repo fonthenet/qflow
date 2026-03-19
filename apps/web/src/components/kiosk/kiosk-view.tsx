@@ -516,7 +516,7 @@ export function KioskView({
             </div>
           ) : null}
           <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
-            {ks.headerText || organization?.name || 'QueueFlow'}
+            {ks.headerText || organization?.name || 'Qflo'}
           </h1>
           <p className="mt-3 text-lg text-slate-600 sm:text-xl">{ks.welcomeMessage}</p>
           <p className="mt-2 text-base text-slate-500">{office.name}</p>

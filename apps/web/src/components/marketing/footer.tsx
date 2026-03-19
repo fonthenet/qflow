@@ -32,7 +32,7 @@ export function Footer() {
                 Q
               </div>
               <span className="text-lg font-bold">
-                Queue<span className="text-primary">Flow</span>
+                Qflo
               </span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -62,7 +62,7 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 md:flex-row">
           <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} QueueFlow. All rights reserved.
+            &copy; {new Date().getFullYear()} Qflo. All rights reserved.
           </p>
           <div className="flex gap-6">
             <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">

@@ -208,7 +208,7 @@ export async function sendPositionUpdatePush(ticketId: string): Promise<boolean>
 
   return sendPushToTicket(ticketId, {
     type: 'position_update',
-    title: position ? `QueueFlow · #${position} in line` : 'QueueFlow · In queue',
+    title: position ? `Qflo · #${position} in line` : 'Qflo · In queue',
     body: [
       estimatedWait ? `~${estimatedWait} min wait` : null,
       nowServing ? `Now serving: ${nowServing}` : null,

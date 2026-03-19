@@ -100,10 +100,10 @@ export default function HowItWorksPage() {
       <section className="bg-gradient-to-br from-primary/5 via-background to-primary/10 py-20">
         <div className="mx-auto max-w-7xl px-6 text-center">
           <h1 className="text-4xl font-extrabold tracking-tight md:text-5xl">
-            How QueueFlow Works
+            How Qflo Works
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-            From sign-up to your first customer notification — here&apos;s exactly how QueueFlow transforms your queue management.
+            From sign-up to your first customer notification — here&apos;s exactly how Qflo transforms your queue management.
           </p>
         </div>
       </section>

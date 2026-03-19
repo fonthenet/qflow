@@ -82,7 +82,7 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
           ) : (
             <span className="app-logo">Q</span>
           )}
-          <span className="app-name">{orgName ?? session?.office_name ?? 'QueueFlow Station'}</span>
+          <span className="app-name">{orgName ?? session?.office_name ?? 'Qflo Station'}</span>
           {orgName && session?.office_name && orgName !== session.office_name && (
             <span className="operator-role" style={{ marginLeft: 0 }}>{session.office_name}</span>
           )}

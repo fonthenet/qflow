@@ -1,9 +1,9 @@
 {
   "name": "queueflow-station",
   "version": "1.0.0",
-  "description": "QueueFlow Operator Station — offline-first queue management",
+  "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
-  "author": "QueueFlow",
+  "author": "Qflo",
   "license": "PROPRIETARY",
   "scripts": {
     "dev": "vite",
@@ -38,7 +38,7 @@
   },
   "build": {
     "appId": "com.queueflow.station",
-    "productName": "QueueFlow Station",
+    "productName": "Qflo Station",
     "directories": {
       "output": "release"
     },
@@ -57,7 +57,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "QueueFlow Station"
+      "shortcutName": "Qflo Station"
     },
     "publish": {
       "provider": "github",

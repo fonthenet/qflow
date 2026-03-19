@@ -12,7 +12,7 @@ interface IosInstallPromptProps {
  * Shows animated step-by-step instructions pointing at Safari's Share button.
  * Designed to feel like a native install prompt — not a wall of text.
  */
-export function IosInstallPrompt({ onDismiss, appName = 'QueueFlow' }: IosInstallPromptProps) {
+export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallPromptProps) {
   const [step, setStep] = useState(1);
   const [animateIn, setAnimateIn] = useState(false);
 

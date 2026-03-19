@@ -265,7 +265,7 @@ struct YourTurnView: View {
                         }
                     }
 
-                    Text("Powered by QueueFlow")
+                    Text("Powered by Qflo")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.42))
                         .tracking(4)

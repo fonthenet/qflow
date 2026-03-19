@@ -1,4 +1,4 @@
-# QueueFlow iOS — App Store Deployment Guide
+# Qflo iOS — App Store Deployment Guide
 
 > **No Mac needed.** Everything runs via GitHub Actions.
 
@@ -19,7 +19,7 @@ Go to [App Store Connect](https://appstoreconnect.apple.com):
 1. Click **My Apps** → **+** → **New App**
 2. Fill in:
    - **Platform**: iOS
-   - **Name**: QueueFlow
+   - **Name**: Qflo
    - **Primary Language**: English
    - **Bundle ID**: com.queueflow.app (register in Certificates portal first)
    - **SKU**: queueflow-app
@@ -97,7 +97,7 @@ In App Store Connect → your app → **App Clip** section:
 
 1. Click **Get Started** under App Clip Experiences
 2. Add **Default App Clip Experience**:
-   - Header image: your QueueFlow icon (1800×1200px recommended)
+   - Header image: your Qflo icon (1800×1200px recommended)
    - Subtitle: "Track your queue position"
    - Action: "Open"
 3. Add **Advanced App Clip Experience**:

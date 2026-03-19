@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         title: shouldLeaveQueue ? 'Queue cancelled' : 'Tracking stopped',
         body: shouldLeaveQueue
           ? 'This ticket has left the queue.'
-          : 'QueueFlow tracking stopped for this visit.',
+          : 'Qflo tracking stopped for this visit.',
         ticketId,
         silent: true,
       }),
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         title: shouldLeaveQueue ? 'Queue cancelled' : 'Tracking stopped',
         body: shouldLeaveQueue
           ? 'This ticket has left the queue.'
-          : 'QueueFlow tracking stopped for this visit.',
+          : 'Qflo tracking stopped for this visit.',
         ticketId,
         silent: true,
       }),

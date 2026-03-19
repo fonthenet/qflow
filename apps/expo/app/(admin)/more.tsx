@@ -424,7 +424,7 @@ export default function MoreScreen() {
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>QueueFlow v1.0.0</Text>
+      <Text style={styles.version}>Qflo v1.0.0</Text>
     </ScrollView>
   );
 }
