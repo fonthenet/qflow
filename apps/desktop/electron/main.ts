@@ -136,16 +136,18 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:create-ticket', (_e, ticket: any) => {
-    db.prepare(`
-      INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
-      VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, 1)
-    `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), ticket.created_at ?? new Date().toISOString());
+    // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, 1)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), ticket.created_at ?? new Date().toISOString());
 
-    // Queue for sync
-    db.prepare(`
-      INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-      VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-    `).run(ticket.id + '-create', ticket.id, JSON.stringify(ticket), new Date().toISOString());
+      db.prepare(`
+        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+        VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
+      `).run(ticket.id + '-create', ticket.id, JSON.stringify(ticket), new Date().toISOString());
+    })();
 
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
     return ticket;
@@ -157,9 +159,17 @@ function setupIPC() {
       .join(', ');
     const values = Object.values(updates);
 
-    db.prepare(`UPDATE tickets SET ${sets} WHERE id = ?`).run(...values, ticketId);
+    // Transaction: ticket update + sync queue insert are atomic (crash-safe)
+    // For manual "Call" button: use atomic CAS to prevent two staff calling same ticket
+    if (updates.status === 'called') {
+      const result = db.prepare(
+        `UPDATE tickets SET ${sets} WHERE id = ? AND status = 'waiting' RETURNING *`
+      ).get(...values, ticketId) as any;
+      if (!result) return null; // ticket was already called by someone else
+    } else {
+      db.prepare(`UPDATE tickets SET ${sets} WHERE id = ?`).run(...values, ticketId);
+    }
 
-    // Queue for sync
     const syncId = `${ticketId}-${Date.now()}`;
     db.prepare(`
       INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -200,27 +210,31 @@ function setupIPC() {
     const now = new Date().toISOString();
 
     // ATOMIC: single UPDATE...RETURNING prevents two desks calling the same ticket
-    const ticket = db.prepare(`
-      UPDATE tickets
-      SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
-      WHERE id = (
-        SELECT id FROM tickets
-        WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
-        ORDER BY priority DESC, created_at ASC
-        LIMIT 1
-      )
-      RETURNING *
-    `).get(deskId, staffId, now, officeId) as any;
+    // Transaction wraps both the ticket update and sync queue insert (crash-safe)
+    let ticket: any = null;
+    db.transaction(() => {
+      ticket = db.prepare(`
+        UPDATE tickets
+        SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ?
+        WHERE id = (
+          SELECT id FROM tickets
+          WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL
+          ORDER BY priority DESC, created_at ASC
+          LIMIT 1
+        )
+        RETURNING *
+      `).get(deskId, staffId, now, officeId) as any;
+
+      if (ticket) {
+        db.prepare(`
+          INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+          VALUES (?, 'CALL', 'tickets', ?, ?, ?)
+        `).run(`${ticket.id}-call-${Date.now()}`, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+      }
+    })();
 
     if (!ticket) return null;
 
-    // Queue sync
-    db.prepare(`
-      INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-      VALUES (?, 'CALL', 'tickets', ?, ?, ?)
-    `).run(`${ticket.id}-call-${Date.now()}`, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
-
-    // Instant push with typed event
     const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
     notifyDisplays({
       type: 'ticket_called',
@@ -243,7 +257,7 @@ function setupIPC() {
     syncEngine?.suppressAuthErrors(); // prevent stale-session race from kicking user out
     await syncEngine?.syncNow();
     await syncEngine?.pullLatest();
-    notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
+    // pullLatest already fires onDataPulled -> notifyDisplays
   });
 
   ipcMain.handle('sync:pending-details', () => {

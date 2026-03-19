@@ -17,6 +17,7 @@ export class SyncEngine {
   private authErrorSuppressedUntil = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
+  private pullInterval: ReturnType<typeof setInterval> | null = null;
 
   public isOnline = false;
   public lastSyncAt: string | null = null;
@@ -49,7 +50,7 @@ export class SyncEngine {
     this.interval = setInterval(() => this.syncNow(), 15_000);
 
     // Pull cloud data every 5s when online to keep SQLite fresh
-    setInterval(() => {
+    this.pullInterval = setInterval(() => {
       if (this.isOnline) this.pullLatest();
     }, 5_000);
   }
@@ -57,6 +58,7 @@ export class SyncEngine {
   stop() {
     if (this.interval) clearInterval(this.interval);
     if (this.healthInterval) clearInterval(this.healthInterval);
+    if (this.pullInterval) clearInterval(this.pullInterval);
   }
 
   // Track when we last refreshed the token to avoid hammering the auth endpoint
@@ -335,13 +337,14 @@ export class SyncEngine {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      // IDs of locally-modified tickets — only skip if a sync is still in-flight
-      // (operation is UPDATE/CALL, meaning WE wrote the local change and haven't synced yet)
-      // Do NOT skip for INSERT — those are new cloud tickets we must accept
+      // IDs of locally-modified tickets — only skip if a sync is RECENTLY in-flight
+      // Items pending > 2 minutes are considered stale and should not block cloud updates
+      // (prevents mobile-served tickets from being stuck as "called" on station)
+      const twoMinAgo = new Date(Date.now() - 120000).toISOString();
       const locallyModifiedIds = new Set(
         (this.db.prepare(
-          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('UPDATE','CALL')"
-        ).all() as any[]).map((r: any) => r.record_id)
+          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('UPDATE','CALL') AND created_at > ?"
+        ).all(twoMinAgo) as any[]).map((r: any) => r.record_id)
       );
 
       const upsertBatch = this.db.transaction((rows: any[]) => {
@@ -401,17 +404,8 @@ export class SyncEngine {
           this.lastPulledAt = new Date().toISOString();
           console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)${useIncremental ? ' [incremental]' : ' [full]'}`);
         } else {
-          // Don't fire auth error if suppressed (recent login) or if session has no refresh_token (stale pre-fix session)
-          if (Date.now() < this.authErrorSuppressedUntil) {
-            console.log('[sync:pullLatest] Auth error suppressed (recent login), skipping');
-            return;
-          }
-          if (!session?.refresh_token) {
-            console.log('[sync:pullLatest] Stale session without refresh_token — skipping auth error (user must re-login manually)');
-            return;
-          }
-          console.error(`[sync:pullLatest] Could not fetch active tickets for office ${officeId} — token expired and refresh failed.`);
-          return;
+          console.warn(`[sync:pullLatest] Could not fetch active tickets for office ${officeId}`);
+          continue; // skip this office, try the next one
         }
 
         // 2. Recent historical tickets — date-filtered (last 48h, avoids clock-drift issues)
@@ -427,18 +421,14 @@ export class SyncEngine {
         for (const t of allPulled) {
           if (!t.ticket_number || !t.id) continue;
 
-          // Remove any LOCAL duplicates that have the same ticket_number but different id
-          // (caused by offline kiosk creating L-R-XXX which gets synced and returns as R-XXX with a different UUID)
           const dupes = this.db.prepare(
             "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
           ).all(t.office_id, t.ticket_number, t.id) as any[];
           for (const dupe of dupes) {
             this.db.prepare("DELETE FROM tickets WHERE id = ?").run(dupe.id);
-            // Also clean up any sync queue items for the deleted duplicate
             this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(dupe.id);
           }
 
-          // Also check for L- prefixed version of this ticket number (e.g., cloud has R-008, local has L-R-008)
           if (!t.ticket_number.startsWith('L-')) {
             const lPrefixed = this.db.prepare(
               "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
@@ -449,10 +439,10 @@ export class SyncEngine {
             }
           }
         }
-
-        // Notify displays that new data was pulled from cloud
-        this.onDataPulled();
       }
+
+      // Notify displays ONCE after all offices are pulled (not per-office)
+      this.onDataPulled();
     } catch (err: any) {
       console.error('[sync:pullLatest] Error:', err?.message ?? err);
     }

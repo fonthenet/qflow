@@ -20,10 +20,12 @@ export function notifyDisplays(event?: SSEEvent) {
   const dead: http.ServerResponse[] = [];
   for (const client of sseClients) {
     try {
+      // Send typed event if provided, otherwise generic update — never both
       if (event) {
         client.write(`data: ${JSON.stringify(event)}\n\n`);
+      } else {
+        client.write('data: update\n\n');
       }
-      client.write('data: update\n\n'); // always send generic for backward compat
     } catch { dead.push(client); }
   }
   for (const c of dead) sseClients.delete(c);
@@ -238,32 +240,33 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         phone: customerPhone || null,
       });
 
-      // Insert ticket locally
-      db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
-        VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, 1)
-      `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now);
+      // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
+          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, 1)
+        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now);
 
-      // Queue for cloud sync
-      db.prepare(`
-        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-        VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-      `).run(
-        ticketId + '-create',
-        ticketId,
-        JSON.stringify({
-          id: ticketId,
-          ticket_number: ticketNumber,
-          office_id: officeId,
-          department_id: departmentId,
-          service_id: serviceId,
-          status: 'waiting',
-          priority: 0,
-          customer_data: { name: customerName || null, phone: customerPhone || null },
-          created_at: now,
-        }),
-        now
-      );
+        db.prepare(`
+          INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+          VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
+        `).run(
+          ticketId + '-create',
+          ticketId,
+          JSON.stringify({
+            id: ticketId,
+            ticket_number: ticketNumber,
+            office_id: officeId,
+            department_id: departmentId,
+            service_id: serviceId,
+            status: 'waiting',
+            priority: 0,
+            customer_data: { name: customerName || null, phone: customerPhone || null },
+            created_at: now,
+          }),
+          now
+        );
+      })();
 
       notifyDisplays({ type: 'ticket_created', ticket_number: ticketNumber, timestamp: now });
 
