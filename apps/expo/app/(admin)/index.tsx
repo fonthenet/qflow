@@ -110,7 +110,7 @@ export default function AdminDashboard() {
       // Active tickets per department
       supabase.from('tickets').select('department_id, status').in('office_id', officeIds).in('status', ['waiting', 'called', 'serving']),
       // Bookings
-      supabase.from('appointments').select('id', { count: 'exact', head: true }).in('office_id', officeIds).gte('scheduled_at', todayDate + 'T00:00:00').lt('scheduled_at', todayDate + 'T23:59:59'),
+      supabase.from('appointments').select('id', { count: 'exact', head: true }).in('office_id', officeIds).gte('scheduled_at', todayDate + 'T00:00:00').lt('scheduled_at', todayDate + 'T23:59:59').neq('status', 'cancelled'),
       supabase.from('appointments').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'pending'),
     ]);
 
