@@ -422,15 +422,30 @@ export class SyncEngine {
           upsertBatch(histTickets);
         }
 
-        // Remap L- ticket numbers after successful cloud sync
+        // ── Deduplicate: when cloud ticket matches a local ticket by number+office, keep cloud version ──
         const allPulled = [...(activeTickets ?? []), ...(histTickets ?? [])];
         for (const t of allPulled) {
-          if (t.ticket_number && !t.ticket_number.startsWith('L-')) {
-            const local = this.db.prepare(
-              "SELECT ticket_number FROM tickets WHERE id = ? AND ticket_number LIKE 'L-%'"
-            ).get(t.id) as any;
-            if (local) {
-              this.db.prepare("UPDATE tickets SET ticket_number = ? WHERE id = ?").run(t.ticket_number, t.id);
+          if (!t.ticket_number || !t.id) continue;
+
+          // Remove any LOCAL duplicates that have the same ticket_number but different id
+          // (caused by offline kiosk creating L-R-XXX which gets synced and returns as R-XXX with a different UUID)
+          const dupes = this.db.prepare(
+            "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
+          ).all(t.office_id, t.ticket_number, t.id) as any[];
+          for (const dupe of dupes) {
+            this.db.prepare("DELETE FROM tickets WHERE id = ?").run(dupe.id);
+            // Also clean up any sync queue items for the deleted duplicate
+            this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(dupe.id);
+          }
+
+          // Also check for L- prefixed version of this ticket number (e.g., cloud has R-008, local has L-R-008)
+          if (!t.ticket_number.startsWith('L-')) {
+            const lPrefixed = this.db.prepare(
+              "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
+            ).all(t.office_id, `L-${t.ticket_number}`, t.id) as any[];
+            for (const lp of lPrefixed) {
+              this.db.prepare("DELETE FROM tickets WHERE id = ?").run(lp.id);
+              this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(lp.id);
             }
           }
         }

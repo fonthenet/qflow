@@ -32,6 +32,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    mainWindow?.webContents.openDevTools({ mode: 'detach' });
   });
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
@@ -122,6 +123,15 @@ function setupIPC() {
       `SELECT * FROM tickets WHERE office_id IN (${officePlaceholders}) AND status IN (${statusPlaceholders})
        ORDER BY priority DESC, created_at ASC`
     ).all(...ids, ...statuses);
+
+    // Debug: log what the display sees vs what the station sees
+    if (result.length === 0) {
+      const allActive = db.prepare("SELECT ticket_number, office_id, status FROM tickets WHERE status IN ('waiting','called','serving')").all();
+      if ((allActive as any[]).length > 0) {
+        console.log(`[db:get-tickets] Station found 0 tickets for offices [${ids.join(',')}] but SQLite has ${(allActive as any[]).length} active tickets:`, allActive);
+      }
+    }
+
     return result;
   });
 
