@@ -26,20 +26,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    show: false,
+    show: true,
     backgroundColor: '#0f172a',
-  });
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-    mainWindow?.webContents.openDevTools({ mode: 'detach' });
-  });
-
-  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
-    console.error(`[window] Failed to load: ${code} ${desc}`);
-  });
-  mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error(`[window] Renderer crashed:`, details);
   });
 
   // Dev or production
