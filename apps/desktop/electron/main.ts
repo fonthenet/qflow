@@ -34,6 +34,13 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error(`[window] Failed to load: ${code} ${desc}`);
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[window] Renderer crashed:`, details);
+  });
+
   // Dev or production
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);

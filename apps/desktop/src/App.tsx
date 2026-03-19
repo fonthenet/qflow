@@ -49,14 +49,9 @@ export function App() {
     setSession(null);
   }, []);
 
-  // Force re-login when the sync engine can't refresh an expired token
-  useEffect(() => {
-    const unsub = window.qf.auth?.onSessionExpired?.(() => {
-      window.qf.session.clear();
-      setSession(null);
-    });
-    return () => unsub?.();
-  }, []);
+  // Note: we intentionally do NOT auto-logout on auth errors.
+  // The sync engine logs token issues and retries automatically.
+  // The user sees "Offline Mode" and can manually sign out/in if needed.
 
   if (loading) {
     return (

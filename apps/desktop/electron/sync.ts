@@ -401,13 +401,16 @@ export class SyncEngine {
           this.lastPulledAt = new Date().toISOString();
           console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)${useIncremental ? ' [incremental]' : ' [full]'}`);
         } else {
-          // Don't fire auth error if suppressed (e.g., user just logged in — old session's failure arriving late)
+          // Don't fire auth error if suppressed (recent login) or if session has no refresh_token (stale pre-fix session)
           if (Date.now() < this.authErrorSuppressedUntil) {
             console.log('[sync:pullLatest] Auth error suppressed (recent login), skipping');
             return;
           }
-          console.error(`[sync:pullLatest] Could not fetch active tickets for office ${officeId} — token expired and refresh failed. Prompting re-login.`);
-          this.onAuthError();
+          if (!session?.refresh_token) {
+            console.log('[sync:pullLatest] Stale session without refresh_token — skipping auth error (user must re-login manually)');
+            return;
+          }
+          console.error(`[sync:pullLatest] Could not fetch active tickets for office ${officeId} — token expired and refresh failed.`);
           return;
         }
 
