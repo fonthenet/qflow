@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -189,7 +191,13 @@ export default function JoinScreen() {
   const selectedService = availableServices.find((s) => s.id === selectedServiceId);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.orgName}>{info?.organization.name ?? 'Queue'}</Text>
@@ -361,6 +369,7 @@ export default function JoinScreen() {
 
       <View style={{ height: spacing.xxl }} />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

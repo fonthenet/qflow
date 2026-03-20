@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -124,6 +125,7 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient colors={['#1e40af', '#3b82f6', '#6366f1']} style={styles.gradient}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[
@@ -222,6 +224,7 @@ export default function LoginScreen() {
           <Text style={styles.backLinkText}>Back to customer view</Text>
         </TouchableOpacity>
       </ScrollView>
+    </KeyboardAvoidingView>
     </LinearGradient>
   );
 }

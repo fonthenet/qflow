@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Linking,
   Platform,
   ScrollView,
@@ -163,7 +164,8 @@ export default function ProfileScreen() {
   const ds = dynamicStyles(colors, isDark);
 
   return (
-    <ScrollView style={ds.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView style={ds.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
 
       {/* ── Staff Section (top) ─────────────────────────────── */}
       {user && isStaff ? (
@@ -402,6 +404,7 @@ export default function ProfileScreen() {
       </View>
 
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

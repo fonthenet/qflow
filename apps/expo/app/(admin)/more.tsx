@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -159,7 +161,8 @@ export default function MoreScreen() {
   const isOperator = staffRole === 'operator' || staffRole === 'branch_admin' || staffRole === 'manager' || staffRole === 'admin';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       {/* ── Quick Actions ── */}
       <View style={styles.quickActions}>
         {isOperator && (
@@ -426,6 +429,7 @@ export default function MoreScreen() {
 
       <Text style={styles.version}>Qflo v1.0.0</Text>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
