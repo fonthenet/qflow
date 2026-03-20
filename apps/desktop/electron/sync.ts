@@ -535,14 +535,15 @@ export class SyncEngine {
       this.updatePendingCount();
     }
 
-    // Auto-discard stale UPDATE/CALL items older than 1 hour — the cloud state has moved on
-    // (e.g., a "call" action from an hour ago is meaningless now)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Auto-discard stale UPDATE/CALL items older than 4 hours — the cloud state has moved on
+    // (e.g., a "call" action from hours ago is meaningless now)
+    // Extended from 1h to 4h to survive extended outages
+    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const staleDiscarded = this.db.prepare(
       "DELETE FROM sync_queue WHERE synced_at IS NULL AND operation != 'INSERT' AND created_at < ?"
-    ).run(oneHourAgo);
+    ).run(fourHoursAgo);
     if (staleDiscarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale sync items older than 1 hour`);
+      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale sync items older than 4 hours`);
       this.updatePendingCount();
     }
 
@@ -688,13 +689,13 @@ export class SyncEngine {
       `);
 
       // IDs of locally-modified tickets — only skip if a sync is RECENTLY in-flight
-      // Items pending > 2 minutes are considered stale and should not block cloud updates
+      // Items pending > 5 minutes are considered stale and should not block cloud updates
       // (prevents mobile-served tickets from being stuck as "called" on station)
-      const twoMinAgo = new Date(Date.now() - 120000).toISOString();
+      const fiveMinAgo = new Date(Date.now() - 300000).toISOString();
       const locallyModifiedIds = new Set(
         (this.db.prepare(
           "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('UPDATE','CALL') AND created_at > ?"
-        ).all(twoMinAgo) as any[]).map((r: any) => r.record_id)
+        ).all(fiveMinAgo) as any[]).map((r: any) => r.record_id)
       );
 
       // Status progression rank — higher = more advanced in the lifecycle

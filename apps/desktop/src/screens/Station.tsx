@@ -530,9 +530,13 @@ export function Station({ session, isOnline }: Props) {
 }
 
 function parseLocalTicket(row: any): Ticket {
+  let customerData = row.customer_data ?? {};
+  if (typeof customerData === 'string') {
+    try { customerData = JSON.parse(customerData); } catch { customerData = {}; }
+  }
   return {
     ...row,
-    customer_data: typeof row.customer_data === 'string' ? JSON.parse(row.customer_data) : row.customer_data ?? {},
+    customer_data: customerData,
     is_remote: !!row.is_remote,
     is_offline: !!row.is_offline,
   };

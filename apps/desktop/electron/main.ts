@@ -379,6 +379,8 @@ function setupIPC() {
 
   ipcMain.handle('session:clear', () => {
     db.prepare("DELETE FROM session WHERE key = 'current'").run();
+    // Stop sync engine on logout to prevent stale token errors
+    syncEngine?.stop();
   });
 
   // ── Debug ───────────────────────────────────────────────────────
