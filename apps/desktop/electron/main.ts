@@ -21,10 +21,28 @@ let kioskUrl: string | null = null;
 const SUPABASE_URL = 'https://ofyyzuocifigyyhqxxqw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
 
+function loadWindowBounds(): { x?: number; y?: number; width: number; height: number } {
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = 'window_bounds'").get() as any;
+    if (row) return JSON.parse(row.value);
+  } catch {}
+  return { width: 1280, height: 800 };
+}
+
+function saveWindowBounds() {
+  if (!mainWindow) return;
+  try {
+    const bounds = mainWindow.getBounds();
+    const db = getDB();
+    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('window_bounds', ?)").run(JSON.stringify(bounds));
+  } catch {}
+}
+
 function createWindow() {
+  const bounds = loadWindowBounds();
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    ...bounds,
     minWidth: 900,
     minHeight: 600,
     title: 'Qflo Station',
@@ -46,10 +64,14 @@ function createWindow() {
   }
 
   mainWindow.on('close', (e) => {
+    saveWindowBounds();
     // Minimize to tray instead of closing
     e.preventDefault();
     mainWindow?.hide();
   });
+
+  mainWindow.on('resize', () => saveWindowBounds());
+  mainWindow.on('move', () => saveWindowBounds());
 
   mainWindow.on('closed', () => {
     mainWindow = null;

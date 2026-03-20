@@ -28,6 +28,11 @@ function statusColor(status: string): string {
   return map[status] ?? '#64748b';
 }
 
+// ── Constants ────────────────────────────────────────────────────
+const CALL_TIMEOUT = 60;
+const POLL_INTERVAL = 3000;
+const DEVICE_CHECK_INTERVAL = 10000;
+
 export function Station({ session, isOnline }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
@@ -36,9 +41,16 @@ export function Station({ session, isOnline }: Props) {
   });
   const [callCountdown, setCallCountdown] = useState(0);
   const [servingElapsed, setServingElapsed] = useState(0);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const servingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const CALL_TIMEOUT = 60;
+  const prevWaitingCount = useRef(0);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   // ── Fetch tickets ────────────────────────────────────────────────
 
@@ -75,7 +87,7 @@ export function Station({ session, isOnline }: Props) {
 
   useEffect(() => {
     fetchTickets();
-    const iv = setInterval(fetchTickets, 3000);
+    const iv = setInterval(fetchTickets, POLL_INTERVAL);
     return () => clearInterval(iv);
   }, [fetchTickets]);
 
@@ -215,6 +227,24 @@ export function Station({ session, isOnline }: Props) {
   const called = tickets.filter((t) => t.status === 'called');
   const serving = tickets.filter((t) => t.status === 'serving');
 
+  // Sound alert when new ticket arrives
+  useEffect(() => {
+    if (waiting.length > prevWaitingCount.current && prevWaitingCount.current > 0) {
+      try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVBRk10AAAACQBAAABAAAAAQA8AB//gAQBkYXRhSAAAAGAAAAAAAAAAAAAAAAA=').play().catch(() => {}); } catch {}
+    }
+    prevWaitingCount.current = waiting.length;
+  }, [waiting.length]);
+
+  // Filter waiting list by search
+  const filteredWaiting = searchFilter
+    ? waiting.filter((t) => {
+        const q = searchFilter.toLowerCase();
+        return t.ticket_number.toLowerCase().includes(q)
+          || ((t.customer_data as any)?.name ?? '').toLowerCase().includes(q)
+          || ((t.customer_data as any)?.phone ?? '').includes(q);
+      })
+    : waiting;
+
   // ── Render ──────────────────────────────────────────────────────
 
   return (
@@ -265,8 +295,8 @@ export function Station({ session, isOnline }: Props) {
                 </div>
 
                 <div className="active-actions">
-                  <button className="btn-primary btn-lg" onClick={() => startServing(activeTicket.id)}>
-                    Start Serving
+                  <button className="btn-primary btn-lg" onClick={() => startServing(activeTicket.id)} title="F9">
+                    Start Serving <span className="shortcut-hint">F9</span>
                   </button>
                   <div className="secondary-actions">
                     <button className="btn-outline" onClick={() => recall(activeTicket.id)}>
@@ -321,8 +351,8 @@ export function Station({ session, isOnline }: Props) {
                 </div>
 
                 <div className="active-actions">
-                  <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)}>
-                    Complete Service
+                  <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
+                    Complete Service <span className="shortcut-hint">F10</span>
                   </button>
                   <div className="secondary-actions">
                     <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)}>
@@ -345,8 +375,9 @@ export function Station({ session, isOnline }: Props) {
               className="btn-primary btn-xl"
               onClick={callNext}
               disabled={waiting.length === 0}
+              title="F8 or Ctrl+Enter"
             >
-              Call Next ({waiting.length})
+              Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
             </button>
           </div>
         )}
@@ -366,9 +397,20 @@ export function Station({ session, isOnline }: Props) {
         </div>
 
         <div className="sidebar-section queue-list queue-waiting">
-          <h4>Waiting ({waiting.length})</h4>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <h4 style={{ margin: 0 }}>Waiting ({waiting.length})</h4>
+            {waiting.length > 3 && (
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="queue-search"
+              />
+            )}
+          </div>
           <div className="ticket-list">
-            {waiting.map((t, i) => (
+            {filteredWaiting.map((t, i) => (
               <div key={t.id} className="queue-item">
                 <div className="queue-item-pos">#{i + 1}</div>
                 <div className="queue-item-info">
@@ -397,8 +439,8 @@ export function Station({ session, isOnline }: Props) {
                 )}
               </div>
             ))}
-            {waiting.length === 0 && (
-              <div className="queue-empty">No customers waiting</div>
+            {filteredWaiting.length === 0 && (
+              <div className="queue-empty">{searchFilter ? 'No matches' : 'No customers waiting'}</div>
             )}
           </div>
         </div>
@@ -476,6 +518,13 @@ export function Station({ session, isOnline }: Props) {
           </div>
         )}
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
