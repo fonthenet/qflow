@@ -5,8 +5,8 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 
 let isCloudReachable = false;
-let onTicketCreated: (() => void) | null = null;
-export function setOnTicketCreated(cb: () => void) { onTicketCreated = cb; }
+let onTicketCreated: ((syncQueueId: string) => void) | null = null;
+export function setOnTicketCreated(cb: (syncQueueId: string) => void) { onTicketCreated = cb; }
 
 // ── SSE: push instant updates to all connected displays/kiosks ───
 const sseClients: Set<http.ServerResponse> = new Set();
@@ -283,7 +283,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       })();
 
       notifyDisplays({ type: 'ticket_created', ticket_number: ticketNumber, timestamp: now });
-      onTicketCreated?.();
+      onTicketCreated?.(ticketId + '-create');
 
       // Count position
       const position = db.prepare(`
@@ -554,11 +554,8 @@ function serveKioskPage(res: http.ServerResponse) {
 
       } else if (state.step === 'done') {
         var t = state.ticket;
-        var trackLocal = API + '/track/' + encodeURIComponent(t.ticket_number);
         var trackUrl = CLOUD + '/ticket/' + t.id;
-        // L- tickets are offline-only until synced — use local tracking URL for QR
-        var qrTarget = t.ticket_number.startsWith('L-') ? trackLocal : trackUrl;
-        var qrHtml = makeQR(qrTarget, 3);
+        var qrHtml = makeQR(trackUrl, 3);
 
         app.innerHTML = header.replace('Take a ticket to join the queue', 'Your ticket is ready') + '<div class="step">' +
           '<div class="result-card">' +

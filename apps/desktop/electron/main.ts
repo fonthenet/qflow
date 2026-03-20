@@ -575,8 +575,10 @@ app.whenReady().then(async () => {
     kioskUrl = kiosk.url + '/kiosk';
     console.log(`Kiosk available at: ${kioskUrl}`);
     // Notify Station UI instantly when a ticket is created from the local kiosk
-    setOnTicketCreated(() => {
+    // Also push to cloud immediately so QR tracking works remotely
+    setOnTicketCreated((syncQueueId: string) => {
       mainWindow?.webContents.send('tickets:changed');
+      syncEngine?.pushImmediate(syncQueueId);
     });
   } catch (err) {
     console.error('Failed to start kiosk server:', err);
