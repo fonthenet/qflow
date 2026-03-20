@@ -110,6 +110,10 @@ export function GroupTicketModal({
         priorityCategoryId: selectedPriority?.id ?? null,
       });
 
+      if ('stationOnline' in result && result.stationOnline && (result as any).stationUrl) {
+        window.location.href = (result as any).stationUrl;
+        return;
+      }
       if (result.error || !result.data) {
         alert(result.error ?? `Error creating ticket for person ${i + 1}. Please try again.`);
         setLoading(false);

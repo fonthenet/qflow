@@ -129,15 +129,56 @@ export function initDB() {
       PRIMARY KEY (office_id, dept_code, date)
     );
 
+    -- Local audit trail for every ticket activity (survives crashes, never deleted)
+    CREATE TABLE IF NOT EXISTS ticket_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id TEXT NOT NULL,
+      ticket_number TEXT,
+      event_type TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT,
+      source TEXT DEFAULT 'station',
+      details TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ticket_audit_log_ticket ON ticket_audit_log(ticket_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_ticket_audit_log_created ON ticket_audit_log(created_at);
+
+    -- Office holidays/closures cache
+    CREATE TABLE IF NOT EXISTS office_holidays (
+      id TEXT PRIMARY KEY,
+      office_id TEXT NOT NULL,
+      holiday_date TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT 'Holiday',
+      is_full_day INTEGER DEFAULT 1,
+      open_time TEXT,
+      close_time TEXT
+    );
+
     -- Indexes
+    CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_dept ON tickets(department_id, status);
     CREATE INDEX IF NOT EXISTS idx_sync_queue_pending ON sync_queue(synced_at) WHERE synced_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);
   `);
 
   // ── Safe schema migrations (idempotent) ──
   try { db.exec(`ALTER TABLE offices ADD COLUMN timezone TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT`); } catch { /* already exists */ }
+
+  // ── Integrity check on startup — detect corruption early ──
+  try {
+    const integrity = db.pragma('integrity_check') as any[];
+    if (integrity?.[0]?.integrity_check !== 'ok') {
+      console.error('[db] INTEGRITY CHECK FAILED:', integrity);
+    }
+  } catch (err) {
+    console.error('[db] Could not run integrity check:', err);
+  }
 
   // ── One-time cleanup: remove L- prefixed local tickets that have a cloud equivalent ──
   const lCleanup = db.prepare(`
@@ -159,6 +200,38 @@ export function initDB() {
 export function getDB(): Database.Database {
   if (!db) throw new Error('Database not initialized');
   return db;
+}
+
+// ── Ticket audit log — immutable trail of every ticket lifecycle event ──
+// Never deleted, survives crashes. Used for debugging, compliance, and support.
+export function logTicketEvent(
+  ticketId: string,
+  eventType: string,
+  opts?: {
+    ticketNumber?: string;
+    fromStatus?: string;
+    toStatus?: string;
+    source?: string;
+    details?: Record<string, unknown>;
+  }
+) {
+  try {
+    db.prepare(`
+      INSERT INTO ticket_audit_log (ticket_id, ticket_number, event_type, from_status, to_status, source, details, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      ticketId,
+      opts?.ticketNumber ?? null,
+      eventType,
+      opts?.fromStatus ?? null,
+      opts?.toStatus ?? null,
+      opts?.source ?? 'station',
+      JSON.stringify(opts?.details ?? {}),
+      new Date().toISOString()
+    );
+  } catch (err) {
+    console.error('[audit] Failed to log ticket event:', err);
+  }
 }
 
 // ── Timezone-aware local date ──────────────────────────────────────

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
+import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
 import { SendTicketLink } from '@/components/kiosk/send-ticket-link';
 import {
@@ -230,6 +231,10 @@ export function RemoteJoinForm({
         estimatedWaitMinutes: currentWait,
         isRemote: true,
       });
+
+      if ('stationOnline' in result && result.stationOnline) {
+        throw new Error('This office is managed by a local station. Please join the queue at the office kiosk.');
+      }
 
       if (result.error || !result.data) {
         throw new Error(result.error ?? 'Failed to join queue. Please try again.');
@@ -497,9 +502,71 @@ export function RemoteJoinForm({
     );
   }
 
+  // ── Business hours check ──────────────────────────────────────
+  const selectedOffice = offices.find((o: any) => o.id === selectedOfficeId);
+  const officeHours = selectedOffice?.operating_hours as OperatingHours | null;
+  const officeTimezone = selectedOffice?.timezone || 'UTC';
+  const [businessStatus, setBusinessStatus] = useState(() =>
+    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
+  );
+
+  useEffect(() => {
+    if (!officeHours) { setBusinessStatus(null); return; }
+    setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    const timer = setInterval(() => {
+      setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [selectedOfficeId, officeHours, officeTimezone]);
+
+  const isOfficeClosed = businessStatus !== null && !businessStatus.isOpen;
+
   // Join form
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#eff6ff_24%,#ffffff_70%)]">
+      {/* Office closed banner */}
+      {isOfficeClosed && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-4">
+          <div className="mx-auto max-w-5xl text-center">
+            <div className="flex items-center justify-center gap-2 text-sm font-semibold text-red-700">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" strokeWidth={2} />
+                <path strokeLinecap="round" strokeWidth={2} d="M12 8v4M12 16h.01" />
+              </svg>
+              <span>
+                {businessStatus?.reason === 'holiday' && businessStatus?.holidayName
+                  ? `Closed for ${businessStatus.holidayName}`
+                  : businessStatus?.reason === 'before_hours' && businessStatus?.todayHours
+                  ? `Not open yet — opens at ${businessStatus.todayHours.open}`
+                  : businessStatus?.reason === 'after_hours'
+                  ? 'Closed for the day'
+                  : 'This location is currently closed'}
+              </span>
+            </div>
+            {businessStatus?.nextOpen && (
+              <p className="mt-1 text-xs text-red-600">
+                Opens {capitalizeDay(businessStatus.nextOpen.day)} at {businessStatus.nextOpen.time}
+              </p>
+            )}
+            {officeHours && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs font-medium text-red-600 hover:text-red-700">
+                  View business hours
+                </summary>
+                <div className="mt-2 inline-block rounded-lg bg-white/60 px-4 py-2 text-xs text-foreground">
+                  {formatOperatingHours(officeHours).map(({ day, hours }) => (
+                    <div key={day} className="flex justify-between gap-4">
+                      <span className="font-medium">{capitalizeDay(day).slice(0, 3)}</span>
+                      <span className={hours === 'Closed' ? 'text-muted-foreground' : ''}>{hours}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Active ticket recovery banner */}
       {existingTicket && (
         <div className="border-b border-primary/20 bg-primary/5 px-4 py-3">
@@ -873,10 +940,12 @@ export function RemoteJoinForm({
 
           <button
             type="submit"
-            disabled={joining || (emailOtpRequired && !emailOtpVerified)}
+            disabled={joining || isOfficeClosed || (emailOtpRequired && !emailOtpVerified)}
             className="w-full rounded-[1.1rem] bg-primary px-6 py-4 text-base font-semibold text-primary-foreground shadow-[0_18px_40px_rgba(37,99,235,0.22)] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {joining ? (
+            {isOfficeClosed ? (
+              'Office Closed'
+            ) : joining ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
                 Joining Queue...

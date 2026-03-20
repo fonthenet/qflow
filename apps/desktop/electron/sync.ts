@@ -1,10 +1,13 @@
 import Database from 'better-sqlite3';
+import { safeStorage } from 'electron';
 import { CONFIG } from './config';
+import { logTicketEvent } from './db';
 
 type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') => void;
 type ProgressCallback = (pendingCount: number) => void;
 type AuthErrorCallback = () => void;
 type DataPulledCallback = () => void;
+type TicketErrorCallback = (error: { message: string; ticketNumber?: string; type: string }) => void;
 
 export class SyncEngine {
   private db: Database.Database;
@@ -14,6 +17,7 @@ export class SyncEngine {
   private onProgress: ProgressCallback;
   private onAuthError: AuthErrorCallback;
   private onDataPulled: DataPulledCallback;
+  private onTicketError: TicketErrorCallback;
   private authErrorSuppressedUntil = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
@@ -38,6 +42,7 @@ export class SyncEngine {
     onProgress: ProgressCallback,
     onAuthError: AuthErrorCallback = () => {},
     onDataPulled: DataPulledCallback = () => {},
+    onTicketError: TicketErrorCallback = () => {},
   ) {
     this.db = db;
     this.supabaseUrl = supabaseUrl;
@@ -46,12 +51,17 @@ export class SyncEngine {
     this.onProgress = onProgress;
     this.onAuthError = onAuthError;
     this.onDataPulled = onDataPulled;
+    this.onTicketError = onTicketError;
   }
 
   private realtimeWs: WebSocket | null = null;
   private realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   private autoResolveInterval: ReturnType<typeof setInterval> | null = null;
+
+  // ── Rapid retry tracking for pushImmediate ──
+  private rapidRetryInFlight = new Set<string>();
+  private static RAPID_RETRY_DELAYS = [2000, 5000, 15000]; // 2s, 5s, 15s
 
   start() {
     // Check connectivity
@@ -69,9 +79,13 @@ export class SyncEngine {
       if (this.isOnline) this.pullLatest();
     }, CONFIG.SYNC_PULL_INTERVAL);
 
-    // Auto-resolve stale tickets
+    // Auto-resolve stale tickets + background reconciliation
     this.autoResolveInterval = setInterval(() => {
-      if (this.isOnline) this.triggerAutoResolve();
+      if (this.isOnline) {
+        this.triggerAutoResolve();
+        this.reconcileLPrefixTickets();
+      }
+      this.recoverStuckItems();
     }, CONFIG.AUTO_RESOLVE_INTERVAL);
   }
 
@@ -112,7 +126,7 @@ export class SyncEngine {
   // When mobile/web updates a ticket in Supabase, the station hears it immediately
   // via WebSocket instead of waiting for the next 5s poll.
 
-  private connectRealtime() {
+  private async connectRealtime() {
     if (this.realtimeWs) return; // already connected
 
     const sessionRow = this.db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
@@ -120,15 +134,28 @@ export class SyncEngine {
     if (!session?.office_ids?.length) return;
 
     const wsUrl = this.supabaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-    const token = session.access_token ?? this.supabaseKey;
+    // Use a fresh access token for RLS-aware realtime
+    const token = await this.ensureFreshToken();
 
     try {
       const ws = new WebSocket(
         `${wsUrl}/realtime/v1/websocket?apikey=${this.supabaseKey}&vsn=1.0.0`
       );
 
+      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+      // Debounce pull calls — multiple changes within 500ms trigger only one pull
+      let pullDebounce: ReturnType<typeof setTimeout> | null = null;
+
       ws.onopen = () => {
-        console.log('[realtime] Connected to Supabase Realtime');
+        console.log('[realtime] ✓ Connected to Supabase Realtime');
+        // Authenticate with access token for RLS
+        ws.send(JSON.stringify({
+          topic: 'realtime:auth',
+          event: 'access_token',
+          payload: { access_token: token },
+          ref: 'auth',
+        }));
+
         // Join the tickets channel for our offices
         const joinMsg = JSON.stringify({
           topic: `realtime:public:tickets`,
@@ -141,11 +168,11 @@ export class SyncEngine {
         ws.send(joinMsg);
 
         // Heartbeat every 30s to keep connection alive
-        const hb = setInterval(() => {
+        heartbeatTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: 'hb' }));
           } else {
-            clearInterval(hb);
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
           }
         }, 30000);
       };
@@ -153,16 +180,27 @@ export class SyncEngine {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(String(event.data));
-          if (msg.event === 'postgres_changes' || msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE') {
-            console.log(`[realtime] Ticket change detected: ${msg.event}`);
-            // Immediately pull + notify
-            this.pullLatest();
+          // Supabase Realtime v2 wraps postgres changes in payload.data
+          const isChange =
+            msg.event === 'postgres_changes' ||
+            msg.event === 'INSERT' || msg.event === 'UPDATE' || msg.event === 'DELETE' ||
+            msg.payload?.data?.type === 'INSERT' || msg.payload?.data?.type === 'UPDATE' || msg.payload?.data?.type === 'DELETE';
+
+          if (isChange) {
+            console.log(`[realtime] Ticket change detected — pulling immediately`);
+            // Debounce: batch rapid-fire changes into one pull
+            if (pullDebounce) clearTimeout(pullDebounce);
+            pullDebounce = setTimeout(() => {
+              this.pullLatest();
+              pullDebounce = null;
+            }, 300);
           }
         } catch { /* ignore parse errors */ }
       };
 
       ws.onclose = () => {
         console.log('[realtime] Disconnected, will retry in 5s');
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
         this.realtimeWs = null;
         this.realtimeRetryTimer = setTimeout(() => {
           if (this.isOnline) this.connectRealtime();
@@ -188,8 +226,9 @@ export class SyncEngine {
   }
 
   private async checkHealth() {
-    // Proactively refresh token every 50 minutes (JWT expires at 60 min by default)
-    if (this.isOnline && Date.now() - this.lastTokenRefreshAt > 50 * 60 * 1000) {
+    // Proactively refresh token every 30 minutes (JWT expires at 60 min by default)
+    // Aggressive refresh prevents token expiry from ever blocking sync
+    if (this.isOnline && Date.now() - this.lastTokenRefreshAt > 30 * 60 * 1000) {
       await this.ensureFreshToken();
     }
 
@@ -207,7 +246,6 @@ export class SyncEngine {
         this.onStatus('syncing');
         await this.syncNow();   // Push offline changes to cloud
         await this.pullLatest(); // Pull cloud state into SQLite (merges, doesn't overwrite)
-        await this.pullLatest(); // Second pull catches any reprocessed data
         this.connectRealtime(); // Subscribe to live cloud changes
       }
 
@@ -266,11 +304,12 @@ export class SyncEngine {
   }
 
   // Core refresh — calls Supabase auth endpoint with refresh_token
+  // Falls back to silent re-auth with stored encrypted credentials if refresh_token is dead
   private async refreshAccessToken(): Promise<string | null> {
     const session = this.getSessionFromDB();
     if (!session?.refresh_token) {
-      console.warn('[sync:token] No refresh_token in session — user must re-login');
-      return null;
+      console.warn('[sync:token] No refresh_token — attempting silent re-auth');
+      return this.silentReAuth();
     }
 
     try {
@@ -288,11 +327,15 @@ export class SyncEngine {
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         console.warn(`[sync:token] Refresh failed (${res.status}): ${body.slice(0, 200)}`);
-        // If refresh_token itself is expired/revoked, Supabase returns 400 or 401
+        // If refresh_token itself is expired/revoked — try silent re-auth
         if (res.status === 400 || res.status === 401 || res.status === 403) {
+          console.log('[sync:token] Refresh token is dead — attempting silent re-auth with stored credentials');
+          const reAuthResult = await this.silentReAuth();
+          if (reAuthResult) return reAuthResult;
+
           this.consecutiveRefreshFailures++;
-          if (this.consecutiveRefreshFailures >= 3 && Date.now() > this.authErrorSuppressedUntil) {
-            console.error('[sync:token] Refresh token is dead after 3 attempts — prompting re-login');
+          if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
+            console.error('[sync:token] All auth methods exhausted — prompting re-login');
             this.onAuthError();
           }
         }
@@ -319,6 +362,84 @@ export class SyncEngine {
       return data.access_token;
     } catch (err: any) {
       console.warn('[sync:token] Token refresh network error:', err?.message ?? err);
+      return null;
+    }
+  }
+
+  /**
+   * Silent re-authentication: uses OS-encrypted stored credentials to get
+   * a brand new Supabase session when the refresh token is dead.
+   * Zero user intervention — the station heals itself.
+   */
+  private async silentReAuth(): Promise<string | null> {
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('[sync:reAuth] OS encryption not available — cannot decrypt stored credentials');
+        return null;
+      }
+
+      const credRow = this.db.prepare("SELECT value FROM session WHERE key = 'auth_cred'").get() as any;
+      if (!credRow) {
+        console.warn('[sync:reAuth] No stored credentials found — user must sign in manually');
+        return null;
+      }
+
+      const cred = JSON.parse(credRow.value);
+      if (!cred?.email || !cred?.enc) return null;
+
+      // Decrypt password using OS credential store (Windows DPAPI / macOS Keychain)
+      const password = safeStorage.decryptString(Buffer.from(cred.enc, 'base64'));
+
+      console.log(`[sync:reAuth] Attempting silent re-auth for ${cred.email}...`);
+      const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          apikey: this.supabaseKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: cred.email, password }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.warn(`[sync:reAuth] Re-auth failed (${res.status}): ${body.slice(0, 200)}`);
+        // If password was changed, credentials are stale — clear them
+        if (res.status === 400 || res.status === 401) {
+          this.db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
+          console.warn('[sync:reAuth] Stored credentials invalidated — user must sign in manually');
+        }
+        return null;
+      }
+
+      const data = await res.json();
+      if (!data.access_token || !data.refresh_token) return null;
+
+      // Update session with fresh tokens
+      const session = this.getSessionFromDB();
+      const updated = {
+        ...session,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      };
+      this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+
+      // Update in-memory cache
+      this.cachedAccessToken = data.access_token;
+      this.lastTokenRefreshAt = Date.now();
+      this.consecutiveRefreshFailures = 0;
+
+      console.log('[sync:reAuth] ✓ Silent re-auth succeeded — station is back online');
+
+      // Auto-retry all stuck AUTH_EXPIRED items
+      this.db.prepare(
+        "UPDATE sync_queue SET attempts = 0, last_error = NULL, next_retry_at = NULL WHERE synced_at IS NULL AND last_error LIKE '%AUTH_EXPIRED%'"
+      ).run();
+      this.updatePendingCount();
+
+      return data.access_token;
+    } catch (err: any) {
+      console.warn('[sync:reAuth] Silent re-auth error:', err?.message ?? err);
       return null;
     }
   }
@@ -361,15 +482,18 @@ export class SyncEngine {
   /**
    * Fire-and-forget: immediately push a specific sync_queue item to Supabase.
    * Called right after a local mutation to minimize cloud display lag.
-   * If it fails, the regular syncNow() timer picks it up later.
+   * On failure, schedules rapid retries (2s, 5s, 15s) before falling back to syncNow().
    */
-  async pushImmediate(syncQueueId: string) {
+  async pushImmediate(syncQueueId: string, _retryAttempt = 0) {
     if (!this.isOnline) return;
 
     const item = this.db.prepare(
       "SELECT * FROM sync_queue WHERE id = ? AND synced_at IS NULL"
     ).get(syncQueueId) as any;
-    if (!item) return;
+    if (!item) {
+      this.rapidRetryInFlight.delete(syncQueueId);
+      return;
+    }
 
     try {
       const authToken = await this.ensureFreshToken();
@@ -379,8 +503,17 @@ export class SyncEngine {
         this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
           .run(new Date().toISOString(), item.id);
         this.updatePendingCount();
+        this.rapidRetryInFlight.delete(syncQueueId);
         console.log(`[sync:pushImmediate] ✓ Pushed ${item.operation} on ${item.table_name}/${item.record_id}`);
-      } else if (result.status === 401) {
+
+        // ── Gap 2: Rewrite L- prefix after successful INSERT push ──
+        if (item.operation === 'INSERT' && item.table_name === 'tickets') {
+          this.rewriteOfflineTicket(item.record_id, item.payload);
+        }
+        return;
+      }
+
+      if (result.status === 401) {
         // Token expired — force refresh and retry once
         this.cachedAccessToken = null;
         const newToken = await this.refreshAccessToken();
@@ -390,13 +523,119 @@ export class SyncEngine {
             this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
               .run(new Date().toISOString(), item.id);
             this.updatePendingCount();
+            this.rapidRetryInFlight.delete(syncQueueId);
             console.log(`[sync:pushImmediate] ✓ Pushed after token refresh`);
+            if (item.operation === 'INSERT' && item.table_name === 'tickets') {
+              this.rewriteOfflineTicket(item.record_id, item.payload);
+            }
+            return;
           }
         }
       }
-      // Any other failure is silently ignored — syncNow() will retry later
+
+      // Non-auth failure — schedule rapid retry
+      this.scheduleRapidRetry(syncQueueId, _retryAttempt);
     } catch (err: any) {
-      console.log(`[sync:pushImmediate] Will retry later: ${err?.message ?? err}`);
+      console.log(`[sync:pushImmediate] Attempt ${_retryAttempt + 1} failed: ${err?.message ?? err}`);
+      this.scheduleRapidRetry(syncQueueId, _retryAttempt);
+    }
+  }
+
+  /** Schedule rapid retry: 2s → 5s → 15s → give up (syncNow takes over) */
+  private scheduleRapidRetry(syncQueueId: string, currentAttempt: number) {
+    if (currentAttempt >= SyncEngine.RAPID_RETRY_DELAYS.length) {
+      this.rapidRetryInFlight.delete(syncQueueId);
+      console.log(`[sync:pushImmediate] Rapid retries exhausted for ${syncQueueId} — syncNow will handle it`);
+      return;
+    }
+    if (this.rapidRetryInFlight.has(syncQueueId) && currentAttempt > 0) return; // already scheduled
+    this.rapidRetryInFlight.add(syncQueueId);
+
+    const delay = SyncEngine.RAPID_RETRY_DELAYS[currentAttempt];
+    console.log(`[sync:pushImmediate] Scheduling retry ${currentAttempt + 1}/3 in ${delay}ms`);
+    setTimeout(() => this.pushImmediate(syncQueueId, currentAttempt + 1), delay);
+  }
+
+  /**
+   * After a locally-created ticket is successfully pushed to cloud,
+   * rewrite its L-{DEPT}-{NNN} number to a proper {DEPT}-{NNN} number
+   * and clear the is_offline flag. Updates both SQLite and Supabase.
+   */
+  private async rewriteOfflineTicket(recordId: string, rawPayload?: string) {
+    try {
+      const ticket = this.db.prepare(
+        "SELECT id, ticket_number, office_id, department_id, is_offline FROM tickets WHERE id = ?"
+      ).get(recordId) as any;
+
+      if (!ticket || !ticket.is_offline || !ticket.ticket_number?.startsWith('L-')) return;
+
+      // Parse the sync payload for daily_sequence (already pushed to cloud)
+      let dailySequence: number | null = null;
+      if (rawPayload) {
+        try {
+          const payload = JSON.parse(rawPayload);
+          dailySequence = payload.daily_sequence ?? null;
+        } catch { /* ignore */ }
+      }
+
+      // Get department code
+      const dept = this.db.prepare("SELECT code FROM departments WHERE id = ?").get(ticket.department_id) as any;
+      const deptCode = dept?.code ?? 'Q';
+
+      // Determine the proper ticket number
+      // Strategy: query cloud for the highest ticket number for this dept today
+      // to avoid duplicates with web-created tickets
+      const token = await this.ensureFreshToken();
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      let properSequence = dailySequence;
+
+      // Query cloud for max sequence to avoid number collisions with web/mobile tickets
+      try {
+        const maxRes = await fetch(
+          `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${ticket.office_id}&department_id=eq.${ticket.department_id}&created_at=gte.${todayStart.toISOString()}&ticket_number=not.like.L-%25&select=daily_sequence&order=daily_sequence.desc&limit=1`,
+          {
+            headers: { apikey: this.supabaseKey, Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(5000),
+          }
+        );
+        if (maxRes.ok) {
+          const rows = await maxRes.json();
+          const cloudMax = rows[0]?.daily_sequence ?? 0;
+          // Use whichever is higher: cloud max + 1, or our daily_sequence
+          if (properSequence === null || cloudMax >= properSequence) {
+            properSequence = cloudMax + 1;
+          }
+        }
+      } catch { /* fallback to dailySequence from payload */ }
+
+      if (properSequence === null) properSequence = 1;
+
+      const properNumber = `${deptCode}-${String(properSequence).padStart(3, '0')}`;
+
+      // Update local SQLite
+      this.db.prepare("UPDATE tickets SET ticket_number = ?, is_offline = 0 WHERE id = ?")
+        .run(properNumber, recordId);
+
+      // Push UPDATE to cloud
+      await fetch(`${this.supabaseUrl}/rest/v1/tickets?id=eq.${recordId}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ ticket_number: properNumber }),
+        signal: AbortSignal.timeout(5000),
+      });
+
+      console.log(`[sync:rewrite] ✓ ${ticket.ticket_number} → ${properNumber} (is_offline cleared)`);
+      this.onDataPulled(); // refresh UI with proper number
+    } catch (err: any) {
+      console.warn(`[sync:rewrite] Failed to rewrite ticket ${recordId}: ${err?.message}`);
+      // Non-critical — ticket still works with L- prefix, just cosmetic
     }
   }
 
@@ -443,6 +682,9 @@ export class SyncEngine {
                 this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
                   .run(new Date().toISOString(), item.id);
                 successCount++;
+                if (item.operation === 'INSERT' && item.table_name === 'tickets') {
+                  this.rewriteOfflineTicket(item.record_id, item.payload);
+                }
                 continue;
               }
             }
@@ -488,6 +730,11 @@ export class SyncEngine {
           "UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?"
         ).run(new Date().toISOString(), item.id);
         successCount++;
+
+        // Rewrite L- prefix after successful INSERT push
+        if (item.operation === 'INSERT' && item.table_name === 'tickets') {
+          this.rewriteOfflineTicket(item.record_id, item.payload);
+        }
       } catch (err: any) {
         // Non-auth error: exponential backoff
         const newAttempts = (item.attempts ?? 0) + 1;
@@ -496,6 +743,16 @@ export class SyncEngine {
         this.db.prepare(
           "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
         ).run(newAttempts, err.message ?? 'Unknown error', nextRetry, item.id);
+
+        // Notify UI on 3rd failure so staff knows something is stuck
+        if (newAttempts === 3 && item.table_name === 'tickets') {
+          const payload = JSON.parse(item.payload || '{}');
+          this.onTicketError({
+            message: `Sync failed for ticket ${payload.ticket_number ?? item.record_id}: ${err.message ?? 'Unknown error'}`,
+            ticketNumber: payload.ticket_number,
+            type: 'sync_failed',
+          });
+        }
       }
     }
 
@@ -637,12 +894,13 @@ export class SyncEngine {
       const officeFilter = officeIds.map((id: string) => `id.eq.${id}`).join(',');
       const officeInFilter = officeIds.map((id: string) => `office_id.eq.${id}`).join(',');
 
-      // Pull offices, departments, services, desks in parallel
-      const [officesRes, deptsRes, svcsRes, desksRes] = await Promise.all([
+      // Pull offices, departments, services, desks, holidays in parallel
+      const [officesRes, deptsRes, svcsRes, desksRes, holidaysRes] = await Promise.all([
         fetch(`${this.supabaseUrl}/rest/v1/offices?or=(${officeFilter})&select=id,name,address,organization_id,settings,operating_hours,timezone`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/departments?or=(${officeInFilter})&select=id,name,code,office_id`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/services?select=id,name,department_id,estimated_service_time`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/desks?or=(${officeInFilter})&select=id,name,department_id,office_id,is_active,current_staff_id`, { headers, signal: AbortSignal.timeout(10000) }),
+        fetch(`${this.supabaseUrl}/rest/v1/office_holidays?or=(${officeInFilter})&select=id,office_id,holiday_date,name,is_full_day,open_time,close_time`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
       ]);
 
       const now = new Date().toISOString();
@@ -679,6 +937,19 @@ export class SyncEngine {
         }
       }
 
+      // Sync holidays
+      if (holidaysRes && holidaysRes.ok) {
+        try {
+          const holidays = await holidaysRes.json();
+          // Clear and replace — holidays are small and infrequent
+          this.db.prepare(`DELETE FROM office_holidays WHERE office_id IN (${officeIds.map(() => '?').join(',')})`).run(...officeIds);
+          const hStmt = this.db.prepare(`INSERT OR REPLACE INTO office_holidays (id, office_id, holiday_date, name, is_full_day, open_time, close_time) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+          for (const h of holidays) {
+            hStmt.run(h.id, h.office_id, h.holiday_date, h.name, h.is_full_day ? 1 : 0, h.open_time ?? null, h.close_time ?? null);
+          }
+        } catch { /* table may not exist on first run */ }
+      }
+
       const upsert = this.db.prepare(`
         INSERT OR REPLACE INTO tickets
         (id, ticket_number, office_id, department_id, service_id, desk_id, status, priority,
@@ -687,13 +958,17 @@ export class SyncEngine {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      // IDs of locally-modified tickets — only skip if a sync is RECENTLY in-flight
-      // Items pending > 5 minutes are considered stale and should not block cloud updates
-      // (prevents mobile-served tickets from being stuck as "called" on station)
+      // IDs of locally-modified tickets — protect ALL unsynced items regardless of age.
+      // Previously used a 5-minute window which caused race conditions:
+      //   1. Kiosk creates ticket (INSERT in sync_queue)
+      //   2. pullLatest runs before pushImmediate completes
+      //   3. Ticket not in cloud yet → reconciliation cancels it
+      // Fix: protect ANY ticket with a pending sync item (INSERT/UPDATE/CALL).
+      // For UPDATE/CALL, also check a time window to avoid blocking stale updates.
       const fiveMinAgo = new Date(Date.now() - 300000).toISOString();
       const locallyModifiedIds = new Set(
         (this.db.prepare(
-          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('INSERT','UPDATE','CALL') AND created_at > ?"
+          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND (operation = 'INSERT' OR created_at > ?)"
         ).all(fiveMinAgo) as any[]).map((r: any) => r.record_id)
       );
 
@@ -717,13 +992,31 @@ export class SyncEngine {
           if (pending?.c > 0) continue; // has pending sync — don't overwrite local changes
 
           // Never downgrade status (e.g., don't overwrite local "called" with cloud "waiting")
+          // EXCEPTION: if the ticket was auto-cancelled locally (by reconciliation) but the cloud
+          // still has it as active, the cloud should win — the local cancellation was a mistake.
+          // We detect this by checking: local is "cancelled", cloud is active, AND there is no
+          // pending sync item for this ticket (meaning the cancellation was never pushed to cloud).
           const local = getLocalStatus.get(t.id) as any;
           if (local) {
             const localRank = statusRank[local.status] ?? 0;
             const cloudRank = statusRank[t.status] ?? 0;
             if (cloudRank < localRank) {
-              console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank})`);
-              continue;
+              // Allow cloud to override local "cancelled" when the cancellation was never pushed
+              const isLocalAutoCancel = local.status === 'cancelled' && ['waiting', 'called', 'serving'].includes(t.status);
+              const hasPendingSync = (checkPending.get(t.id) as any)?.c > 0;
+              if (isLocalAutoCancel && !hasPendingSync) {
+                console.log(`[sync:pull] Cloud overrides local auto-cancel for ${t.ticket_number}: local=cancelled → cloud=${t.status}`);
+                logTicketEvent(t.id, 'restored_from_cloud', {
+                  ticketNumber: t.ticket_number,
+                  fromStatus: 'cancelled',
+                  toStatus: t.status,
+                  source: 'sync_pull',
+                  details: { reason: 'cloud_still_active_local_auto_cancelled' },
+                });
+              } else {
+                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank})`);
+                continue;
+              }
             }
           }
 
@@ -808,17 +1101,52 @@ export class SyncEngine {
             if (locallyModifiedIds.has(local.id)) continue; // we have a pending local change — don't overwrite
             if (local.is_offline) continue; // offline-created ticket not yet synced — don't cancel it
 
+            // Extra safety: never cancel tickets created less than 2 minutes ago
+            // (covers the gap between INSERT and first successful push)
+            const localTicket = this.db.prepare("SELECT created_at FROM tickets WHERE id = ?").get(local.id) as any;
+            if (localTicket?.created_at) {
+              const ageMs = Date.now() - new Date(localTicket.created_at).getTime();
+              if (ageMs < 120_000) {
+                console.log(`[sync:reconcile] Skipping ${local.ticket_number} — created ${Math.round(ageMs / 1000)}s ago, too recent to cancel`);
+                continue;
+              }
+            }
+
             // This ticket is active locally but gone from cloud — check history pull
             const inHistory = (histTickets ?? []).find((t: any) => t.id === local.id);
             if (inHistory) {
               // Cloud has it as served/cancelled — adopt that status
               console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cloud=${inHistory.status}`);
+              logTicketEvent(local.id, 'reconcile_status_update', {
+                ticketNumber: local.ticket_number,
+                fromStatus: local.status,
+                toStatus: inHistory.status,
+                source: 'sync_reconcile',
+                details: { reason: 'cloud_status_adopted' },
+              });
+              this.onTicketError({
+                message: `${local.ticket_number} was ${inHistory.status} remotely`,
+                ticketNumber: local.ticket_number,
+                type: 'reconcile_status_change',
+              });
             } else {
               // Not in cloud at all (auto-resolved or deleted) — mark as cancelled locally
               console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cancelled (not in cloud)`);
+              logTicketEvent(local.id, 'auto_cancelled', {
+                ticketNumber: local.ticket_number,
+                fromStatus: local.status,
+                toStatus: 'cancelled',
+                source: 'sync_reconcile',
+                details: { reason: 'not_found_in_cloud', wasOffline: Boolean(local.is_offline) },
+              });
               this.db.prepare(
                 "UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ?"
               ).run(new Date().toISOString(), local.id);
+              this.onTicketError({
+                message: `${local.ticket_number} was removed — not found in cloud`,
+                ticketNumber: local.ticket_number,
+                type: 'auto_cancelled',
+              });
             }
           }
         }
@@ -849,6 +1177,47 @@ export class SyncEngine {
       this.onDataPulled();
     } catch (err: any) {
       console.error('[sync:pullLatest] Error:', err?.message ?? err);
+    }
+  }
+
+  /**
+   * L-prefix reconciliation: find any tickets still stuck with L- prefix
+   * (rewrite failed after push) and attempt to fix them.
+   * Runs every auto-resolve cycle (~60s) as a background cleanup.
+   */
+  private async reconcileLPrefixTickets() {
+    try {
+      const orphans = this.db.prepare(
+        "SELECT id, ticket_number, office_id, department_id FROM tickets WHERE ticket_number LIKE 'L-%' AND is_offline = 0"
+      ).all() as any[];
+      if (orphans.length === 0) return;
+
+      console.log(`[sync:reconcile] Found ${orphans.length} ticket(s) with L- prefix after sync — fixing...`);
+      for (const ticket of orphans) {
+        await this.rewriteOfflineTicket(ticket.id);
+      }
+    } catch (err: any) {
+      console.warn('[sync:reconcile] L-prefix reconciliation error:', err?.message);
+    }
+  }
+
+  /**
+   * Recover stuck sync items: reset items that have been stuck for > 30 min
+   * with retriable errors (network timeouts, 5xx). Caps at 10 total attempts.
+   */
+  private recoverStuckItems() {
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const recovered = this.db.prepare(`
+      UPDATE sync_queue
+      SET attempts = CASE WHEN attempts > 8 THEN 8 ELSE attempts END,
+          next_retry_at = NULL
+      WHERE synced_at IS NULL
+        AND attempts >= 3 AND attempts < 10
+        AND created_at < ?
+        AND (last_error LIKE '%timeout%' OR last_error LIKE '%fetch%' OR last_error LIKE '%5___%' OR last_error LIKE '%network%')
+    `).run(thirtyMinAgo);
+    if (recovered.changes > 0) {
+      console.log(`[sync:recover] Reset ${recovered.changes} stuck item(s) for retry`);
     }
   }
 

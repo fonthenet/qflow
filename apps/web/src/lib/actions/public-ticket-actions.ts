@@ -1,6 +1,6 @@
 'use server';
 
-import { TICKET_EVENT_TYPES } from '@queueflow/shared';
+import { TICKET_EVENT_TYPES, isOfficeOpen, type OperatingHours } from '@queueflow/shared';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasVerifiedBookingEmail } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
@@ -49,18 +49,69 @@ export async function estimatePublicWaitTime(departmentId: string, serviceId: st
   return { data: data ?? null };
 }
 
+// Station-online guard for ticket creation
+const STATION_ONLINE_STALE_MS = 90_000;
+
+async function getStationInfoForOffice(officeId: string): Promise<{ online: boolean; localUrl?: string }> {
+  const admin = createAdminClient();
+  const cutoff = new Date(Date.now() - STATION_ONLINE_STALE_MS).toISOString();
+  const { data } = await (admin as any)
+    .from('desktop_connections')
+    .select('id')
+    .eq('office_id', officeId)
+    .eq('is_online', true)
+    .gte('last_ping', cutoff)
+    .limit(1);
+  const online = !!(data && (data as any[]).length > 0);
+  if (!online) return { online: false };
+  // Get the station's local URL from office settings
+  const { data: office } = await admin
+    .from('offices')
+    .select('settings')
+    .eq('id', officeId)
+    .single();
+  const settings = (office?.settings ?? {}) as Record<string, unknown>;
+  const localUrl = typeof settings.station_local_url === 'string' ? settings.station_local_url : undefined;
+  return { online: true, localUrl };
+}
+
+export async function checkStationForOffice(officeId: string) {
+  return getStationInfoForOffice(officeId);
+}
+
 export async function createPublicTicket(input: CreatePublicTicketInput) {
   const supabase = createAdminClient();
   const status = input.status ?? 'waiting';
 
+  // Block ticket creation when a local station is online
+  const stationInfo = await getStationInfoForOffice(input.officeId);
+  if (stationInfo.online) {
+    const kioskHint = stationInfo.localUrl ? ` Use the lobby kiosk or visit ${stationInfo.localUrl}` : '';
+    return { error: `Queue is managed by the local station.${kioskHint}`, stationOnline: true, stationUrl: stationInfo.localUrl };
+  }
+
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('id, organization:organizations(settings)')
+    .select('id, operating_hours, timezone, organization:organizations(settings)')
     .eq('id', input.officeId)
     .single();
 
   if (officeError || !office) {
     return { error: officeError?.message ?? 'Office not found' };
+  }
+
+  // ── Business hours enforcement — reject same-day queue if closed ──
+  const opHours = office.operating_hours as OperatingHours | null;
+  if (opHours && Object.keys(opHours).length > 0) {
+    const bh = isOfficeOpen(opHours, office.timezone || 'UTC');
+    if (!bh.isOpen) {
+      const reason = bh.reason === 'holiday' && bh.holidayName
+        ? `This location is closed for ${bh.holidayName}`
+        : bh.reason === 'before_hours' && bh.todayHours
+        ? `This location opens at ${bh.todayHours.open}`
+        : 'This location is currently closed';
+      return { error: reason };
+    }
   }
 
   const organizationSettings =

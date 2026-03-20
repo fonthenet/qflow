@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('sync:progress', handler);
       return () => ipcRenderer.removeListener('sync:progress', handler);
     },
+    onError: (callback: (error: { message: string; ticketNumber?: string; type: string }) => void) => {
+      const handler = (_: any, error: any) => callback(error);
+      ipcRenderer.on('sync:error', handler);
+      return () => ipcRenderer.removeListener('sync:error', handler);
+    },
   },
 
   // Session

@@ -41,6 +41,7 @@ export interface StaffSession {
   office_ids: string[];
   access_token?: string;
   refresh_token?: string;
+  _pwd?: string; // transient: encrypted and stored separately for silent re-auth
 }
 
 // Extend window with our IPC bridge — keep in sync with preload.ts

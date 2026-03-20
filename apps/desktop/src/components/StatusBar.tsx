@@ -44,48 +44,77 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
       .catch(() => {});
   }, []);
 
+  const [retrying, setRetrying] = useState(false);
+
+  const fetchPending = async () => {
+    try {
+      const items = await window.qf.sync.getPendingDetails();
+      setPendingItems(items);
+      return items;
+    } catch {
+      setPendingItems([]);
+      return [];
+    }
+  };
+
   const openPanel = async () => {
     if (showPanel) { setShowPanel(false); return; }
     setLoading(true);
-    const items = await window.qf.sync.getPendingDetails();
-    setPendingItems(items);
+    await fetchPending();
     setLoading(false);
     setShowPanel(true);
   };
 
   const retryItem = async (id: string) => {
-    await window.qf.sync.retryItem(id);
-    const items = await window.qf.sync.getPendingDetails();
-    setPendingItems(items);
+    try {
+      await window.qf.sync.retryItem(id);
+      await fetchPending();
+    } catch { /* retry failed silently */ }
   };
 
   const discardItem = async (id: string) => {
-    await window.qf.sync.discardItem(id);
-    const items = await window.qf.sync.getPendingDetails();
-    setPendingItems(items);
-    if (items.length === 0) setShowPanel(false);
+    try {
+      await window.qf.sync.discardItem(id);
+      const items = await fetchPending();
+      if (items.length === 0) setShowPanel(false);
+    } catch { /* discard failed */ }
   };
 
   const discardAll = async () => {
     if (!confirm('Discard all pending sync items? This data will not be synced to the cloud.')) return;
-    await window.qf.sync.discardAll();
-    setPendingItems([]);
-    setShowPanel(false);
+    try {
+      await window.qf.sync.discardAll();
+      setPendingItems([]);
+      setShowPanel(false);
+    } catch { /* discard failed */ }
   };
 
   const forceSync = async () => {
-    await window.qf.sync.forceSync();
-    const items = await window.qf.sync.getPendingDetails();
-    setPendingItems(items);
-    if (items.length === 0) setShowPanel(false);
+    setRetrying(true);
+    try {
+      await window.qf.sync.forceSync();
+      const items = await fetchPending();
+      if (items.length === 0) setShowPanel(false);
+    } catch { /* sync failed */ }
+    setRetrying(false);
   };
+
+  // Focus trap: keep Tab within the panel when open
+  useEffect(() => {
+    if (!showPanel) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowPanel(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showPanel]);
 
   return (
     <>
       <div className="status-bar" role="banner" aria-label="Status bar">
         <div className="status-bar-left">
           {logoUrl ? (
-            <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} />
+            <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} onError={() => setLogoUrl(null)} />
           ) : (
             <span className="app-logo">Q</span>
           )}
@@ -100,6 +129,15 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
             <span className="connection-dot" aria-hidden="true" />
             <span>{syncStatus.isOnline ? 'Connected' : 'Offline Mode'}</span>
           </div>
+          {!syncStatus.isOnline && (
+            <span style={{
+              padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+              background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+              animation: 'pulse 2s infinite',
+            }}>
+              No internet — running locally
+            </span>
+          )}
           {syncStatus.pendingCount > 0 && (
             <span
               className="pending-badge"
@@ -148,9 +186,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
         <div
           role="dialog"
           aria-label="Pending sync items"
-          onKeyDown={(e) => { if (e.key === 'Escape') setShowPanel(false); }}
-          tabIndex={-1}
-          ref={(el) => el?.focus()}
+          aria-modal="true"
           style={{
             position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)',
             width: 520, maxHeight: 400, background: 'var(--surface)', border: '1px solid var(--border)',
@@ -161,7 +197,9 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>Pending Sync Items</span>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-sm btn-call" onClick={forceSync}>Retry All</button>
+              <button className="btn-sm btn-call" onClick={forceSync} disabled={retrying}>
+                {retrying ? 'Syncing...' : 'Retry All'}
+              </button>
               {pendingItems.length > 0 && (
                 <button className="btn-sm" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }} onClick={discardAll}>
                   Discard All

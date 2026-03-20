@@ -15,8 +15,8 @@ export const CONFIG = {
 
   // Sync intervals (ms)
   HEALTH_CHECK_INTERVAL: 10_000,
-  SYNC_PUSH_INTERVAL: 15_000,
-  SYNC_PULL_INTERVAL: 10_000,
+  SYNC_PUSH_INTERVAL: 10_000,   // push local changes every 10s (fallback; pushImmediate handles urgent)
+  SYNC_PULL_INTERVAL: 5_000,    // pull cloud changes every 5s (fallback; Realtime WS handles instant)
   AUTO_RESOLVE_INTERVAL: 60_000,
 
   // App

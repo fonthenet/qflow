@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Calendar, Clock, MapPin, Check } from 'lucide-react';
+import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
 import {
   clearBookingEmailOtpVerification,
@@ -477,6 +478,19 @@ export function BookingForm({
     );
   }
 
+  // ── Business hours info ──────────────────────────────────────
+  const officeHours = office.operating_hours as OperatingHours | null;
+  const officeTimezone = office.timezone || 'UTC';
+  const [bookingBusinessStatus, setBookingBusinessStatus] = useState(() =>
+    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
+  );
+  useEffect(() => {
+    if (!officeHours) return;
+    setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    const t = setInterval(() => setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
+    return () => clearInterval(t);
+  }, [officeHours, officeTimezone]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
       {sandboxMode ? (
@@ -484,6 +498,29 @@ export function BookingForm({
           Sandbox mode. This booking flow looks and behaves like the live page, but it never creates a real reservation or sends alerts.
         </div>
       ) : null}
+
+      {/* Business hours info banner */}
+      {bookingBusinessStatus && !bookingBusinessStatus.isOpen && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center">
+          <p className="text-sm font-medium text-amber-800">
+            <Clock className="mr-1 inline h-4 w-4" />
+            {bookingBusinessStatus.reason === 'holiday' && bookingBusinessStatus.holidayName
+              ? `Closed for ${bookingBusinessStatus.holidayName}`
+              : bookingBusinessStatus.reason === 'before_hours' && bookingBusinessStatus.todayHours
+              ? `Not open yet — opens at ${bookingBusinessStatus.todayHours.open}`
+              : 'This location is currently closed'}
+            {bookingBusinessStatus.nextOpen && (
+              <span className="ml-1 text-amber-600">
+                — Opens {capitalizeDay(bookingBusinessStatus.nextOpen.day)} at {bookingBusinessStatus.nextOpen.time}
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-amber-600">
+            You can still book an appointment for a future date.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-border bg-card px-6 py-4 text-center">
         <div className="flex flex-col items-center justify-center gap-3">

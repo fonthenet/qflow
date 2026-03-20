@@ -32,6 +32,27 @@ import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
+// Station-online guard: block web queue ops when a local station is connected
+const STATION_ONLINE_STALE_MS = 90_000; // 90s — station pings every 30s, allow 3 missed
+const STATION_ONLINE_ERROR = 'A local QFlow Station is online for this office. Use the station to manage the queue.';
+
+async function isStationOnlineForOffice(officeId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const cutoff = new Date(Date.now() - STATION_ONLINE_STALE_MS).toISOString();
+  const { data } = await (admin as any)
+    .from('desktop_connections')
+    .select('id')
+    .eq('office_id', officeId)
+    .eq('is_online', true)
+    .gte('last_ping', cutoff)
+    .limit(1);
+  return !!(data && (data as any[]).length > 0);
+}
+
+export async function checkStationOnline(officeId: string): Promise<boolean> {
+  return isStationOnlineForOffice(officeId);
+}
+
 async function syncLiveActivity(ticketId: string, source: string): Promise<boolean> {
   const synced = await sendLiveActivityUpdateForTicket(ticketId).catch((err) => {
     console.error(`[${source}] Live Activity sync error:`, err);
@@ -434,7 +455,8 @@ export async function completePublicCheckIn(
 }
 
 export async function callNextTicket(deskId: string) {
-  const { context } = await getDeskOperationContext(deskId);
+  const { context, desk } = await getDeskOperationContext(deskId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
   let smsSent = false;
 
@@ -567,6 +589,7 @@ export async function callNextTicket(deskId: string) {
 
 export async function callSpecificTicket(deskId: string, ticketId: string) {
   const { context, desk } = await getDeskOperationContext(deskId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
   let smsSent = false;
 
@@ -696,7 +719,8 @@ export async function callSpecificTicket(deskId: string, ticketId: string) {
 }
 
 export async function startServing(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -780,7 +804,8 @@ export async function startServing(ticketId: string) {
 }
 
 export async function markServed(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -862,7 +887,8 @@ export async function markServed(ticketId: string) {
 }
 
 export async function markNoShow(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -946,7 +972,8 @@ export async function transferTicket(
   targetDepartmentId: string,
   targetServiceId: string
 ) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
   const targetDepartment = await getDepartmentById(context, targetDepartmentId);
   const targetService = await getServiceById(context, targetServiceId);
@@ -1055,7 +1082,8 @@ export async function transferTicket(
 }
 
 export async function recallTicket(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   // Verify ticket is in 'called' status
@@ -1205,7 +1233,8 @@ export async function recallTicket(ticketId: string) {
 }
 
 export async function callBackTicketToDesk(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   const { data: ticket, error: fetchError } = await supabase
@@ -1309,7 +1338,8 @@ export async function callBackTicketToDesk(ticketId: string) {
 }
 
 export async function buzzTicket(ticketId: string) {
-  const { context } = await getTicketOperationContext(ticketId);
+  const { context, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   // Fetch the ticket — works for any active status (waiting, called, serving)
@@ -1432,7 +1462,8 @@ export async function buzzTicket(ticketId: string) {
 }
 
 export async function resetTicketToQueue(ticketId: string) {
-  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   const { error } = await supabase
@@ -1738,7 +1769,8 @@ export async function unassignDesk(deskId: string) {
 }
 
 export async function parkTicket(ticketId: string) {
-  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   // Guard: ticket must be called or serving
@@ -1776,7 +1808,8 @@ export async function parkTicket(ticketId: string) {
 }
 
 export async function unparkTicket(ticketId: string) {
-  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
+  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
 
   // Guard: must be parked

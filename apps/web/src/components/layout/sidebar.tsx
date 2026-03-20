@@ -16,6 +16,7 @@ import {
   Tv,
   ScrollText,
   CalendarDays,
+  Building2,
   House,
   Map,
 } from 'lucide-react';
@@ -59,6 +60,7 @@ interface SidebarProps {
 
 const adminNav = [
   { href: '/admin/overview', label: 'Overview', icon: Map, section: 'Business' },
+  { href: '/admin/offices', label: 'Offices & Desks', icon: Building2, section: 'Business' },
   { href: '/admin/staff', label: 'Team', icon: Users, section: 'Business' },
   { href: '/admin/services', label: 'Services', icon: Grid3X3, section: 'Business' },
   { href: '/admin/priorities', label: 'Priority Rules', icon: Star, section: 'Business' },
@@ -109,6 +111,7 @@ export function Sidebar({
       const desiredOrder = [
         '/desk',
         '/admin/overview',
+        '/admin/offices',
         '/admin/staff',
         '/admin/services',
         '/admin/priorities',

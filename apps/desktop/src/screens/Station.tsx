@@ -1,6 +1,77 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
+
+// ── Transfer Modal Component ──────────────────────────────────────
+function TransferModal({ desks, onTransfer, onClose }: {
+  desks: [string, string][];
+  onTransfer: (deskId: string, deskName: string) => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-label="Transfer ticket to another desk"
+        style={{
+          background: 'var(--surface)', borderRadius: 12, padding: 24,
+          minWidth: 320, maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          outline: 'none',
+        }}
+      >
+        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Transfer to Desk</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {desks.map(([id, name]) => (
+            <button
+              key={id}
+              onClick={() => onTransfer(id, name)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+                background: 'var(--surface2)', border: '1px solid var(--border)',
+                borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                color: 'var(--text)', textAlign: 'left', transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--primary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface2)')}
+            >
+              <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                {name.charAt(0).toUpperCase()}
+              </span>
+              {name}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            marginTop: 16, width: '100%', padding: '10px', border: '1px solid var(--border)',
+            borderRadius: 8, background: 'transparent', color: 'var(--text2)',
+            cursor: 'pointer', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 declare global {
   interface Window {
@@ -45,6 +116,91 @@ const STAFF_STATUS_LABELS: Record<StaffStatus, { label: string; color: string; i
   away: { label: 'Away', color: '#ef4444', icon: '○' },
 };
 
+const DAYS_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+function OfficeHoursBadge() {
+  const [status, setStatus] = useState<{ isOpen: boolean; reason: string; todayHours: any; nextOpen?: any; currentDay: string } | null>(null);
+
+  useEffect(() => {
+    function check() {
+      try {
+        const offices = (window as any).qf?.db?.query?.('SELECT operating_hours, timezone FROM offices LIMIT 1');
+        const office = offices?.[0];
+        if (!office?.operating_hours) return;
+        const hours = typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours;
+        if (!hours || Object.keys(hours).length === 0) return;
+        const tz = office.timezone || 'UTC';
+        const now = new Date();
+
+        let day: string, time: string;
+        try {
+          const df = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: tz });
+          day = df.format(now).toLowerCase();
+          const tf = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+          const parts = tf.formatToParts(now);
+          time = `${(parts.find(p => p.type === 'hour')?.value ?? '00').padStart(2, '0')}:${(parts.find(p => p.type === 'minute')?.value ?? '00').padStart(2, '0')}`;
+        } catch {
+          day = DAYS_NAMES[now.getDay()];
+          time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        }
+
+        const todayH = hours[day];
+        const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+        if (!todayH || (todayH.open === '00:00' && todayH.close === '00:00')) {
+          // Find next open
+          const di = DAYS_NAMES.indexOf(day);
+          let next: any;
+          for (let o = 1; o <= 7; o++) {
+            const d = DAYS_NAMES[(di + o) % 7];
+            const h = hours[d];
+            if (h && !(h.open === '00:00' && h.close === '00:00')) { next = { day: d, time: h.open }; break; }
+          }
+          setStatus({ isOpen: false, reason: 'closed_today', todayHours: null, nextOpen: next, currentDay: day });
+        } else {
+          const cm = toMins(time), om = toMins(todayH.open), clm = toMins(todayH.close);
+          const isOpen = cm >= om && cm < clm;
+          setStatus({ isOpen, reason: isOpen ? 'open' : (cm < om ? 'before_hours' : 'after_hours'), todayHours: todayH, currentDay: day });
+        }
+      } catch { /* ignore */ }
+    }
+    check();
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!status) return null;
+
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  return (
+    <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+        Office Hours
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+        borderRadius: 8, fontSize: 13,
+        background: status.isOpen ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+        color: status.isOpen ? '#16a34a' : '#dc2626',
+        fontWeight: 600,
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+          background: status.isOpen ? '#22c55e' : '#ef4444',
+        }} />
+        {status.isOpen
+          ? `Open until ${status.todayHours?.close || ''}`
+          : status.reason === 'before_hours'
+          ? `Opens at ${status.todayHours?.open || ''}`
+          : status.nextOpen
+          ? `Closed — opens ${cap(status.nextOpen.day)} ${status.nextOpen.time}`
+          : 'Closed'
+        }
+      </div>
+    </div>
+  );
+}
+
 export function Station({ session, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
@@ -56,6 +212,9 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   const [searchFilter, setSearchFilter] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const servingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevWaitingCount = useRef(0);
@@ -106,6 +265,14 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
     const iv = setInterval(fetchTickets, FALLBACK_POLL_INTERVAL);
     return () => { unsub?.(); clearInterval(iv); };
   }, [fetchTickets]);
+
+  // ── Sync error notifications ───────────────────────────────────
+  useEffect(() => {
+    const unsub = window.qf.sync?.onError?.((error: { message: string; ticketNumber?: string; type: string }) => {
+      showToast(error.message, 'error');
+    });
+    return () => { unsub?.(); };
+  }, [showToast]);
 
   // ── Track active ticket (called/serving by this desk) ──────────
 
@@ -159,17 +326,32 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
 
   // ALWAYS write to SQLite first — sync engine pushes to cloud
   const callNext = async () => {
-    await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
-    fetchTickets();
-    // Trigger immediate sync if online
-    window.qf.sync?.force?.();
+    try {
+      const result = await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
+      if (!result) {
+        showToast('No tickets waiting in queue', 'info');
+        return;
+      }
+      fetchTickets();
+      window.qf.sync?.force?.().catch(() => {});
+    } catch (err: any) {
+      showToast('Failed to call next ticket', 'error');
+      console.error('[station] callNext error:', err);
+    }
   };
 
   const updateTicketStatus = async (ticketId: string, updates: Record<string, any>) => {
-    await window.qf.db.updateTicket(ticketId, updates);
-    fetchTickets();
-    // Trigger immediate sync if online
-    window.qf.sync?.force?.();
+    try {
+      const result = await window.qf.db.updateTicket(ticketId, updates);
+      if (updates.status === 'called' && !result) {
+        showToast('Ticket already called by another desk', 'error');
+      }
+      fetchTickets();
+      window.qf.sync?.force?.().catch(() => {});
+    } catch (err: any) {
+      showToast('Failed to update ticket', 'error');
+      console.error('[station] updateTicket error:', err);
+    }
   };
 
   const startServing = (id: string) => {
@@ -193,11 +375,11 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   };
 
   const recall = async (id: string) => {
+    const t = tickets.find((t) => t.id === id);
     await updateTicketStatus(id, {
       called_at: new Date().toISOString(),
-      recall_count: (activeTicket?.recall_count ?? 0) + 1,
+      recall_count: (t?.recall_count ?? 0) + 1,
     });
-    const t = tickets.find((t) => t.id === id);
     if (t) addActivity(t.ticket_number, 'Recalled');
   };
 
@@ -254,13 +436,17 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   useEffect(() => {
     const checkDevices = async () => {
       try {
-        const res = await fetch('http://localhost:3847/api/device-status');
-        const d = await res.json();
-        setDeviceStatuses(d.devices ?? []);
-      } catch {}
+        const res = await fetch('http://localhost:3847/api/device-status', {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          setDeviceStatuses(d.devices ?? []);
+        }
+      } catch { /* kiosk server may not be ready yet */ }
     };
     checkDevices();
-    const iv = setInterval(checkDevices, 10000);
+    const iv = setInterval(checkDevices, DEVICE_CHECK_INTERVAL);
     return () => clearInterval(iv);
   }, []);
 
@@ -271,12 +457,15 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   // ── Recent activity log ─────────────────────────────────────────
   const [recentActivity, setRecentActivity] = useState<Array<{ ticket: string; action: string; time: string }>>([]);
 
-  // Track completed actions
+  // Track completed actions — only keep the latest status per ticket
   const addActivity = useCallback((ticket: string, action: string) => {
-    setRecentActivity((prev) => [
-      { ticket, action, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) },
-      ...prev.slice(0, 9), // keep last 10
-    ]);
+    setRecentActivity((prev) => {
+      const filtered = prev.filter((a) => a.ticket !== ticket);
+      return [
+        { ticket, action, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) },
+        ...filtered.slice(0, 9),
+      ];
+    });
   }, []);
 
   // Sound alert when new ticket arrives
@@ -287,16 +476,23 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
     prevWaitingCount.current = waiting.length;
   }, [waiting.length]);
 
+  // Debounced search — 300ms delay to prevent lag on slow hardware
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(searchFilter), 300);
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, [searchFilter]);
+
   // Filter waiting list by search
   const filteredWaiting = useMemo(() => {
-    if (!searchFilter) return waiting;
-    const q = searchFilter.toLowerCase();
+    if (!debouncedSearch) return waiting;
+    const q = debouncedSearch.toLowerCase();
     return waiting.filter((t) =>
       t.ticket_number.toLowerCase().includes(q)
       || ((t.customer_data as any)?.name ?? '').toLowerCase().includes(q)
       || ((t.customer_data as any)?.phone ?? '').includes(q)
     );
-  }, [waiting, searchFilter]);
+  }, [waiting, debouncedSearch]);
 
   // Virtualization: only render first N items to avoid DOM bloat with 100+ tickets
   const VISIBLE_CHUNK = 50;
@@ -373,16 +569,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                     <button className="btn-outline" onClick={() => {
                       const deskList = Object.entries(names.desks).filter(([id]) => id !== session.desk_id);
                       if (deskList.length === 0) { showToast('No other desks available', 'error'); return; }
-                      const choices = deskList.map(([id, name], i) => `${i + 1}. ${name}`).join('\n');
-                      const pick = prompt(`Transfer to which desk?\n${choices}\nEnter number:`);
-                      if (!pick) return;
-                      const idx = parseInt(pick) - 1;
-                      if (idx >= 0 && idx < deskList.length) {
-                        const [targetDeskId, targetDeskName] = deskList[idx];
-                        updateTicketStatus(activeTicket.id, { desk_id: targetDeskId, status: 'waiting', called_at: null, called_by_staff_id: null });
-                        addActivity(activeTicket.ticket_number, `→ ${targetDeskName}`);
-                        showToast(`Transferred to ${targetDeskName}`, 'info');
-                      }
+                      setShowTransferModal(true);
                     }} aria-label={`Transfer ticket ${activeTicket.ticket_number} to another desk`}>
                       Transfer
                     </button>
@@ -687,6 +874,9 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
           </div>
         )}
 
+        {/* Office Open/Closed Status */}
+        <OfficeHoursBadge />
+
         {/* Device Status */}
         {deviceStatuses.length > 0 && (
           <div className="sidebar-section">
@@ -742,6 +932,22 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
           </div>
         )}
       </div>
+
+      {/* Transfer modal */}
+      {showTransferModal && activeTicket && (
+        <TransferModal
+          desks={Object.entries(names.desks).filter(([id]) => id !== session.desk_id)}
+          onTransfer={(deskId, deskName) => {
+            updateTicketStatus(activeTicket.id, {
+              desk_id: deskId, status: 'waiting', called_at: null, called_by_staff_id: null,
+            });
+            addActivity(activeTicket.ticket_number, `→ ${deskName}`);
+            showToast(`Transferred to ${deskName}`, 'info');
+            setShowTransferModal(false);
+          }}
+          onClose={() => setShowTransferModal(false)}
+        />
+      )}
 
       {/* Toast notification */}
       {toast && (

@@ -28,6 +28,7 @@ import { PriorityBadge } from '@/components/tickets/priority-badge';
 import { checkInAppointment, findAppointment } from '@/lib/actions/appointment-actions';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { buildBookingPath } from '@/lib/office-links';
+import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 
 interface PriorityCategory {
   id: string;
@@ -172,6 +173,70 @@ export function KioskView({
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const [showHoursPanel, setShowHoursPanel] = useState(false);
+
+  // ── Business hours enforcement ──────────────────────────────
+  const officeHours = office.operating_hours as OperatingHours | null;
+  const officeTimezone = office.timezone || 'UTC';
+  const [kioskBusinessStatus, setKioskBusinessStatus] = useState(() =>
+    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
+  );
+  useEffect(() => {
+    if (!officeHours) return;
+    setKioskBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    const t = setInterval(() => setKioskBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
+    return () => clearInterval(t);
+  }, [officeHours, officeTimezone]);
+
+  const isWebKioskClosed = kioskBusinessStatus !== null && !kioskBusinessStatus.isOpen;
+
+  // If closed, show closed overlay
+  if (isWebKioskClosed && step === 'home') {
+    const bh = kioskBusinessStatus;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-background to-muted/30 p-8 text-center">
+        {ks.showLogo && ks.logoUrl && (
+          <img src={ks.logoUrl} alt="Logo" className="mb-6 h-16 w-auto" />
+        )}
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-red-50">
+          <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4M12 16h.01" />
+          </svg>
+        </div>
+        <h1 className="mb-2 text-3xl font-bold text-foreground">
+          {bh?.reason === 'holiday' && bh?.holidayName
+            ? `Closed for ${bh.holidayName}`
+            : bh?.reason === 'before_hours' && bh?.todayHours
+            ? 'Not Open Yet'
+            : bh?.reason === 'after_hours'
+            ? 'Closed for the Day'
+            : 'Currently Closed'}
+        </h1>
+        {bh?.reason === 'before_hours' && bh?.todayHours && (
+          <p className="mb-2 text-lg text-muted-foreground">Opens at <strong>{bh.todayHours.open}</strong> today</p>
+        )}
+        {bh?.nextOpen && !(bh?.reason === 'before_hours') && (
+          <p className="mb-2 text-lg text-muted-foreground">
+            Opens {capitalizeDay(bh.nextOpen.day)} at {bh.nextOpen.time}
+          </p>
+        )}
+        {officeHours && (
+          <div className="mt-6 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-muted-foreground">Business Hours</h3>
+            <div className="space-y-1 text-sm">
+              {formatOperatingHours(officeHours).map(({ day, hours }) => (
+                <div key={day} className={`flex justify-between gap-6 ${day === bh?.currentDay ? 'font-bold text-primary' : 'text-foreground'}`}>
+                  <span>{capitalizeDay(day).slice(0, 3)}</span>
+                  <span className={hours === 'Closed' ? 'text-muted-foreground' : ''}>{hours}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const verticalConfig = (() => {
     switch (vertical) {
@@ -393,6 +458,11 @@ export function KioskView({
       priorityCategoryId: priority?.id ?? null,
     });
 
+    if ('stationOnline' in result && result.stationOnline && result.stationUrl) {
+      window.location.href = result.stationUrl;
+      return;
+    }
+
     if (result.error || !result.data) {
       alert(result.error ?? 'Error creating ticket. Please try again.');
       setLoading(false);
@@ -555,8 +625,51 @@ export function KioskView({
           <p className="mt-4 text-sm text-slate-500">
             {activeDepartments.length} departments · {visibleServiceCount} services
           </p>
+          {officeHours && kioskBusinessStatus && (
+            <button
+              onClick={() => setShowHoursPanel(!showHoursPanel)}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold shadow-sm backdrop-blur transition-colors hover:bg-white"
+              aria-expanded={showHoursPanel}
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${kioskBusinessStatus.isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-slate-700">
+                {kioskBusinessStatus.isOpen
+                  ? kioskBusinessStatus.todayHours
+                    ? `Open until ${kioskBusinessStatus.todayHours.close}`
+                    : 'Open'
+                  : 'Closed'}
+              </span>
+              <Clock3 className={`h-3 w-3 text-slate-400 transition-transform ${showHoursPanel ? 'rotate-180' : ''}`} />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Collapsible business hours panel ── */}
+      {showHoursPanel && officeHours && kioskBusinessStatus && (
+        <div className="mx-auto -mt-4 mb-4 max-w-sm animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg">
+            <h3 className="mb-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+              Business Hours
+            </h3>
+            <div className="space-y-1">
+              {formatOperatingHours(officeHours).map(({ day, hours }) => (
+                <div
+                  key={day}
+                  className={`flex justify-between rounded-lg px-3 py-1.5 text-sm ${
+                    day === kioskBusinessStatus.currentDay
+                      ? 'bg-primary/5 font-bold text-primary'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  <span>{capitalizeDay(day)}</span>
+                  <span className={hours === 'Closed' ? 'text-slate-400' : ''}>{hours}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         {step === 'home' && (

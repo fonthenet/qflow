@@ -247,6 +247,24 @@ export function DeskPanel({
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
+  const [stationOnline, setStationOnline] = useState(false);
+
+  // Station-online check: poll every 30s
+  useEffect(() => {
+    if (sandboxMode) return;
+    let mounted = true;
+    const check = () => {
+      import('@/lib/actions/ticket-actions').then(({ checkStationOnline }) => {
+        if (!mounted) return;
+        checkStationOnline(desk.office_id).then((online) => {
+          if (mounted) setStationOnline(online);
+        });
+      });
+    };
+    check();
+    const interval = setInterval(check, 30_000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [desk.office_id, sandboxMode]);
 
   // Safety: periodic cleanup + heartbeat
   const safetyRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1379,6 +1397,17 @@ export function DeskPanel({
         </div>
       </div>
 
+      {/* Station Online Banner */}
+      {stationOnline && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <div>
+            <strong>QFlow Station is online.</strong> Queue operations are managed locally by the station.
+            Use the desktop app or local desk (<code className="mx-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs dark:bg-amber-900">http://station-ip/desk</code>) to call, serve and manage tickets.
+          </div>
+        </div>
+      )}
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         {/* Left Column: Current Work Item */}
@@ -1467,7 +1496,7 @@ export function DeskPanel({
                 )}
                 <button
                   onClick={handleCallNext}
-                  disabled={isPending || queue.waiting.length === 0 || !canCallNext}
+                  disabled={isPending || queue.waiting.length === 0 || !canCallNext || stationOnline}
                   className="inline-flex items-center gap-3 rounded-xl bg-primary px-8 py-4 text-lg font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0"
                 >
                   {isPending ? (

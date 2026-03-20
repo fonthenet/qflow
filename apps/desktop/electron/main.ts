@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { initDB, getDB } from './db';
+import { initDB, getDB, logTicketEvent } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -198,6 +198,13 @@ function setupIPC() {
       `).run(ticket.id + '-create', ticket.id, JSON.stringify(ticket), new Date().toISOString());
     })();
 
+    logTicketEvent(ticket.id, 'created', {
+      ticketNumber: ticket.ticket_number,
+      toStatus: 'waiting',
+      source: 'station_offline',
+      details: { officeId: ticket.office_id, departmentId: ticket.department_id, serviceId: ticket.service_id, isOffline: true },
+    });
+
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
     mainWindow?.webContents.send('tickets:changed');
 
@@ -208,14 +215,34 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any) => {
-    const sets = Object.entries(updates)
+    // Validate ticketId format
+    if (typeof ticketId !== 'string' || !ticketId) return null;
+
+    // Whitelist allowed update fields to prevent arbitrary column writes
+    const ALLOWED_FIELDS = new Set([
+      'status', 'desk_id', 'called_at', 'called_by_staff_id',
+      'serving_started_at', 'completed_at', 'cancelled_at', 'parked_at',
+      'recall_count', 'notes', 'priority',
+    ]);
+    const safeUpdates: Record<string, any> = {};
+    for (const [key, val] of Object.entries(updates)) {
+      if (ALLOWED_FIELDS.has(key)) safeUpdates[key] = val;
+    }
+    if (Object.keys(safeUpdates).length === 0) return null;
+
+    const sets = Object.entries(safeUpdates)
       .map(([key]) => `${key} = ?`)
       .join(', ');
-    const values = Object.values(updates);
+    const values = Object.values(safeUpdates);
+
+    // ── Capture previous state BEFORE the update for audit trail ──
+    const prevTicket = safeUpdates.status
+      ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any
+      : null;
 
     // Transaction: ticket update + sync queue insert are atomic (crash-safe)
     // For manual "Call" button: use atomic CAS to prevent two staff calling same ticket
-    if (updates.status === 'called') {
+    if (safeUpdates.status === 'called') {
       const result = db.prepare(
         `UPDATE tickets SET ${sets} WHERE id = ? AND status = 'waiting' RETURNING *`
       ).get(...values, ticketId) as any;
@@ -224,37 +251,64 @@ function setupIPC() {
       db.prepare(`UPDATE tickets SET ${sets} WHERE id = ?`).run(...values, ticketId);
     }
 
+    // ── Audit log for every status transition and recall ──
+    if (safeUpdates.status && prevTicket) {
+      logTicketEvent(ticketId, safeUpdates.status === 'waiting' ? 'requeued' : safeUpdates.status, {
+        ticketNumber: prevTicket.ticket_number,
+        fromStatus: prevTicket.status,
+        toStatus: safeUpdates.status,
+        source: 'station',
+        details: {
+          deskId: safeUpdates.desk_id,
+          staffId: safeUpdates.called_by_staff_id,
+          ...(safeUpdates.notes ? { notes: safeUpdates.notes } : {}),
+          ...(safeUpdates.recall_count !== undefined ? { recallCount: safeUpdates.recall_count } : {}),
+        },
+      });
+    } else if (safeUpdates.recall_count !== undefined && !safeUpdates.status) {
+      // Recall doesn't change status but is still an important event
+      const tk = db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any;
+      logTicketEvent(ticketId, 'recalled', {
+        ticketNumber: tk?.ticket_number,
+        fromStatus: tk?.status,
+        toStatus: tk?.status,
+        source: 'station',
+        details: { recallCount: safeUpdates.recall_count },
+      });
+    }
+
     const syncId = `${ticketId}-${Date.now()}`;
     db.prepare(`
       INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
       VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
-    `).run(syncId, ticketId, JSON.stringify(updates), new Date().toISOString());
+    `).run(syncId, ticketId, JSON.stringify(safeUpdates), new Date().toISOString());
 
     // Immediately push to cloud so web/mobile displays update within 1-2s
     syncEngine?.pushImmediate(syncId);
 
     // Push typed SSE event based on status change
-    if (updates.status === 'served' || updates.status === 'no_show') {
+    if (safeUpdates.status === 'served' || safeUpdates.status === 'no_show') {
       notifyDisplays({ type: 'ticket_served', timestamp: new Date().toISOString() });
-    } else if (updates.status === 'cancelled') {
+    } else if (safeUpdates.status === 'cancelled') {
       notifyDisplays({ type: 'ticket_cancelled', timestamp: new Date().toISOString() });
-    } else if (updates.status === 'called') {
-      const dsk = updates.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(updates.desk_id) as any : null;
+    } else if (safeUpdates.status === 'called') {
+      const dsk = safeUpdates.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any : null;
       const tk = db.prepare('SELECT ticket_number FROM tickets WHERE id = ?').get(ticketId) as any;
       notifyDisplays({ type: 'ticket_called', ticket_number: tk?.ticket_number, desk_name: dsk?.name, timestamp: new Date().toISOString() });
     } else {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     }
     mainWindow?.webContents.send('tickets:changed');
-    return { id: ticketId, ...updates };
+    return { id: ticketId, ...safeUpdates };
   });
 
   ipcMain.handle('db:query', (_e, table: string, officeIds: string[]) => {
-    if (!officeIds?.length) return [];
+    if (!officeIds?.length || !Array.isArray(officeIds)) return [];
+    // Strict whitelist — only allowed tables can be queried
     const placeholders = officeIds.map(() => '?').join(',');
     switch (table) {
       case 'departments':
-        return db.prepare(`SELECT id, name FROM departments WHERE office_id IN (${placeholders})`).all(...officeIds);
+        return db.prepare(`SELECT id, name, code FROM departments WHERE office_id IN (${placeholders})`).all(...officeIds);
       case 'services':
         return db.prepare(`SELECT id, name, department_id FROM services`).all();
       case 'desks':
@@ -265,6 +319,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:call-next', async (_e, officeId: string, deskId: string, staffId: string) => {
+    if (!officeId || !deskId || !staffId) return null;
     const now = new Date().toISOString();
     const callTs = Date.now();
 
@@ -307,10 +362,24 @@ function setupIPC() {
 
       for (const candidate of candidates) {
         // If cloud check succeeded, skip tickets not confirmed waiting in cloud
-        // BUT skip this check for offline-created tickets (not yet synced)
-        const isOffline = (db.prepare("SELECT is_offline FROM tickets WHERE id = ?").get(candidate.id) as any)?.is_offline;
-        if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !isOffline) {
+        // BUT skip this check for:
+        //   - offline-created tickets (not yet synced)
+        //   - tickets with pending sync (INSERT not yet pushed)
+        //   - tickets created less than 2 minutes ago (sync in progress)
+        const ticketInfo = db.prepare("SELECT is_offline, created_at FROM tickets WHERE id = ?").get(candidate.id) as any;
+        const hasPendingSync = (db.prepare(
+          "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND record_id = ? AND table_name = 'tickets'"
+        ).get(candidate.id) as any)?.c > 0;
+        const isRecent = ticketInfo?.created_at && (Date.now() - new Date(ticketInfo.created_at).getTime()) < 120_000;
+
+        if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !ticketInfo?.is_offline && !hasPendingSync && !isRecent) {
           // This ticket was cancelled/resolved remotely — mark it locally too
+          logTicketEvent(candidate.id, 'auto_cancelled_call_next', {
+            fromStatus: 'waiting',
+            toStatus: 'cancelled',
+            source: 'call_next_cloud_precheck',
+            details: { reason: 'not_in_cloud_waiting' },
+          });
           db.prepare("UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ? AND status = 'waiting'")
             .run(now, candidate.id);
           skippedCount++;
@@ -331,6 +400,13 @@ function setupIPC() {
             INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
             VALUES (?, 'CALL', 'tickets', ?, ?, ?)
           `).run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+          logTicketEvent(ticket.id, 'called', {
+            ticketNumber: ticket.ticket_number,
+            fromStatus: 'waiting',
+            toStatus: 'called',
+            source: 'station',
+            details: { deskId, staffId },
+          });
           break;
         }
       }
@@ -394,6 +470,17 @@ function setupIPC() {
   // ── Session ───────────────────────────────────────────────────────
 
   ipcMain.handle('session:save', (_e, session: any) => {
+    // Extract and encrypt password for silent re-auth (never stored in plaintext)
+    const pwd = session._pwd;
+    delete session._pwd; // never persist plaintext in session JSON
+
+    if (pwd && session.email && safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(pwd).toString('base64');
+      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('auth_cred', ?)")
+        .run(JSON.stringify({ email: session.email, enc: encrypted }));
+      console.log('[auth] Credentials encrypted and stored for silent re-auth');
+    }
+
     db.prepare(`
       INSERT OR REPLACE INTO session (key, value)
       VALUES ('current', ?)
@@ -410,6 +497,7 @@ function setupIPC() {
 
   ipcMain.handle('session:clear', () => {
     db.prepare("DELETE FROM session WHERE key = 'current'").run();
+    db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
     // Stop sync engine on logout to prevent stale token errors
     syncEngine?.stop();
   });
@@ -565,6 +653,10 @@ app.whenReady().then(async () => {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
       // Tell renderer to refresh tickets immediately (event-driven, no polling needed)
       mainWindow?.webContents.send('tickets:changed');
+    },
+    (error) => {
+      // Surface sync/reconciliation errors to the Station UI
+      mainWindow?.webContents.send('sync:error', error);
     }
   );
   syncEngine.start();

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CalendarDays,
   Clock3,
   ExternalLink,
   Eye,
@@ -21,12 +22,15 @@ import { updateKioskSettings } from '@/lib/actions/admin-actions';
 import { buildBookingCheckInPath, buildBookingPath, buildKioskPath } from '@/lib/office-links';
 import { PublicLinkActions } from './public-link-actions';
 import { KioskView } from '@/components/kiosk/kiosk-view';
+import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 
 interface Office {
   id: string;
   name: string;
   is_active: boolean;
   settings?: Record<string, unknown> | null;
+  operating_hours?: Record<string, { open: string; close: string }> | null;
+  timezone?: string | null;
 }
 
 interface Service {
@@ -572,6 +576,55 @@ export function KioskSettings({
                     </div>
                   );
                 })}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* ── Business Hours ──────────────────────────────── */}
+          {activeOffices.length > 0 && (
+            <SectionCard icon={CalendarDays} title="Business Hours" description="Operating schedule shown on the kiosk when the office is closed.">
+              <div className="space-y-3">
+                {activeOffices.map((office) => {
+                  const oh = office.operating_hours as OperatingHours | null;
+                  const tz = office.timezone || 'UTC';
+                  const status = isOfficeOpen(oh, tz);
+                  const schedule = formatOperatingHours(oh);
+                  return (
+                    <div key={office.id} className="rounded-xl border border-border overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 bg-card">
+                        <div className="flex items-center gap-2.5">
+                          <span className={`h-2.5 w-2.5 rounded-full ${status.isOpen ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                          <span className="text-sm font-medium text-foreground">{office.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium ${status.isOpen ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {status.isOpen ? `Open until ${status.todayHours?.close ?? '--:--'}` : 'Closed'}
+                          </span>
+                          <a
+                            href="/admin/offices"
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Edit
+                          </a>
+                        </div>
+                      </div>
+                      <div className="border-t border-border bg-muted/10 px-4 py-3">
+                        <div className="grid grid-cols-2 gap-1.5 text-xs">
+                          {schedule.map((row) => (
+                            <div key={row.day} className="flex justify-between gap-2 py-0.5">
+                              <span className="text-muted-foreground">{capitalizeDay(row.day)}</span>
+                              <span className="font-medium text-foreground">{row.hours}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-muted-foreground">
+                  Edit hours and holidays in{' '}
+                  <a href="/admin/offices" className="text-primary hover:underline font-medium">Office settings</a>.
+                </p>
               </div>
             </SectionCard>
           )}

@@ -165,7 +165,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
     }
   };
 
-  const hasData = Object.values(customerData).some((v) => v !== '' && v !== false);
+  const hasData = Object.values(customerData).some((v) => v !== '' && v !== false && v !== null && v !== undefined);
 
   const renderField = (field: IntakeField) => {
     const hasError = !!errors[field.field_name];

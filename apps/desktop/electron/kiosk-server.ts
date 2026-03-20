@@ -1,12 +1,122 @@
 import http from 'http';
 import { networkInterfaces } from 'os';
-import { getDB, generateOfflineTicketNumber } from './db';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { getDB, generateOfflineTicketNumber, logTicketEvent } from './db';
 import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
+import QRCode from 'qrcode';
+
+// ── Static kiosk assets (loaded once at startup, served from memory) ──
+const KIOSK_DIR = join(__dirname, 'kiosk');
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+};
+
+// ── Business hours check (runs server-side, no npm dependency needed) ──
+const DAYS_OF_WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+interface BusinessHoursStatus {
+  isOpen: boolean;
+  reason: string;
+  todayHours: { open: string; close: string } | null;
+  currentTime: string;
+  currentDay: string;
+  nextOpen?: { day: string; time: string };
+  holidayName?: string;
+}
+
+function checkBusinessHours(
+  operatingHours: Record<string, { open: string; close: string }> | null,
+  timezone: string,
+  _officeId?: string,
+): BusinessHoursStatus {
+  const now = new Date();
+  let day: string, time: string, dayIndex: number;
+
+  try {
+    const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timezone });
+    day = dayFmt.format(now).toLowerCase();
+    const timeFmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone });
+    const parts = timeFmt.formatToParts(now);
+    const h = parts.find(p => p.type === 'hour')?.value ?? '00';
+    const m = parts.find(p => p.type === 'minute')?.value ?? '00';
+    time = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+    dayIndex = DAYS_OF_WEEK.indexOf(day);
+  } catch {
+    day = DAYS_OF_WEEK[now.getDay()];
+    time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    dayIndex = now.getDay();
+  }
+
+  const base = { currentTime: time, currentDay: day };
+
+  if (!operatingHours || Object.keys(operatingHours).length === 0) {
+    return { ...base, isOpen: true, reason: 'no_hours', todayHours: null };
+  }
+
+  // Check holidays from local DB
+  let holidayName: string | undefined;
+  try {
+    const db = getDB();
+    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now);
+    const holiday = db.prepare('SELECT name FROM office_holidays WHERE office_id = ? AND holiday_date = ?').get(_officeId, dateStr) as any;
+    if (holiday) {
+      holidayName = holiday.name;
+      const next = findNextOpenDay(operatingHours, dayIndex);
+      return { ...base, isOpen: false, reason: 'holiday', todayHours: null, holidayName, nextOpen: next };
+    }
+  } catch { /* table may not exist yet */ }
+
+  const todayHours = operatingHours[day];
+  if (!todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00')) {
+    const next = findNextOpenDay(operatingHours, dayIndex);
+    return { ...base, isOpen: false, reason: 'closed_today', todayHours: null, nextOpen: next };
+  }
+
+  const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const currentMins = toMins(time);
+  const openMins = toMins(todayHours.open);
+  const closeMins = toMins(todayHours.close);
+
+  if (currentMins < openMins) {
+    return { ...base, isOpen: false, reason: 'before_hours', todayHours, nextOpen: { day, time: todayHours.open } };
+  }
+  if (currentMins >= closeMins) {
+    const next = findNextOpenDay(operatingHours, dayIndex);
+    return { ...base, isOpen: false, reason: 'after_hours', todayHours, nextOpen: next };
+  }
+
+  return { ...base, isOpen: true, reason: 'open', todayHours };
+}
+
+function findNextOpenDay(hours: Record<string, { open: string; close: string }>, currentDayIndex: number) {
+  for (let offset = 1; offset <= 7; offset++) {
+    const idx = (currentDayIndex + offset) % 7;
+    const dayName = DAYS_OF_WEEK[idx];
+    const h = hours[dayName];
+    if (h && !(h.open === '00:00' && h.close === '00:00')) {
+      return { day: dayName, time: h.open };
+    }
+  }
+  return undefined;
+}
 
 let isCloudReachable = false;
 let onTicketCreated: ((syncQueueId: string) => void) | null = null;
 export function setOnTicketCreated(cb: (syncQueueId: string) => void) { onTicketCreated = cb; }
+
+// ── HTML entity escaping (prevent XSS) ──────────────────────────
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ── SSE: push instant updates to all connected displays/kiosks ───
 const sseClients: Set<http.ServerResponse> = new Set();
@@ -56,20 +166,18 @@ setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.n
 const { CLOUD_URL, SUPABASE_URL } = CONFIG;
 const SUPABASE_KEY = CONFIG.SUPABASE_ANON_KEY;
 
-// Check cloud connectivity every 15s
-setInterval(async () => {
+// Check cloud connectivity every 15s — only mark reachable on real success (2xx/3xx/4xx)
+async function checkCloudReachability() {
   try {
-    const res = await fetch(`${CLOUD_URL}/api/queue-status?slug=test`, { signal: AbortSignal.timeout(5000) });
-    isCloudReachable = res.status !== 0; // Any response = reachable (even 404)
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+      headers: { apikey: SUPABASE_KEY },
+      signal: AbortSignal.timeout(5000),
+    });
+    isCloudReachable = res.status < 500;
   } catch { isCloudReachable = false; }
-}, 15_000);
-// Initial check
-setTimeout(async () => {
-  try {
-    const res = await fetch(`${CLOUD_URL}/api/queue-status?slug=test`, { signal: AbortSignal.timeout(5000) });
-    isCloudReachable = res.status !== 0;
-  } catch { isCloudReachable = false; }
-}, 1000);
+}
+setInterval(checkCloudReachability, 15_000);
+setTimeout(checkCloudReachability, 1000);
 
 let server: http.Server | null = null;
 let localPort = 3847;
@@ -111,8 +219,17 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
 
       // Route requests
       if (path === '/kiosk' && req.method === 'GET') {
-        // Always serve local kiosk — it works offline and registers as a device
-        serveKioskPage(res);
+        serveStaticKioskFile('kiosk.html', res);
+      } else if (path.startsWith('/kiosk/') && req.method === 'GET') {
+        // Serve static kiosk assets (CSS, JS)
+        const fileName = path.replace('/kiosk/', '');
+        // Security: only allow known filenames, no path traversal
+        if (/^[a-zA-Z0-9._-]+\.(css|js)$/.test(fileName)) {
+          serveStaticKioskFile(fileName, res);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Not found' }));
+        }
       } else if (path === '/display' && req.method === 'GET') {
         serveDisplayPage(res);
       } else if (path.startsWith('/track/') && req.method === 'GET') {
@@ -132,13 +249,7 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleSSE(req, res);
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
-      } else if (path === '/api/debug-tickets' && req.method === 'GET') {
-        const ddb = getDB();
-        const all = ddb.prepare("SELECT ticket_number, status, is_offline, created_at FROM tickets ORDER BY created_at DESC LIMIT 20").all();
-        const syncQ = ddb.prepare("SELECT record_id, operation, synced_at FROM sync_queue WHERE table_name = 'tickets' ORDER BY created_at DESC LIMIT 20").all();
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ tickets: all, sync_queue: syncQ }, null, 2));
+        res.end(JSON.stringify({ status: 'ok', version: CONFIG.APP_VERSION, cloud: isCloudReachable ? CLOUD_URL : '' }));
       } else if (path === '/api/device-ping' && req.method === 'POST') {
         handleDevicePing(req, res);
       } else if (path === '/api/device-status' && req.method === 'GET') {
@@ -206,8 +317,21 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     } catch { /* ignore */ }
   }
 
+  // ── Business hours check ──────────────────────────────────────
+  const operatingHours = office.operating_hours ? (typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours) : null;
+  const timezone = office.timezone || 'UTC';
+  const businessStatus = checkBusinessHours(operatingHours, timezone, office.id);
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ office, departments, services, logo_url: logoUrl, org_name: orgName }));
+  res.end(JSON.stringify({
+    office,
+    departments,
+    services,
+    logo_url: logoUrl,
+    org_name: orgName,
+    is_open: businessStatus.isOpen,
+    business_hours: businessStatus,
+  }));
 }
 
 function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -219,14 +343,21 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
     if (size > MAX_BODY) { req.destroy(); return; }
     body += chunk;
   });
-  req.on('end', () => {
+  req.on('end', async () => {
     try {
       if (size > MAX_BODY) {
         res.writeHead(413, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Request too large' }));
         return;
       }
-      const { officeId, departmentId, serviceId, customerName, customerPhone } = JSON.parse(body);
+
+      let parsed: any;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        return;
+      }
+      const { officeId, departmentId, serviceId, customerName, customerPhone } = parsed;
 
       if (!officeId || !departmentId || !serviceId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -234,29 +365,113 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         return;
       }
 
+      // Validate IDs are valid UUIDs (prevent injection)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(officeId) || !uuidRegex.test(departmentId) || !uuidRegex.test(serviceId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid ID format' }));
+        return;
+      }
+
       // Input sanitization
-      const safeName = typeof customerName === 'string' ? customerName.slice(0, 200).trim() : null;
+      const safeName = typeof customerName === 'string' ? customerName.replace(/[<>&"']/g, '').slice(0, 200).trim() : null;
       const safePhone = typeof customerPhone === 'string' ? customerPhone.replace(/[^\d+\-() ]/g, '').slice(0, 30) : null;
 
       const db = getDB();
 
-      // Get department code for ticket number
-      const dept = db.prepare('SELECT code FROM departments WHERE id = ?').get(departmentId) as any;
-      const deptCode = dept?.code ?? 'Q';
+      // Validate department and service exist in this office
+      const dept = db.prepare('SELECT id, code FROM departments WHERE id = ? AND office_id = ?').get(departmentId, officeId) as any;
+      if (!dept) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid department' }));
+        return;
+      }
+      const svc = db.prepare('SELECT id FROM services WHERE id = ? AND department_id = ?').get(serviceId, departmentId) as any;
+      if (!svc) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid service' }));
+        return;
+      }
 
-      // Generate offline ticket number
-      const ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
+      // ── Business hours enforcement — reject if office is closed ──
+      const officeRow = db.prepare('SELECT operating_hours, timezone FROM offices WHERE id = ?').get(officeId) as any;
+      if (officeRow) {
+        const opHours = officeRow.operating_hours ? (typeof officeRow.operating_hours === 'string' ? JSON.parse(officeRow.operating_hours) : officeRow.operating_hours) : null;
+        const tz = officeRow.timezone || 'UTC';
+        const bh = checkBusinessHours(opHours, tz, officeId);
+        if (!bh.isOpen) {
+          const reason = bh.reason === 'holiday' ? `Closed for ${bh.holidayName || 'holiday'}` :
+            bh.reason === 'closed_today' ? 'Closed today' :
+            bh.reason === 'before_hours' ? `Opens at ${bh.todayHours?.open || ''}` :
+            bh.reason === 'after_hours' ? 'Closed for the day' : 'Office is closed';
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: reason, closed: true, business_hours: bh }));
+          return;
+        }
+      }
+
+      const deptCode = dept?.code ?? 'Q';
       const ticketId = randomUUID();
       const now = new Date().toISOString();
-      // Generate qr_token for cloud tracking (12 char random string)
       const qrToken = randomUUID().replace(/-/g, '').slice(0, 12);
-      // Daily sequence: count today's tickets for this office + 1
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const seqRow = db.prepare(
-        "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND created_at >= ?"
-      ).get(officeId, todayStart.toISOString()) as any;
-      const dailySequence = (seqRow?.c ?? 0) + 1;
+
+      // ── Generate ticket number ──────────────────────────────────
+      // When online: query cloud for the next sequence to get a proper
+      // number (CS-012) that matches what the station will display.
+      // When offline: fall back to L-prefix (L-CS-010).
+      let ticketNumber: string;
+      let dailySequence: number;
+      let isOffline = true;
+
+      if (isCloudReachable) {
+        try {
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          const maxRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&department_id=eq.${departmentId}&created_at=gte.${todayStart.toISOString()}&ticket_number=not.like.L-%25&select=daily_sequence&order=daily_sequence.desc&limit=1`,
+            {
+              headers: { apikey: SUPABASE_KEY },
+              signal: AbortSignal.timeout(3000),
+            }
+          );
+          if (maxRes.ok) {
+            const rows = await maxRes.json();
+            const cloudMax = rows[0]?.daily_sequence ?? 0;
+            // Also check local non-L tickets to extract max sequence from ticket_number
+            const localTickets = db.prepare(
+              "SELECT ticket_number FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ? AND ticket_number NOT LIKE 'L-%'"
+            ).all(officeId, departmentId, todayStart.toISOString()) as any[];
+            let localMax = 0;
+            for (const t of localTickets) {
+              // ticket_number format: "CS-012" → extract 12
+              const match = t.ticket_number?.match(/-(\d+)$/);
+              if (match) localMax = Math.max(localMax, parseInt(match[1], 10));
+            }
+            dailySequence = Math.max(cloudMax, localMax) + 1;
+            ticketNumber = `${deptCode}-${String(dailySequence).padStart(3, '0')}`;
+            isOffline = false;
+          } else {
+            throw new Error('Cloud query failed');
+          }
+        } catch {
+          // Cloud query failed — fall back to offline numbering
+          ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          const seqRow = db.prepare(
+            "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
+          ).get(officeId, departmentId, todayStart.toISOString()) as any;
+          dailySequence = (seqRow?.c ?? 0) + 1;
+        }
+      } else {
+        ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const seqRow = db.prepare(
+          "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
+        ).get(officeId, departmentId, todayStart.toISOString()) as any;
+        dailySequence = (seqRow?.c ?? 0) + 1;
+      }
 
       const customerData = JSON.stringify({
         name: safeName || null,
@@ -267,8 +482,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       db.transaction(() => {
         db.prepare(`
           INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
-          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, 1)
-        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now);
+          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?)
+        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0);
 
         db.prepare(`
           INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -293,6 +508,18 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         );
       })();
 
+      // Audit log — immutable trail
+      logTicketEvent(ticketId, 'created', {
+        ticketNumber,
+        toStatus: 'waiting',
+        source: 'kiosk',
+        details: {
+          officeId, departmentId, serviceId, deptCode,
+          isOffline, dailySequence,
+          customerName: safeName || null,
+        },
+      });
+
       notifyDisplays({ type: 'ticket_created', ticket_number: ticketNumber, timestamp: now });
       onTicketCreated?.(ticketId + '-create');
 
@@ -303,6 +530,20 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         AND created_at <= ? AND parked_at IS NULL
       `).get(officeId, departmentId, now) as any;
 
+      // Generate QR code server-side (proper library, guaranteed scannable)
+      const trackUrl = `${CLOUD_URL}/ticket/${ticketId}`;
+      let qrDataUrl = '';
+      try {
+        qrDataUrl = await QRCode.toDataURL(trackUrl, {
+          errorCorrectionLevel: 'M',
+          margin: 4,
+          scale: 8,
+          color: { dark: '#000000', light: '#ffffff' },
+        });
+      } catch (qrErr) {
+        console.error('[kiosk] QR generation error:', qrErr);
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ticket: {
@@ -311,11 +552,13 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
           status: 'waiting',
           position: position?.pos ?? 1,
           created_at: now,
+          qr_data_url: qrDataUrl,
         },
       }));
     } catch (err: any) {
+      console.error('[kiosk] Ticket creation error:', err);
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      res.end(JSON.stringify({ error: 'Failed to create ticket. Please try again.' }));
     }
   });
 }
@@ -350,260 +593,55 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'served' AND created_at >= ?"
   ).get(officeId, todayISO) as any;
 
+  // Per-department breakdown for kiosk display
+  const deptCounts = db.prepare(`
+    SELECT d.id, d.name, COUNT(t.id) as waiting,
+      COALESCE(AVG(s.estimated_service_time), 10) as avg_service_time
+    FROM departments d
+    LEFT JOIN tickets t ON t.department_id = d.id AND t.status = 'waiting' AND t.office_id = ? AND t.created_at >= ?
+    LEFT JOIN services s ON t.service_id = s.id
+    WHERE d.office_id = ?
+    GROUP BY d.id, d.name
+  `).all(officeId, todayISO, officeId) as any[];
+
+  const departments = deptCounts.map(d => ({
+    id: d.id,
+    name: d.name,
+    waiting: d.waiting ?? 0,
+    estimated_wait: Math.round((d.waiting ?? 0) * (d.avg_service_time ?? 10)),
+  }));
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     waiting: waiting?.c ?? 0,
     called: called?.c ?? 0,
     serving: serving?.c ?? 0,
     served: served?.c ?? 0,
+    departments,
   }));
 }
 
-// ── Kiosk HTML Page (Offline Fallback — matches web kiosk design) ──
+// ── Static kiosk file serving ──────────────────────────────────────
+// All kiosk UI lives in separate .html/.css/.js files under electron/kiosk/.
+// Files are read from disk on each request (simple, no caching issues during dev).
 
-function serveKioskPage(res: http.ServerResponse) {
-  const ip = getLocalIP();
-  const apiBase = `http://${ip}:${localPort}`;
-  const db = getDB();
-  const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
-  const officeName = office?.name ?? 'Qflo';
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>${officeName} — Take a Ticket</title>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"><\/script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #0f172a; min-height: 100vh; }
-
-    .kiosk { display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 32px 24px; }
-
-    .kiosk-header { text-align: center; margin-bottom: 40px; }
-    .kiosk-logo { width: 72px; height: 72px; background: white; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
-    .kiosk-logo span { font-size: 36px; font-weight: 900; color: #3b82f6; }
-    .kiosk-header h1 { font-size: 28px; font-weight: 800; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .kiosk-header .subtitle { font-size: 16px; color: rgba(255,255,255,0.8); margin-top: 4px; }
-    .offline-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-top: 10px; background: rgba(255,255,255,0.2); color: white; backdrop-filter: blur(4px); }
-
-    .step { width: 100%; max-width: 640px; }
-    .step-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; text-align: center; color: white; }
-
-    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
-    .card {
-      background: white; border-radius: 16px; padding: 28px 20px; text-align: center;
-      font-size: 17px; font-weight: 700; color: #1e293b; cursor: pointer;
-      transition: all 0.2s; box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-      border: 2px solid transparent;
-    }
-    .card:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); border-color: #3b82f6; }
-    .card:active { transform: translateY(0); }
-    .card-icon { font-size: 32px; margin-bottom: 8px; }
-    .card-count { font-size: 12px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
-
-    .form-card { background: white; border-radius: 20px; padding: 36px 32px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
-    .form-group { margin-bottom: 20px; }
-    .form-group label { display: block; font-size: 14px; font-weight: 600; color: #64748b; margin-bottom: 8px; }
-    .form-group input { width: 100%; padding: 16px 18px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 17px; outline: none; transition: border-color 0.15s; }
-    .form-group input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-
-    .btn { display: block; width: 100%; padding: 18px; border: none; border-radius: 14px; font-size: 18px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
-    .btn-primary { background: #3b82f6; color: white; box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
-    .btn-primary:hover { background: #2563eb; transform: translateY(-1px); }
-    .btn-ghost { background: transparent; color: rgba(255,255,255,0.7); margin-top: 12px; border: 1px solid rgba(255,255,255,0.2); }
-    .btn-ghost:hover { background: rgba(255,255,255,0.1); color: white; }
-    .btn-white { background: white; color: #3b82f6; margin-top: 16px; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .result-card { text-align: center; background: white; border-radius: 24px; padding: 48px 32px; box-shadow: 0 12px 48px rgba(0,0,0,0.12); }
-    .result-check { width: 72px; height: 72px; background: #22c55e; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
-    .result-check svg { width: 36px; height: 36px; fill: white; }
-    .result-number { font-size: 64px; font-weight: 900; color: #1e293b; letter-spacing: -3px; line-height: 1; }
-    .result-position { font-size: 18px; color: #64748b; margin-top: 8px; font-weight: 600; }
-    .result-divider { height: 1px; background: #e2e8f0; margin: 24px 0; }
-    .qr-section { display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px; background: #f0f9ff; border-radius: 12px; }
-    .qr-section .qr-box { flex-shrink: 0; }
-    .qr-section .qr-text { font-size: 13px; color: #475569; }
-    .qr-section .qr-text strong { color: #1e40af; display: block; margin-bottom: 4px; }
-    .result-timer { font-size: 13px; color: #94a3b8; margin-top: 16px; }
-
-    .back-btn { display: inline-flex; align-items: center; gap: 6px; color: rgba(255,255,255,0.7); font-weight: 600; font-size: 14px; cursor: pointer; margin-bottom: 16px; }
-    .back-btn:hover { color: white; }
-
-    @media (max-width: 480px) {
-      .kiosk { padding: 20px 16px; }
-      .card-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
-      .card { padding: 20px 12px; font-size: 15px; }
-      .result-number { font-size: 48px; }
-      .qr-section { flex-direction: column; text-align: center; }
-    }
-  </style>
-</head>
-<body>
-  <div class="kiosk" id="app">
-    <div style="color:white;padding:48px;text-align:center">Loading...</div>
-  </div>
-
-  <script>
-    const API = '${apiBase}';
-    const CLOUD = '${CLOUD_URL}';
-    let state = { step: 'loading', office: null, orgName: null, departments: [], services: [], selectedDept: null, selectedService: null, ticket: null };
-    let resetTimer = null;
-
-    function makeQR(text, size) {
-      try {
-        var qr = qrcode(0, 'M');
-        qr.addData(text);
-        qr.make();
-        return qr.createSvgTag({ cellSize: size || 3, margin: 0 });
-      } catch { return ''; }
-    }
-
-    async function init() {
-      try {
-        const res = await fetch(API + '/api/kiosk-info');
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        state.office = data.office;
-        state.orgName = data.org_name || null;
-        state.departments = data.departments;
-        state.services = data.services;
-        state.step = state.departments.length === 1 ? (function() { state.selectedDept = state.departments[0]; var svcs = state.services.filter(function(s){return s.department_id===state.departments[0].id}); return svcs.length === 1 ? (state.selectedService = svcs[0], 'customer') : 'service'; })() : 'department';
-        render();
-      } catch (err) {
-        document.getElementById('app').innerHTML = '<div style="color:white;padding:48px;text-align:center;font-size:18px">Cannot connect to Qflo Station.<br><span style="font-size:14px;opacity:0.7;margin-top:8px;display:block">Make sure the desktop app is running on this network.</span></div>';
-      }
-    }
-
-    function selectDept(dept) {
-      state.selectedDept = dept;
-      var deptServices = state.services.filter(function(s){return s.department_id === dept.id});
-      if (deptServices.length === 1) { state.selectedService = deptServices[0]; state.step = 'customer'; }
-      else { state.step = 'service'; }
-      render();
-    }
-
-    function selectService(svc) { state.selectedService = svc; state.step = 'customer'; render(); }
-
-    async function takeTicket(skip) {
-      var nameInput = document.getElementById('cname');
-      var phoneInput = document.getElementById('cphone');
-      var btn = document.getElementById('submit-btn');
-      if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
-      try {
-        var res = await fetch(API + '/api/take-ticket', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            officeId: state.office.id, departmentId: state.selectedDept.id,
-            serviceId: state.selectedService.id,
-            customerName: skip ? '' : (nameInput?.value || ''),
-            customerPhone: skip ? '' : (phoneInput?.value || ''),
-          }),
-        });
-        var data = await res.json();
-        if (data.error) throw new Error(data.error);
-        state.ticket = data.ticket;
-        state.step = 'done';
-        render();
-        resetTimer = setTimeout(reset, 20000);
-      } catch (err) {
-        if (btn) { btn.disabled = false; btn.textContent = 'Get Ticket'; }
-        alert('Error: ' + err.message);
-      }
-    }
-
-    function reset() {
-      if (resetTimer) clearTimeout(resetTimer);
-      state.step = state.departments.length === 1 ? 'service' : 'department';
-      state.selectedDept = state.departments.length === 1 ? state.departments[0] : null;
-      state.selectedService = null;
-      state.ticket = null;
-      render();
-    }
-
-    function render() {
-      var app = document.getElementById('app');
-      var name = state.office?.name ?? 'Qflo';
-
-      var header = '<div class="kiosk-header">' +
-        '<div class="kiosk-logo"><span>Q</span></div>' +
-        '<h1>' + (state.orgName || name) + '</h1>' +
-        (state.orgName && state.orgName !== name ? '<div class="subtitle">' + name + '</div>' : '<div class="subtitle">Take a ticket to join the queue</div>') +
-        '<div class="offline-badge" id="kiosk-conn">Local Mode — Tickets sync when online</div>' +
-        '</div>';
-
-      if (state.step === 'department') {
-        var cards = state.departments.map(function(d) {
-          return '<div class="card" onclick="selectDept(' + JSON.stringify(d).replace(/"/g, '&quot;') + ')">' +
-            '<div class="card-icon">🏥</div>' + d.name + '</div>';
-        }).join('');
-        app.innerHTML = header + '<div class="step"><div class="step-title">Select Department</div><div class="card-grid">' + cards + '</div></div>';
-
-      } else if (state.step === 'service') {
-        var svcs = state.services.filter(function(s){return s.department_id === state.selectedDept.id});
-        var cards = svcs.map(function(s) {
-          return '<div class="card" onclick="selectService(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')">' +
-            '<div class="card-icon">📋</div>' + s.name + '</div>';
-        }).join('');
-        app.innerHTML = header + '<div class="step">' +
-          '<div class="back-btn" onclick="state.step=\\'department\\';render();">← Back</div>' +
-          '<div class="step-title">Select Service</div><div class="card-grid">' + cards + '</div></div>';
-
-      } else if (state.step === 'customer') {
-        app.innerHTML = header + '<div class="step">' +
-          '<div class="back-btn" onclick="state.step=\\'service\\';render();">← Back</div>' +
-          '<div class="form-card">' +
-          '<div style="text-align:center;font-size:20px;font-weight:700;margin-bottom:24px">Your Information</div>' +
-          '<div class="form-group"><label>Name (optional)</label><input id="cname" placeholder="Enter your name" autocomplete="off"></div>' +
-          '<div class="form-group"><label>Phone (optional)</label><input id="cphone" placeholder="Phone number" type="tel" autocomplete="off"></div>' +
-          '<button id="submit-btn" class="btn btn-primary" onclick="takeTicket(false)">Get Ticket</button>' +
-          '</div>' +
-          '<button class="btn btn-ghost" onclick="takeTicket(true)">Skip — Just give me a number</button>' +
-          '</div>';
-
-      } else if (state.step === 'done') {
-        var t = state.ticket;
-        var trackUrl = CLOUD + '/ticket/' + t.id;
-        var qrHtml = makeQR(trackUrl, 3);
-
-        app.innerHTML = header.replace('Take a ticket to join the queue', 'Your ticket is ready') + '<div class="step">' +
-          '<div class="result-card">' +
-          '<div class="result-check"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div>' +
-          '<div class="result-number">' + t.ticket_number + '</div>' +
-          '<div class="result-position">#' + t.position + ' in queue</div>' +
-          '<div class="result-divider"></div>' +
-          '<div class="qr-section">' +
-          '<div class="qr-box">' + qrHtml + '</div>' +
-          '<div class="qr-text"><strong>Track on your phone</strong>Scan this QR code to track your position remotely from anywhere. You will be notified when it is your turn.</div>' +
-          '</div>' +
-          '<div style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all"><a href="' + trackUrl + '" style="color:#3b82f6;text-decoration:none">' + trackUrl + '</a></div>' +
-          '<div class="result-timer">This screen resets automatically in 20 seconds</div>' +
-          '</div>' +
-          '<button class="btn btn-white" onclick="reset()">Take Another Ticket</button>' +
-          '</div>';
-      }
-    }
-
-    // Device ping — register this kiosk
-    var kioskId = 'kiosk-' + Math.random().toString(36).substr(2, 6);
-    function pingKiosk() {
-      fetch(API + '/api/device-ping', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ id: kioskId, type: 'kiosk', name: 'Local Kiosk' })
-      }).catch(function(){});
-    }
-    pingKiosk();
-    setInterval(pingKiosk, 15000);
-
-    init();
-  <\/script>
-</body>
-</html>`;
-
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(html);
+function serveStaticKioskFile(fileName: string, res: http.ServerResponse) {
+  const ext = fileName.substring(fileName.lastIndexOf('.'));
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  try {
+    const filePath = join(KIOSK_DIR, fileName);
+    const content = readFileSync(filePath, 'utf-8');
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+    res.end(content);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  }
 }
 
 // ── Track Ticket API ──────────────────────────────────────────────
@@ -727,9 +765,24 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
   req.on('data', (chunk) => { body += chunk; });
   req.on('end', () => {
     try {
-      const { id, type, name } = JSON.parse(body);
-      if (id && type) {
-        devices.set(id, { id, type, name: name ?? type, lastPing: Date.now() });
+      const { type, name } = JSON.parse(body);
+      if (type) {
+        // Key by type + client IP — one entry per physical device per type
+        // Multiple tabs from the same device merge; different devices stay separate
+        const clientIP = (req.socket.remoteAddress ?? 'unknown').replace('::ffff:', '');
+        const deviceKey = `${type}-${clientIP}`;
+
+        // Remove any old random-ID entries of the same type from this IP
+        for (const [existingId, d] of devices) {
+          if (d.type === type && existingId !== deviceKey && existingId !== 'station') {
+            // Check if this old entry is from the same IP (embedded in id or stale)
+            if ((Date.now() - d.lastPing) > 30000 || existingId.startsWith(`${type}-`)) {
+              devices.delete(existingId);
+            }
+          }
+        }
+
+        devices.set(deviceKey, { id: deviceKey, type, name: name ?? type, lastPing: Date.now() });
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -743,6 +796,15 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
 function handleDeviceStatus(res: http.ServerResponse) {
   const now = Date.now();
   const TIMEOUT = 30_000; // 30s = considered disconnected
+  const STALE = 120_000;  // 2min = remove from list entirely
+
+  // Prune devices that haven't pinged in 2+ minutes (closed tabs, disconnected devices)
+  for (const [id, d] of devices) {
+    if (id !== 'station' && (now - d.lastPing) > STALE) {
+      devices.delete(id);
+    }
+  }
+
   const list = Array.from(devices.values()).map(d => ({
     ...d,
     connected: (now - d.lastPing) < TIMEOUT,
@@ -1238,7 +1300,8 @@ function serveDisplayPage(res: http.ServerResponse) {
     }
 
     // Device ping — register this display
-    var displayId = 'display-' + Math.random().toString(36).substr(2, 6);
+    var displayId = localStorage.getItem('qf_device_id') || ('display-' + Math.random().toString(36).substr(2, 6));
+    localStorage.setItem('qf_device_id', displayId);
     function pingDevice() {
       fetch(API + '/api/device-ping', {
         method: 'POST', headers: {'Content-Type':'application/json'},
