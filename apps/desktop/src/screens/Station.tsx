@@ -45,35 +45,11 @@ export function Station({ session, isOnline }: Props) {
   // ALWAYS read from SQLite — the sync engine keeps it up to date
   const fetchTickets = useCallback(async () => {
     const officeIds = session.office_ids?.length ? session.office_ids : [session.office_id];
-    console.log('[Station] Fetching tickets for offices:', officeIds);
-    const local = await window.qf.db.getTickets(
-      officeIds,
-      ['waiting', 'called', 'serving']
-    );
-    console.log('[Station] Got', local.length, 'tickets from SQLite', local.map((t: any) => `${t.ticket_number}(${t.status})`));
+    const local = await window.qf.db.getTickets(officeIds, ['waiting', 'called', 'serving']);
     setTickets(local.map(parseLocalTicket));
   }, [session.office_id, session.office_ids]);
 
   // ── Load names for departments, services, desks ─────────────────
-
-  // Debug: log session and DB state on mount
-  useEffect(() => {
-    console.log('[Station] Session:', JSON.stringify({
-      office_id: session.office_id,
-      office_ids: session.office_ids,
-      desk_id: session.desk_id,
-      staff_id: session.staff_id,
-    }));
-    // Check what's actually in SQLite
-    const checkDB = async () => {
-      const stats = await window.qf.debug?.dbStats?.();
-      console.log('[Station] SQLite DB Stats:', JSON.stringify(stats, null, 2));
-    };
-    checkDB();
-    // Re-check every 10s
-    const iv = setInterval(checkDB, 10000);
-    return () => clearInterval(iv);
-  }, [session]);
 
   // Load names from SQLite (sync engine keeps them fresh)
   useEffect(() => {
@@ -188,6 +164,29 @@ export function Station({ session, isOnline }: Props) {
 
   const cancel = (id: string) =>
     updateTicketStatus(id, { status: 'cancelled', cancelled_at: new Date().toISOString() });
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      // Ctrl+Enter or F8: Call Next
+      if (((e.ctrlKey && e.key === 'Enter') || e.key === 'F8') && !activeTicket && session.desk_id) {
+        e.preventDefault();
+        callNext();
+      }
+      // F9: Start Serving (when called)
+      if (e.key === 'F9' && activeTicket?.status === 'called') {
+        e.preventDefault();
+        startServing(activeTicket.id);
+      }
+      // F10: Complete (when serving)
+      if (e.key === 'F10' && activeTicket?.status === 'serving') {
+        e.preventDefault();
+        complete(activeTicket.id);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [activeTicket, session.desk_id]);
 
   // ── Derived data ────────────────────────────────────────────────
 

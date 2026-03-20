@@ -5,6 +5,14 @@ import { initDB, getDB } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, type SSEEvent } from './kiosk-server';
 
+// ── Crash handlers — log and keep running ─────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+});
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
@@ -126,14 +134,6 @@ function setupIPC() {
       `SELECT * FROM tickets WHERE office_id IN (${officePlaceholders}) AND status IN (${statusPlaceholders})
        ORDER BY priority DESC, created_at ASC`
     ).all(...ids, ...statuses);
-
-    // Debug: log what the display sees vs what the station sees
-    if (result.length === 0) {
-      const allActive = db.prepare("SELECT ticket_number, office_id, status FROM tickets WHERE status IN ('waiting','called','serving')").all();
-      if ((allActive as any[]).length > 0) {
-        console.log(`[db:get-tickets] Station found 0 tickets for offices [${ids.join(',')}] but SQLite has ${(allActive as any[]).length} active tickets:`, allActive);
-      }
-    }
 
     return result;
   });

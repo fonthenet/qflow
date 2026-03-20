@@ -213,9 +213,20 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
 
 function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
   let body = '';
-  req.on('data', (chunk) => { body += chunk; });
+  let size = 0;
+  const MAX_BODY = 8192; // 8KB max
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > MAX_BODY) { req.destroy(); return; }
+    body += chunk;
+  });
   req.on('end', () => {
     try {
+      if (size > MAX_BODY) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request too large' }));
+        return;
+      }
       const { officeId, departmentId, serviceId, customerName, customerPhone } = JSON.parse(body);
 
       if (!officeId || !departmentId || !serviceId) {
@@ -223,6 +234,10 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ error: 'Missing required fields' }));
         return;
       }
+
+      // Input sanitization
+      const safeName = typeof customerName === 'string' ? customerName.slice(0, 200).trim() : null;
+      const safePhone = typeof customerPhone === 'string' ? customerPhone.replace(/[^\d+\-() ]/g, '').slice(0, 30) : null;
 
       const db = getDB();
 
@@ -236,8 +251,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const now = new Date().toISOString();
 
       const customerData = JSON.stringify({
-        name: customerName || null,
-        phone: customerPhone || null,
+        name: safeName || null,
+        phone: safePhone || null,
       });
 
       // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
@@ -261,7 +276,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             service_id: serviceId,
             status: 'waiting',
             priority: 0,
-            customer_data: { name: customerName || null, phone: customerPhone || null },
+            customer_data: { name: safeName || null, phone: safePhone || null },
             created_at: now,
           }),
           now

@@ -1,5 +1,5 @@
 {
-  "name": "queueflow-station",
+  "name": "qflo-station",
   "version": "1.0.0",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
@@ -20,14 +20,12 @@
     "electron-updater": "^6.3.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.1",
-    "uuid": "^11.1.0"
+    "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.5.2",
     "electron": "^35.2.1",
     "electron-builder": "^26.0.12",
@@ -37,7 +35,7 @@
     "vitest": "^3.2.4"
   },
   "build": {
-    "appId": "com.queueflow.station",
+    "appId": "com.qflo.station",
     "productName": "Qflo Station",
     "directories": {
       "output": "release"

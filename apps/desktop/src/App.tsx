@@ -1,9 +1,36 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component, type ReactNode } from 'react';
 import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
 import type { StaffSession, SyncStatus } from './lib/types';
 import './styles.css';
+
+// ── Error Boundary — prevents full app crash on render errors ─────
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[ErrorBoundary] Caught:', error, info?.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: '#0f172a', color: '#e2e8f0' }}>
+          <div style={{ fontSize: 48 }}>⚠️</div>
+          <h2 style={{ fontSize: 22, fontWeight: 700 }}>Something went wrong</h2>
+          <p style={{ fontSize: 14, color: '#94a3b8', maxWidth: 400 }}>{this.state.error.message}</p>
+          <button
+            onClick={() => { this.setState({ error: null }); window.location.reload(); }}
+            style={{ padding: '10px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
+          >
+            Reload App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function App() {
   const [session, setSession] = useState<StaffSession | null>(null);
@@ -63,13 +90,15 @@ export function App() {
   }
 
   return (
-    <div className="app">
-      <StatusBar session={session} syncStatus={syncStatus} onLogout={handleLogout} />
-      {session ? (
-        <Station session={session} isOnline={syncStatus.isOnline} />
-      ) : (
-        <Login onLogin={handleLogin} />
-      )}
-    </div>
+    <ErrorBoundary>
+      <div className="app">
+        <StatusBar session={session} syncStatus={syncStatus} onLogout={handleLogout} />
+        {session ? (
+          <Station session={session} isOnline={syncStatus.isOnline} />
+        ) : (
+          <Login onLogin={handleLogin} />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }
