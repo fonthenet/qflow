@@ -248,6 +248,15 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
       const ticketId = randomUUID();
       const now = new Date().toISOString();
+      // Generate qr_token for cloud tracking (12 char random string)
+      const qrToken = randomUUID().replace(/-/g, '').slice(0, 12);
+      // Daily sequence: count today's tickets for this office + 1
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const seqRow = db.prepare(
+        "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND created_at >= ?"
+      ).get(officeId, todayStart.toISOString()) as any;
+      const dailySequence = (seqRow?.c ?? 0) + 1;
 
       const customerData = JSON.stringify({
         name: safeName || null,
@@ -277,6 +286,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             priority: 0,
             customer_data: { name: safeName || null, phone: safePhone || null },
             created_at: now,
+            qr_token: qrToken,
+            daily_sequence: dailySequence,
           }),
           now
         );
@@ -567,6 +578,7 @@ function serveKioskPage(res: http.ServerResponse) {
           '<div class="qr-box">' + qrHtml + '</div>' +
           '<div class="qr-text"><strong>Track on your phone</strong>Scan this QR code to track your position remotely from anywhere. You will be notified when it is your turn.</div>' +
           '</div>' +
+          '<div style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all"><a href="' + trackUrl + '" style="color:#3b82f6;text-decoration:none">' + trackUrl + '</a></div>' +
           '<div class="result-timer">This screen resets automatically in 20 seconds</div>' +
           '</div>' +
           '<button class="btn btn-white" onclick="reset()">Take Another Ticket</button>' +
