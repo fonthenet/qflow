@@ -400,6 +400,23 @@ function setupIPC() {
   });
 }
 
+// ── Single instance lock — prevent duplicate windows ─────────────────
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  // Another instance is already running — quit this one immediately
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // User launched a second instance — focus the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
