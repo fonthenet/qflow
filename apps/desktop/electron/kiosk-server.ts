@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 
 let isCloudReachable = false;
+let onTicketCreated: (() => void) | null = null;
+export function setOnTicketCreated(cb: () => void) { onTicketCreated = cb; }
 
 // ── SSE: push instant updates to all connected displays/kiosks ───
 const sseClients: Set<http.ServerResponse> = new Set();
@@ -109,17 +111,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
 
       // Route requests
       if (path === '/kiosk' && req.method === 'GET') {
-        // Smart proxy: online → redirect to cloud kiosk, offline → local page
-        const db = getDB();
-        const office = db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
-        const slug = office?.settings ? (JSON.parse(office.settings)?.platform_office_slug ?? '') : '';
-
-        if (isCloudReachable && slug) {
-          res.writeHead(302, { Location: `${CLOUD_URL}/kiosk/${slug}` });
-          res.end();
-        } else {
-          serveKioskPage(res);
-        }
+        // Always serve local kiosk — it works offline and registers as a device
+        serveKioskPage(res);
       } else if (path === '/display' && req.method === 'GET') {
         serveDisplayPage(res);
       } else if (path.startsWith('/track/') && req.method === 'GET') {
@@ -140,6 +133,12 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
+      } else if (path === '/api/debug-tickets' && req.method === 'GET') {
+        const ddb = getDB();
+        const all = ddb.prepare("SELECT ticket_number, status, is_offline, created_at FROM tickets ORDER BY created_at DESC LIMIT 20").all();
+        const syncQ = ddb.prepare("SELECT record_id, operation, synced_at FROM sync_queue WHERE table_name = 'tickets' ORDER BY created_at DESC LIMIT 20").all();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ tickets: all, sync_queue: syncQ }, null, 2));
       } else if (path === '/api/device-ping' && req.method === 'POST') {
         handleDevicePing(req, res);
       } else if (path === '/api/device-status' && req.method === 'GET') {
@@ -284,6 +283,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       })();
 
       notifyDisplays({ type: 'ticket_created', ticket_number: ticketNumber, timestamp: now });
+      onTicketCreated?.();
 
       // Count position
       const position = db.prepare(`
@@ -574,6 +574,17 @@ function serveKioskPage(res: http.ServerResponse) {
           '</div>';
       }
     }
+
+    // Device ping — register this kiosk
+    var kioskId = 'kiosk-' + Math.random().toString(36).substr(2, 6);
+    function pingKiosk() {
+      fetch(API + '/api/device-ping', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ id: kioskId, type: 'kiosk', name: 'Local Kiosk' })
+      }).catch(function(){});
+    }
+    pingKiosk();
+    setInterval(pingKiosk, 15000);
 
     init();
   <\/script>

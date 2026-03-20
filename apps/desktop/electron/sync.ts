@@ -693,7 +693,7 @@ export class SyncEngine {
       const fiveMinAgo = new Date(Date.now() - 300000).toISOString();
       const locallyModifiedIds = new Set(
         (this.db.prepare(
-          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('UPDATE','CALL') AND created_at > ?"
+          "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation IN ('INSERT','UPDATE','CALL') AND created_at > ?"
         ).all(fiveMinAgo) as any[]).map((r: any) => r.record_id)
       );
 
@@ -800,12 +800,13 @@ export class SyncEngine {
         if (activeTickets !== null) {
           const cloudActiveIds = new Set(activeTickets.map((t: any) => t.id));
           const localActive = this.db.prepare(
-            "SELECT id, ticket_number, status FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
+            "SELECT id, ticket_number, status, is_offline FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
           ).all(officeId) as any[];
 
           for (const local of localActive) {
             if (cloudActiveIds.has(local.id)) continue; // still active in cloud — fine
             if (locallyModifiedIds.has(local.id)) continue; // we have a pending local change — don't overwrite
+            if (local.is_offline) continue; // offline-created ticket not yet synced — don't cancel it
 
             // This ticket is active locally but gone from cloud — check history pull
             const inHistory = (histTickets ?? []).find((t: any) => t.id === local.id);
@@ -822,21 +823,24 @@ export class SyncEngine {
           }
         }
 
-        // ── Clean up L- prefixed local tickets that now have a cloud equivalent ──
-        // Only remove L- local copies, NOT cloud-to-cloud duplicates (those have the same ticket_number
-        // across active+historical pulls and must coexist)
+        // ── Clean up L- prefixed local tickets that have been synced to cloud ──
+        // Only delete L- copies when the cloud ticket has the SAME ID (meaning the
+        // offline ticket was successfully pushed and the cloud assigned a real number).
+        // Never delete based on ticket_number alone — a new L-CS-003 is NOT a dupe of
+        // yesterday's CS-003.
         const allPulled = [...(activeTickets ?? []), ...(histTickets ?? [])];
         const pulledIds = new Set(allPulled.map((t: any) => t.id));
         for (const t of allPulled) {
           if (!t.ticket_number || !t.id || t.ticket_number.startsWith('L-')) continue;
-          // Only remove L- prefixed LOCAL copies (offline-created tickets that synced to cloud)
-          const lDupes = this.db.prepare(
-            "SELECT id FROM tickets WHERE office_id = ? AND ticket_number = ? AND id != ?"
-          ).all(t.office_id, `L-${t.ticket_number}`, t.id) as any[];
-          for (const lp of lDupes) {
-            if (pulledIds.has(lp.id)) continue; // don't delete something we just pulled
-            this.db.prepare("DELETE FROM tickets WHERE id = ?").run(lp.id);
-            this.db.prepare("DELETE FROM sync_queue WHERE record_id = ?").run(lp.id);
+          // Only remove L- prefixed LOCAL copies that share the same record ID
+          // (the sync engine reuses the UUID, so after push the cloud has the same id)
+          const localL = this.db.prepare(
+            "SELECT id, ticket_number FROM tickets WHERE id = ? AND ticket_number LIKE 'L-%'"
+          ).get(t.id) as any;
+          if (localL) {
+            // Cloud now has this ticket with a real number — delete the L- local copy
+            console.log(`[sync:cleanup] Removing local ${localL.ticket_number}, cloud has ${t.ticket_number}`);
+            this.db.prepare("DELETE FROM tickets WHERE id = ? AND ticket_number LIKE 'L-%'").run(t.id);
           }
         }
       }

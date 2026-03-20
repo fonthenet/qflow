@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 
 // ── Crash handlers — log and keep running ─────────────────────────────
@@ -572,6 +572,10 @@ app.whenReady().then(async () => {
     const kiosk = await startKioskServer(CONFIG.KIOSK_PORT);
     kioskUrl = kiosk.url + '/kiosk';
     console.log(`Kiosk available at: ${kioskUrl}`);
+    // Notify Station UI instantly when a ticket is created from the local kiosk
+    setOnTicketCreated(() => {
+      mainWindow?.webContents.send('tickets:changed');
+    });
   } catch (err) {
     console.error('Failed to start kiosk server:', err);
   }
