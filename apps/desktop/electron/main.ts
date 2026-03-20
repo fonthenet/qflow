@@ -307,7 +307,9 @@ function setupIPC() {
 
       for (const candidate of candidates) {
         // If cloud check succeeded, skip tickets not confirmed waiting in cloud
-        if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id)) {
+        // BUT skip this check for offline-created tickets (not yet synced)
+        const isOffline = (db.prepare("SELECT is_offline FROM tickets WHERE id = ?").get(candidate.id) as any)?.is_offline;
+        if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !isOffline) {
           // This ticket was cancelled/resolved remotely — mark it locally too
           db.prepare("UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ? AND status = 'waiting'")
             .run(now, candidate.id);

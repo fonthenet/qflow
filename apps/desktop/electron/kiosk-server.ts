@@ -554,9 +554,11 @@ function serveKioskPage(res: http.ServerResponse) {
 
       } else if (state.step === 'done') {
         var t = state.ticket;
-        var trackUrl = CLOUD + '/ticket/' + t.id;
         var trackLocal = API + '/track/' + encodeURIComponent(t.ticket_number);
-        var qrHtml = makeQR(trackUrl, 3) || makeQR(trackLocal, 3);
+        var trackUrl = CLOUD + '/ticket/' + t.id;
+        // L- tickets are offline-only until synced — use local tracking URL for QR
+        var qrTarget = t.ticket_number.startsWith('L-') ? trackLocal : trackUrl;
+        var qrHtml = makeQR(qrTarget, 3);
 
         app.innerHTML = header.replace('Take a ticket to join the queue', 'Your ticket is ready') + '<div class="step">' +
           '<div class="result-card">' +
