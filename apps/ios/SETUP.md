@@ -53,13 +53,13 @@
 ### App Clip target:
 1. Select QueueFlowClip target → Signing & Capabilities
 2. Add **Associated Domains** capability
-3. Add domain: `appclips:qflow-sigma.vercel.app` (or your production domain)
+3. Add domain: `appclips:qflo.net` (or your production domain)
 4. Add **Push Notifications** capability
 
 ### Companion App target:
 1. Select QueueFlow target → Signing & Capabilities
 2. Add **Associated Domains** capability
-3. Add domain: `appclips:qflow-sigma.vercel.app`
+3. Add domain: `appclips:qflo.net`
 
 ## Step 5: Configure App Clip URL Handling
 
@@ -91,7 +91,7 @@ APNS_KEY_P8=-----BEGIN PRIVATE KEY-----\nYOUR_KEY_CONTENT\n-----END PRIVATE KEY-
 
 1. Select the QueueFlowClip scheme
 2. Edit Scheme → Run → Arguments → Environment Variables
-3. Add: `_XCAppClipURL` = `https://qflow-sigma.vercel.app/q/YOUR_TEST_TOKEN`
+3. Add: `_XCAppClipURL` = `https://qflo.net/q/YOUR_TEST_TOKEN`
 4. Run on Simulator
 
 ## Step 9: Test on Physical Device

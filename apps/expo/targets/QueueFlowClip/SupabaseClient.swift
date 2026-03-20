@@ -11,7 +11,7 @@ class SupabaseClient {
     private let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ"
 
     // IMPORTANT: Replace with your production domain
-    private let apiBaseURL = "https://qflow-sigma.vercel.app"
+    private let apiBaseURL = "https://qflo.net"
 
     private init() {}
 

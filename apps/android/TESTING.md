@@ -10,7 +10,7 @@ Use this checklist after the Firebase and server credentials in `SETUP.md` are c
 
 ## Initial registration
 
-1. Open a real queue link like `https://qflow-sigma.vercel.app/q/TOKEN`.
+1. Open a real queue link like `https://qflo.net/q/TOKEN`.
 2. On Android 13+, allow notifications when prompted.
 3. Confirm the backend inserts a row in `public.android_tokens` for that ticket.
 4. Confirm the app immediately shows the current queue state as an ongoing notification.

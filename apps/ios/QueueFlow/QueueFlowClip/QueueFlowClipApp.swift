@@ -117,7 +117,7 @@ class AppState: ObservableObject {
         }
 
         let normalizedPath = rawURL.hasPrefix("/") ? rawURL : "/" + rawURL
-        if let resolvedURL = URL(string: "https://qflow-sigma.vercel.app\(normalizedPath)") {
+        if let resolvedURL = URL(string: "https://qflo.net\(normalizedPath)") {
             handleURL(resolvedURL)
         }
     }

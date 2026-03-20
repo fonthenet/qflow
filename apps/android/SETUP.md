@@ -57,7 +57,7 @@ This Android module now targets Android 16 APIs using AGP 8.13.x, Gradle 8.13, a
 ## 5. Test flow
 
 1. Install the Android app.
-2. Open a queue link like `https://qflow-sigma.vercel.app/q/TOKEN` in the app.
+2. Open a queue link like `https://qflo.net/q/TOKEN` in the app.
 3. The app registers its FCM token with `/api/android-register`.
 4. Queue actions send native Android updates through FCM.
 5. Follow the full regression checklist in `TESTING.md`.

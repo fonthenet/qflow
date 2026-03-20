@@ -101,7 +101,7 @@ In App Store Connect → your app → **App Clip** section:
    - Subtitle: "Track your queue position"
    - Action: "Open"
 3. Add **Advanced App Clip Experience**:
-   - URL: `https://qflow-sigma.vercel.app/q/`
+   - URL: `https://qflo.net/q/`
    - This matches your QR code URLs
 
 ## Deploying
@@ -124,7 +124,7 @@ This submits the latest TestFlight build for App Store review.
 
 After deployment, verify your AASA file is accessible:
 ```
-curl https://qflow-sigma.vercel.app/.well-known/apple-app-site-association
+curl https://qflo.net/.well-known/apple-app-site-association
 ```
 
 You can also use Apple's validator:

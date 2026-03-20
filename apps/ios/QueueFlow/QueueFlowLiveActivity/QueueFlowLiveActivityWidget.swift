@@ -184,7 +184,7 @@ struct QueueFlowLiveActivityWidget: Widget {
     private func queueURL(
         for context: ActivityViewContext<QueueLiveActivityAttributes>
     ) -> URL? {
-        URL(string: "https://qflow-sigma.vercel.app/q/\(context.attributes.qrToken)")
+        URL(string: "https://qflo.net/q/\(context.attributes.qrToken)")
     }
 }
 

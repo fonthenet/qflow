@@ -50,7 +50,7 @@ struct ContentView: View {
                 // Open web app button
                 Button {
                     // Replace with your production domain
-                    if let url = URL(string: "https://qflow-sigma.vercel.app") {
+                    if let url = URL(string: "https://qflo.net") {
                         openURL(url)
                     }
                 } label: {

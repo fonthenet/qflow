@@ -48,14 +48,14 @@ android {
 
         // TWA metadata
         manifestPlaceholders = [
-            hostName: "qflow-sigma.vercel.app",
-            defaultUrl: "https://qflow-sigma.vercel.app/",
+            hostName: "qflo.net",
+            defaultUrl: "https://qflo.net/",
             launcherName: "Qflo",
             assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"],' +
-                ' "target": { "namespace": "web", "site": "https://qflow-sigma.vercel.app" } }]'
+                ' "target": { "namespace": "web", "site": "https://qflo.net" } }]'
         ]
 
-        buildConfigField "String", "APP_BASE_URL", quote("https://qflow-sigma.vercel.app")
+        buildConfigField "String", "APP_BASE_URL", quote("https://qflo.net")
         buildConfigField "String", "FIREBASE_PROJECT_ID", quote(readConfig("QUEUEFLOW_FIREBASE_PROJECT_ID"))
         buildConfigField "String", "FIREBASE_APP_ID", quote(readConfig("QUEUEFLOW_FIREBASE_APP_ID"))
         buildConfigField "String", "FIREBASE_API_KEY", quote(readConfig("QUEUEFLOW_FIREBASE_API_KEY"))
