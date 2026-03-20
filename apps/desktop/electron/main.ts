@@ -396,6 +396,9 @@ function setupIPC() {
       INSERT OR REPLACE INTO session (key, value)
       VALUES ('current', ?)
     `).run(JSON.stringify(session));
+
+    // Register Station's local IP in office settings so web kiosk can discover it
+    registerStationIP(session);
   });
 
   ipcMain.handle('session:load', () => {
@@ -465,6 +468,49 @@ function setupIPC() {
     } catch {}
     return { orgName: null, logoUrl: null, brandColor: null };
   });
+}
+
+// ── Register Station IP in Supabase so web kiosk can discover it ─────
+
+async function registerStationIP(session: any) {
+  try {
+    const ip = getLocalIP();
+    const port = CONFIG.KIOSK_PORT;
+    const officeIds = session.office_ids?.length ? session.office_ids : [session.office_id];
+    if (!officeIds?.length) return;
+
+    const headers: Record<string, string> = {
+      apikey: CONFIG.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    };
+
+    for (const officeId of officeIds) {
+      // Read current settings
+      const res = await fetch(
+        `${CONFIG.SUPABASE_URL}/rest/v1/offices?id=eq.${officeId}&select=settings`,
+        { headers, signal: AbortSignal.timeout(5000) }
+      );
+      if (!res.ok) continue;
+      const offices = await res.json();
+      const currentSettings = offices[0]?.settings ?? {};
+
+      // Merge station_ip into settings
+      const updated = { ...currentSettings, station_local_url: `http://${ip}:${port}` };
+      await fetch(
+        `${CONFIG.SUPABASE_URL}/rest/v1/offices?id=eq.${officeId}`,
+        {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ settings: updated }),
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+    }
+  } catch {
+    // Non-critical — web kiosk just won't show as connected
+  }
 }
 
 // ── Single instance lock — prevent duplicate windows ─────────────────

@@ -85,6 +85,7 @@ export default async function KioskPage({ params }: KioskPageProps) {
       priorityCategories={kioskSettings.showPriorities ? (priorityCategories || []) : []}
       kioskSettings={kioskSettings}
       vertical={platformConfig.selection.vertical}
+      stationLocalUrl={officeSettings.station_local_url ?? null}
     />
   );
 }

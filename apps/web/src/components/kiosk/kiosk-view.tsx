@@ -100,6 +100,7 @@ interface KioskViewProps {
       status: string;
     }>;
   };
+  stationLocalUrl?: string | null;
 }
 
 type KioskStep = 'home' | 'department' | 'service' | 'priority' | 'appointment' | 'ticket';
@@ -112,6 +113,7 @@ export function KioskView({
   kioskSettings,
   vertical,
   sandbox,
+  stationLocalUrl,
 }: KioskViewProps) {
   const sandboxMode = Boolean(sandbox?.enabled);
   // General rule: org logo_url is the source of truth.
@@ -262,6 +264,23 @@ export function KioskView({
     setLoading(false);
     setShowGroupModal(false);
   }
+
+  // Ping Station's local server so web kiosk shows as "Online" in Devices
+  useEffect(() => {
+    if (!stationLocalUrl) return;
+    const kioskId = 'web-kiosk-' + office.id.slice(0, 8);
+    const ping = () => {
+      fetch(`${stationLocalUrl}/api/device-ping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: kioskId, type: 'kiosk', name: 'Web Kiosk' }),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+    };
+    ping();
+    const iv = setInterval(ping, 15000);
+    return () => clearInterval(iv);
+  }, [stationLocalUrl, office.id]);
 
   useEffect(() => {
     const timeoutMs = Math.max(ks.idleTimeout, 10) * 1000;

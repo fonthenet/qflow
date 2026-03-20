@@ -111,7 +111,8 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
 
   useEffect(() => {
     const mine = tickets.find(
-      (t) => t.desk_id === session.desk_id && (t.status === 'called' || t.status === 'serving')
+      (t) => (t.status === 'called' || t.status === 'serving') &&
+        (t.desk_id === session.desk_id || t.called_by_staff_id === session.staff_id)
     );
     setActiveTicket(mine ?? null);
 
@@ -300,6 +301,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   // Virtualization: only render first N items to avoid DOM bloat with 100+ tickets
   const VISIBLE_CHUNK = 50;
   const [showAllWaiting, setShowAllWaiting] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
     return filteredWaiting.slice(0, VISIBLE_CHUNK);
@@ -648,31 +650,40 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity — collapsed by default */}
         {recentActivity.length > 0 && (
           <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
-            <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Recent Activity
-            </h4>
-            <div className="ticket-list" role="list" aria-label="Recent activity">
-              {recentActivity.slice(0, 5).map((a, i) => (
-                <div key={i} className="queue-item" role="listitem" style={{ padding: '4px 12px' }}>
-                  <div className="queue-item-info">
-                    <span className="queue-item-number" style={{ fontSize: 12 }}>{a.ticket}</span>
-                    <span className="queue-item-meta">
-                      {a.action} &middot; {a.time}
+            <button
+              onClick={() => setShowActivity(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+              }}
+            >
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                Recent Activity ({recentActivity.length})
+              </h4>
+              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showActivity ? '▲' : '▼'}</span>
+            </button>
+            {showActivity && (
+              <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6 }} role="list" aria-label="Recent activity">
+                {recentActivity.slice(0, 10).map((a, i) => (
+                  <div key={i} role="listitem" style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '3px 0', fontSize: 11, color: 'var(--text2)',
+                  }}>
+                    <span><strong>{a.ticket}</strong> {a.action} · {a.time}</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, marginLeft: 6, whiteSpace: 'nowrap',
+                      background: a.action === 'Completed' ? 'rgba(34,197,94,0.15)' : a.action === 'No Show' ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
+                      color: a.action === 'Completed' ? '#22c55e' : a.action === 'No Show' ? '#f97316' : '#3b82f6',
+                    }}>
+                      {a.action}
                     </span>
                   </div>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                    background: a.action === 'Completed' ? 'rgba(34,197,94,0.15)' : a.action === 'No Show' ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
-                    color: a.action === 'Completed' ? '#22c55e' : a.action === 'No Show' ? '#f97316' : '#3b82f6',
-                  }}>
-                    {a.action}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
