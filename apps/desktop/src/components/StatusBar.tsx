@@ -30,9 +30,14 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
 
   useEffect(() => {
     window.qf.org?.getBranding?.()
-      .then((b: { orgName: string | null; logoUrl: string | null }) => {
+      .then((b: { orgName: string | null; logoUrl: string | null; brandColor: string | null }) => {
         if (b?.logoUrl) setLogoUrl(b.logoUrl);
         if (b?.orgName) setOrgName(b.orgName);
+        // Apply org brand color as CSS variable for white-label
+        if (b?.brandColor) {
+          document.documentElement.style.setProperty('--primary', b.brandColor);
+          document.documentElement.style.setProperty('--called', b.brandColor);
+        }
       })
       .catch(() => {});
   }, []);

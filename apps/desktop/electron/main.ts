@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, type SSEEvent } from './kiosk-server';
+import { CONFIG } from './config';
 
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -18,8 +19,7 @@ let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
 let kioskUrl: string | null = null;
 
-const SUPABASE_URL = 'https://ofyyzuocifigyyhqxxqw.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = CONFIG;
 
 function loadWindowBounds(): { x?: number; y?: number; width: number; height: number } {
   try {
@@ -59,6 +59,25 @@ function createWindow() {
     },
     show: true,
     backgroundColor: '#0f172a',
+  });
+
+  // Content Security Policy
+  const supabaseDomain = new URL(SUPABASE_URL).hostname;
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          `default-src 'self'; ` +
+          `script-src 'self' 'unsafe-inline'; ` +
+          `style-src 'self' 'unsafe-inline'; ` +
+          `img-src 'self' data: https: blob:; ` +
+          `connect-src 'self' https://${supabaseDomain} wss://${supabaseDomain} ${CONFIG.CLOUD_URL} http://localhost:*; ` +
+          `font-src 'self' data:; ` +
+          `media-src 'self' data:;`
+        ],
+      },
+    });
   });
 
   // Dev or production
@@ -124,7 +143,7 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   };
 
   const menu = Menu.buildFromTemplate([
-    { label: 'Qflo Station v1.0.0', enabled: false },
+    { label: `${CONFIG.APP_NAME} v${CONFIG.APP_VERSION}`, enabled: false },
     { type: 'separator' },
     { label: statusLabels[status], enabled: false },
     { type: 'separator' },
@@ -432,13 +451,19 @@ function setupIPC() {
       if (!office?.organization_id) return { orgName: null, logoUrl: null };
 
       const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url`, { headers, signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url,settings`, { headers, signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const orgs = await res.json();
-        return { orgName: orgs[0]?.name ?? null, logoUrl: orgs[0]?.logo_url ?? null };
+        const org = orgs[0];
+        const settings = org?.settings ?? {};
+        return {
+          orgName: org?.name ?? null,
+          logoUrl: org?.logo_url ?? null,
+          brandColor: settings?.brand_color ?? null,
+        };
       }
     } catch {}
-    return { orgName: null, logoUrl: null };
+    return { orgName: null, logoUrl: null, brandColor: null };
   });
 }
 
@@ -498,7 +523,7 @@ app.whenReady().then(async () => {
 
   // Start local kiosk server for tablets/touchscreens
   try {
-    const kiosk = await startKioskServer(3847);
+    const kiosk = await startKioskServer(CONFIG.KIOSK_PORT);
     kioskUrl = kiosk.url + '/kiosk';
     console.log(`Kiosk available at: ${kioskUrl}`);
   } catch (err) {

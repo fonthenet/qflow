@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { CONFIG } from './config';
 
 type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') => void;
 type ProgressCallback = (pendingCount: number) => void;
@@ -53,27 +54,25 @@ export class SyncEngine {
   private autoResolveInterval: ReturnType<typeof setInterval> | null = null;
 
   start() {
-    // Check connectivity every 10s
-    this.healthInterval = setInterval(() => this.checkHealth(), 10_000);
+    // Check connectivity
+    this.healthInterval = setInterval(() => this.checkHealth(), CONFIG.HEALTH_CHECK_INTERVAL);
     this.checkHealth();
 
     // ── STARTUP: Force token refresh immediately ──
-    // When the station restarts, the cached token is likely expired.
-    // Proactively refresh so the first sync/call doesn't fail with 401.
     this.refreshOnStartup();
 
-    // Try to sync pending items every 15s
-    this.interval = setInterval(() => this.syncNow(), 15_000);
+    // Try to sync pending items
+    this.interval = setInterval(() => this.syncNow(), CONFIG.SYNC_PUSH_INTERVAL);
 
-    // Pull cloud data every 10s when online (Realtime handles instant updates, this is fallback)
+    // Pull cloud data when online (Realtime handles instant updates, this is fallback)
     this.pullInterval = setInterval(() => {
       if (this.isOnline) this.pullLatest();
-    }, 10_000);
+    }, CONFIG.SYNC_PULL_INTERVAL);
 
-    // Auto-resolve stale tickets every 60s (server-side cleanup runs too, this is belt-and-suspenders)
+    // Auto-resolve stale tickets
     this.autoResolveInterval = setInterval(() => {
       if (this.isOnline) this.triggerAutoResolve();
-    }, 60_000);
+    }, CONFIG.AUTO_RESOLVE_INTERVAL);
   }
 
   private async refreshOnStartup() {

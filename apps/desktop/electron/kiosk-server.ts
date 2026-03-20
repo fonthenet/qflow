@@ -2,6 +2,7 @@ import http from 'http';
 import { networkInterfaces } from 'os';
 import { getDB, generateOfflineTicketNumber } from './db';
 import { randomUUID } from 'crypto';
+import { CONFIG } from './config';
 
 let isCloudReachable = false;
 
@@ -50,9 +51,8 @@ const devices: Map<string, DeviceInfo> = new Map();
 devices.set('station', { id: 'station', type: 'station', name: 'Qflo Station', lastPing: Date.now() });
 // Update station heartbeat every 10s
 setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.now(); }, 10000);
-const CLOUD_URL = 'https://qflo.net';
-const SUPABASE_URL = 'https://ofyyzuocifigyyhqxxqw.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
+const { CLOUD_URL, SUPABASE_URL } = CONFIG;
+const SUPABASE_KEY = CONFIG.SUPABASE_ANON_KEY;
 
 // Check cloud connectivity every 15s
 setInterval(async () => {
