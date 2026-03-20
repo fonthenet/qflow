@@ -586,7 +586,9 @@ export default function DeskScreen() {
       {/* Header */}
       <View style={styles.ticketHeader}>
         <View>
-          <Text style={styles.ticketLabel}>
+          <Text style={[styles.ticketLabel, {
+            color: activeTicket.status === 'serving' ? colors.serving : colors.called,
+          }]}>
             {activeTicket.status === 'serving' ? 'Now Serving' : 'Called'}
           </Text>
           <Text style={styles.ticketNumber}>{activeTicket.ticket_number}</Text>
@@ -614,23 +616,30 @@ export default function DeskScreen() {
         </View>
       </View>
 
-      {/* Customer & meta — compact row */}
+      {/* Customer & meta */}
       <View style={styles.metaCompact}>
-        {activeTicket.customer_data?.name ? (
-          <Text style={styles.metaName}>{activeTicket.customer_data.name}</Text>
-        ) : null}
+        <Text style={styles.metaName}>
+          {activeTicket.customer_data?.name || 'Walk-in Customer'}
+        </Text>
         {activeTicket.customer_data?.phone ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="call-outline" size={12} color={colors.textSecondary} />
-            <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary }}>{activeTicket.customer_data.phone}</Text>
+            <Ionicons name="call-outline" size={13} color={colors.textSecondary} />
+            <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary }}>
+              {activeTicket.customer_data.phone}
+            </Text>
           </View>
         ) : null}
-        <Text style={styles.metaSub} numberOfLines={1}>
-          {[
-            activeTicket.service_id ? names.services[activeTicket.service_id] : null,
-            activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
-          ].filter(Boolean).join(' · ')}
-        </Text>
+        {[
+          activeTicket.service_id ? names.services[activeTicket.service_id] : null,
+          activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
+        ].filter(Boolean).length > 0 ? (
+          <Text style={styles.metaSub} numberOfLines={1}>
+            {[
+              activeTicket.service_id ? names.services[activeTicket.service_id] : null,
+              activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
+            ].filter(Boolean).join(' · ')}
+          </Text>
+        ) : null}
         {priorityInfo ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Ionicons name="flag" size={12} color={priorityInfo.color ?? colors.warning} />
@@ -639,11 +648,11 @@ export default function DeskScreen() {
             </Text>
           </View>
         ) : null}
-        {(activeTicket.customer_data?.notes || activeTicket.notes) ? (
+        {(activeTicket.customer_data?.reason || activeTicket.customer_data?.notes || activeTicket.notes) ? (
           <View style={styles.notesBubble}>
             <Ionicons name="chatbubble-outline" size={12} color={colors.info} />
             <Text style={[styles.notesText, { color: colors.text }]} numberOfLines={3}>
-              {activeTicket.customer_data?.notes || activeTicket.notes}
+              {activeTicket.customer_data?.reason || activeTicket.customer_data?.notes || activeTicket.notes}
             </Text>
           </View>
         ) : null}
@@ -1137,8 +1146,7 @@ const styles = StyleSheet.create({
   },
   ticketLabel: {
     fontSize: fontSize.xs,
-    fontWeight: '700',
-    color: colors.textMuted,
+    fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
@@ -1158,16 +1166,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   metaCompact: {
-    gap: 2,
+    gap: 5,
   },
   metaName: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
+    fontSize: fontSize.lg,
+    fontWeight: '700',
     color: colors.text,
   },
   metaSub: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
+    fontWeight: '500',
   },
   notesBubble: {
     flexDirection: 'row',

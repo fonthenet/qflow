@@ -236,6 +236,14 @@ export function Station({ session, isOnline }: Props) {
                 <div className="active-customer">
                   {(activeTicket.customer_data as any)?.name ?? 'Walk-in Customer'}
                 </div>
+                {(activeTicket.customer_data as any)?.phone && (
+                  <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
+                )}
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                  <div className="active-notes">
+                    <strong>Reason:</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                  </div>
+                )}
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? 'Service'} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? 'Dept'}
@@ -284,9 +292,9 @@ export function Station({ session, isOnline }: Props) {
                 {(activeTicket.customer_data as any)?.phone && (
                   <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
                 )}
-                {(activeTicket.customer_data as any)?.notes && (
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
                   <div className="active-notes">
-                    <strong>Note:</strong> {(activeTicket.customer_data as any).notes}
+                    <strong>Reason:</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
                   </div>
                 )}
                 <div className="active-meta">

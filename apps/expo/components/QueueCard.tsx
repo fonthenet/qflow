@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Animated, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CountdownTimer } from './CountdownTimer';
 import type { TicketResponse } from '@/lib/api';
@@ -243,20 +243,33 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
   const [editVisible, setEditVisible] = useState(false);
   const [editName, setEditName] = useState(ticket.customer_data?.name ?? '');
   const [editPhone, setEditPhone] = useState(ticket.customer_data?.phone ?? '');
+  const [editReason, setEditReason] = useState(ticket.customer_data?.reason ?? ticket.customer_data?.notes ?? '');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const saveEdit = async () => {
     setSaving(true);
+    setSaveError('');
     try {
-      await fetch(`${API_BASE_URL}/api/ticket-update`, {
+      const res = await fetch(`${API_BASE_URL}/api/ticket-update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: ticket.qr_token, name: editName.trim(), phone: editPhone.trim() }),
+        body: JSON.stringify({
+          token: ticket.qr_token,
+          name: editName.trim(),
+          phone: editPhone.trim(),
+          reason: editReason.trim(),
+        }),
       });
-      setEditVisible(false);
-      onTicketUpdated?.();
+      if (res.ok) {
+        setEditVisible(false);
+        onTicketUpdated?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setSaveError(err.error ?? 'Failed to save');
+      }
     } catch {
-      // ignore
+      setSaveError('Network error — try again');
     } finally {
       setSaving(false);
     }
@@ -401,6 +414,8 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
             onPress={() => {
               setEditName(ticket.customer_data?.name ?? '');
               setEditPhone(ticket.customer_data?.phone ?? '');
+              setEditReason(ticket.customer_data?.reason ?? ticket.customer_data?.notes ?? '');
+              setSaveError('');
               setEditVisible(true);
             }}
           >
@@ -412,39 +427,65 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
 
       {/* Edit Modal */}
       <Modal visible={editVisible} transparent animationType="slide" onRequestClose={() => setEditVisible(false)}>
-        <View style={layout.modalOverlay}>
-          <View style={[layout.modalCard, { backgroundColor: t.cardBg, borderColor: t.cardBorder }]}>
-            <Text style={[layout.modalTitle, { color: t.textPrimary }]}>Edit Visit Info</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={layout.modalOverlay}>
+            <View style={[layout.modalCard, { backgroundColor: t.cardBg, borderColor: t.cardBorder }]}>
+              <Text style={[layout.modalTitle, { color: t.textPrimary }]}>Edit Visit Info</Text>
 
-            <Text style={[layout.modalLabel, { color: t.textMuted }]}>Name</Text>
-            <TextInput
-              style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Your name"
-              placeholderTextColor={t.textMuted}
-            />
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Full Name</Text>
+                <TextInput
+                  style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Your name"
+                  placeholderTextColor={t.textMuted}
+                  returnKeyType="next"
+                  autoCapitalize="words"
+                />
 
-            <Text style={[layout.modalLabel, { color: t.textMuted }]}>Phone</Text>
-            <TextInput
-              style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
-              value={editPhone}
-              onChangeText={setEditPhone}
-              placeholder="Your phone"
-              placeholderTextColor={t.textMuted}
-              keyboardType="phone-pad"
-            />
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Phone Number</Text>
+                <TextInput
+                  style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
+                  value={editPhone}
+                  onChangeText={setEditPhone}
+                  placeholder="Your phone"
+                  placeholderTextColor={t.textMuted}
+                  keyboardType="phone-pad"
+                  returnKeyType="next"
+                />
 
-            <View style={layout.modalButtons}>
-              <TouchableOpacity style={[layout.modalCancel, { borderColor: t.cardBorder }]} onPress={() => setEditVisible(false)}>
-                <Text style={[layout.modalCancelText, { color: t.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[layout.modalSave, { backgroundColor: t.accent }]} onPress={saveEdit} disabled={saving}>
-                <Text style={layout.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
-              </TouchableOpacity>
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Reason for Visit</Text>
+                <TextInput
+                  style={[layout.modalInput, layout.modalTextArea, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
+                  value={editReason}
+                  onChangeText={setEditReason}
+                  placeholder="e.g. Follow-up, Consultation…"
+                  placeholderTextColor={t.textMuted}
+                  multiline
+                  numberOfLines={3}
+                  returnKeyType="done"
+                />
+
+                {saveError ? (
+                  <Text style={{ color: t.red, fontSize: fs.sm, marginTop: sp.xs }}>{saveError}</Text>
+                ) : null}
+              </ScrollView>
+
+              <View style={layout.modalButtons}>
+                <TouchableOpacity style={[layout.modalCancel, { borderColor: t.cardBorder }]} onPress={() => setEditVisible(false)}>
+                  <Text style={[layout.modalCancelText, { color: t.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[layout.modalSave, { backgroundColor: t.accent }]} onPress={saveEdit} disabled={saving}>
+                  <Text style={layout.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* CALLED */}
@@ -606,7 +647,10 @@ const layout = StyleSheet.create({
   modalInput: {
     borderWidth: 1, borderRadius: br.md,
     paddingHorizontal: sp.md, paddingVertical: sp.sm,
-    fontSize: fs.md,
+    fontSize: fs.md, marginBottom: sp.md,
+  },
+  modalTextArea: {
+    height: 80, textAlignVertical: 'top',
   },
   modalButtons: { flexDirection: 'row', gap: sp.sm, marginTop: sp.xs },
   modalCancel: {

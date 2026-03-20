@@ -73,13 +73,14 @@ export async function registerForPush(ticketId: string, qrToken?: string): Promi
 
   try {
     if (Platform.OS === 'ios') {
+      // Register raw APNs device token (for direct APNs delivery via our server)
       const token = await Notifications.getDevicePushTokenAsync();
       return registerApns({
         ticketId,
         deviceToken: token.data as string,
         kind: 'alert',
         environment: 'production',
-        bundleId: 'com.queueflow.mobile',
+        bundleId: 'com.queueflow.app', // must match app.json bundleIdentifier
       });
     }
 

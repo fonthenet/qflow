@@ -10,7 +10,7 @@ function createServiceSupabaseClient() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { token, name, phone } = await request.json();
+    const { token, name, phone, reason } = await request.json();
 
     if (!token || typeof token !== 'string') {
       return NextResponse.json({ error: 'token is required' }, { status: 400 });
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     const updated: Record<string, string> = { ...existing };
     if (name && typeof name === 'string') updated['name'] = name.trim();
     if (phone !== undefined && typeof phone === 'string') updated['phone'] = phone.trim();
+    if (reason !== undefined && typeof reason === 'string') updated['reason'] = reason.trim();
 
     const { error: updateError } = await supabase
       .from('tickets')
