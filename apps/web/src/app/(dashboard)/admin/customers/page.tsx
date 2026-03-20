@@ -1,12 +1,13 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { CustomersClient } from './customers-client';
 
 export default async function CustomersPage() {
-  const supabase = await createClient();
+  const context = await getStaffContext();
 
-  const { data: customers, error } = await supabase
+  const { data: customers, error } = await context.supabase
     .from('customers')
     .select('*')
+    .eq('organization_id', context.staff.organization_id)
     .order('last_visit_at', { ascending: false });
 
   if (error) {

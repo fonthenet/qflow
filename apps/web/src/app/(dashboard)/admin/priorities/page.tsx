@@ -1,12 +1,13 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { PrioritiesClient } from './priorities-client';
 
 export default async function PrioritiesPage() {
-  const supabase = await createClient();
+  const context = await getStaffContext();
 
-  const { data: priorities, error } = await supabase
+  const { data: priorities, error } = await context.supabase
     .from('priority_categories')
     .select('*')
+    .eq('organization_id', context.staff.organization_id)
     .order('weight', { ascending: false });
 
   if (error) {
