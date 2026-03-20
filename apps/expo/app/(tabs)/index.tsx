@@ -604,7 +604,7 @@ export default function HomeScreen() {
 
         <CustomerInfoCard ticket={t} />
 
-        <Text style={s.footer}>Powered by Qflo</Text>
+        <Text style={s.footer}>POWERED BY QFLO</Text>
       </ScrollView>
       </Animated.View>
     );

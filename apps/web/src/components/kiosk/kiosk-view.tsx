@@ -114,20 +114,33 @@ export function KioskView({
   sandbox,
 }: KioskViewProps) {
   const sandboxMode = Boolean(sandbox?.enabled);
-  const ks = kioskSettings ?? {
-    welcomeMessage: 'Welcome',
-    headerText: '',
-    themeColor: '',
-    logoUrl: null,
-    showLogo: false,
-    showPriorities: true,
-    showEstimatedTime: true,
-    hiddenDepartments: [],
-    hiddenServices: [],
-    lockedDepartmentId: null,
-    buttonLabel: 'Get Ticket',
-    idleTimeout: 60,
-  };
+  // General rule: org logo_url is the source of truth.
+  // When kioskSettings is provided (from the page server component), trust it — the page already
+  // applies the auto-detect rule (showLogo = kiosk_show_logo ?? Boolean(logo_url)).
+  // When kioskSettings is absent (e.g. sandbox / no-config fallback), derive from the org prop.
+  const orgLogoUrl = organization?.logo_url ?? null;
+  const ks = kioskSettings
+    ? {
+        ...kioskSettings,
+        // Ensure logoUrl is never null when org has a logo
+        logoUrl: kioskSettings.logoUrl ?? orgLogoUrl,
+        // Auto-show if the page didn't explicitly decide (showLogo was not set)
+        showLogo: kioskSettings.showLogo ?? Boolean(kioskSettings.logoUrl ?? orgLogoUrl),
+      }
+    : {
+        welcomeMessage: 'Welcome',
+        headerText: '',
+        themeColor: '',
+        logoUrl: orgLogoUrl,
+        showLogo: Boolean(orgLogoUrl),
+        showPriorities: true,
+        showEstimatedTime: true,
+        hiddenDepartments: [],
+        hiddenServices: [],
+        lockedDepartmentId: null,
+        buttonLabel: 'Get Ticket',
+        idleTimeout: 60,
+      };
 
   const lockedDept = ks.lockedDepartmentId
     ? departments.find((department: any) => department.id === ks.lockedDepartmentId) ?? null
@@ -931,6 +944,15 @@ export function KioskView({
             style={primaryCardStyle}
           >
             <div className="text-center">
+              {ks.showLogo && ks.logoUrl ? (
+                <div className="mb-5 flex justify-center">
+                  <img
+                    src={ks.logoUrl}
+                    alt={organization?.name || ''}
+                    className="h-14 w-auto object-contain"
+                  />
+                </div>
+              ) : null}
               <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500 print:text-slate-700">
                 Check-in complete
               </p>

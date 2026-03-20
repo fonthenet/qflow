@@ -7,6 +7,13 @@ export default async function DisplaysAdminPage() {
 
   if (context.accessibleOfficeIds.length === 0) redirect('/desk');
 
+  // Fetch organization for live preview (logo, name)
+  const { data: organization } = await context.supabase
+    .from('organizations')
+    .select('name, logo_url')
+    .eq('id', context.staff.organization_id)
+    .single();
+
   const { data: offices } = await context.supabase
     .from('offices')
     .select('id, name, is_active')
@@ -36,6 +43,7 @@ export default async function DisplaysAdminPage() {
       screens={screens ?? []}
       offices={offices ?? []}
       departments={departments ?? []}
+      organization={organization ?? undefined}
     />
   );
 }

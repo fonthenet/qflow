@@ -491,7 +491,7 @@ export function RemoteJoinForm({
             />
           </div>
 
-          <p className="mt-4 text-xs text-muted-foreground">Powered by Qflo</p>
+          <p className="mt-4 text-xs text-muted-foreground">POWERED BY QFLO</p>
         </div>
       </div>
     );
@@ -935,7 +935,7 @@ export function RemoteJoinForm({
 
       {/* Footer */}
       <div className="px-4 pb-6 pt-2 text-center">
-        <p className="text-xs text-muted-foreground">Powered by Qflo</p>
+        <p className="text-xs text-muted-foreground">POWERED BY QFLO</p>
       </div>
     </div>
   );
