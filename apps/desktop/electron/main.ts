@@ -47,7 +47,9 @@ function saveWindowBounds() {
 function createWindow() {
   const bounds = loadWindowBounds();
   mainWindow = new BrowserWindow({
-    ...bounds,
+    width: bounds.width,
+    height: bounds.height,
+    center: true,
     minWidth: 900,
     minHeight: 600,
     title: 'Qflo Station',
@@ -57,7 +59,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    show: true,
+    show: false,
     backgroundColor: '#0f172a',
   });
 
@@ -87,7 +89,23 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
+  // Ensure window is visible and centered on screen after loading
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+
+  // Safety fallback — force show after 3 seconds no matter what
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.center();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }, 3000);
+
   mainWindow.on('close', (e) => {
+    if ((app as any).isQuitting) return; // Allow actual quit
     saveWindowBounds();
     // Minimize to tray instead of closing
     e.preventDefault();
@@ -708,6 +726,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  (app as any).isQuitting = true;
   syncEngine?.stop();
   stopKioskServer();
   mainWindow?.destroy();

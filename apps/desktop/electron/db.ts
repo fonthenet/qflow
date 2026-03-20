@@ -156,13 +156,12 @@ export function initDB() {
       close_time TEXT
     );
 
-    -- Indexes
+    -- Indexes (only on columns guaranteed to exist in CREATE TABLE above)
     CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at);
     CREATE INDEX IF NOT EXISTS idx_tickets_dept ON tickets(department_id, status);
     CREATE INDEX IF NOT EXISTS idx_sync_queue_pending ON sync_queue(synced_at) WHERE synced_at IS NULL;
-    CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);
   `);
 
@@ -177,6 +176,9 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN is_remote INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN appointment_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN synced_at TEXT`); } catch { /* already exists */ }
+
+  // Indexes that depend on migrated columns (must come after ALTER TABLEs)
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }
 
   // ── Integrity check on startup — detect corruption early ──
   try {
