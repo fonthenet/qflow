@@ -33,7 +33,7 @@ export async function updateSession(request: NextRequest) {
 
   // Public routes that don't need auth
   const publicPrefixes = [
-    '/q/', '/display/', '/kiosk/', '/join/', '/book/',
+    '/q/', '/ticket/', '/display/', '/kiosk/', '/join/', '/book/',
     '/login', '/register', '/history', '/api/',
     // Marketing & legal pages
     '/solutions', '/pricing', '/how-it-works', '/contact', '/docs',
