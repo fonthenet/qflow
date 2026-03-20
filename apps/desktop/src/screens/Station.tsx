@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 
@@ -30,7 +30,7 @@ function statusColor(status: string): string {
 
 // ── Constants ────────────────────────────────────────────────────
 const CALL_TIMEOUT = 60;
-const POLL_INTERVAL = 3000;
+const FALLBACK_POLL_INTERVAL = 10000; // 10s fallback (event-driven is primary)
 const DEVICE_CHECK_INTERVAL = 10000;
 
 export function Station({ session, isOnline }: Props) {
@@ -83,12 +83,15 @@ export function Station({ session, isOnline }: Props) {
     })();
   }, [session.office_ids]);
 
-  // ── Polling ─────────────────────────────────────────────────────
+  // ── Event-driven refresh + fallback polling ─────────────────────
 
   useEffect(() => {
     fetchTickets();
-    const iv = setInterval(fetchTickets, POLL_INTERVAL);
-    return () => clearInterval(iv);
+    // Listen for push events from main process (instant, no wasted polls)
+    const unsub = window.qf.tickets?.onChange?.(fetchTickets);
+    // Fallback poll in case events are missed (10s vs old 3s)
+    const iv = setInterval(fetchTickets, FALLBACK_POLL_INTERVAL);
+    return () => { unsub?.(); clearInterval(iv); };
   }, [fetchTickets]);
 
   // ── Track active ticket (called/serving by this desk) ──────────
@@ -223,9 +226,9 @@ export function Station({ session, isOnline }: Props) {
     return () => clearInterval(iv);
   }, []);
 
-  const waiting = tickets.filter((t) => t.status === 'waiting' && !t.parked_at);
-  const called = tickets.filter((t) => t.status === 'called');
-  const serving = tickets.filter((t) => t.status === 'serving');
+  const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
+  const called = useMemo(() => tickets.filter((t) => t.status === 'called'), [tickets]);
+  const serving = useMemo(() => tickets.filter((t) => t.status === 'serving'), [tickets]);
 
   // Sound alert when new ticket arrives
   useEffect(() => {
@@ -236,14 +239,15 @@ export function Station({ session, isOnline }: Props) {
   }, [waiting.length]);
 
   // Filter waiting list by search
-  const filteredWaiting = searchFilter
-    ? waiting.filter((t) => {
-        const q = searchFilter.toLowerCase();
-        return t.ticket_number.toLowerCase().includes(q)
-          || ((t.customer_data as any)?.name ?? '').toLowerCase().includes(q)
-          || ((t.customer_data as any)?.phone ?? '').includes(q);
-      })
-    : waiting;
+  const filteredWaiting = useMemo(() => {
+    if (!searchFilter) return waiting;
+    const q = searchFilter.toLowerCase();
+    return waiting.filter((t) =>
+      t.ticket_number.toLowerCase().includes(q)
+      || ((t.customer_data as any)?.name ?? '').toLowerCase().includes(q)
+      || ((t.customer_data as any)?.phone ?? '').includes(q)
+    );
+  }, [waiting, searchFilter]);
 
   // ── Render ──────────────────────────────────────────────────────
 

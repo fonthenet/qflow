@@ -65,10 +65,10 @@ export class SyncEngine {
     // Try to sync pending items every 15s
     this.interval = setInterval(() => this.syncNow(), 15_000);
 
-    // Pull cloud data every 5s when online to keep SQLite fresh (fallback for when Realtime is down)
+    // Pull cloud data every 10s when online (Realtime handles instant updates, this is fallback)
     this.pullInterval = setInterval(() => {
       if (this.isOnline) this.pullLatest();
-    }, 5_000);
+    }, 10_000);
 
     // Auto-resolve stale tickets every 60s (server-side cleanup runs too, this is belt-and-suspenders)
     this.autoResolveInterval = setInterval(() => {

@@ -57,6 +57,15 @@ contextBridge.exposeInMainWorld('qf', {
     },
   },
 
+  // Ticket change events (push-based, no polling needed)
+  tickets: {
+    onChange: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('tickets:changed', handler);
+      return () => ipcRenderer.removeListener('tickets:changed', handler);
+    },
+  },
+
   // Debug
   debug: {
     dbStats: () => ipcRenderer.invoke('debug:db-stats'),

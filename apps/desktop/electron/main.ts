@@ -30,13 +30,18 @@ function loadWindowBounds(): { x?: number; y?: number; width: number; height: nu
   return { width: 1280, height: 800 };
 }
 
+let saveBoundsTimer: ReturnType<typeof setTimeout> | null = null;
 function saveWindowBounds() {
-  if (!mainWindow) return;
-  try {
-    const bounds = mainWindow.getBounds();
-    const db = getDB();
-    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('window_bounds', ?)").run(JSON.stringify(bounds));
-  } catch {}
+  // Debounce: window fires dozens of resize/move events per drag
+  if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
+  saveBoundsTimer = setTimeout(() => {
+    if (!mainWindow) return;
+    try {
+      const bounds = mainWindow.getBounds();
+      const db = getDB();
+      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('window_bounds', ?)").run(JSON.stringify(bounds));
+    } catch {}
+  }, 500);
 }
 
 function createWindow() {
@@ -175,6 +180,7 @@ function setupIPC() {
     })();
 
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
+    mainWindow?.webContents.send('tickets:changed');
 
     // Immediately push to cloud so web/mobile displays update within 1-2s
     syncEngine?.pushImmediate(ticket.id + '-create');
@@ -220,6 +226,7 @@ function setupIPC() {
     } else {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     }
+    mainWindow?.webContents.send('tickets:changed');
     return { id: ticketId, ...updates };
   });
 
@@ -483,6 +490,8 @@ app.whenReady().then(async () => {
     },
     () => {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
+      // Tell renderer to refresh tickets immediately (event-driven, no polling needed)
+      mainWindow?.webContents.send('tickets:changed');
     }
   );
   syncEngine.start();
