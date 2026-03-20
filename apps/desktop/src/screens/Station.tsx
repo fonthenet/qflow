@@ -297,6 +297,14 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
     );
   }, [waiting, searchFilter]);
 
+  // Virtualization: only render first N items to avoid DOM bloat with 100+ tickets
+  const VISIBLE_CHUNK = 50;
+  const [showAllWaiting, setShowAllWaiting] = useState(false);
+  const visibleWaiting = useMemo(() => {
+    if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
+    return filteredWaiting.slice(0, VISIBLE_CHUNK);
+  }, [filteredWaiting, showAllWaiting]);
+
   // ── Render ──────────────────────────────────────────────────────
 
   return (
@@ -552,14 +560,14 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 type="text"
                 placeholder="Search..."
                 value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
+                onChange={(e) => { setSearchFilter(e.target.value); setShowAllWaiting(false); }}
                 className="queue-search"
                 aria-label="Search waiting queue by name, phone, or ticket number"
               />
             )}
           </div>
           <div className="ticket-list" role="list" aria-label="Waiting tickets">
-            {filteredWaiting.map((t, i) => (
+            {visibleWaiting.map((t, i) => (
               <div key={t.id} className="queue-item" role="listitem" aria-label={`Position ${i + 1}, ticket ${t.ticket_number}, ${(t.customer_data as any)?.name ?? 'Walk-in'}, waiting ${formatWait(t.created_at)}`}>
                 <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
@@ -573,7 +581,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                   {t.appointment_id && <span className="badge booked">Booked</span>}
                   {t.is_remote && <span className="badge remote">Remote</span>}
                 </div>
-                {session.desk_id && !activeTicket && (
+                {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
                   <button
                     className="btn-sm btn-call"
                     aria-label={`Call ticket ${t.ticket_number}`}
@@ -589,6 +597,18 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 )}
               </div>
             ))}
+            {!showAllWaiting && filteredWaiting.length > VISIBLE_CHUNK && (
+              <button
+                onClick={() => setShowAllWaiting(true)}
+                style={{
+                  width: '100%', padding: '8px', margin: '4px 0', border: 'none',
+                  background: 'var(--surface2)', color: 'var(--primary)', borderRadius: 6,
+                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                }}
+              >
+                Show all {filteredWaiting.length} tickets ({filteredWaiting.length - VISIBLE_CHUNK} more)
+              </button>
+            )}
             {filteredWaiting.length === 0 && (
               <div className="queue-empty">{searchFilter ? 'No matches' : 'No customers waiting'}</div>
             )}
