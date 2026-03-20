@@ -443,30 +443,31 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
             )}
           </div>
         ) : (
-          <div className="idle-panel">
-            {/* Staff status indicator */}
-            <div style={{ position: 'relative', marginBottom: 16 }}>
+          <>
+          {/* Staff status pill — top-right of main area */}
+          <div style={{ position: 'absolute', top: 16, right: 16 }}>
+            <div style={{ position: 'relative' }}>
               <button
-                className="btn-outline"
                 onClick={() => setShowStatusMenu((v) => !v)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 16px', borderRadius: 20,
-                  border: `2px solid ${STAFF_STATUS_LABELS[staffStatus].color}`,
-                  background: 'transparent', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600, color: STAFF_STATUS_LABELS[staffStatus].color,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: `1.5px solid ${STAFF_STATUS_LABELS[staffStatus].color}40`,
+                  background: `${STAFF_STATUS_LABELS[staffStatus].color}12`,
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: STAFF_STATUS_LABELS[staffStatus].color,
                 }}
                 aria-label={`Staff status: ${STAFF_STATUS_LABELS[staffStatus].label}. Click to change.`}
               >
                 <span>{STAFF_STATUS_LABELS[staffStatus].icon}</span>
                 <span>{STAFF_STATUS_LABELS[staffStatus].label}</span>
-                <span style={{ fontSize: 10, opacity: 0.7 }}>▼</span>
+                <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
               </button>
               {showStatusMenu && (
                 <div style={{
-                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                  position: 'absolute', top: '100%', right: 0,
                   marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 160,
+                  borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
                   boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
                 }}>
                   {(Object.entries(STAFF_STATUS_LABELS) as [StaffStatus, typeof STAFF_STATUS_LABELS[StaffStatus]][]).map(([key, val]) => (
@@ -493,7 +494,9 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 </div>
               )}
             </div>
+          </div>
 
+          <div className="idle-panel">
             {queuePaused || staffStatus !== 'available' ? (
               <>
                 <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : staffStatus === 'away' ? '#ef4444' : '#64748b' }}>
@@ -514,28 +517,30 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 <div className="idle-icon">✓</div>
                 <h2>Ready for Next Customer</h2>
                 <p>{waiting.length} waiting in queue</p>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <button
-                    className="btn-primary btn-xl"
-                    onClick={callNext}
-                    disabled={waiting.length === 0}
-                    title="F8 or Ctrl+Enter"
-                  >
-                    Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
-                  </button>
-                  <button
-                    className="btn-outline"
-                    onClick={() => { onQueuePausedChange(true); showToast('Queue paused — no new calls', 'info'); }}
-                    title="F7 — Pause accepting customers"
-                    style={{ padding: '12px 20px', fontSize: 14 }}
-                    aria-label="Pause queue"
-                  >
-                    ⏸ Pause <span className="shortcut-hint">F7</span>
-                  </button>
-                </div>
+                <button
+                  className="btn-primary btn-xl"
+                  onClick={callNext}
+                  disabled={waiting.length === 0}
+                  title="F8 or Ctrl+Enter"
+                >
+                  Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
+                </button>
+                <button
+                  onClick={() => { onQueuePausedChange(true); showToast('Queue paused — no new calls', 'info'); }}
+                  title="F7 — Pause accepting customers"
+                  style={{
+                    marginTop: 16, padding: '6px 16px', fontSize: 12, fontWeight: 600,
+                    background: 'transparent', border: '1px solid var(--border)', borderRadius: 8,
+                    color: 'var(--text3)', cursor: 'pointer',
+                  }}
+                  aria-label="Pause queue"
+                >
+                  ⏸ Pause Queue <span className="shortcut-hint">F7</span>
+                </button>
               </>
             )}
           </div>
+          </>
         )}
       </div>
 

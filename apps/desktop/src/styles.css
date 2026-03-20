@@ -89,7 +89,7 @@ input { font-family: inherit; }
 
 /* ── Station Layout ──────────────────────────────────────────────── */
 .station { display: flex; flex: 1; overflow: hidden; }
-.station-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; }
+.station-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; }
 .station-sidebar { width: 380px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 
 /* ── No Desk ─────────────────────────────────────────────────────── */
