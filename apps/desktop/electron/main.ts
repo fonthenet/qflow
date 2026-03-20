@@ -49,16 +49,13 @@ function createWindow() {
 }
 
 function createTray() {
-  // Use the full icon from file — better quality, auto-scaled by Windows
-  // Falls back to inline white monochrome if file not found
+  // Use white-on-transparent tray icon (visible on dark taskbars)
   let icon: Electron.NativeImage;
-  const iconPath = path.join(__dirname, '../assets/icon.png');
   try {
-    icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    icon = nativeImage.createFromPath(path.join(__dirname, '../assets/tray-icon.png'));
+    if (icon.isEmpty()) throw new Error('empty');
   } catch {
-    icon = nativeImage.createFromDataURL(
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAsTAAALEwEAmpwYAAABoElEQVR4nJXSP4ryQBzG8WERYZGQoGSCUZngbzIuSdiXCKkVbAUbPYSdpYVgIWjhDSwUCV7AIkew8wZWiiCYQrASxXnZGVzcP81+qoHnyxTDIP+PkPfVP8EV5Nn7CrlPPM8rlUoA8C4AAGPM87znBr09OI4DAJVKZblcHo/HOI6jKKrVagDgOM5nhmyBMQYAvu9vNpvT6TQcDgeDQRzH2+02CIJiscgYkyWiAmMMY9ztdjnnzWZTEer1Oue83+9jjBljskRFgVKayWSm0+ntdrNtGwAopbZtn8/nxWKBMaaUyhIVBMuyVFWdTCb3+51SWigUstlsLpe7Xq/z+VzTNMuyZInyAiFEVdV2u805b7ValNLZbNbr9TjnnU5HURRCiCxR9sEwjHw+v1qtLpdLGIb7/Z5zvtvtXNfFGJumKTOkP2CMNU0jhIxGo/V6HUXReDw+HA5hGKZSKYyxzFDmia7r8n0ajUa5XDZN03XdarWqKIqu67JB2g+GYfi+HwTBx0dAKJFIpNPpzxXJK79JCMlkUhWeJ/T6m9TDzwm9/NF/mcakRyIDdt0AAAAASUVORK5CYII='
-    );
+    icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png')).resize({ width: 16, height: 16 });
   }
 
   tray = new Tray(icon);
