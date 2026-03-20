@@ -49,10 +49,17 @@ function createWindow() {
 }
 
 function createTray() {
-  // Qflo 16x16 icon
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAACPklEQVR4nKXOT0iTcRzH8d+9Ts0Ctdwf9yfw0CE6dBBcuM1c80+55p90ldix8BTkoYgIOkUEHTpUUChhl6jQyTRJczNnmRuVln+2geamZaKQy/mO5ycPWmqXHngdnu/z/sAjTGdn2I65fs2/GmH0TvE385k1hro16vtWrTDWxdjI7I2hrYqS6Z7E4o1hOR0nyz1JTlVUfvu7F8aacVTmU+PsOzlG/vkYz/oWSc6nmf2Rpu3NEgWNcflNaTZuRG71KApjzSi6ylEO1H9hbCrF/GKaG81Jrj9KMLewQjyR4mDDGFrPiGzVncj1fERhrv5EhjNC091plMdzOcoOW5id9jBllybk7er9r2icEdmqO2Fwh1GYPBE0xUM8bJ9jJQ2WqghGeQ9jroyw9DPN485v7HYOyVbdCcPxdyhMFUNo7CEePE+QXoX9nvfynu0aRFv2ltTKKi0ds2Q4QrJVd0JfPoDCeCKExh6k8ea4/N3aKyPkVQ7S7Ety7V5c3i7enmCXLYixIiQ3CqEvCaIwlAbRuYKYyvsZ+LBA6tcqrf4k07PLcjyVXOaQd5CcYwHZqjuhc/Wi0pf0svdoD3nuALdaogx/XqCzf447rXES35d54p8h0/FKdupG6Iq72cjg7Cbb/lKqbRqmoKEfS2kPh+sClF4YJMvWhd653gudw88mRX7Mri6s9X0UnguQ733NngIfmdYO9EV/tkJr97Elm48saxtZ1nayj7Sjd/jQOTZ3Qlv4gu3obOu2a0SO9Sn/4zf7f3VwLWW1vwAAAABJRU5ErkJggg=='
-  );
+  // Use the full icon from file — better quality, auto-scaled by Windows
+  // Falls back to inline white monochrome if file not found
+  let icon: Electron.NativeImage;
+  const iconPath = path.join(__dirname, '../assets/icon.png');
+  try {
+    icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  } catch {
+    icon = nativeImage.createFromDataURL(
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAsTAAALEwEAmpwYAAABoElEQVR4nJXSP4ryQBzG8WERYZGQoGSCUZngbzIuSdiXCKkVbAUbPYSdpYVgIWjhDSwUCV7AIkew8wZWiiCYQrASxXnZGVzcP81+qoHnyxTDIP+PkPfVP8EV5Nn7CrlPPM8rlUoA8C4AAGPM87znBr09OI4DAJVKZblcHo/HOI6jKKrVagDgOM5nhmyBMQYAvu9vNpvT6TQcDgeDQRzH2+02CIJiscgYkyWiAmMMY9ztdjnnzWZTEer1Oue83+9jjBljskRFgVKayWSm0+ntdrNtGwAopbZtn8/nxWKBMaaUyhIVBMuyVFWdTCb3+51SWigUstlsLpe7Xq/z+VzTNMuyZInyAiFEVdV2u805b7ValNLZbNbr9TjnnU5HURRCiCxR9sEwjHw+v1qtLpdLGIb7/Z5zvtvtXNfFGJumKTOkP2CMNU0jhIxGo/V6HUXReDw+HA5hGKZSKYyxzFDmia7r8n0ajUa5XDZN03XdarWqKIqu67JB2g+GYfi+HwTBx0dAKJFIpNPpzxXJK79JCMlkUhWeJ/T6m9TDzwm9/NF/mcakRyIDdt0AAAAASUVORK5CYII='
+    );
+  }
 
   tray = new Tray(icon);
   updateTrayMenu('connecting');
