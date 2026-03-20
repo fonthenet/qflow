@@ -444,8 +444,30 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
           </div>
         ) : (
           <>
-          {/* Staff status pill — top-right of main area */}
-          <div style={{ position: 'absolute', top: 16, right: 16 }}>
+          {/* Status + Pause pills — top-right of main area */}
+          <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Pause toggle — only show when available */}
+            {staffStatus === 'available' && (
+              <button
+                onClick={() => {
+                  onQueuePausedChange(!queuePaused);
+                  showToast(queuePaused ? 'Queue resumed' : 'Queue paused — no new calls', queuePaused ? 'success' : 'info');
+                }}
+                title="F7 — Toggle pause"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: queuePaused ? '1.5px solid #f59e0b40' : '1.5px solid var(--border)',
+                  background: queuePaused ? 'rgba(245,158,11,0.12)' : 'transparent',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: queuePaused ? '#f59e0b' : 'var(--text3)',
+                }}
+                aria-label={queuePaused ? 'Resume queue' : 'Pause queue'}
+              >
+                {queuePaused ? '▶ Resume' : '⏸ Pause'} <span className="shortcut-hint">F7</span>
+              </button>
+            )}
+            {/* Staff status dropdown */}
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowStatusMenu((v) => !v)}
@@ -524,18 +546,6 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                   title="F8 or Ctrl+Enter"
                 >
                   Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
-                </button>
-                <button
-                  onClick={() => { onQueuePausedChange(true); showToast('Queue paused — no new calls', 'info'); }}
-                  title="F7 — Pause accepting customers"
-                  style={{
-                    marginTop: 16, padding: '6px 16px', fontSize: 12, fontWeight: 600,
-                    background: 'transparent', border: '1px solid var(--border)', borderRadius: 8,
-                    color: 'var(--text3)', cursor: 'pointer',
-                  }}
-                  aria-label="Pause queue"
-                >
-                  ⏸ Pause Queue <span className="shortcut-hint">F7</span>
                 </button>
               </>
             )}
