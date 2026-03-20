@@ -248,11 +248,11 @@ export function Station({ session, isOnline }: Props) {
   // ── Render ──────────────────────────────────────────────────────
 
   return (
-    <div className="station">
+    <div className="station" role="main">
       {/* Left panel — active ticket */}
-      <div className="station-main">
+      <div className="station-main" aria-label="Active ticket area">
         {!session.desk_id ? (
-          <div className="no-desk">
+          <div className="no-desk" role="alert">
             <h2>No Desk Assigned</h2>
             <p>Ask your admin to assign you to a desk before you can start serving.</p>
           </div>
@@ -279,8 +279,8 @@ export function Station({ session, isOnline }: Props) {
                 </div>
 
                 {/* Countdown */}
-                <div className="countdown-ring">
-                  <svg viewBox="0 0 100 100">
+                <div className="countdown-ring" role="timer" aria-label={`${callCountdown} seconds remaining`}>
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
                     <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="6" />
                     <circle
                       cx="50" cy="50" r="45" fill="none"
@@ -299,13 +299,13 @@ export function Station({ session, isOnline }: Props) {
                     Start Serving <span className="shortcut-hint">F9</span>
                   </button>
                   <div className="secondary-actions">
-                    <button className="btn-outline" onClick={() => recall(activeTicket.id)}>
+                    <button className="btn-outline" onClick={() => recall(activeTicket.id)} aria-label={`Recall ticket ${activeTicket.ticket_number}, recalled ${activeTicket.recall_count} times`}>
                       Recall ({activeTicket.recall_count})
                     </button>
-                    <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)}>
+                    <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)} aria-label={`Mark ticket ${activeTicket.ticket_number} as no show`}>
                       No Show
                     </button>
-                    <button className="btn-outline" onClick={() => requeue(activeTicket.id)}>
+                    <button className="btn-outline" onClick={() => requeue(activeTicket.id)} aria-label={`Send ticket ${activeTicket.ticket_number} back to queue`}>
                       Back to Queue
                     </button>
                   </div>
@@ -332,7 +332,7 @@ export function Station({ session, isOnline }: Props) {
                 </div>
 
                 {/* Serving elapsed timer */}
-                <div className="serving-timer" style={{
+                <div className="serving-timer" role="timer" aria-label={`Serving for ${Math.floor(servingElapsed / 60)} minutes ${servingElapsed % 60} seconds`} style={{
                   margin: '1rem auto',
                   display: 'flex',
                   alignItems: 'center',
@@ -384,14 +384,14 @@ export function Station({ session, isOnline }: Props) {
       </div>
 
       {/* Right panel — queue overview */}
-      <div className="station-sidebar">
+      <div className="station-sidebar" role="complementary" aria-label="Queue sidebar">
         <div className="sidebar-section">
           <div className="sidebar-header">
             <h3>Queue Overview</h3>
-            <div className="queue-stats">
-              <span className="stat-pill waiting">{waiting.length} waiting</span>
-              <span className="stat-pill called">{called.length} called</span>
-              <span className="stat-pill serving">{serving.length} serving</span>
+            <div className="queue-stats" aria-label={`${waiting.length} waiting, ${called.length} called, ${serving.length} serving`}>
+              <span className="stat-pill waiting" aria-hidden="true">{waiting.length} waiting</span>
+              <span className="stat-pill called" aria-hidden="true">{called.length} called</span>
+              <span className="stat-pill serving" aria-hidden="true">{serving.length} serving</span>
             </div>
           </div>
         </div>
@@ -406,13 +406,14 @@ export function Station({ session, isOnline }: Props) {
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
                 className="queue-search"
+                aria-label="Search waiting queue by name, phone, or ticket number"
               />
             )}
           </div>
-          <div className="ticket-list">
+          <div className="ticket-list" role="list" aria-label="Waiting tickets">
             {filteredWaiting.map((t, i) => (
-              <div key={t.id} className="queue-item">
-                <div className="queue-item-pos">#{i + 1}</div>
+              <div key={t.id} className="queue-item" role="listitem" aria-label={`Position ${i + 1}, ticket ${t.ticket_number}, ${(t.customer_data as any)?.name ?? 'Walk-in'}, waiting ${formatWait(t.created_at)}`}>
+                <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{t.ticket_number}</span>
                   <span className="queue-item-meta">
@@ -427,6 +428,7 @@ export function Station({ session, isOnline }: Props) {
                 {session.desk_id && !activeTicket && (
                   <button
                     className="btn-sm btn-call"
+                    aria-label={`Call ticket ${t.ticket_number}`}
                     onClick={() => updateTicketStatus(t.id, {
                       status: 'called',
                       desk_id: session.desk_id,
@@ -447,10 +449,10 @@ export function Station({ session, isOnline }: Props) {
 
         <div className="sidebar-section queue-list queue-active">
           <h4>Active ({called.length + serving.length})</h4>
-          <div className="ticket-list">
+          <div className="ticket-list" role="list" aria-label="Active tickets">
             {[...called, ...serving].map((t) => (
-              <div key={t.id} className={`queue-item ${t.desk_id === session.desk_id ? 'mine' : ''}`}>
-                <div className="queue-item-dot" style={{ background: statusColor(t.status) }} />
+              <div key={t.id} className={`queue-item ${t.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem" aria-label={`Ticket ${t.ticket_number}, ${t.status} at ${names.desks[t.desk_id ?? ''] ?? 'desk'}`}>
+                <div className="queue-item-dot" style={{ background: statusColor(t.status) }} aria-hidden="true" />
                 <div className="queue-item-info">
                   <span className="queue-item-number">{t.ticket_number}</span>
                   <span className="queue-item-meta">
@@ -477,7 +479,7 @@ export function Station({ session, isOnline }: Props) {
                 <span style={{
                   width: 8, height: 8, borderRadius: 4, flexShrink: 0,
                   background: d.connected ? '#22c55e' : '#ef4444',
-                }} />
+                }} aria-hidden="true" />
                 <span style={{ flex: 1 }}>{d.name}</span>
                 <span style={{ fontSize: 11, color: d.connected ? 'var(--text3)' : 'var(--danger)' }}>
                   {d.connected ? 'Online' : 'Offline'}

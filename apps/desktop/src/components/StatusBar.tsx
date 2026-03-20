@@ -75,7 +75,7 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
 
   return (
     <>
-      <div className="status-bar">
+      <div className="status-bar" role="banner" aria-label="Status bar">
         <div className="status-bar-left">
           {logoUrl ? (
             <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} />
@@ -89,8 +89,8 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
         </div>
 
         <div className="status-bar-center">
-          <div className={`connection-badge ${syncStatus.isOnline ? 'online' : 'offline'}`}>
-            <span className="connection-dot" />
+          <div className={`connection-badge ${syncStatus.isOnline ? 'online' : 'offline'}`} role="status" aria-live="polite" aria-label={syncStatus.isOnline ? 'Connected to cloud' : 'Offline mode'}>
+            <span className="connection-dot" aria-hidden="true" />
             <span>{syncStatus.isOnline ? 'Connected' : 'Offline Mode'}</span>
           </div>
           {syncStatus.pendingCount > 0 && (
@@ -113,7 +113,7 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
               {session.desk_name && (
                 <span className="desk-badge">{session.desk_name}</span>
               )}
-              <button className="btn-logout" onClick={onLogout}>Sign Out</button>
+              <button className="btn-logout" onClick={onLogout} aria-label="Sign out of Qflo Station">Sign Out</button>
             </>
           )}
         </div>
@@ -121,12 +121,18 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
 
       {/* Sync details panel */}
       {showPanel && (
-        <div style={{
-          position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)',
-          width: 520, maxHeight: 400, background: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.2)', zIndex: 1000,
-          display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}>
+        <div
+          role="dialog"
+          aria-label="Pending sync items"
+          onKeyDown={(e) => { if (e.key === 'Escape') setShowPanel(false); }}
+          tabIndex={-1}
+          ref={(el) => el?.focus()}
+          style={{
+            position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)',
+            width: 520, maxHeight: 400, background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.2)', zIndex: 1000,
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', outline: 'none',
+          }}>
           {/* Header */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>Pending Sync Items</span>
