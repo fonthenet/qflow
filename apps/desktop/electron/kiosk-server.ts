@@ -319,7 +319,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
 
   // ── Business hours check ──────────────────────────────────────
   const operatingHours = office.operating_hours ? (typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours) : null;
-  const timezone = office.timezone || 'UTC';
+  const timezone = office.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const businessStatus = checkBusinessHours(operatingHours, timezone, office.id);
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -556,9 +556,9 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         },
       }));
     } catch (err: any) {
-      console.error('[kiosk] Ticket creation error:', err);
+      console.error('[kiosk] Ticket creation error:', err?.message, err?.stack);
       res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Failed to create ticket. Please try again.' }));
+      res.end(JSON.stringify({ error: `Failed to create ticket: ${err?.message || 'Unknown error'}. Please try again.` }));
     }
   });
 }

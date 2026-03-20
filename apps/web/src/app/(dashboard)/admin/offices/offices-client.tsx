@@ -405,12 +405,32 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Timezone
                 </label>
-                <input
-                  name="timezone"
-                  defaultValue={editing?.timezone ?? ''}
-                  placeholder="e.g. Africa/Algiers"
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-                />
+                <div className="flex gap-2">
+                  <select
+                    name="timezone"
+                    id="tz-select"
+                    defaultValue={editing?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
+                    className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  >
+                    {(() => {
+                      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      const common = [
+                        detected,
+                        'Africa/Algiers', 'Africa/Cairo', 'Africa/Casablanca', 'Africa/Tunis', 'Africa/Lagos',
+                        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo',
+                        'Asia/Dubai', 'Asia/Riyadh', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Singapore',
+                        'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Istanbul', 'Europe/Moscow',
+                        'Australia/Sydney', 'Pacific/Auckland',
+                        'UTC',
+                      ];
+                      const unique = [...new Set(common)];
+                      return unique.map(tz => (
+                        <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}{tz === detected ? ' (detected)' : ''}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Auto-detected from your browser. Change if office is in a different timezone.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
