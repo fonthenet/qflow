@@ -49,9 +49,9 @@ function createWindow() {
 }
 
 function createTray() {
-  // Use a simple 16x16 icon
+  // Qflo 16x16 icon
   const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAfElEQVQ4T2NkoBAwUqifYdAb8P///38GIwYGhv8MDIxAxsLv////32BkYNzIwMi4AeYCRkbGBf///9/IxMT0n5GR8T8DA+N/BgaG/0AGsgJkF8CczsjI+B9mALoNyC5AdgGGF9BdgOwCDC+guwDZBRheQHcBsgtgXmAgN1kDANvOXxHMfqm4AAAAAElFTkSuQmCC'
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAACPklEQVR4nKXOT0iTcRzH8d+9Ts0Ctdwf9yfw0CE6dBBcuM1c80+55p90ldix8BTkoYgIOkUEHTpUUChhl6jQyTRJczNnmRuVln+2geamZaKQy/mO5ycPWmqXHngdnu/z/sAjTGdn2I65fs2/GmH0TvE385k1hro16vtWrTDWxdjI7I2hrYqS6Z7E4o1hOR0nyz1JTlVUfvu7F8aacVTmU+PsOzlG/vkYz/oWSc6nmf2Rpu3NEgWNcflNaTZuRG71KApjzSi6ylEO1H9hbCrF/GKaG81Jrj9KMLewQjyR4mDDGFrPiGzVncj1fERhrv5EhjNC091plMdzOcoOW5id9jBllybk7er9r2icEdmqO2Fwh1GYPBE0xUM8bJ9jJQ2WqghGeQ9jroyw9DPN485v7HYOyVbdCcPxdyhMFUNo7CEePE+QXoX9nvfynu0aRFv2ltTKKi0ds2Q4QrJVd0JfPoDCeCKExh6k8ea4/N3aKyPkVQ7S7Ety7V5c3i7enmCXLYixIiQ3CqEvCaIwlAbRuYKYyvsZ+LBA6tcqrf4k07PLcjyVXOaQd5CcYwHZqjuhc/Wi0pf0svdoD3nuALdaogx/XqCzf447rXES35d54p8h0/FKdupG6Iq72cjg7Cbb/lKqbRqmoKEfS2kPh+sClF4YJMvWhd653gudw88mRX7Mri6s9X0UnguQ733NngIfmdYO9EV/tkJr97Elm48saxtZ1nayj7Sjd/jQOTZ3Qlv4gu3obOu2a0SO9Sn/4zf7f3VwLWW1vwAAAABJRU5ErkJggg=='
   );
 
   tray = new Tray(icon);
