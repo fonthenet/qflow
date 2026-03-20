@@ -51,11 +51,22 @@ function createWindow() {
 function createTray() {
   // Use white-on-transparent tray icon (visible on dark taskbars)
   let icon: Electron.NativeImage;
-  try {
-    icon = nativeImage.createFromPath(path.join(__dirname, '../assets/tray-icon.png'));
-    if (icon.isEmpty()) throw new Error('empty');
-  } catch {
-    icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png')).resize({ width: 16, height: 16 });
+  const candidates = [
+    path.join(__dirname, '../assets/tray-icon.png'),
+    path.join(app.getAppPath(), 'assets/tray-icon.png'),
+    path.join(__dirname, '../assets/icon.png'),
+    path.join(app.getAppPath(), 'assets/icon.png'),
+  ];
+  icon = nativeImage.createEmpty();
+  for (const p of candidates) {
+    try {
+      const img = nativeImage.createFromPath(p);
+      if (!img.isEmpty()) { icon = img; break; }
+    } catch { /* try next */ }
+  }
+  if (icon.isEmpty()) {
+    // Last resort: create a simple white square
+    icon = nativeImage.createFromBuffer(Buffer.alloc(16 * 16 * 4, 255), { width: 16, height: 16 });
   }
 
   tray = new Tray(icon);

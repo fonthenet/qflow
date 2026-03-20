@@ -366,7 +366,7 @@ export function Station({ session, isOnline }: Props) {
           </div>
         </div>
 
-        <div className="sidebar-section queue-list">
+        <div className="sidebar-section queue-list queue-waiting">
           <h4>Waiting ({waiting.length})</h4>
           <div className="ticket-list">
             {waiting.map((t, i) => (
@@ -404,7 +404,7 @@ export function Station({ session, isOnline }: Props) {
           </div>
         </div>
 
-        <div className="sidebar-section queue-list">
+        <div className="sidebar-section queue-list queue-active">
           <h4>Active ({called.length + serving.length})</h4>
           <div className="ticket-list">
             {[...called, ...serving].map((t) => (
@@ -448,7 +448,7 @@ export function Station({ session, isOnline }: Props) {
 
         {/* Local Network URLs */}
         {kioskUrl && (
-          <div className="sidebar-section" style={{ marginTop: 'auto', borderTop: '1px solid var(--border)' }}>
+          <div className="sidebar-section">
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Local Network
             </div>
