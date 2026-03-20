@@ -19,9 +19,11 @@ interface Props {
   session: StaffSession | null;
   syncStatus: SyncStatus;
   onLogout: () => void;
+  staffStatus?: 'available' | 'on_break' | 'away';
+  queuePaused?: boolean;
 }
 
-export function StatusBar({ session, syncStatus, onLogout }: Props) {
+export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePaused }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,6 +115,23 @@ export function StatusBar({ session, syncStatus, onLogout }: Props) {
         <div className="status-bar-right">
           {session && (
             <>
+              {staffStatus && staffStatus !== 'available' && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                  background: staffStatus === 'on_break' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                  color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444',
+                }}>
+                  {staffStatus === 'on_break' ? '☕ Break' : '🚫 Away'}
+                </span>
+              )}
+              {queuePaused && staffStatus === 'available' && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                  background: 'rgba(100,116,139,0.15)', color: '#94a3b8',
+                }}>
+                  ⏸ Paused
+                </span>
+              )}
               <span className="operator-name">{session.full_name}</span>
               <span className="operator-role">{session.role}</span>
               {session.desk_name && (

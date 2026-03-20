@@ -11,6 +11,10 @@ declare global {
 interface Props {
   session: StaffSession;
   isOnline: boolean;
+  staffStatus: 'available' | 'on_break' | 'away';
+  queuePaused: boolean;
+  onStaffStatusChange: (status: 'available' | 'on_break' | 'away') => void;
+  onQueuePausedChange: (paused: boolean) => void;
 }
 
 function formatWait(dateStr: string): string {
@@ -33,7 +37,15 @@ const CALL_TIMEOUT = 60;
 const FALLBACK_POLL_INTERVAL = 10000; // 10s fallback (event-driven is primary)
 const DEVICE_CHECK_INTERVAL = 10000;
 
-export function Station({ session, isOnline }: Props) {
+type StaffStatus = 'available' | 'on_break' | 'away';
+
+const STAFF_STATUS_LABELS: Record<StaffStatus, { label: string; color: string; icon: string }> = {
+  available: { label: 'Available', color: '#22c55e', icon: '●' },
+  on_break: { label: 'On Break', color: '#f59e0b', icon: '◐' },
+  away: { label: 'Away', color: '#ef4444', icon: '○' },
+};
+
+export function Station({ session, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -43,6 +55,7 @@ export function Station({ session, isOnline }: Props) {
   const [servingElapsed, setServingElapsed] = useState(0);
   const [searchFilter, setSearchFilter] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const servingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevWaitingCount = useRef(0);
@@ -202,10 +215,15 @@ export function Station({ session, isOnline }: Props) {
   // ── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      // Ctrl+Enter or F8: Call Next
-      if (((e.ctrlKey && e.key === 'Enter') || e.key === 'F8') && !activeTicket && session.desk_id) {
+      // Ctrl+Enter or F8: Call Next (respects pause)
+      if (((e.ctrlKey && e.key === 'Enter') || e.key === 'F8') && !activeTicket && session.desk_id && !queuePaused && staffStatus === 'available') {
         e.preventDefault();
         callNext();
+      }
+      // F7: Toggle queue pause
+      if (e.key === 'F7' && session.desk_id) {
+        e.preventDefault();
+        onQueuePausedChange(!queuePaused);
       }
       // F9: Start Serving (when called)
       if (e.key === 'F9' && activeTicket?.status === 'called') {
@@ -220,7 +238,7 @@ export function Station({ session, isOnline }: Props) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [activeTicket, session.desk_id]);
+  }, [activeTicket, session.desk_id, queuePaused, staffStatus]);
 
   // ── Derived data ────────────────────────────────────────────────
 
@@ -418,17 +436,97 @@ export function Station({ session, isOnline }: Props) {
           </div>
         ) : (
           <div className="idle-panel">
-            <div className="idle-icon">✓</div>
-            <h2>Ready for Next Customer</h2>
-            <p>{waiting.length} waiting in queue</p>
-            <button
-              className="btn-primary btn-xl"
-              onClick={callNext}
-              disabled={waiting.length === 0}
-              title="F8 or Ctrl+Enter"
-            >
-              Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
-            </button>
+            {/* Staff status indicator */}
+            <div style={{ position: 'relative', marginBottom: 16 }}>
+              <button
+                className="btn-outline"
+                onClick={() => setShowStatusMenu((v) => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 16px', borderRadius: 20,
+                  border: `2px solid ${STAFF_STATUS_LABELS[staffStatus].color}`,
+                  background: 'transparent', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, color: STAFF_STATUS_LABELS[staffStatus].color,
+                }}
+                aria-label={`Staff status: ${STAFF_STATUS_LABELS[staffStatus].label}. Click to change.`}
+              >
+                <span>{STAFF_STATUS_LABELS[staffStatus].icon}</span>
+                <span>{STAFF_STATUS_LABELS[staffStatus].label}</span>
+                <span style={{ fontSize: 10, opacity: 0.7 }}>▼</span>
+              </button>
+              {showStatusMenu && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                  marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 160,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                }}>
+                  {(Object.entries(STAFF_STATUS_LABELS) as [StaffStatus, typeof STAFF_STATUS_LABELS[StaffStatus]][]).map(([key, val]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        onStaffStatusChange(key);
+                        setShowStatusMenu(false);
+                        if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
+                        if (key === 'available' && queuePaused) onQueuePausedChange(false);
+                        showToast(`Status: ${val.label}`, 'info');
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                        padding: '10px 16px', border: 'none', cursor: 'pointer',
+                        background: key === staffStatus ? 'var(--surface2)' : 'transparent',
+                        color: 'var(--text)', fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      <span style={{ color: val.color }}>{val.icon}</span>
+                      {val.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {queuePaused || staffStatus !== 'available' ? (
+              <>
+                <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : staffStatus === 'away' ? '#ef4444' : '#64748b' }}>
+                  {staffStatus === 'on_break' ? '☕' : staffStatus === 'away' ? '🚫' : '⏸'}
+                </div>
+                <h2>{staffStatus === 'on_break' ? 'On Break' : staffStatus === 'away' ? 'Away' : 'Queue Paused'}</h2>
+                <p>{waiting.length} waiting in queue</p>
+                <button
+                  className="btn-primary btn-xl"
+                  onClick={() => { onQueuePausedChange(false); onStaffStatusChange('available'); showToast('Queue resumed', 'success'); }}
+                  style={{ background: '#22c55e' }}
+                >
+                  Resume Queue <span className="shortcut-hint">F7</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="idle-icon">✓</div>
+                <h2>Ready for Next Customer</h2>
+                <p>{waiting.length} waiting in queue</p>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <button
+                    className="btn-primary btn-xl"
+                    onClick={callNext}
+                    disabled={waiting.length === 0}
+                    title="F8 or Ctrl+Enter"
+                  >
+                    Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
+                  </button>
+                  <button
+                    className="btn-outline"
+                    onClick={() => { onQueuePausedChange(true); showToast('Queue paused — no new calls', 'info'); }}
+                    title="F7 — Pause accepting customers"
+                    style={{ padding: '12px 20px', fontSize: 14 }}
+                    aria-label="Pause queue"
+                  >
+                    ⏸ Pause <span className="shortcut-hint">F7</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

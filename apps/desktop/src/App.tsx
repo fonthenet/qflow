@@ -40,6 +40,8 @@ export function App() {
     pendingCount: 0,
     lastSyncAt: null,
   });
+  const [staffStatus, setStaffStatus] = useState<'available' | 'on_break' | 'away'>('available');
+  const [queuePaused, setQueuePaused] = useState(false);
 
   // Load saved session on mount
   useEffect(() => {
@@ -92,9 +94,9 @@ export function App() {
   return (
     <ErrorBoundary>
       <div className="app">
-        <StatusBar session={session} syncStatus={syncStatus} onLogout={handleLogout} />
+        <StatusBar session={session} syncStatus={syncStatus} onLogout={handleLogout} staffStatus={staffStatus} queuePaused={queuePaused} />
         {session ? (
-          <Station session={session} isOnline={syncStatus.isOnline} />
+          <Station session={session} isOnline={syncStatus.isOnline} staffStatus={staffStatus} queuePaused={queuePaused} onStaffStatusChange={setStaffStatus} onQueuePausedChange={setQueuePaused} />
         ) : (
           <Login onLogin={handleLogin} />
         )}
