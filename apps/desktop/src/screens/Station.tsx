@@ -158,27 +158,46 @@ export function Station({ session, isOnline }: Props) {
     window.qf.sync?.force?.();
   };
 
-  const startServing = (id: string) =>
+  const startServing = (id: string) => {
     updateTicketStatus(id, { status: 'serving', serving_started_at: new Date().toISOString() });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'Serving');
+  };
 
-  const complete = (id: string) =>
+  const complete = (id: string) => {
     updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString() });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'Completed');
+    showToast(`${t?.ticket_number ?? 'Ticket'} completed`, 'success');
+  };
 
-  const noShow = (id: string) =>
+  const noShow = (id: string) => {
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString() });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'No Show');
+    showToast(`${t?.ticket_number ?? 'Ticket'} marked no-show`, 'info');
+  };
 
   const recall = async (id: string) => {
     await updateTicketStatus(id, {
       called_at: new Date().toISOString(),
       recall_count: (activeTicket?.recall_count ?? 0) + 1,
     });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'Recalled');
   };
 
-  const requeue = (id: string) =>
+  const requeue = (id: string) => {
     updateTicketStatus(id, { status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'Requeued');
+  };
 
-  const cancel = (id: string) =>
+  const cancel = (id: string) => {
     updateTicketStatus(id, { status: 'cancelled', cancelled_at: new Date().toISOString() });
+    const t = tickets.find((t) => t.id === id);
+    if (t) addActivity(t.ticket_number, 'Cancelled');
+  };
 
   // ── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
@@ -229,6 +248,17 @@ export function Station({ session, isOnline }: Props) {
   const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
   const called = useMemo(() => tickets.filter((t) => t.status === 'called'), [tickets]);
   const serving = useMemo(() => tickets.filter((t) => t.status === 'serving'), [tickets]);
+
+  // ── Recent activity log ─────────────────────────────────────────
+  const [recentActivity, setRecentActivity] = useState<Array<{ ticket: string; action: string; time: string }>>([]);
+
+  // Track completed actions
+  const addActivity = useCallback((ticket: string, action: string) => {
+    setRecentActivity((prev) => [
+      { ticket, action, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) },
+      ...prev.slice(0, 9), // keep last 10
+    ]);
+  }, []);
 
   // Sound alert when new ticket arrives
   useEffect(() => {
@@ -311,6 +341,22 @@ export function Station({ session, isOnline }: Props) {
                     </button>
                     <button className="btn-outline" onClick={() => requeue(activeTicket.id)} aria-label={`Send ticket ${activeTicket.ticket_number} back to queue`}>
                       Back to Queue
+                    </button>
+                    <button className="btn-outline" onClick={() => {
+                      const deskList = Object.entries(names.desks).filter(([id]) => id !== session.desk_id);
+                      if (deskList.length === 0) { showToast('No other desks available', 'error'); return; }
+                      const choices = deskList.map(([id, name], i) => `${i + 1}. ${name}`).join('\n');
+                      const pick = prompt(`Transfer to which desk?\n${choices}\nEnter number:`);
+                      if (!pick) return;
+                      const idx = parseInt(pick) - 1;
+                      if (idx >= 0 && idx < deskList.length) {
+                        const [targetDeskId, targetDeskName] = deskList[idx];
+                        updateTicketStatus(activeTicket.id, { desk_id: targetDeskId, status: 'waiting', called_at: null, called_by_staff_id: null });
+                        addActivity(activeTicket.ticket_number, `→ ${targetDeskName}`);
+                        showToast(`Transferred to ${targetDeskName}`, 'info');
+                      }
+                    }} aria-label={`Transfer ticket ${activeTicket.ticket_number} to another desk`}>
+                      Transfer
                     </button>
                   </div>
                 </div>
@@ -468,6 +514,34 @@ export function Station({ session, isOnline }: Props) {
             ))}
           </div>
         </div>
+
+        {/* Recent Activity */}
+        {recentActivity.length > 0 && (
+          <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
+            <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Recent Activity
+            </h4>
+            <div className="ticket-list" role="list" aria-label="Recent activity">
+              {recentActivity.slice(0, 5).map((a, i) => (
+                <div key={i} className="queue-item" role="listitem" style={{ padding: '4px 12px' }}>
+                  <div className="queue-item-info">
+                    <span className="queue-item-number" style={{ fontSize: 12 }}>{a.ticket}</span>
+                    <span className="queue-item-meta">
+                      {a.action} &middot; {a.time}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                    background: a.action === 'Completed' ? 'rgba(34,197,94,0.15)' : a.action === 'No Show' ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
+                    color: a.action === 'Completed' ? '#22c55e' : a.action === 'No Show' ? '#f97316' : '#3b82f6',
+                  }}>
+                    {a.action}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Device Status */}
         {deviceStatuses.length > 0 && (
