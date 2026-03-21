@@ -20,12 +20,14 @@ export default async function PlatformPage() {
     { data: allOffices },
     { data: allLicenses },
     { data: allTickets },
+    { data: pendingDevices },
   ] = await Promise.all([
     admin.from('organizations').select('id, name, slug, logo_url, plan_id, subscription_status, trial_ends_at, current_period_end, monthly_visit_count, settings, created_at').order('created_at', { ascending: false }),
     admin.from('staff').select('id, organization_id, role, is_active, full_name, email'),
     admin.from('offices').select('id, organization_id, name, is_active'),
     admin.from('station_licenses').select('*').order('created_at', { ascending: false }),
     admin.from('tickets').select('id, office_id, status, created_at').order('created_at', { ascending: false }).limit(10000),
+    admin.from('pending_device_activations').select('*').eq('status', 'pending').order('requested_at', { ascending: false }),
   ]);
 
   // Map offices to orgs for ticket counting
@@ -73,6 +75,7 @@ export default async function PlatformPage() {
     <PlatformDashboard
       organizations={orgStats}
       licenses={allLicenses ?? []}
+      pendingDevices={pendingDevices ?? []}
       platformStats={platformStats}
     />
   );

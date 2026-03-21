@@ -31,6 +31,21 @@ export function Login({ onLogin }: Props) {
     }).catch(() => setLicenseChecked(true));
   }, []);
 
+  // Poll for remote approval every 5 seconds when not licensed
+  useEffect(() => {
+    if (licensed || !licenseChecked) return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await (window as any).qf?.license?.checkApproval();
+        if (result?.approved) {
+          setLicensed(true);
+          clearInterval(interval);
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [licensed, licenseChecked]);
+
   const handleActivate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!licenseKey.trim()) return;
@@ -151,21 +166,21 @@ export function Login({ onLogin }: Props) {
           <div className="login-header">
             <div className="login-logo" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>🔑</div>
             <h1>Activate Station</h1>
-            <p>Enter your license key to activate this station</p>
+            <p>Waiting for administrator approval</p>
           </div>
 
-          <form onSubmit={handleActivate} className="login-form">
+          <div className="login-form">
             {licenseError && <div className="login-error">{licenseError}</div>}
 
             <div className="form-field">
               <label>Machine ID</label>
               <div style={{
                 fontFamily: 'monospace',
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: 700,
-                letterSpacing: 2,
+                letterSpacing: 3,
                 textAlign: 'center',
-                padding: '12px 16px',
+                padding: '14px 16px',
                 background: '#f1f5f9',
                 borderRadius: 12,
                 color: '#334155',
@@ -177,30 +192,59 @@ export function Login({ onLogin }: Props) {
               >
                 {machineId}
               </div>
-              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, textAlign: 'center' }}>
-                Click to copy — provide this to your administrator
-              </p>
             </div>
 
-            <div className="form-field">
-              <label>License Key</label>
-              <input
-                type="text"
-                value={licenseKey}
-                onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                placeholder="XXXX-XXXX-XXXX-XXXX"
-                style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2, textAlign: 'center' }}
-                autoFocus
-              />
+            {/* Waiting indicator */}
+            <div style={{
+              textAlign: 'center',
+              padding: '16px 0',
+              color: '#64748b',
+              fontSize: 14,
+            }}>
+              <div style={{
+                display: 'inline-block',
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#f59e0b',
+                marginRight: 8,
+                animation: 'pulse 1.5s ease-in-out infinite',
+              }} />
+              This device has been registered. Your administrator will approve it remotely.
             </div>
 
-            <button type="submit" className="btn-primary btn-full" disabled={activating || !licenseKey.trim()}>
-              {activating ? 'Activating...' : 'Activate License'}
-            </button>
-          </form>
+            {/* Divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0' }}>
+              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>or enter key manually</span>
+              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+            </div>
+
+            <form onSubmit={handleActivate}>
+              <div className="form-field">
+                <input
+                  type="text"
+                  value={licenseKey}
+                  onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  style={{ fontFamily: 'monospace', fontSize: 16, letterSpacing: 2, textAlign: 'center' }}
+                />
+              </div>
+              <button type="submit" className="btn-primary btn-full" disabled={activating || !licenseKey.trim()}>
+                {activating ? 'Activating...' : 'Activate Manually'}
+              </button>
+            </form>
+          </div>
+
+          <style>{`
+            @keyframes pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.3; }
+            }
+          `}</style>
 
           <p className="login-footer">
-            Contact your system administrator to get a license key for this machine.
+            This station will activate automatically once approved by your administrator.
           </p>
         </div>
       </div>

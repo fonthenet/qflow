@@ -113,6 +113,56 @@ export async function verifyLicense(licenseKey: string, machineId: string): Prom
   }
 }
 
+/** Register this machine as pending activation (so super admin sees it) */
+export async function registerPendingDevice(machineId: string): Promise<void> {
+  try {
+    // Upsert — if already registered, just update the timestamp
+    await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/pending_device_activations`, {
+      method: 'POST',
+      headers: {
+        apikey: CONFIG.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        machine_id: machineId,
+        machine_name: hostname(),
+        requested_at: new Date().toISOString(),
+        status: 'pending',
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    // Silently fail — not critical
+  }
+}
+
+/** Check if super admin has approved this machine */
+export async function checkApproval(machineId: string): Promise<{ approved: boolean; licenseKey?: string }> {
+  try {
+    // Check if there's a license already bound to this machine
+    const res = await fetch(
+      `${CONFIG.SUPABASE_URL}/rest/v1/station_licenses?machine_id=eq.${machineId}&status=eq.active&select=license_key,organization_name`,
+      {
+        headers: {
+          apikey: CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+    if (!res.ok) return { approved: false };
+    const rows = await res.json();
+    if (rows.length > 0) {
+      return { approved: true, licenseKey: rows[0].license_key };
+    }
+    return { approved: false };
+  } catch {
+    return { approved: false };
+  }
+}
+
 /** Check if a license is stored locally */
 export function getStoredLicense(db: any): { key: string; machineId: string } | null {
   try {

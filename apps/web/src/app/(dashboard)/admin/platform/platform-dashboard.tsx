@@ -64,6 +64,15 @@ interface License {
   created_at: string;
 }
 
+interface PendingDevice {
+  id: string;
+  machine_id: string;
+  machine_name: string | null;
+  ip_address: string | null;
+  requested_at: string;
+  status: string;
+}
+
 interface PlatformStats {
   totalOrganizations: number;
   totalStaff: number;
@@ -76,17 +85,20 @@ interface PlatformStats {
 interface Props {
   organizations: OrgStats[];
   licenses: License[];
+  pendingDevices: PendingDevice[];
   platformStats: PlatformStats;
 }
 
 type Tab = 'overview' | 'organizations' | 'licenses';
 
-export function PlatformDashboard({ organizations: initialOrgs, licenses: initialLicenses, platformStats }: Props) {
+export function PlatformDashboard({ organizations: initialOrgs, licenses: initialLicenses, pendingDevices: initialPending, platformStats }: Props) {
   const supabase = createClient();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>(initialPending.length > 0 ? 'licenses' : 'overview');
   const [organizations, setOrganizations] = useState(initialOrgs);
   const [licenses, setLicenses] = useState(initialLicenses);
+  const [pendingDevices, setPendingDevices] = useState(initialPending);
   const [search, setSearch] = useState('');
+  const [approveOrgId, setApproveOrgId] = useState<Record<string, string>>({});
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -106,6 +118,54 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
       .order('created_at', { ascending: false });
     if (data) setLicenses(data);
   }, [supabase]);
+
+  const refreshPending = useCallback(async () => {
+    const { data } = await supabase
+      .from('pending_device_activations')
+      .select('*')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false });
+    if (data) setPendingDevices(data);
+  }, [supabase]);
+
+  // Approve a pending device — create license bound to that machine
+  const approveDevice = async (device: PendingDevice) => {
+    const orgId = approveOrgId[device.id] || '';
+    const org = organizations.find(o => o.id === orgId);
+    setError('');
+
+    const key = generateKey();
+    // Create license already bound to this machine
+    const { error: insertErr } = await supabase.from('station_licenses').insert({
+      license_key: key,
+      organization_id: orgId || null,
+      organization_name: org?.name || null,
+      machine_id: device.machine_id,
+      machine_name: device.machine_name,
+      activated_at: new Date().toISOString(),
+      status: 'active',
+    } as any);
+
+    if (insertErr) {
+      setError(insertErr.message);
+      return;
+    }
+
+    // Mark device as approved
+    await supabase.from('pending_device_activations')
+      .update({ status: 'approved' } as any)
+      .eq('id', device.id);
+
+    refreshLicenses();
+    refreshPending();
+  };
+
+  const rejectDevice = async (device: PendingDevice) => {
+    await supabase.from('pending_device_activations')
+      .update({ status: 'rejected' } as any)
+      .eq('id', device.id);
+    refreshPending();
+  };
 
   const generateKey = () => {
     const bytes = new Uint8Array(8);
@@ -251,7 +311,7 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
         {([
           { id: 'overview', label: 'Overview', icon: Globe },
           { id: 'organizations', label: 'Organizations', icon: Building2 },
-          { id: 'licenses', label: 'Licenses & Devices', icon: Key },
+          { id: 'licenses', label: `Licenses & Devices${pendingDevices.length > 0 ? ` (${pendingDevices.length})` : ''}`, icon: Key },
         ] as const).map(t => (
           <button
             key={t.id}
@@ -534,6 +594,66 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
               </button>
             </div>
           </div>
+
+          {/* Pending Devices — awaiting approval */}
+          {pendingDevices.length > 0 && (
+            <div className="border-2 border-amber-300 rounded-xl bg-amber-50/50 overflow-hidden">
+              <div className="px-5 py-3 bg-amber-100/60 border-b border-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                  <h3 className="font-semibold text-amber-900 text-sm">
+                    {pendingDevices.length} Device{pendingDevices.length > 1 ? 's' : ''} Waiting for Approval
+                  </h3>
+                </div>
+                <button onClick={refreshPending} className="text-xs text-amber-700 hover:text-amber-900 transition-colors">
+                  <RefreshCw size={14} />
+                </button>
+              </div>
+              <div className="divide-y divide-amber-200">
+                {pendingDevices.map(device => (
+                  <div key={device.id} className="px-5 py-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                        <Monitor size={20} className="text-amber-700" />
+                      </div>
+                      <div className="min-w-0">
+                        <code className="font-mono text-base font-bold tracking-wider text-foreground">{device.machine_id}</code>
+                        <div className="flex gap-3 text-xs text-muted-foreground mt-0.5">
+                          {device.machine_name && <span>{device.machine_name}</span>}
+                          <span>Requested {new Date(device.requested_at).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <select
+                        value={approveOrgId[device.id] || ''}
+                        onChange={e => setApproveOrgId(prev => ({ ...prev, [device.id]: e.target.value }))}
+                        className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="">Select organization...</option>
+                        {organizations.map(org => (
+                          <option key={org.id} value={org.id}>{org.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => approveDevice(device)}
+                        disabled={!approveOrgId[device.id]}
+                        className="px-4 py-1.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                      >
+                        <CheckCircle size={14} /> Approve
+                      </button>
+                      <button
+                        onClick={() => rejectDevice(device)}
+                        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* License stats */}
           <div className="grid grid-cols-4 gap-3">

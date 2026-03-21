@@ -5,7 +5,7 @@ import { initDB, getDB, logTicketEvent } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
-import { getMachineId, verifyLicense, getStoredLicense, storeLicense } from './license';
+import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -609,12 +609,28 @@ function setupIPC() {
 
   ipcMain.handle('license:machine-id', () => getMachineId());
 
-  ipcMain.handle('license:status', () => {
+  ipcMain.handle('license:status', async () => {
     const stored = getStoredLicense(db);
     const machineId = getMachineId();
-    if (!stored) return { licensed: false, machineId };
+    if (!stored) {
+      // Auto-register as pending device so super admin can see it
+      registerPendingDevice(machineId).catch(() => {});
+      return { licensed: false, machineId };
+    }
     if (stored.machineId !== machineId) return { licensed: false, machineId, error: 'Machine changed' };
     return { licensed: true, machineId, key: stored.key };
+  });
+
+  // Poll for remote approval — super admin approved this device
+  ipcMain.handle('license:check-approval', async () => {
+    const machineId = getMachineId();
+    const result = await checkApproval(machineId);
+    if (result.approved && result.licenseKey) {
+      // Auto-store the license locally
+      storeLicense(db, result.licenseKey, machineId);
+      return { approved: true, key: result.licenseKey };
+    }
+    return { approved: false };
   });
 
   ipcMain.handle('license:activate', async (_e, key: string) => {

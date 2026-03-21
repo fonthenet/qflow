@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('qf', {
     getMachineId: () => ipcRenderer.invoke('license:machine-id'),
     getStatus: () => ipcRenderer.invoke('license:status'),
     activate: (key: string) => ipcRenderer.invoke('license:activate', key),
+    checkApproval: () => ipcRenderer.invoke('license:check-approval'),
   },
 
   // Debug
