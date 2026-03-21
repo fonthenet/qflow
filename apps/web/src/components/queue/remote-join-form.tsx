@@ -398,6 +398,26 @@ export function RemoteJoinForm({
       .catch(() => {});
   }, [ticket]);
 
+  // ── Business hours check ──────────────────────────────────────
+  // NOTE: hooks must be called before any conditional early return
+  const selectedOffice = offices.find((o: any) => o.id === selectedOfficeId);
+  const officeHours = selectedOffice?.operating_hours as OperatingHours | null;
+  const officeTimezone = selectedOffice?.timezone || 'UTC';
+  const [businessStatus, setBusinessStatus] = useState(() =>
+    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
+  );
+
+  useEffect(() => {
+    if (!officeHours) { setBusinessStatus(null); return; }
+    setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    const timer = setInterval(() => {
+      setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [selectedOfficeId, officeHours, officeTimezone]);
+
+  const isOfficeClosed = businessStatus !== null && !businessStatus.isOpen;
+
   // Success state - show ticket QR code, tracking link, and share options
   if (ticket) {
     return (
@@ -501,25 +521,6 @@ export function RemoteJoinForm({
       </div>
     );
   }
-
-  // ── Business hours check ──────────────────────────────────────
-  const selectedOffice = offices.find((o: any) => o.id === selectedOfficeId);
-  const officeHours = selectedOffice?.operating_hours as OperatingHours | null;
-  const officeTimezone = selectedOffice?.timezone || 'UTC';
-  const [businessStatus, setBusinessStatus] = useState(() =>
-    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
-  );
-
-  useEffect(() => {
-    if (!officeHours) { setBusinessStatus(null); return; }
-    setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    const timer = setInterval(() => {
-      setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    }, 60000);
-    return () => clearInterval(timer);
-  }, [selectedOfficeId, officeHours, officeTimezone]);
-
-  const isOfficeClosed = businessStatus !== null && !businessStatus.isOpen;
 
   // Join form
   return (
