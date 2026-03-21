@@ -40,7 +40,20 @@ export default async function DashboardLayout({
     .eq('organization_id', staff.organization_id);
   const organizationSettings = ((staff.organization as any)?.settings ?? {}) as Record<string, unknown>;
   const platformConfig = resolvePlatformConfig({ organizationSettings });
-  const allowedNavigation = getAllowedNavigation(platformConfig.rolePolicy, staff.role);
+  let allowedNavigation = getAllowedNavigation(platformConfig.rolePolicy, staff.role);
+
+  // Super admin (platform owner) — full access
+  const isSuperAdmin = user.email === 'f.onthenet@gmail.com';
+  if (isSuperAdmin) {
+    if (!allowedNavigation.includes('/admin/licenses')) {
+      allowedNavigation = [...allowedNavigation, '/admin/licenses'];
+    }
+    if (!allowedNavigation.includes('/admin/platform')) {
+      allowedNavigation = [...allowedNavigation, '/admin/platform'];
+    }
+  } else {
+    allowedNavigation = allowedNavigation.filter((n: string) => n !== '/admin/licenses' && n !== '/admin/platform');
+  }
   const templateConfigured =
     getPlatformLifecycleState(organizationSettings, {
       hasExistingData: (officeCount ?? 0) > 0,
@@ -51,6 +64,7 @@ export default async function DashboardLayout({
       <Sidebar
         staff={staff}
         allowedNavigation={allowedNavigation}
+        isSuperAdmin={isSuperAdmin}
         templateSummary={summarizeTemplate(platformConfig)}
         templateConfigured={templateConfigured}
       />

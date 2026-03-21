@@ -20,6 +20,7 @@ import {
   House,
   Map,
   Key,
+  Crown,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { DesktopStatusBadge } from '@/components/desktop-status-badge';
@@ -35,6 +36,7 @@ interface SidebarProps {
     };
   };
   allowedNavigation: string[];
+  isSuperAdmin?: boolean;
   templateConfigured: boolean;
   templateSummary: {
     id: string;
@@ -70,7 +72,6 @@ const adminNav = [
   { href: '/admin/virtual-codes', label: 'Join Links & QR', icon: QrCode, section: 'Channels' },
   { href: '/admin/kiosk', label: 'Lobby Kiosk', icon: Tablet, section: 'Channels' },
   { href: '/admin/displays', label: 'Display Screens', icon: Tv, section: 'Channels' },
-  { href: '/admin/licenses', label: 'Station Licenses', icon: Key, section: 'Channels' },
   { href: '/admin/analytics', label: 'Reports', icon: BarChart3, section: 'Insights' },
   { href: '/admin/audit', label: 'Activity Log', icon: ScrollText, section: 'Insights' },
   { href: '/admin/settings', label: 'Settings', icon: Cog, section: 'Insights' },
@@ -98,19 +99,25 @@ function getLabelOverrides(templateSummary: SidebarProps['templateSummary']) {
   } as Record<string, string>;
 }
 
-const sectionOrder = ['Work', 'Business', 'Customers', 'Channels', 'Insights'] as const;
+const platformNav = [
+  { href: '/admin/platform', label: 'Control Center', icon: Crown, section: 'Platform' },
+];
+
+const sectionOrder = ['Platform', 'Work', 'Business', 'Customers', 'Channels', 'Insights'] as const;
 
 export function Sidebar({
   staff,
   allowedNavigation,
+  isSuperAdmin,
   templateSummary,
   templateConfigured,
 }: SidebarProps) {
   const pathname = usePathname();
-  const navItems = [...deskNav, ...adminNav]
+  const navItems = [...(isSuperAdmin ? platformNav : []), ...deskNav, ...adminNav]
     .filter((item) => item.href === '/admin/overview' ? allowedNavigation.some(n => n.startsWith('/admin/')) : allowedNavigation.includes(item.href))
     .sort((a, b) => {
       const desiredOrder = [
+        '/admin/platform',
         '/desk',
         '/admin/overview',
         '/admin/offices',
@@ -122,6 +129,7 @@ export function Sidebar({
         '/admin/virtual-codes',
         '/admin/kiosk',
         '/admin/displays',
+        '/admin/licenses',
         '/admin/analytics',
         '/admin/audit',
         '/admin/settings',
