@@ -99,11 +99,7 @@ function getLabelOverrides(templateSummary: SidebarProps['templateSummary']) {
   } as Record<string, string>;
 }
 
-const platformNav = [
-  { href: '/admin/platform', label: 'Control Center', icon: Crown, section: 'Platform' },
-];
-
-const sectionOrder = ['Platform', 'Work', 'Business', 'Customers', 'Channels', 'Insights'] as const;
+const sectionOrder = ['Work', 'Business', 'Customers', 'Channels', 'Insights'] as const;
 
 export function Sidebar({
   staff,
@@ -113,7 +109,7 @@ export function Sidebar({
   templateConfigured,
 }: SidebarProps) {
   const pathname = usePathname();
-  const navItems = [...(isSuperAdmin ? platformNav : []), ...deskNav, ...adminNav]
+  const navItems = [...deskNav, ...adminNav]
     .filter((item) => item.href === '/admin/overview' ? allowedNavigation.some(n => n.startsWith('/admin/')) : allowedNavigation.includes(item.href))
     .sort((a, b) => {
       const desiredOrder = [
@@ -181,6 +177,19 @@ export function Sidebar({
           )}
         </div>
       </div>
+
+      {/* Super Admin Quick Link */}
+      {isSuperAdmin && (
+        <div className="border-b border-border px-3 py-2">
+          <Link
+            href="/super-admin"
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-gradient-to-r from-amber-50 to-orange-50 text-amber-800 border border-amber-200 hover:from-amber-100 hover:to-orange-100 transition-colors"
+          >
+            <Crown className="h-4 w-4" />
+            Platform Control Center
+          </Link>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">

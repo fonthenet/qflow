@@ -42,18 +42,9 @@ export default async function DashboardLayout({
   const platformConfig = resolvePlatformConfig({ organizationSettings });
   let allowedNavigation = getAllowedNavigation(platformConfig.rolePolicy, staff.role);
 
-  // Super admin (platform owner) — full access
   const isSuperAdmin = user.email === 'f.onthenet@gmail.com';
-  if (isSuperAdmin) {
-    if (!allowedNavigation.includes('/admin/licenses')) {
-      allowedNavigation = [...allowedNavigation, '/admin/licenses'];
-    }
-    if (!allowedNavigation.includes('/admin/platform')) {
-      allowedNavigation = [...allowedNavigation, '/admin/platform'];
-    }
-  } else {
-    allowedNavigation = allowedNavigation.filter((n: string) => n !== '/admin/licenses' && n !== '/admin/platform');
-  }
+  // Remove super-admin-only routes from business sidebar
+  allowedNavigation = allowedNavigation.filter((n: string) => n !== '/admin/licenses' && n !== '/admin/platform');
   const templateConfigured =
     getPlatformLifecycleState(organizationSettings, {
       hasExistingData: (officeCount ?? 0) > 0,
