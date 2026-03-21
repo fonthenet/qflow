@@ -22,6 +22,7 @@
   };
   var resetTimer = null;
   var idleTimer = null;
+  var countdownInterval = null;
   var IDLE_TIMEOUT = 60000;
   var businessCheckInterval = null;
 
@@ -256,6 +257,7 @@
   window.reset = reset;
   function reset() {
     if (resetTimer) clearTimeout(resetTimer);
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
     S.selectedService = null;
     S.ticket = null;
 
@@ -308,12 +310,12 @@
         '</button>';
     }
 
-    return '<div class="kiosk-header">' +
+    return '<div class="kiosk-header" style="position:relative">' +
+      (hoursBtn ? '<div style="position:absolute;top:16px;right:16px">' + hoursBtn + '</div>' : '') +
       '<div class="header-logo">' + logoHtml + '</div>' +
       '<h1>' + esc(displayName) + '</h1>' +
       (S.orgName && S.orgName !== name ? '<div class="subtitle">' + esc(name) + '</div>' : '<div class="subtitle">Welcome &mdash; Take a ticket below</div>') +
       '<div class="conn-dot" id="kconn">Connected</div>' +
-      hoursBtn +
       '</div>';
   }
 
@@ -522,11 +524,12 @@
 
       // Live countdown
       var remaining = AUTO_RESET;
-      var countdownInterval = setInterval(function () {
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(function () {
         remaining--;
         var el = document.getElementById('countdown-num');
-        if (el) el.textContent = remaining;
-        if (remaining <= 0) clearInterval(countdownInterval);
+        if (el) el.textContent = Math.max(0, remaining);
+        if (remaining <= 0) { clearInterval(countdownInterval); countdownInterval = null; }
       }, 1000);
     }
   }

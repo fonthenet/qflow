@@ -457,6 +457,20 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   // ── Recent activity log ─────────────────────────────────────────
   const [recentActivity, setRecentActivity] = useState<Array<{ ticket: string; action: string; time: string }>>([]);
 
+  // Load recent activity from audit log on mount (persisted across restarts)
+  useEffect(() => {
+    if (!session?.office_id) return;
+    (window as any).qf?.activity?.getRecent(session.office_id, 10).then((rows: any[]) => {
+      if (rows?.length) {
+        setRecentActivity(rows.map((r: any) => ({
+          ticket: r.ticket,
+          action: r.action,
+          time: new Date(r.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        })));
+      }
+    }).catch(() => {});
+  }, [session?.office_id]);
+
   // Track completed actions — only keep the latest status per ticket
   const addActivity = useCallback((ticket: string, action: string) => {
     setRecentActivity((prev) => {

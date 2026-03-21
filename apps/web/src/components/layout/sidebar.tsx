@@ -19,6 +19,7 @@ import {
   Building2,
   House,
   Map,
+  Key,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { DesktopStatusBadge } from '@/components/desktop-status-badge';
@@ -69,6 +70,7 @@ const adminNav = [
   { href: '/admin/virtual-codes', label: 'Join Links & QR', icon: QrCode, section: 'Channels' },
   { href: '/admin/kiosk', label: 'Lobby Kiosk', icon: Tablet, section: 'Channels' },
   { href: '/admin/displays', label: 'Display Screens', icon: Tv, section: 'Channels' },
+  { href: '/admin/licenses', label: 'Station Licenses', icon: Key, section: 'Channels' },
   { href: '/admin/analytics', label: 'Reports', icon: BarChart3, section: 'Insights' },
   { href: '/admin/audit', label: 'Activity Log', icon: ScrollText, section: 'Insights' },
   { href: '/admin/settings', label: 'Settings', icon: Cog, section: 'Insights' },

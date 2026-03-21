@@ -1,7 +1,7 @@
 import http from 'http';
 import { networkInterfaces } from 'os';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join, extname } from 'path';
 import { getDB, generateOfflineTicketNumber, logTicketEvent } from './db';
 import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
@@ -254,6 +254,34 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleDevicePing(req, res);
       } else if (path === '/api/device-status' && req.method === 'GET') {
         handleDeviceStatus(res);
+      // ── Station UI served over local network ─────────────────────
+      } else if (path === '/station' || path === '/station/') {
+        serveStationIndex(res);
+      } else if (path.startsWith('/station/assets/')) {
+        serveStationAsset(path.replace('/station/', ''), res);
+      // ── Station HTTP API (mirrors Electron IPC) ──────────────────
+      } else if (path === '/api/station/config' && req.method === 'GET') {
+        handleStationConfig(res);
+      } else if (path === '/api/station/tickets' && req.method === 'GET') {
+        handleStationGetTickets(url, res);
+      } else if (path === '/api/station/update-ticket' && req.method === 'POST') {
+        handleStationBody(req, res, handleStationUpdateTicket);
+      } else if (path === '/api/station/call-next' && req.method === 'POST') {
+        handleStationBody(req, res, handleStationCallNext);
+      } else if (path === '/api/station/query' && req.method === 'GET') {
+        handleStationQuery(url, res);
+      } else if (path === '/api/station/sync-status' && req.method === 'GET') {
+        handleStationSyncStatus(res);
+      } else if (path === '/api/station/session' && req.method === 'GET') {
+        handleStationSessionLoad(res);
+      } else if (path === '/api/station/activity' && req.method === 'GET') {
+        handleStationActivity(url, res);
+      } else if (path === '/api/station/events' && req.method === 'GET') {
+        handleStationSSE(req, res);
+      } else if (path === '/api/station/kiosk-info' && req.method === 'GET') {
+        handleStationKioskInfo(res);
+      } else if (path === '/api/station/branding' && req.method === 'GET') {
+        handleStationBranding(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -1382,4 +1410,379 @@ function serveDisplayPage(res: http.ServerResponse) {
 
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(html);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ── Station Web Interface — mirrors the Electron IPC over HTTP ──────
+// Allows any browser on the local network to use the full station UI
+// at http://<station-ip>:3847/station
+// ══════════════════════════════════════════════════════════════════════
+
+const STATION_DIR = join(__dirname, '../dist');
+const STATION_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+// SSE clients for station UI (separate from display SSE)
+const stationSSEClients: Set<http.ServerResponse> = new Set();
+
+/** Notify all station browser clients of a change */
+export function notifyStationClients(event: Record<string, any>) {
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const client of stationSSEClients) {
+    try { client.write(data); } catch { stationSSEClients.delete(client); }
+  }
+}
+
+/** Serve the station index.html with the HTTP shim injected */
+function serveStationIndex(res: http.ServerResponse) {
+  try {
+    let html = readFileSync(join(STATION_DIR, 'index.html'), 'utf-8');
+
+    // Inject the HTTP shim BEFORE the app script — this creates window.qf
+    // using fetch() instead of ipcRenderer
+    const shimScript = `<script>
+// ── HTTP Bridge — replaces Electron IPC with fetch calls ──
+(function() {
+  var API = window.location.origin;
+
+  function get(path) {
+    return fetch(API + path).then(function(r) { return r.json(); });
+  }
+  function post(path, body) {
+    return fetch(API + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function(r) { return r.json(); });
+  }
+
+  // Ticket change listeners (SSE-powered)
+  var ticketListeners = [];
+  var syncListeners = [];
+  var errorListeners = [];
+  var sse = null;
+
+  function connectSSE() {
+    if (sse) { try { sse.close(); } catch(e) {} }
+    sse = new EventSource(API + '/api/station/events');
+    sse.onmessage = function(e) {
+      try {
+        var data = JSON.parse(e.data);
+        if (data.type === 'tickets_changed') {
+          ticketListeners.forEach(function(cb) { cb(); });
+        } else if (data.type === 'sync_status') {
+          syncListeners.forEach(function(cb) { cb(data.status); });
+        } else if (data.type === 'sync_error') {
+          errorListeners.forEach(function(cb) { cb(data.error); });
+        }
+      } catch(err) {}
+    };
+    sse.onerror = function() {
+      setTimeout(connectSSE, 3000);
+    };
+  }
+  connectSSE();
+
+  window.qf = {
+    getConfig: function() { return get('/api/station/config'); },
+
+    db: {
+      getTickets: function(officeId, statuses) {
+        var ids = Array.isArray(officeId) ? officeId.join(',') : officeId;
+        return get('/api/station/tickets?officeIds=' + ids + '&statuses=' + statuses.join(','));
+      },
+      createTicket: function(ticket) {
+        return post('/api/take-ticket', {
+          officeId: ticket.office_id,
+          departmentId: ticket.department_id,
+          serviceId: ticket.service_id,
+          customerName: ticket.customer_data?.name || '',
+          customerPhone: ticket.customer_data?.phone || '',
+        });
+      },
+      updateTicket: function(ticketId, updates) {
+        return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates });
+      },
+      callNext: function(officeId, deskId, staffId) {
+        return post('/api/station/call-next', { officeId: officeId, deskId: deskId, staffId: staffId });
+      },
+      query: function(table, officeIds) {
+        return get('/api/station/query?table=' + table + '&officeIds=' + officeIds.join(','));
+      },
+    },
+
+    sync: {
+      getStatus: function() { return get('/api/station/sync-status'); },
+      forceSync: function() { return post('/api/station/sync-force', {}); },
+      getPendingDetails: function() { return get('/api/station/sync-pending'); },
+      discardItem: function() { return Promise.resolve(); },
+      discardAll: function() { return Promise.resolve(); },
+      retryItem: function() { return Promise.resolve(); },
+      onStatusChange: function(cb) {
+        syncListeners.push(cb);
+        return function() { syncListeners = syncListeners.filter(function(c) { return c !== cb; }); };
+      },
+      onProgress: function(cb) { return function() {}; },
+      onError: function(cb) {
+        errorListeners.push(cb);
+        return function() { errorListeners = errorListeners.filter(function(c) { return c !== cb; }); };
+      },
+    },
+
+    session: {
+      save: function(session) { return Promise.resolve(); },
+      load: function() { return get('/api/station/session'); },
+      clear: function() { return Promise.resolve(); },
+    },
+
+    isOnline: function() { return get('/api/station/sync-status').then(function(s) { return s.isOnline; }); },
+
+    auth: {
+      onSessionExpired: function(cb) { return function() {}; },
+    },
+
+    tickets: {
+      onChange: function(cb) {
+        ticketListeners.push(cb);
+        return function() { ticketListeners = ticketListeners.filter(function(c) { return c !== cb; }); };
+      },
+    },
+
+    activity: {
+      getRecent: function(officeId, limit) {
+        return get('/api/station/activity?officeId=' + officeId + '&limit=' + (limit || 20));
+      },
+    },
+
+    debug: {
+      dbStats: function() { return get('/api/station/debug-stats'); },
+    },
+
+    kiosk: {
+      getUrl: function() { return get('/api/station/kiosk-info').then(function(d) { return d.kioskUrl; }); },
+      getLocalIP: function() { return get('/api/station/kiosk-info').then(function(d) { return d.localIP; }); },
+    },
+
+    org: {
+      getBranding: function() { return get('/api/station/branding'); },
+    },
+  };
+})();
+</script>`;
+
+    // Inject shim before the app's module script
+    html = html.replace('<script type="module"', shimScript + '\n  <script type="module"');
+    // Fix asset paths for /station/ base
+    html = html.replace(/\.\/assets\//g, '/station/assets/');
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(html);
+  } catch (err: any) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Station UI not available: ' + (err?.message || 'unknown') }));
+  }
+}
+
+/** Serve static station assets (JS, CSS, images) */
+function serveStationAsset(relPath: string, res: http.ServerResponse) {
+  try {
+    const filePath = join(STATION_DIR, relPath);
+    if (!filePath.startsWith(STATION_DIR)) { res.writeHead(403); res.end(); return; }
+    if (!existsSync(filePath)) { res.writeHead(404); res.end(); return; }
+    const ext = extname(filePath);
+    const mime = STATION_MIME[ext] || 'application/octet-stream';
+    const content = readFileSync(filePath);
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' });
+    res.end(content);
+  } catch {
+    res.writeHead(404); res.end();
+  }
+}
+
+// ── Station API Handlers ────────────────────────────────────────────
+
+function handleStationConfig(res: http.ServerResponse) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ supabaseUrl: CONFIG.SUPABASE_URL, supabaseAnonKey: CONFIG.SUPABASE_ANON_KEY }));
+}
+
+function handleStationGetTickets(url: URL, res: http.ServerResponse) {
+  const db = getDB();
+  const officeIds = (url.searchParams.get('officeIds') || '').split(',').filter(Boolean);
+  const statuses = (url.searchParams.get('statuses') || '').split(',').filter(Boolean);
+  if (!officeIds.length || !statuses.length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('[]'); return; }
+  const oPh = officeIds.map(() => '?').join(',');
+  const sPh = statuses.map(() => '?').join(',');
+  const result = db.prepare(`SELECT * FROM tickets WHERE office_id IN (${oPh}) AND status IN (${sPh}) ORDER BY priority DESC, created_at ASC`).all(...officeIds, ...statuses);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(result));
+}
+
+function handleStationQuery(url: URL, res: http.ServerResponse) {
+  const db = getDB();
+  const table = url.searchParams.get('table') || '';
+  const officeIds = (url.searchParams.get('officeIds') || '').split(',').filter(Boolean);
+  if (!officeIds.length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('[]'); return; }
+  const ph = officeIds.map(() => '?').join(',');
+  let result: any[] = [];
+  switch (table) {
+    case 'departments': result = db.prepare(`SELECT id, name, code FROM departments WHERE office_id IN (${ph})`).all(...officeIds); break;
+    case 'services': result = db.prepare('SELECT id, name, department_id FROM services').all(); break;
+    case 'desks': result = db.prepare(`SELECT id, name FROM desks WHERE office_id IN (${ph})`).all(...officeIds); break;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(result));
+}
+
+function handleStationSyncStatus(res: http.ServerResponse) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ isOnline: isCloudReachable, pendingCount: 0, lastSyncAt: null }));
+}
+
+function handleStationSessionLoad(res: http.ServerResponse) {
+  const db = getDB();
+  try {
+    const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(row ? row.value : 'null');
+  } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); }
+}
+
+function handleStationActivity(url: URL, res: http.ServerResponse) {
+  const db = getDB();
+  const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+  try {
+    const rows = db.prepare(`
+      SELECT a.ticket_number, a.event_type, a.to_status, a.created_at
+      FROM ticket_audit_log a
+      INNER JOIN (
+        SELECT ticket_id, MAX(created_at) as max_created
+        FROM ticket_audit_log WHERE created_at >= datetime('now', '-24 hours')
+        GROUP BY ticket_id
+      ) latest ON a.ticket_id = latest.ticket_id AND a.created_at = latest.max_created
+      ORDER BY a.created_at DESC LIMIT ?
+    `).all(limit) as any[];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(rows.map((r: any) => ({ ticket: r.ticket_number || '?', action: r.to_status || r.event_type || 'unknown', time: r.created_at }))));
+  } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('[]'); }
+}
+
+function handleStationKioskInfo(res: http.ServerResponse) {
+  const ip = getLocalIP();
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ kioskUrl: `http://${ip}:${localPort}/kiosk`, localIP: ip }));
+}
+
+function handleStationBranding(res: http.ServerResponse) {
+  const db = getDB();
+  try {
+    const session = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    if (!session) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); return; }
+    const s = JSON.parse(session.value);
+    const office = db.prepare('SELECT * FROM offices WHERE id = ?').get(s.office_id) as any;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ office_name: office?.name || s.office_name, organization_id: office?.organization_id }));
+  } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); }
+}
+
+function handleStationSSE(req: http.IncomingMessage, res: http.ServerResponse) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+  res.write('data: {"type":"connected"}\n\n');
+  stationSSEClients.add(res);
+  req.on('close', () => { stationSSEClients.delete(res); });
+}
+
+function handleStationBody(req: http.IncomingMessage, res: http.ServerResponse, handler: (body: any, res: http.ServerResponse) => void) {
+  let body = '';
+  let size = 0;
+  req.on('data', (chunk) => { size += chunk.length; if (size > 8192) { req.destroy(); return; } body += chunk; });
+  req.on('end', () => {
+    try { handler(JSON.parse(body), res); }
+    catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON' })); }
+  });
+}
+
+function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
+  const db = getDB();
+  const { ticketId, updates } = body;
+  if (!ticketId || !updates) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing ticketId or updates' })); return; }
+
+  const ALLOWED = new Set(['status', 'desk_id', 'called_at', 'called_by_staff_id', 'serving_started_at', 'completed_at', 'cancelled_at', 'parked_at', 'recall_count', 'notes', 'priority']);
+  const safe: Record<string, any> = {};
+  for (const [k, v] of Object.entries(updates)) { if (ALLOWED.has(k)) safe[k] = v; }
+  if (!Object.keys(safe).length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); return; }
+
+  const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
+  const vals = Object.values(safe);
+  const prev = safe.status ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any : null;
+
+  if (safe.status === 'called') {
+    const r = db.prepare(`UPDATE tickets SET ${sets} WHERE id = ? AND status = 'waiting' RETURNING *`).get(...vals, ticketId);
+    if (!r) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); return; }
+  } else {
+    db.prepare(`UPDATE tickets SET ${sets} WHERE id = ?`).run(...vals, ticketId);
+  }
+
+  if (safe.status && prev) {
+    logTicketEvent(ticketId, safe.status === 'waiting' ? 'requeued' : safe.status, {
+      ticketNumber: prev.ticket_number, fromStatus: prev.status, toStatus: safe.status, source: 'station_web',
+    });
+  }
+
+  const syncId = `${ticketId}-${Date.now()}`;
+  db.prepare(`INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)`).run(syncId, ticketId, JSON.stringify(safe), new Date().toISOString());
+  onTicketCreated?.(syncId);
+
+  const tk = db.prepare('SELECT ticket_number FROM tickets WHERE id = ?').get(ticketId) as any;
+  if (safe.status === 'called') {
+    const dsk = safe.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(safe.desk_id) as any : null;
+    notifyDisplays({ type: 'ticket_called', ticket_number: tk?.ticket_number, desk_name: dsk?.name, timestamp: new Date().toISOString() });
+  } else { notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() }); }
+  notifyStationClients({ type: 'tickets_changed' });
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ id: ticketId, ...safe }));
+}
+
+async function handleStationCallNext(body: any, res: http.ServerResponse) {
+  const db = getDB();
+  const { officeId, deskId, staffId } = body;
+  if (!officeId || !deskId || !staffId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Missing fields' })); return; }
+
+  const now = new Date().toISOString();
+  let ticket: any = null;
+  let syncId = '';
+
+  db.transaction(() => {
+    const candidates = db.prepare(`SELECT id FROM tickets WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL ORDER BY priority DESC, created_at ASC LIMIT 10`).all(officeId) as any[];
+    for (const c of candidates) {
+      ticket = db.prepare(`UPDATE tickets SET status = 'called', desk_id = ?, called_by_staff_id = ?, called_at = ? WHERE id = ? AND status = 'waiting' RETURNING *`).get(deskId, staffId, now, c.id) as any;
+      if (ticket) {
+        syncId = `${ticket.id}-call-${Date.now()}`;
+        db.prepare(`INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'CALL', 'tickets', ?, ?, ?)`)
+          .run(syncId, ticket.id, JSON.stringify({ status: 'called', desk_id: deskId, called_by_staff_id: staffId, called_at: now }), now);
+        logTicketEvent(ticket.id, 'called', { ticketNumber: ticket.ticket_number, fromStatus: 'waiting', toStatus: 'called', source: 'station_web', details: { deskId, staffId } });
+        break;
+      }
+    }
+  })();
+
+  if (!ticket) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); return; }
+
+  onTicketCreated?.(syncId);
+  const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
+  notifyDisplays({ type: 'ticket_called', ticket_number: ticket.ticket_number, desk_name: desk?.name ?? deskId, timestamp: now });
+  notifyStationClients({ type: 'tickets_changed' });
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(ticket));
 }

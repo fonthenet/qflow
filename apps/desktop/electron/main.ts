@@ -3,8 +3,9 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB, logTicketEvent } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, setOnTicketCreated, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
+import { getMachineId, verifyLicense, getStoredLicense, storeLicense } from './license';
 
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -225,6 +226,7 @@ function setupIPC() {
 
     notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
     mainWindow?.webContents.send('tickets:changed');
+    notifyStationClients({ type: 'tickets_changed' });
 
     // Immediately push to cloud so web/mobile displays update within 1-2s
     syncEngine?.pushImmediate(ticket.id + '-create');
@@ -317,6 +319,7 @@ function setupIPC() {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     }
     mainWindow?.webContents.send('tickets:changed');
+    notifyStationClients({ type: 'tickets_changed' });
     return { id: ticketId, ...safeUpdates };
   });
 
@@ -542,6 +545,31 @@ function setupIPC() {
     };
   });
 
+  // ── Activity log ─────────────────────────────────────────────────
+
+  ipcMain.handle('activity:get-recent', (_e, officeId: string, limit = 20) => {
+    try {
+      // Get the latest event per ticket (final status only), ordered by most recent
+      const rows = db.prepare(`
+        SELECT a.ticket_number, a.event_type, a.to_status, a.created_at, a.details
+        FROM ticket_audit_log a
+        INNER JOIN (
+          SELECT ticket_id, MAX(created_at) as max_created
+          FROM ticket_audit_log
+          WHERE created_at >= datetime('now', '-24 hours')
+          GROUP BY ticket_id
+        ) latest ON a.ticket_id = latest.ticket_id AND a.created_at = latest.max_created
+        ORDER BY a.created_at DESC
+        LIMIT ?
+      `).all(limit) as any[];
+      return rows.map((r: any) => ({
+        ticket: r.ticket_number || '?',
+        action: r.to_status || r.event_type || 'unknown',
+        time: r.created_at,
+      }));
+    } catch { return []; }
+  });
+
   // ── Connection status ─────────────────────────────────────────────
 
   ipcMain.handle('connection:status', () => syncEngine?.isOnline ?? false);
@@ -575,6 +603,28 @@ function setupIPC() {
       }
     } catch {}
     return { orgName: null, logoUrl: null, brandColor: null };
+  });
+
+  // ── License ──────────────────────────────────────────────────────
+
+  ipcMain.handle('license:machine-id', () => getMachineId());
+
+  ipcMain.handle('license:status', () => {
+    const stored = getStoredLicense(db);
+    const machineId = getMachineId();
+    if (!stored) return { licensed: false, machineId };
+    if (stored.machineId !== machineId) return { licensed: false, machineId, error: 'Machine changed' };
+    return { licensed: true, machineId, key: stored.key };
+  });
+
+  ipcMain.handle('license:activate', async (_e, key: string) => {
+    const machineId = getMachineId();
+    const result = await verifyLicense(key.trim().toUpperCase(), machineId);
+    if (result.valid) {
+      storeLicense(db, key.trim().toUpperCase(), machineId);
+      return { success: true, org: result.org };
+    }
+    return { success: false, error: result.error };
   });
 }
 
@@ -671,6 +721,7 @@ app.whenReady().then(async () => {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
       // Tell renderer to refresh tickets immediately (event-driven, no polling needed)
       mainWindow?.webContents.send('tickets:changed');
+    notifyStationClients({ type: 'tickets_changed' });
     },
     (error) => {
       // Surface sync/reconciliation errors to the Station UI
@@ -688,6 +739,7 @@ app.whenReady().then(async () => {
     // Also push to cloud immediately so QR tracking works remotely
     setOnTicketCreated((syncQueueId: string) => {
       mainWindow?.webContents.send('tickets:changed');
+    notifyStationClients({ type: 'tickets_changed' });
       syncEngine?.pushImmediate(syncQueueId);
     });
   } catch (err) {

@@ -11,7 +11,7 @@ export const CONFIG = {
   CLOUD_URL: 'https://qflo.net',
 
   // Kiosk server
-  KIOSK_PORT: 3847,
+  KIOSK_PORT: 80,
 
   // Sync intervals (ms)
   HEALTH_CHECK_INTERVAL: 10_000,

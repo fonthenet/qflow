@@ -71,6 +71,19 @@ contextBridge.exposeInMainWorld('qf', {
     },
   },
 
+  // Activity log
+  activity: {
+    getRecent: (officeId: string, limit?: number) =>
+      ipcRenderer.invoke('activity:get-recent', officeId, limit),
+  },
+
+  // License
+  license: {
+    getMachineId: () => ipcRenderer.invoke('license:machine-id'),
+    getStatus: () => ipcRenderer.invoke('license:status'),
+    activate: (key: string) => ipcRenderer.invoke('license:activate', key),
+  },
+
   // Debug
   debug: {
     dbStats: () => ipcRenderer.invoke('debug:db-stats'),
