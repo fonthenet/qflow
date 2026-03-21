@@ -15,9 +15,9 @@ export default async function SuperAdminLayout({
   if (user.email !== SUPER_ADMIN_EMAIL) redirect('/admin/overview');
 
   return (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen">
       <SuperAdminSidebar />
-      <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
+      <main className="flex-1 overflow-y-auto bg-muted/30">
         <div className="p-8">
           {children}
         </div>
