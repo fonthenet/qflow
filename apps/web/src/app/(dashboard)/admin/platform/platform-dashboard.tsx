@@ -139,6 +139,23 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
     setCreating(false);
   };
 
+  // Quick generate — instantly creates a license for the same org
+  const quickGenerate = async (orgId: string | null, orgName: string | null) => {
+    setError('');
+    const key = generateKey();
+    const { error } = await supabase.from('station_licenses').insert({
+      license_key: key,
+      organization_id: orgId || null,
+      organization_name: orgName || null,
+      status: 'active',
+    } as any);
+    if (error) {
+      setError(error.message);
+    } else {
+      refreshLicenses();
+    }
+  };
+
   const toggleLicenseStatus = async (license: License) => {
     const newStatus = license.status === 'active' ? 'suspended' : 'active';
     await supabase.from('station_licenses').update({ status: newStatus }).eq('id', license.id);
@@ -580,6 +597,13 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => quickGenerate(license.organization_id, license.organization_name)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center gap-1"
+                      title={`Generate another license for ${license.organization_name ?? 'this org'}`}
+                    >
+                      <Plus size={13} /> Generate
+                    </button>
                     <button onClick={() => toggleLicenseStatus(license)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${license.status === 'active' ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
                       {license.status === 'active' ? 'Suspend' : 'Activate'}
                     </button>
