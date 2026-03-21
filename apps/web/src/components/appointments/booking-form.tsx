@@ -464,6 +464,20 @@ export function BookingForm({
     });
   }
 
+  // ── Business hours info ──────────────────────────────────────
+  // NOTE: hooks must be called before any conditional early return
+  const officeHours = office.operating_hours as OperatingHours | null;
+  const officeTimezone = office.timezone || 'UTC';
+  const [bookingBusinessStatus, setBookingBusinessStatus] = useState(() =>
+    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
+  );
+  useEffect(() => {
+    if (!officeHours) return;
+    setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
+    const t = setInterval(() => setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
+    return () => clearInterval(t);
+  }, [officeHours, officeTimezone]);
+
   if (bookingMode === 'disabled') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
@@ -477,19 +491,6 @@ export function BookingForm({
       </div>
     );
   }
-
-  // ── Business hours info ──────────────────────────────────────
-  const officeHours = office.operating_hours as OperatingHours | null;
-  const officeTimezone = office.timezone || 'UTC';
-  const [bookingBusinessStatus, setBookingBusinessStatus] = useState(() =>
-    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
-  );
-  useEffect(() => {
-    if (!officeHours) return;
-    setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    const t = setInterval(() => setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
-    return () => clearInterval(t);
-  }, [officeHours, officeTimezone]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
