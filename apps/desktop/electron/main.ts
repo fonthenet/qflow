@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { initDB, getDB, logTicketEvent } from './db';
+import { initDB, getDB, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -710,6 +710,9 @@ app.whenReady().then(async () => {
   // Init SQLite
   initDB();
 
+  // Start automatic database backups (daily, keeps last 7)
+  startAutoBackup();
+
   // Setup IPC
   setupIPC();
 
@@ -796,6 +799,7 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   (app as any).isQuitting = true;
   syncEngine?.stop();
+  stopAutoBackup();
   stopKioskServer();
   mainWindow?.destroy();
 });

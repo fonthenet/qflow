@@ -24,6 +24,7 @@ export default async function SuperAdminPage() {
   (allOffices ?? []).forEach((o: any) => { officeOrgMap[o.id] = o.organization_id; });
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const orgSummaries = (organizations ?? []).map((org: any) => {
     const staff = (allStaff ?? []).filter((s: any) => s.organization_id === org.id);
@@ -40,6 +41,19 @@ export default async function SuperAdminPage() {
     };
   });
 
+  const todayTicketsAll = (allTickets ?? []).filter((t: any) => t.created_at?.startsWith(todayStr));
+  const weekTicketsAll = (allTickets ?? []).filter((t: any) => t.created_at?.slice(0, 10) >= weekAgo);
+  const activeOrgsToday = new Set(
+    todayTicketsAll.map((t: any) => officeOrgMap[t.office_id]).filter(Boolean)
+  ).size;
+
+  // Calculate avg tickets per day (last 7 days excluding today)
+  const last7DaysTickets = (allTickets ?? []).filter((t: any) => {
+    const d = t.created_at?.slice(0, 10);
+    return d >= weekAgo && d < todayStr;
+  });
+  const avgTicketsPerDay = last7DaysTickets.length > 0 ? Math.round(last7DaysTickets.length / 7) : 0;
+
   const stats = {
     totalOrganizations: (organizations ?? []).length,
     totalStaff: (allStaff ?? []).filter((s: any) => s.is_active).length,
@@ -48,18 +62,54 @@ export default async function SuperAdminPage() {
     activeLicenses: (allLicenses ?? []).filter((l: any) => l.status === 'active').length,
     boundDevices: (allLicenses ?? []).filter((l: any) => l.machine_id).length,
     pendingDevices: (pendingDevices ?? []).length,
-    ticketsToday: (allTickets ?? []).filter((t: any) => t.created_at?.startsWith(todayStr)).length,
+    ticketsToday: todayTicketsAll.length,
+    ticketsThisWeek: weekTicketsAll.length,
+    avgTicketsPerDay,
+    activeOrgsToday,
   };
 
   const recentDevices = (allLicenses ?? [])
     .filter((l: any) => l.machine_id)
     .slice(0, 6);
 
+  // Build recent activity feed from various sources
+  const recentActivity: { id: string; type: 'org_created' | 'license_activated' | 'device_approved' | 'ticket_milestone'; message: string; timestamp: string }[] = [];
+
+  // Recent org creations (last 30 days)
+  for (const org of (organizations ?? []).slice(0, 5)) {
+    const created = new Date((org as any).created_at);
+    if (Date.now() - created.getTime() < 30 * 24 * 60 * 60 * 1000) {
+      recentActivity.push({
+        id: `org-${(org as any).id}`,
+        type: 'org_created',
+        message: `${(org as any).name} registered on the platform`,
+        timestamp: (org as any).created_at,
+      });
+    }
+  }
+
+  // Recent device activations
+  for (const license of (allLicenses ?? []).filter((l: any) => l.activated_at)) {
+    const activated = new Date((license as any).activated_at);
+    if (Date.now() - activated.getTime() < 7 * 24 * 60 * 60 * 1000) {
+      recentActivity.push({
+        id: `license-${(license as any).id}`,
+        type: 'license_activated',
+        message: `Device ${(license as any).machine_name ?? (license as any).machine_id?.slice(0, 12)} activated for ${(license as any).organization_name ?? 'Unknown'}`,
+        timestamp: (license as any).activated_at,
+      });
+    }
+  }
+
+  // Sort activity by timestamp desc and take top 8
+  recentActivity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
   return (
     <SuperAdminOverview
       stats={stats}
       organizations={orgSummaries}
       recentDevices={recentDevices}
+      recentActivity={recentActivity.slice(0, 8)}
     />
   );
 }

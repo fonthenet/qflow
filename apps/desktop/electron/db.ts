@@ -259,6 +259,63 @@ export function getLocalDate(officeId?: string, dbInstance?: Database.Database):
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 }
 
+// ── Database backup ───────────────────────────────────────────────
+// Creates a timestamped backup of the SQLite database using the safe
+// backup API (atomic copy, no corruption risk even during writes).
+// Keeps the last 7 backups, deleting older ones automatically.
+export function backupDatabase(): { path: string; size: number } | null {
+  try {
+    const userDataPath = app.getPath('userData');
+    const backupDir = path.join(userDataPath, 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupPath = path.join(backupDir, `queueflow-${timestamp}.db`);
+
+    // Use SQLite backup API (safe, atomic)
+    db.backup(backupPath);
+
+    const stats = fs.statSync(backupPath);
+    console.log(`[db:backup] ✓ Backup created: ${backupPath} (${(stats.size / 1024).toFixed(1)}KB)`);
+
+    // Cleanup: keep only the last 7 backups
+    const backups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('queueflow-') && f.endsWith('.db'))
+      .sort()
+      .reverse();
+
+    for (const old of backups.slice(7)) {
+      try {
+        fs.unlinkSync(path.join(backupDir, old));
+        console.log(`[db:backup] Cleaned up old backup: ${old}`);
+      } catch {}
+    }
+
+    return { path: backupPath, size: stats.size };
+  } catch (err: any) {
+    console.error('[db:backup] Backup failed:', err.message);
+    return null;
+  }
+}
+
+// Schedule automatic daily backup (call once on startup)
+let backupTimer: ReturnType<typeof setInterval> | null = null;
+export function startAutoBackup(intervalMs = 24 * 60 * 60 * 1000) {
+  // Immediate backup on first start
+  setTimeout(() => backupDatabase(), 5000);
+  // Then every 24 hours
+  backupTimer = setInterval(() => backupDatabase(), intervalMs);
+}
+
+export function stopAutoBackup() {
+  if (backupTimer) {
+    clearInterval(backupTimer);
+    backupTimer = null;
+  }
+}
+
 // Generate offline ticket number: L-{DEPT_CODE}-{COUNTER}
 // Counter resets daily in the office's local timezone
 export function generateOfflineTicketNumber(officeId: string, deptCode: string, dbInstance?: Database.Database): string {

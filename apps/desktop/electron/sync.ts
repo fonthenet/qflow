@@ -63,6 +63,56 @@ export class SyncEngine {
   private rapidRetryInFlight = new Set<string>();
   private static RAPID_RETRY_DELAYS = [2000, 5000, 15000]; // 2s, 5s, 15s
 
+  // ── Circuit breaker ──────────────────────────────────────────────
+  // Prevents infinite retry loops when the cloud is unreachable or broken.
+  // After CIRCUIT_BREAKER_THRESHOLD consecutive push failures, the circuit
+  // opens and sync pauses for CIRCUIT_BREAKER_COOLDOWN_MS. The operator
+  // is notified via onTicketError so they can investigate.
+  private consecutivePushFailures = 0;
+  private circuitOpen = false;
+  private circuitOpenedAt = 0;
+  private static CIRCUIT_BREAKER_THRESHOLD = 5;
+  private static CIRCUIT_BREAKER_COOLDOWN_MS = 60_000; // 1 minute cooldown
+
+  private tripCircuitBreaker(lastError: string) {
+    if (this.circuitOpen) return;
+    this.circuitOpen = true;
+    this.circuitOpenedAt = Date.now();
+    console.error(`[sync:circuit-breaker] OPEN after ${this.consecutivePushFailures} consecutive failures. Pausing sync for ${SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s`);
+    this.onTicketError({
+      message: `Sync paused: ${this.consecutivePushFailures} consecutive failures. Last error: ${lastError}. Will auto-retry in ${SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s.`,
+      type: 'circuit_breaker_open',
+    });
+  }
+
+  private checkCircuitBreaker(): boolean {
+    if (!this.circuitOpen) return true; // circuit closed — allow sync
+    const elapsed = Date.now() - this.circuitOpenedAt;
+    if (elapsed >= SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS) {
+      // Half-open: allow one attempt to see if the service recovered
+      console.log('[sync:circuit-breaker] Cooldown elapsed — half-open, attempting sync...');
+      this.circuitOpen = false;
+      this.consecutivePushFailures = 0;
+      return true;
+    }
+    return false; // circuit still open — block sync
+  }
+
+  private recordPushSuccess() {
+    if (this.consecutivePushFailures > 0) {
+      console.log(`[sync:circuit-breaker] Push succeeded — resetting failure count (was ${this.consecutivePushFailures})`);
+    }
+    this.consecutivePushFailures = 0;
+    this.circuitOpen = false;
+  }
+
+  private recordPushFailure(error: string) {
+    this.consecutivePushFailures++;
+    if (this.consecutivePushFailures >= SyncEngine.CIRCUIT_BREAKER_THRESHOLD) {
+      this.tripCircuitBreaker(error);
+    }
+  }
+
   start() {
     // Check connectivity
     this.healthInterval = setInterval(() => this.checkHealth(), CONFIG.HEALTH_CHECK_INTERVAL);
@@ -641,6 +691,7 @@ export class SyncEngine {
 
   async syncNow() {
     if (!this.isOnline) return;
+    if (!this.checkCircuitBreaker()) return; // circuit breaker open — skip
 
     const now = new Date().toISOString();
     const pending = this.db.prepare(
@@ -730,6 +781,7 @@ export class SyncEngine {
           "UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?"
         ).run(new Date().toISOString(), item.id);
         successCount++;
+        this.recordPushSuccess();
 
         // Rewrite L- prefix after successful INSERT push
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
@@ -743,6 +795,10 @@ export class SyncEngine {
         this.db.prepare(
           "UPDATE sync_queue SET attempts = ?, last_error = ?, next_retry_at = ? WHERE id = ?"
         ).run(newAttempts, err.message ?? 'Unknown error', nextRetry, item.id);
+
+        // Circuit breaker: track consecutive failures
+        this.recordPushFailure(err.message ?? 'Unknown error');
+        if (this.circuitOpen) break; // circuit tripped — stop processing
 
         // Notify UI on 3rd failure so staff knows something is stuck
         if (newAttempts === 3 && item.table_name === 'tickets') {

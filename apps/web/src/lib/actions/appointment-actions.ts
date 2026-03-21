@@ -59,6 +59,61 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
   }
 
+  // ── Double-booking prevention ──────────────────────────────────
+  // Check slot availability before inserting
+  const scheduledDate = data.scheduledAt.split('T')[0];
+  const scheduledTime = data.scheduledAt.split('T')[1]?.slice(0, 5); // HH:MM
+
+  // Get org slot settings
+  const orgSettings =
+    ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
+      | Record<string, any>
+      | undefined) ?? {};
+  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
+  const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
+
+  // Count existing non-cancelled appointments in the same slot window
+  const slotStart = data.scheduledAt;
+  const slotEndDate = new Date(data.scheduledAt);
+  slotEndDate.setMinutes(slotEndDate.getMinutes() + slotDurationMinutes);
+  const slotEnd = slotEndDate.toISOString();
+
+  const { count: existingCount, error: countError } = await supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('office_id', data.officeId)
+    .eq('service_id', data.serviceId)
+    .neq('status', 'cancelled')
+    .gte('scheduled_at', `${scheduledDate}T${scheduledTime}:00`)
+    .lt('scheduled_at', slotEnd);
+
+  if (countError) {
+    return { error: countError.message };
+  }
+
+  if ((existingCount ?? 0) >= slotsPerInterval) {
+    return { error: 'This time slot is fully booked. Please choose a different time.' };
+  }
+
+  // Check for blocked slots
+  try {
+    const { data: blockedSlots } = await (supabase as any)
+      .from('blocked_slots')
+      .select('id')
+      .eq('office_id', data.officeId)
+      .eq('blocked_date', scheduledDate)
+      .lte('start_time', scheduledTime)
+      .gt('end_time', scheduledTime)
+      .limit(1);
+
+    if (blockedSlots && blockedSlots.length > 0) {
+      return { error: 'This time slot has been blocked by the office. Please choose a different time.' };
+    }
+  } catch {
+    // blocked_slots table may not exist yet — allow booking
+  }
+
+  // ── Insert appointment ──────────────────────────────────────────
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
