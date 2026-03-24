@@ -1,4 +1,5 @@
 type OfficeWithSettings = {
+  id?: string;
   name: string;
   settings?: unknown;
 };
@@ -15,7 +16,7 @@ export function slugifyOfficeName(name: string) {
     .replace(/^-|-$/g, '');
 }
 
-export function getOfficePublicSlug(office: OfficeWithSettings) {
+function getOfficeSlugBase(office: OfficeWithSettings) {
   const settings =
     office.settings && typeof office.settings === 'object' && !Array.isArray(office.settings)
       ? (office.settings as Record<string, unknown>)
@@ -26,8 +27,17 @@ export function getOfficePublicSlug(office: OfficeWithSettings) {
     : slugifyOfficeName(office.name);
 }
 
+export function getOfficePublicSlug(office: OfficeWithSettings) {
+  const baseSlug = getOfficeSlugBase(office);
+  return office.id ? `${baseSlug}--${office.id}` : baseSlug;
+}
+
 export function matchesOfficePublicSlug(office: OfficeWithSettings, officeSlug: string) {
-  return getOfficePublicSlug(office) === officeSlug;
+  const baseSlug = getOfficeSlugBase(office);
+  if (office.id) {
+    return officeSlug === `${baseSlug}--${office.id}` || officeSlug === baseSlug;
+  }
+  return officeSlug === baseSlug;
 }
 
 export function buildKioskPath(office: OfficeWithSettings) {

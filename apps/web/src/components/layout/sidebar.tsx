@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
-import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 interface SidebarProps {
   staff: {
@@ -214,7 +213,6 @@ export function Sidebar({
             </p>
           </div>
           <div className="flex items-center gap-1">
-            <LanguageSwitcher />
             <Link
               href="/"
               className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

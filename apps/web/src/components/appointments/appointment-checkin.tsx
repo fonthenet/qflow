@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/providers/locale-provider';
 import { findAppointment, checkInAppointment } from '@/lib/actions/appointment-actions';
+import { buildBookingPath } from '@/lib/office-links';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 
 interface AppointmentCheckInProps {
@@ -71,11 +72,6 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
       minute: '2-digit',
     });
   }
-
-  const officeSlug = office.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
@@ -235,7 +231,7 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
             {/* Link to book */}
             <div className="mt-6 text-center">
               <a
-                href={`/book/${officeSlug}`}
+                href={buildBookingPath(office)}
                 className="text-sm text-primary hover:underline"
               >
                 Don&apos;t have an appointment? Book one now

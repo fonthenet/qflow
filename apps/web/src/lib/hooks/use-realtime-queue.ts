@@ -7,6 +7,14 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 
+const EMPTY_QUEUE: QueueData = {
+  waiting: [],
+  called: [],
+  serving: [],
+  recentlyServed: [],
+  cancelled: [],
+};
+
 export interface QueueData {
   waiting: Ticket[];
   called: Ticket[];
@@ -28,21 +36,14 @@ export function useRealtimeQueue({
   disabled = false,
   initialQueue,
 }: UseRealtimeQueueOptions) {
-  const emptyQueue: QueueData = {
-    waiting: [],
-    called: [],
-    serving: [],
-    recentlyServed: [],
-    cancelled: [],
-  };
-  const [queue, setQueue] = useState<QueueData>(initialQueue ?? emptyQueue);
+  const [queue, setQueue] = useState<QueueData>(initialQueue ?? EMPTY_QUEUE);
   const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const fetchQueue = useCallback(async () => {
     if (disabled) {
-      setQueue(initialQueue ?? emptyQueue);
+      setQueue(initialQueue ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
@@ -97,11 +98,11 @@ export function useRealtimeQueue({
         .slice(0, 5),
     });
     setError(null);
-  }, [departmentId, disabled, emptyQueue, initialQueue, officeId]);
+  }, [departmentId, disabled, initialQueue, officeId]);
 
   useEffect(() => {
     if (disabled) {
-      setQueue(initialQueue ?? emptyQueue);
+      setQueue(initialQueue ?? EMPTY_QUEUE);
       setIsLoading(false);
       return;
     }
@@ -156,7 +157,7 @@ export function useRealtimeQueue({
         channelRef.current = null;
       }
     };
-  }, [departmentId, disabled, emptyQueue, fetchQueue, initialQueue, officeId]);
+  }, [departmentId, disabled, fetchQueue, initialQueue, officeId]);
 
   return {
     queue,

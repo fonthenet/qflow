@@ -1,26 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { matchesOfficePublicSlug } from '@/lib/office-links';
 
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
-}
-
-function slugifyOfficeName(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-function matchesSlug(office: { name: string; settings?: unknown }, slug: string) {
-  const s = office.settings && typeof office.settings === 'object' && !Array.isArray(office.settings)
-    ? (office.settings as Record<string, unknown>)
-    : {};
-  const configured = s.platform_office_slug;
-  const effective = typeof configured === 'string' && configured.trim()
-    ? configured
-    : slugifyOfficeName(office.name);
-  return effective === slug;
 }
 
 function generateSlots(openTime: string, closeTime: string, durationMinutes: number): string[] {
@@ -61,7 +47,7 @@ export async function GET(request: NextRequest) {
     .select('id, name, settings, operating_hours, organization_id')
     .eq('is_active', true);
 
-  const office = (offices ?? []).find((o: any) => matchesSlug(o, slug));
+  const office = (offices ?? []).find((o: any) => matchesOfficePublicSlug(o, slug));
   if (!office) return NextResponse.json({ error: 'Office not found' }, { status: 404 });
 
   // Fetch org settings

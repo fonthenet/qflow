@@ -220,6 +220,11 @@ export function YourTurn({
   }, [sandboxMode, ticket.desk_id]);
 
   useEffect(() => {
+    setCalledAt(ticket.called_at);
+    setRecallCount(ticket.recall_count ?? 0);
+  }, [ticket.called_at, ticket.recall_count]);
+
+  useEffect(() => {
     if (sandboxMode) return;
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw-notify.js').catch(() => {});

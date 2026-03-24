@@ -11,6 +11,7 @@ import {
   markBookingEmailOtpVerified,
   updateAppointmentContact,
 } from '@/lib/actions/appointment-actions';
+import { buildBookingCheckInPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
 
 interface BookingFormProps {
@@ -66,11 +67,6 @@ export function BookingForm({
     vocabulary.bookingLabel === 'Appointment'
       ? t('Book an Appointment')
       : t('Book a {label}', { label: vocabulary.bookingLabel });
-  const officeSlug = office.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
   const resolvedInitialDepartment =
     departments.find((department) => department.id === initialDepartmentId) ??
     (hasSingleDepartment ? departments[0] : null) ??
@@ -1064,7 +1060,7 @@ export function BookingForm({
             </div>
 
             <Link
-              href={sandboxMode ? sandbox?.trackPath ?? `/book/${officeSlug}/checkin` : `/book/${officeSlug}/checkin`}
+              href={sandboxMode ? sandbox?.trackPath ?? buildBookingCheckInPath(office) : buildBookingCheckInPath(office)}
               className="block w-full rounded-xl border border-border bg-card px-4 py-4 text-center text-lg font-medium text-foreground transition-colors hover:bg-muted"
             >
               {sandboxMode

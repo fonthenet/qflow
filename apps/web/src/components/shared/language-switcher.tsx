@@ -1,7 +1,8 @@
 'use client';
 
-import { Languages } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/components/providers/locale-provider';
 import type { AppLocale } from '@/lib/i18n/messages';
 
@@ -15,6 +16,8 @@ export function LanguageSwitcher() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { locale } = useI18n();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   function buildHref(nextLocale: AppLocale) {
     const params = new URLSearchParams(searchParams?.toString());
@@ -23,22 +26,46 @@ export function LanguageSwitcher() {
     return query ? `${pathname}?${query}` : pathname;
   }
 
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
+  const otherLocales = (['en', 'fr', 'ar'] as const).filter((entry) => entry !== locale);
+
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-border bg-background/80 p-1 text-xs shadow-sm backdrop-blur">
-      <span className="px-2 text-muted-foreground">
-        <Languages className="h-3.5 w-3.5" />
-      </span>
-      {(['en', 'fr', 'ar'] as const).map((entry) => (
-        <a
-          key={entry}
-          href={buildHref(entry)}
-          className={`rounded-full px-2.5 py-1 font-semibold transition-colors ${
-            locale === entry ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          {localeLabels[entry]}
-        </a>
-      ))}
+    <div ref={containerRef} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm backdrop-blur transition-colors hover:bg-background"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+      >
+        {localeLabels[locale]}
+        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen ? (
+        <div className="absolute right-0 top-full z-50 mt-2 min-w-[72px] rounded-2xl border border-border bg-background/95 p-1 shadow-lg backdrop-blur">
+          {otherLocales.map((entry) => (
+            <a
+              key={entry}
+              href={buildHref(entry)}
+              className="block rounded-xl px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => setIsOpen(false)}
+            >
+              {localeLabels[entry]}
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

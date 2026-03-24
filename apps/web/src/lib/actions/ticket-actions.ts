@@ -1064,55 +1064,66 @@ export async function recallTicket(ticketId: string) {
 
   // Reset called_at so the customer's countdown timer restarts + increment recall count
   const newRecallCount = (ticket.recall_count ?? 0) + 1;
-  const { error: updateError } = await supabase
+  const calledAt = new Date().toISOString();
+  const { data: updatedTicket, error: updateError } = await supabase
     .from('tickets')
     .update({
-      called_at: new Date().toISOString(),
+      called_at: calledAt,
       recall_count: newRecallCount,
     })
-    .eq('id', ticketId);
+    .eq('id', ticketId)
+    .select('*')
+    .single();
 
-  if (updateError) {
+  if (updateError || !updatedTicket) {
     return { error: 'Failed to reset timer' };
   }
 
   // Broadcast recall via Supabase Realtime REST API (server-side, no WebSocket)
-  await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`,
-    {
-      method: 'POST',
-      headers: {
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            topic: `recall-${ticket.office_id}`,
-            event: 'ticket_recall',
-            payload: {
-              ticket_id: ticket.id,
-              ticket_number: ticket.ticket_number,
-              desk_id: ticket.desk_id,
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/realtime/v1/api/broadcast`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              topic: `recall-${updatedTicket.office_id}`,
+              event: 'ticket_recall',
+              payload: {
+                ticket_id: updatedTicket.id,
+                ticket_number: updatedTicket.ticket_number,
+                desk_id: updatedTicket.desk_id,
+              },
             },
-          },
-        ],
-      }),
-    }
-  );
+          ],
+        }),
+      }
+    );
 
-  const deskName = await getDeskName(supabase, ticket.desk_id);
+    if (!response.ok) {
+      console.warn('[Recall] Broadcast request failed:', response.status, response.statusText);
+    }
+  } catch (error) {
+    console.warn('[Recall] Broadcast request errored:', error);
+  }
+
+  const deskName = await getDeskName(supabase, updatedTicket.desk_id);
 
   // Web Push — rich recall alert
   if (!process.env.VERCEL) {
     sendPushToTicket(ticketId, {
       type: 'recall',
       title: '⚠️ REMINDER — YOUR TURN!',
-      body: `Ticket ${ticket.ticket_number} — Go to ${deskName} NOW`,
+      body: `Ticket ${updatedTicket.ticket_number} — Go to ${deskName} NOW`,
       tag: `qf-turn-${ticketId}`,
-      url: `/q/${ticket.qr_token}`,
+      url: `/q/${updatedTicket.qr_token}`,
       ticketId,
-      ticketNumber: ticket.ticket_number,
+      ticketNumber: updatedTicket.ticket_number,
       deskName,
       recallCount: newRecallCount,
     }).catch((err) => console.error('[Recall] Push notification error:', err));
@@ -1121,8 +1132,8 @@ export async function recallTicket(ticketId: string) {
   // APNs push for iOS App Clip users (always, regardless of env)
   const apnsSent = await sendAPNsToTicket(ticketId, {
     title: 'Reminder: Your Turn!',
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
+    body: `Ticket ${updatedTicket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
   }).catch((err) => {
     console.error('[Recall] APNs notification error:', err);
     return false;
@@ -1135,13 +1146,13 @@ export async function recallTicket(ticketId: string) {
   const androidSent = await sendAndroidToTicket(ticketId, {
     type: 'recall',
     title: 'Reminder: Your Turn!',
-    body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
-    url: `/q/${ticket.qr_token}`,
+    body: `Ticket ${updatedTicket.ticket_number} — Please go to ${deskName}`,
+    url: `/q/${updatedTicket.qr_token}`,
     ticketId,
-    ticketNumber: ticket.ticket_number,
-    qrToken: ticket.qr_token,
+    ticketNumber: updatedTicket.ticket_number,
+    qrToken: updatedTicket.qr_token,
     deskName,
-    status: ticket.status,
+    status: updatedTicket.status,
     recallCount: newRecallCount,
   }).catch((err) => {
     console.error('[Recall] Android push error:', err);
@@ -1153,7 +1164,7 @@ export async function recallTicket(ticketId: string) {
   }
 
   const smsResult = await maybeSendPriorityAlertSms(supabase, {
-    ticket,
+    ticket: updatedTicket,
     event: 'recall',
     deskName,
   });
@@ -1164,7 +1175,7 @@ export async function recallTicket(ticketId: string) {
   await supabase.from('ticket_events').insert({
     ticket_id: ticketId,
     event_type: TICKET_EVENT_TYPES.RECALLED,
-    desk_id: ticket.desk_id,
+    desk_id: updatedTicket.desk_id,
     staff_id: context.staff.id,
   });
 
@@ -1174,26 +1185,27 @@ export async function recallTicket(ticketId: string) {
     type: 'recall',
     channel: 'realtime',
     payload: {
-      ticket_number: ticket.ticket_number,
-      desk_id: ticket.desk_id,
+      ticket_number: updatedTicket.ticket_number,
+      desk_id: updatedTicket.desk_id,
     },
-    sent_at: new Date().toISOString(),
+    sent_at: calledAt,
   });
 
   await logAuditEvent(context, {
     actionType: 'ticket_recalled',
     entityType: 'ticket',
-    entityId: ticket.id,
-    officeId: ticket.office_id,
-    summary: `Recalled ticket ${ticket.ticket_number}`,
+    entityId: updatedTicket.id,
+    officeId: updatedTicket.office_id,
+    summary: `Recalled ticket ${updatedTicket.ticket_number}`,
     metadata: {
-      deskId: ticket.desk_id,
+      deskId: updatedTicket.desk_id,
       recallCount: newRecallCount,
       smsSent: smsResult.sent,
     },
   });
 
-  return { data: ticket, smsSent: smsResult.sent };
+  revalidatePath('/desk');
+  return { data: updatedTicket, smsSent: smsResult.sent };
 }
 
 export async function callBackTicketToDesk(ticketId: string) {

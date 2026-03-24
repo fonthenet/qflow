@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { matchesOfficePublicSlug } from '@/lib/office-links';
 
 let _supabase: SupabaseClient | null = null;
 
@@ -11,29 +12,6 @@ function getSupabase(): SupabaseClient {
     );
   }
   return _supabase;
-}
-
-function slugifyOfficeName(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function matchesOfficePublicSlug(
-  office: { name: string; settings?: unknown },
-  slug: string
-) {
-  const settings =
-    office.settings && typeof office.settings === 'object' && !Array.isArray(office.settings)
-      ? (office.settings as Record<string, unknown>)
-      : {};
-  const configuredSlug = settings.platform_office_slug;
-  const effectiveSlug =
-    typeof configuredSlug === 'string' && configuredSlug.trim().length > 0
-      ? configuredSlug
-      : slugifyOfficeName(office.name);
-  return effectiveSlug === slug;
 }
 
 export async function GET(request: NextRequest) {
