@@ -1,10 +1,10 @@
-import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
+import { getStaffContext, requireAdminMutationRole } from '@/lib/authz';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { BusinessMapClient } from './business-map-client';
 
 export default async function OverviewPage() {
   const context = await getStaffContext();
-  await requireOrganizationAdmin(context);
+  requireAdminMutationRole(context);
 
   const { data: org } = await context.supabase
     .from('organizations')

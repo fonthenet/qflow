@@ -22,6 +22,7 @@ import {
   GitBranchPlus,
   CalendarDays,
   House,
+  LayoutDashboard,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -61,6 +62,7 @@ interface SidebarProps {
 }
 
 const adminNav = [
+  { href: '/admin/overview', label: 'Business Overview', icon: LayoutDashboard, section: 'Work' },
   { href: '/admin/onboarding', label: 'Business Setup', icon: Sparkles, section: 'Setup' },
   { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
   { href: '/admin/offices', label: 'Locations', icon: Building2, section: 'Setup' },
@@ -118,6 +120,7 @@ export function Sidebar({
     .filter((item) => allowedNavigation.includes(item.href))
     .sort((a, b) => {
       const desiredOrder = [
+        '/admin/overview',
         '/admin/onboarding',
         '/admin/template-governance',
         ...(templateSummary.defaultNavigation ?? []),
@@ -146,7 +149,7 @@ export function Sidebar({
     <aside className="flex w-64 flex-col border-r border-border bg-card">
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-6">
-        <Link href="/admin/offices" className="text-xl font-bold">
+        <Link href="/admin/overview" className="text-xl font-bold">
           Queue<span className="text-primary">Flow</span>
         </Link>
       </div>

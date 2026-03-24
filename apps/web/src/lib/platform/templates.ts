@@ -21,6 +21,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/onboarding',
           '/admin/template-governance',
           '/admin/offices',
@@ -47,6 +48,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/onboarding',
           '/admin/template-governance',
           '/admin/offices',
@@ -70,6 +72,7 @@ function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'office',
         adminAccess: true,
         allowedNavigation: [
+          '/admin/overview',
           '/admin/offices',
           '/admin/departments',
           '/admin/services',
@@ -371,7 +374,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'public_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays', '/admin/kiosk', '/admin/bookings', '/admin/analytics', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays', '/admin/kiosk', '/admin/bookings', '/admin/analytics', '/admin/settings', '/desk'],
     enabledModules: ['kiosk', 'display_board', 'priority_categories', 'appointments', 'branch_comparison'],
     onboardingCopy: {
       headline: 'Launch a public-service branch',
@@ -425,6 +428,7 @@ export const industryTemplates: IndustryTemplate[] = [
         mode: 'normal',
         showPriorities: true,
         showEstimatedTime: true,
+        showGroupTickets: false,
         idleTimeoutSeconds: 75,
       },
       publicJoin: {
@@ -577,7 +581,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'bank',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/displays', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/displays', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'branch_comparison', 'vip_priority', 'customer_history', 'display_board'],
     onboardingCopy: {
       headline: 'Stand up a banking flow',
@@ -631,6 +635,7 @@ export const industryTemplates: IndustryTemplate[] = [
         mode: 'normal',
         showPriorities: true,
         showEstimatedTime: true,
+        showGroupTickets: false,
         idleTimeoutSeconds: 75,
       },
       publicJoin: {
@@ -776,7 +781,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'clinic',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments', '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'intake_forms', 'display_board', 'priority_categories'],
     onboardingCopy: {
       headline: 'Launch a clinic flow',
@@ -830,6 +835,7 @@ export const industryTemplates: IndustryTemplate[] = [
         mode: 'normal',
         showPriorities: true,
         showEstimatedTime: false,
+        showGroupTickets: false,
         idleTimeoutSeconds: 90,
       },
       publicJoin: {
@@ -983,7 +989,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'light_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/bookings', '/admin/analytics', '/admin/customers', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/desks', '/admin/staff', '/admin/bookings', '/admin/analytics', '/admin/customers', '/admin/settings', '/desk'],
     enabledModules: ['appointments', 'virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
     onboardingCopy: {
       headline: 'Set up a host stand and waitlist',
@@ -1037,6 +1043,7 @@ export const industryTemplates: IndustryTemplate[] = [
         mode: 'normal',
         showPriorities: false,
         showEstimatedTime: true,
+        showGroupTickets: false,
         idleTimeoutSeconds: 60,
       },
       publicJoin: {
@@ -1169,7 +1176,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     dashboardMode: 'light_service',
-    defaultNavigation: ['/admin/onboarding', '/admin/offices', '/admin/services', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/settings', '/desk'],
+    defaultNavigation: ['/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services', '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/bookings', '/admin/settings', '/desk'],
     enabledModules: ['virtual_join', 'customer_history', 'feedback', 'staff_assignment'],
     onboardingCopy: {
       headline: 'Launch a client-first waitlist',
@@ -1220,6 +1227,7 @@ export const industryTemplates: IndustryTemplate[] = [
         mode: 'normal',
         showPriorities: false,
         showEstimatedTime: true,
+        showGroupTickets: false,
         idleTimeoutSeconds: 45,
       },
       publicJoin: {

@@ -8,6 +8,42 @@ import { useI18n } from '@/components/providers/locale-provider';
 
 type Office = Database['public']['Tables']['offices']['Row'];
 
+const TIMEZONE_OPTIONS = [
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'America/Phoenix',
+  'America/Toronto',
+  'America/Mexico_City',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Amsterdam',
+  'Europe/Brussels',
+  'Europe/Zurich',
+  'Europe/Algiers',
+  'Africa/Casablanca',
+  'Africa/Tunis',
+  'Africa/Cairo',
+  'Asia/Dubai',
+  'Asia/Riyadh',
+  'Asia/Qatar',
+  'Asia/Kuwait',
+] as const;
+
+const WEEK_DAYS = [
+  { key: 'monday', label: 'Monday' },
+  { key: 'tuesday', label: 'Tuesday' },
+  { key: 'wednesday', label: 'Wednesday' },
+  { key: 'thursday', label: 'Thursday' },
+  { key: 'friday', label: 'Friday' },
+  { key: 'saturday', label: 'Saturday' },
+  { key: 'sunday', label: 'Sunday' },
+] as const;
+
 function formatBranchTypeLabel(value: string | undefined, t: (key: string) => string) {
   switch (value) {
     case 'service_center':
@@ -31,6 +67,10 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
   const [editing, setEditing] = useState<Office | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const editingHours = ((editing?.operating_hours as Record<string, { open: string; close: string }> | null) ?? {}) as Record<
+    string,
+    { open: string; close: string }
+  >;
 
   function openCreate() {
     setEditing(null);
@@ -205,12 +245,17 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                 <label className="mb-1 block text-sm font-medium text-foreground">
                   {t('Timezone')}
                 </label>
-                <input
+                <select
                   name="timezone"
-                  defaultValue={editing?.timezone ?? ''}
-                  placeholder={t('e.g. America/New_York')}
+                  defaultValue={editing?.timezone ?? 'America/Los_Angeles'}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                />
+                >
+                  {TIMEZONE_OPTIONS.map((timezone) => (
+                    <option key={timezone} value={timezone}>
+                      {timezone}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
@@ -266,6 +311,50 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                   className="h-4 w-4 rounded border-input"
                 />
                 <label className="text-sm font-medium text-foreground">{t('Active')}</label>
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                <div className="mb-3">
+                  <p className="text-sm font-medium text-foreground">{t('Work Schedule')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('Set the opening hours for this location. These hours are used for bookings and customer-facing availability.')}
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {WEEK_DAYS.map((day) => {
+                    const hours = editingHours[day.key] ?? { open: '08:00', close: '17:00' };
+                    const isClosed = hours.open === '00:00' && hours.close === '00:00';
+                    return (
+                      <div key={day.key} className="grid grid-cols-[110px_1fr_auto] items-center gap-3">
+                        <label className="text-sm font-medium text-foreground">{t(day.label)}</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="time"
+                            name={`${day.key}_open`}
+                            defaultValue={isClosed ? '08:00' : hours.open}
+                            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                          />
+                          <input
+                            type="time"
+                            name={`${day.key}_close`}
+                            defaultValue={isClosed ? '17:00' : hours.close}
+                            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            name={`${day.key}_closed`}
+                            value="true"
+                            defaultChecked={isClosed}
+                            className="h-4 w-4 rounded border-input"
+                          />
+                          {t('Closed')}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">

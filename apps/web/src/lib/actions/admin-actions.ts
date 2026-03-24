@@ -108,6 +108,20 @@ function getOfficeSettingsFromForm(formData: FormData, currentSettings: AnyRecor
   };
 }
 
+function getOperatingHoursFromForm(formData: FormData) {
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
+  const operatingHours: Record<string, { open: string; close: string }> = {};
+
+  days.forEach((day) => {
+    const closed = formData.get(`${day}_closed`) === 'true';
+    const open = (formData.get(`${day}_open`) as string) || '08:00';
+    const close = (formData.get(`${day}_close`) as string) || '17:00';
+    operatingHours[day] = closed ? { open: '00:00', close: '00:00' } : { open, close };
+  });
+
+  return operatingHours;
+}
+
 // ─── Offices ────────────────────────────────────────────────────────────────
 
 export async function createOffice(formData: FormData) {
@@ -122,6 +136,7 @@ export async function createOffice(formData: FormData) {
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
       timezone: (formData.get('timezone') as string) || null,
+      operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       organization_id: context.staff.organization_id,
       settings,
@@ -156,6 +171,7 @@ export async function updateOffice(id: string, formData: FormData) {
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
       timezone: (formData.get('timezone') as string) || null,
+      operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       settings,
     })
