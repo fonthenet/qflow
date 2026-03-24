@@ -65,15 +65,15 @@ function buildApplicationMenu() {
   }));
 
   const menu = Menu.buildFromTemplate([
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
+    { role: 'fileMenu', label: translate(currentLocale, 'File') },
+    { role: 'editMenu', label: translate(currentLocale, 'Edit') },
+    { role: 'viewMenu', label: translate(currentLocale, 'View') },
+    { role: 'windowMenu', label: translate(currentLocale, 'Window') },
     {
       label: translate(currentLocale, 'Language'),
       submenu: languageSubmenu,
     },
-    { role: 'help' },
+    { role: 'help', label: translate(currentLocale, 'Help') },
   ]);
 
   Menu.setApplicationMenu(menu);

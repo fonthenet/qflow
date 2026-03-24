@@ -638,7 +638,7 @@
         '<button class="btn-back" onclick="' + backHandler + '">&larr; ' + tr('Back') + '</button>' +
         '<div class="form-card scale-in">' +
         '<div style="text-align:center;margin-bottom:20px">' +
-        '<div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">' + esc(S.selectedDept.name) + (S.selectedService ? ' &mdash; ' + esc(S.selectedService.name) : '') + '</div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">' + esc(tr(S.selectedDept.name)) + (S.selectedService ? ' &mdash; ' + esc(tr(S.selectedService.name)) : '') + '</div>' +
         '<div style="font-size:20px;font-weight:800">' + tr('Your Details') + '</div>' +
         '<div style="font-size:13px;color:var(--text3);margin-top:4px">' + waitMsg + '</div>' +
         '</div>' +
