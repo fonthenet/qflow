@@ -22,78 +22,58 @@ interface UseRealtimeQueueOptions {
   initialQueue?: QueueData;
 }
 
-const EMPTY_QUEUE: QueueData = {
-  waiting: [],
-  called: [],
-  serving: [],
-  recentlyServed: [],
-  cancelled: [],
-};
-
 export function useRealtimeQueue({
   officeId,
   departmentId,
   disabled = false,
   initialQueue,
 }: UseRealtimeQueueOptions) {
-  const [queue, setQueue] = useState<QueueData>(initialQueue ?? EMPTY_QUEUE);
+  const emptyQueue: QueueData = {
+    waiting: [],
+    called: [],
+    serving: [],
+    recentlyServed: [],
+    cancelled: [],
+  };
+  const [queue, setQueue] = useState<QueueData>(initialQueue ?? emptyQueue);
   const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const hasLoadedRef = useRef(false);
-  // Use a ref so initialQueue changes don't recreate fetchQueue
-  const initialQueueRef = useRef(initialQueue);
-  initialQueueRef.current = initialQueue;
 
   const fetchQueue = useCallback(async () => {
     if (disabled) {
-      setQueue(initialQueueRef.current ?? EMPTY_QUEUE);
+      setQueue(initialQueue ?? emptyQueue);
       setIsLoading(false);
       return;
     }
     const supabase = createClient();
 
-    // Fetch active tickets — no date cutoff for waiting/called/serving so
-    // tickets from previous days still appear.  Only limit served/cancelled
-    // to the last 24 h so the list stays manageable.
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // Fetch today's active tickets
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString();
 
-    // 1) All currently-active tickets (no date filter)
-    let activeQuery = supabase
+    let query = supabase
       .from('tickets')
       .select('*')
       .eq('office_id', officeId)
-      .in('status', ['waiting', 'called', 'serving'])
+      .gte('created_at', todayIso)
+      .in('status', ['waiting', 'called', 'serving', 'served', 'cancelled'])
       .order('priority', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: true });
 
-    // 2) Recently-completed tickets (last 24 h only)
-    let completedQuery = supabase
-      .from('tickets')
-      .select('*')
-      .eq('office_id', officeId)
-      .in('status', ['served', 'cancelled'])
-      .gte('completed_at', yesterday)
-      .order('completed_at', { ascending: false })
-      .limit(20);
-
     if (departmentId) {
-      activeQuery = activeQuery.eq('department_id', departmentId);
-      completedQuery = completedQuery.eq('department_id', departmentId);
+      query = query.eq('department_id', departmentId);
     }
 
-    const [activeResult, completedResult] = await Promise.all([activeQuery, completedQuery]);
+    const { data, error: fetchError } = await query;
 
-    if (activeResult.error) {
-      setError(activeResult.error.message);
-      return;
-    }
-    if (completedResult.error) {
-      setError(completedResult.error.message);
+    if (fetchError) {
+      setError(fetchError.message);
       return;
     }
 
-    const tickets = [...(activeResult.data ?? []), ...(completedResult.data ?? [])];
+    const tickets = data ?? [];
 
     setQueue({
       waiting: tickets.filter((t) => t.status === 'waiting'),
@@ -117,25 +97,20 @@ export function useRealtimeQueue({
         .slice(0, 5),
     });
     setError(null);
-  }, [departmentId, disabled, officeId]);
+  }, [departmentId, disabled, emptyQueue, initialQueue, officeId]);
 
   useEffect(() => {
     if (disabled) {
-      setQueue(initialQueueRef.current ?? EMPTY_QUEUE);
+      setQueue(initialQueue ?? emptyQueue);
       setIsLoading(false);
       return;
     }
     const supabase = createClient();
     let realtimeConnected = false;
 
-    // Only show loading spinner on the very first fetch, not on re-subscriptions
-    if (!hasLoadedRef.current) {
-      setIsLoading(true);
-    }
-    fetchQueue().finally(() => {
-      setIsLoading(false);
-      hasLoadedRef.current = true;
-    });
+    // Initial fetch
+    setIsLoading(true);
+    fetchQueue().finally(() => setIsLoading(false));
 
     // Subscribe to realtime changes
     // Note: postgres_changes only supports filtering on ONE column.
@@ -181,7 +156,7 @@ export function useRealtimeQueue({
         channelRef.current = null;
       }
     };
-  }, [departmentId, disabled, fetchQueue, officeId]);
+  }, [departmentId, disabled, emptyQueue, fetchQueue, initialQueue, officeId]);
 
   return {
     queue,

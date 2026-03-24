@@ -1,4 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Qflo</string>
+    <string name="app_name">QueueFlow</string>
+    <string name="queue_live_updates_channel_name">Queue Live Updates</string>
+    <string name="queue_live_updates_channel_desc">Live queue progress and ticket status</string>
+    <string name="queue_alerts_channel_name">Queue Alerts</string>
+    <string name="queue_alerts_channel_desc">Urgent queue calls, recalls, and buzzes</string>
+    <string name="open">Open</string>
+    <string name="current_visit">Current visit</string>
+    <string name="ticket_label">Ticket %1$s</string>
+    <string name="your_desk">your desk</string>
+    <string name="with_staff_now">With staff now</string>
+    <string name="go_to_desk">Go to %1$s</string>
+    <string name="return_to_desk">Return to %1$s</string>
+    <string name="show_screen_on_arrival">Ticket %1$s • Show this screen when you arrive.</string>
+    <string name="proceed_now">Proceed now. Countdown is active.</string>
+    <string name="return_to_desk_now">Ticket %1$s • Please return to the desk now.</string>
+    <string name="staff_waiting_now">Staff is waiting for you right now.</string>
+    <string name="at_desk">At %1$s</string>
+    <string name="staff_helping">A staff member is helping you.</string>
+    <string name="line_position">#%1$d in line</string>
+    <string name="approx_wait">~%1$d min</string>
+    <string name="now_serving">Now %1$s</string>
+    <string name="waiting_for_turn">Waiting for your turn</string>
+    <string name="buzz_alert">Buzz alert</string>
+    <string name="reminder_your_turn">Reminder: your turn</string>
+    <string name="its_your_turn">It\'s your turn</string>
+    <string name="please_go_to_desk_now">Ticket %1$s • Please go to %2$s now</string>
+    <string name="return_to_desk_immediately">Ticket %1$s • Return to %2$s immediately</string>
+    <string name="visit_status_updated">Visit status updated</string>
+    <string name="visit_complete">Visit complete</string>
+    <string name="ticket_marked_missed">This ticket was marked as missed.</string>
+    <string name="thanks_for_visiting_feedback">Thanks for visiting. Tap to leave feedback.</string>
+    <string name="now_short">NOW</string>
+    <string name="desk_short">DESK</string>
 </resources>

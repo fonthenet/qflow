@@ -93,20 +93,20 @@ object QueueLiveUpdateNotifier {
 
         val liveChannel = NotificationChannel(
             LIVE_CHANNEL_ID,
-            "Queue Live Updates",
+            context.getString(R.string.queue_live_updates_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Live queue progress and ticket status"
+            description = context.getString(R.string.queue_live_updates_channel_desc)
             setShowBadge(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
 
         val alertChannel = NotificationChannel(
             ALERT_CHANNEL_ID,
-            "Queue Alerts",
+            context.getString(R.string.queue_alerts_channel_name),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Urgent queue calls, recalls, and buzzes"
+            description = context.getString(R.string.queue_alerts_channel_desc)
             enableLights(true)
             lightColor = Color.RED
             enableVibration(true)
@@ -157,13 +157,16 @@ object QueueLiveUpdateNotifier {
 
         val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(alertTitle(payload))
-            .setContentText(alertBody(payload))
+            .setContentTitle(alertTitle(context, payload))
+            .setContentText(alertBody(context, payload))
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText(alertBody(payload))
-                    .setBigContentTitle(alertTitle(payload))
-                    .setSummaryText(payload.ticketNumber?.let { "Ticket $it" } ?: (payload.serviceName ?: payload.officeName ?: "Current visit"))
+                    .bigText(alertBody(context, payload))
+                    .setBigContentTitle(alertTitle(context, payload))
+                    .setSummaryText(
+                        payload.ticketNumber?.let { context.getString(R.string.ticket_label, it) }
+                            ?: (payload.serviceName ?: payload.officeName ?: context.getString(R.string.current_visit))
+                    )
             )
             .setContentIntent(buildOpenIntent(context, payload))
             .setCategory(if (payload.type == "buzz") NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_CALL)
@@ -176,7 +179,7 @@ object QueueLiveUpdateNotifier {
             .setColorized(true)
             .addAction(
                 R.drawable.ic_notification,
-                "Open",
+                context.getString(R.string.open),
                 buildOpenIntent(context, payload)
             )
 
@@ -187,12 +190,12 @@ object QueueLiveUpdateNotifier {
     private fun postCompletionNotification(context: Context, payload: QueueLiveUpdatePayload) {
         val builder = NotificationCompat.Builder(context, LIVE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(completionTitle(payload))
-            .setContentText(completionBody(payload))
+            .setContentTitle(completionTitle(context, payload))
+            .setContentText(completionBody(context, payload))
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText(completionBody(payload))
-                    .setBigContentTitle(completionTitle(payload))
+                    .bigText(completionBody(context, payload))
+                    .setBigContentTitle(completionTitle(context, payload))
             )
             .setContentIntent(buildOpenIntent(context, payload))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -241,9 +244,9 @@ object QueueLiveUpdateNotifier {
     ): Notification {
         val builder = NotificationCompat.Builder(context, LIVE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(liveTitle(payload))
-            .setContentText(liveBody(payload))
-            .setSubText(liveSubtext(payload))
+            .setContentTitle(liveTitle(context, payload))
+            .setContentText(liveBody(context, payload))
+            .setSubText(liveSubtext(context, payload))
             .setContentIntent(buildOpenIntent(context, payload))
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -261,7 +264,7 @@ object QueueLiveUpdateNotifier {
             )
             .addAction(
                 R.drawable.ic_notification,
-                "Open",
+                context.getString(R.string.open),
                 buildOpenIntent(context, payload)
             )
 
@@ -281,83 +284,90 @@ object QueueLiveUpdateNotifier {
             }
         }
 
-        shortCriticalText(payload)?.let { builder.setShortCriticalText(it) }
+        shortCriticalText(context, payload)?.let { builder.setShortCriticalText(it) }
         return builder.build()
     }
 
-    private fun liveTitle(payload: QueueLiveUpdatePayload): String {
+    private fun liveTitle(context: Context, payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "called" -> "Go to ${payload.deskName ?: "your desk"}"
-            "recall" -> "Return to ${payload.deskName ?: "your desk"}"
-            "serving" -> payload.serviceName ?: "With staff now"
-            else -> payload.serviceName ?: payload.departmentName ?: payload.officeName ?: payload.ticketNumber?.let { "Ticket $it" } ?: "Current visit"
+            "called" -> context.getString(R.string.go_to_desk, payload.deskName ?: context.getString(R.string.your_desk))
+            "recall" -> context.getString(R.string.return_to_desk, payload.deskName ?: context.getString(R.string.your_desk))
+            "serving" -> payload.serviceName ?: context.getString(R.string.with_staff_now)
+            else ->
+                payload.serviceName
+                    ?: payload.departmentName
+                    ?: payload.officeName
+                    ?: payload.ticketNumber?.let { context.getString(R.string.ticket_label, it) }
+                    ?: context.getString(R.string.current_visit)
         }
     }
 
-    private fun liveBody(payload: QueueLiveUpdatePayload): String {
+    private fun liveBody(context: Context, payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "called" -> payload.ticketNumber?.let { "Ticket $it • Show this screen when you arrive." }
-                ?: "Proceed now. Countdown is active."
-            "recall" -> payload.ticketNumber?.let { "Ticket $it • Please return to the desk now." }
-                ?: "Staff is waiting for you right now."
-            "serving" -> payload.deskName?.let { "At $it" } ?: "A staff member is helping you."
+            "called" -> payload.ticketNumber?.let { context.getString(R.string.show_screen_on_arrival, it) }
+                ?: context.getString(R.string.proceed_now)
+            "recall" -> payload.ticketNumber?.let { context.getString(R.string.return_to_desk_now, it) }
+                ?: context.getString(R.string.staff_waiting_now)
+            "serving" -> payload.deskName?.let { context.getString(R.string.at_desk, it) }
+                ?: context.getString(R.string.staff_helping)
             else -> buildString {
                 payload.officeName?.let { append(it) }
                 if (payload.position != null) {
                     if (isNotEmpty()) append(" • ")
-                    append("#${payload.position} in line")
+                    append(context.getString(R.string.line_position, payload.position))
                 }
                 if (payload.estimatedWait != null) {
                     if (isNotEmpty()) append(" • ")
-                    append("~${payload.estimatedWait} min")
+                    append(context.getString(R.string.approx_wait, payload.estimatedWait))
                 }
                 if (!payload.nowServing.isNullOrBlank()) {
                     if (isNotEmpty()) append(" • ")
-                    append("Now ${payload.nowServing}")
+                    append(context.getString(R.string.now_serving, payload.nowServing))
                 }
-                if (isEmpty()) append("Waiting for your turn")
+                if (isEmpty()) append(context.getString(R.string.waiting_for_turn))
             }
         }
     }
 
-    private fun liveSubtext(payload: QueueLiveUpdatePayload): String? {
+    private fun liveSubtext(context: Context, payload: QueueLiveUpdatePayload): String? {
         return when (payload.type) {
-            "called", "recall" -> payload.ticketNumber?.let { "Ticket $it" }
-            "serving" -> listOf(payload.officeName, payload.ticketNumber?.let { "Ticket $it" }).filterNotNull().joinToString(" • ").ifBlank { null }
+            "called", "recall" -> payload.ticketNumber?.let { context.getString(R.string.ticket_label, it) }
+            "serving" -> listOf(payload.officeName, payload.ticketNumber?.let { context.getString(R.string.ticket_label, it) }).filterNotNull().joinToString(" • ").ifBlank { null }
             else -> payload.departmentName ?: payload.status?.replaceFirstChar { it.uppercase() }
         }
     }
 
-    private fun alertTitle(payload: QueueLiveUpdatePayload): String {
+    private fun alertTitle(context: Context, payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "buzz" -> "Buzz alert"
-            "recall" -> "Reminder: your turn"
-            else -> "It's your turn"
+            "buzz" -> context.getString(R.string.buzz_alert)
+            "recall" -> context.getString(R.string.reminder_your_turn)
+            else -> context.getString(R.string.its_your_turn)
         }
     }
 
-    private fun alertBody(payload: QueueLiveUpdatePayload): String {
-        val desk = payload.deskName ?: "your desk"
+    private fun alertBody(context: Context, payload: QueueLiveUpdatePayload): String {
+        val desk = payload.deskName ?: context.getString(R.string.your_desk)
+        val ticketNumber = payload.ticketNumber.orEmpty()
         return when (payload.type) {
             "buzz" -> payload.body.ifBlank {
-                "Ticket ${payload.ticketNumber ?: ""} • Please go to $desk now"
+                context.getString(R.string.please_go_to_desk_now, ticketNumber, desk)
             }
-            "recall" -> "Ticket ${payload.ticketNumber ?: ""} • Return to $desk immediately"
-            else -> "Ticket ${payload.ticketNumber ?: ""} • Go to $desk now"
+            "recall" -> context.getString(R.string.return_to_desk_immediately, ticketNumber, desk)
+            else -> context.getString(R.string.please_go_to_desk_now, ticketNumber, desk)
         }
     }
 
-    private fun completionTitle(payload: QueueLiveUpdatePayload): String {
+    private fun completionTitle(context: Context, payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "no_show" -> "Visit status updated"
-            else -> "Visit complete"
+            "no_show" -> context.getString(R.string.visit_status_updated)
+            else -> context.getString(R.string.visit_complete)
         }
     }
 
-    private fun completionBody(payload: QueueLiveUpdatePayload): String {
+    private fun completionBody(context: Context, payload: QueueLiveUpdatePayload): String {
         return when (payload.type) {
-            "no_show" -> "This ticket was marked as missed."
-            else -> "Thanks for visiting. Tap to leave feedback."
+            "no_show" -> context.getString(R.string.ticket_marked_missed)
+            else -> context.getString(R.string.thanks_for_visiting_feedback)
         }
     }
 
@@ -383,11 +393,11 @@ object QueueLiveUpdateNotifier {
         }
     }
 
-    private fun shortCriticalText(payload: QueueLiveUpdatePayload): String? {
+    private fun shortCriticalText(context: Context, payload: QueueLiveUpdatePayload): String? {
         return when (payload.type) {
             "position_update" -> payload.position?.let { "#$it" }
-            "called", "recall", "buzz" -> "NOW"
-            "serving" -> payload.deskName ?: "DESK"
+            "called", "recall", "buzz" -> context.getString(R.string.now_short)
+            "serving" -> payload.deskName ?: context.getString(R.string.desk_short)
             else -> null
         }
     }

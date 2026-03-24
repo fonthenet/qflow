@@ -3,8 +3,8 @@ import { buildStarterDeskRecords, buildStarterDisplayRecords, buildStarterOffice
 import { getIndustryTemplateById } from './templates';
 
 describe('starter office seed data', () => {
-  it('builds a comprehensive standard starter office record', () => {
-    const template = getIndustryTemplateById('standard');
+  it('builds a comprehensive public-service starter office record', () => {
+    const template = getIndustryTemplateById('public-service');
     const starterOffice = template.starterOffices[0]!;
 
     const record = buildStarterOfficeRecord({
@@ -16,7 +16,7 @@ describe('starter office seed data', () => {
     });
 
     expect(record.operatingHours?.monday?.open).toBe('08:00');
-    expect(record.settings.platform_template_id).toBe('standard');
+    expect(record.settings.platform_template_id).toBe('public-service');
     expect(Array.isArray(record.settings.platform_service_areas)).toBe(true);
     expect((record.settings.platform_counter_map as unknown[]).length).toBeGreaterThanOrEqual(4);
   });
@@ -77,7 +77,7 @@ describe('starter office seed data', () => {
   });
 
   it('prefers explicit display presets when a template ships multiple screens', () => {
-    const template = getIndustryTemplateById('standard');
+    const template = getIndustryTemplateById('public-service');
     const starterOffice = template.starterOffices[0]!;
 
     const displays = buildStarterDisplayRecords({
@@ -90,10 +90,10 @@ describe('starter office seed data', () => {
     });
 
     expect(displays).toHaveLength(2);
-    expect(displays[0]?.name).toBe('Main Display');
+    expect(displays[0]?.name).toBe('Main Hall Screen');
     expect(displays[1]?.settings).toEqual(
       expect.objectContaining({
-        zone: 'service_area',
+        zone: 'parcel_wall',
       })
     );
   });

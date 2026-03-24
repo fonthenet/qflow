@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { LocaleProvider } from '@/components/providers/locale-provider';
+import { TranslationRuntime } from '@/components/providers/translation-runtime';
+import { getServerI18n } from '@/lib/i18n';
 
 export const viewport: Viewport = {
   themeColor: '#2563eb',
@@ -30,14 +33,21 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { locale, countryCode, dir } = await getServerI18n();
+
   return (
-    <html lang="en">
-      <body className="min-h-screen font-sans antialiased">{children}</body>
+    <html lang={locale} dir={dir}>
+      <body className="min-h-screen font-sans antialiased">
+        <LocaleProvider locale={locale} countryCode={countryCode}>
+          <TranslationRuntime />
+          {children}
+        </LocaleProvider>
+      </body>
     </html>
   );
 }

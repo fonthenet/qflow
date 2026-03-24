@@ -1,4 +1,4 @@
-# Qflo CI and Staging Validation
+# QueueFlow CI and Staging Validation
 
 ## Workflows
 
@@ -37,7 +37,7 @@ Recommended:
 The workflows seed a reusable tenant with:
 
 ```env
-QUEUEFLOW_E2E_ORG_NAME=Qflo E2E
+QUEUEFLOW_E2E_ORG_NAME=QueueFlow E2E
 QUEUEFLOW_E2E_ORG_SLUG=queueflow-e2e
 QUEUEFLOW_E2E_OFFICE_NAME=E2E Main Branch
 QUEUEFLOW_E2E_BRANCH_TYPE=branch_office

@@ -59,61 +59,6 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
   }
 
-  // ── Double-booking prevention ──────────────────────────────────
-  // Check slot availability before inserting
-  const scheduledDate = data.scheduledAt.split('T')[0];
-  const scheduledTime = data.scheduledAt.split('T')[1]?.slice(0, 5); // HH:MM
-
-  // Get org slot settings
-  const orgSettings =
-    ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
-      | Record<string, any>
-      | undefined) ?? {};
-  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
-  const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
-
-  // Count existing non-cancelled appointments in the same slot window
-  const slotStart = data.scheduledAt;
-  const slotEndDate = new Date(data.scheduledAt);
-  slotEndDate.setMinutes(slotEndDate.getMinutes() + slotDurationMinutes);
-  const slotEnd = slotEndDate.toISOString();
-
-  const { count: existingCount, error: countError } = await supabase
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('office_id', data.officeId)
-    .eq('service_id', data.serviceId)
-    .neq('status', 'cancelled')
-    .gte('scheduled_at', `${scheduledDate}T${scheduledTime}:00`)
-    .lt('scheduled_at', slotEnd);
-
-  if (countError) {
-    return { error: countError.message };
-  }
-
-  if ((existingCount ?? 0) >= slotsPerInterval) {
-    return { error: 'This time slot is fully booked. Please choose a different time.' };
-  }
-
-  // Check for blocked slots
-  try {
-    const { data: blockedSlots } = await (supabase as any)
-      .from('blocked_slots')
-      .select('id')
-      .eq('office_id', data.officeId)
-      .eq('blocked_date', scheduledDate)
-      .lte('start_time', scheduledTime)
-      .gt('end_time', scheduledTime)
-      .limit(1);
-
-    if (blockedSlots && blockedSlots.length > 0) {
-      return { error: 'This time slot has been blocked by the office. Please choose a different time.' };
-    }
-  } catch {
-    // blocked_slots table may not exist yet — allow booking
-  }
-
-  // ── Insert appointment ──────────────────────────────────────────
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
@@ -261,7 +206,6 @@ export async function checkInAppointment(appointmentId: string) {
         name: appointment.customer_name,
         phone: appointment.customer_phone,
         email: appointment.customer_email,
-        notes: appointment.notes || null,
       },
       estimated_wait_minutes: waitMinutes ?? null,
     })
@@ -345,10 +289,10 @@ export async function getAvailableSlots(
 ) {
   const supabase = createAdminClient();
 
-  // Fetch office operating hours + org settings
+  // Fetch office operating hours
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('operating_hours, organization:organizations(settings)')
+    .select('operating_hours')
     .eq('id', officeId)
     .single();
 
@@ -356,35 +300,23 @@ export async function getAvailableSlots(
     return { error: officeError?.message ?? 'Office not found' };
   }
 
-  const orgSettings =
-    ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
-      | Record<string, any>
-      | undefined) ?? {};
-
-  const bookingMode = orgSettings.booking_mode ?? 'simple';
-  if (bookingMode === 'disabled') return { data: [] };
-
-  const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
-  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
-  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
-
-  // Validate date within horizon (compare date strings to avoid timezone issues)
-  const todayStr = new Date().toISOString().split('T')[0];
-  const maxD = new Date(todayStr + 'T12:00:00');
-  maxD.setDate(maxD.getDate() + bookingHorizonDays);
-  const maxDateStr = maxD.toISOString().split('T')[0];
-  if (date < todayStr || date > maxDateStr) return { data: [] };
-
+  // Parse operating hours - expected format: { "monday": { "open": "08:00", "close": "17:00" }, ... }
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }>) ?? {};
   const dayOfWeek = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  const dayHours = operatingHours[dayOfWeek] ?? { open: '08:00', close: '17:00' };
-  const allSlots = generateSlots(dayHours.open, dayHours.close, slotDurationMinutes);
+  const dayHours = operatingHours[dayOfWeek];
 
-  // Fetch existing appointments
+  if (!dayHours) {
+    // Fallback: default hours 08:00-17:00
+    return { data: generateSlots('08:00', '17:00', date) };
+  }
+
+  const allSlots = generateSlots(dayHours.open, dayHours.close, date);
+
+  // Fetch existing appointments for that date to exclude booked slots
   const startOfDay = `${date}T00:00:00`;
   const endOfDay = `${date}T23:59:59`;
 
-  const appointmentsResult = await supabase
+  const { data: existingAppointments } = await supabase
     .from('appointments')
     .select('scheduled_at')
     .eq('office_id', officeId)
@@ -393,35 +325,23 @@ export async function getAvailableSlots(
     .gte('scheduled_at', startOfDay)
     .lte('scheduled_at', endOfDay);
 
-  // Fetch blocked slots (graceful — table may not exist yet)
-  let blockedData: { start_time: string; end_time: string }[] = [];
-  try {
-    const blockedResult = await (supabase as any)
-      .from('blocked_slots')
-      .select('start_time, end_time')
-      .eq('office_id', officeId)
-      .eq('blocked_date', date);
-    blockedData = (blockedResult.data ?? []) as { start_time: string; end_time: string }[];
-  } catch {
-    // Table may not exist yet
-  }
+  const bookedTimes = new Set(
+    (existingAppointments ?? []).map((a) => {
+      const d = new Date(a.scheduled_at);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    })
+  );
 
-  // Count bookings per slot time
-  const slotBookingCounts = new Map<string, number>();
-  for (const a of appointmentsResult.data ?? []) {
-    const d = new Date(a.scheduled_at);
-    const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
-  }
-
+  // Filter out slots that are in the past (if date is today)
   const now = new Date();
-  const isToday = date === todayStr;
+  const isToday = date === now.toISOString().split('T')[0];
 
   const availableSlots = allSlots.filter((slot) => {
-    if ((slotBookingCounts.get(slot) ?? 0) >= slotsPerInterval) return false;
-    if (blockedData.some((b) => slot >= b.start_time && slot < b.end_time)) return false;
+    if (bookedTimes.has(slot)) return false;
     if (isToday) {
-      const slotTime = new Date(`${date}T${slot}:00`);
+      const [h, m] = slot.split(':').map(Number);
+      const slotTime = new Date(date + 'T12:00:00');
+      slotTime.setHours(h, m, 0, 0);
       if (slotTime <= now) return false;
     }
     return true;
@@ -430,7 +350,7 @@ export async function getAvailableSlots(
   return { data: availableSlots };
 }
 
-function generateSlots(openTime: string, closeTime: string, durationMinutes: number): string[] {
+function generateSlots(openTime: string, closeTime: string, date: string): string[] {
   const slots: string[] = [];
   const [openH, openM] = openTime.split(':').map(Number);
   const [closeH, closeM] = closeTime.split(':').map(Number);
@@ -442,10 +362,10 @@ function generateSlots(openTime: string, closeTime: string, durationMinutes: num
     slots.push(
       `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`
     );
-    currentM += durationMinutes;
+    currentM += 30;
     if (currentM >= 60) {
-      currentH += Math.floor(currentM / 60);
-      currentM = currentM % 60;
+      currentM -= 60;
+      currentH += 1;
     }
   }
 

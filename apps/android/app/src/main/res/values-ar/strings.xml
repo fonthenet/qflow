@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">QueueFlow</string>
+    <string name="queue_live_updates_channel_name">تحديثات الطابور المباشرة</string>
+    <string name="queue_live_updates_channel_desc">تقدم الطابور المباشر وحالة التذكرة</string>
+    <string name="queue_alerts_channel_name">تنبيهات الطابور</string>
+    <string name="queue_alerts_channel_desc">نداءات الطابور العاجلة وإعادات النداء والتنبيهات</string>
+    <string name="open">فتح</string>
+    <string name="current_visit">الزيارة الحالية</string>
+    <string name="ticket_label">التذكرة %1$s</string>
+    <string name="your_desk">منضدتك</string>
+    <string name="with_staff_now">مع الموظف الآن</string>
+    <string name="go_to_desk">اذهب إلى %1$s</string>
+    <string name="return_to_desk">عد إلى %1$s</string>
+    <string name="show_screen_on_arrival">التذكرة %1$s • أظهر هذه الشاشة عند وصولك.</string>
+    <string name="proceed_now">تقدّم الآن. العد التنازلي نشط.</string>
+    <string name="return_to_desk_now">التذكرة %1$s • يرجى العودة إلى المنضدة الآن.</string>
+    <string name="staff_waiting_now">الموظفون بانتظارك الآن.</string>
+    <string name="at_desk">عند %1$s</string>
+    <string name="staff_helping">أحد الموظفين يساعدك الآن.</string>
+    <string name="line_position">#%1$d في الطابور</string>
+    <string name="approx_wait">~%1$d دقيقة</string>
+    <string name="now_serving">الآن %1$s</string>
+    <string name="waiting_for_turn">بانتظار دورك</string>
+    <string name="buzz_alert">تنبيه عاجل</string>
+    <string name="reminder_your_turn">تذكير: هذا دورك</string>
+    <string name="its_your_turn">حان دورك</string>
+    <string name="please_go_to_desk_now">التذكرة %1$s • يرجى التوجّه إلى %2$s الآن</string>
+    <string name="return_to_desk_immediately">التذكرة %1$s • عد إلى %2$s فورًا</string>
+    <string name="visit_status_updated">تم تحديث حالة الزيارة</string>
+    <string name="visit_complete">اكتملت الزيارة</string>
+    <string name="ticket_marked_missed">تم وضع علامة غياب على هذه التذكرة.</string>
+    <string name="thanks_for_visiting_feedback">شكرًا لزيارتك. اضغط لترك تقييم.</string>
+    <string name="now_short">الآن</string>
+    <string name="desk_short">منضدة</string>
+</resources>

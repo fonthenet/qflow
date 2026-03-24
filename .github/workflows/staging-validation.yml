@@ -30,7 +30,7 @@ jobs:
       QUEUEFLOW_E2E_EMAIL: ${{ secrets.QUEUEFLOW_E2E_EMAIL }}
       QUEUEFLOW_E2E_PASSWORD: ${{ secrets.QUEUEFLOW_E2E_PASSWORD }}
       QUEUEFLOW_E2E_ALLOW_MUTATIONS: 'true'
-      QUEUEFLOW_E2E_ORG_NAME: Qflo E2E
+      QUEUEFLOW_E2E_ORG_NAME: QueueFlow E2E
       QUEUEFLOW_E2E_ORG_SLUG: queueflow-e2e
       QUEUEFLOW_E2E_TEMPLATE_ID: ${{ github.event.inputs.template_id }}
       QUEUEFLOW_E2E_OPERATING_MODEL: service_routing

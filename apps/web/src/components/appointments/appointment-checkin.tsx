@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/components/providers/locale-provider';
 import { findAppointment, checkInAppointment } from '@/lib/actions/appointment-actions';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 
@@ -11,6 +12,7 @@ interface AppointmentCheckInProps {
 }
 
 export function AppointmentCheckIn({ office, organization }: AppointmentCheckInProps) {
+  const { formatTime } = useI18n();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -63,12 +65,10 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
     }
   }
 
-  function formatTime(dateStr: string) {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('en-US', {
+  function formatAppointmentTime(dateStr: string) {
+    return formatTime(dateStr, {
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true,
     });
   }
 
@@ -198,7 +198,7 @@ export function AppointmentCheckIn({ office, organization }: AppointmentCheckInP
                               {apt.department?.name} - {apt.service?.name}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              Scheduled at {formatTime(apt.scheduled_at)}
+                              Scheduled at {formatAppointmentTime(apt.scheduled_at)}
                             </p>
                           </div>
                           <span

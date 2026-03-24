@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { BookingsHistory } from '@/components/admin/bookings-history';
-import { SlotManager } from '@/components/admin/slot-manager';
 
 export default async function AdminBookingsPage() {
   const supabase = await createClient();
@@ -19,18 +18,9 @@ export default async function AdminBookingsPage() {
 
   if (!staff) redirect('/login');
 
-  // Fetch org settings
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('settings')
-    .eq('id', staff.organization_id)
-    .single();
-
-  const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
-
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, is_active, settings, operating_hours')
+    .select('id, name, is_active, settings')
     .eq('organization_id', staff.organization_id)
     .order('name');
 
@@ -79,27 +69,10 @@ export default async function AdminBookingsPage() {
   }));
 
   return (
-    <div className="space-y-6">
-      <BookingsHistory
-        offices={offices ?? []}
-        departments={departments ?? []}
-        appointments={hydratedAppointments}
-      />
-      {orgSettings.booking_mode !== 'disabled' && (
-        <div className="px-6 pb-6">
-          <div className="rounded-2xl border border-border bg-card shadow-sm">
-            <div className="border-b border-border px-5 py-4">
-              <h2 className="text-lg font-semibold text-foreground">Manage Slots</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Block or unblock time slots for specific dates. Blocked slots won&apos;t be available for booking.
-              </p>
-            </div>
-            <div className="p-5">
-              <SlotManager offices={offices ?? []} orgSettings={orgSettings} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <BookingsHistory
+      offices={offices ?? []}
+      departments={departments ?? []}
+      appointments={hydratedAppointments}
+    />
   );
 }

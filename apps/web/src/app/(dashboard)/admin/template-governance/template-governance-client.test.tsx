@@ -167,7 +167,7 @@ describe('TemplateGovernanceClient', () => {
 
     render(
       <TemplateGovernanceClient
-        organization={{ id: 'org-1', name: 'Qflo Financial' }}
+        organization={{ id: 'org-1', name: 'QueueFlow Financial' }}
         templateSummary={{
           id: 'bank-branch',
           title: 'Bank Branch',
@@ -212,7 +212,7 @@ describe('TemplateGovernanceClient', () => {
 
     render(
       <TemplateGovernanceClient
-        organization={{ id: 'org-1', name: 'Qflo Financial' }}
+        organization={{ id: 'org-1', name: 'QueueFlow Financial' }}
         templateSummary={{
           id: 'bank-branch',
           title: 'Bank Branch',

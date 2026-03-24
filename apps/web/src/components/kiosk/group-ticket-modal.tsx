@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import QRCode from 'qrcode';
+import { useI18n } from '@/components/providers/locale-provider';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 
 interface PriorityCategory {
@@ -38,6 +39,7 @@ export function GroupTicketModal({
   onClose,
   onComplete,
 }: GroupTicketModalProps) {
+  const { t } = useI18n();
   const activeServices = (department.services ?? [])
     .filter((s: any) => s.is_active)
     .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -86,7 +88,7 @@ export function GroupTicketModal({
   async function handleSubmit() {
     if (members.length === 0) return;
     if (members.some((m) => !m.serviceId)) {
-      alert('Please select a service for each group member.');
+      alert(t('Please select a service for each group member.'));
       return;
     }
 
@@ -110,12 +112,8 @@ export function GroupTicketModal({
         priorityCategoryId: selectedPriority?.id ?? null,
       });
 
-      if ('stationOnline' in result && result.stationOnline && (result as any).stationUrl) {
-        window.location.href = (result as any).stationUrl;
-        return;
-      }
       if (result.error || !result.data) {
-        alert(result.error ?? `Error creating ticket for person ${i + 1}. Please try again.`);
+        alert(result.error ?? t('Error creating ticket for person {count}. Please try again.', { count: i + 1 }));
         setLoading(false);
         return;
       }
@@ -151,9 +149,9 @@ export function GroupTicketModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-foreground">Group Ticket</h2>
+            <h2 className="text-lg font-bold text-foreground">{t('Group Ticket')}</h2>
             <p className="text-sm text-muted-foreground">
-              {department.name} - Create tickets for multiple people
+              {t('{department} - Create tickets for multiple people', { department: department.name })}
             </p>
           </div>
           <button
@@ -170,7 +168,7 @@ export function GroupTicketModal({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-foreground">
-                Group Members ({members.length})
+                {t('Group Members ({count})', { count: members.length })}
               </label>
               <button
                 type="button"
@@ -178,7 +176,7 @@ export function GroupTicketModal({
                 className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add Person
+                {t('Add Person')}
               </button>
             </div>
 
@@ -189,7 +187,7 @@ export function GroupTicketModal({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted-foreground">
-                    Person {index + 1}
+                    {t('Person {count}', { count: index + 1 })}
                   </span>
                   {members.length > 1 && (
                     <button
@@ -205,7 +203,7 @@ export function GroupTicketModal({
                   type="text"
                   value={member.name}
                   onChange={(e) => updateMember(member.id, 'name', e.target.value)}
-                  placeholder="Name (optional)"
+                  placeholder={t('Name (optional)')}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
                 <select
@@ -227,7 +225,7 @@ export function GroupTicketModal({
           {priorityCategories.length > 0 && (
             <div>
               <label className="mb-2 block text-sm font-semibold text-foreground">
-                Priority (for all group members)
+                {t('Priority (for all group members)')}
               </label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -239,7 +237,7 @@ export function GroupTicketModal({
                       : 'border-border text-muted-foreground hover:bg-muted'
                   }`}
                 >
-                  Normal
+                  {t('Normal')}
                 </button>
                 {priorityCategories.map((cat) => (
                   <button
@@ -279,7 +277,7 @@ export function GroupTicketModal({
             onClick={onClose}
             className="flex-1 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
@@ -288,8 +286,11 @@ export function GroupTicketModal({
             className="flex-1 rounded-lg bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             {loading
-              ? 'Creating...'
-              : `Create ${members.length} Ticket${members.length > 1 ? 's' : ''}`}
+              ? t('Creating...')
+              : t('Create {count} Ticket{suffix}', {
+                  count: members.length,
+                  suffix: members.length > 1 ? 's' : '',
+                })}
           </button>
         </div>
       </div>

@@ -18,8 +18,6 @@ import {
   AlertCircle,
   TimerReset,
   MapPinned,
-  Pause,
-  LayoutGrid,
 } from 'lucide-react';
 import { useRealtimeQueue } from '@/lib/hooks/use-realtime-queue';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
@@ -36,11 +34,10 @@ import {
   resetTicketToQueue,
   assignRestaurantTable,
   clearRestaurantTable,
-  parkTicket,
-  unparkTicket,
 } from '@/lib/actions/ticket-actions';
 import { CustomerDataCard } from '@/components/desk/customer-data-card';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
+import { useI18n } from '@/components/providers/locale-provider';
 import type { Database } from '@/lib/supabase/database.types';
 import type { CustomerDataScope } from '@/lib/privacy';
 import type { QueueData } from '@/lib/hooks/use-realtime-queue';
@@ -219,6 +216,7 @@ export function DeskPanel({
   platformContext,
   sandbox,
 }: DeskPanelProps) {
+  const { t } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   const [currentTicket, setCurrentTicket] = useState<Ticket | null>(
     initialCurrentTicket ?? null
@@ -239,48 +237,12 @@ export function DeskPanel({
     time: Date;
   } | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
-  const [showTableMapModal, setShowTableMapModal] = useState(false);
-  const [tableMapFilter, setTableMapFilter] = useState<'all' | 'available' | 'occupied'>('all');
-  const [tableMapZoneFilter, setTableMapZoneFilter] = useState<string | null>(null);
+  const [showTableAssignmentPanel, setShowTableAssignmentPanel] = useState(false);
   const [transferDeptId, setTransferDeptId] = useState('');
   const [transferServiceId, setTransferServiceId] = useState('');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
-  const [stationOnline, setStationOnline] = useState(false);
-
-  // Station-online check: poll every 30s
-  useEffect(() => {
-    if (sandboxMode) return;
-    let mounted = true;
-    const check = () => {
-      import('@/lib/actions/ticket-actions').then(({ checkStationOnline }) => {
-        if (!mounted) return;
-        checkStationOnline(desk.office_id).then((online) => {
-          if (mounted) setStationOnline(online);
-        });
-      });
-    };
-    check();
-    const interval = setInterval(check, 30_000);
-    return () => { mounted = false; clearInterval(interval); };
-  }, [desk.office_id, sandboxMode]);
-
-  // Safety: periodic cleanup + heartbeat
-  const safetyRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (sandboxMode) return;
-    let mounted = true;
-    import('@/lib/actions/ticket-actions').then(({ runQueueSafetyChecks, runDailyCleanup }) => {
-      if (!mounted) return;
-      runDailyCleanup();
-      safetyRef.current = setInterval(() => runQueueSafetyChecks(desk.id), 30_000);
-    });
-    return () => {
-      mounted = false;
-      if (safetyRef.current) clearInterval(safetyRef.current);
-    };
-  }, [desk.id, sandboxMode]);
 
   const { queue: liveQueue, isLoading } = useRealtimeQueue({
     officeId: desk.office_id,
@@ -292,6 +254,9 @@ export function DeskPanel({
   useEffect(() => {
     setTableState(restaurantTables);
   }, [restaurantTables]);
+  useEffect(() => {
+    setShowTableAssignmentPanel(false);
+  }, [currentTicket?.id]);
   const vocabulary = platformContext?.vocabulary;
   const officeSettings = platformContext?.officeSettings ?? {};
   const restaurantTablePresets = (
@@ -330,10 +295,6 @@ export function DeskPanel({
     .filter((entry) => entry.id.length > 0);
   const isRestaurantMode =
     platformContext?.vertical === 'restaurant' || restaurantTablePresets.length > 0;
-  const isClinicMode = platformContext?.vertical === 'clinic';
-  const isBankMode = platformContext?.vertical === 'bank';
-  const isBarbershopMode = platformContext?.vertical === 'barbershop';
-  const allowMultiCall = isRestaurantMode || isBarbershopMode;
   const customerLabel = vocabulary?.customerLabel ?? 'Customer';
   const queueLabel = vocabulary?.queueLabel ?? 'Queue';
   const serviceLabel = vocabulary?.serviceLabel ?? 'Service';
@@ -356,11 +317,6 @@ export function DeskPanel({
     const allActive = [...queue.called, ...queue.serving];
     const updated = allActive.find((t) => t.id === currentTicket.id);
     if (updated) {
-      // Don't re-adopt a ticket that was just parked
-      if (updated.parked_at != null) {
-        setCurrentTicket(null);
-        return;
-      }
       // Only sync if the realtime data is newer (avoid overwriting optimistic recall updates)
       const currentCalledAt = currentTicket.called_at ? new Date(currentTicket.called_at).getTime() : 0;
       const updatedCalledAt = updated.called_at ? new Date(updated.called_at).getTime() : 0;
@@ -409,10 +365,6 @@ export function DeskPanel({
   }, []);
 
   const handleCallNext = () => {
-    if (!canCallNext) {
-      addToast('Finish or complete the current ticket before calling the next one.', 'error');
-      return;
-    }
     if (sandboxMode) {
       const nextTicket = queue.waiting[0];
       if (!nextTicket) return;
@@ -455,7 +407,7 @@ export function DeskPanel({
   const handleStartServing = () => {
     if (!currentTicket) return;
     if (isRestaurantMode && currentTicket.status === 'called' && !currentAssignedTableCode) {
-      setShowTableMapModal(true);
+      setShowTableAssignmentPanel(true);
       addToast('Choose a table to seat this party.', 'info');
       return;
     }
@@ -728,7 +680,7 @@ export function DeskPanel({
         recall_count: (ticket.recall_count ?? 0) + 1,
       };
       setCurrentTicket(calledTicket);
-  
+      setShowTableAssignmentPanel(false);
       setSandboxQueue((current) => ({
         ...current,
         called: [calledTicket, ...current.called.filter((entry) => entry.id !== ticket.id)],
@@ -749,7 +701,7 @@ export function DeskPanel({
         return;
       }
       setCurrentTicket(result.data);
-  
+      setShowTableAssignmentPanel(false);
       const smsSent = 'smsSent' in result && result.smsSent === true;
       addToast(
         smsSent
@@ -766,7 +718,7 @@ export function DeskPanel({
 
   const handleResumeTicket = (ticket: Ticket) => {
     setCurrentTicket(ticket);
-
+    setShowTableAssignmentPanel(false);
     addToast(
       isRestaurantMode
         ? `Resumed ${getTicketCustomerName(ticket) ?? 'party'} on the host stand`
@@ -775,118 +727,7 @@ export function DeskPanel({
     );
   };
 
-  const handleParkTicket = () => {
-    if (!currentTicket) return;
-    if (sandboxMode) {
-      const parked = { ...currentTicket, parked_at: new Date().toISOString() } as Ticket;
-      setSandboxQueue((current) => ({
-        ...current,
-        called: current.called.map((t) => (t.id === parked.id ? parked : t)),
-        serving: current.serving.map((t) => (t.id === parked.id ? parked : t)),
-      }));
-      setCurrentTicket(null);
-      addToast(
-        isRestaurantMode
-          ? `Parked ${getTicketCustomerName(currentTicket) ?? 'party'} on hold`
-          : isClinicMode
-            ? `Patient ${currentTicket.ticket_number} placed on hold`
-            : isBarbershopMode
-              ? `Client ${currentTicket.ticket_number} placed on hold`
-              : `Ticket ${currentTicket.ticket_number} parked on hold`,
-        'info'
-      );
-      return;
-    }
-    const ticketRef = currentTicket;
-    startTransition(async () => {
-      const result = await parkTicket(ticketRef.id);
-      if (result.error) {
-        addToast(result.error, 'error');
-        return;
-      }
-      setCurrentTicket(null);
-      addToast(
-        isRestaurantMode
-          ? `Parked ${getTicketCustomerName(ticketRef) ?? 'party'} on hold`
-          : `Ticket ${ticketRef.ticket_number} parked on hold`,
-        'info'
-      );
-    });
-  };
-
-  const handleUnparkTicket = (ticket: Ticket) => {
-    if (sandboxMode) {
-      const unparked = { ...ticket, parked_at: null } as Ticket;
-      setSandboxQueue((current) => ({
-        ...current,
-        called: current.called.map((t) => (t.id === unparked.id ? unparked : t)),
-        serving: current.serving.map((t) => (t.id === unparked.id ? unparked : t)),
-      }));
-      setCurrentTicket(unparked);
-  
-      addToast(
-        isRestaurantMode
-          ? `Resumed ${getTicketCustomerName(ticket) ?? 'party'} from hold`
-          : `Resumed ticket ${ticket.ticket_number} from hold`,
-        'info'
-      );
-      return;
-    }
-    startTransition(async () => {
-      const result = await unparkTicket(ticket.id);
-      if (result.error) {
-        addToast(result.error, 'error');
-        return;
-      }
-      setCurrentTicket(result.data);
-  
-      addToast(
-        isRestaurantMode
-          ? `Resumed ${getTicketCustomerName(ticket) ?? 'party'} from hold`
-          : `Resumed ticket ${ticket.ticket_number} from hold`,
-        'info'
-      );
-    });
-  };
-
-  const handleParkSpecificTicket = (ticket: Ticket) => {
-    if (sandboxMode) {
-      const parked = { ...ticket, parked_at: new Date().toISOString() } as Ticket;
-      setSandboxQueue((current) => ({
-        ...current,
-        called: current.called.map((t) => (t.id === parked.id ? parked : t)),
-        serving: current.serving.map((t) => (t.id === parked.id ? parked : t)),
-      }));
-      if (currentTicket?.id === ticket.id) setCurrentTicket(null);
-      addToast(
-        isRestaurantMode
-          ? `Parked ${getTicketCustomerName(ticket) ?? 'party'} on hold`
-          : `Ticket ${ticket.ticket_number} parked on hold`,
-        'info'
-      );
-      return;
-    }
-    startTransition(async () => {
-      const result = await parkTicket(ticket.id);
-      if (result.error) {
-        addToast(result.error, 'error');
-        return;
-      }
-      if (currentTicket?.id === ticket.id) setCurrentTicket(null);
-      addToast(
-        isRestaurantMode
-          ? `Parked ${getTicketCustomerName(ticket) ?? 'party'} on hold`
-          : `Ticket ${ticket.ticket_number} parked on hold`,
-        'info'
-      );
-    });
-  };
-
   const handleCallWaitingTicket = (ticket: Ticket) => {
-    if (!canCallNext) {
-      addToast('Finish or complete the current ticket before calling the next one.', 'error');
-      return;
-    }
     if (sandboxMode) {
       const calledTicket = {
         ...ticket,
@@ -965,6 +806,7 @@ export function DeskPanel({
               : entry
         )
       );
+      setCurrentTicket(updatedTicket);
       setSandboxQueue((current) => {
         const nextCalled =
           currentTicket.status === 'called'
@@ -985,8 +827,8 @@ export function DeskPanel({
           serving: nextServing,
         };
       });
-      setCurrentTicket(null);
-      addToast(`Seated ${getTicketCustomerName(updatedTicket) ?? 'party'} at ${table.code}`);
+      setShowTableAssignmentPanel(false);
+      addToast(`Assigned ${table.code} to ${getTicketCustomerName(updatedTicket) ?? 'party'}`);
       return;
     }
 
@@ -1000,6 +842,7 @@ export function DeskPanel({
         addToast('Table assignment did not return updated data', 'error');
         return;
       }
+      setCurrentTicket(result.data.ticket);
       setTableState((current) =>
         current.map((entry) =>
           entry.id === result.data.table.id
@@ -1014,8 +857,8 @@ export function DeskPanel({
               : entry
         )
       );
-      setCurrentTicket(null);
-      addToast(`Seated ${getTicketCustomerName(result.data.ticket) ?? 'party'} at ${result.data.table.code}`);
+      setShowTableAssignmentPanel(false);
+      addToast(`Assigned ${result.data.table.code} to ${getTicketCustomerName(result.data.ticket) ?? 'party'}`);
     });
   };
 
@@ -1182,17 +1025,17 @@ export function DeskPanel({
 
     const data = ticket.customer_data as Record<string, unknown>;
     const items: string[] = [];
-    if (asBoolean(data.accessibility_seating)) items.push('Accessible seating');
-    if (asBoolean(data.high_chair)) items.push('High chair');
+    if (asBoolean(data.accessibility_seating)) items.push(t('Accessible seating'));
+    if (asBoolean(data.high_chair)) items.push(t('High chair'));
     return items;
-  }, []);
+  }, [t]);
 
   const getTicketSource = useCallback((ticket: Ticket | null | undefined) => {
-    if (!ticket) return 'Unknown';
-    if (ticket.appointment_id) return isRestaurantMode ? bookingLabel : 'Appointment';
-    if (ticket.is_remote) return isRestaurantMode ? 'Remote waitlist' : 'Remote join';
-    return isRestaurantMode ? 'Walk-in party' : 'Walk-in';
-  }, [bookingLabel, isRestaurantMode]);
+    if (!ticket) return t('Unknown');
+    if (ticket.appointment_id) return isRestaurantMode ? bookingLabel : t('Appointment');
+    if (ticket.is_remote) return isRestaurantMode ? t('Remote waitlist') : t('Remote join');
+    return isRestaurantMode ? t('Walk-in party') : t('Walk-in');
+  }, [bookingLabel, isRestaurantMode, t]);
 
   const formatAbsoluteTime = useCallback((value: string | null | undefined) => {
     if (!value) return '--';
@@ -1205,37 +1048,18 @@ export function DeskPanel({
   const formatRelativeTime = useCallback((value: string | null | undefined) => {
     if (!value) return '--';
     const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
-    if (elapsedMinutes < 1) return 'Just now';
-    if (elapsedMinutes === 1) return '1 min ago';
-    if (elapsedMinutes < 60) return `${elapsedMinutes} min ago`;
+    if (elapsedMinutes < 1) return t('Just now');
+    if (elapsedMinutes === 1) return t('1 min ago');
+    if (elapsedMinutes < 60) return t('{count} min ago', { count: elapsedMinutes });
     const hours = Math.floor(elapsedMinutes / 60);
     const minutes = elapsedMinutes % 60;
-    return minutes === 0 ? `${hours}h ago` : `${hours}h ${minutes}m ago`;
-  }, []);
+    return minutes === 0
+      ? t('{count}h ago', { count: hours })
+      : t('{hours}h {minutes}m ago', { hours, minutes });
+  }, [t]);
 
   const waitingTickets = queue.waiting;
-  const parkedTickets = [...queue.called, ...queue.serving].filter(
-    (ticket) => ticket.parked_at != null && ticket.desk_id === desk.id
-  );
-  const calledAtThisDesk = queue.called.filter(
-    (ticket) => ticket.desk_id === desk.id && ticket.parked_at == null && ticket.id !== currentTicket?.id
-  );
-  const hasActiveTicketAtDesk = currentTicket != null || calledAtThisDesk.length > 0 || queue.serving.some(
-    (ticket) => ticket.desk_id === desk.id && ticket.parked_at == null
-  );
-  const canCallNext = allowMultiCall || !hasActiveTicketAtDesk;
-  const seatedTicketIds = new Set(
-    tableState
-      .filter((t) => t.current_ticket_id != null)
-      .map((t) => t.current_ticket_id as string)
-  );
-  const activeElsewhere = [...queue.called, ...queue.serving].filter(
-    (ticket) =>
-      ticket.id !== currentTicket?.id &&
-      ticket.parked_at == null &&
-      !seatedTicketIds.has(ticket.id) &&
-      !(ticket.desk_id === desk.id && ticket.status === 'called')
-  );
+  const activeElsewhere = [...queue.called, ...queue.serving].filter((ticket) => ticket.id !== currentTicket?.id);
   const nextWaitingTicket = waitingTickets[0] ?? null;
   const longestWaitingMinutes = waitingTickets.reduce((longest, ticket) => {
     if (!ticket.created_at) return longest;
@@ -1244,33 +1068,15 @@ export function DeskPanel({
   }, 0);
   const queueStateLabel = isRestaurantMode
     ? isServing
-      ? 'Party seated now'
+      ? t('Party seated now')
       : isCalled
-        ? 'Waiting for party to arrive'
-        : 'Ready to notify the next party'
-    : isClinicMode
-      ? isServing
-        ? 'Patient in consultation'
-        : isCalled
-          ? 'Waiting for patient'
-          : 'Ready for next patient'
-    : isBarbershopMode
-      ? isServing
-        ? 'Client in chair'
-        : isCalled
-          ? 'Waiting for client'
-          : 'Ready for next client'
-    : isBankMode
-      ? isServing
-        ? 'Serving client now'
-        : isCalled
-          ? 'Client called to counter'
-          : 'Ready for next client'
+        ? t('Waiting for party to arrive')
+        : t('Ready to notify the next party')
     : isServing
-      ? 'Serving now'
+      ? t('Serving now')
       : isCalled
-        ? 'Waiting for customer'
-        : 'Ready for next ticket';
+        ? t('Waiting for customer')
+        : t('Ready for next ticket');
   const currentPartySize = getRestaurantPartySize(currentTicket);
   const currentPreference = getRestaurantSeatingPreference(currentTicket);
   const currentNeeds = getRestaurantNeeds(currentTicket);
@@ -1307,10 +1113,10 @@ export function DeskPanel({
   const suggestedTables = getSuggestedTablesForTicket(currentTicket);
   const nextSuggestedTable = suggestedTables[0] ?? null;
   const currentTableCardLabel = currentAssignedRestaurantTable
-    ? 'Assigned table'
+    ? t('Assigned table')
     : isServing
-      ? 'Seat this party at'
-      : 'Next table';
+      ? t('Seat this party at')
+      : t('Next table');
   const availableRestaurantTables = tableState.filter(
     (table) => table.status === 'available' && table.current_ticket_id == null
   );
@@ -1356,7 +1162,7 @@ export function DeskPanel({
             {desk.display_name ?? desk.name}
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Operator: {staffName}
+            {t('Operator')}: {staffName}
           </p>
           <p className="mt-2 text-sm font-medium text-foreground/80">{queueStateLabel}</p>
         </div>
@@ -1364,26 +1170,15 @@ export function DeskPanel({
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2">
             <Users className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold text-primary">
-              {queue.waiting.length} {isRestaurantMode ? 'parties waiting' : 'waiting'}
+              {isRestaurantMode
+                ? t('{count} parties waiting', { count: queue.waiting.length })
+                : t('{count} waiting', { count: queue.waiting.length })}
             </span>
           </div>
           <div className="hidden items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground md:flex">
             <TimerReset className="h-4 w-4" />
-            Longest wait {longestWaitingMinutes}m
+            {t('Longest wait {minutes}m', { minutes: longestWaitingMinutes })}
           </div>
-          {isRestaurantMode && tableState.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowTableMapModal(true)}
-              className="hidden items-center gap-2 rounded-full bg-emerald-50 border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors md:flex"
-            >
-              <LayoutGrid className="h-4 w-4" />
-              Floor Map
-              <span className="rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                {availableRestaurantTables.length}/{tableState.length}
-              </span>
-            </button>
-          )}
           <div
             className={`h-3 w-3 rounded-full ${
               isServing
@@ -1392,21 +1187,10 @@ export function DeskPanel({
                   ? 'bg-warning animate-pulse'
                   : 'bg-muted-foreground'
             }`}
-            title={isServing ? 'Serving' : isCalled ? 'Called' : 'Idle'}
+            title={isServing ? t('Serving') : isCalled ? t('Called') : t('Idle')}
           />
         </div>
       </div>
-
-      {/* Station Online Banner */}
-      {stationOnline && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <div>
-            <strong>QFlow Station is online.</strong> Queue operations are managed locally by the station.
-            Use the desktop app or local desk (<code className="mx-1 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs dark:bg-amber-900">http://station-ip/desk</code>) to call, serve and manage tickets.
-          </div>
-        </div>
-      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
@@ -1445,19 +1229,19 @@ export function DeskPanel({
                       )}
                     </div>
                     <h2 className="text-xl font-semibold text-foreground mb-1">
-                      {lastAction.action === 'served' ? 'Visit Complete' :
-                       lastAction.action === 'no_show' ? 'Marked No-Show' :
-                       lastAction.action === 'cancelled' ? 'Customer Left Queue' :
-                       lastAction.action === 'transferred' ? 'Ticket Transferred' :
-                       'Ticket Reset'}
+                      {lastAction.action === 'served' ? t('Visit Complete') :
+                       lastAction.action === 'no_show' ? t('Marked No-Show') :
+                       lastAction.action === 'cancelled' ? t('Customer Left Queue') :
+                       lastAction.action === 'transferred' ? t('Ticket Transferred') :
+                       t('Ticket Reset')}
                     </h2>
                     <p className="text-sm text-muted-foreground mb-1">
-                      Ticket <span className="font-bold text-foreground">{lastAction.ticketNumber}</span>
-                      {lastAction.action === 'served' ? ' was served by you' :
-                       lastAction.action === 'no_show' ? ' did not show up' :
-                       lastAction.action === 'cancelled' ? ' ended their visit' :
-                       lastAction.action === 'transferred' ? ' was transferred' :
-                       ' was sent back to queue'}
+                      {t('Ticket')} <span className="font-bold text-foreground">{lastAction.ticketNumber}</span>
+                      {lastAction.action === 'served' ? t(' was served by you') :
+                       lastAction.action === 'no_show' ? t(' did not show up') :
+                       lastAction.action === 'cancelled' ? t(' ended their visit') :
+                       lastAction.action === 'transferred' ? t(' was transferred') :
+                       t(' was sent back to queue')}
                     </p>
                     <p className="text-xs text-muted-foreground mb-6">
                       {lastAction.time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -1469,34 +1253,22 @@ export function DeskPanel({
                       <Ticket className="h-10 w-10 text-muted-foreground" />
                     </div>
                     <h2 className="text-xl font-semibold text-foreground mb-1">
-                      {isRestaurantMode ? 'No Active Party' : isClinicMode ? 'No Active Patient' : isBarbershopMode ? 'No Active Client' : isBankMode ? 'No Active Client' : 'No Active Ticket'}
+                      {isRestaurantMode ? t('No Active Party') : t('No Active Ticket')}
                     </h2>
                     <p className="text-sm text-muted-foreground mb-6">
                       {queue.waiting.length > 0
                         ? isRestaurantMode
-                          ? `${queue.waiting.length} party${queue.waiting.length > 1 ? 'ies' : ''} waiting to be seated`
-                          : isClinicMode
-                            ? `${queue.waiting.length} patient${queue.waiting.length > 1 ? 's' : ''} in the waiting room`
-                            : isBarbershopMode
-                              ? `${queue.waiting.length} client${queue.waiting.length > 1 ? 's' : ''} waiting`
-                              : isBankMode
-                                ? `${queue.waiting.length} client${queue.waiting.length > 1 ? 's' : ''} in queue`
-                                : `${queue.waiting.length} ticket${queue.waiting.length > 1 ? 's' : ''} waiting in queue`
+                          ? t('{count} parties waiting to be seated', { count: queue.waiting.length })
+                          : t('{count} tickets waiting in queue', { count: queue.waiting.length })
                         : isRestaurantMode
-                          ? 'Waitlist is empty'
-                          : isClinicMode
-                            ? 'No patients waiting'
-                            : isBarbershopMode
-                              ? 'No clients waiting'
-                              : isBankMode
-                                ? 'No clients in queue'
-                                : 'Queue is empty'}
+                          ? t('Waitlist is empty')
+                          : t('Queue is empty')}
                     </p>
                   </>
                 )}
                 <button
                   onClick={handleCallNext}
-                  disabled={isPending || queue.waiting.length === 0 || !canCallNext || stationOnline}
+                  disabled={isPending || queue.waiting.length === 0}
                   className="inline-flex items-center gap-3 rounded-xl bg-primary px-8 py-4 text-lg font-bold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:translate-y-0"
                 >
                   {isPending ? (
@@ -1506,19 +1278,11 @@ export function DeskPanel({
                   )}
                   {queue.waiting.length > 0
                     ? isRestaurantMode
-                      ? `Notify Next Party (${queue.waiting.length})`
-                      : isClinicMode
-                        ? `Call Next Patient (${queue.waiting.length})`
-                        : isBarbershopMode
-                          ? `Call Next Client (${queue.waiting.length})`
-                          : `Call Next (${queue.waiting.length})`
+                      ? t('Notify Next Party ({count})', { count: queue.waiting.length })
+                      : t('Call Next ({count})', { count: queue.waiting.length })
                     : isRestaurantMode
-                      ? 'Notify Next Party'
-                      : isClinicMode
-                        ? 'Call Next Patient'
-                        : isBarbershopMode
-                          ? 'Call Next Client'
-                          : 'Call Next'}
+                      ? t('Notify Next Party')
+                      : t('Call Next')}
                 </button>
               </div>
             ) : (
@@ -1538,7 +1302,7 @@ export function DeskPanel({
                           isServing ? 'bg-success' : 'bg-warning'
                         }`}
                       />
-                      {isRestaurantMode ? (isServing ? 'Seated' : 'Notified') : isServing ? 'Serving' : 'Called'}
+                      {isRestaurantMode ? (isServing ? t('Seated') : t('Notified')) : isServing ? t('Serving') : t('Called')}
                     </span>
                     <PriorityBadge priorityCategory={getPriorityCategory(currentTicket)} />
                   </div>
@@ -1579,7 +1343,7 @@ export function DeskPanel({
                         0:{callCountdown.toString().padStart(2, '0')}
                       </span>
                       {callCountdown === 0 && (
-                        <span className="rounded-full bg-destructive px-2 py-0.5 text-xs font-bold text-white">EXPIRED</span>
+                        <span className="rounded-full bg-destructive px-2 py-0.5 text-xs font-bold text-white">{t('EXPIRED')}</span>
                       )}
                     </div>
                   )}
@@ -1588,7 +1352,7 @@ export function DeskPanel({
                 {/* Ticket Number - Large and prominent */}
                 <div className="text-center mb-5">
                   <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                    {isRestaurantMode ? `${customerLabel} ready to seat` : 'Ticket Number'}
+                    {isRestaurantMode ? t('{label} ready to seat', { label: customerLabel }) : t('Ticket Number')}
                   </p>
                   <p className="text-6xl font-black text-foreground tracking-tight leading-none">
                     {isRestaurantMode
@@ -1597,7 +1361,7 @@ export function DeskPanel({
                   </p>
                   {isRestaurantMode && (
                     <p className="mt-2 text-base font-semibold text-muted-foreground">
-                      Ref {currentTicket.ticket_number}
+                      {t('Ref')} {currentTicket.ticket_number}
                     </p>
                   )}
                 </div>
@@ -1606,28 +1370,30 @@ export function DeskPanel({
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {isRestaurantMode ? serviceLabel : 'Service'}
+                      
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
-                      {isRestaurantMode && currentPartySize ? `Party of ${currentPartySize}` : currentServiceName}
+                      {isRestaurantMode && currentPartySize ? t('Party of {count}', { count: currentPartySize }) : currentServiceName}
                     </p>
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {isRestaurantMode ? 'Arrival' : 'Source'}
+                      {isRestaurantMode ? t('Arrival') : t('Source')}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">{getTicketSource(currentTicket)}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {isRestaurantMode ? currentTableCardLabel : 'Checked in'}
+                      
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
                       {isRestaurantMode
                         ? currentAssignedRestaurantTable
                           ? `${currentAssignedRestaurantTable.code} · ${currentAssignedRestaurantTable.label}`
-                          : nextSuggestedTable
+                        : nextSuggestedTable
                             ? `${nextSuggestedTable.code} · ${nextSuggestedTable.label}`
-                            : 'Choose table'
+                            : t('Choose table')
                         : formatAbsoluteTime(currentTicket.checked_in_at)}
                     </p>
                     {isRestaurantMode && currentPreference && (
@@ -1638,13 +1404,13 @@ export function DeskPanel({
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {isRestaurantMode
                         ? currentReservationReference
-                          ? 'Reservation ref'
+                          ? t('Reservation ref')
                           : isServing
-                            ? 'Seated at'
-                            : 'Notified at'
+                            ? t('Seated at')
+                            : t('Notified at')
                         : isServing
-                          ? 'Started serving'
-                          : 'Called at'}
+                          ? t('Started serving')
+                          : t('Called at')}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
                       {isRestaurantMode && currentReservationReference
@@ -1656,164 +1422,221 @@ export function DeskPanel({
                   </div>
                 </div>
 
-                {isRestaurantMode && currentNeeds.length > 0 && (
-                  <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700">Needs</span>
-                    <span className="text-sm font-semibold text-foreground">{currentNeeds.join(' · ')}</span>
-                  </div>
-                )}
-
                 {isRestaurantMode && (
-                  <div className="mb-5">
-                    {currentAssignedRestaurantTable ? (
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-200/60 text-sm font-black text-emerald-800">
-                            {currentAssignedRestaurantTable.code}
-                          </div>
+                  <div className="mb-5 grid gap-3 lg:grid-cols-[1.35fr_0.95fr]">
+                    <div className="rounded-xl border border-border bg-card">
+                      <div className="border-b border-border px-4 py-3">
+                        <h3 className="text-sm font-semibold text-foreground">{t('Party details')}</h3>
+                      </div>
+                      <div className="grid gap-3 p-4 md:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{customerLabel}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{getTicketCustomerName(currentTicket) ?? t('Walk-in party')}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Party size')}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{currentPartySize ? t('{count} guests', { count: currentPartySize }) : t('Not collected')}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Checked in')}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{formatAbsoluteTime(currentTicket.checked_in_at)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Assigned table')}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">
+                            {currentAssignedRestaurantTable
+                              ? `${currentAssignedRestaurantTable.code} · ${currentAssignedRestaurantTable.label}`
+                              : currentAssignedTableCode
+                                ? `${currentAssignedTableCode} · ${currentAssignedTableLabel ?? t('Assigned')}`
+                              : t('Not assigned yet')}
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Needs')}</p>
+                          <p className="mt-1 text-sm font-semibold text-foreground">{currentNeeds.length > 0 ? currentNeeds.join(' · ') : t('No special seating needs')}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card">
+                      <div className="border-b border-border px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-foreground">{currentAssignedRestaurantTable.label}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {restaurantAreas.find((area) => area.id === currentAssignedRestaurantTable.zone)?.label ??
-                                (currentAssignedRestaurantTable.zone
-                                  ? toTitleCase(currentAssignedRestaurantTable.zone.replace(/-/g, ' '))
-                                  : 'Dining room')}
-                              {currentAssignedRestaurantTable.capacity ? ` · Seats ${currentAssignedRestaurantTable.capacity}` : ''}
+                            <h3 className="text-sm font-semibold text-foreground">
+                              {currentAssignedRestaurantTable ? t('Change table') : t('Available tables')}
+                            </h3>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {currentAssignedRestaurantTable
+                                ? t('This party already has a table. Change it only if the host needs to move them.')
+                                : showTableAssignmentPanel
+                                  ? t('Pick a table to seat the current party.')
+                                  : t('Open seating options when you are ready to assign a table.')}
                             </p>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setShowTableMapModal(true)}
-                            className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-foreground hover:bg-emerald-100"
+                            onClick={() => setShowTableAssignmentPanel((current) => !current)}
+                            className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted"
                           >
-                            Change
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleClearRestaurantTable(currentAssignedRestaurantTable)}
-                            disabled={isPending}
-                            className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-foreground hover:bg-emerald-100 disabled:opacity-50"
-                          >
-                            Unassign
+                            {showTableAssignmentPanel
+                              ? t('Hide')
+                              : currentAssignedRestaurantTable
+                                ? t('Change table')
+                                : t('Choose table')}
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-3">
-                        <p className="text-sm text-muted-foreground">No table assigned</p>
-                        <button
-                          type="button"
-                          onClick={() => setShowTableMapModal(true)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90"
-                        >
-                          <LayoutGrid className="h-4 w-4" />
-                          Floor Map
-                        </button>
+                      <div className="space-y-2 p-4">
+                        {currentAssignedRestaurantTable && (
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                                  Assigned table
+                                </p>
+                                <p className="mt-1 text-lg font-bold text-foreground">
+                                  {currentAssignedRestaurantTable.code}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {currentAssignedRestaurantTable.label}
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                  <span>
+                                    {restaurantAreas.find((area) => area.id === currentAssignedRestaurantTable.zone)?.label ??
+                                      (currentAssignedRestaurantTable.zone
+                                        ? toTitleCase(currentAssignedRestaurantTable.zone.replace(/-/g, ' '))
+                                        : 'Dining room')}
+                                  </span>
+                                  {currentAssignedRestaurantTable.capacity ? (
+                                    <span>Seats up to {currentAssignedRestaurantTable.capacity}</span>
+                                  ) : null}
+                                  {currentAssignedRestaurantTable.assigned_at ? (
+                                    <span>Selected {formatRelativeTime(currentAssignedRestaurantTable.assigned_at)}</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleClearRestaurantTable(currentAssignedRestaurantTable)}
+                                disabled={isPending}
+                                className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-foreground hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                Unassign table
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {showTableAssignmentPanel && nextSuggestedTable && (
+                          <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Seat this party next at</p>
+                            <div className="mt-1 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-lg font-bold text-foreground">{nextSuggestedTable.code}</p>
+                                <p className="text-sm text-muted-foreground">{nextSuggestedTable.label}</p>
+                              </div>
+                              <span className="rounded-full bg-card px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm">
+                                {restaurantAreas.find((area) => area.id === nextSuggestedTable.zone)?.label ??
+                                  (nextSuggestedTable.zone ? toTitleCase(nextSuggestedTable.zone.replace(/-/g, ' ')) : 'Dining room')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        {showTableAssignmentPanel ? (
+                          availableRestaurantTables.length > 0 ? (
+                          availableRestaurantTables.map((table) => {
+                            const zoneLabel =
+                              restaurantAreas.find((area) => area.id === table.zone)?.label ??
+                              (table.zone ? toTitleCase(table.zone.replace(/-/g, ' ')) : 'Dining room');
+                            const isRecommended = suggestedTables.some(
+                              (suggested) => suggested.code === table.code
+                            );
+                            return (
+                              <div key={table.code} className={`rounded-xl border bg-background px-3 py-3 ${isRecommended ? 'border-primary/30' : 'border-border'}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-bold text-foreground">{table.label}</p>
+                                    <p className="text-xs text-muted-foreground">{zoneLabel} · Seats up to {table.capacity ?? table.max_party_size ?? 0}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {isRecommended && (
+                                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                        Best fit
+                                      </span>
+                                    )}
+                                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                                      {table.code}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between gap-3">
+                                  <span
+                                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getRestaurantTableStatusTone(table.status)}`}
+                                  >
+                                    {table.status === 'available' ? 'Available now' : toTitleCase(table.status ?? 'available')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAssignRestaurantTable(table)}
+                                    disabled={isPending}
+                                    className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                                  >
+                                    Assign
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                          ) : (
+                          <p className="text-sm text-muted-foreground">No available tables right now. Free up or turn a table before seating the next party.</p>
+                          )
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            {currentAssignedRestaurantTable ? (
+                              <>This party is already assigned to <span className="font-semibold text-foreground">{currentAssignedRestaurantTable.code}</span>. Use <span className="font-semibold text-foreground">Change table</span> only if you need to move them.</>
+                            ) : (
+                              <>Click <span className="font-semibold text-foreground">Choose table</span> when the host is ready to seat this party.</>
+                            )}
+                          </p>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
                 {/* Customer Data */}
-                {!isRestaurantMode && (
-                  currentTicket.customer_data ? (
-                    <CustomerDataCard
-                      data={currentTicket.customer_data as Record<string, unknown> | null}
-                      fields={currentTicketFields}
-                      scope={customerDataScope}
-                      className="mb-5"
-                    />
-                  ) : (
-                    <div className="mb-5 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {getTicketCustomerName(currentTicket) ?? 'No intake collected'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Department</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {getTicketDepartmentName(currentTicket)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Estimated wait</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">
-                          {currentTicket.estimated_wait_minutes ? `${currentTicket.estimated_wait_minutes} min` : 'Not available'}
-                        </p>
-                      </div>
+                {!isRestaurantMode && currentTicket.customer_data ? (
+                  <CustomerDataCard
+                    data={currentTicket.customer_data as Record<string, unknown> | null}
+                    fields={currentTicketFields}
+                    scope={customerDataScope}
+                    className="mb-5"
+                  />
+                ) : (
+                  <div className="mb-5 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Party' : 'Customer'}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {getTicketCustomerName(currentTicket) ?? (isRestaurantMode ? 'Walk-in party' : 'No intake collected')}
+                      </p>
                     </div>
-                  )
-                )}
-
-                {/* Clinic-specific appointment info */}
-                {isClinicMode && currentTicket && (
-                  <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm font-semibold text-teal-800">Patient Visit Details</span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Area' : 'Department'}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {isRestaurantMode
+                          ? currentPreference ?? getTicketDepartmentName(currentTicket)
+                          : getTicketDepartmentName(currentTicket)}
+                      </p>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-700/70">Visit Type</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{getTicketServiceName(currentTicket)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-700/70">Source</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{currentTicket.appointment_id ? 'Scheduled appointment' : 'Walk-in visit'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-700/70">Wait Time</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{formatRelativeTime(currentTicket.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Barbershop-specific service info */}
-                {isBarbershopMode && currentTicket && (
-                  <div className="mb-5 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm font-semibold text-violet-800">Service Details</span>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-700/70">Service</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{getTicketServiceName(currentTicket)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-700/70">Type</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{currentTicket.appointment_id ? 'Booked' : 'Walk-in'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-700/70">Waiting Since</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{formatRelativeTime(currentTicket.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Bank-specific counter info */}
-                {isBankMode && currentTicket && (
-                  <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm font-semibold text-blue-800">Counter Service Details</span>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700/70">Transaction</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{getTicketServiceName(currentTicket)}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700/70">Channel</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{currentTicket.appointment_id ? 'Pre-booked' : currentTicket.is_remote ? 'Mobile queue' : 'Walk-in'}</p>
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-700/70">Queue Time</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground">{formatRelativeTime(currentTicket.created_at)}</p>
-                      </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {isRestaurantMode ? 'Wait quote' : 'Estimated wait'}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-foreground">
+                        {currentTicket.estimated_wait_minutes ? `${currentTicket.estimated_wait_minutes} min` : 'Not available'}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -1836,13 +1659,7 @@ export function DeskPanel({
                           ? currentAssignedTableCode
                             ? 'Seat Party'
                             : 'Choose Table to Seat'
-                          : isClinicMode
-                            ? 'Begin Consultation'
-                            : isBarbershopMode
-                              ? 'Start Service'
-                              : isBankMode
-                                ? 'Begin Service'
-                                : 'Start Serving'}
+                          : 'Start Serving'}
                       </button>
                       <button
                         onClick={handleRecall}
@@ -1866,7 +1683,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-warning/10 px-5 py-3 text-sm font-bold text-warning hover:bg-warning/20 disabled:opacity-50 transition-all"
                       >
                         <UserX className="h-4 w-4" />
-                        {isRestaurantMode ? 'Party Left' : isClinicMode ? 'Patient Left' : isBarbershopMode ? 'Client Left' : 'No Show'}
+                        {isRestaurantMode ? 'Party Left' : 'No Show'}
                       </button>
                       <button
                         onClick={handleResetToQueue}
@@ -1874,15 +1691,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-gray-100 px-5 py-3 text-sm font-bold text-gray-600 hover:bg-gray-200 disabled:opacity-50 transition-all"
                       >
                         <ArrowRightLeft className="h-4 w-4" />
-                        {isRestaurantMode ? 'Back to Waitlist' : isClinicMode ? 'Back to Waiting Room' : 'Reset to Queue'}
-                      </button>
-                      <button
-                        onClick={handleParkTicket}
-                        disabled={isPending}
-                        className="inline-flex items-center gap-2 rounded-xl bg-amber-100 px-5 py-3 text-sm font-bold text-amber-700 hover:bg-amber-200 disabled:opacity-50 transition-all"
-                      >
-                        <Pause className="h-4 w-4" />
-                        {isRestaurantMode ? 'Park Party' : isClinicMode ? 'Hold Patient' : isBarbershopMode ? 'Hold Client' : 'Park'}
+                        {isRestaurantMode ? 'Back to Waitlist' : 'Reset to Queue'}
                       </button>
                     </>
                   )}
@@ -1899,49 +1708,30 @@ export function DeskPanel({
                         ) : (
                           <CheckCircle2 className="h-4 w-4" />
                         )}
-                        {isRestaurantMode ? 'Close Party' : isClinicMode ? 'Complete Visit' : isBarbershopMode ? 'Service Complete' : isBankMode ? 'Transaction Complete' : 'Mark Served'}
+                        {isRestaurantMode ? 'Close Party' : 'Mark Served'}
                       </button>
-                      {!isRestaurantMode && (
-                        <button
-                          onClick={() => setShowTransferDialog(true)}
-                          disabled={isPending}
-                          className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
-                        >
-                          <ArrowRightLeft className="h-4 w-4" />
-                          {isClinicMode ? 'Refer to Department' : 'Transfer'}
-                        </button>
-                      )}
                       <button
-                        onClick={handleParkTicket}
+                        onClick={() => setShowTransferDialog(true)}
                         disabled={isPending}
-                        className="inline-flex items-center gap-2 rounded-xl bg-amber-100 px-5 py-3 text-sm font-bold text-amber-700 hover:bg-amber-200 disabled:opacity-50 transition-all"
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
                       >
-                        <Pause className="h-4 w-4" />
-                        {isRestaurantMode ? 'Park Party' : isClinicMode ? 'Hold Patient' : isBarbershopMode ? 'Hold Client' : 'Park'}
+                        <ArrowRightLeft className="h-4 w-4" />
+                        {isRestaurantMode ? 'Reassign Area' : 'Transfer'}
                       </button>
                     </>
                   )}
 
-                  {/* Put back — dismiss a seated party back to the sidebar */}
-                  {isServing && isRestaurantMode && currentAssignedRestaurantTable && (
-                    <button
-                      onClick={() => setCurrentTicket(null)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm font-bold text-foreground hover:bg-muted transition-all"
-                    >
-                      <X className="h-4 w-4" />
-                      Put back
-                    </button>
-                  )}
-
-                  {/* Call Next while serving (queue next) — only for multi-call verticals */}
-                  {isServing && queue.waiting.length > 0 && allowMultiCall && (
+                  {/* Call Next while serving (queue next) */}
+                  {isServing && queue.waiting.length > 0 && (
                     <button
                       onClick={handleCallNext}
                       disabled={isPending}
                       className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm font-bold text-foreground hover:bg-muted disabled:opacity-50 transition-all ml-auto"
                     >
-                      <PhoneForwarded className="h-4 w-4" />
-                      {isRestaurantMode ? `Notify Next Party (${queue.waiting.length})` : `Call Next (${queue.waiting.length})`}
+                  <PhoneForwarded className="h-4 w-4" />
+                      {isRestaurantMode
+                        ? t('Notify Next Party ({count})', { count: queue.waiting.length })
+                        : t('Call Next ({count})', { count: queue.waiting.length })}
                     </button>
                   )}
                 </div>
@@ -1949,85 +1739,25 @@ export function DeskPanel({
             )}
           </div>
 
-          {/* Called Stack - other called tickets at this desk */}
-          {calledAtThisDesk.length > 0 && (
-            <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-foreground">
-                  {isRestaurantMode ? 'Other Notified Parties' : isClinicMode ? 'Other Called Patients' : 'Other Called Tickets'}
-                  <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
-                    {calledAtThisDesk.length}
-                  </span>
-                </h3>
-              </div>
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {calledAtThisDesk.map((ticket) => (
-                  <div
-                    key={ticket.id}
-                    className="flex-shrink-0 w-56 rounded-xl border border-primary/20 bg-card p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-base font-bold text-foreground">
-                        {isRestaurantMode ? getTicketCustomerName(ticket) ?? ticket.ticket_number : ticket.ticket_number}
-                      </span>
-                      <PriorityBadge priorityCategory={getPriorityCategory(ticket)} />
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {isRestaurantMode
-                        ? `${getRestaurantPartySize(ticket) ? `Party of ${getRestaurantPartySize(ticket)}` : getTicketServiceName(ticket)}`
-                        : getTicketServiceName(ticket)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Called {formatRelativeTime(ticket.called_at)}
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleResumeTicket(ticket)}
-                        disabled={isPending}
-                        className="flex-1 rounded-lg bg-primary px-2 py-1.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        Switch to
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleParkSpecificTicket(ticket)}
-                        disabled={isPending}
-                        className="rounded-lg bg-amber-100 px-2 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-200 disabled:opacity-50"
-                      >
-                        <Pause className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Queue Health */}
-          <div className={`grid gap-4 ${parkedTickets.length > 0 ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {isRestaurantMode ? 'Parties waiting' : 'Waiting'}
+                {isRestaurantMode ? t('Parties waiting') : t('Waiting')}
               </p>
               <p className="mt-2 text-3xl font-bold text-foreground">{queue.waiting.length}</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Longest wait</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Longest wait')}</p>
+              
               <p className="mt-2 text-3xl font-bold text-foreground">{longestWaitingMinutes}m</p>
             </div>
-            {parkedTickets.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">On hold</p>
-                <p className="mt-2 text-3xl font-bold text-amber-700">{parkedTickets.length}</p>
-              </div>
-            )}
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active elsewhere</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Active elsewhere')}</p>
               <p className="mt-2 text-3xl font-bold text-foreground">{activeElsewhere.length}</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recently served</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Recently served')}</p>
               <p className="mt-2 text-3xl font-bold text-foreground">{queue.recentlyServed.length}</p>
             </div>
           </div>
@@ -2044,12 +1774,8 @@ export function DeskPanel({
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   {isRestaurantMode
-                    ? `Next parties waiting for this ${deskLabel.toLowerCase()}'s area`
-                    : isClinicMode
-                      ? 'Patients waiting to be seen'
-                      : isBarbershopMode
-                        ? 'Clients waiting for service'
-                        : `Next people waiting for this ${deskLabel.toLowerCase()}'s department`}
+                    ? t('Next parties waiting for this {label}\'s area', { label: deskLabel.toLowerCase() })
+                    : t('Next people waiting for this {label}\'s department', { label: deskLabel.toLowerCase() })}
                 </p>
               </div>
               <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
@@ -2061,7 +1787,7 @@ export function DeskPanel({
                 <div className="rounded-xl bg-primary/5 px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">Up next</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">{t('Up next')}</p>
                       <div className="mt-1 flex items-center gap-2">
                         <p className="text-lg font-bold text-foreground">{nextWaitingTicket.ticket_number}</p>
                         <PriorityBadge priorityCategory={getPriorityCategory(nextWaitingTicket)} />
@@ -2070,30 +1796,30 @@ export function DeskPanel({
                     <button
                       type="button"
                       onClick={() => handleCallWaitingTicket(nextWaitingTicket)}
-                      disabled={isPending || !canCallNext}
+                      disabled={isPending}
                       className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {isRestaurantMode ? 'Notify now' : 'Call now'}
+                      {isRestaurantMode ? t('Notify now') : t('Call now')}
                     </button>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {isRestaurantMode
-                      ? `${getTicketCustomerName(nextWaitingTicket) ?? 'Walk-in party'} · ${
+                      ? `${getTicketCustomerName(nextWaitingTicket) ?? t('Walk-in party')} · ${
                           getRestaurantPartySize(nextWaitingTicket)
-                            ? `Party of ${getRestaurantPartySize(nextWaitingTicket)}`
+                            ? t('Party of {count}', { count: getRestaurantPartySize(nextWaitingTicket) })
                           : normalizeRestaurantLabel(getTicketServiceName(nextWaitingTicket)) ?? getTicketServiceName(nextWaitingTicket)
                         } · ${formatRelativeTime(nextWaitingTicket.created_at)}`
                       : `${getTicketServiceName(nextWaitingTicket)} · ${formatRelativeTime(nextWaitingTicket.created_at)}`}
                   </p>
                   {isRestaurantMode && getSuggestedTablesForTicket(nextWaitingTicket)[0] && (
                     <p className="mt-2 text-xs font-semibold text-foreground">
-                      Next table: {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.code} · {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.label}
+                      {t('Next table')}: {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.code} · {getSuggestedTablesForTicket(nextWaitingTicket)[0]?.label}
                     </p>
                   )}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {isRestaurantMode ? 'No parties are waiting right now.' : 'No one is waiting right now.'}
+                  {isRestaurantMode ? t('No parties are waiting right now.') : t('No one is waiting right now.')}
                 </p>
               )}
             </div>
@@ -2106,7 +1832,7 @@ export function DeskPanel({
                 <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center">
                   <Ticket className="mb-3 h-8 w-8 text-muted-foreground" />
                   <p className="text-sm font-medium text-foreground">
-                    {isRestaurantMode ? 'No parties waiting' : 'No tickets waiting'}
+                    {isRestaurantMode ? t('No parties waiting') : t('No tickets waiting')}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {isRestaurantMode
@@ -2116,7 +1842,7 @@ export function DeskPanel({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {queue.waiting.slice(1).map((ticket, index) => (
+                  {queue.waiting.map((ticket, index) => (
                     (() => {
                       const rowSuggestedTable = isRestaurantMode ? getSuggestedTablesForTicket(ticket)[0] : null;
                       return (
@@ -2149,29 +1875,29 @@ export function DeskPanel({
                                 <button
                                   type="button"
                                   onClick={() => handleCallWaitingTicket(ticket)}
-                                  disabled={isPending || !canCallNext}
+                                  disabled={isPending}
                                   className="shrink-0 rounded-lg border border-border bg-background px-3 py-2 text-[11px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
                                 >
-                                  {isRestaurantMode ? 'Notify' : 'Call'}
+                                  {isRestaurantMode ? t('Notify') : t('Call')}
                                 </button>
                               </div>
                               <p className="mt-1 text-sm text-foreground/80">
                                 {isRestaurantMode
-                                  ? `${getTicketCustomerName(ticket) ?? 'Walk-in party'}${
-                                      getRestaurantPartySize(ticket) ? ` · Party of ${getRestaurantPartySize(ticket)}` : ''
+                                  ? `${getTicketCustomerName(ticket) ?? t('Walk-in party')}${
+                                      getRestaurantPartySize(ticket) ? ` · ${t('Party of {count}', { count: getRestaurantPartySize(ticket) })}` : ''
                                     }`
                                   : getTicketServiceName(ticket)}
                               </p>
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                                 <span>
                                   {isRestaurantMode
-                                    ? getRestaurantSeatingPreference(ticket) ?? 'First available'
-                                    : getTicketCustomerName(ticket) ?? 'No name provided'}
+                                    ? getRestaurantSeatingPreference(ticket) ?? t('First available')
+                                    : getTicketCustomerName(ticket) ?? t('No name provided')}
                                 </span>
                                 <span>{formatRelativeTime(ticket.created_at)}</span>
-                                <span>Checked in {formatAbsoluteTime(ticket.checked_in_at)}</span>
+                                <span>{t('Checked in')} {formatAbsoluteTime(ticket.checked_in_at)}</span>
                                 {isRestaurantMode && rowSuggestedTable && (
-                                  <span>Next table {rowSuggestedTable.code}</span>
+                                  <span>{t('Next table')} {rowSuggestedTable.code}</span>
                                 )}
                                 {isRestaurantMode && getReservationReference(ticket) && (
                                   <span>{getReservationReference(ticket)}</span>
@@ -2188,202 +1914,151 @@ export function DeskPanel({
             </div>
           </div>
 
-          {/* On Hold / Parked Tickets */}
-          {parkedTickets.length > 0 && (
-            <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/50">
-              <div className="border-b border-amber-200 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-amber-800">
-                    {isRestaurantMode ? 'Parked Parties' : isClinicMode ? 'On Hold Patients' : isBarbershopMode ? 'On Hold Clients' : 'On Hold'}
-                  </h3>
-                  <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                    {parkedTickets.length}
-                  </span>
-                </div>
-                <p className="text-xs text-amber-700/70 mt-0.5">
-                  {isRestaurantMode
-                    ? 'Parked parties waiting to be resumed'
-                    : 'Tickets paused and waiting to be resumed'}
+          {isRestaurantMode && (
+            <div className="rounded-2xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h3 className="text-sm font-semibold text-foreground">{t('Taken tables')}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {t('See which parties are seated now, then clear the table when it is ready again.')}
                 </p>
               </div>
-              <div className="p-2 space-y-2">
-                {parkedTickets.map((ticket) => (
-                  <div
-                    key={ticket.id}
-                    className="rounded-xl border border-amber-200 bg-white px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-foreground">
-                            {isRestaurantMode ? getTicketCustomerName(ticket) ?? ticket.ticket_number : ticket.ticket_number}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                            ticket.status === 'serving' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'
-                          }`}>
-                            {ticket.status === 'serving' ? 'Was serving' : 'Was called'}
-                          </span>
-                          <PriorityBadge priorityCategory={getPriorityCategory(ticket)} />
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground truncate">
-                          {isRestaurantMode
-                            ? `${getRestaurantPartySize(ticket) ? `Party of ${getRestaurantPartySize(ticket)} · ` : ''}${getTicketServiceName(ticket)}`
-                            : `${getTicketCustomerName(ticket) ?? 'No name'} · ${getTicketServiceName(ticket)}`}
-                        </p>
-                        <p className="mt-1 text-xs text-amber-600">
-                          <Pause className="inline h-3 w-3 mr-0.5" />
-                          Parked {formatRelativeTime(ticket.parked_at)}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleUnparkTicket(ticket)}
-                        disabled={isPending}
-                        className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
-                      >
-                        Resume
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Active Parties — unified section for seated tables + other active tickets */}
-          <div className="rounded-2xl border border-border bg-card">
-            <div className="border-b border-border px-4 py-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">
-                  {isRestaurantMode ? 'Active Parties' : isClinicMode ? 'Active Patients' : isBarbershopMode ? 'Active Clients' : 'Active Tickets'}
-                </h3>
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold text-muted-foreground">
-                  {isRestaurantMode
-                    ? occupiedRestaurantTables.length + activeElsewhere.length
-                    : activeElsewhere.length}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isRestaurantMode
-                  ? 'Seated parties and active tickets across all stands'
-                  : isClinicMode
-                    ? 'Patients currently being seen across all rooms'
-                    : 'All currently called or serving tickets'}
-              </p>
-            </div>
-            <div className="p-2 space-y-1 max-h-72 overflow-y-auto">
-              {/* Restaurant: Seated at tables (this desk's tables) */}
-              {isRestaurantMode && occupiedRestaurantTables.length > 0 && (
-                <>
-                  <p className="px-2 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                    Seated at tables
+              <div className="space-y-2 p-3">
+                {occupiedRestaurantTables.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">
+                    {t('No tables are currently taken.')}
                   </p>
-                  {occupiedRestaurantTables.map((table) => {
+                ) : (
+                  occupiedRestaurantTables.map((table) => {
                     const seatedTicket = getTicketById(table.current_ticket_id);
                     const zoneLabel =
                       restaurantAreas.find((area) => area.id === table.zone)?.label ??
-                      (table.zone ? toTitleCase(table.zone.replace(/-/g, ' ')) : 'Dining room');
-                    const seatedName = getTicketCustomerName(seatedTicket) ?? 'Unknown party';
+                      (table.zone ? toTitleCase(table.zone.replace(/-/g, ' ')) : t('Dining room'));
+                    const seatedName = getTicketCustomerName(seatedTicket) ?? t('Unknown party');
                     const partySize = getRestaurantPartySize(seatedTicket);
 
                     return (
                       <div
                         key={table.id}
-                        className="rounded-xl border border-border px-3 py-2.5"
+                        className="rounded-xl border border-border bg-background px-3 py-3"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="inline-flex items-center justify-center h-7 w-7 rounded-lg bg-rose-100 text-[11px] font-black text-rose-700 shrink-0">
-                              {table.code}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-foreground truncate">
-                                {seatedName}{partySize ? ` · ${partySize}` : ''}
-                              </p>
-                              <p className="text-[11px] text-muted-foreground truncate">
-                                {zoneLabel}{table.assigned_at ? ` · ${formatRelativeTime(table.assigned_at)}` : ''}
-                              </p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-foreground">{table.code}</p>
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${getRestaurantTableStatusTone(table.status)}`}
+                              >
+                                {toTitleCase(table.status ?? 'occupied')}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm font-semibold text-foreground">
+                              {seatedName}
+                              {partySize ? ` · ${t('Party of {count}', { count: partySize })}` : ''}
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span>{table.label}</span>
+                              <span>{zoneLabel}</span>
+                              {seatedTicket?.ticket_number ? (
+                                <span>{seatedTicket.ticket_number}</span>
+                              ) : null}
+                              {table.assigned_at ? (
+                                <span>{t('Seated')} {formatRelativeTime(table.assigned_at)}</span>
+                              ) : null}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {seatedTicket && currentTicket?.id !== seatedTicket.id && (
+                          <div className="flex shrink-0 flex-col gap-2">
+                            {seatedTicket && currentTicket?.id !== seatedTicket.id ? (
                               <button
                                 type="button"
                                 onClick={() => handleResumeTicket(seatedTicket)}
                                 disabled={isPending}
-                                className="rounded-lg border border-border px-2 py-1.5 text-[10px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                                className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-muted disabled:opacity-50"
                               >
-                                View
+                                {t('Resume')}
                               </button>
-                            )}
+                            ) : null}
+                            {seatedTicket ? (
+                              <button
+                                type="button"
+                                onClick={() => handleBuzzSpecificTicket(seatedTicket)}
+                                disabled={isPending}
+                                className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:opacity-50"
+                              >
+                                {t('Call back')}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handleClearRestaurantTable(table)}
                               disabled={isPending}
-                              className="rounded-lg border border-border px-2 py-1.5 text-[10px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                              className="rounded-lg border border-border px-3 py-2 text-xs font-bold text-foreground hover:bg-muted disabled:opacity-50"
                             >
-                              Free table
+                              {t('Clear table')}
                             </button>
                           </div>
                         </div>
                       </div>
                     );
-                  })}
-                </>
-              )}
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
-              {/* Other active tickets (at other desks) */}
-              {activeElsewhere.length > 0 && (
-                <>
-                  {isRestaurantMode && occupiedRestaurantTables.length > 0 && (
-                    <p className="px-2 pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                      At other {deskLabel.toLowerCase()}s
-                    </p>
-                  )}
-                  {activeElsewhere.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="rounded-xl border border-border px-3 py-2.5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                            ticket.status === 'serving' ? 'bg-success' : 'bg-warning'
-                          }`}
-                        />
-                        <span className="text-sm font-semibold text-foreground truncate">
-                          {isRestaurantMode
-                            ? getTicketCustomerName(ticket) ?? ticket.ticket_number
-                            : ticket.ticket_number}
-                        </span>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground ml-auto shrink-0">
-                          {isRestaurantMode
-                            ? ticket.status === 'serving' ? 'Seated' : 'Notified'
-                            : ticket.status}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                        <span>
-                          {isRestaurantMode
-                            ? getRestaurantPartySize(ticket) ? `Party of ${getRestaurantPartySize(ticket)}` : getTicketServiceName(ticket)
-                            : `${getTicketCustomerName(ticket) ?? 'No name'} · ${getTicketServiceName(ticket)}`}
-                        </span>
-                        <span>{formatRelativeTime(ticket.called_at ?? ticket.serving_started_at)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {/* Empty state */}
-              {(isRestaurantMode ? occupiedRestaurantTables.length + activeElsewhere.length : activeElsewhere.length) === 0 && (
+          {/* Currently Called / Being Served by Others */}
+          <div className="rounded-2xl border border-border bg-card">
+            <div className="border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                {isRestaurantMode ? t('Active at Other {label}s', { label: deskLabel }) : t('Active at Other Desks')}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {isRestaurantMode
+                  ? t('See notified or seated parties at other host stands')
+                  : t('Cross-desk visibility for called or serving tickets')}
+              </p>
+            </div>
+            <div className="p-2 space-y-1 max-h-56 overflow-y-auto">
+              {activeElsewhere.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-muted-foreground">
                   {isRestaurantMode
-                    ? 'No parties are currently seated or being served.'
-                    : isClinicMode
-                      ? 'No patients are currently being seen.'
-                      : 'No tickets are currently being served.'}
+                    ? t('No other host stands are actively notifying or seating parties right now.')
+                    : t('No other desks are actively calling or serving right now.')}
                 </p>
+              ) : (
+                activeElsewhere.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className="rounded-xl border border-border px-3 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                          ticket.status === 'serving' ? 'bg-success' : 'bg-warning'
+                        }`}
+                      />
+                      <span className="text-sm font-bold text-foreground">
+                        {ticket.ticket_number}
+                      </span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground ml-auto">
+                        {ticket.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>
+                        {isRestaurantMode
+                          ? `${getTicketCustomerName(ticket) ?? t('Party')}${
+                              getRestaurantPartySize(ticket) ? ` · ${t('Party of {count}', { count: getRestaurantPartySize(ticket) })}` : ''
+                            }`
+                          : getTicketServiceName(ticket)}
+                      </span>
+                      <span>{getTicketSource(ticket)}</span>
+                      {isRestaurantMode && getRestaurantSeatingPreference(ticket) && (
+                        <span>{getRestaurantSeatingPreference(ticket)}</span>
+                      )}
+                      <span>{formatRelativeTime(ticket.called_at ?? ticket.serving_started_at)}</span>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -2397,7 +2072,7 @@ export function DeskPanel({
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
                 <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                   <ArrowRightLeft className="h-5 w-5 text-primary" />
-                  {isRestaurantMode ? 'Move Party' : 'Transfer Ticket'}
+                  {isRestaurantMode ? t('Move Party') : t('Transfer Ticket')}
                 </h3>
               <button
                 onClick={() => {
@@ -2413,7 +2088,7 @@ export function DeskPanel({
             <div className="p-6 space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground mb-2">
-                  {isRestaurantMode ? 'Move party' : 'Transferring ticket'}{' '}
+                  {isRestaurantMode ? t('Move party') : t('Transferring ticket')}{' '}
                   <span className="font-bold text-foreground">
                     {currentTicket?.ticket_number}
                   </span>
@@ -2421,7 +2096,7 @@ export function DeskPanel({
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1.5">
-                  {isRestaurantMode ? 'Seating area' : 'Department'}
+                  {isRestaurantMode ? t('Seating area') : t('Department')}
                 </label>
                 <select
                   value={transferDeptId}
@@ -2431,7 +2106,7 @@ export function DeskPanel({
                   }}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 >
-                    <option value="">{isRestaurantMode ? 'Select seating area...' : 'Select department...'}</option>
+                    <option value="">{isRestaurantMode ? t('Select seating area...') : t('Select department...')}</option>
                   {departments
                     .filter((d) => d.is_active && d.id !== desk.department_id)
                     .map((d) => (
@@ -2444,14 +2119,14 @@ export function DeskPanel({
               {transferDeptId && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                  {isRestaurantMode ? serviceLabel : 'Service'}
+                  {isRestaurantMode ? serviceLabel : t('Service')}
                   </label>
                   <select
                     value={transferServiceId}
                     onChange={(e) => setTransferServiceId(e.target.value)}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   >
-                    <option value="">{isRestaurantMode ? `Select ${serviceLabel.toLowerCase()}...` : 'Select service...'}</option>
+                    <option value="">{isRestaurantMode ? t('Select {label}...', { label: serviceLabel.toLowerCase() }) : t('Select service...')}</option>
                     {transferableServices.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -2469,7 +2144,7 @@ export function DeskPanel({
                   }}
                   className="flex-1 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   onClick={handleTransfer}
@@ -2479,185 +2154,13 @@ export function DeskPanel({
                   {isPending ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Transferring...
+                      {t('Transferring...')}
                     </span>
                   ) : (
-                    isRestaurantMode ? 'Move Party' : 'Transfer'
+                    isRestaurantMode ? t('Move Party') : t('Transfer')
                   )}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Table Map Modal */}
-      {showTableMapModal && isRestaurantMode && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/50">
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-card border border-border shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-6 py-4">
-              <div>
-                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                  <LayoutGrid className="h-5 w-5 text-primary" />
-                  Floor Map
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {availableRestaurantTables.length} available · {occupiedRestaurantTables.length} occupied · {tableState.length} total
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowTableMapModal(false);
-                  setTableMapFilter('all');
-                  setTableMapZoneFilter(null);
-                }}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Filter Bar */}
-            <div className="border-b border-border px-6 py-3 flex flex-wrap items-center gap-2">
-              {(['all', 'available', 'occupied'] as const).map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => setTableMapFilter(filter)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    tableMapFilter === filter
-                      ? filter === 'available'
-                        ? 'bg-emerald-600 text-white'
-                        : filter === 'occupied'
-                          ? 'bg-rose-600 text-white'
-                          : 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  {filter === 'all' ? `All (${tableState.length})` : filter === 'available' ? `Available (${availableRestaurantTables.length})` : `Occupied (${occupiedRestaurantTables.length})`}
-                </button>
-              ))}
-              <div className="h-4 w-px bg-border mx-1" />
-              <button
-                type="button"
-                onClick={() => setTableMapZoneFilter(null)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  tableMapZoneFilter === null ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
-              >
-                All zones
-              </button>
-              {restaurantAreas.map((area) => (
-                <button
-                  key={area.id}
-                  type="button"
-                  onClick={() => setTableMapZoneFilter(tableMapZoneFilter === area.id ? null : area.id)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    tableMapZoneFilter === area.id ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  {area.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {(() => {
-                const filteredTables = tableState.filter((table) => {
-                  if (tableMapFilter === 'available' && (table.status !== 'available' || table.current_ticket_id != null)) return false;
-                  if (tableMapFilter === 'occupied' && (table.status === 'available' && table.current_ticket_id == null)) return false;
-                  if (tableMapZoneFilter && table.zone !== tableMapZoneFilter) return false;
-                  return true;
-                });
-
-                // Group by zone
-                const zones = new Map<string, typeof filteredTables>();
-                for (const table of filteredTables) {
-                  const zoneKey = table.zone ?? '__general__';
-                  if (!zones.has(zoneKey)) zones.set(zoneKey, []);
-                  zones.get(zoneKey)!.push(table);
-                }
-
-                if (filteredTables.length === 0) {
-                  return (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <LayoutGrid className="h-10 w-10 text-muted-foreground mb-3" />
-                      <p className="text-sm font-medium text-foreground">No tables match this filter</p>
-                      <p className="text-xs text-muted-foreground mt-1">Try a different filter or zone.</p>
-                    </div>
-                  );
-                }
-
-                return Array.from(zones.entries()).map(([zoneKey, tables]) => {
-                  const zoneLabel = zoneKey === '__general__'
-                    ? (restaurantAreas.length > 0 ? 'General' : '')
-                    : restaurantAreas.find((a) => a.id === zoneKey)?.label ?? toTitleCase(zoneKey.replace(/-/g, ' '));
-
-                  return (
-                    <div key={zoneKey} className="mb-6 last:mb-0">
-                      {zoneLabel && (
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{zoneLabel}</h4>
-                      )}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {tables.map((table) => {
-                          const isAvailable = table.status === 'available' && table.current_ticket_id == null;
-                          const isOccupied = !isAvailable && table.current_ticket_id != null;
-                          const seatedTicket = isOccupied ? getTicketById(table.current_ticket_id) : null;
-                          const isRecommended = currentTicket && suggestedTables.some((s) => s.code === table.code);
-
-                          return (
-                            <button
-                              key={table.id}
-                              type="button"
-                              onClick={() => {
-                                if (isAvailable && currentTicket) {
-                                  handleAssignRestaurantTable(table);
-                                  setShowTableMapModal(false);
-                                  setTableMapFilter('all');
-                                  setTableMapZoneFilter(null);
-                                }
-                              }}
-                              disabled={!isAvailable || !currentTicket || isPending}
-                              className={`relative rounded-xl border-2 p-3 text-left transition-all ${
-                                isAvailable
-                                  ? isRecommended
-                                    ? 'border-primary bg-emerald-50 ring-2 ring-primary hover:bg-emerald-100 cursor-pointer'
-                                    : 'border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 cursor-pointer'
-                                  : table.status === 'held' || table.status === 'reserved_soon'
-                                    ? 'border-amber-200 bg-amber-50/70 cursor-default'
-                                    : 'border-rose-200 bg-rose-50/70 cursor-default'
-                              } ${(!isAvailable || !currentTicket) ? 'opacity-80' : ''}`}
-                            >
-                              <div className="flex items-center justify-between gap-1 mb-1">
-                                <span className="text-lg font-black text-foreground leading-tight">{table.code}</span>
-                                <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
-                                  isAvailable ? 'bg-emerald-500' : table.status === 'held' || table.status === 'reserved_soon' ? 'bg-amber-500' : 'bg-rose-500'
-                                }`} />
-                              </div>
-                              <p className="text-[11px] text-muted-foreground truncate">{table.label}</p>
-                              {table.capacity && (
-                                <p className="text-[10px] text-muted-foreground">Seats {table.capacity}</p>
-                              )}
-                              {isOccupied && seatedTicket && (
-                                <p className="mt-1 text-[10px] font-semibold text-rose-600 truncate">
-                                  {getTicketCustomerName(seatedTicket) ?? seatedTicket.ticket_number}
-                                </p>
-                              )}
-                              {isRecommended && (
-                                <span className="absolute -top-1.5 -right-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground">
-                                  Best fit
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
             </div>
           </div>
         </div>

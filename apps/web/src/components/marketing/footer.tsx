@@ -1,4 +1,8 @@
+'use client';
+
 import Link from 'next/link';
+import { useI18n } from '@/components/providers/locale-provider';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 const footerLinks = {
   Product: [
@@ -21,6 +25,8 @@ const footerLinks = {
 };
 
 export function Footer() {
+  const { t } = useI18n();
+
   return (
     <footer className="border-t border-border bg-muted/30">
       <div className="mx-auto max-w-7xl px-6 py-16">
@@ -32,18 +38,18 @@ export function Footer() {
                 Q
               </div>
               <span className="text-lg font-bold">
-                Qflo
+                Queue<span className="text-primary">Flow</span>
               </span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Smart queue management for modern businesses. Free push notifications, no SMS fees.
+              {t('Smart queue management for modern businesses. Free push notifications, no SMS fees.')}
             </p>
           </div>
 
           {/* Link Columns */}
           {Object.entries(footerLinks).map(([category, links]) => (
             <div key={category}>
-              <h3 className="mb-4 text-sm font-semibold text-foreground">{category}</h3>
+              <h3 className="mb-4 text-sm font-semibold text-foreground">{t(category)}</h3>
               <ul className="space-y-3">
                 {links.map((link) => (
                   <li key={link.href}>
@@ -51,7 +57,7 @@ export function Footer() {
                       href={link.href}
                       className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {link.label}
+                      {t(link.label)}
                     </Link>
                   </li>
                 ))}
@@ -62,14 +68,15 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 md:flex-row">
           <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} Qflo. All rights reserved.
+            &copy; {new Date().getFullYear()} QueueFlow. {t('All rights reserved.')}
           </p>
-          <div className="flex gap-6">
+          <div className="flex items-center gap-6">
+            <LanguageSwitcher />
             <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Privacy Policy
+              {t('Privacy Policy')}
             </Link>
             <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
-              Terms of Service
+              {t('Terms of Service')}
             </Link>
           </div>
         </div>

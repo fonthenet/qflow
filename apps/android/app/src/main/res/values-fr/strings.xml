@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">QueueFlow</string>
+    <string name="queue_live_updates_channel_name">Mises a jour de la file</string>
+    <string name="queue_live_updates_channel_desc">Progression en direct de la file et statut du ticket</string>
+    <string name="queue_alerts_channel_name">Alertes de file</string>
+    <string name="queue_alerts_channel_desc">Appels urgents, rappels et buzz de file</string>
+    <string name="open">Ouvrir</string>
+    <string name="current_visit">Visite en cours</string>
+    <string name="ticket_label">Ticket %1$s</string>
+    <string name="your_desk">votre guichet</string>
+    <string name="with_staff_now">Avec le personnel</string>
+    <string name="go_to_desk">Rendez-vous a %1$s</string>
+    <string name="return_to_desk">Retournez a %1$s</string>
+    <string name="show_screen_on_arrival">Ticket %1$s • Montrez cet ecran a votre arrivee.</string>
+    <string name="proceed_now">Avancez maintenant. Le compte a rebours est actif.</string>
+    <string name="return_to_desk_now">Ticket %1$s • Revenez au guichet maintenant.</string>
+    <string name="staff_waiting_now">Le personnel vous attend en ce moment.</string>
+    <string name="at_desk">A %1$s</string>
+    <string name="staff_helping">Un membre du personnel s\'occupe de vous.</string>
+    <string name="line_position">#%1$d dans la file</string>
+    <string name="approx_wait">~%1$d min</string>
+    <string name="now_serving">En cours %1$s</string>
+    <string name="waiting_for_turn">En attente de votre tour</string>
+    <string name="buzz_alert">Alerte buzz</string>
+    <string name="reminder_your_turn">Rappel : c'est votre tour</string>
+    <string name="its_your_turn">C\'est votre tour</string>
+    <string name="please_go_to_desk_now">Ticket %1$s • Veuillez vous rendre a %2$s maintenant</string>
+    <string name="return_to_desk_immediately">Ticket %1$s • Retournez immediatement a %2$s</string>
+    <string name="visit_status_updated">Statut de la visite mis a jour</string>
+    <string name="visit_complete">Visite terminee</string>
+    <string name="ticket_marked_missed">Ce ticket a ete marque comme manque.</string>
+    <string name="thanks_for_visiting_feedback">Merci de votre visite. Touchez pour laisser un avis.</string>
+    <string name="now_short">MAINT.</string>
+    <string name="desk_short">GUICHET</string>
+</resources>

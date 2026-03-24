@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { Check, Copy, ExternalLink, QrCode, Download } from 'lucide-react';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface PublicLinkActionsProps {
   path: string;
@@ -16,9 +17,10 @@ export function PublicLinkActions({
   path,
   qrTitle,
   qrDescription,
-  downloadName = 'qflo-link.png',
+  downloadName = 'queueflow-link.png',
   buttonClassName = 'rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted',
 }: PublicLinkActionsProps) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [showQr, setShowQr] = useState(false);
@@ -76,13 +78,13 @@ export function PublicLinkActions({
         >
           <span className="inline-flex items-center gap-2">
             <ExternalLink className="h-4 w-4" />
-            Open
+            {t('Open')}
           </span>
         </a>
         <button type="button" onClick={handleCopy} className={buttonClassName}>
           <span className="inline-flex items-center gap-2">
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? 'Copied' : 'Copy link'}
+            {copied ? t('Copied') : t('Copy link')}
           </span>
         </button>
         <button
@@ -93,7 +95,7 @@ export function PublicLinkActions({
         >
           <span className="inline-flex items-center gap-2">
             <QrCode className="h-4 w-4" />
-            {isGeneratingQr ? 'Loading...' : 'QR code'}
+            {isGeneratingQr ? t('Loading...') : t('QR code')}
           </span>
         </button>
       </div>
@@ -112,7 +114,7 @@ export function PublicLinkActions({
                 <img src={qrDataUrl} alt={qrTitle} className="h-64 w-64" />
               ) : (
                 <div className="flex h-64 w-64 items-center justify-center text-sm text-muted-foreground">
-                  Preparing QR code...
+                  {t('Preparing QR code...')}
                 </div>
               )}
             </div>
@@ -125,7 +127,7 @@ export function PublicLinkActions({
                 onClick={handleCopy}
                 className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
               >
-                {copied ? 'Copied' : 'Copy link'}
+                {copied ? t('Copied') : t('Copy link')}
               </button>
               <button
                 type="button"
@@ -140,7 +142,7 @@ export function PublicLinkActions({
               >
                 <span className="inline-flex items-center gap-2">
                   <Download className="h-4 w-4" />
-                  Download
+                  {t('Download')}
                 </span>
               </button>
             </div>
@@ -150,7 +152,7 @@ export function PublicLinkActions({
               onClick={() => setShowQr(false)}
               className="mt-3 w-full rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Close
+              {t('Close')}
             </button>
           </div>
         </div>

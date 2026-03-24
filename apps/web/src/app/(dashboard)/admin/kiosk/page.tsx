@@ -34,7 +34,7 @@ export default async function KioskAdminPage() {
   // Fetch offices for preview links
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, is_active, settings, operating_hours, timezone')
+    .select('id, name, is_active, settings')
     .eq('organization_id', staff.organization_id)
     .order('name');
 

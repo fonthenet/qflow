@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { register } from '@/lib/actions/auth-actions';
+import { useI18n } from '@/components/providers/locale-provider';
 
 export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t } = useI18n();
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
@@ -25,7 +27,7 @@ export default function RegisterPage() {
           <h1 className="text-3xl font-bold">
             Q<span className="text-primary">flo</span>
           </h1>
-          <p className="mt-2 text-muted-foreground">Register your business</p>
+          <p className="mt-2 text-muted-foreground">{t('Register your business')}</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
@@ -38,7 +40,7 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <label htmlFor="organizationName" className="text-sm font-medium">
-                Business Name
+                {t('Business Name')}
               </label>
               <input
                 id="organizationName"
@@ -46,13 +48,13 @@ export default function RegisterPage() {
                 type="text"
                 required
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="City Hospital, Post Office..."
+                placeholder={t('City Hospital, Post Office...')}
               />
             </div>
 
             <div className="space-y-2">
               <label htmlFor="fullName" className="text-sm font-medium">
-                Your Full Name
+                {t('Your Full Name')}
               </label>
               <input
                 id="fullName"
@@ -60,13 +62,13 @@ export default function RegisterPage() {
                 type="text"
                 required
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="John Doe"
+                placeholder={t('John Doe')}
               />
             </div>
 
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
-                Email
+                {t('Email')}
               </label>
               <input
                 id="email"
@@ -80,7 +82,7 @@ export default function RegisterPage() {
 
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
-                Password
+                {t('Password')}
               </label>
               <input
                 id="password"
@@ -89,7 +91,7 @@ export default function RegisterPage() {
                 required
                 minLength={6}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="Minimum 6 characters"
+                placeholder={t('Minimum 6 characters')}
               />
             </div>
 
@@ -98,14 +100,14 @@ export default function RegisterPage() {
               disabled={loading}
               className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? t('Creating account...') : t('Create Account')}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{' '}
+            {t('Already have an account?')}{' '}
             <Link href="/login" className="font-medium text-primary hover:underline">
-              Sign in
+              {t('Sign In')}
             </Link>
           </p>
         </div>

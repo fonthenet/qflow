@@ -3,32 +3,23 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
-  Accessibility,
   ArrowLeft,
-  Baby,
   CalendarClock,
+  Check,
   ChevronRight,
   Clock3,
-  ConciergeBell,
-  Crown,
-  Heart,
-  Layers,
-  Medal,
-  Printer,
   Search,
-  Shield,
-  Star,
+  Stethoscope,
   Ticket,
-  UserCheck,
   Users,
 } from 'lucide-react';
+import { useI18n } from '@/components/providers/locale-provider';
 import { GroupTicketModal } from '@/components/kiosk/group-ticket-modal';
-import { SendTicketLink } from '@/components/kiosk/send-ticket-link';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 import { checkInAppointment, findAppointment } from '@/lib/actions/appointment-actions';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { buildBookingPath } from '@/lib/office-links';
-import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 
 interface PriorityCategory {
   id: string;
@@ -44,6 +35,8 @@ interface KioskSettingsType {
   themeColor: string;
   logoUrl?: string | null;
   showLogo?: boolean;
+  vertical?: 'public_service' | 'bank' | 'clinic' | 'restaurant' | 'barbershop';
+  mode?: 'normal' | 'quick_book';
   showPriorities: boolean;
   showEstimatedTime: boolean;
   hiddenDepartments: string[];
@@ -51,33 +44,6 @@ interface KioskSettingsType {
   lockedDepartmentId: string | null;
   buttonLabel: string;
   idleTimeout: number;
-  showAppointmentCheckIn?: boolean;
-  showGroupTickets?: boolean;
-}
-
-const PRIORITY_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-  senior: Crown,
-  elderly: Crown,
-  accessible: Accessibility,
-  accessibility: Accessibility,
-  disabled: Accessibility,
-  handicap: Accessibility,
-  veteran: Medal,
-  military: Medal,
-  pregnant: Heart,
-  pregnancy: Heart,
-  vip: Star,
-  priority: Shield,
-  child: Baby,
-  infant: Baby,
-};
-
-function getPriorityIcon(name: string) {
-  const key = name.toLowerCase().trim();
-  for (const [keyword, Icon] of Object.entries(PRIORITY_ICON_MAP)) {
-    if (key.includes(keyword)) return Icon;
-  }
-  return UserCheck;
 }
 
 interface KioskViewProps {
@@ -86,7 +52,6 @@ interface KioskViewProps {
   departments: any[];
   priorityCategories?: PriorityCategory[];
   kioskSettings?: KioskSettingsType;
-  vertical?: 'standard' | 'public_service' | 'bank' | 'clinic' | 'restaurant' | 'barbershop' | null;
   sandbox?: {
     enabled: boolean;
     bookingPath: string;
@@ -101,7 +66,6 @@ interface KioskViewProps {
       status: string;
     }>;
   };
-  stationLocalUrl?: string | null;
 }
 
 type KioskStep = 'home' | 'department' | 'service' | 'priority' | 'appointment' | 'ticket';
@@ -112,38 +76,26 @@ export function KioskView({
   departments,
   priorityCategories = [],
   kioskSettings,
-  vertical,
   sandbox,
-  stationLocalUrl,
 }: KioskViewProps) {
+  const { t, formatDateTime, formatTime } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
-  // General rule: org logo_url is the source of truth.
-  // When kioskSettings is provided (from the page server component), trust it — the page already
-  // applies the auto-detect rule (showLogo = kiosk_show_logo ?? Boolean(logo_url)).
-  // When kioskSettings is absent (e.g. sandbox / no-config fallback), derive from the org prop.
-  const orgLogoUrl = organization?.logo_url ?? null;
-  const ks = kioskSettings
-    ? {
-        ...kioskSettings,
-        // Ensure logoUrl is never null when org has a logo
-        logoUrl: kioskSettings.logoUrl ?? orgLogoUrl,
-        // Auto-show if the page didn't explicitly decide (showLogo was not set)
-        showLogo: kioskSettings.showLogo ?? Boolean(kioskSettings.logoUrl ?? orgLogoUrl),
-      }
-    : {
-        welcomeMessage: 'Welcome',
-        headerText: '',
-        themeColor: '',
-        logoUrl: orgLogoUrl,
-        showLogo: Boolean(orgLogoUrl),
-        showPriorities: true,
-        showEstimatedTime: true,
-        hiddenDepartments: [],
-        hiddenServices: [],
-        lockedDepartmentId: null,
-        buttonLabel: 'Get Ticket',
-        idleTimeout: 60,
-      };
+  const ks = kioskSettings ?? {
+    welcomeMessage: t('Welcome'),
+    headerText: '',
+    themeColor: '',
+    logoUrl: null,
+    showLogo: false,
+    vertical: 'public_service',
+    mode: 'normal',
+    showPriorities: true,
+    showEstimatedTime: true,
+    hiddenDepartments: [],
+    hiddenServices: [],
+    lockedDepartmentId: null,
+    buttonLabel: t('Get Ticket'),
+    idleTimeout: 60,
+  };
 
   const lockedDept = ks.lockedDepartmentId
     ? departments.find((department: any) => department.id === ks.lockedDepartmentId) ?? null
@@ -157,9 +109,12 @@ export function KioskView({
         .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)),
     }))
     .filter((department: any) => department.services.length > 0);
-
-  const [step, setStep] = useState<KioskStep>('home');
-  const [selectedDept, setSelectedDept] = useState<any>(lockedDept);
+  const defaultDept =
+    lockedDept ?? (ks.mode === 'normal' && activeDepartments.length === 1 ? activeDepartments[0] : null);
+  const defaultStep: KioskStep = defaultDept ? 'service' : 'home';
+  const directServiceEntry = Boolean(defaultDept);
+  const [step, setStep] = useState<KioskStep>(defaultStep);
+  const [selectedDept, setSelectedDept] = useState<any>(defaultDept);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
   const [ticket, setTicket] = useState<any>(null);
@@ -173,140 +128,19 @@ export function KioskView({
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
-  const [showHoursPanel, setShowHoursPanel] = useState(false);
 
-  // ── Business hours enforcement ──────────────────────────────
-  const officeHours = office.operating_hours as OperatingHours | null;
-  const officeTimezone = office.timezone || 'UTC';
-  const [kioskBusinessStatus, setKioskBusinessStatus] = useState(() =>
-    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
-  );
-  useEffect(() => {
-    if (!officeHours) return;
-    setKioskBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    const t = setInterval(() => setKioskBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
-    return () => clearInterval(t);
-  }, [officeHours, officeTimezone]);
-
-  const isWebKioskClosed = kioskBusinessStatus !== null && !kioskBusinessStatus.isOpen;
-
-  // If closed, show closed overlay
-  if (isWebKioskClosed && step === 'home') {
-    const bh = kioskBusinessStatus;
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-background to-muted/30 p-8 text-center">
-        {ks.showLogo && ks.logoUrl && (
-          <img src={ks.logoUrl} alt="Logo" className="mb-6 h-16 w-auto" />
-        )}
-        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-red-50">
-          <svg className="h-10 w-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4M12 16h.01" />
-          </svg>
-        </div>
-        <h1 className="mb-2 text-3xl font-bold text-foreground">
-          {bh?.reason === 'holiday' && bh?.holidayName
-            ? `Closed for ${bh.holidayName}`
-            : bh?.reason === 'before_hours' && bh?.todayHours
-            ? 'Not Open Yet'
-            : bh?.reason === 'after_hours'
-            ? 'Closed for the Day'
-            : 'Currently Closed'}
-        </h1>
-        {bh?.reason === 'before_hours' && bh?.todayHours && (
-          <p className="mb-2 text-lg text-muted-foreground">Opens at <strong>{bh.todayHours.open}</strong> today</p>
-        )}
-        {bh?.nextOpen && !(bh?.reason === 'before_hours') && (
-          <p className="mb-2 text-lg text-muted-foreground">
-            Opens {capitalizeDay(bh.nextOpen.day)} at {bh.nextOpen.time}
-          </p>
-        )}
-        {officeHours && (
-          <div className="mt-6 rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-muted-foreground">Business Hours</h3>
-            <div className="space-y-1 text-sm">
-              {formatOperatingHours(officeHours).map(({ day, hours }) => (
-                <div key={day} className={`flex justify-between gap-6 ${day === bh?.currentDay ? 'font-bold text-primary' : 'text-foreground'}`}>
-                  <span>{capitalizeDay(day).slice(0, 3)}</span>
-                  <span className={hours === 'Closed' ? 'text-muted-foreground' : ''}>{hours}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const verticalConfig = (() => {
-    switch (vertical) {
-      case 'restaurant':
-        return {
-          homeIcon: '🍽️',
-          homeSubtitle: 'Join the waitlist or check in for your reservation',
-          departmentLabel: 'Dining Area',
-          serviceLabel: 'Party Size',
-          appointmentLabel: 'Reservation',
-          ticketLabel: 'Waitlist Number',
-          queueMessage: 'Your table will be ready soon',
-          accentGradient: 'from-amber-50 to-orange-50',
-        };
-      case 'bank':
-        return {
-          homeIcon: '🏦',
-          homeSubtitle: 'Take a number for banking services',
-          departmentLabel: 'Service Counter',
-          serviceLabel: 'Transaction Type',
-          appointmentLabel: 'Scheduled Appointment',
-          ticketLabel: 'Queue Number',
-          queueMessage: 'Please wait for your number to be called',
-          accentGradient: 'from-blue-50 to-indigo-50',
-        };
-      case 'clinic':
-        return {
-          homeIcon: '🏥',
-          homeSubtitle: 'Check in for your visit or join the waiting list',
-          departmentLabel: 'Department',
-          serviceLabel: 'Visit Type',
-          appointmentLabel: 'Scheduled Appointment',
-          ticketLabel: 'Patient Number',
-          queueMessage: 'You will be called when the doctor is ready',
-          accentGradient: 'from-teal-50 to-cyan-50',
-        };
-      case 'barbershop':
-        return {
-          homeIcon: '💈',
-          homeSubtitle: 'Walk in or check in for your appointment',
-          departmentLabel: 'Service',
-          serviceLabel: 'Style',
-          appointmentLabel: 'Booked Appointment',
-          ticketLabel: 'Your Number',
-          queueMessage: 'Have a seat, we will call you when your stylist is ready',
-          accentGradient: 'from-violet-50 to-purple-50',
-        };
-      default: // public_service
-        return {
-          homeIcon: '🏛️',
-          homeSubtitle: 'Get a ticket and wait for your turn',
-          departmentLabel: 'Department',
-          serviceLabel: 'Service',
-          appointmentLabel: 'Appointment',
-          ticketLabel: 'Ticket Number',
-          queueMessage: 'Wait for your number to be displayed',
-          accentGradient: 'from-slate-50 to-gray-50',
-        };
-    }
-  })();
-
-  const themeColor = ks.themeColor && /^#[0-9a-fA-F]{6}$/.test(ks.themeColor) ? ks.themeColor : '#18181b';
+  const themeColor = ks.themeColor || '#2563eb';
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
-  const visibleServiceCount = activeDepartments.reduce(
-    (count: number, department: any) => count + department.services.length,
-    0
-  );
+  const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
+  const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
+  const localizedWelcomeMessage = t(ks.welcomeMessage);
+  const localizedButtonLabel = t(ks.buttonLabel);
+  const bookingFirst = ks.mode === 'quick_book';
+  const isClinicKiosk = ks.vertical === 'clinic';
+  const showHeaderMessage = step === 'home' || step === 'department' || step === 'appointment';
   const primaryCardStyle = {
-    borderColor: '#e4e4e7',
-    boxShadow: '0 18px 40px rgba(0,0,0,0.06)',
+    borderColor: `${themeColor}22`,
+    boxShadow: `0 10px 28px ${themeColor}10`,
   };
 
   function clearAppointmentSearch() {
@@ -319,8 +153,8 @@ export function KioskView({
   }
 
   function resetSession() {
-    setStep('home');
-    setSelectedDept(lockedDept);
+    setStep(defaultStep);
+    setSelectedDept(defaultDept);
     setSelectedService(null);
     setSelectedPriority(null);
     setTicket(null);
@@ -330,22 +164,9 @@ export function KioskView({
     setShowGroupModal(false);
   }
 
-  // Ping Station's local server so web kiosk shows as "Online" in Devices
   useEffect(() => {
-    if (!stationLocalUrl) return;
-    const kioskId = 'web-kiosk-' + office.id.slice(0, 8);
-    const ping = () => {
-      fetch(`${stationLocalUrl}/api/device-ping`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: kioskId, type: 'kiosk', name: 'Web Kiosk' }),
-        signal: AbortSignal.timeout(3000),
-      }).catch(() => {});
-    };
-    ping();
-    const iv = setInterval(ping, 15000);
-    return () => clearInterval(iv);
-  }, [stationLocalUrl, office.id]);
+    setSelectedDept(defaultDept);
+  }, [defaultDept]);
 
   useEffect(() => {
     const timeoutMs = Math.max(ks.idleTimeout, 10) * 1000;
@@ -366,12 +187,12 @@ export function KioskView({
       if (timeoutId) clearTimeout(timeoutId);
       events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
     };
-  }, [ks.idleTimeout, lockedDept]);
+  }, [defaultDept, defaultStep, ks.idleTimeout]);
 
   function startWalkInFlow() {
     setSearchError(null);
-    if (lockedDept) {
-      setSelectedDept(lockedDept);
+    if (defaultDept) {
+      setSelectedDept(defaultDept);
       setStep('service');
       return;
     }
@@ -381,6 +202,12 @@ export function KioskView({
   }
 
   function goBackFromService() {
+    if (directServiceEntry) {
+      setStep(defaultStep);
+      setSelectedDept(defaultDept);
+      return;
+    }
+
     if (lockedDept) {
       setStep('home');
       return;
@@ -458,13 +285,8 @@ export function KioskView({
       priorityCategoryId: priority?.id ?? null,
     });
 
-    if ('stationOnline' in result && result.stationOnline && result.stationUrl) {
-      window.location.href = result.stationUrl;
-      return;
-    }
-
     if (result.error || !result.data) {
-      alert(result.error ?? 'Error creating ticket. Please try again.');
+      alert(result.error ?? t('Error creating ticket. Please try again.'));
       setLoading(false);
       return;
     }
@@ -495,7 +317,7 @@ export function KioskView({
 
   async function handleSearchAppointment() {
     if (!searchTerm.trim()) {
-      setSearchError('Enter your name or phone number to find your appointment.');
+      setSearchError(t('Enter your name or phone number to find your appointment.'));
       return;
     }
 
@@ -554,7 +376,7 @@ export function KioskView({
     const result = await checkInAppointment(appointmentId);
 
     if (result.error || !result.data?.ticket) {
-      setSearchError(result.error ?? 'Unable to check in this appointment.');
+      setSearchError(result.error ?? t('Unable to check in this appointment.'));
       setCheckingIn(null);
       return;
     }
@@ -573,197 +395,129 @@ export function KioskView({
     setCheckingIn(null);
   }
 
-  function handlePrint() {
-    window.print();
-  }
-
-  function formatTime(dateStr: string) {
-    return new Date(dateStr).toLocaleTimeString('en-US', {
+  function formatAppointmentTime(dateStr: string) {
+    return formatTime(dateStr, {
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true,
     });
   }
+
+  const walkInButton = (
+    <button
+      onClick={startWalkInFlow}
+      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:min-h-[136px] sm:px-8"
+    >
+      <div
+        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white sm:h-20 sm:w-20"
+        style={{ backgroundColor: themeColor }}
+      >
+        <Ticket className="h-8 w-8 sm:h-10 sm:w-10" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+          {localizedButtonLabel}
+        </div>
+      </div>
+      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
+    </button>
+  );
+
+  const appointmentsButton = (
+    <button
+      onClick={() => {
+        clearAppointmentSearch();
+        setStep('appointment');
+      }}
+      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:min-h-[136px] sm:px-8"
+    >
+      <div
+        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white sm:h-20 sm:w-20"
+        style={{ backgroundColor: themeColor }}
+      >
+        <CalendarClock className="h-8 w-8 sm:h-10 sm:w-10" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+          {t('Appointments')}
+        </div>
+      </div>
+      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
+    </button>
+  );
+
+  const bookingButton = (
+    <a
+      href={bookingPath}
+      className={`flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border px-6 py-6 text-left transition-colors sm:min-h-[136px] sm:px-8 ${
+        bookingFirst
+          ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+          : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+      }`}
+    >
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 sm:h-20 sm:w-20">
+        <Clock3 className="h-8 w-8 sm:h-10 sm:w-10" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+          {t('Book')}
+        </div>
+      </div>
+      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
+    </a>
+  );
 
   return (
     <div
       className="min-h-screen"
       style={{
-        background: '#f8fafc',
+        background: `linear-gradient(180deg, #f8fafc 0%, #ffffff 18%, ${themeColor}0a 100%)`,
       }}
     >
+      <div className="fixed right-4 top-4 z-40 sm:right-6 sm:top-6">
+        <LanguageSwitcher />
+      </div>
       {sandboxMode ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
-          Sandbox mode. This kiosk uses the real layout, but tickets, appointment check-ins, and QR scans stay in a safe preview environment.
+          {t(
+            'Sandbox mode. This kiosk uses the real layout, but tickets, appointment check-ins, and QR scans stay in a safe preview environment.'
+          )}
         </div>
       ) : null}
-      <div className="relative overflow-hidden border-b border-slate-200/70 bg-white/80">
-        <div
-          className="pointer-events-none absolute inset-x-0 -top-16 h-56 blur-3xl"
-          style={{
-            background: 'linear-gradient(90deg, rgba(0,0,0,0.03) 0%, rgba(255,255,255,0) 75%)',
-          }}
-        />
-        <div className="relative mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
-          <div className="inline-flex items-center rounded-full border border-white/90 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.34em] text-slate-700 shadow-sm backdrop-blur">
-            {organization?.name || ks.headerText || 'Business'}
-          </div>
-          {ks.showLogo && ks.logoUrl ? (
-            <div className="mt-6 flex justify-center">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
+          {hasLogo ? (
+            <div className="mb-5 flex justify-center">
               <img
-                src={ks.logoUrl}
+                src={ks.logoUrl!}
                 alt={`${organization?.name || 'Business'} logo`}
-                className="max-h-44 w-auto max-w-[520px] object-contain"
+                className="max-h-20 w-auto max-w-[220px] object-contain"
               />
             </div>
           ) : null}
-          <h1 className="mt-6 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
-            {ks.headerText || organization?.name || 'Qflo'}
+          <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+            {kioskTitle}
           </h1>
-          <p className="mt-3 text-lg text-slate-600 sm:text-xl">{ks.welcomeMessage}</p>
-          <p className="mt-2 text-base text-slate-500">{office.name}</p>
-          <p className="mt-4 text-sm text-slate-500">
-            {activeDepartments.length} departments · {visibleServiceCount} services
-          </p>
-          {officeHours && kioskBusinessStatus && (
-            <button
-              onClick={() => setShowHoursPanel(!showHoursPanel)}
-              className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold shadow-sm backdrop-blur transition-colors hover:bg-white"
-              aria-expanded={showHoursPanel}
-            >
-              <span className={`inline-block h-2 w-2 rounded-full ${kioskBusinessStatus.isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-slate-700">
-                {kioskBusinessStatus.isOpen
-                  ? kioskBusinessStatus.todayHours
-                    ? `Open until ${kioskBusinessStatus.todayHours.close}`
-                    : 'Open'
-                  : 'Closed'}
-              </span>
-              <Clock3 className={`h-3 w-3 text-slate-400 transition-transform ${showHoursPanel ? 'rotate-180' : ''}`} />
-            </button>
-          )}
+          {office.name && office.name !== kioskTitle ? (
+            <p className="mt-2 text-base text-slate-500">{office.name}</p>
+          ) : null}
+          {showHeaderMessage ? (
+            <p className="mt-4 text-2xl text-slate-700 sm:text-3xl">{localizedWelcomeMessage}</p>
+          ) : null}
         </div>
       </div>
 
-      {/* ── Collapsible business hours panel ── */}
-      {showHoursPanel && officeHours && kioskBusinessStatus && (
-        <div className="mx-auto -mt-4 mb-4 max-w-sm animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg">
-            <h3 className="mb-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
-              Business Hours
-            </h3>
-            <div className="space-y-1">
-              {formatOperatingHours(officeHours).map(({ day, hours }) => (
-                <div
-                  key={day}
-                  className={`flex justify-between rounded-lg px-3 py-1.5 text-sm ${
-                    day === kioskBusinessStatus.currentDay
-                      ? 'bg-primary/5 font-bold text-primary'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  <span>{capitalizeDay(day)}</span>
-                  <span className={hours === 'Closed' ? 'text-slate-400' : ''}>{hours}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         {step === 'home' && (
-          <section className="rounded-[2rem] border bg-white/90 p-6 backdrop-blur sm:p-8" style={primaryCardStyle}>
-            <div className="mx-auto max-w-2xl text-center">
-              {ks.showLogo && ks.logoUrl ? (
-                <img
-                  src={ks.logoUrl}
-                  alt=""
-                  className="mx-auto mb-6 h-20 w-auto object-contain"
-                />
-              ) : (
-                <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-slate-100 text-4xl">
-                  {verticalConfig.homeIcon}
-                </div>
-              )}
-              <h1 className="text-4xl font-black text-slate-950 sm:text-5xl">
-                {ks.welcomeMessage || organization?.name || 'Welcome'}
-              </h1>
-              {ks.headerText ? (
-                <p className="mt-3 text-lg text-slate-600">{ks.headerText}</p>
-              ) : (
-                <p className="mt-3 text-lg text-slate-600">{verticalConfig.homeSubtitle}</p>
-              )}
-            </div>
-
-            <div className="mx-auto mt-8 flex max-w-lg flex-col gap-4">
-              <button
-                onClick={startWalkInFlow}
-                disabled={loading}
-                className="group relative flex w-full items-center gap-5 rounded-[1.5rem] border-2 px-6 py-6 text-left shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50"
-                style={{
-                  borderColor: themeColor,
-                  backgroundColor: `${themeColor}08`,
-                }}
-              >
-                <div
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-md"
-                  style={{ backgroundColor: themeColor }}
-                >
-                  <Ticket className="h-7 w-7" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">
-                    {ks.buttonLabel || (vertical === 'restaurant' ? 'Join Waitlist' : vertical === 'barbershop' ? 'Walk In' : 'Get Ticket')}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {vertical === 'restaurant'
-                      ? 'Add your party to the waitlist now'
-                      : vertical === 'clinic'
-                        ? 'Walk in without a prior appointment'
-                        : vertical === 'barbershop'
-                          ? 'No appointment? No problem'
-                          : vertical === 'bank'
-                            ? 'Take a number for counter service'
-                            : 'Join the queue and get your ticket number'}
-                  </div>
-                </div>
-                <ChevronRight className="h-6 w-6 text-slate-400 transition-transform group-hover:translate-x-1" />
-              </button>
-
-              {ks.showAppointmentCheckIn !== false ? (
-                <button
-                  onClick={() => {
-                    clearAppointmentSearch();
-                    setStep('appointment');
-                  }}
-                  className="group flex w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:-translate-y-0.5"
-                >
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                    <CalendarClock className="h-7 w-7" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xl font-bold text-slate-950">
-                      {verticalConfig.appointmentLabel} Check-in
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {vertical === 'restaurant'
-                        ? 'Already have a reservation? Check in here'
-                        : vertical === 'clinic'
-                          ? 'Have a scheduled appointment? Check in here'
-                          : vertical === 'barbershop'
-                            ? 'Booked ahead? Let us know you are here'
-                            : 'Already booked? Find and confirm your appointment'}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-6 w-6 text-slate-400 transition-transform group-hover:translate-x-1" />
-                </button>
-              ) : null}
+          <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
+            <div className="grid gap-4">
+              {bookingFirst ? bookingButton : walkInButton}
+              {bookingFirst ? walkInButton : appointmentsButton}
+              {bookingFirst ? appointmentsButton : bookingButton}
             </div>
           </section>
         )}
 
-        {step !== 'home' && step !== 'ticket' && (
+        {step !== 'home' && step !== 'ticket' && !(step === 'service' && directServiceEntry) && (
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <button
               onClick={() => {
@@ -785,16 +539,16 @@ export function KioskView({
               className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back
+              {t('Back')}
             </button>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-sm text-slate-600 shadow-sm backdrop-blur">
-              <span className={step === 'department' ? 'font-semibold text-slate-950' : ''}>Department</span>
+              <span className={step === 'department' ? 'font-semibold text-slate-950' : ''}>{t('Department')}</span>
               <ChevronRight className="h-4 w-4 text-slate-300" />
-              <span className={step === 'service' ? 'font-semibold text-slate-950' : ''}>Service</span>
+              <span className={step === 'service' ? 'font-semibold text-slate-950' : ''}>{t('Service')}</span>
               {priorityCategories.length > 0 ? (
                 <>
                   <ChevronRight className="h-4 w-4 text-slate-300" />
-                  <span className={step === 'priority' ? 'font-semibold text-slate-950' : ''}>Priority</span>
+                  <span className={step === 'priority' ? 'font-semibold text-slate-950' : ''}>{t('Priority')}</span>
                 </>
               ) : null}
             </div>
@@ -802,17 +556,9 @@ export function KioskView({
         )}
 
         {step === 'department' && (
-          <section className="rounded-[2rem] border bg-white/90 p-5 backdrop-blur sm:p-6" style={primaryCardStyle}>
+          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
             <div className="mx-auto max-w-2xl text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Walk-in check-in
-              </p>
-              <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                {verticalConfig.departmentLabel === 'Dining Area' ? 'Choose your dining area' : `Choose a ${verticalConfig.departmentLabel.toLowerCase()}`}
-              </h2>
-              <p className="mt-2 text-base text-slate-600">
-                Pick the area that best matches the help you need today.
-              </p>
+              <h2 className="text-3xl font-semibold text-slate-950 sm:text-4xl">{t('Choose a department')}</h2>
             </div>
 
             <div className="mt-6 space-y-3">
@@ -823,21 +569,18 @@ export function KioskView({
                     setSelectedDept(department);
                     setStep('service');
                   }}
-                  className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
+                  className="group flex min-h-[104px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:px-7"
                 >
                   <div
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white"
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
                     style={{ backgroundColor: themeColor }}
                   >
-                    <Layers className="h-5 w-5" />
+                    {department.code || 'D'}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xl font-bold text-slate-950">{department.name}</div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {department.description || `${department.services.length} service${department.services.length === 1 ? '' : 's'} available`}
-                    </div>
+                    <div className="text-2xl font-semibold text-slate-950 sm:text-3xl">{t(department.name)}</div>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                  <ChevronRight className="h-7 w-7 text-slate-300" />
                 </button>
               ))}
             </div>
@@ -845,77 +588,69 @@ export function KioskView({
         )}
 
         {step === 'service' && selectedDept && (
-          <section className="rounded-[2rem] border bg-white/90 p-5 backdrop-blur sm:p-6" style={primaryCardStyle}>
+          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
               <div className="border-b border-slate-100 pb-5 text-center">
                 <div className="mx-auto max-w-2xl">
-                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    {selectedDept.code || 'Department'}
-                  </p>
-                  <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                    {selectedDept.name}
+                  <h2 className="text-3xl font-semibold text-slate-950 sm:text-4xl">
+                    {t(selectedDept.name)}
                   </h2>
-                  <p className="mt-2 text-base text-slate-600">
-                    {vertical === 'restaurant' ? 'How many guests?' : vertical === 'barbershop' ? 'Choose your style' : `Select a ${verticalConfig.serviceLabel.toLowerCase()}`}
-                  </p>
-                </div>
-                <div className="mx-auto mt-4 inline-flex rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  {selectedDept.services.length} service{selectedDept.services.length === 1 ? '' : 's'} available
                 </div>
               </div>
 
               <div className="mt-5 space-y-3">
-                {selectedDept.services.map((service: any) => (
+                {selectedDept.services.map((service: any) => {
+                  const showMedicalIcon =
+                    isClinicKiosk ||
+                    /medical|doctor|visit|check.?up|consult/i.test(service.name ?? '');
+
+                  return (
                   <button
                     key={service.id}
                     onClick={() => handleServiceSelected(service)}
                     disabled={loading}
-                    className="group flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                    className="group relative flex min-h-[104px] w-full flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-center transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 sm:px-7"
                   >
                     <div
-                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white"
+                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
                       style={{ backgroundColor: themeColor }}
                     >
-                      <ConciergeBell className="h-5 w-5" />
+                      {showMedicalIcon ? <Stethoscope className="h-7 w-7" /> : service.code || 'S'}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xl font-bold text-slate-950">{service.name}</div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        {service.description || 'Select this service to continue'}
-                      </div>
+                    <div className="min-w-0">
+                      <div className="text-2xl font-semibold text-slate-950 sm:text-3xl">{t(service.name)}</div>
                       {ks.showEstimatedTime && service.estimated_service_time ? (
-                        <div className="mt-2 text-sm font-medium text-sky-700">
-                          Est. {service.estimated_service_time} min
+                        <div className="mt-2 text-base font-medium text-sky-700">
+                          {t('{count} min', { count: service.estimated_service_time })}
                         </div>
                       ) : null}
                     </div>
-                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                    <ChevronRight className="absolute right-6 top-1/2 h-7 w-7 -translate-y-1/2 text-slate-300" />
                   </button>
-                ))}
+                  );
+                })}
               </div>
-              {ks.showGroupTickets !== false ? (
-                <button
-                  onClick={() => setShowGroupModal(true)}
-                  disabled={loading}
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-50"
-                >
-                  <Users className="h-5 w-5" />
-                  Group ticket
-                </button>
-              ) : null}
+              <button
+                onClick={() => setShowGroupModal(true)}
+                disabled={loading}
+                className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-50"
+              >
+                <Users className="h-5 w-5" />
+                {t('Group ticket')}
+              </button>
           </section>
         )}
 
         {step === 'priority' && selectedService && (
-          <section className="rounded-[2rem] border bg-white/90 p-5 backdrop-blur sm:p-6" style={primaryCardStyle}>
+          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
             <div className="mx-auto max-w-2xl text-center">
               <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Priority
+                {t('Priority')}
               </p>
               <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                Select a priority level
+                {t('Select a priority level')}
               </h2>
               <p className="mt-2 text-base text-slate-600">
-                Choose a priority category only if it applies to your visit.
+                {t('Choose a priority category only if it applies to your visit.')}
               </p>
             </div>
 
@@ -923,15 +658,15 @@ export function KioskView({
               <button
                 onClick={() => handlePrioritySelected(null)}
                 disabled={loading}
-                className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                className="flex w-full items-center gap-4 rounded-[1.25rem] border border-slate-200 bg-white px-5 py-5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                  <Users className="h-5 w-5" />
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-700">
+                  STD
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-xl font-bold text-slate-950">Standard</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Continue with the normal queue order.
+                    {t('Continue with the normal queue order.')}
                   </div>
                 </div>
                 <ChevronRight className="h-5 w-5 text-slate-400" />
@@ -942,17 +677,19 @@ export function KioskView({
                   key={category.id}
                   onClick={() => handlePrioritySelected(category)}
                   disabled={loading}
-                  className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                  className="flex w-full items-center gap-4 rounded-[1.25rem] border bg-white px-5 py-5 text-left transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  style={{ borderColor: category.color ?? '#94a3b8' }}
                 >
-                  {(() => { const Icon = getPriorityIcon(category.name); return (
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                    <Icon className="h-5 w-5" />
+                  <div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl text-white"
+                    style={{ backgroundColor: category.color ?? '#64748b' }}
+                  >
+                    {category.icon || 'P'}
                   </div>
-                  ); })()}
                   <div className="min-w-0 flex-1">
                     <div className="text-xl font-bold text-slate-950">{category.name}</div>
                     <div className="mt-1 text-sm text-slate-600">
-                      Served ahead of standard visits
+                      {t('Served ahead of standard visits')}
                     </div>
                   </div>
                   <ChevronRight className="h-5 w-5 text-slate-400" />
@@ -963,17 +700,17 @@ export function KioskView({
         )}
 
         {step === 'appointment' && (
-            <section className="rounded-[2rem] border bg-white/90 p-5 backdrop-blur sm:p-6" style={primaryCardStyle}>
+            <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
               <div className="text-center">
                 <div className="mx-auto max-w-2xl">
                   <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Appointment check-in
+                    {t('Appointment check-in')}
                   </p>
                   <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                    Find today&apos;s reservation
+                    {t("Find today's reservation")}
                   </h2>
                   <p className="mt-2 max-w-2xl text-base text-slate-600">
-                    Search using your name or phone number, then confirm your arrival right here.
+                    {t('Search using your name or phone number, then confirm your arrival right here.')}
                   </p>
                 </div>
               </div>
@@ -986,7 +723,7 @@ export function KioskView({
 
               <div className="mt-6 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
                 <label className="block text-sm font-semibold text-slate-900">
-                  Name or phone number
+                  {t('Name or phone number')}
                 </label>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                   <div className="relative flex-1">
@@ -996,17 +733,17 @@ export function KioskView({
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
                       onKeyDown={(event) => event.key === 'Enter' && handleSearchAppointment()}
-                      placeholder="Enter your name or phone number"
-                      className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-12 pr-4 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                      placeholder={t('Enter your name or phone number')}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-12 pr-4 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
                     />
                   </div>
                   <button
                     onClick={handleSearchAppointment}
                     disabled={searching}
-                    className="inline-flex items-center justify-center rounded-2xl px-6 py-4 text-base font-semibold text-white shadow-lg transition-opacity disabled:opacity-60"
+                    className="inline-flex items-center justify-center rounded-xl px-6 py-4 text-base font-semibold text-white transition-opacity disabled:opacity-60"
                     style={{ backgroundColor: themeColor }}
                   >
-                    {searching ? 'Searching...' : 'Search'}
+                    {searching ? t('Searching...') : t('Search')}
                   </button>
                 </div>
               </div>
@@ -1014,23 +751,23 @@ export function KioskView({
               {searched ? (
                 <div className="mt-6 space-y-4">
                   {appointments.length === 0 ? (
-                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-sm">
-                      <h3 className="text-xl font-bold text-slate-950">No appointment found</h3>
+                    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-6 text-center">
+                      <h3 className="text-xl font-bold text-slate-950">{t('No appointment found')}</h3>
                       <p className="mt-2 text-base text-slate-600">
-                        We couldn&apos;t find a reservation for today with that search.
+                        {t("We couldn't find a reservation for today with that search.")}
                       </p>
                       <a
                         href={bookingPath}
-                        className="mt-5 inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100"
+                        className="mt-5 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100"
                       >
-                        Book an appointment instead
+                        {t('Book an appointment instead')}
                       </a>
                     </div>
                   ) : (
                     appointments.map((appointment) => (
                       <div
                         key={appointment.id}
-                        className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm"
+                        className="rounded-[1.25rem] border border-slate-200 bg-white p-5"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
@@ -1039,7 +776,7 @@ export function KioskView({
                               {appointment.department?.name} · {appointment.service?.name}
                             </p>
                             <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
-                              Scheduled for {formatTime(appointment.scheduled_at)}
+                              {t('Scheduled for {time}', { time: formatAppointmentTime(appointment.scheduled_at) })}
                             </p>
                           </div>
                           <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
@@ -1049,10 +786,10 @@ export function KioskView({
                         <button
                           onClick={() => handleAppointmentCheckIn(appointment.id)}
                           disabled={checkingIn === appointment.id}
-                          className="mt-5 inline-flex w-full items-center justify-center rounded-2xl px-4 py-4 text-base font-semibold text-white shadow-lg transition-opacity disabled:opacity-60"
+                          className="mt-5 inline-flex w-full items-center justify-center rounded-xl px-4 py-4 text-base font-semibold text-white transition-opacity disabled:opacity-60"
                           style={{ backgroundColor: themeColor }}
                         >
-                          {checkingIn === appointment.id ? 'Checking in...' : 'Check in now'}
+                          {checkingIn === appointment.id ? t('Checking in...') : t('Check in now')}
                         </button>
                       </div>
                     ))
@@ -1061,9 +798,9 @@ export function KioskView({
               ) : null}
               <a
                 href={bookingPath}
-                className="mt-5 flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-white"
+                className="mt-5 flex items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-white"
               >
-                <span>Need to book instead?</span>
+                <span>{t('Need to book instead?')}</span>
                 <ChevronRight className="h-5 w-5 text-slate-400" />
               </a>
             </section>
@@ -1072,43 +809,37 @@ export function KioskView({
         {step === 'ticket' && ticket && (
           <section
             ref={printRef}
-            className="mx-auto max-w-3xl rounded-[2rem] border bg-white/92 p-6 shadow-[0_22px_60px_rgba(15,23,42,0.09)] backdrop-blur print:border print:border-black print:shadow-none sm:p-8"
+            className="mx-auto max-w-3xl rounded-[1.75rem] border bg-white p-6 print:border print:border-black print:shadow-none sm:p-8"
             style={primaryCardStyle}
           >
             <div className="text-center">
-              {ks.showLogo && ks.logoUrl ? (
-                <div className="mb-5 flex justify-center">
-                  <img
-                    src={ks.logoUrl}
-                    alt={organization?.name || ''}
-                    className="h-14 w-auto object-contain"
-                  />
-                </div>
-              ) : null}
               <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500 print:text-slate-700">
-                Check-in complete
+                {t('Check-in complete')}
               </p>
               <h2 className="mt-3 text-3xl font-bold text-slate-950 print:text-black sm:text-4xl">
-                You&apos;re in the queue
+                {t("You're in the queue")}
               </h2>
               <p className="mt-2 text-base text-slate-600 print:text-slate-700">
-                {verticalConfig.queueMessage}
+                {t('Keep this ticket and scan the QR code to follow your place in line.')}
               </p>
               <div className="mt-4 flex justify-center">
                 <PriorityBadge priorityCategory={ticket.priority_category} />
               </div>
             </div>
 
-            <div className="mt-8 rounded-[1.75rem] bg-slate-950 px-6 py-8 text-center text-white print:bg-white print:text-black">
-              <p className="text-sm uppercase tracking-[0.24em] text-white/65 print:text-slate-500">
-                {verticalConfig.ticketLabel}
+            <div
+              className="mt-8 rounded-[1.75rem] border border-slate-200 bg-slate-50 px-6 py-8 text-center text-slate-950 print:bg-white print:text-black"
+            >
+              <p className="text-sm uppercase tracking-[0.24em] text-slate-500 print:text-slate-500">
+                {t('Ticket number')}
               </p>
               <p
-                className="mt-3 text-7xl font-black tracking-tight text-white print:text-black sm:text-8xl"
+                className="mt-3 text-7xl font-black tracking-tight print:text-black sm:text-8xl"
+                style={{ color: themeColor }}
               >
                 {ticket.ticket_number}
               </p>
-              <div className="mt-5 space-y-1 text-sm text-slate-300 print:text-slate-700">
+              <div className="mt-5 space-y-1 text-sm text-slate-700 print:text-slate-700">
                 <p>{organization?.name}</p>
                 <p>{office.name}</p>
                 <p>{ticket.department_name}</p>
@@ -1132,21 +863,28 @@ export function KioskView({
                 <img
                   src={qrDataUrl}
                   alt="Scan to track your queue position"
+                  alt={t('Scan to track your queue position')}
                   className="mx-auto h-56 w-56"
                 />
               ) : null}
               <p className="mt-4 text-base font-semibold text-slate-800">
-                Scan to track your queue position
+                {t('Scan to track your queue position')}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                {new Date().toLocaleString()}
+                {formatDateTime(new Date(), {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
               </p>
             </div>
 
             {ticket.group_tickets && ticket.group_tickets.length > 1 ? (
               <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
                 <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Group tickets
+                  {t('Group tickets')}
                 </p>
                 <div className="mt-4 space-y-2 text-sm text-slate-700">
                   {ticket.group_tickets.map((groupTicket: any, index: number) => (
@@ -1154,7 +892,7 @@ export function KioskView({
                       key={groupTicket.id}
                       className="flex items-center justify-between rounded-xl bg-white px-4 py-3"
                     >
-                      <span>{groupTicket.person_name || `Person ${index + 1}`}</span>
+                      <span>{groupTicket.person_name || t('Person {count}', { count: index + 1 })}</span>
                       <span className="font-mono font-bold">{groupTicket.ticket_number}</span>
                     </div>
                   ))}
@@ -1163,28 +901,12 @@ export function KioskView({
             ) : null}
 
             <div className="mt-6 print:hidden">
-              <SendTicketLink
-                ticketUrl={ticket.tracking_url ? `${window.location.origin}${ticket.tracking_url}` : `${window.location.origin}/q/${ticket.qr_token}`}
-                ticketNumber={ticket.ticket_number}
-                officeName={office.name}
-              />
-            </div>
-
-            <div className="mt-6 grid gap-3 print:hidden sm:grid-cols-2">
-              <button
-                onClick={handlePrint}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-base font-semibold text-white shadow-lg transition-opacity"
-                style={{ backgroundColor: themeColor }}
-              >
-                <Printer className="h-5 w-5" />
-                Print ticket
-              </button>
               <button
                 onClick={resetSession}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100"
               >
-                <ArrowLeft className="h-5 w-5" />
-                Back to start
+                <Check className="h-5 w-5" />
+                {t('Done')}
               </button>
             </div>
           </section>

@@ -23,16 +23,16 @@ describe('TemplateOnboardingClient', () => {
   it('prefills the first office name for new organizations', () => {
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'Qflo' }}
+        organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={0}
         currentTemplate={{
-          id: 'standard',
-          title: 'Standard Queue',
-          vertical: 'standard',
-          version: '1.2.0',
-          dashboardMode: 'standard',
+          id: 'public-service',
+          title: 'Public Service Branch',
+          vertical: 'public_service',
+          version: '1.1.0',
+          dashboardMode: 'public_service',
           operatingModel: 'department_first',
-          branchType: 'general_office',
+          branchType: 'service_center',
           enabledModules: ['kiosk'],
           recommendedRoles: ['admin'],
         }}
@@ -40,7 +40,7 @@ describe('TemplateOnboardingClient', () => {
     );
 
     expect((screen.getByLabelText('Starter Office Name') as HTMLInputElement).value).toBe(
-      'Qflo Main Location'
+      'QueueFlow Main Location'
     );
   });
 
@@ -49,16 +49,16 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'Qflo' }}
+        organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={2}
         currentTemplate={{
-          id: 'standard',
-          title: 'Standard Queue',
-          vertical: 'standard',
-          version: '1.2.0',
-          dashboardMode: 'standard',
+          id: 'public-service',
+          title: 'Public Service Branch',
+          vertical: 'public_service',
+          version: '1.1.0',
+          dashboardMode: 'public_service',
           operatingModel: 'department_first',
-          branchType: 'general_office',
+          branchType: 'service_center',
           enabledModules: ['kiosk'],
           recommendedRoles: ['admin'],
         }}
@@ -93,7 +93,7 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'Qflo' }}
+        organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={1}
         currentTemplate={{
           id: 'clinic',
@@ -137,7 +137,7 @@ describe('TemplateOnboardingClient', () => {
 
     render(
       <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'Qflo' }}
+        organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={1}
         currentTemplate={{
           id: 'bank-branch',

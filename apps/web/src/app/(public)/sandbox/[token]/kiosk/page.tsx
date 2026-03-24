@@ -20,6 +20,16 @@ function toSandboxScheduledAt(timeLabel: string) {
   return new Date(Date.UTC(2026, 2, 16, hour, minute, 0)).toISOString();
 }
 
+const supportedKioskVerticals = [
+  'public_service',
+  'bank',
+  'clinic',
+  'restaurant',
+  'barbershop',
+] as const;
+
+type SupportedKioskVertical = (typeof supportedKioskVerticals)[number];
+
 export default async function SandboxKioskPage({
   params,
   searchParams,
@@ -33,6 +43,12 @@ export default async function SandboxKioskPage({
   if (!preview) {
     notFound();
   }
+
+  const kioskVertical = supportedKioskVerticals.includes(
+    preview.template.vertical as SupportedKioskVertical
+  )
+    ? (preview.template.vertical as SupportedKioskVertical)
+    : undefined;
 
   return (
     <SandboxFrame
@@ -75,6 +91,8 @@ export default async function SandboxKioskPage({
           themeColor: preview.kioskProfile.themeColor,
           logoUrl: preview.organization.logoUrl,
           showLogo: Boolean(preview.organization.logoUrl),
+          vertical: kioskVertical,
+          mode: preview.kioskProfile.mode,
           showPriorities: preview.queuePolicy.priorityMode !== 'none',
           showEstimatedTime: preview.kioskProfile.showEstimatedTime,
           hiddenDepartments: [],

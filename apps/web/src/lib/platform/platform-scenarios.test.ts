@@ -9,11 +9,11 @@ import { getIndustryTemplateById, industryTemplates } from './templates';
 
 const VERTICAL_SCENARIOS = [
   {
-    templateId: 'standard',
+    templateId: 'public-service',
     officeName: 'Central Service Center',
     expected: {
-      vertical: 'standard',
-      dashboardMode: 'standard',
+      vertical: 'public_service',
+      dashboardMode: 'public_service',
       queueLifecycle: 'ticket',
       routingMode: 'department_first',
       numberingFormat: 'department_sequence',
@@ -97,7 +97,7 @@ function createOrganizationSettings(templateId: string) {
         ? 'service_routing'
         : template.vertical === 'clinic'
           ? 'appointments_first'
-          : template.vertical === 'standard' || template.vertical === 'public_service'
+          : template.vertical === 'public_service'
             ? 'department_first'
             : 'waitlist',
     platform_branch_type: starterOffice.branchType,
@@ -128,7 +128,7 @@ describe('multi-industry platform scenarios', () => {
   it('ships starter coverage for the five launch verticals', () => {
     expect(industryTemplates).toHaveLength(5);
     expect(industryTemplates.map((template) => template.vertical)).toEqual(
-      expect.arrayContaining(['standard', 'bank', 'clinic', 'restaurant', 'barbershop'])
+      expect.arrayContaining(['public_service', 'bank', 'clinic', 'restaurant', 'barbershop'])
     );
   });
 
@@ -148,7 +148,7 @@ describe('multi-industry platform scenarios', () => {
               ? 'service_routing'
               : template.vertical === 'clinic'
                 ? 'appointments_first'
-                : template.vertical === 'standard' || template.vertical === 'public_service'
+                : template.vertical === 'public_service'
                   ? 'department_first'
                   : 'waitlist',
           platform_branch_type: starterOffice?.branchType,

@@ -9,29 +9,7 @@ import type {
   TrialTemplateDepartmentDraft,
   TrialTemplateStructure,
 } from '@queueflow/shared';
-import {
-  Building2,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Eye,
-  EyeOff,
-  Globe,
-  GripVertical,
-  Layers,
-  Lock,
-  Monitor,
-  Plus,
-  Rocket,
-  Save,
-  Scissors,
-  ShieldCheck,
-  Store,
-  Trash2,
-  UtensilsCrossed,
-  X,
-} from 'lucide-react';
+import { CalendarDays, CheckCircle2, LayoutTemplate, Lock, Monitor, Plus, Save, Settings2, Store } from 'lucide-react';
 import {
   clearIndustryTemplateTrial,
   confirmIndustryTemplateSetup,
@@ -40,6 +18,7 @@ import {
 import { buildTrialTemplateStructure, normalizeTrialTemplateStructure } from '@/lib/platform/trial-structure';
 import { industryTemplates } from '@/lib/platform/templates';
 import { sandboxSurfaceMeta } from '@/lib/platform/sandbox-surfaces';
+import { useI18n } from '@/components/providers/locale-provider';
 
 type TemplateSummary = {
   id: string;
@@ -93,67 +72,35 @@ function formatEnum(value: string) {
 
 function verticalLabel(vertical: string) {
   switch (vertical) {
-    case 'standard':
-    case 'public_service': return 'Standard Queue';
-    case 'bank': return 'Banking & Finance';
-    case 'clinic': return 'Healthcare & Clinics';
-    case 'restaurant': return 'Restaurants & Hospitality';
-    case 'barbershop': return 'Salons & Barbershops';
-    default: return formatEnum(vertical);
-  }
-}
-
-function verticalDescription(vertical: string) {
-  switch (vertical) {
-    case 'standard':
-    case 'public_service': return 'Flexible ticketing for any business with departments, priorities, and displays';
-    case 'bank': return 'Service-based routing with teller counters';
-    case 'clinic': return 'Appointment-first flow with walk-in support';
-    case 'restaurant': return 'Party-size waitlist with host-controlled seating';
-    case 'barbershop': return 'Walk-in and appointment booking for stylists';
-    default: return 'Custom queue management';
-  }
-}
-
-function verticalIcon(vertical: string) {
-  switch (vertical) {
-    case 'standard':
-    case 'public_service': return <Layers className="h-5 w-5" />;
-    case 'bank': return <ShieldCheck className="h-5 w-5" />;
-    case 'clinic': return <Plus className="h-5 w-5" />;
-    case 'restaurant': return <UtensilsCrossed className="h-5 w-5" />;
-    case 'barbershop': return <Scissors className="h-5 w-5" />;
-    default: return <Layers className="h-5 w-5" />;
-  }
-}
-
-function verticalColor(vertical: string) {
-  switch (vertical) {
-    case 'standard':
     case 'public_service':
-      return { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', ring: 'ring-slate-400', accent: 'bg-slate-700', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' };
+      return 'Public service';
     case 'bank':
-      return { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', ring: 'ring-emerald-400', accent: 'bg-emerald-500', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700' };
+      return 'Banking';
     case 'clinic':
-      return { bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-200', ring: 'ring-sky-400', accent: 'bg-sky-500', badgeBg: 'bg-sky-100', badgeText: 'text-sky-700' };
+      return 'Clinic';
     case 'restaurant':
-      return { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200', ring: 'ring-amber-400', accent: 'bg-amber-500', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700' };
+      return 'Restaurant';
     case 'barbershop':
-      return { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-200', ring: 'ring-orange-400', accent: 'bg-orange-500', badgeBg: 'bg-orange-100', badgeText: 'text-orange-700' };
+      return 'Salon or barbershop';
     default:
-      return { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', ring: 'ring-gray-400', accent: 'bg-gray-500', badgeBg: 'bg-gray-100', badgeText: 'text-gray-700' };
+      return formatEnum(vertical);
   }
 }
 
-function verticalFeatures(vertical: string): string[] {
-  switch (vertical) {
-    case 'standard':
-    case 'public_service': return ['Multi-department', 'Priority lanes', 'Kiosk', 'Display board', 'Appointments'];
-    case 'bank': return ['Service routing', 'Teller counters', 'VIP support'];
-    case 'clinic': return ['Appointments', 'Walk-ins', 'Patient queue'];
-    case 'restaurant': return ['Party size', 'Table assignment', 'Waitlist'];
-    case 'barbershop': return ['Stylist booking', 'Walk-ins', 'Service menu'];
-    default: return ['Queue management', 'Tickets'];
+function queueFlowLabel(value: OperatingModel, vertical?: string) {
+  switch (value) {
+    case 'department_first':
+      return 'Customers choose an area first';
+    case 'service_routing':
+      return 'Customers choose what they need';
+    case 'appointments_first':
+      return 'Appointments first';
+    case 'waitlist':
+      return vertical === 'restaurant'
+        ? 'Hosts control seating and call parties when ready'
+        : 'Simple waitlist';
+    default:
+      return formatEnum(value);
   }
 }
 
@@ -201,90 +148,114 @@ function countEnabledServices(departments: TrialTemplateDepartmentDraft[]) {
   );
 }
 
-/* ── Tiny reusable pieces ────────────────────────────────────────────────── */
+function compactWords(value: string) {
+  return value.length > 72 ? `${value.slice(0, 69)}...` : value;
+}
 
-function StepIndicator({ step, label, active, completed }: { step: number; label: string; active: boolean; completed: boolean }) {
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <span
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all ${
-          completed
-            ? 'bg-emerald-500 text-white'
-            : active
-              ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/25'
-              : 'bg-muted text-muted-foreground'
-        }`}
-      >
-        {completed ? <CheckCircle2 className="h-4 w-4" /> : step}
-      </span>
-      <span className={`text-sm font-medium transition-colors ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+    <div className="rounded-2xl border border-border bg-background px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         {label}
-      </span>
+      </p>
+      <p className="mt-1 text-base font-semibold text-foreground">{value}</p>
     </div>
   );
 }
 
-function Toggle({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => !disabled && onChange(!checked)}
-      disabled={disabled}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        checked ? 'bg-primary' : 'bg-gray-200'
-      } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
-    >
-      <span
-        className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-          checked ? 'translate-x-[18px]' : 'translate-x-[3px]'
-        }`}
-      />
-    </button>
-  );
+function getTemplatePickTone(vertical: string) {
+  switch (vertical) {
+    case 'public_service':
+      return {
+        base: 'border-border bg-background',
+        active: 'border-slate-400 bg-slate-100',
+      };
+    case 'bank':
+      return {
+        base: 'border-border bg-background',
+        active: 'border-stone-400 bg-stone-100',
+      };
+    case 'clinic':
+      return {
+        base: 'border-border bg-background',
+        active: 'border-neutral-400 bg-neutral-100',
+      };
+    case 'restaurant':
+      return {
+        base: 'border-border bg-background',
+        active: 'border-amber-400 bg-amber-100/70',
+      };
+    case 'barbershop':
+      return {
+        base: 'border-border bg-background',
+        active: 'border-orange-300 bg-orange-100/70',
+      };
+    default:
+      return {
+        base: 'border-border bg-background',
+        active: 'border-primary bg-primary/5',
+      };
+  }
 }
 
-function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-2xl border border-border/60 bg-card shadow-sm ${className}`}>
-      {children}
-    </div>
-  );
+function getTemplateHue(vertical: string) {
+  switch (vertical) {
+    case 'public_service':
+      return {
+        page: 'bg-slate-50',
+        heroBadge: 'bg-zinc-100 text-zinc-700',
+        heroGlow: 'from-slate-50 via-white to-slate-100/60',
+        card: 'border-slate-200/90 bg-slate-50/65',
+        softCard: 'border-slate-200/90 bg-slate-50/85',
+        selectedCard: 'border-zinc-300 bg-zinc-100/70',
+      };
+    case 'bank':
+      return {
+        page: 'bg-stone-50',
+        heroBadge: 'bg-stone-100 text-stone-700',
+        heroGlow: 'from-stone-50 via-white to-amber-100/35',
+        card: 'border-stone-200/90 bg-stone-50/65',
+        softCard: 'border-stone-200/90 bg-stone-50/85',
+        selectedCard: 'border-stone-300 bg-stone-100/70',
+      };
+    case 'clinic':
+      return {
+        page: 'bg-neutral-50',
+        heroBadge: 'bg-neutral-100 text-neutral-700',
+        heroGlow: 'from-neutral-50 via-white to-neutral-100/60',
+        card: 'border-neutral-200/90 bg-neutral-50/70',
+        softCard: 'border-neutral-200/90 bg-neutral-50/88',
+        selectedCard: 'border-neutral-300 bg-neutral-100/70',
+      };
+    case 'restaurant':
+      return {
+        page: 'bg-amber-50/35',
+        heroBadge: 'bg-stone-100 text-stone-700',
+        heroGlow: 'from-amber-50/55 via-white to-stone-100/30',
+        card: 'border-amber-200/85 bg-amber-50/40',
+        softCard: 'border-amber-200/85 bg-amber-50/60',
+        selectedCard: 'border-stone-300 bg-stone-100/70',
+      };
+    case 'barbershop':
+      return {
+        page: 'bg-orange-50/30',
+        heroBadge: 'bg-orange-100/80 text-stone-700',
+        heroGlow: 'from-orange-50/50 via-white to-stone-100/30',
+        card: 'border-orange-200/85 bg-orange-50/40',
+        softCard: 'border-orange-200/85 bg-orange-50/60',
+        selectedCard: 'border-orange-300 bg-orange-100/65',
+      };
+    default:
+      return {
+        page: 'bg-white',
+        heroBadge: 'bg-primary/10 text-primary',
+        heroGlow: 'from-white via-white to-white',
+        card: 'border-border bg-card',
+        softCard: 'border-border bg-card',
+        selectedCard: 'border-primary bg-primary/5',
+      };
+  }
 }
-
-function SectionHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
-      <div>
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
-        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function CountBadge({ count, label, active }: { count: number; label: string; active?: boolean }) {
-  return (
-    <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-      active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-    }`}>
-      <span className="font-bold">{count}</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-/* ── Main component ──────────────────────────────────────────────────────── */
 
 export function TemplateOnboardingClient({
   organization,
@@ -294,6 +265,7 @@ export function TemplateOnboardingClient({
   trialTemplate = currentTemplate,
   trialSettings = {},
 }: TemplateOnboardingClientProps) {
+  const { t } = useI18n();
   const router = useRouter();
   const setupLocked = lifecycleState === 'template_confirmed';
   const initialTemplateId = asString(trialSettings.platform_trial_template_id, trialTemplate.id);
@@ -336,9 +308,6 @@ export function TemplateOnboardingClient({
   const [isPreviewPending, startPreviewTransition] = useTransition();
   const [isConfirmPending, startConfirmTransition] = useTransition();
   const [isClearPending, startClearTransition] = useTransition();
-  const [expandedDepartments, setExpandedDepartments] = useState<Set<number>>(
-    () => new Set(trialStructure.departments.map((_, i) => i))
-  );
 
   const selectedTemplate =
     industryTemplates.find((entry) => entry.id === selectedTemplateId) ?? industryTemplates[0];
@@ -358,14 +327,14 @@ export function TemplateOnboardingClient({
       ? trialSettings.platform_trial_share_token
       : '';
   const sandboxLinks = sandboxShareToken
-    ? {
-        hub: `/sandbox/${sandboxShareToken}`,
-        booking: `/sandbox/${sandboxShareToken}/booking`,
-        kiosk: `/sandbox/${sandboxShareToken}/kiosk`,
-        desk: `/sandbox/${sandboxShareToken}/desk`,
-        queue: `/sandbox/${sandboxShareToken}/queue`,
-        display: `/sandbox/${sandboxShareToken}/display`,
-      }
+      ? {
+          hub: `/sandbox/${sandboxShareToken}`,
+          booking: `/sandbox/${sandboxShareToken}/booking`,
+          kiosk: `/sandbox/${sandboxShareToken}/kiosk`,
+          desk: `/sandbox/${sandboxShareToken}/desk`,
+          queue: `/sandbox/${sandboxShareToken}/queue`,
+          display: `/sandbox/${sandboxShareToken}/display`,
+        }
     : null;
 
   const departmentOptions = trialStructure.departments.map((department) => ({
@@ -373,13 +342,7 @@ export function TemplateOnboardingClient({
     name: department.name,
   }));
   const restaurantTemplate = selectedTemplate.vertical === 'restaurant';
-  const vc = verticalColor(selectedTemplate.vertical);
-
-  // Determine step completion for progress
-  const step1Done = !!selectedTemplateId;
-  const step2Done = !!officeName.trim();
-  const step3Done = enabledDepartmentCount > 0 && enabledServiceCount > 0;
-  const step4Done = enabledDeskCount > 0;
+  const hue = highlightedTemplateId ? getTemplateHue(selectedTemplate.vertical) : getTemplateHue('default');
 
   function resetStructure(nextTemplateId: string, nextBranchType: BranchType, includeDisplays: boolean) {
     const nextTemplate = industryTemplates.find((entry) => entry.id === nextTemplateId) ?? industryTemplates[0];
@@ -387,9 +350,7 @@ export function TemplateOnboardingClient({
       nextTemplate.starterOffices.find((office) => office.branchType === nextBranchType) ??
       nextTemplate.starterOffices[0];
 
-    const next = buildTrialTemplateStructure(nextOffice, { includeDisplays });
-    setTrialStructure(next);
-    setExpandedDepartments(new Set(next.departments.map((_, i) => i)));
+    setTrialStructure(buildTrialTemplateStructure(nextOffice, { includeDisplays }));
   }
 
   function handleTemplateChange(nextTemplateId: string) {
@@ -404,7 +365,7 @@ export function TemplateOnboardingClient({
         ? 'service_routing'
         : nextTemplate.vertical === 'clinic'
           ? 'appointments_first'
-          : nextTemplate.vertical === 'standard' || nextTemplate.vertical === 'public_service'
+          : nextTemplate.vertical === 'public_service'
             ? 'department_first'
             : 'waitlist'
     );
@@ -428,7 +389,11 @@ export function TemplateOnboardingClient({
       );
       return;
     }
-    setTrialStructure((current) => ({ ...current, displays: [] }));
+
+    setTrialStructure((current) => ({
+      ...current,
+      displays: [],
+    }));
   }
 
   function updateDepartment(
@@ -444,28 +409,24 @@ export function TemplateOnboardingClient({
   }
 
   function addDepartment() {
-    setTrialStructure((current) => {
-      const newIndex = current.departments.length;
-      setExpandedDepartments((prev) => new Set([...prev, newIndex]));
-      return {
-        ...current,
-        departments: [
-          ...current.departments,
-          {
-            code: `AREA${newIndex + 1}`,
-            name: `New ${vocabulary.departmentLabel.toLowerCase()}`,
-            enabled: true,
-            services: [
-              {
-                code: `SERV${newIndex + 1}`,
-                name: `New ${vocabulary.serviceLabel.toLowerCase()}`,
-                enabled: true,
-              },
-            ],
-          },
-        ],
-      };
-    });
+    setTrialStructure((current) => ({
+      ...current,
+      departments: [
+        ...current.departments,
+        {
+          code: `AREA${current.departments.length + 1}`,
+          name: `New ${vocabulary.departmentLabel.toLowerCase()}`,
+          enabled: true,
+          services: [
+            {
+              code: `SERV${current.departments.length + 1}`,
+              name: `New ${vocabulary.serviceLabel.toLowerCase()}`,
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    }));
   }
 
   function removeDepartment(index: number) {
@@ -476,14 +437,6 @@ export function TemplateOnboardingClient({
         desks: current.desks.filter((desk) => desk.departmentCode !== department.code),
         displays: current.displays,
       };
-    });
-    setExpandedDepartments((prev) => {
-      const next = new Set<number>();
-      for (const i of prev) {
-        if (i < index) next.add(i);
-        else if (i > index) next.add(i - 1);
-      }
-      return next;
     });
   }
 
@@ -504,6 +457,7 @@ export function TemplateOnboardingClient({
   function addDesk() {
     const firstDepartment = departmentOptions[0];
     if (!firstDepartment) return;
+
     setTrialStructure((current) => ({
       ...current,
       desks: [
@@ -514,9 +468,9 @@ export function TemplateOnboardingClient({
           enabled: true,
           status: 'open',
           serviceCodes:
-            current.departments
-              .find((department) => department.code === firstDepartment.code)
-              ?.services.map((service) => service.code) ?? [],
+            current.departments.find((department) => department.code === firstDepartment.code)?.services.map(
+              (service) => service.code
+            ) ?? [],
         },
       ],
     }));
@@ -552,13 +506,16 @@ export function TemplateOnboardingClient({
   function handleSavePreview() {
     setErrorMessage(null);
     setSuccessMessage(null);
+
     startPreviewTransition(async () => {
       const result = await saveIndustryTemplateTrial(buildPayload());
       if (result && 'error' in result && result.error) {
         setErrorMessage(result.error);
         return;
       }
+
       setSuccessMessage('Draft saved. Nothing live was created yet.');
+      
       setHighlightedTemplateId(selectedTemplate.id);
       router.refresh();
     });
@@ -567,16 +524,18 @@ export function TemplateOnboardingClient({
   function handleConfirmTemplate() {
     setErrorMessage(null);
     setSuccessMessage(null);
+
     startConfirmTransition(async () => {
       const result = await confirmIndustryTemplateSetup(buildPayload());
       if (result && 'error' in result && result.error) {
         setErrorMessage(result.error);
         return;
       }
+
       setSuccessMessage(
         `Setup confirmed. Created ${result && 'data' in result ? result.data?.departmentsCreated ?? 0 : 0} areas, ${
           result && 'data' in result ? result.data?.servicesCreated ?? 0 : 0
-        } services, and ${result && 'data' in result ? result.data?.desksCreated ?? 0 : 0} ${vocabulary.deskLabel.toLowerCase()}s.`
+        } services, and ${result && 'data' in result ? result.data?.desksCreated ?? 0 : 0} counters.`
       );
       router.refresh();
     });
@@ -585,12 +544,14 @@ export function TemplateOnboardingClient({
   function handleClearPreview() {
     setErrorMessage(null);
     setSuccessMessage(null);
+
     startClearTransition(async () => {
       const result = await clearIndustryTemplateTrial();
       if (result && 'error' in result && result.error) {
         setErrorMessage(result.error);
         return;
       }
+
       setSelectedTemplateId(currentTemplate.id);
       setHighlightedTemplateId(null);
       setOperatingModel(currentTemplate.operatingModel as OperatingModel);
@@ -600,561 +561,618 @@ export function TemplateOnboardingClient({
       setOfficeName(`${organization.name} Main Location`);
       setTimezone('America/Los_Angeles');
       resetStructure(currentTemplate.id, currentTemplate.branchType as BranchType, true);
-      setSuccessMessage('Draft cleared. Your live business was not changed.');
+      setSuccessMessage(t('Draft cleared. Your live business was not changed.'));
       router.refresh();
     });
   }
 
-  function toggleDepartmentExpanded(index: number) {
-    setExpandedDepartments((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  }
-
-  /* ── Render ──────────────────────────────────────────────────────────── */
-
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 pb-28 sm:px-6">
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Business Setup</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-          Choose a starting template, configure your structure, and go live when you&apos;re ready.
-        </p>
-        {setupLocked && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            <Lock className="h-4 w-4 shrink-0" />
-            <span>Setup is locked. Go to <span className="font-medium">Settings</span> to reset if you need to start over.</span>
+    <div className="space-y-6 p-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
+            {setupLocked ? <Lock className="h-4 w-4" /> : <LayoutTemplate className="h-4 w-4" />}
+            {setupLocked ? t('Live setup is locked') : t('Build your starter setup')}
           </div>
-        )}
+          <h1 className="mt-4 text-3xl font-bold text-foreground">{t('Business Setup')}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('Start with a business type, then shape the actual setup your team will use. Keep only the areas, services, counters, and screens you want before anything goes live.')}
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:w-[420px]">
+          <MiniStat label={t('Mode')} value={setupLocked ? t('Live business') : t('Draft preview')} />
+          <MiniStat label={t('Current setup')} value={currentTemplate.title} />
+          <MiniStat label={t('Live locations')} value={`${existingOfficeCount}`} />
+          <MiniStat label={t('Draft')} value={highlightedTemplateId ? selectedTemplate.title : t('No draft saved')} />
+        </div>
       </div>
 
-      {/* ── Progress Steps ───────────────────────────────────────────── */}
-      {!setupLocked && (
-        <div className="mb-8 flex items-center gap-1 overflow-x-auto pb-1">
-          <StepIndicator step={1} label="Business type" active={!step1Done} completed={step1Done} />
-          <div className="mx-1 h-px w-6 bg-border sm:w-10" />
-          <StepIndicator step={2} label="Location" active={step1Done && !step2Done} completed={step2Done} />
-          <div className="mx-1 h-px w-6 bg-border sm:w-10" />
-          <StepIndicator step={3} label="Structure" active={step2Done && !step3Done} completed={step3Done} />
-          <div className="mx-1 h-px w-6 bg-border sm:w-10" />
-          <StepIndicator step={4} label="Stations" active={step3Done && !step4Done} completed={step4Done} />
-        </div>
-      )}
-
-      {/* ── Alerts ──────────────────────────────────────────────────── */}
-      {successMessage && (
-        <div className="mb-6 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
+      {successMessage ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CheckCircle2 className="h-4 w-4" />
           {successMessage}
         </div>
-      )}
-      {errorMessage && (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>
-      )}
+      ) : null}
 
-      <div className="space-y-8">
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* STEP 1 — Business Type                                       */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Choose your business type</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              This sets your default labels, customer flow, and starter structure.
-            </p>
+      {errorMessage ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      <div className={`space-y-6 rounded-[2rem] p-4 transition-colors duration-300 ${hue.page}`}>
+        <div className={`rounded-2xl border p-4 shadow-sm transition-colors ${hue.card}`}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{t('Pick a starting point')}</p>
+              <p className="text-sm text-muted-foreground">
+                {t('Keep this compact. The setup editor below is where the real work happens.')}
+              </p>
+            </div>
+            {setupLocked ? (
+              <div className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                {t('Switching to another business model is blocked after launch')}
+              </div>
+            ) : null}
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
             {industryTemplates.map((template) => {
-              const active = selectedTemplateId === template.id;
-              const color = verticalColor(template.vertical);
-              const features = verticalFeatures(template.vertical);
+              const active = highlightedTemplateId != null && template.id === highlightedTemplateId;
+              const pickTone = getTemplatePickTone(template.vertical);
               return (
                 <button
                   key={template.id}
                   type="button"
                   onClick={() => handleTemplateChange(template.id)}
                   disabled={setupLocked}
-                  className={`group relative flex flex-col rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
-                    active
-                      ? `${color.border} ${color.bg} shadow-sm`
-                      : 'border-border/50 bg-card hover:border-border hover:shadow-sm'
-                  } ${setupLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                  className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                    active ? pickTone.active : `${pickTone.base} hover:border-primary/40`
+                  } ${setupLocked ? 'cursor-not-allowed opacity-70' : ''}`}
                 >
-                  {/* Icon + Selected indicator */}
-                  <div className="flex items-start justify-between mb-3">
-                    <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${color.bg} ${color.text}`}>
-                      {verticalIcon(template.vertical)}
-                    </span>
-                    {active && (
-                      <span className={`flex h-5 w-5 items-center justify-center rounded-full ${color.accent}`}>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-white" />
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title + Description */}
                   <p className="text-sm font-semibold text-foreground">{template.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                    {verticalDescription(template.vertical)}
-                  </p>
-
-                  {/* Feature tags */}
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {features.map((feature) => (
-                      <span
-                        key={feature}
-                        className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
-                          active ? `${color.badgeBg} ${color.badgeText}` : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {feature}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t(verticalLabel(template.vertical))}</p>
                 </button>
               );
             })}
           </div>
-        </section>
+        </div>
 
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* STEP 2 — Location & Flow                                     */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Your first location</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Name your location and choose how customers join the queue.
-            </p>
-          </div>
-
-          <SectionCard>
-            <div className="p-6">
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {vocabulary.officeLabel} name
-                  </label>
-                  <input
-                    value={officeName}
-                    onChange={(e) => setOfficeName(e.target.value)}
-                    disabled={setupLocked}
-                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-60 transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Timezone
-                  </label>
-                  <div className="relative">
-                    <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                    <select
-                      value={timezone}
-                      onChange={(e) => setTimezone(e.target.value)}
-                      disabled={setupLocked}
-                      className="w-full appearance-none rounded-xl border border-border bg-background pl-9 pr-8 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-60 transition-all"
-                    >
-                      {Intl.supportedValuesOf('timeZone').map((tz) => {
-                        const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
-                        const offsetPart = fmt.formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value ?? '';
-                        const offset = offsetPart.replace('GMT', 'UTC');
-                        return <option key={tz} value={tz}>{tz} ({offset})</option>;
-                      })}
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Customer flow
-                  </label>
-                  <select
-                    value={operatingModel}
-                    onChange={(e) => setOperatingModel(e.target.value as OperatingModel)}
-                    disabled={setupLocked}
-                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-60 transition-all"
-                  >
-                    <option value="department_first">Customers choose an area first</option>
-                    <option value="service_routing">Customers choose what they need</option>
-                    <option value="appointments_first">Appointments first</option>
-                    <option value="waitlist">Simple waitlist</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {vocabulary.officeLabel} style
-                  </label>
-                  <select
-                    value={branchType}
-                    onChange={(e) => handleBranchTypeChange(e.target.value as BranchType)}
-                    disabled={setupLocked}
-                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-60 transition-all"
-                  >
-                    {availableBranchTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {formatEnum(type)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Toggle options */}
-              <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl bg-muted/30 px-4 py-3">
-                <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer">
-                  <Toggle checked={createStarterDisplay} onChange={handleDisplayToggle} disabled={setupLocked} />
-                  <span>Display screens</span>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
+        <div className="space-y-6">
+          <div className={`rounded-3xl border bg-gradient-to-br p-6 shadow-sm transition-colors ${hue.card} ${hue.heroGlow}`}>
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-primary" />
+              <h2 className="text-lg font-semibold text-foreground">{t('Basic setup')}</h2>
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-muted-foreground">
+                  {t('How customers start')}
                 </label>
-                {selectedTemplate.starterPriorities.length > 0 && (
-                  <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer">
-                    <Toggle checked={seedPriorities} onChange={setSeedPriorities} disabled={setupLocked} />
-                    <span>Priority categories</span>
-                  </label>
-                )}
+                <select
+                  value={operatingModel}
+                  onChange={(event) => setOperatingModel(event.target.value as OperatingModel)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+                  disabled={setupLocked}
+                >
+                  <option value="department_first">{t('Customers choose an area first')}</option>
+                  <option value="service_routing">{t('Customers choose what they need')}</option>
+                  <option value="appointments_first">{t('Appointments first')}</option>
+                  <option value="waitlist">{t('Simple waitlist')}</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-muted-foreground">
+                  {vocabulary.officeLabel} style
+                </label>
+                <select
+                  value={branchType}
+                  onChange={(event) => handleBranchTypeChange(event.target.value as BranchType)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+                  disabled={setupLocked}
+                >
+                  {availableBranchTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {formatEnum(type)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-muted-foreground">
+                  {t('First {label} name', { label: vocabulary.officeLabel.toLowerCase() })}
+                </label>
+                <input
+                  value={officeName}
+                  onChange={(event) => setOfficeName(event.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+                  disabled={setupLocked}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-muted-foreground">
+                  {t('Timezone')}
+                </label>
+                <input
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+                  disabled={setupLocked}
+                />
               </div>
             </div>
-          </SectionCard>
-        </section>
 
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* STEP 3 — Structure                                           */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section>
-          <div className="mb-4 flex items-start justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                {vocabulary.departmentLabel}s &amp; {vocabulary.serviceLabel}s
-              </h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                What customers see when they join. You can adjust these anytime later.
-              </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <label className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={createStarterDisplay}
+                  onChange={(event) => handleDisplayToggle(event.target.checked)}
+                  disabled={setupLocked}
+                />
+                {t('Create starter display screens')}
+              </label>
+              {selectedTemplate.starterPriorities.length > 0 ? (
+                <label className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={seedPriorities}
+                    onChange={(event) => setSeedPriorities(event.target.checked)}
+                    disabled={setupLocked}
+                  />
+                  {t('Include priority options')}
+                </label>
+              ) : null}
             </div>
-            {!setupLocked && (
-              <button
-                type="button"
-                onClick={addDepartment}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add {vocabulary.departmentLabel.toLowerCase()}
-              </button>
-            )}
           </div>
 
-          {restaurantTemplate && (
-            <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              <UtensilsCrossed className="h-4 w-4 shrink-0" />
-              Guests pick party size and preference. Hosts handle the actual seating.
+          <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.softCard}`}>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              <h2 className="text-lg font-semibold text-foreground">{t('Sandbox test ride')}</h2>
             </div>
-          )}
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('Test the full customer journey before you confirm this setup. Nothing here is live, and no real booking, queue ticket, alert, or cancellation will be sent.')}
+            </p>
 
-          <div className="space-y-3">
-            {trialStructure.departments.map((department, departmentIndex) => {
-              const isExpanded = expandedDepartments.has(departmentIndex);
-              const activeServiceCount = department.services.filter((s) => s.enabled).length;
-              const totalServiceCount = department.services.length;
-              return (
-                <SectionCard key={`${department.code}-${departmentIndex}`}>
-                  {/* Department header */}
-                  <div className="flex items-center gap-3 px-5 py-3.5">
+            <div className="mt-4 rounded-2xl border border-current/10 bg-background/90 px-4 py-3 text-sm text-foreground/80">
+              {t('You are in test mode. Businesses can open this on another device, scan a real sandbox QR code, and walk through booking, kiosk, queue, and display behavior before launch.')}
+            </div>
+
+            {sandboxLinks ? (
+              <div className="mt-4 rounded-2xl border border-border bg-background p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{t('Shareable sandbox links are ready')}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('Open these on desktop or phone. The kiosk preview includes a real QR that opens the sandbox queue page.')}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => toggleDepartmentExpanded(departmentIndex)}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={handleSavePreview}
+                      disabled={setupLocked || actionPending}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      <Save className="h-4 w-4" />
+                      {isPreviewPending ? t('Saving draft...') : t('Save draft')}
                     </button>
-                    <div className={`h-2 w-2 rounded-full ${department.enabled ? vc.accent : 'bg-muted-foreground/30'}`} />
-                    <input
-                      value={department.name}
-                      onChange={(e) =>
-                        updateDepartment(departmentIndex, (current) => ({
-                          ...current,
-                          name: e.target.value,
-                        }))
-                      }
-                      disabled={setupLocked}
-                      className="flex-1 bg-transparent text-sm font-semibold text-foreground focus:outline-none disabled:opacity-60"
-                    />
-                    <span className="text-xs text-muted-foreground">
-                      {activeServiceCount}/{totalServiceCount} active
-                    </span>
-                    <Toggle
-                      checked={department.enabled}
-                      onChange={(v) =>
-                        updateDepartment(departmentIndex, (current) => ({ ...current, enabled: v }))
-                      }
-                      disabled={setupLocked}
-                    />
-                    {!setupLocked && trialStructure.departments.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeDepartment(departmentIndex)}
-                        className="text-muted-foreground/50 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <a
+                      href={sandboxLinks.hub}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                    >
+                      {t('Open sandbox')}
+                    </a>
                   </div>
+                </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  {sandboxSurfaceMeta
+                    .filter((surface) => surface.key !== 'overview')
+                    .map((surface) => (
+                      <a
+                        key={surface.key}
+                        href={
+                          surface.key === 'booking'
+                            ? sandboxLinks.booking
+                            : surface.key === 'kiosk'
+                              ? sandboxLinks.kiosk
+                              : surface.key === 'desk'
+                                ? sandboxLinks.desk
+                                : surface.key === 'queue'
+                                  ? sandboxLinks.queue
+                                  : sandboxLinks.display
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl border border-border px-3 py-3 text-sm font-medium text-foreground hover:bg-muted"
+                      >
+                        {t('{label} preview', { label: surface.label })}
+                      </a>
+                    ))}
+                </div>
+                <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={handleConfirmTemplate}
+                    disabled={setupLocked || actionPending}
+                    className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {t('Use this setup')}
+                  </button>
+                  {!setupLocked ? (
+                    <button
+                      type="button"
+                      onClick={handleClearPreview}
+                      disabled={actionPending}
+                      className="flex-1 rounded-2xl border border-border px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isClearPending ? t('Clearing draft...') : t('Clear draft')}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-amber-300 bg-background px-4 py-3 text-sm text-amber-900">
+                {t('Save the draft once to generate shareable sandbox links for desktop and phone testing.')}
+              </div>
+            )}
 
-                  {/* Services list */}
-                  {isExpanded && (
-                    <div className="border-t border-border/50 bg-muted/20 px-5 py-3 space-y-1.5">
-                      {department.services.map((service, serviceIndex) => (
-                        <div
-                          key={`${service.code}-${serviceIndex}`}
-                          className="flex items-center gap-3 rounded-xl bg-background px-3.5 py-2.5 border border-transparent hover:border-border/50 transition-colors"
-                        >
-                          <GripVertical className="h-3.5 w-3.5 text-muted-foreground/30" />
+            {!sandboxLinks ? (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleSavePreview}
+                  disabled={setupLocked || actionPending}
+                  className="flex-1 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isPreviewPending ? t('Saving draft...') : t('Save draft')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmTemplate}
+                  disabled={setupLocked || actionPending}
+                  className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {t('Use this setup')}
+                </button>
+                {!setupLocked ? (
+                  <button
+                    type="button"
+                    onClick={handleClearPreview}
+                    disabled={actionPending}
+                    className="flex-1 rounded-2xl border border-border bg-background px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isClearPending ? t('Clearing draft...') : t('Clear draft')}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+          </div>
+
+          {restaurantTemplate ? (
+          <div className={`rounded-3xl border p-5 shadow-sm transition-colors ${hue.softCard}`}>
+            <h2 className="text-lg font-semibold text-amber-950">{t('Restaurant host setup')}</h2>
+              <div className="mt-3 space-y-2 text-sm leading-6 text-amber-900">
+                <p>{t('Guests should choose party size and seating preference, not exact tables.')}</p>
+                <p>{t('Hosts keep control of table assignment, indoor or outdoor placement, and reservation arrivals.')}</p>
+                <p>{t('Keep the public options simple. The host stand handles the real seating decision.')}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">{t('What customers can choose')}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('Keep this simple. Customers should recognize these options quickly.')}
+                </p>
+              </div>
+              {!setupLocked ? (
+                <button
+                  type="button"
+                  onClick={addDepartment}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('Add {label}', { label: vocabulary.departmentLabel.toLowerCase() })}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {trialStructure.departments.map((department, departmentIndex) => (
+                <div key={`${department.code}-${departmentIndex}`} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          value={department.name}
+                          onChange={(event) =>
+                            updateDepartment(departmentIndex, (current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          className="min-w-[220px] flex-1 rounded-xl border border-border px-3 py-2 text-sm font-semibold"
+                          disabled={setupLocked}
+                        />
+                        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                           <input
-                            value={service.name}
-                            onChange={(e) =>
+                            type="checkbox"
+                            checked={department.enabled}
+                            onChange={(event) =>
                               updateDepartment(departmentIndex, (current) => ({
                                 ...current,
-                                services: current.services.map((entry, entryIndex) =>
-                                  entryIndex === serviceIndex
-                                    ? { ...entry, name: e.target.value }
-                                    : entry
-                                ),
+                                enabled: event.target.checked,
                               }))
                             }
                             disabled={setupLocked}
-                            className="flex-1 bg-transparent text-sm text-foreground focus:outline-none disabled:opacity-60"
                           />
+                          {t('Show this area')}
+                        </label>
+                        {!setupLocked && trialStructure.departments.length > 1 ? (
                           <button
                             type="button"
-                            onClick={() =>
-                              updateDepartment(departmentIndex, (current) => ({
-                                ...current,
-                                services: current.services.map((entry, entryIndex) =>
-                                  entryIndex === serviceIndex
-                                    ? { ...entry, enabled: !entry.enabled }
-                                    : entry
-                                ),
-                              }))
-                            }
-                            disabled={setupLocked}
-                            className={`rounded-lg p-1 transition-colors ${
-                              service.enabled
-                                ? 'text-primary hover:bg-primary/10'
-                                : 'text-muted-foreground/40 hover:bg-muted'
-                            }`}
-                            title={service.enabled ? 'Visible to customers' : 'Hidden from customers'}
+                            onClick={() => removeDepartment(departmentIndex)}
+                            className="text-sm font-medium text-red-600"
                           >
-                            {service.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                            {t('Remove')}
                           </button>
-                        </div>
-                      ))}
-                      {!setupLocked && (
-                        <button
-                          type="button"
-                          onClick={() => addService(departmentIndex)}
-                          className="mt-1.5 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
-                        >
-                          <Plus className="h-3 w-3" />
-                          Add {vocabulary.serviceLabel.toLowerCase()}
-                        </button>
-                      )}
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {department.services.map((service, serviceIndex) => (
+                          <div key={`${service.code}-${serviceIndex}`} className="flex flex-col gap-2 rounded-xl border border-border/70 px-3 py-3 sm:flex-row sm:items-center">
+                            <input
+                              value={service.name}
+                              onChange={(event) =>
+                                updateDepartment(departmentIndex, (current) => ({
+                                  ...current,
+                                  services: current.services.map((entry, entryIndex) =>
+                                    entryIndex === serviceIndex
+                                      ? { ...entry, name: event.target.value }
+                                      : entry
+                                  ),
+                                }))
+                              }
+                              className="flex-1 rounded-lg border border-border px-3 py-2 text-sm"
+                              disabled={setupLocked}
+                            />
+                            <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={service.enabled}
+                                onChange={(event) =>
+                                  updateDepartment(departmentIndex, (current) => ({
+                                    ...current,
+                                    services: current.services.map((entry, entryIndex) =>
+                                      entryIndex === serviceIndex
+                                        ? { ...entry, enabled: event.target.checked }
+                                        : entry
+                                    ),
+                                  }))
+                                }
+                                disabled={setupLocked}
+                              />
+                              {t('Show')}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </SectionCard>
-              );
-            })}
-          </div>
-        </section>
+                  </div>
 
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* STEP 4 — Stations & Screens                                  */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              {vocabulary.deskLabel}s &amp; Screens
-            </h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Set up where your staff will work and what customers will see.
-            </p>
+                  {!setupLocked ? (
+                    <button
+                      type="button"
+                      onClick={() => addService(departmentIndex)}
+                      className="mt-3 text-sm font-medium text-primary"
+                    >
+                      {t('+ Add {label}', { label: vocabulary.serviceLabel.toLowerCase() })}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* ── Desks / Counters ─────────────────────────────────── */}
-            <SectionCard>
-              <SectionHeader
-                title={`${vocabulary.deskLabel}s`}
-                description={`Where staff serve ${vocabulary.customerLabel.toLowerCase()}s`}
-                action={!setupLocked ? (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Store className="h-4 w-4 text-primary" />
+                    <h2 className="text-lg font-semibold text-foreground">{t('Counters and desks')}</h2>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t('Set up where customers will be served.')}
+                  </p>
+                </div>
+                {!setupLocked ? (
                   <button
                     type="button"
                     onClick={addDesk}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
                   >
-                    <Plus className="h-3 w-3" /> Add
+                    <Plus className="h-4 w-4" />
+                    {t('Add {label}', { label: vocabulary.deskLabel.toLowerCase() })}
                   </button>
-                ) : undefined}
-              />
-              <div className="px-6 pb-5 space-y-2">
+                ) : null}
+              </div>
+
+              <div className="mt-5 space-y-3">
                 {trialStructure.desks.map((desk, deskIndex) => (
-                  <div
-                    key={`${desk.name}-${deskIndex}`}
-                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition-all ${
-                      desk.enabled ? 'border-border/50 bg-background' : 'border-border/30 bg-muted/30 opacity-60'
-                    }`}
-                  >
-                    <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <input
-                      value={desk.name}
-                      onChange={(e) =>
-                        setTrialStructure((current) => ({
-                          ...current,
-                          desks: current.desks.map((entry, entryIndex) =>
-                            entryIndex === deskIndex ? { ...entry, name: e.target.value } : entry
-                          ),
-                        }))
-                      }
-                      disabled={setupLocked}
-                      className="flex-1 min-w-0 bg-transparent text-sm font-medium text-foreground focus:outline-none disabled:opacity-60"
-                    />
-                    <select
-                      value={desk.departmentCode}
-                      onChange={(e) =>
-                        setTrialStructure((current) => ({
-                          ...current,
-                          desks: current.desks.map((entry, entryIndex) =>
-                            entryIndex === deskIndex
-                              ? {
-                                  ...entry,
-                                  departmentCode: e.target.value,
-                                  serviceCodes:
-                                    current.departments
-                                      .find((department) => department.code === e.target.value)
-                                      ?.services.map((service) => service.code) ?? [],
-                                }
-                              : entry
-                          ),
-                        }))
-                      }
-                      disabled={setupLocked}
-                      className="w-28 rounded-lg border border-border bg-background px-2 py-1 text-xs disabled:opacity-60"
-                    >
-                      {departmentOptions.map((d) => (
-                        <option key={d.code} value={d.code}>{d.name}</option>
-                      ))}
-                    </select>
-                    <Toggle
-                      checked={desk.enabled}
-                      onChange={(v) =>
-                        setTrialStructure((current) => ({
-                          ...current,
-                          desks: current.desks.map((entry, entryIndex) =>
-                            entryIndex === deskIndex ? { ...entry, enabled: v } : entry
-                          ),
-                        }))
-                      }
-                      disabled={setupLocked}
-                    />
-                    {!setupLocked && trialStructure.desks.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
+                  <div key={`${desk.name}-${deskIndex}`} className="rounded-2xl border border-border bg-background p-4">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                      <input
+                        value={desk.name}
+                        onChange={(event) =>
                           setTrialStructure((current) => ({
                             ...current,
-                            desks: current.desks.filter((_, entryIndex) => entryIndex !== deskIndex),
+                            desks: current.desks.map((entry, entryIndex) =>
+                              entryIndex === deskIndex ? { ...entry, name: event.target.value } : entry
+                            ),
                           }))
                         }
-                        className="text-muted-foreground/40 hover:text-red-500 transition-colors"
+                        className="rounded-xl border border-border px-3 py-2 text-sm font-medium"
+                        disabled={setupLocked}
+                      />
+                      <select
+                        value={desk.departmentCode}
+                        onChange={(event) =>
+                          setTrialStructure((current) => ({
+                            ...current,
+                            desks: current.desks.map((entry, entryIndex) =>
+                              entryIndex === deskIndex
+                                ? {
+                                    ...entry,
+                                    departmentCode: event.target.value,
+                                    serviceCodes:
+                                      current.departments
+                                        .find((department) => department.code === event.target.value)
+                                        ?.services.map((service) => service.code) ?? [],
+                                  }
+                                : entry
+                            ),
+                          }))
+                        }
+                        className="rounded-xl border border-border px-3 py-2 text-sm"
+                        disabled={setupLocked}
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {trialStructure.desks.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                    No {vocabulary.deskLabel.toLowerCase()}s yet. Add one to get started.
-                  </div>
-                )}
-              </div>
-            </SectionCard>
-
-            {/* ── Display Screens ──────────────────────────────────── */}
-            <SectionCard>
-              <SectionHeader
-                title="Display screens"
-                description="Public-facing queue boards"
-                action={!setupLocked && createStarterDisplay ? (
-                  <button
-                    type="button"
-                    onClick={addDisplay}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    <Plus className="h-3 w-3" /> Add
-                  </button>
-                ) : undefined}
-              />
-              <div className="px-6 pb-5">
-                {!createStarterDisplay ? (
-                  <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                    Display screens are off. Enable them above in step 2.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {trialStructure.displays.map((display, displayIndex) => (
-                      <div
-                        key={`${display.name}-${displayIndex}`}
-                        className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition-all ${
-                          display.enabled ? 'border-border/50 bg-background' : 'border-border/30 bg-muted/30 opacity-60'
-                        }`}
-                      >
-                        <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        {departmentOptions.map((department) => (
+                          <option key={department.code} value={department.code}>
+                            {department.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                         <input
-                          value={display.name}
-                          onChange={(e) =>
+                          type="checkbox"
+                          checked={desk.enabled}
+                          onChange={(event) =>
                             setTrialStructure((current) => ({
                               ...current,
-                              displays: current.displays.map((entry, entryIndex) =>
-                                entryIndex === displayIndex ? { ...entry, name: e.target.value } : entry
+                              desks: current.desks.map((entry, entryIndex) =>
+                                entryIndex === deskIndex ? { ...entry, enabled: event.target.checked } : entry
                               ),
                             }))
                           }
                           disabled={setupLocked}
-                          className="flex-1 min-w-0 bg-transparent text-sm font-medium text-foreground focus:outline-none disabled:opacity-60"
+                        />
+                        {t('Create this counter')}
+                      </label>
+                      {!setupLocked && trialStructure.desks.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTrialStructure((current) => ({
+                              ...current,
+                              desks: current.desks.filter((_, entryIndex) => entryIndex !== deskIndex),
+                            }))
+                          }
+                          className="text-sm font-medium text-red-600"
+                        >
+                          {t('Remove')}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4 text-primary" />
+                    <h2 className="text-lg font-semibold text-foreground">{t('Display screens')}</h2>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {t('Create public screens only if this business needs them.')}
+                  </p>
+                </div>
+                {!setupLocked && createStarterDisplay ? (
+                  <button
+                    type="button"
+                    onClick={addDisplay}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {t('Add screen')}
+                  </button>
+                ) : null}
+              </div>
+
+              {!createStarterDisplay ? (
+                <div className="mt-5 rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  {t('Starter display screens are turned off for this setup.')}
+                </div>
+              ) : (
+                <div className="mt-5 space-y-3">
+                  {trialStructure.displays.map((display, displayIndex) => (
+                    <div key={`${display.name}-${displayIndex}`} className="rounded-2xl border border-border bg-background p-4">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                        <input
+                          value={display.name}
+                          onChange={(event) =>
+                            setTrialStructure((current) => ({
+                              ...current,
+                              displays: current.displays.map((entry, entryIndex) =>
+                                entryIndex === displayIndex ? { ...entry, name: event.target.value } : entry
+                              ),
+                            }))
+                          }
+                          className="rounded-xl border border-border px-3 py-2 text-sm font-medium"
+                          disabled={setupLocked}
                         />
                         <select
                           value={display.layout ?? selectedTemplate.experienceProfile.display.defaultLayout}
-                          onChange={(e) =>
+                          onChange={(event) =>
                             setTrialStructure((current) => ({
                               ...current,
                               displays: current.displays.map((entry, entryIndex) =>
                                 entryIndex === displayIndex
-                                  ? { ...entry, layout: e.target.value as 'list' | 'grid' | 'department_split' }
+                                  ? { ...entry, layout: event.target.value as 'list' | 'grid' | 'department_split' }
                                   : entry
                               ),
                             }))
                           }
+                          className="rounded-xl border border-border px-3 py-2 text-sm"
                           disabled={setupLocked}
-                          className="w-28 rounded-lg border border-border bg-background px-2 py-1 text-xs disabled:opacity-60"
                         >
-                          <option value="list">List</option>
-                          <option value="grid">Grid</option>
-                          <option value="department_split">Split</option>
+                          <option value="list">{t('List view')}</option>
+                          <option value="grid">{t('Grid view')}</option>
+                          <option value="department_split">{t('Split by area')}</option>
                         </select>
-                        <Toggle
-                          checked={display.enabled}
-                          onChange={(v) =>
-                            setTrialStructure((current) => ({
-                              ...current,
-                              displays: current.displays.map((entry, entryIndex) =>
-                                entryIndex === displayIndex ? { ...entry, enabled: v } : entry
-                              ),
-                            }))
-                          }
-                          disabled={setupLocked}
-                        />
-                        {!setupLocked && trialStructure.displays.length > 1 && (
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={display.enabled}
+                            onChange={(event) =>
+                              setTrialStructure((current) => ({
+                                ...current,
+                                displays: current.displays.map((entry, entryIndex) =>
+                                  entryIndex === displayIndex ? { ...entry, enabled: event.target.checked } : entry
+                                ),
+                              }))
+                            }
+                            disabled={setupLocked}
+                          />
+                          {t('Create this screen')}
+                        </label>
+                        {!setupLocked && trialStructure.displays.length > 1 ? (
                           <button
                             type="button"
                             onClick={() =>
@@ -1163,118 +1181,68 @@ export function TemplateOnboardingClient({
                                 displays: current.displays.filter((_, entryIndex) => entryIndex !== displayIndex),
                               }))
                             }
-                            className="text-muted-foreground/40 hover:text-red-500 transition-colors"
+                            className="text-sm font-medium text-red-600"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            {t('Remove')}
                           </button>
-                        )}
+                        ) : null}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </SectionCard>
-          </div>
-        </section>
-
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {/* Sandbox Preview                                              */}
-        {/* ══════════════════════════════════════════════════════════════ */}
-        {sandboxLinks && !setupLocked && (
-          <SectionCard>
-            <div className="flex items-center justify-between px-6 pt-5 pb-3">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Sandbox preview</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Test the customer journey before going live. Nothing here is real.
-                </p>
-              </div>
-              <a
-                href={sandboxLinks.hub}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-xl bg-primary/10 px-3.5 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-              >
-                Open sandbox
-              </a>
-            </div>
-            <div className="flex flex-wrap gap-2 px-6 pb-5">
-              {sandboxSurfaceMeta
-                .filter((surface) => surface.key !== 'overview')
-                .map((surface) => (
-                  <a
-                    key={surface.key}
-                    href={
-                      surface.key === 'booking'
-                        ? sandboxLinks.booking
-                        : surface.key === 'kiosk'
-                          ? sandboxLinks.kiosk
-                          : surface.key === 'desk'
-                            ? sandboxLinks.desk
-                            : surface.key === 'queue'
-                              ? sandboxLinks.queue
-                              : sandboxLinks.display
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-xl border border-border px-3.5 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    {surface.label}
-                  </a>
-                ))}
-            </div>
-          </SectionCard>
-        )}
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/* Bottom Action Bar                                            */}
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {!setupLocked && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur-md">
-          <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3.5">
-            {/* Summary pills */}
-            <div className="hidden items-center gap-2 sm:flex">
-              <CountBadge count={enabledDepartmentCount} label={enabledDepartmentCount === 1 ? vocabulary.departmentLabel.toLowerCase() : `${vocabulary.departmentLabel.toLowerCase()}s`} active />
-              <CountBadge count={enabledServiceCount} label={enabledServiceCount === 1 ? vocabulary.serviceLabel.toLowerCase() : `${vocabulary.serviceLabel.toLowerCase()}s`} active />
-              <CountBadge count={enabledDeskCount} label={enabledDeskCount === 1 ? vocabulary.deskLabel.toLowerCase() : `${vocabulary.deskLabel.toLowerCase()}s`} active />
-              {createStarterDisplay && <CountBadge count={enabledDisplayCount} label={`screen${enabledDisplayCount !== 1 ? 's' : ''}`} active />}
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2.5 ml-auto">
-              {highlightedTemplateId && (
-                <button
-                  type="button"
-                  onClick={handleClearPreview}
-                  disabled={actionPending}
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
-                >
-                  {isClearPending ? 'Clearing...' : 'Clear draft'}
-                </button>
+                    </div>
+                  ))}
+                </div>
               )}
-              <button
-                type="button"
-                onClick={handleSavePreview}
-                disabled={actionPending}
-                className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
-              >
-                <Save className="h-3.5 w-3.5" />
-                {isPreviewPending ? 'Saving...' : 'Save draft'}
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmTemplate}
-                disabled={actionPending}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 disabled:opacity-50 transition-colors"
-              >
-                <Rocket className="h-3.5 w-3.5" />
-                {isConfirmPending ? 'Creating...' : 'Go live'}
-              </button>
             </div>
           </div>
         </div>
-      )}
+
+        <aside className="space-y-4">
+          <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+            <h2 className="text-lg font-semibold text-foreground">{t('Live summary')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('This is the setup that will be created when you confirm.')}
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <MiniStat label={vocabulary.officeLabel} value={compactWords(officeName)} />
+              <MiniStat label={vocabulary.departmentLabel} value={t('{count} active', { count: enabledDepartmentCount })} />
+              <MiniStat label={vocabulary.serviceLabel} value={t('{count} active', { count: enabledServiceCount })} />
+              <MiniStat label={vocabulary.deskLabel} value={t('{count} active', { count: enabledDeskCount })} />
+              <MiniStat label={t('Displays')} value={createStarterDisplay ? t('{count} active', { count: enabledDisplayCount }) : t('Off')} />
+              <MiniStat label={t('Customer flow')} value={t(queueFlowLabel(operatingModel, selectedTemplate.vertical))} />
+            </div>
+          </div>
+
+          <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+            <h2 className="text-lg font-semibold text-foreground">{t('Customer-facing view')}</h2>
+            <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+              <div className="rounded-2xl border border-border bg-background px-4 py-3">
+                <p className="font-medium text-foreground">{t('Kiosk')}</p>
+                <p className="mt-1">{selectedTemplate.experienceProfile.kiosk.headerText}</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-background px-4 py-3">
+                <p className="font-medium text-foreground">{t('Join page')}</p>
+                <p className="mt-1">{selectedTemplate.experienceProfile.publicJoin.headline}</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-background px-4 py-3">
+                <p className="font-medium text-foreground">{t('Display')}</p>
+                <p className="mt-1">
+                  {createStarterDisplay
+                    ? t('Starts in {layout}', { layout: t(formatEnum(selectedTemplate.experienceProfile.display.defaultLayout)) })
+                    : t('No starter display screens')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {setupLocked ? (
+            <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {t('This business is already live. Use template updates for safe changes instead of switching the whole setup.')}
+              </p>
+            </div>
+          ) : null}
+        </aside>
+      </section>
+      </div>
     </div>
   );
 }

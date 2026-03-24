@@ -9,8 +9,6 @@ export const TICKET_EVENT_TYPES = {
   CANCELLED: 'cancelled',
   TRANSFERRED: 'transferred',
   BUZZED: 'buzzed',
-  PARKED: 'parked',
-  UNPARKED: 'unparked',
   FEEDBACK_SUBMITTED: 'feedback_submitted',
 } as const;
 

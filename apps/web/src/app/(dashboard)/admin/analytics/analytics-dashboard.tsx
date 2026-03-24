@@ -34,6 +34,7 @@ import {
   type TemplatePerformanceRow,
   type TemplateOfficeComparisonRow,
 } from '@/lib/actions/analytics-actions';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface AnalyticsDashboardProps {
   initialSummary: AnalyticsSummary;
@@ -60,6 +61,7 @@ export function AnalyticsDashboard({
   offices,
   departments,
 }: AnalyticsDashboardProps) {
+  const { t } = useI18n();
   const [summary, setSummary] = useState(initialSummary);
   const [ticketsByHour, setTicketsByHour] = useState(initialTicketsByHour);
   const [ticketsByDepartment, setTicketsByDepartment] = useState(
@@ -109,163 +111,167 @@ export function AnalyticsDashboard({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex flex-col gap-5 border-b border-border px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              <Activity className="h-3.5 w-3.5" />
-              Analytics
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Reports</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              See the most useful numbers for wait times, service flow, feedback, and team performance.
-            </p>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={selectedDateRange}
-              onChange={(e) => setSelectedDateRange(e.target.value)}
-              aria-label="Date Range"
-              className="rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="today">Today</option>
-              <option value="last7">Last 7 days</option>
-              <option value="last30">Last 30 days</option>
-            </select>
-
-            <select
-              value={selectedOffice}
-              onChange={(e) => setSelectedOffice(e.target.value)}
-              aria-label="Office Filter"
-              className="rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">All Locations</option>
-              {offices.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={handleRefresh}
-              disabled={isPending}
-              aria-label="Apply Filters"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              Update View
-            </button>
-          </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{t('Reports')}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t('See the most useful numbers for wait times, service flow, feedback, and team performance.')}
+          </p>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <select
+          value={selectedDateRange}
+          onChange={(e) => setSelectedDateRange(e.target.value)}
+          aria-label={t('Date Range')}
+          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
+        >
+          <option value="today">{t('Today')}</option>
+          <option value="last7">{t('Last 7 days')}</option>
+          <option value="last30">{t('Last 30 days')}</option>
+        </select>
+
+        <select
+          value={selectedOffice}
+          onChange={(e) => setSelectedOffice(e.target.value)}
+          aria-label={t('Office Filter')}
+          className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
+        >
+          <option value="">{t('All Locations')}</option>
+          {offices.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+
+        <button
+          onClick={handleRefresh}
+          disabled={isPending}
+          aria-label={t('Apply Filters')}
+          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
+        >
+          {t('Update View')}
+        </button>
+      </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
-          label="Total Tickets"
+          label={t('Total Tickets')}
           value={summary.totalTicketsToday.toString()}
           subtitle={
             selectedDateRange === 'today'
-              ? 'today'
+              ? t('today')
               : selectedDateRange === 'last7'
-                ? 'last 7 days'
-                : 'last 30 days'
+                ? t('last 7 days')
+                : t('last 30 days')
           }
           icon={<TicketCheck className="h-5 w-5" />}
           iconBg="bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
         />
         <SummaryCard
-          label="Avg Wait Time"
+          label={t('Avg Wait Time')}
           value={
             summary.avgWaitTime !== null ? `${summary.avgWaitTime} min` : '--'
           }
-          subtitle="created to serving"
+          subtitle={t('created to serving')}
           icon={<Clock className="h-5 w-5" />}
           iconBg="bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
         />
         <SummaryCard
-          label="Avg Service Time"
+          label={t('Avg Service Time')}
           value={
             summary.avgServiceTime !== null
               ? `${summary.avgServiceTime} min`
               : '--'
           }
-          subtitle="serving to completed"
+          subtitle={t('serving to completed')}
           icon={<Timer className="h-5 w-5" />}
           iconBg="bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400"
         />
         <SummaryCard
-          label="Satisfaction"
+          label={t('Satisfaction')}
           value={
             summary.avgSatisfaction !== null
               ? `${summary.avgSatisfaction}/5`
               : '--'
           }
-          subtitle={`${feedbackSummary.totalFeedback} ratings`}
+          subtitle={t('{count} ratings', { count: feedbackSummary.totalFeedback })}
           icon={<Star className="h-5 w-5" />}
           iconBg="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/40 dark:text-yellow-400"
         />
       </div>
-      </section>
 
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-6 py-5">
+      <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Setup Rollout</h3>
+            <h3 className="text-sm font-semibold text-foreground">{t('Setup Rollout')}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Track how well your business setup has been rolled out across locations and where local changes exist.
+              {t('Track how well your business setup has been rolled out across locations and where local changes exist.')}
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
+          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
             <p className="font-semibold text-foreground">{templateHealth.summary.templateTitle}</p>
             <p className="text-muted-foreground">
-              Applied v{templateHealth.summary.appliedVersion} · Latest v{templateHealth.summary.latestVersion}
+              {t('Applied v{applied} · Latest v{latest}', {
+                applied: templateHealth.summary.appliedVersion,
+                latest: templateHealth.summary.latestVersion,
+              })}
             </p>
           </div>
         </div>
-        </div>
 
-        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
-            label="Locations up to date"
+            label={t('Locations up to date')}
             value={`${templateHealth.summary.currentVersionCoveragePercent}%`}
-            subtitle={`${templateHealth.summary.officesCurrentCount} of ${templateHealth.summary.officeCount} offices current`}
+            subtitle={t('{current} of {total} offices current', {
+              current: templateHealth.summary.officesCurrentCount,
+              total: templateHealth.summary.officeCount,
+            })}
             icon={<ShieldCheck className="h-5 w-5" />}
             iconBg="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
           />
           <SummaryCard
-            label="Local changes"
+            label={t('Local changes')}
             value={templateHealth.summary.currentDriftCount.toString()}
             subtitle={
               templateHealth.summary.snapshotScope === 'office'
-                ? `${templateHealth.summary.driftSnapshotCountInRange} snapshots in range`
-                : `${templateHealth.summary.officesWithDrift} offices still drifted`
+                ? t('{count} snapshots in range', { count: templateHealth.summary.driftSnapshotCountInRange })
+                : t('{count} offices still drifted', { count: templateHealth.summary.officesWithDrift })
             }
             icon={<Activity className="h-5 w-5" />}
             iconBg="bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-400"
           />
           <SummaryCard
-            label="Business updates"
+            label={t('Business updates')}
             value={templateHealth.summary.organizationUpgradeCountInRange.toString()}
-            subtitle={`${templateHealth.summary.totalOrganizationUpgradeCount} total · Last ${formatTimestamp(templateHealth.summary.lastMigrationAt)}`}
+            subtitle={t('{count} total · Last {last}', {
+              count: templateHealth.summary.totalOrganizationUpgradeCount,
+              last: formatTimestamp(templateHealth.summary.lastMigrationAt),
+            })}
             icon={<RefreshCw className="h-5 w-5" />}
             iconBg="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400"
           />
           <SummaryCard
-            label="Location rollouts"
+            label={t('Location rollouts')}
             value={templateHealth.summary.officeRolloutCountInRange.toString()}
-            subtitle={`${templateHealth.summary.totalOfficeRolloutCount} total · Last ${formatTimestamp(templateHealth.summary.lastOfficeRolloutAt)}`}
+            subtitle={t('{count} total · Last {last}', {
+              count: templateHealth.summary.totalOfficeRolloutCount,
+              last: formatTimestamp(templateHealth.summary.lastOfficeRolloutAt),
+            })}
             icon={<GitBranchPlus className="h-5 w-5" />}
             iconBg="bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400"
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 px-6 pb-6 xl:grid-cols-[1.1fr,1.1fr,0.9fr]">
-          <div className="rounded-xl border border-border bg-background p-5">
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.1fr,0.9fr]">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
             <h4 className="mb-1 text-sm font-semibold text-foreground">Drift Trend</h4>
             <p className="mb-4 text-xs text-muted-foreground">
               {templateHealth.summary.snapshotScope === 'office'
@@ -277,27 +283,26 @@ export function AnalyticsDashboard({
               scope={templateHealth.summary.snapshotScope}
             />
           </div>
-          <div className="rounded-xl border border-border bg-background p-5">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Template Activity</h4>
             <TemplateActivityChart data={templateHealth.activity} />
           </div>
-          <div className="rounded-xl border border-border bg-background p-5">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Office Version Status</h4>
             <TemplateOfficeStatusTable data={templateHealth.officeStatuses} />
           </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-6 py-5">
+      <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Business Performance</h3>
+            <h3 className="text-sm font-semibold text-foreground">Business Performance</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Compare wait accuracy, no-shows, completion rate, and service time across your business types and locations.
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
+          <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm">
             <p className="font-semibold text-foreground">{formatVerticalLabel(templatePerformance.summary.primaryVertical)}</p>
             <p className="text-muted-foreground">
               {templatePerformance.summary.primaryTemplateTitle} · {templatePerformance.summary.templateCount} template group
@@ -305,9 +310,8 @@ export function AnalyticsDashboard({
             </p>
           </div>
         </div>
-        </div>
 
-        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
             label="Wait Accuracy"
             value={formatPercentValue(templatePerformance.summary.waitAccuracyPercent)}
@@ -338,12 +342,12 @@ export function AnalyticsDashboard({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 px-6 pb-6 xl:grid-cols-[1fr,1.15fr]">
-          <div className="rounded-xl border border-border bg-background p-5">
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr,1.15fr]">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Business Type Comparison</h4>
             <TemplatePerformanceTable data={templatePerformance.templateRows} />
           </div>
-          <div className="rounded-xl border border-border bg-background p-5">
+          <div className="rounded-xl border border-border bg-muted/20 p-5">
             <h4 className="mb-4 text-sm font-semibold text-foreground">Location Comparison</h4>
             <TemplateOfficeComparisonTable data={templatePerformance.officeRows} />
           </div>
@@ -352,79 +356,54 @@ export function AnalyticsDashboard({
 
       {/* Charts Row 1: Tickets by Hour + Tickets by Department */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="text-base font-semibold text-foreground">
-              Busy hours today
-            </h3>
-          </div>
-          <div className="p-5">
-            <TicketsByHourChart data={ticketsByHour} />
-          </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">
+            Busy hours today
+          </h3>
+          <TicketsByHourChart data={ticketsByHour} />
         </div>
 
-        <div className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="text-base font-semibold text-foreground">
-              Demand by department
-            </h3>
-          </div>
-          <div className="p-5">
-            <DepartmentBarChart data={ticketsByDepartment} />
-          </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">
+            Demand by department
+          </h3>
+          <DepartmentBarChart data={ticketsByDepartment} />
         </div>
       </div>
 
       {/* Charts Row 2: Wait Time Trend + Feedback Distribution */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="text-base font-semibold text-foreground">
-              Wait time trend
-            </h3>
-          </div>
-          <div className="p-5">
-            <WaitTimeTrendChart data={waitTimeTrend} />
-          </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">
+            Wait time trend
+          </h3>
+          <WaitTimeTrendChart data={waitTimeTrend} />
         </div>
 
-        <div className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="text-base font-semibold text-foreground">
-              Feedback Summary
-            </h3>
-          </div>
-          <div className="p-5">
-            <FeedbackDistribution data={feedbackSummary} />
-          </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <FeedbackDistribution data={feedbackSummary} />
         </div>
       </div>
 
       {/* Staff Performance Table */}
-      <div className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4">
-          <h3 className="text-base font-semibold text-foreground">
-            Team performance
-          </h3>
-        </div>
-        <div className="p-5">
-          <StaffPerformanceTable data={staffPerformance} />
-        </div>
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="mb-4 text-sm font-semibold text-foreground">
+          Team performance
+        </h3>
+        <StaffPerformanceTable data={staffPerformance} />
       </div>
 
       {/* Recent Feedback Comments */}
       {feedbackSummary.recentComments.length > 0 && (
-        <div className="rounded-2xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border px-5 py-4">
-            <h3 className="text-base font-semibold text-foreground">
-              Recent customer comments
-            </h3>
-          </div>
-          <div className="space-y-3 p-5">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-4 text-sm font-semibold text-foreground">
+            Recent customer comments
+          </h3>
+          <div className="space-y-3">
             {feedbackSummary.recentComments.map((c) => (
               <div
                 key={c.id}
-                className="rounded-xl border border-border bg-background p-4"
+                className="rounded-lg border border-border bg-muted/30 p-4"
               >
                 <div className="mb-1 flex items-center gap-2">
                   <div className="flex gap-0.5">
@@ -501,10 +480,10 @@ function SummaryCard({
   iconBg: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-background p-4 transition-shadow hover:shadow-md">
+    <div className="rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-        <div className={`rounded-xl p-2 ${iconBg}`}>{icon}</div>
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <div className={`rounded-lg p-2 ${iconBg}`}>{icon}</div>
       </div>
       <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
@@ -794,7 +773,7 @@ function TemplateOfficeStatusTable({ data }: { data: TemplateHealthOfficeRow[] }
   return (
     <div className="space-y-3">
       {data.slice(0, 8).map((office) => (
-        <div key={office.office_id} className="rounded-xl border border-border bg-background px-4 py-3">
+        <div key={office.office_id} className="rounded-lg border border-border bg-background px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">{office.office_name}</p>
@@ -822,10 +801,11 @@ function TemplateOfficeStatusTable({ data }: { data: TemplateHealthOfficeRow[] }
 }
 
 function TemplatePerformanceTable({ data }: { data: TemplatePerformanceRow[] }) {
+  const { t } = useI18n();
   if (data.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        No template KPI data available
+        {t('No template KPI data available')}
       </p>
     );
   }
@@ -835,12 +815,12 @@ function TemplatePerformanceTable({ data }: { data: TemplatePerformanceRow[] }) 
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left">
-            <th className="pb-3 pr-4 font-medium text-muted-foreground">Template</th>
-            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Tickets</th>
-            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Wait Accuracy</th>
-            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">No-Show</th>
-            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">Completion</th>
-            <th className="pb-3 text-right font-medium text-muted-foreground">Avg Service</th>
+            <th className="pb-3 pr-4 font-medium text-muted-foreground">{t('Template')}</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">{t('Tickets')}</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">{t('Wait Accuracy')}</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">{t('No-Show')}</th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">{t('Completion')}</th>
+            <th className="pb-3 text-right font-medium text-muted-foreground">{t('Avg Service')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -849,7 +829,7 @@ function TemplatePerformanceTable({ data }: { data: TemplatePerformanceRow[] }) 
               <td className="py-3 pr-4">
                 <p className="font-medium text-foreground">{row.templateTitle}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {formatVerticalLabel(row.vertical)} · {row.officeCount} office{row.officeCount === 1 ? '' : 's'}
+                  {formatVerticalLabel(row.vertical)} · {t('{count} offices', { count: row.officeCount })}
                 </p>
               </td>
               <td className="py-3 pr-4 text-right text-foreground">{row.totalTickets}</td>
@@ -866,10 +846,11 @@ function TemplatePerformanceTable({ data }: { data: TemplatePerformanceRow[] }) 
 }
 
 function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeComparisonRow[] }) {
+  const { t } = useI18n();
   if (data.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        No office comparison data available
+        {t('No office comparison data available')}
       </p>
     );
   }
@@ -877,7 +858,7 @@ function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeCompariso
   return (
     <div className="space-y-3">
       {data.slice(0, 8).map((row) => (
-        <div key={row.officeId} className="rounded-xl border border-border bg-background px-4 py-3">
+        <div key={row.officeId} className="rounded-lg border border-border bg-background px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-foreground">{row.officeName}</p>
@@ -885,15 +866,15 @@ function TemplateOfficeComparisonTable({ data }: { data: TemplateOfficeCompariso
                 {row.templateTitle} · {formatVerticalLabel(row.vertical)}
               </p>
             </div>
-            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-              {row.totalTickets} tickets
+            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-foreground">
+              {t('{count} tickets', { count: row.totalTickets })}
             </span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-4">
-            <span>Wait accuracy {formatPercentValue(row.waitAccuracyPercent)}</span>
-            <span>No-show {formatPercentValue(row.noShowRate)}</span>
-            <span>Completion {formatPercentValue(row.completionRate)}</span>
-            <span>Avg service {formatMinutesValue(row.avgServiceTime)}</span>
+            <span>{t('Wait accuracy {value}', { value: formatPercentValue(row.waitAccuracyPercent) })}</span>
+            <span>{t('No-show {value}', { value: formatPercentValue(row.noShowRate) })}</span>
+            <span>{t('Completion {value}', { value: formatPercentValue(row.completionRate) })}</span>
+            <span>{t('Avg service {value}', { value: formatMinutesValue(row.avgServiceTime) })}</span>
           </div>
         </div>
       ))}
@@ -914,6 +895,7 @@ const STAR_BAR_COLORS = [
 ];
 
 function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
+  const { t } = useI18n();
   const maxCount = Math.max(...data.distribution.map((d) => d.count), 1);
 
   // Sort distribution 5 -> 1 for display
@@ -921,6 +903,10 @@ function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
 
   return (
     <div>
+      <h3 className="mb-4 text-sm font-semibold text-foreground">
+        {t('Feedback Summary')}
+      </h3>
+
       <div className="flex gap-6">
         {/* Big average number */}
         <div className="flex flex-col items-center justify-center gap-1 min-w-[80px]">
@@ -942,7 +928,7 @@ function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
             </div>
           )}
           <span className="text-xs text-muted-foreground">
-            {data.totalFeedback} ratings
+            {t('{count} ratings', { count: data.totalFeedback })}
           </span>
         </div>
 
@@ -956,7 +942,7 @@ function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
             return (
               <div key={d.rating} className="flex items-center gap-2">
                 <span className="w-12 text-right text-xs text-muted-foreground">
-                  {d.rating} star{d.rating !== 1 ? 's' : ''}
+                  {t('{count} stars', { count: d.rating })}
                 </span>
                 <div className="h-3 flex-1 rounded-full bg-muted">
                   <div
@@ -981,10 +967,11 @@ function FeedbackDistribution({ data }: { data: FeedbackSummaryData }) {
 /* -------------------------------------------------------------------------- */
 
 function StaffPerformanceTable({ data }: { data: StaffPerformanceRow[] }) {
+  const { t } = useI18n();
   if (data.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        No staff performance data available
+        {t('No staff performance data available')}
       </p>
     );
   }
@@ -995,19 +982,19 @@ function StaffPerformanceTable({ data }: { data: StaffPerformanceRow[] }) {
         <thead>
           <tr className="border-b border-border text-left">
             <th className="pb-3 pr-4 font-medium text-muted-foreground">
-              Staff Name
+              {t('Staff Name')}
             </th>
             <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
-              Tickets Served
+              {t('Tickets Served')}
             </th>
             <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
-              Avg Service Time
+              {t('Avg Service Time')}
             </th>
             <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
-              Avg Rating
+              {t('Avg Rating')}
             </th>
             <th className="pb-3 text-right font-medium text-muted-foreground">
-              No-Shows
+              {t('No-Shows')}
             </th>
           </tr>
         </thead>

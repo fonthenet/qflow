@@ -3,8 +3,10 @@ import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { SettingsClient } from './settings-client';
 import { isSmsProviderConfigured } from '@/lib/sms';
 import { resolvePlatformConfig, summarizeTemplate } from '@/lib/platform/config';
+import { getServerI18n } from '@/lib/i18n';
 
 export default async function SettingsPage() {
+  const { t } = await getServerI18n();
   const context = await getStaffContext();
   try {
     await requireOrganizationAdmin(context);
@@ -21,7 +23,7 @@ export default async function SettingsPage() {
   if (orgError || !organization) {
     return (
       <div className="p-6 text-red-500">
-        Failed to load organization settings.
+        {t('Failed to load organization settings.')}
       </div>
     );
   }

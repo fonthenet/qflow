@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { useI18n } from '@/components/providers/locale-provider';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 const navLinks = [
   { href: '/solutions', label: 'Solutions' },
@@ -18,7 +20,10 @@ interface NavbarProps {
 
 export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const signedInLabel = organizationName ? `Signed in to ${organizationName}` : 'Signed in';
+  const { t } = useI18n();
+  const signedInLabel = organizationName
+    ? t('Signed in to {organization}', { organization: organizationName })
+    : t('Signed in');
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-lg">
@@ -29,7 +34,7 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
             Q
           </div>
           <span className="text-xl font-bold tracking-tight">
-            Q<span className="text-primary">flo</span>
+            Queue<span className="text-primary">Flow</span>
           </span>
         </Link>
 
@@ -41,13 +46,14 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
               href={link.href}
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              {link.label}
+              {t(link.label)}
             </Link>
           ))}
         </div>
 
         {/* Desktop CTA */}
         <div className="hidden items-center gap-3 md:flex">
+          <LanguageSwitcher />
           {signedIn ? (
             <>
               <span className="rounded-full border border-primary/15 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary">
@@ -57,7 +63,7 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                 href="/admin/offices"
                 className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
               >
-                Open Dashboard
+                {t('Open Dashboard')}
               </Link>
             </>
           ) : (
@@ -66,13 +72,13 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                 href="/login"
                 className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                Log in
+                {t('Log in')}
               </Link>
               <Link
                 href="/register"
                 className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
               >
-                Get Started Free
+                {t('Get Started Free')}
               </Link>
             </>
           )}
@@ -98,10 +104,11 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                 onClick={() => setMobileOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
               >
-                {link.label}
+                {t(link.label)}
               </Link>
             ))}
             <hr className="my-2 border-border" />
+            <LanguageSwitcher />
             {signedIn ? (
               <>
                 <div className="rounded-lg px-3 py-2 text-sm font-medium text-primary">
@@ -112,7 +119,7 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                   onClick={() => setMobileOpen(false)}
                   className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
                 >
-                  Open Dashboard
+                  {t('Open Dashboard')}
                 </Link>
               </>
             ) : (
@@ -122,14 +129,14 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                   onClick={() => setMobileOpen(false)}
                   className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted"
                 >
-                  Log in
+                  {t('Log in')}
                 </Link>
                 <Link
                   href="/register"
                   onClick={() => setMobileOpen(false)}
                   className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
                 >
-                  Get Started Free
+                  {t('Get Started Free')}
                 </Link>
               </>
             )}

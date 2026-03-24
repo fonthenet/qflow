@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { useI18n } from '@/components/providers/locale-provider';
 
 export function SandboxQrCard({
   title,
@@ -12,6 +13,7 @@ export function SandboxQrCard({
   description: string;
   path: string;
 }) {
+  const { t } = useI18n();
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [absoluteUrl, setAbsoluteUrl] = useState('');
   const [copied, setCopied] = useState(false);
@@ -67,7 +69,7 @@ export function SandboxQrCard({
           <img src={qrDataUrl} alt={title} className="h-52 w-52 rounded-xl bg-white p-2" />
         ) : (
           <div className="flex h-52 w-52 items-center justify-center rounded-xl bg-white text-sm text-muted-foreground">
-            Preparing QR
+            {t('Preparing QR')}
           </div>
         )}
       </div>
@@ -76,7 +78,7 @@ export function SandboxQrCard({
         onClick={() => void handleCopy()}
         className="mt-4 w-full rounded-xl border border-border px-4 py-3 text-sm font-medium text-foreground hover:bg-muted"
       >
-        {copied ? 'Copied' : 'Copy sandbox link'}
+        {copied ? t('Copied') : t('Copy sandbox link')}
       </button>
     </div>
   );

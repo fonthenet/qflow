@@ -1,5 +1,7 @@
 'use client';
 
+import { useI18n } from '@/components/providers/locale-provider';
+
 interface QueueStopDialogProps {
   isOpen: boolean;
   isStopping: boolean;
@@ -21,6 +23,7 @@ export function QueueStopDialog({
   onCancel,
   onConfirm,
 }: QueueStopDialogProps) {
+  const { t } = useI18n();
   if (!isOpen) return null;
 
   return (
@@ -32,8 +35,8 @@ export function QueueStopDialog({
               <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 5.636l-1.414 1.414M7.05 16.95l-1.414 1.414M5.636 5.636l1.414 1.414M16.95 16.95l1.414 1.414M12 3v2m0 14v2m9-9h-2M5 12H3" />
             </svg>
           </div>
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-300">{description}</p>
+          <h2 className="text-lg font-semibold text-white">{t(title)}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-300">{t(description)}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 px-5 py-5">
@@ -43,7 +46,7 @@ export function QueueStopDialog({
             disabled={isStopping}
             className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {cancelLabel}
+            {t(cancelLabel)}
           </button>
           <button
             type="button"
@@ -51,7 +54,7 @@ export function QueueStopDialog({
             disabled={isStopping}
             className="rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(244,63,94,0.35)] transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isStopping ? 'Stopping...' : confirmLabel}
+            {isStopping ? t('Stopping...') : t(confirmLabel)}
           </button>
         </div>
       </div>

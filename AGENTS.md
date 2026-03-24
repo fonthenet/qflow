@@ -1,4 +1,4 @@
-# Qflo Repo Rules
+# QueueFlow Repo Rules
 
 ## End-to-End Wiring Rule
 

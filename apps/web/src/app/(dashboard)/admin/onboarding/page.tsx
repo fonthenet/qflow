@@ -6,8 +6,10 @@ import {
   summarizeTemplate,
 } from '@/lib/platform/config';
 import { TemplateOnboardingClient } from './template-onboarding-client';
+import { getServerI18n } from '@/lib/i18n';
 
 export default async function PlatformOnboardingPage() {
+  const { t } = await getServerI18n();
   const context = await getStaffContext();
   try {
     await requireOrganizationAdmin(context);
@@ -24,7 +26,7 @@ export default async function PlatformOnboardingPage() {
   ]);
 
   if (!organization) {
-    return <div className="p-6 text-red-500">Unable to load organization settings.</div>;
+    return <div className="p-6 text-red-500">{t('Unable to load organization settings.')}</div>;
   }
 
   const lifecycleState = getPlatformLifecycleState(organization.settings ?? {}, {

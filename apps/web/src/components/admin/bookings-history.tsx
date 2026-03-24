@@ -2,6 +2,7 @@
 
 import { CalendarClock, Clock3, Ticket, Users } from 'lucide-react';
 import { buildBookingCheckInPath, buildBookingPath } from '@/lib/office-links';
+import { useI18n } from '@/components/providers/locale-provider';
 import { PublicLinkActions } from './public-link-actions';
 
 interface Office {
@@ -58,15 +59,6 @@ interface BookingsHistoryProps {
   appointments: AppointmentRecord[];
 }
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 function getStatusClasses(status: string | null) {
   switch (status) {
     case 'checked_in':
@@ -87,6 +79,7 @@ export function BookingsHistory({
   departments,
   appointments,
 }: BookingsHistoryProps) {
+  const { t, formatDateTime } = useI18n();
   const activeOffices = offices.filter((office) => office.is_active);
   const totalAppointments = appointments.length;
   const pendingAppointments = appointments.filter((entry) =>
@@ -97,37 +90,37 @@ export function BookingsHistory({
 
   return (
     <div className="space-y-6 p-6">
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4">
-          <h1 className="text-2xl font-bold text-foreground">Bookings</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Review recent appointment history by category and share the right booking link or QR code for each service.
+      <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">{t('Bookings')}</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              {t('Review recent appointment history by category and share the right booking link or QR code for each service.')}
             </p>
-        </div>
+          </div>
 
-        <div className="px-5 py-4">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Recent bookings
+            <div className="rounded-2xl border border-border bg-background px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('Recent bookings')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{totalAppointments}</p>
             </div>
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Pending
+            <div className="rounded-2xl border border-border bg-background px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('Pending')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{pendingAppointments}</p>
             </div>
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Checked in
+            <div className="rounded-2xl border border-border bg-background px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('Checked in')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{checkedInAppointments}</p>
             </div>
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Cancelled
+            <div className="rounded-2xl border border-border bg-background px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t('Cancelled')}
               </p>
               <p className="mt-2 text-2xl font-semibold text-foreground">{cancelledAppointments}</p>
             </div>
@@ -142,51 +135,51 @@ export function BookingsHistory({
         const officeAppointments = appointments.filter((entry) => entry.office_id === office.id);
 
         return (
-          <section key={office.id} className="rounded-2xl border border-border bg-card shadow-sm">
-            <div className="border-b border-border px-5 py-4">
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <section key={office.id} className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <h2 className="text-base font-semibold text-foreground">{office.name}</h2>
+                <h2 className="text-2xl font-semibold text-foreground">{office.name}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {officeAppointments.length} recent appointment{officeAppointments.length === 1 ? '' : 's'} across all booking categories.
+                  {t('{count} recent appointment(s) across all booking categories.', {
+                    count: officeAppointments.length,
+                  })}
                 </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="font-medium text-foreground">Office booking page</p>
+                  <p className="font-medium text-foreground">{t('Office booking page')}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Share when the customer should choose a department and service themselves.
+                    {t('Share when the customer should choose a department and service themselves.')}
                   </p>
                   <div className="mt-4">
                     <PublicLinkActions
                       path={buildBookingPath(office)}
-                      qrTitle={`${office.name} booking page`}
-                      qrDescription="Scan to book an appointment for this office."
+                      qrTitle={t('{name} booking page', { name: office.name })}
+                      qrDescription={t('Scan to book an appointment for this office.')}
                       downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-booking.png`}
                     />
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="font-medium text-foreground">Office arrival check-in</p>
+                  <p className="font-medium text-foreground">{t('Office arrival check-in')}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Share when customers need to find an existing appointment and check in.
+                    {t('Share when customers need to find an existing appointment and check in.')}
                   </p>
                   <div className="mt-4">
                     <PublicLinkActions
                       path={buildBookingCheckInPath(office)}
-                      qrTitle={`${office.name} appointment check-in`}
-                      qrDescription="Scan to look up and check in an appointment."
+                      qrTitle={t('{name} appointment check-in', { name: office.name })}
+                      qrDescription={t('Scan to look up and check in an appointment.')}
                       downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-checkin.png`}
                     />
                   </div>
                 </div>
               </div>
-              </div>
             </div>
 
-            <div className="space-y-5 px-5 py-4">
+            <div className="mt-6 space-y-5">
               {officeDepartments.map((department) => {
                 const departmentAppointments = officeAppointments.filter(
                   (entry) => entry.department_id === department.id
@@ -197,26 +190,31 @@ export function BookingsHistory({
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-semibold text-foreground">{department.name}</h3>
-                          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                          <h3 className="text-xl font-semibold text-foreground">{department.name}</h3>
+                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
                             {department.code}
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {departmentAppointments.length} recent booking{departmentAppointments.length === 1 ? '' : 's'} in this department.
+                          {t('{count} recent booking(s) in this department.', {
+                            count: departmentAppointments.length,
+                          })}
                         </p>
                       </div>
 
                       <div className="rounded-2xl border border-border p-4">
-                        <p className="font-medium text-foreground">Department booking page</p>
+                        <p className="font-medium text-foreground">{t('Department booking page')}</p>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Start inside this department, then let the customer choose the service.
+                          {t('Start inside this department, then let the customer choose the service.')}
                         </p>
                         <div className="mt-4">
                           <PublicLinkActions
                             path={buildBookingPath(office, { departmentId: department.id })}
-                            qrTitle={`${office.name} ${department.name} booking`}
-                            qrDescription="Scan to open booking directly in this department."
+                            qrTitle={t('{office} {department} booking', {
+                              office: office.name,
+                              department: department.name,
+                            })}
+                            qrDescription={t('Scan to open booking directly in this department.')}
                             downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-${department.code.toLowerCase()}-booking.png`}
                           />
                         </div>
@@ -244,28 +242,28 @@ export function BookingsHistory({
                                 <div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <h4 className="font-semibold text-foreground">{service.name}</h4>
-                                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                                       {service.code}
                                     </span>
                                   </div>
                                   <p className="mt-1 text-sm text-muted-foreground">
-                                    Direct booking category for this service.
+                                    {t('Direct booking category for this service.')}
                                   </p>
                                 </div>
                                 <div className="flex gap-2 text-xs">
-                                  <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                                    {servicePendingCount} pending
+                                  <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
+                                    {t('{count} pending', { count: servicePendingCount })}
                                   </span>
-                                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                                    {serviceCheckedInCount} checked in
+                                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                                    {t('{count} checked in', { count: serviceCheckedInCount })}
                                   </span>
                                 </div>
                               </div>
 
                               <div className="mt-4 rounded-2xl border border-border bg-card p-4">
-                                <p className="font-medium text-foreground">Share booking link</p>
+                                <p className="font-medium text-foreground">{t('Share booking link')}</p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  Customers land directly on this service when they open the link.
+                                  {t('Customers land directly on this service when they open the link.')}
                                 </p>
                                 <div className="mt-4">
                                   <PublicLinkActions
@@ -273,8 +271,11 @@ export function BookingsHistory({
                                       departmentId: department.id,
                                       serviceId: service.id,
                                     })}
-                                    qrTitle={`${office.name} ${service.name} booking`}
-                                    qrDescription="Scan to book directly into this service category."
+                                    qrTitle={t('{office} {service} booking', {
+                                      office: office.name,
+                                      service: service.name,
+                                    })}
+                                    qrDescription={t('Scan to book directly into this service category.')}
                                     downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-${service.code.toLowerCase()}-booking.png`}
                                   />
                                 </div>
@@ -283,21 +284,19 @@ export function BookingsHistory({
                               <div className="mt-4">
                                 <div className="flex items-center gap-2">
                                   <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                                  <p className="text-sm font-medium text-foreground">Recent history</p>
+                                  <p className="text-sm font-medium text-foreground">{t('Recent history')}</p>
                                 </div>
 
                                 {serviceAppointments.length === 0 ? (
-                                  <div className="mt-3 rounded-xl border border-dashed border-border px-4 py-8 text-center">
-                                    <CalendarClock className="mx-auto h-8 w-8 text-muted-foreground/50" />
-                                    <p className="mt-2 text-sm font-medium text-foreground">No recent bookings</p>
-                                    <p className="mt-1 text-sm text-muted-foreground">No recent bookings for this category.</p>
+                                  <div className="mt-3 rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
+                                    {t('No recent bookings for this category.')}
                                   </div>
                                 ) : (
                                   <div className="mt-3 space-y-2">
                                     {serviceAppointments.slice(0, 5).map((appointment) => (
                                       <div
                                         key={appointment.id}
-                                        className="rounded-xl border border-border bg-background px-4 py-4"
+                                        className="rounded-2xl border border-border bg-background px-4 py-3"
                                       >
                                         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                                           <div>
@@ -306,17 +305,23 @@ export function BookingsHistory({
                                                 {appointment.customer_name}
                                               </p>
                                               <span
-                                                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${getStatusClasses(
+                                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClasses(
                                                   appointment.status
                                                 )}`}
                                               >
-                                                {(appointment.status ?? 'pending').replace(/_/g, ' ')}
+                                                {t((appointment.status ?? 'pending').replace(/_/g, ' '))}
                                               </span>
                                             </div>
                                             <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
                                               <span className="inline-flex items-center gap-1.5">
                                                 <Clock3 className="h-4 w-4" />
-                                                {formatDateTime(appointment.scheduled_at)}
+                                  {formatDateTime(appointment.scheduled_at, {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  })}
                                               </span>
                                               {appointment.customer_phone ? (
                                                 <span className="inline-flex items-center gap-1.5">
@@ -331,7 +336,7 @@ export function BookingsHistory({
                                             <div className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
                                               <span className="inline-flex items-center gap-1.5">
                                                 <Ticket className="h-4 w-4" />
-                                                Ticket {appointment.ticket.ticket_number}
+                                                {t('Ticket {number}', { number: appointment.ticket.ticket_number })}
                                               </span>
                                             </div>
                                           ) : null}
@@ -350,10 +355,8 @@ export function BookingsHistory({
               })}
 
               {officeDepartments.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-background px-4 py-8 text-center">
-                  <Users className="mx-auto h-8 w-8 text-muted-foreground/50" />
-                  <p className="mt-2 text-sm font-medium text-foreground">No departments yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Add departments and services to create shareable booking categories for this office.</p>
+                <div className="rounded-2xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
+                  {t('Add departments and services to create shareable booking categories for this office.')}
                 </div>
               ) : null}
             </div>
@@ -362,10 +365,8 @@ export function BookingsHistory({
       })}
 
       {activeOffices.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center shadow-sm">
-          <CalendarClock className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 text-sm font-medium text-foreground">No active offices</p>
-          <p className="mt-1 text-sm text-muted-foreground">There are no active offices yet, so booking categories and public QR links are not available.</p>
+        <section className="rounded-3xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
+          {t('There are no active offices yet, so booking categories and public QR links are not available.')}
         </section>
       ) : null}
     </div>

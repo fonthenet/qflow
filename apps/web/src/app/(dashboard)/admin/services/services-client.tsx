@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/components/providers/locale-provider';
 import {
   createService,
   updateService,
@@ -41,6 +42,7 @@ export function ServicesClient({
   departments: Department[];
   currentDepartmentFilter: string;
 }) {
+  const { t } = useI18n();
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
@@ -74,7 +76,7 @@ export function ServicesClient({
   }
 
   function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this service?')) return;
+    if (!confirm(t('Are you sure you want to delete this service?'))) return;
     startTransition(async () => {
       const result = await deleteService(id);
       if (result?.error) setError(result.error);
@@ -90,19 +92,19 @@ export function ServicesClient({
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+    <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Services</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-            Set up the visit types and services customers can choose.
+          <h1 className="text-2xl font-bold text-foreground">{t('Services')}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t('Set up the visit types and services customers can choose.')}
           </p>
         </div>
         <button
           onClick={openCreate}
-          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          New Service
+          {t('New Service')}
         </button>
       </div>
 
@@ -111,9 +113,9 @@ export function ServicesClient({
         <select
           value={currentDepartmentFilter}
           onChange={(e) => handleFilterChange(e.target.value)}
-          className="rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="">All Departments</option>
+          <option value="">{t('All Departments')}</option>
           {departments.map((d) => (
             <option key={d.id} value={d.id}>
               {d.name} {d.office ? `(${d.office.name})` : ''}
@@ -123,70 +125,70 @@ export function ServicesClient({
       </div>
 
       {error && !showModal && (
-        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/30">
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Code</th>
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Department</th>
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Est. Time</th>
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-              <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Name')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Code')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Department')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Est. Time')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Status')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground text-right">{t('Actions')}</th>
             </tr>
           </thead>
           <tbody>
             {services.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-sm text-muted-foreground">
-                  No services yet. Add a service so customers know what they can request.
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  {t('No services yet. Add a service so customers know what they can request.')}
                 </td>
               </tr>
             )}
             {services.map((svc) => (
-              <tr key={svc.id} className="border-b border-border/40 last:border-0 hover:bg-muted/20 transition-colors">
-                <td className="px-5 py-3.5 font-medium text-foreground">{svc.name}</td>
-                <td className="px-5 py-3.5">
+              <tr key={svc.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
+                <td className="px-4 py-3 font-medium text-foreground">{svc.name}</td>
+                <td className="px-4 py-3">
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {svc.code}
                   </code>
                 </td>
-                <td className="px-5 py-3.5 text-muted-foreground">
+                <td className="px-4 py-3 text-muted-foreground">
                   {svc.department?.name ?? '---'}
                 </td>
-                <td className="px-5 py-3.5 text-muted-foreground">
+                <td className="px-4 py-3 text-muted-foreground">
                   {svc.estimated_service_time ? `${svc.estimated_service_time} min` : '---'}
                 </td>
-                <td className="px-5 py-3.5">
+                <td className="px-4 py-3">
                   <span
-                    className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold ${
+                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                       svc.is_active
                         ? 'bg-success/10 text-success'
                         : 'bg-muted text-muted-foreground'
                     }`}
                   >
-                    {svc.is_active ? 'Active' : 'Inactive'}
+                    {svc.is_active ? t('Active') : t('Inactive')}
                   </span>
                 </td>
-                <td className="px-5 py-3.5 text-right">
+                <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <button
                       onClick={() => openEdit(svc)}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                     >
-                      Edit
+                      {t('Edit')}
                     </button>
                     <button
                       onClick={() => handleDelete(svc.id)}
                       disabled={isPending}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                      className="rounded-md px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                     >
-                      Delete
+                      {t('Delete')}
                     </button>
                   </div>
                 </td>
@@ -200,65 +202,65 @@ export function ServicesClient({
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50"
             onClick={() => setShowModal(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border border-border/60 bg-card p-6 shadow-2xl">
+          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              {editing ? 'Edit Service' : 'Create Service'}
+              {editing ? t('Edit Service') : t('Create Service')}
             </h2>
 
             {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 {error}
               </div>
             )}
 
             <form action={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Name <span className="text-destructive">*</span>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Name')} <span className="text-destructive">*</span>
                 </label>
                 <input
                   name="name"
                   required
                   defaultValue={editing?.name ?? ''}
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Code <span className="text-destructive">*</span>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Code')} <span className="text-destructive">*</span>
                 </label>
                 <input
                   name="code"
                   required
                   defaultValue={editing?.code ?? ''}
                   placeholder="e.g. SVC-001"
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Description
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Description')}
                 </label>
                 <input
                   name="description"
                   defaultValue={editing?.description ?? ''}
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Department <span className="text-destructive">*</span>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Department')} <span className="text-destructive">*</span>
                 </label>
                 <select
                   name="department_id"
                   required
                   defaultValue={editing?.department_id ?? currentDepartmentFilter ?? ''}
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
-                  <option value="">Select department...</option>
+                  <option value="">{t('Select department...')}</option>
                   {departments.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name} {d.office ? `(${d.office.name})` : ''}
@@ -268,39 +270,39 @@ export function ServicesClient({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Estimated time (min)
+                  <label className="mb-1 block text-sm font-medium text-foreground">
+                    {t('Estimated time (min)')}
                   </label>
                   <input
                     name="estimated_service_time"
                     type="number"
                     min="1"
                     defaultValue={editing?.estimated_service_time ?? ''}
-                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Priority
+                  <label className="mb-1 block text-sm font-medium text-foreground">
+                    {t('Priority')}
                   </label>
                   <input
                     name="priority"
                     type="number"
                     min="0"
                     defaultValue={editing?.priority ?? ''}
-                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Sort Order
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Sort Order')}
                 </label>
                 <input
                   name="sort_order"
                   type="number"
                   defaultValue={editing?.sort_order ?? ''}
-                  className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -311,23 +313,23 @@ export function ServicesClient({
                   defaultChecked={editing?.is_active ?? true}
                   className="h-4 w-4 rounded border-input"
                 />
-                <label className="text-sm font-medium text-foreground">Active</label>
+                <label className="text-sm font-medium text-foreground">{t('Active')}</label>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {isPending ? 'Saving...' : editing ? 'Update' : 'Create'}
+                  {isPending ? t('Saving...') : editing ? t('Update') : t('Create')}
                 </button>
               </div>
             </form>

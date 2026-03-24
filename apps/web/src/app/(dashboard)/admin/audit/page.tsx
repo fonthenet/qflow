@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
-import { FileText, ShieldCheck } from 'lucide-react';
 import { getStaffContext, isOrganizationWideRole, requireAuditAccess } from '@/lib/authz';
+import { getServerI18n } from '@/lib/i18n';
 
 function formatMetadata(value: unknown) {
   if (!value || typeof value !== 'object') {
@@ -12,6 +12,7 @@ function formatMetadata(value: unknown) {
 }
 
 export default async function AuditPage() {
+  const { formatDateTime } = await getServerI18n();
   const context = await getStaffContext();
   try {
     requireAuditAccess(context);
@@ -34,9 +35,7 @@ export default async function AuditPage() {
   if (error) {
     return (
       <div className="p-6">
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-          Failed to load audit logs: {error.message}
-        </div>
+        <p className="text-destructive">Failed to load audit logs: {error.message}</p>
       </div>
     );
   }
@@ -64,13 +63,13 @@ export default async function AuditPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Audit Log</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Audit Log</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Latest governance and queue-control actions across your accessible scope.
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card px-4 py-3 text-right">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Scope
           </p>
           <p className="text-sm font-medium text-foreground">
@@ -82,7 +81,7 @@ export default async function AuditPage() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="grid grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr_0.8fr] gap-4 border-b border-border px-5 py-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="grid grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr_0.8fr] gap-4 border-b border-border px-6 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <div>Summary</div>
           <div>Action</div>
           <div>Actor</div>
@@ -93,7 +92,7 @@ export default async function AuditPage() {
         {auditLogs && auditLogs.length > 0 ? (
           <div className="divide-y divide-border">
             {auditLogs.map((entry) => (
-              <div key={entry.id} className="grid grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr_0.8fr] gap-4 px-5 py-4 text-sm transition-colors hover:bg-muted/50">
+              <div key={entry.id} className="grid grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr_0.8fr] gap-4 px-6 py-4 text-sm">
                 <div>
                   <p className="font-medium text-foreground">{entry.summary}</p>
                   {formatMetadata(entry.metadata) && (
@@ -104,7 +103,7 @@ export default async function AuditPage() {
                 </div>
                 <div className="text-muted-foreground">
                   <p className="font-medium text-foreground">{entry.action_type}</p>
-                  <p className="mt-0.5 text-xs">{entry.entity_type}</p>
+                  <p className="text-xs">{entry.entity_type}</p>
                 </div>
                 <div className="text-muted-foreground">
                   {entry.actor_staff_id ? actorMap.get(entry.actor_staff_id) ?? 'Unknown staff' : 'System'}
@@ -113,15 +112,20 @@ export default async function AuditPage() {
                   {entry.office_id ? officeMap.get(entry.office_id) ?? 'Unknown office' : 'Organization'}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {new Date(entry.created_at).toLocaleString()}
+                  {formatDateTime(entry.created_at, {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="px-6 py-16 text-center">
-            <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground/50" />
-            <p className="mt-3 text-sm font-medium text-foreground">No audit events yet</p>
+          <div className="px-6 py-12 text-center">
+            <p className="text-sm font-medium text-foreground">No audit events yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
               New template, settings, desk, and queue-control actions will appear here.
             </p>

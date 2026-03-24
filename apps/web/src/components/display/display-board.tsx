@@ -1,66 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-
-// ─── Voice Announcement Presets ──────────────────────────────────────────
-export const VOICE_PRESETS: Record<string, { pitch: number; rate: number; label: string; description: string }> = {
-  sophia: { pitch: 1.1, rate: 0.88, label: 'Sophia', description: 'Warm & professional' },
-  emma: { pitch: 1.25, rate: 0.95, label: 'Emma', description: 'Clear & confident' },
-  aria: { pitch: 1.0, rate: 0.80, label: 'Aria', description: 'Calm & soothing' },
-};
-
-function spellTicketNumber(num: string): string {
-  // "A-105" → "A, 1, 0, 5" (spell each character for clarity)
-  return num
-    .replace(/[-_]/g, ' ')
-    .split('')
-    .filter((c) => c.trim())
-    .join(', ');
-}
-
-function pickFemaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
-  const preferred = ['samantha', 'karen', 'moira', 'victoria', 'zira', 'hazel', 'susan', 'female', 'woman'];
-  const englishVoices = voices.filter((v) => v.lang.startsWith('en'));
-  for (const keyword of preferred) {
-    const match = englishVoices.find((v) => v.name.toLowerCase().includes(keyword));
-    if (match) return match;
-  }
-  return englishVoices[0];
-}
-
-export function speakAnnouncement(
-  ticketNumber: string,
-  deskName: string,
-  voiceId: string,
-  onEnd?: () => void
-) {
-  if (!voiceId || voiceId === 'none' || typeof window === 'undefined') return;
-  const preset = VOICE_PRESETS[voiceId];
-  if (!preset) return;
-
-  try {
-    const synth = window.speechSynthesis;
-    synth.cancel();
-
-    const text = `Now serving ${spellTicketNumber(ticketNumber)}. Please proceed to ${deskName}.`;
-    const utterance = new SpeechSynthesisUtterance(text);
-
-    const voices = synth.getVoices();
-    const voice = pickFemaleVoice(voices);
-    if (voice) utterance.voice = voice;
-
-    utterance.pitch = preset.pitch;
-    utterance.rate = preset.rate;
-    utterance.volume = 1;
-    utterance.lang = 'en-US';
-    if (onEnd) utterance.onend = onEnd;
-
-    synth.speak(utterance);
-  } catch {
-    /* speech synthesis not available */
-  }
-}
 
 interface ScreenSettings {
   layout?: string;
@@ -74,7 +15,6 @@ interface ScreenSettings {
   show_estimated_wait?: boolean;
   max_tickets_shown?: number;
   announcement_sound?: boolean;
-  announcement_voice?: string;
   announcement_duration?: number;
   auto_scroll_interval?: number;
   visible_department_ids?: string[];
@@ -111,7 +51,6 @@ export function DisplayBoard({
   const showDeptBreakdown = s.show_department_breakdown ?? true;
   const maxTicketsShown = s.max_tickets_shown ?? 8;
   const announcementSound = s.announcement_sound ?? true;
-  const announcementVoice = s.announcement_voice ?? 'none';
   const announcementDuration = (s.announcement_duration ?? 8) * 1000;
   const visibleDeptIds = s.visible_department_ids ?? departments.map((d) => d.id);
   const layout = screen.layout ?? s.layout ?? 'list';
@@ -132,7 +71,7 @@ export function DisplayBoard({
         servingBorder: accentColor,
         calledText: '#166534',
         servingText: '#1d4ed8',
-        waitingCount: '#dc2626',
+        waitingCount: '#92400e',
         badgeBg: 'rgba(15,23,42,0.08)',
         badgeText: '#0f172a',
         announceBg: 'rgba(255,255,255,0.96)',
@@ -177,14 +116,6 @@ export function DisplayBoard({
   const [lastCalledTicket, setLastCalledTicket] = useState<any>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  // Ensure browser speech voices are loaded
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.getVoices(); // trigger load
-      window.speechSynthesis.onvoiceschanged = () => { window.speechSynthesis.getVoices(); };
-    }
-  }, []);
 
   // Update clock every second
   useEffect(() => {
@@ -240,21 +171,9 @@ export function DisplayBoard({
               // Play chime sound (if enabled)
               if (announcementSound) {
                 try {
-                  const audio = new Audio('/sounds/chime.wav');
+                  const audio = new Audio('/sounds/chime.mp3');
                   audio.play().catch(() => {});
                 } catch {}
-              }
-              // Voice announcement (if enabled)
-              if (announcementVoice && announcementVoice !== 'none') {
-                const deskLabel =
-                  calledTicket.desk?.display_name ||
-                  calledTicket.desk?.name ||
-                  'Counter';
-                // Small delay after chime so they don't overlap
-                setTimeout(
-                  () => speakAnnouncement(calledTicket.ticket_number, deskLabel, announcementVoice),
-                  announcementSound ? 1200 : 0
-                );
               }
               // Hide announcement after configured duration
               setTimeout(() => setShowAnnouncement(false), announcementDuration);
@@ -294,7 +213,7 @@ export function DisplayBoard({
       clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
-  }, [announcementDuration, announcementSound, announcementVoice, office.id, sandboxMode, screen.id]);
+  }, [announcementDuration, announcementSound, office.id, sandboxMode, screen.id]);
 
   // Filter active tickets by visible departments
   const nowServing = activeTickets.filter((t) => {
@@ -370,7 +289,7 @@ export function DisplayBoard({
           ) : null}
           <div>
             <h1 className={`${headingClass} font-bold`}>
-              {office.organization?.name || 'Qflo'}
+              {office.organization?.name || 'QueueFlow'}
             </h1>
             <p className="mt-1 text-2xl font-medium" style={{ color: colors.textMuted }}>{office.name}</p>
           </div>

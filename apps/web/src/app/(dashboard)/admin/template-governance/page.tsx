@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
+import { getServerI18n } from '@/lib/i18n';
 import {
   getPlatformLifecycleState,
   resolvePlatformConfig,
@@ -9,6 +10,7 @@ import { buildTemplateGovernanceReport } from '@/lib/platform/governance';
 import { TemplateGovernanceClient } from './template-governance-client';
 
 export default async function TemplateGovernancePage() {
+  const { t } = await getServerI18n();
   const context = await getStaffContext();
   try {
     await requireOrganizationAdmin(context);
@@ -34,7 +36,9 @@ export default async function TemplateGovernancePage() {
     return (
       <div className="p-6">
         <p className="text-destructive">
-          Failed to load template governance: {organizationError?.message ?? 'Unknown error'}
+          {t('Failed to load template governance: {message}', {
+            message: organizationError?.message ?? t('Unknown error'),
+          })}
         </p>
       </div>
     );
@@ -44,7 +48,9 @@ export default async function TemplateGovernancePage() {
     return (
       <div className="p-6">
         <p className="text-destructive">
-          Failed to load office drift data: {officesError.message}
+          {t('Failed to load office drift data: {message}', {
+            message: officesError.message,
+          })}
         </p>
       </div>
     );

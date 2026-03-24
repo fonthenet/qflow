@@ -13,6 +13,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface Customer {
   id: string;
@@ -42,6 +43,7 @@ export function CustomersClient({
 }: {
   customers: Customer[];
 }) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [ticketHistory, setTicketHistory] = useState<
@@ -94,52 +96,46 @@ export function CustomersClient({
       new Date(ticket.serving_started_at).getTime() -
       new Date(ticket.created_at).getTime();
     const mins = Math.round(waitMs / 60000);
-    return `${mins} min`;
+    return t('{count} min', { count: mins });
   }
 
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Customers</h1>
+        <h1 className="text-2xl font-bold">{t('Customers')}</h1>
         <p className="text-sm text-muted-foreground">
-          View registered customers and their visit history
+          {t('View registered customers and their visit history')}
         </p>
       </div>
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search by name, phone, or email..."
+          placeholder={t('Search by name, phone, or email...')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-xl border border-input bg-background pl-11 pr-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          className="w-full rounded-lg border border-border bg-card pl-10 pr-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
 
       {/* Customers List */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         {/* Table Header */}
-        <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border px-5 py-4 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          <div className="col-span-2">Customer</div>
-          <div>Phone</div>
-          <div>Email</div>
-          <div className="text-center">Visits</div>
-          <div className="text-right">Last Visit</div>
+        <div className="hidden sm:grid sm:grid-cols-6 gap-4 border-b border-border bg-muted/30 px-6 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <div className="col-span-2">{t('Customer')}</div>
+          <div>{t('Phone')}</div>
+          <div>{t('Email')}</div>
+          <div className="text-center">{t('Visits')}</div>
+          <div className="text-right">{t('Last Visit')}</div>
         </div>
 
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-            <User className="h-10 w-10 text-muted-foreground/40 mb-3" />
-            <p className="text-sm font-semibold text-foreground">
-              {search ? 'No results' : 'No customers yet'}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {search
-                ? 'No customers matching your search'
-                : 'Customers will appear here after their first visit'}
-            </p>
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">
+            {search
+              ? t('No customers matching your search')
+              : t('No customers found')}
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -157,7 +153,7 @@ export function CustomersClient({
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">
-                          {customer.name || 'Unnamed Customer'}
+                          {customer.name || t('Unnamed Customer')}
                         </p>
                         <p className="text-xs text-muted-foreground sm:hidden">
                           {customer.phone || '--'}
@@ -203,35 +199,35 @@ export function CustomersClient({
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3.5 w-3.5" />
-                        {customer.visit_count} visits
+                        {t('{count} visits', { count: customer.visit_count })}
                       </div>
                     </div>
 
                     <h4 className="text-sm font-semibold mb-3">
-                      Visit History
+                      {t('Visit History')}
                     </h4>
 
                     {loadingHistory === customer.id ? (
                       <p className="text-sm text-muted-foreground py-4 text-center">
-                        Loading history...
+                        {t('Loading history...')}
                       </p>
                     ) : (ticketHistory[customer.id] ?? []).length === 0 ? (
                       <p className="text-sm text-muted-foreground py-4 text-center">
-                        No visit history found
+                        {t('No visit history found')}
                       </p>
                     ) : (
                       <div className="space-y-2">
                         {(ticketHistory[customer.id] ?? []).map((ticket) => (
                           <div
                             key={ticket.id}
-                            className="rounded-xl border border-border bg-card px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4"
+                            className="rounded-lg border border-border bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4"
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary shrink-0">
+                              <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded shrink-0">
                                 #{ticket.ticket_number}
                               </span>
                               <span
-                                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${
+                                className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
                                   ticket.status === 'completed'
                                     ? 'bg-green-100 text-green-700'
                                     : ticket.status === 'no_show'
@@ -241,7 +237,7 @@ export function CustomersClient({
                                         : 'bg-blue-100 text-blue-700'
                                 }`}
                               >
-                                {ticket.status}
+                                {t(ticket.status)}
                               </span>
                             </div>
                             <div className="text-sm text-muted-foreground truncate">
@@ -251,7 +247,7 @@ export function CustomersClient({
                             </div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                               <Clock className="h-3 w-3" />
-                              Wait: {formatWaitTime(ticket)}
+                              {t('Wait')}: {formatWaitTime(ticket)}
                             </div>
                             <div className="text-xs text-muted-foreground shrink-0">
                               {new Date(
@@ -285,7 +281,10 @@ export function CustomersClient({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {initialCustomers.length} customers
+        {t('Showing {filtered} of {total} customers', {
+          filtered: filtered.length,
+          total: initialCustomers.length,
+        })}
       </p>
     </div>
   );

@@ -585,7 +585,7 @@ async function main() {
   loadLocalEnv();
 
   if (shouldShowHelp()) {
-    console.log(`Qflo E2E seed
+    console.log(`QueueFlow E2E seed
 
 Required:
   NEXT_PUBLIC_SUPABASE_URL
@@ -613,9 +613,9 @@ Optional:
   const supabase = createServiceClient();
 
   const email = process.env.QUEUEFLOW_E2E_EMAIL ?? 'e2e-admin@queueflow.local';
-  const password = process.env.QUEUEFLOW_E2E_PASSWORD ?? 'Qflo123!';
-  const fullName = process.env.QUEUEFLOW_E2E_FULL_NAME ?? 'Qflo E2E Admin';
-  const organizationName = process.env.QUEUEFLOW_E2E_ORG_NAME ?? 'Qflo E2E';
+  const password = process.env.QUEUEFLOW_E2E_PASSWORD ?? 'QueueFlow123!';
+  const fullName = process.env.QUEUEFLOW_E2E_FULL_NAME ?? 'QueueFlow E2E Admin';
+  const organizationName = process.env.QUEUEFLOW_E2E_ORG_NAME ?? 'QueueFlow E2E';
   const organizationSlug = process.env.QUEUEFLOW_E2E_ORG_SLUG ?? slugify(organizationName);
   const templateId = process.env.QUEUEFLOW_E2E_TEMPLATE_ID ?? 'bank-branch';
   const operatingModel = (process.env.QUEUEFLOW_E2E_OPERATING_MODEL ??

@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Calendar, Clock, MapPin, Check } from 'lucide-react';
-import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
 import {
   clearBookingEmailOtpVerification,
@@ -12,6 +11,7 @@ import {
   markBookingEmailOtpVerified,
   updateAppointmentContact,
 } from '@/lib/actions/appointment-actions';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface BookingFormProps {
   office: any;
@@ -49,6 +49,7 @@ export function BookingForm({
   platformContext,
   sandbox,
 }: BookingFormProps) {
+  const { t, formatDate, formatTime } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   const vocabulary = {
     officeLabel: platformContext?.vocabulary?.officeLabel ?? 'Location',
@@ -63,8 +64,8 @@ export function BookingForm({
   const serviceLabelLower = vocabulary.serviceLabel.toLowerCase();
   const bookingActionLabel =
     vocabulary.bookingLabel === 'Appointment'
-      ? 'Book an Appointment'
-      : `Book a ${vocabulary.bookingLabel}`;
+      ? t('Book an Appointment')
+      : t('Book a {label}', { label: vocabulary.bookingLabel });
   const officeSlug = office.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -113,13 +114,6 @@ export function BookingForm({
 
   const today = new Date().toISOString().split('T')[0];
   const orgSettings = organization?.settings ?? {};
-  const bookingMode = orgSettings.booking_mode ?? 'simple';
-  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
-  const maxDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + bookingHorizonDays);
-    return d.toISOString().split('T')[0];
-  })();
   const bookingEmailOtpEnabled = Boolean(orgSettings.email_otp_enabled);
   const bookingEmailOtpRequired = Boolean(
     orgSettings.email_otp_enabled && orgSettings.email_otp_required_for_booking
@@ -199,11 +193,11 @@ export function BookingForm({
 
   function handleCustomerInfo() {
     if (!customerName.trim()) {
-      setError('Please enter your name');
+      setError(t('Please enter your name'));
       return;
     }
     if (bookingEmailOtpRequired && !customerEmail.trim()) {
-      setError('Please enter your email to verify this booking.');
+      setError(t('Please enter your email to verify this booking.'));
       return;
     }
     setError(null);
@@ -212,7 +206,7 @@ export function BookingForm({
 
   async function handleConfirm() {
     if (bookingEmailOtpRequired && !emailOtpVerified) {
-      setError('Please verify your email before confirming this booking.');
+      setError(t('Please verify your email before confirming this booking.'));
       return;
     }
 
@@ -259,7 +253,7 @@ export function BookingForm({
   async function handleSendEmailOtp() {
     const email = customerEmail.trim().toLowerCase();
     if (!email) {
-      setError('Please enter your email to receive a verification code.');
+      setError(t('Please enter your email to receive a verification code.'));
       return;
     }
 
@@ -447,93 +441,40 @@ export function BookingForm({
     done: 7,
   }[step];
 
-  function formatTime(time: string) {
-    const [h, m] = time.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const hour12 = h % 12 || 12;
-    return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
-  }
-
-  function formatDate(dateStr: string) {
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+  function formatSlotTime(time: string) {
+    return formatTime(`2000-01-01T${time}:00`, {
+      hour: 'numeric',
+      minute: '2-digit',
     });
   }
 
-  // ── Business hours info ──────────────────────────────────────
-  // NOTE: hooks must be called before any conditional early return
-  const officeHours = office.operating_hours as OperatingHours | null;
-  const officeTimezone = office.timezone || 'UTC';
-  const [bookingBusinessStatus, setBookingBusinessStatus] = useState(() =>
-    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
-  );
-  useEffect(() => {
-    if (!officeHours) return;
-    setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    const t = setInterval(() => setBookingBusinessStatus(isOfficeOpen(officeHours, officeTimezone)), 60000);
-    return () => clearInterval(t);
-  }, [officeHours, officeTimezone]);
-
-  if (bookingMode === 'disabled') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
-        <div className="mx-auto max-w-lg px-4 py-20 text-center">
-          <Calendar className="mx-auto h-16 w-16 text-muted-foreground/50" />
-          <h2 className="mt-6 text-2xl font-bold text-foreground">Online Booking Unavailable</h2>
-          <p className="mt-3 text-muted-foreground">
-            This business does not currently accept online bookings. Please visit in person or contact them directly.
-          </p>
-        </div>
-      </div>
-    );
+  function formatSelectedDate(dateStr: string) {
+    return formatDate(`${dateStr}T12:00:00`, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
       {sandboxMode ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
-          Sandbox mode. This booking flow looks and behaves like the live page, but it never creates a real reservation or sends alerts.
+          {t('Sandbox mode. This booking flow looks and behaves like the live page, but it never creates a real reservation or sends alerts.')}
         </div>
       ) : null}
-
-      {/* Business hours info banner */}
-      {bookingBusinessStatus && !bookingBusinessStatus.isOpen && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center">
-          <p className="text-sm font-medium text-amber-800">
-            <Clock className="mr-1 inline h-4 w-4" />
-            {bookingBusinessStatus.reason === 'holiday' && bookingBusinessStatus.holidayName
-              ? `Closed for ${bookingBusinessStatus.holidayName}`
-              : bookingBusinessStatus.reason === 'before_hours' && bookingBusinessStatus.todayHours
-              ? `Not open yet — opens at ${bookingBusinessStatus.todayHours.open}`
-              : 'This location is currently closed'}
-            {bookingBusinessStatus.nextOpen && (
-              <span className="ml-1 text-amber-600">
-                — Opens {capitalizeDay(bookingBusinessStatus.nextOpen.day)} at {bookingBusinessStatus.nextOpen.time}
-              </span>
-            )}
-          </p>
-          <p className="mt-0.5 text-xs text-amber-600">
-            You can still book an appointment for a future date.
-          </p>
-        </div>
-      )}
-
       {/* Header */}
       <div className="border-b border-border bg-card px-6 py-4 text-center">
         <div className="flex flex-col items-center justify-center gap-3">
           {organization?.logo_url ? (
             <img
               src={organization.logo_url}
-              alt={`${organization?.name || 'Business'} logo`}
+              alt={t('{name} logo', { name: organization?.name || t('Business') })}
               className="max-h-24 w-auto max-w-[280px] object-contain"
             />
           ) : null}
           <h1 className="text-2xl font-bold text-foreground">
-            {organization?.name || 'Qflo'}
+            {organization?.name || 'QueueFlow'}
           </h1>
         </div>
         <div className="mt-1 flex items-center justify-center gap-1.5 text-muted-foreground">
@@ -557,7 +498,7 @@ export function BookingForm({
             ))}
           </div>
           <p className="text-center text-xs text-muted-foreground">
-            Step {stepNumber} of 6
+            {t('Step {step} of 6', { step: stepNumber })}
           </p>
         </div>
       )}
@@ -575,7 +516,10 @@ export function BookingForm({
             <div className="text-center">
               <h2 className="text-3xl font-bold text-foreground">{`Select ${vocabulary.departmentLabel}`}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                {`Choose the ${departmentLabelLower} for your ${bookingLabelLower}`}
+                {t('Choose the {department} for your {booking}', {
+                  department: departmentLabelLower,
+                  booking: bookingLabelLower,
+                })}
               </p>
             </div>
             <div className="grid gap-4">
@@ -604,7 +548,9 @@ export function BookingForm({
             <div className="text-center">
               <h2 className="text-3xl font-bold text-foreground">{selectedDept.name}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                {`Select ${hasSingleDepartment ? serviceLabelLower : `a ${serviceLabelLower}`}`}
+                {hasSingleDepartment
+                  ? t('Select {service}', { service: serviceLabelLower })
+                  : t('Select a {service}', { service: serviceLabelLower })}
               </p>
             </div>
             <div className="grid gap-4">
@@ -625,7 +571,7 @@ export function BookingForm({
                       {service.estimated_service_time && (
                         <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
                           <Clock className="h-3.5 w-3.5" />
-                          <span>Est. {service.estimated_service_time} min</span>
+                          <span>{t('Est. {minutes} min', { minutes: service.estimated_service_time })}</span>
                         </div>
                       )}
                     </div>
@@ -637,7 +583,7 @@ export function BookingForm({
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              {`Back to ${vocabulary.departmentLabel}s`}
+              {t('Back to {label}', { label: `${vocabulary.departmentLabel}s` })}
             </button>
           </div>
         )}
@@ -647,23 +593,24 @@ export function BookingForm({
           <div className="space-y-6">
             <div className="text-center">
               <Calendar className="mx-auto h-10 w-10 text-primary" />
-              <h2 className="mt-3 text-3xl font-bold text-foreground">Choose a Date</h2>
+              <h2 className="mt-3 text-3xl font-bold text-foreground">{t('Choose a Date')}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                {`Select when you would like to visit for your ${bookingLabelLower}`}
+                {t('Select when you would like to visit for your {booking}', {
+                  booking: bookingLabelLower,
+                })}
               </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <input
                 type="date"
                 min={today}
-                max={maxDate}
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
               {selectedDate && (
                 <p className="mt-3 text-center text-muted-foreground">
-                  {formatDate(selectedDate)}
+                  {formatSelectedDate(selectedDate)}
                 </p>
               )}
             </div>
@@ -672,13 +619,13 @@ export function BookingForm({
               disabled={!selectedDate}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Continue
+              {t('Continue')}
             </button>
             <button
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Back
+              {t('Back')}
             </button>
           </div>
         )}
@@ -688,9 +635,9 @@ export function BookingForm({
           <div className="space-y-6">
             <div className="text-center">
               <Clock className="mx-auto h-10 w-10 text-primary" />
-              <h2 className="mt-3 text-3xl font-bold text-foreground">Choose a Time</h2>
+              <h2 className="mt-3 text-3xl font-bold text-foreground">{t('Choose a Time')}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                {formatDate(selectedDate)}
+                {formatSelectedDate(selectedDate)}
               </p>
             </div>
 
@@ -701,10 +648,10 @@ export function BookingForm({
             ) : availableSlots.length === 0 ? (
               <div className="rounded-xl border border-border bg-card p-6 text-center shadow-sm">
                 <p className="text-lg text-muted-foreground">
-                  No available time slots for this date.
+                  {t('No available time slots for this date.')}
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Please choose a different date.
+                  {t('Please choose a different date.')}
                 </p>
               </div>
             ) : (
@@ -719,7 +666,7 @@ export function BookingForm({
                         : 'border-border bg-card text-foreground hover:border-primary hover:shadow-sm'
                     }`}
                   >
-                    {formatTime(slot)}
+                    {formatSlotTime(slot)}
                   </button>
                 ))}
               </div>
@@ -729,7 +676,7 @@ export function BookingForm({
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Back
+              {t('Back')}
             </button>
           </div>
         )}
@@ -738,34 +685,34 @@ export function BookingForm({
         {step === 'info' && (
           <div className="space-y-6">
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-foreground">Your Information</h2>
+              <h2 className="text-3xl font-bold text-foreground">{t('Your Information')}</h2>
               <p className="mt-2 text-lg text-muted-foreground">
-                {`Please provide your details for this ${bookingLabelLower}`}
+                {t('Please provide your details for this {booking}', { booking: bookingLabelLower })}
               </p>
             </div>
 
             <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  Full Name <span className="text-destructive">*</span>
+                  {t('Full Name')} <span className="text-destructive">*</span>
                 </label>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Enter your full name"
+                  placeholder={t('Enter your full name')}
                   className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  Phone Number <span className="text-xs text-muted-foreground">(optional)</span>
+                  {t('Phone Number')} <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
                 </label>
                 <input
                   type="tel"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="Enter your phone number"
+                  placeholder={t('Enter your phone number')}
                   className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -775,19 +722,19 @@ export function BookingForm({
                   {bookingEmailOtpRequired ? (
                     <span className="text-destructive">*</span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">(optional)</span>
+                    <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
                   )}
                 </label>
                 <input
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder="Enter your email address"
+                  placeholder={t('Enter your email address')}
                   className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
                 {bookingEmailOtpRequired ? (
                   <p className="mt-1.5 text-xs text-muted-foreground">
-                    This business requires email verification before a booking is confirmed.
+                    {t('This business requires email verification before a booking is confirmed.')}
                   </p>
                 ) : null}
               </div>
@@ -797,13 +744,13 @@ export function BookingForm({
               onClick={handleCustomerInfo}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
-              {`Review ${vocabulary.bookingLabel}`}
+              {t('Review {label}', { label: vocabulary.bookingLabel })}
             </button>
             <button
               onClick={handleBack}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
             >
-              Back
+              {t('Back')}
             </button>
           </div>
         )}
@@ -830,30 +777,30 @@ export function BookingForm({
               <div className="flex items-center justify-between border-b border-border py-2">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Date
+                  {t('Date')}
                 </span>
-                <span className="font-medium text-foreground">{formatDate(selectedDate)}</span>
+                <span className="font-medium text-foreground">{formatSelectedDate(selectedDate)}</span>
               </div>
               <div className="flex items-center justify-between border-b border-border py-2">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Clock className="h-4 w-4" />
-                  Time
+                  {t('Time')}
                 </span>
-                <span className="font-medium text-foreground">{formatTime(selectedTime)}</span>
+                <span className="font-medium text-foreground">{formatSlotTime(selectedTime)}</span>
               </div>
               <div className="flex justify-between border-b border-border py-2">
-                <span className="text-muted-foreground">Name</span>
+                <span className="text-muted-foreground">{t('Name')}</span>
                 <span className="font-medium text-foreground">{customerName}</span>
               </div>
               {customerPhone && (
                 <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">Phone</span>
+                  <span className="text-muted-foreground">{t('Phone')}</span>
                   <span className="font-medium text-foreground">{customerPhone}</span>
                 </div>
               )}
               {customerEmail && (
                 <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Email</span>
+                  <span className="text-muted-foreground">{t('Email')}</span>
                   <span className="font-medium text-foreground">{customerEmail}</span>
                 </div>
               )}
@@ -862,15 +809,20 @@ export function BookingForm({
             {bookingEmailOtpRequired ? (
               <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-6">
                 <div>
-                  <h3 className="text-base font-semibold text-foreground">Email verification</h3>
+                  <h3 className="text-base font-semibold text-foreground">{t('Email verification')}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {`We'll send a short code to ${customerEmail || 'your email'} before this ${bookingLabelLower} is created.`}
+                    {t('We\'ll send a short code to {email} before this {booking} is created.', {
+                      email: customerEmail || t('your email'),
+                      booking: bookingLabelLower,
+                    })}
                   </p>
                 </div>
 
                 {emailOtpVerified ? (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                    {`Email verified. Your ${bookingLabelLower} is ready to confirm.`}
+                    {t('Email verified. Your {booking} is ready to confirm.', {
+                      booking: bookingLabelLower,
+                    })}
                   </div>
                 ) : (
                   <>
@@ -886,15 +838,17 @@ export function BookingForm({
                         className="rounded-xl border border-primary/20 bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {sendingEmailOtp
-                          ? 'Sending code...'
+                          ? t('Sending code...')
                           : emailOtpSent
                             ? emailOtpResendRemainingSeconds > 0
-                              ? `Resend in ${emailOtpResendRemainingSeconds}s`
-                              : 'Resend code'
-                            : 'Send verification code'}
+                              ? t('Resend in {seconds}s', { seconds: emailOtpResendRemainingSeconds })
+                              : t('Resend code')
+                            : t('Send verification code')}
                       </button>
                       <p className="self-center text-xs text-muted-foreground">
-                        Resend available after about {bookingEmailOtpResendCooldownSeconds} seconds.
+                        {t('Resend available after about {seconds} seconds.', {
+                          seconds: bookingEmailOtpResendCooldownSeconds,
+                        })}
                       </p>
                     </div>
 
@@ -902,14 +856,14 @@ export function BookingForm({
                       <div className="space-y-3">
                         <div>
                           <label className="mb-1.5 block text-sm font-medium text-foreground">
-                            Verification code
+                            {t('Verification code')}
                           </label>
                           <input
                             type="text"
                             inputMode="numeric"
                             value={emailOtpCode}
                             onChange={(e) => setEmailOtpCode(e.target.value.replace(/\s+/g, ''))}
-                            placeholder="Enter the code from your email"
+                            placeholder={t('Enter the code from your email')}
                             className="w-full rounded-xl border border-border bg-card px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                           />
                         </div>
@@ -919,7 +873,7 @@ export function BookingForm({
                           disabled={verifyingEmailOtp || !emailOtpCode.trim()}
                           className="w-full rounded-xl border border-primary bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {verifyingEmailOtp ? 'Verifying...' : 'Verify email'}
+                          {verifyingEmailOtp ? t('Verifying...') : t('Verify email')}
                         </button>
                       </div>
                     ) : null}
@@ -940,10 +894,10 @@ export function BookingForm({
               {submitting ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  {`${vocabulary.bookingLabel}...`}
+                  {t('{label}...', { label: vocabulary.bookingLabel })}
                 </span>
               ) : (
-                `Confirm ${vocabulary.bookingLabel}`
+                t('Confirm {label}', { label: vocabulary.bookingLabel })
               )}
             </button>
             <button
@@ -951,7 +905,7 @@ export function BookingForm({
               disabled={submitting}
               className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
-              Back
+              {t('Back')}
             </button>
           </div>
         )}
@@ -965,15 +919,15 @@ export function BookingForm({
               </div>
 
               <h2 className="text-2xl font-bold text-foreground">
-                {`${vocabulary.bookingLabel} Confirmed!`}
+                {t('{label} Confirmed!', { label: vocabulary.bookingLabel })}
               </h2>
               <p className="mt-2 text-muted-foreground">
-                {`Your ${bookingLabelLower} has been booked successfully.`}
+                {t('Your {booking} has been booked successfully.', { booking: bookingLabelLower })}
               </p>
 
               <div className="mt-6 rounded-xl bg-muted p-4">
                 <p className="text-sm font-medium text-muted-foreground">
-                  Reference Number
+                  {t('Reference Number')}
                 </p>
                 <p className="text-2xl font-bold tracking-wider text-primary">
                   {appointment.id.slice(0, 8).toUpperCase()}
@@ -991,11 +945,11 @@ export function BookingForm({
                 </div>
                 <div className="flex items-center gap-3 text-sm text-foreground">
                   <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span>{formatDate(selectedDate)}</span>
+                  <span>{formatSelectedDate(selectedDate)}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-foreground">
                   <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span>{formatTime(selectedTime)}</span>
+                  <span>{formatSlotTime(selectedTime)}</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-foreground">
                   <span className="w-4 shrink-0 text-center text-muted-foreground">N</span>
@@ -1019,12 +973,12 @@ export function BookingForm({
                 <p className="text-sm font-medium text-primary">
                   {vocabulary.bookingLabel === 'Reservation'
                     ? 'Please arrive a few minutes early so the host can seat your party smoothly.'
-                    : 'Please arrive a few minutes early to check in.'}
+                    : t('Please arrive a few minutes early to check in.')}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {vocabulary.bookingLabel === 'Reservation'
-                    ? 'You can check in with the host stand or online when you arrive.'
-                    : 'You can check in at the kiosk or online when you arrive.'}
+                    ? t('You can check in with the host stand or online when you arrive.')
+                    : t('You can check in at the kiosk or online when you arrive.')}
                 </p>
               </div>
 
@@ -1032,10 +986,12 @@ export function BookingForm({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      {vocabulary.bookingLabel === 'Reservation' ? 'Reservation details' : 'Visit details'}
+                      {vocabulary.bookingLabel === 'Reservation' ? t('Reservation details') : t('Visit details')}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {`Update the contact info on this ${bookingLabelLower} if you need to correct it.`}
+                      {t('Update the contact info on this {booking} if you need to correct it.', {
+                        booking: bookingLabelLower,
+                      })}
                     </p>
                   </div>
                   {!editingBookedInfo ? (
@@ -1044,7 +1000,7 @@ export function BookingForm({
                       onClick={() => setEditingBookedInfo(true)}
                       className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                     >
-                      Edit info
+                      {t('Edit info')}
                     </button>
                   ) : null}
                 </div>
@@ -1053,7 +1009,7 @@ export function BookingForm({
                   <div className="mt-4 space-y-3">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-foreground">
-                        Full Name <span className="text-destructive">*</span>
+                        {t('Full Name')} <span className="text-destructive">*</span>
                       </label>
                       <input
                         type="text"
@@ -1064,7 +1020,7 @@ export function BookingForm({
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-foreground">
-                        Phone Number
+                        {t('Phone Number')}
                       </label>
                       <input
                         type="tel"
@@ -1075,7 +1031,7 @@ export function BookingForm({
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-foreground">
-                        Email
+                        {t('Email')}
                       </label>
                       <input
                         type="email"
@@ -1091,7 +1047,7 @@ export function BookingForm({
                         disabled={savingBookedInfo}
                         className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
                       >
-                        {savingBookedInfo ? 'Saving...' : 'Save changes'}
+                        {savingBookedInfo ? t('Saving...') : t('Save changes')}
                       </button>
                       <button
                         type="button"
@@ -1099,7 +1055,7 @@ export function BookingForm({
                         disabled={savingBookedInfo}
                         className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                       >
-                        Cancel
+                        {t('Cancel')}
                       </button>
                     </div>
                   </div>
@@ -1112,18 +1068,18 @@ export function BookingForm({
               className="block w-full rounded-xl border border-border bg-card px-4 py-4 text-center text-lg font-medium text-foreground transition-colors hover:bg-muted"
             >
               {sandboxMode
-                ? 'Open Queue Preview'
+                ? t('Open Queue Preview')
                 : vocabulary.bookingLabel === 'Reservation'
-                  ? 'Track or Check In Reservation'
-                  : 'Track or Check In Appointment'}
+                  ? t('Track or Check In Reservation')
+                  : t('Track or Check In Appointment')}
             </Link>
             <button
               onClick={handleStartOver}
               className="w-full rounded-xl bg-primary px-4 py-4 text-lg font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
             >
               {vocabulary.bookingLabel === 'Reservation'
-                ? 'Book Another Reservation'
-                : 'Book Another Appointment'}
+                ? t('Book Another Reservation')
+                : t('Book Another Appointment')}
             </button>
           </div>
         )}
@@ -1131,7 +1087,7 @@ export function BookingForm({
 
       {/* Footer */}
       <div className="px-4 pb-6 text-center">
-        <p className="text-xs text-muted-foreground">POWERED BY QFLO</p>
+        <p className="text-xs text-muted-foreground">{t('Powered by QueueFlow')}</p>
       </div>
     </div>
   );

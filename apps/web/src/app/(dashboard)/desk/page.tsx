@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { ADMIN_LIKE_ROLES, STAFF_ROLES } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/server';
@@ -5,8 +6,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { DeskPanel } from '@/components/desk/desk-panel';
 import { DeskSelector } from '@/components/desk/desk-selector';
 import { resolvePlatformConfig } from '@/lib/platform/config';
+import { getServerI18n } from '@/lib/i18n';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerI18n();
+  return {
+    title: t('My Desk'),
+  };
+}
 
 export default async function DeskPage() {
+  const { t } = await getServerI18n();
   const supabase = await createClient();
 
   // Get current user
@@ -38,23 +48,7 @@ export default async function DeskPage() {
     // Fetch available desks for the staff member's office
     const officeId = staff.office_id;
 
-    // Resolve vocabulary for the selector UI
-    const [{ data: selectorOrg }, { data: selectorOffice }] = await Promise.all([
-      staff.organization_id
-        ? supabase.from('organizations').select('settings').eq('id', staff.organization_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      officeId
-        ? supabase.from('offices').select('settings').eq('id', officeId).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-    const selectorConfig = resolvePlatformConfig({
-      organizationSettings: (selectorOrg?.settings as Record<string, unknown> | null) ?? {},
-      officeSettings: (selectorOffice?.settings as Record<string, unknown> | null) ?? {},
-    });
-    const selectorVocabulary = selectorConfig.experienceProfile.vocabulary;
-
     if (!officeId) {
-      const officeLabel = selectorVocabulary?.officeLabel ?? 'Office';
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md">
@@ -74,11 +68,10 @@ export default async function DeskPage() {
               </svg>
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">
-              No {officeLabel} Assigned
+              {t('No Office Assigned')}
             </h2>
             <p className="text-muted-foreground">
-              You are not assigned to any {officeLabel.toLowerCase()}. Please contact your administrator
-              to assign you to one.
+              {t('You are not assigned to any office. Please contact your administrator to assign you to an office.')}
             </p>
           </div>
         </div>
@@ -98,10 +91,6 @@ export default async function DeskPage() {
       <DeskSelector
         desks={availableDesks ?? []}
         staffName={staff.full_name}
-        vocabulary={{
-          deskLabel: selectorVocabulary?.deskLabel,
-          departmentLabel: selectorVocabulary?.departmentLabel,
-        }}
       />
     );
   }

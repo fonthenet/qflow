@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { login } from '@/lib/actions/auth-actions';
+import { useI18n } from '@/components/providers/locale-provider';
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t } = useI18n();
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
@@ -25,7 +27,7 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold">
             Q<span className="text-primary">flo</span>
           </h1>
-          <p className="mt-2 text-muted-foreground">Sign in to your account</p>
+          <p className="mt-2 text-muted-foreground">{t('Sign in to your account')}</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
@@ -38,7 +40,7 @@ export default function LoginPage() {
 
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
-                Email
+                {t('Email')}
               </label>
               <input
                 id="email"
@@ -52,7 +54,7 @@ export default function LoginPage() {
 
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
-                Password
+                {t('Password')}
               </label>
               <input
                 id="password"
@@ -60,7 +62,7 @@ export default function LoginPage() {
                 type="password"
                 required
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="Enter your password"
+                placeholder={t('Enter your password')}
               />
             </div>
 
@@ -69,14 +71,14 @@ export default function LoginPage() {
               disabled={loading}
               className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? t('Signing in...') : t('Sign In')}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
+            {t("Don't have an account?")}{' '}
             <Link href="/register" className="font-medium text-primary hover:underline">
-              Register your business
+              {t('Register your business')}
             </Link>
           </p>
         </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
+import { useI18n } from '@/components/providers/locale-provider';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 
@@ -13,12 +14,12 @@ interface FeedbackFormProps {
   onDone?: () => Promise<void> | void;
 }
 
-function RatingLabel({ rating }: { rating: number }) {
-  if (rating === 1) return 'Poor';
-  if (rating === 2) return 'Fair';
-  if (rating === 3) return 'Good';
-  if (rating === 4) return 'Very Good';
-  if (rating === 5) return 'Excellent';
+function RatingLabel({ rating, t }: { rating: number; t: (key: string) => string }) {
+  if (rating === 1) return t('Poor');
+  if (rating === 2) return t('Fair');
+  if (rating === 3) return t('Good');
+  if (rating === 4) return t('Very Good');
+  if (rating === 5) return t('Excellent');
   return null;
 }
 
@@ -28,6 +29,7 @@ export function FeedbackForm({
   serviceName,
   onDone,
 }: FeedbackFormProps) {
+  const { t } = useI18n();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -75,7 +77,7 @@ export function FeedbackForm({
 
       setIsSubmitted(true);
     } catch {
-      setError('Failed to submit feedback. Please try again.');
+      setError(t('Failed to submit feedback. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -92,7 +94,7 @@ export function FeedbackForm({
     }
   };
 
-  const ratingLabel = <RatingLabel rating={hoveredRating || rating} />;
+  const ratingLabel = <RatingLabel rating={hoveredRating || rating} t={t} />;
 
   if (isSubmitted) {
     return (
@@ -104,13 +106,15 @@ export function FeedbackForm({
             </svg>
           </div>
 
-          <h1 className="mt-5 text-2xl font-semibold text-white">Visit complete</h1>
+          <h1 className="mt-5 text-2xl font-semibold text-white">{t('Visit complete')}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-300">
-            Thanks for sharing your feedback. Your visit on ticket {ticket.ticket_number} is all wrapped up.
+            {t('Thanks for sharing your feedback. Your visit on ticket {number} is all wrapped up.', {
+              number: ticket.ticket_number,
+            })}
           </p>
 
           <div className="mt-6 rounded-[26px] border border-white/10 bg-white/5 px-5 py-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Your rating</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{t('Your rating')}</p>
             <div className="mt-4 flex justify-center gap-1">
               {[1, 2, 3, 4, 5].map((star) => (
                 <svg
@@ -131,11 +135,11 @@ export function FeedbackForm({
             disabled={isFinishing}
             className="mt-6 w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 disabled:opacity-60"
           >
-            {isFinishing ? 'Closing...' : 'Done'}
+            {isFinishing ? t('Closing...') : t('Done')}
           </button>
 
           <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">
-            {officeName} · Qflo
+            {officeName} · {t('QueueFlow')}
           </p>
         </div>
       </div>
@@ -149,19 +153,21 @@ export function FeedbackForm({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">Thanks for visiting</h1>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">{t('Thanks for visiting')}</h1>
               <p className="mt-3 text-sm leading-6 text-slate-300">
-                Ticket {ticket.ticket_number} is complete. If you have a moment, tell us how this visit felt.
+                {t('Ticket {number} is complete. If you have a moment, tell us how this visit felt.', {
+                  number: ticket.ticket_number,
+                })}
               </p>
             </div>
             <div className="rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
-              Complete
+              {t('Complete')}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8">
             <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Your rating</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{t('Your rating')}</p>
               <div className="mt-5 flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -171,7 +177,7 @@ export function FeedbackForm({
                     onMouseEnter={() => setHoveredRating(star)}
                     onMouseLeave={() => setHoveredRating(0)}
                     onClick={() => setRating(star)}
-                    aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                    aria-label={t('Rate {count} star(s)', { count: star })}
                   >
                     <svg
                       className={`h-11 w-11 transition-colors ${
@@ -195,14 +201,14 @@ export function FeedbackForm({
 
             <div className="mt-4 rounded-[28px] border border-white/10 bg-white/5 p-5">
               <label htmlFor="comment" className="text-sm font-semibold text-white">
-                Anything we should know?
+                {t('Anything we should know?')}
               </label>
-              <p className="mt-1 text-sm text-slate-300">Optional notes help the team improve the next visit.</p>
+              <p className="mt-1 text-sm text-slate-300">{t('Optional notes help the team improve the next visit.')}</p>
               <textarea
                 id="comment"
                 rows={4}
                 className="mt-4 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-base text-white outline-none transition-colors placeholder:text-slate-500 focus:border-sky-300/40 focus:ring-2 focus:ring-sky-300/20"
-                placeholder="Share what went well or what could be smoother..."
+                placeholder={t('Share what went well or what could be smoother...')}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
               />
@@ -220,7 +226,7 @@ export function FeedbackForm({
                 disabled={rating === 0 || isSubmitting}
                 className="w-full rounded-2xl bg-white px-6 py-4 text-base font-semibold text-slate-950 shadow-[0_18px_45px_rgba(255,255,255,0.10)] transition hover:bg-slate-100 active:scale-[0.99] disabled:opacity-40"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit feedback'}
+                {isSubmitting ? t('Submitting...') : t('Submit feedback')}
               </button>
 
               <button
@@ -229,14 +235,14 @@ export function FeedbackForm({
                 disabled={isFinishing}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-semibold text-slate-100 transition hover:bg-white/8 disabled:opacity-60"
               >
-                {isFinishing ? 'Closing...' : 'Finish without feedback'}
+                {isFinishing ? t('Closing...') : t('Finish without feedback')}
               </button>
             </div>
           </form>
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · Qflo</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · {t('QueueFlow')}</p>
         </div>
       </div>
     </div>

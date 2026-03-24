@@ -1,5 +1,4 @@
 import { getStaffContext } from '@/lib/authz';
-import { resolvePlatformConfig } from '@/lib/platform/config';
 import { DesksClient } from './desks-client';
 
 export default async function DesksPage({
@@ -14,16 +13,6 @@ export default async function DesksPage({
       ? [params.office]
       : []
     : context.accessibleOfficeIds;
-
-  const { data: org } = await context.supabase
-    .from('organizations')
-    .select('settings')
-    .eq('id', context.staff.organization_id)
-    .single();
-  const platformConfig = resolvePlatformConfig({ organizationSettings: (org?.settings ?? {}) as Record<string, unknown> });
-  const vocabulary = platformConfig.experienceProfile.vocabulary;
-  const deskLabel = vocabulary?.deskLabel ?? 'Counter';
-  const customerLabel = vocabulary?.customerLabel ?? 'Customer';
 
   const { data: offices } = requestedOfficeIds.length > 0
     ? await context.supabase
@@ -84,8 +73,6 @@ export default async function DesksPage({
       staffList={staffList ?? []}
       currentOfficeFilter={params.office ?? ''}
       currentDepartmentFilter={params.department ?? ''}
-      deskLabel={deskLabel}
-      customerLabel={customerLabel}
     />
   );
 }

@@ -65,7 +65,7 @@ export default async function RemoteJoinPage({ params }: PageProps) {
 
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, address, settings, operating_hours, timezone')
+    .select('id, name, address, settings')
     .eq('organization_id', virtualCode.organization_id)
     .eq('is_active', true)
     .order('name');

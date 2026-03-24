@@ -49,37 +49,36 @@ export function useRealtimeTicket({
   const channelsRef = useRef<RealtimeChannel[]>([]);
   const supabaseRef = useRef(createClient());
 
-  const fetchPositionAndWait = useCallback(async () => {
+  const fetchPosition = useCallback(async () => {
     const supabase = supabaseRef.current;
     try {
       const { data } = await supabase.rpc('get_queue_position', {
         p_ticket_id: ticketId,
       });
-
-      // Extract position + wait from whatever format the RPC returns:
-      // - JSONB object: { position: N, estimated_wait_minutes: N, ... }
-      // - Plain integer: N (legacy)
-      // - String-wrapped number: "3" (edge case)
-      let pos: number | null = null;
-      let wait: number | null = null;
-
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const obj = data as Record<string, unknown>;
-        const rawPos = obj.position;
-        const rawWait = obj.estimated_wait_minutes;
-        if (rawPos != null && !isNaN(Number(rawPos))) pos = Number(rawPos);
-        if (rawWait != null && !isNaN(Number(rawWait))) wait = Number(rawWait);
-      } else if (data != null && !isNaN(Number(data))) {
-        pos = Number(data);
+      if (data !== null && data !== undefined) {
+        setPosition(data);
+        setLastSyncedAt(new Date());
       }
-
-      if (pos !== null) setPosition(pos);
-      if (wait !== null) setEstimatedWait(wait);
-      setLastSyncedAt(new Date());
     } catch {
       // Silently handle - position will remain stale
     }
   }, [ticketId]);
+
+  const fetchWaitTime = useCallback(async (departmentId: string, serviceId: string) => {
+    const supabase = supabaseRef.current;
+    try {
+      const { data } = await supabase.rpc('estimate_wait_time', {
+        p_department_id: departmentId,
+        p_service_id: serviceId,
+      });
+      if (data !== null && data !== undefined) {
+        setEstimatedWait(data);
+        setLastSyncedAt(new Date());
+      }
+    } catch {
+      // Silently handle
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     if (disabled) {
@@ -103,12 +102,15 @@ export function useRealtimeTicket({
     setLastSyncedAt(new Date());
 
     if (data.status === 'waiting') {
-      await fetchPositionAndWait();
+      await Promise.all([
+        fetchPosition(),
+        fetchWaitTime(data.department_id, data.service_id),
+      ]);
     } else {
       setPosition(null);
       setEstimatedWait(null);
     }
-  }, [disabled, fetchPositionAndWait, initialData, sandboxEstimatedWait, sandboxPosition, ticketId]);
+  }, [disabled, fetchPosition, fetchWaitTime, initialData, sandboxEstimatedWait, sandboxPosition, ticketId]);
 
   useEffect(() => {
     if (!disabled) return;
@@ -122,9 +124,10 @@ export function useRealtimeTicket({
   useEffect(() => {
     if (disabled) return;
     if (ticket.status === 'waiting') {
-      fetchPositionAndWait();
+      fetchPosition();
+      fetchWaitTime(ticket.department_id, ticket.service_id);
     }
-  }, [disabled, ticket.status, ticket.service_id, fetchPositionAndWait]);
+  }, [disabled, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
 
   // Refetch when page returns to foreground (mobile browsers suspend WebSockets when backgrounded)
   useEffect(() => {
@@ -166,7 +169,8 @@ export function useRealtimeTicket({
 
           // Refresh position if still waiting
           if (newTicket.status === 'waiting') {
-            fetchPositionAndWait();
+            fetchPosition();
+            fetchWaitTime(newTicket.department_id, newTicket.service_id);
           } else {
             setPosition(null);
             setEstimatedWait(null);
@@ -181,23 +185,24 @@ export function useRealtimeTicket({
         }
       });
 
-    // Channel 2: Listen for ANY ticket status change in same service
+    // Channel 2: Listen for ANY ticket status change in same department
     // This triggers position refresh when someone ahead gets called/served
-    const serviceChannel = supabase
-      .channel(`service-queue-${ticket.service_id}`)
+    const deptChannel = supabase
+      .channel(`dept-queue-${ticket.department_id}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'tickets',
-          filter: `service_id=eq.${ticket.service_id}`,
+          filter: `department_id=eq.${ticket.department_id}`,
         },
         (payload) => {
           const changed = payload.new as Ticket;
           // Only refresh if a different ticket changed status (not ours)
           if (changed.id !== ticketId && ticket.status === 'waiting') {
-            fetchPositionAndWait();
+            fetchPosition();
+            fetchWaitTime(ticket.department_id, ticket.service_id);
           }
         }
       )
@@ -211,9 +216,9 @@ export function useRealtimeTicket({
       })
       .subscribe();
 
-    channelsRef.current = [ticketChannel, serviceChannel, broadcastChannel];
+    channelsRef.current = [ticketChannel, deptChannel, broadcastChannel];
 
-    // Polling fallback: refresh ticket + position every 3s to guarantee updates
+    // Polling fallback: refresh ticket + position every 5s to guarantee updates
     // even if realtime WebSocket is down (e.g., env vars not baked into client bundle)
     const pollInterval = setInterval(() => {
       supabase
@@ -231,21 +236,22 @@ export function useRealtimeTicket({
               return prev;
             });
             if (data.status === 'waiting') {
-              fetchPositionAndWait();
+              fetchPosition();
+              fetchWaitTime(data.department_id, data.service_id);
             } else if (data.status !== (ticket as Ticket).status) {
               setPosition(null);
               setEstimatedWait(null);
             }
           }
         });
-    }, 3000);
+    }, 5000);
 
     return () => {
       clearInterval(pollInterval);
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
       channelsRef.current = [];
     };
-  }, [disabled, ticketId, qrToken, ticket.status, ticket.service_id, fetchPositionAndWait]);
+  }, [disabled, ticketId, qrToken, ticket.status, ticket.department_id, ticket.service_id, fetchPosition, fetchWaitTime]);
 
   return { ticket, position, estimatedWait, isUpdating, broadcast, lastSyncedAt, refresh };
 }

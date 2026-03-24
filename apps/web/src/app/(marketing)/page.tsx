@@ -101,7 +101,7 @@ export default async function HomePage() {
 
   const signedInHeroTitle = staffOrganizationName
     ? `You’re signed in to ${staffOrganizationName}`
-    : 'You’re signed in to Qflo';
+    : 'You’re signed in to QueueFlow';
   const signedInHeroMessage = staffOrganizationName
     ? `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your business dashboard to manage queues, desks, bookings, and customer flow for ${staffOrganizationName}.`
     : `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your dashboard to manage queues, desks, bookings, and customer flow.`;
@@ -342,7 +342,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Why Qflo vs SMS */}
+      {/* Why QueueFlow vs SMS */}
       <section className="py-24">
         <div className="mx-auto max-w-7xl px-6">
           <div className="mx-auto max-w-3xl">
@@ -351,7 +351,7 @@ export default async function HomePage() {
                 Why Pay for SMS When Push Is Free?
               </h2>
               <p className="mt-4 text-lg text-muted-foreground">
-                Other queue systems charge $0.08-$0.15 per SMS. With Qflo, every notification is free.
+                Other queue systems charge $0.08-$0.15 per SMS. With QueueFlow, every notification is free.
               </p>
             </div>
             <div className="mt-12 overflow-hidden rounded-2xl border border-border">
@@ -360,7 +360,7 @@ export default async function HomePage() {
                   <tr className="border-b border-border bg-muted/50">
                     <th className="px-6 py-4 text-left font-semibold">Feature</th>
                     <th className="px-6 py-4 text-center font-semibold text-muted-foreground">SMS-Based Systems</th>
-                    <th className="px-6 py-4 text-center font-semibold text-primary">Qflo</th>
+                    <th className="px-6 py-4 text-center font-semibold text-primary">QueueFlow</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -32,27 +32,6 @@ import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
-// Station-online guard: block web queue ops when a local station is connected
-const STATION_ONLINE_STALE_MS = 90_000; // 90s — station pings every 30s, allow 3 missed
-const STATION_ONLINE_ERROR = 'A local QFlow Station is online for this office. Use the station to manage the queue.';
-
-async function isStationOnlineForOffice(officeId: string): Promise<boolean> {
-  const admin = createAdminClient();
-  const cutoff = new Date(Date.now() - STATION_ONLINE_STALE_MS).toISOString();
-  const { data } = await (admin as any)
-    .from('desktop_connections')
-    .select('id')
-    .eq('office_id', officeId)
-    .eq('is_online', true)
-    .gte('last_ping', cutoff)
-    .limit(1);
-  return !!(data && (data as any[]).length > 0);
-}
-
-export async function checkStationOnline(officeId: string): Promise<boolean> {
-  return isStationOnlineForOffice(officeId);
-}
-
 async function syncLiveActivity(ticketId: string, source: string): Promise<boolean> {
   const synced = await sendLiveActivityUpdateForTicket(ticketId).catch((err) => {
     console.error(`[${source}] Live Activity sync error:`, err);
@@ -94,7 +73,7 @@ async function getOfficeContext(
 
   return {
     organizationId: data?.organization_id ?? null,
-    officeName: data?.name ?? 'Qflo',
+    officeName: data?.name ?? 'QueueFlow',
   };
 }
 
@@ -110,15 +89,15 @@ function buildPriorityAlertMessage(params: {
 
   switch (event) {
     case 'called':
-      return `Qflo: Ticket ${ticketNumber} is now called at ${officeName}. Go to ${deskName}. Track: ${trackUrl}`;
+      return `QueueFlow: Ticket ${ticketNumber} is now called at ${officeName}. Go to ${deskName}. Track: ${trackUrl}`;
     case 'recall':
-      return `Qflo reminder: Ticket ${ticketNumber} is still waiting for you at ${deskName}. Track: ${trackUrl}`;
+      return `QueueFlow reminder: Ticket ${ticketNumber} is still waiting for you at ${deskName}. Track: ${trackUrl}`;
     case 'buzz':
       return status === 'called'
-        ? `Qflo buzz: Ticket ${ticketNumber}, please go to ${deskName} now. Track: ${trackUrl}`
-        : `Qflo buzz: Staff is trying to reach ticket ${ticketNumber}. Open your queue page: ${trackUrl}`;
+        ? `QueueFlow buzz: Ticket ${ticketNumber}, please go to ${deskName} now. Track: ${trackUrl}`
+        : `QueueFlow buzz: Staff is trying to reach ticket ${ticketNumber}. Open your queue page: ${trackUrl}`;
     default:
-      return `Qflo update for ticket ${ticketNumber}: ${trackUrl}`;
+      return `QueueFlow update for ticket ${ticketNumber}: ${trackUrl}`;
   }
 }
 
@@ -126,7 +105,7 @@ function buildAbsoluteTicketUrl(qrToken: string): string {
   const baseUrl = (
     process.env.APP_CLIP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflo.net'
+    'https://qflow-sigma.vercel.app'
   ).replace(/\/+$/, '');
 
   return `${baseUrl}/q/${qrToken}`;
@@ -455,26 +434,17 @@ export async function completePublicCheckIn(
 }
 
 export async function callNextTicket(deskId: string) {
-  const { context, desk } = await getDeskOperationContext(deskId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getDeskOperationContext(deskId);
   const supabase = context.supabase;
   let smsSent = false;
 
-  // Try round-robin first, then overflow fallback
-  let ticketId: string | null = null;
-  const { data: rrData, error: rrError } = await supabase.rpc('call_next_ticket_round_robin', {
+  const { data: ticketId, error } = await supabase.rpc('call_next_ticket', {
     p_desk_id: deskId,
     p_staff_id: context.staff.id,
   });
-  if (!rrError && rrData) {
-    ticketId = rrData;
-  } else {
-    const { data: ovData, error: ovError } = await supabase.rpc('call_next_ticket_with_overflow', {
-      p_desk_id: deskId,
-      p_staff_id: context.staff.id,
-    });
-    if (ovError) return { error: ovError.message };
-    ticketId = ovData;
+
+  if (error) {
+    return { error: error.message };
   }
 
   if (!ticketId) {
@@ -589,7 +559,6 @@ export async function callNextTicket(deskId: string) {
 
 export async function callSpecificTicket(deskId: string, ticketId: string) {
   const { context, desk } = await getDeskOperationContext(deskId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
   const supabase = context.supabase;
   let smsSent = false;
 
@@ -719,8 +688,7 @@ export async function callSpecificTicket(deskId: string, ticketId: string) {
 }
 
 export async function startServing(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -804,8 +772,7 @@ export async function startServing(ticketId: string) {
 }
 
 export async function markServed(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -887,8 +854,7 @@ export async function markServed(ticketId: string) {
 }
 
 export async function markNoShow(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   const { data: ticket, error } = await supabase
@@ -972,8 +938,7 @@ export async function transferTicket(
   targetDepartmentId: string,
   targetServiceId: string
 ) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
   const targetDepartment = await getDepartmentById(context, targetDepartmentId);
   const targetService = await getServiceById(context, targetServiceId);
@@ -1082,8 +1047,7 @@ export async function transferTicket(
 }
 
 export async function recallTicket(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   // Verify ticket is in 'called' status
@@ -1233,8 +1197,7 @@ export async function recallTicket(ticketId: string) {
 }
 
 export async function callBackTicketToDesk(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   const { data: ticket, error: fetchError } = await supabase
@@ -1338,8 +1301,7 @@ export async function callBackTicketToDesk(ticketId: string) {
 }
 
 export async function buzzTicket(ticketId: string) {
-  const { context, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   // Fetch the ticket — works for any active status (waiting, called, serving)
@@ -1462,8 +1424,7 @@ export async function buzzTicket(ticketId: string) {
 }
 
 export async function resetTicketToQueue(ticketId: string) {
-  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
+  const { context, ticket } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
   const { error } = await supabase
@@ -1766,95 +1727,4 @@ export async function unassignDesk(deskId: string) {
 
   revalidatePath('/desk');
   return { data: true };
-}
-
-export async function parkTicket(ticketId: string) {
-  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
-  const supabase = context.supabase;
-
-  // Guard: ticket must be called or serving
-  if (ticket.status !== 'called' && ticket.status !== 'serving') {
-    return { error: 'Only called or serving tickets can be parked' };
-  }
-  // Guard: not already parked
-  if (ticket.parked_at) {
-    return { error: 'Ticket is already parked' };
-  }
-
-  const now = new Date().toISOString();
-  const { data: updatedTicket, error: updateError } = await supabase
-    .from('tickets')
-    .update({ parked_at: now })
-    .eq('id', ticketId)
-    .select('*')
-    .single();
-
-  if (updateError || !updatedTicket) {
-    return { error: 'Failed to park ticket' };
-  }
-
-  await logAuditEvent(context, {
-    actionType: 'ticket_parked',
-    entityType: 'ticket',
-    entityId: ticketId,
-    officeId: ticket.office_id,
-    summary: `Parked ticket ${ticket.ticket_number}`,
-    metadata: { ticket_number: ticket.ticket_number, previous_status: ticket.status },
-  });
-
-  revalidatePath('/desk');
-  return { data: updatedTicket };
-}
-
-export async function unparkTicket(ticketId: string) {
-  const { context, ticket, desk } = await getTicketOperationContext(ticketId);
-  if (await isStationOnlineForOffice(desk.office_id)) return { error: STATION_ONLINE_ERROR };
-  const supabase = context.supabase;
-
-  // Guard: must be parked
-  if (!ticket.parked_at) {
-    return { error: 'Ticket is not parked' };
-  }
-
-  const { data: updatedTicket, error: updateError } = await supabase
-    .from('tickets')
-    .update({ parked_at: null })
-    .eq('id', ticketId)
-    .select('*')
-    .single();
-
-  if (updateError || !updatedTicket) {
-    return { error: 'Failed to unpark ticket' };
-  }
-
-  await logAuditEvent(context, {
-    actionType: 'ticket_unparked',
-    entityType: 'ticket',
-    entityId: ticketId,
-    officeId: ticket.office_id,
-    summary: `Resumed parked ticket ${ticket.ticket_number}`,
-    metadata: { ticket_number: ticket.ticket_number, status: ticket.status },
-  });
-
-  revalidatePath('/desk');
-  return { data: updatedTicket };
-}
-
-// ── Safety Net Functions ──────────────────────────────────────────
-
-export async function runQueueSafetyChecks(deskId: string) {
-  const supabase = await createClient();
-  // 1. Requeue expired calls (90s timeout)
-  await supabase.rpc('requeue_expired_calls', { p_timeout_seconds: 90 });
-  // 2. Adjust booking priorities based on scheduled time
-  await supabase.rpc('adjust_booking_priorities');
-  // 3. Ping desk heartbeat
-  await supabase.from('desks').update({ last_active_at: new Date().toISOString() }).eq('id', deskId);
-}
-
-export async function runDailyCleanup() {
-  const supabase = await createClient();
-  const { data } = await supabase.rpc('cleanup_stale_tickets');
-  return data ?? 0;
 }

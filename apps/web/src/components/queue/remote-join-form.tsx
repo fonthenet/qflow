@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import QRCode from 'qrcode';
 import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
-import { isOfficeOpen, formatOperatingHours, capitalizeDay, type OperatingHours } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
-import { SendTicketLink } from '@/components/kiosk/send-ticket-link';
 import {
   clearBookingEmailOtpVerification,
   markBookingEmailOtpVerified,
@@ -79,30 +76,6 @@ export function RemoteJoinForm({
   const [emailOtpResendRemainingSeconds, setEmailOtpResendRemainingSeconds] =
     useState(0);
   const [supabase] = useState(() => createClient());
-
-  // Check localStorage for an existing active ticket from this browser
-  const [existingTicket, setExistingTicket] = useState<{
-    qr_token: string;
-    ticket_number: string;
-  } | null>(null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('qf_active_ticket');
-      if (!saved) return;
-      const parsed = JSON.parse(saved);
-      // Only show if created within the last 12 hours
-      const createdAt = new Date(parsed.created_at).getTime();
-      const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
-      if (createdAt > twelveHoursAgo && parsed.qr_token) {
-        setExistingTicket({ qr_token: parsed.qr_token, ticket_number: parsed.ticket_number });
-      } else {
-        localStorage.removeItem('qf_active_ticket');
-      }
-    } catch {
-      localStorage.removeItem('qf_active_ticket');
-    }
-  }, []);
 
   const officeLocked = !!virtualCode.office_id;
   const departmentLocked = !!virtualCode.department_id;
@@ -232,10 +205,6 @@ export function RemoteJoinForm({
         isRemote: true,
       });
 
-      if ('stationOnline' in result && result.stationOnline) {
-        throw new Error('This office is managed by a local station. Please join the queue at the office kiosk.');
-      }
-
       if (result.error || !result.data) {
         throw new Error(result.error ?? 'Failed to join queue. Please try again.');
       }
@@ -325,7 +294,7 @@ export function RemoteJoinForm({
     setVerifyingEmailOtp(false);
   }
 
-  const orgName = organization?.name || 'Qflo';
+  const orgName = organization?.name || 'QueueFlow';
   const resolvedVocabulary: TemplateVocabulary = vocabulary ?? {
     officeLabel: 'Location',
     departmentLabel: 'Department',
@@ -358,75 +327,15 @@ export function RemoteJoinForm({
   const selectionActiveClass = 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-[0_16px_40px_rgba(37,99,235,0.12)]';
   const selectionIdleClass = 'border-border bg-card hover:border-primary/50 hover:shadow-sm';
 
-  // When ticket is created: save to localStorage and update URL
-  useEffect(() => {
-    if (!ticket) return;
-
-    // 1. Save active ticket to localStorage so the customer can always recover it
-    try {
-      localStorage.setItem(
-        'qf_active_ticket',
-        JSON.stringify({
-          qr_token: ticket.qr_token,
-          ticket_number: ticket.ticket_number,
-          created_at: new Date().toISOString(),
-        })
-      );
-    } catch {}
-
-    // 2. Replace browser URL to the tracking page — so bookmark/refresh = tracking page
-    const trackingPath = `/q/${ticket.qr_token}`;
-    window.history.replaceState({}, '', trackingPath);
-  }, [ticket]);
-
-  // Generate QR code when ticket is created
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const trackingUrl = ticket
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/q/${ticket.qr_token}`
-    : '';
-
-  useEffect(() => {
-    if (!ticket) return;
-    const url = `${window.location.origin}/q/${ticket.qr_token}`;
-    QRCode.toDataURL(url, {
-      width: 200,
-      margin: 2,
-      color: { dark: '#000000', light: '#ffffff' },
-      errorCorrectionLevel: 'M',
-    })
-      .then((dataUrl: string) => setQrDataUrl(dataUrl))
-      .catch(() => {});
-  }, [ticket]);
-
-  // ── Business hours check ──────────────────────────────────────
-  // NOTE: hooks must be called before any conditional early return
-  const selectedOffice = offices.find((o: any) => o.id === selectedOfficeId);
-  const officeHours = selectedOffice?.operating_hours as OperatingHours | null;
-  const officeTimezone = selectedOffice?.timezone || 'UTC';
-  const [businessStatus, setBusinessStatus] = useState(() =>
-    officeHours ? isOfficeOpen(officeHours, officeTimezone) : null
-  );
-
-  useEffect(() => {
-    if (!officeHours) { setBusinessStatus(null); return; }
-    setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    const timer = setInterval(() => {
-      setBusinessStatus(isOfficeOpen(officeHours, officeTimezone));
-    }, 60000);
-    return () => clearInterval(timer);
-  }, [selectedOfficeId, officeHours, officeTimezone]);
-
-  const isOfficeClosed = businessStatus !== null && !businessStatus.isOpen;
-
-  // Success state - show ticket QR code, tracking link, and share options
+  // Success state - show ticket and link to tracking
   if (ticket) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
         <div className="w-full max-w-sm text-center">
           <div className="rounded-xl border border-border bg-card p-8 shadow-lg">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
               <svg
-                className="h-8 w-8 text-emerald-600"
+                className="h-8 w-8 text-primary"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -439,15 +348,14 @@ export function RemoteJoinForm({
                 />
               </svg>
             </div>
-            <h1 className="mb-1 text-2xl font-bold text-foreground">
+            <h1 className="mb-2 text-2xl font-bold text-foreground">
               You&apos;re in the Queue!
             </h1>
-            <p className="mb-5 text-sm text-muted-foreground">
-              Save your QR code or tap below to track your ticket
+            <p className="mb-6 text-sm text-muted-foreground">
+              You have successfully joined the queue remotely.
             </p>
 
-            {/* Ticket number */}
-            <div className="mb-5 rounded-lg bg-muted p-4">
+            <div className="mb-6 rounded-lg bg-muted p-4">
               <p className="text-sm font-medium text-muted-foreground">
                 Your Ticket Number
               </p>
@@ -456,26 +364,7 @@ export function RemoteJoinForm({
               </p>
             </div>
 
-            {/* QR Code */}
-            {qrDataUrl && (
-              <div className="mb-5">
-                <div className="mx-auto inline-block rounded-xl border-2 border-dashed border-primary/20 bg-white p-3">
-                  <img
-                    src={qrDataUrl}
-                    alt={`QR code for ticket ${ticket.ticket_number}`}
-                    width={200}
-                    height={200}
-                    className="rounded-lg"
-                  />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Scan or screenshot this QR to track from any device
-                </p>
-              </div>
-            )}
-
-            {/* Office / Department / Service info */}
-            <div className="mb-5 space-y-2 rounded-lg bg-muted/50 p-4 text-left text-sm">
+            <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-left text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Office</span>
                 <span className="font-medium text-foreground">{displayOffice?.name}</span>
@@ -494,29 +383,15 @@ export function RemoteJoinForm({
               )}
             </div>
 
-            {/* Track button — skip the countdown */}
             <a
               href={`/q/${ticket.qr_token}`}
-              className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-6 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98]"
+              className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98]"
             >
-              <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              Track My Ticket Live
+              Track Your Position
             </a>
           </div>
 
-          {/* Share / Send ticket link */}
-          <div className="mt-4">
-            <SendTicketLink
-              ticketUrl={trackingUrl}
-              ticketNumber={ticket.ticket_number}
-              officeName={displayOffice?.name ?? ''}
-            />
-          </div>
-
-          <p className="mt-4 text-xs text-muted-foreground">POWERED BY QFLO</p>
+          <p className="mt-4 text-xs text-muted-foreground">Powered by QueueFlow</p>
         </div>
       </div>
     );
@@ -525,83 +400,6 @@ export function RemoteJoinForm({
   // Join form
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#eff6ff_24%,#ffffff_70%)]">
-      {/* Office closed banner */}
-      {isOfficeClosed && (
-        <div className="border-b border-red-200 bg-red-50 px-4 py-4">
-          <div className="mx-auto max-w-5xl text-center">
-            <div className="flex items-center justify-center gap-2 text-sm font-semibold text-red-700">
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" strokeWidth={2} />
-                <path strokeLinecap="round" strokeWidth={2} d="M12 8v4M12 16h.01" />
-              </svg>
-              <span>
-                {businessStatus?.reason === 'holiday' && businessStatus?.holidayName
-                  ? `Closed for ${businessStatus.holidayName}`
-                  : businessStatus?.reason === 'before_hours' && businessStatus?.todayHours
-                  ? `Not open yet — opens at ${businessStatus.todayHours.open}`
-                  : businessStatus?.reason === 'after_hours'
-                  ? 'Closed for the day'
-                  : 'This location is currently closed'}
-              </span>
-            </div>
-            {businessStatus?.nextOpen && (
-              <p className="mt-1 text-xs text-red-600">
-                Opens {capitalizeDay(businessStatus.nextOpen.day)} at {businessStatus.nextOpen.time}
-              </p>
-            )}
-            {officeHours && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs font-medium text-red-600 hover:text-red-700">
-                  View business hours
-                </summary>
-                <div className="mt-2 inline-block rounded-lg bg-white/60 px-4 py-2 text-xs text-foreground">
-                  {formatOperatingHours(officeHours).map(({ day, hours }) => (
-                    <div key={day} className="flex justify-between gap-4">
-                      <span className="font-medium">{capitalizeDay(day).slice(0, 3)}</span>
-                      <span className={hours === 'Closed' ? 'text-muted-foreground' : ''}>{hours}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Active ticket recovery banner */}
-      {existingTicket && (
-        <div className="border-b border-primary/20 bg-primary/5 px-4 py-3">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-              </svg>
-              <span>
-                You already have ticket <strong>{existingTicket.ticket_number}</strong>
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <a
-                href={`/q/${existingTicket.qr_token}`}
-                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90"
-              >
-                Track Ticket
-              </a>
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.removeItem('qf_active_ticket');
-                  setExistingTicket(null);
-                }}
-                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted transition"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="border-b border-border/70 bg-white/90 px-4 pb-8 pt-6 backdrop-blur sm:px-6">
         <div className="mx-auto max-w-5xl">
@@ -941,12 +739,10 @@ export function RemoteJoinForm({
 
           <button
             type="submit"
-            disabled={joining || isOfficeClosed || (emailOtpRequired && !emailOtpVerified)}
+            disabled={joining || (emailOtpRequired && !emailOtpVerified)}
             className="w-full rounded-[1.1rem] bg-primary px-6 py-4 text-base font-semibold text-primary-foreground shadow-[0_18px_40px_rgba(37,99,235,0.22)] transition-all hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isOfficeClosed ? (
-              'Office Closed'
-            ) : joining ? (
+            {joining ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
                 Joining Queue...
@@ -1005,7 +801,7 @@ export function RemoteJoinForm({
 
       {/* Footer */}
       <div className="px-4 pb-6 pt-2 text-center">
-        <p className="text-xs text-muted-foreground">POWERED BY QFLO</p>
+        <p className="text-xs text-muted-foreground">Powered by QueueFlow</p>
       </div>
     </div>
   );

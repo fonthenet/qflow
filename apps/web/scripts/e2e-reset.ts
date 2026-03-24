@@ -46,7 +46,7 @@ async function main() {
   loadLocalEnv();
 
   if (shouldShowHelp()) {
-    console.log(`Qflo E2E reset
+    console.log(`QueueFlow E2E reset
 
 Required:
   NEXT_PUBLIC_SUPABASE_URL

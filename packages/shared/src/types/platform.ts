@@ -1,7 +1,6 @@
 import type { StaffRole } from '../constants';
 
 export type IndustryVertical =
-  | 'standard'
   | 'public_service'
   | 'bank'
   | 'clinic'
@@ -9,7 +8,6 @@ export type IndustryVertical =
   | 'barbershop';
 
 export type DashboardMode =
-  | 'standard'
   | 'public_service'
   | 'bank'
   | 'clinic'
@@ -22,7 +20,6 @@ export type OperatingModel =
   | 'waitlist';
 
 export type BranchType =
-  | 'general_office'
   | 'service_center'
   | 'branch_office'
   | 'community_clinic'
@@ -148,6 +145,7 @@ export interface KioskExperienceProfile {
   headerText: string;
   themeColor: string;
   buttonLabel: string;
+  mode: 'normal' | 'quick_book';
   showPriorities: boolean;
   showEstimatedTime: boolean;
   idleTimeoutSeconds: number;

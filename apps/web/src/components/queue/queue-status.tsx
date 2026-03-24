@@ -16,6 +16,7 @@ import { stopTicketTracking } from '@/lib/tracking';
 import { IosInstallPrompt } from '@/components/queue/ios-install-prompt';
 import type { Database } from '@/lib/supabase/database.types';
 import type { PriorityAlertConfig } from '@/lib/priority-alerts';
+import { useI18n } from '@/components/providers/locale-provider';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type NotificationRow = Database['public']['Tables']['notifications']['Row'];
@@ -34,11 +35,6 @@ interface QueueStatusProps {
     nowServing?: string | null;
     deskName?: string | null;
   };
-}
-
-function formatSyncLabel(date: Date | null) {
-  if (!date) return 'Syncing live updates';
-  return `Updated ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 function progressPercent(position: number | null) {
@@ -98,6 +94,7 @@ function QueueActionPill({
   loading?: boolean;
   icon?: React.ReactNode;
 }) {
+  const { t, formatTime } = useI18n();
   const toneClass = {
     secondary: 'border-white/10 bg-white/8 text-white hover:bg-white/12',
     danger: 'border-rose-400/25 bg-rose-500/15 text-rose-100 hover:bg-rose-500/20',
@@ -111,7 +108,7 @@ function QueueActionPill({
       disabled={disabled}
       className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
     >
-      {loading ? 'Working...' : <>{icon}{label}</>}
+      {loading ? t('Working...') : <>{icon}{label}</>}
     </button>
   );
 }
@@ -171,9 +168,10 @@ export function QueueStatus({
   priorityAlertConfig,
   sandbox,
 }: QueueStatusProps) {
+  const { t } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   // Build display hierarchy: Organization > Office/Branch > Service
-  const businessName = organizationName || officeName || 'Business';
+  const businessName = organizationName || officeName || t('Business');
   const branchLine = organizationName && officeName && officeName !== organizationName
     ? officeName
     : departmentName && departmentName !== businessName
@@ -208,7 +206,6 @@ export function QueueStatus({
   const [stopOutcome, setStopOutcome] = useState<'left_queue' | 'cleared'>('left_queue');
   const [stopError, setStopError] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
-  const [servingElapsed, setServingElapsed] = useState(0);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -221,9 +218,11 @@ export function QueueStatus({
   const shouldShowIosSetupLabel = hasMounted && isIos && !isInStandaloneMode;
 
   const syncLabel = useMemo(() => {
-    if (isUpdating || isRefreshing) return 'Syncing now';
-    return formatSyncLabel(lastSyncedAt);
-  }, [isRefreshing, isUpdating, lastSyncedAt]);
+    if (isUpdating || isRefreshing || !lastSyncedAt) return t('Syncing live updates');
+    return t('Updated {time}', {
+      time: formatTime(lastSyncedAt, { hour: 'numeric', minute: '2-digit' }),
+    });
+  }, [formatTime, isRefreshing, isUpdating, lastSyncedAt, t]);
 
   const fireBuzz = () => {
     if (sandboxMode) return;
@@ -317,7 +316,7 @@ export function QueueStatus({
       }
       const result = await stopTicketTracking(ticket.id);
       if (!result) {
-        setStopError('We could not leave the queue just yet. Please try again.');
+        setStopError(t('We could not leave the queue just yet. Please try again.'));
         return;
       }
 
@@ -336,27 +335,6 @@ export function QueueStatus({
   useEffect(() => {
     setHasMounted(true);
   }, []);
-
-  // Clear localStorage active ticket when ticket reaches a terminal state
-  useEffect(() => {
-    if (['served', 'cancelled', 'no_show', 'transferred'].includes(ticket.status)) {
-      try { localStorage.removeItem('qf_active_ticket'); } catch {}
-    }
-  }, [ticket.status]);
-
-  // Serving elapsed timer
-  useEffect(() => {
-    if (ticket.status === 'serving' && ticket.serving_started_at) {
-      const update = () => {
-        setServingElapsed(Math.floor((Date.now() - new Date(ticket.serving_started_at!).getTime()) / 1000));
-      };
-      update();
-      const timer = setInterval(update, 1000);
-      return () => clearInterval(timer);
-    } else {
-      setServingElapsed(0);
-    }
-  }, [ticket.status, ticket.serving_started_at]);
 
   useEffect(() => {
     if (sandboxMode) return;
@@ -615,8 +593,8 @@ export function QueueStatus({
         }
         detail={
           stopOutcome === 'left_queue'
-            ? `Ticket ${ticket.ticket_number} is no longer active in line.`
-            : `Ticket ${ticket.ticket_number} no longer has live updates on this device.`
+            ? t('Ticket {ticketNumber} is no longer active in line.', { ticketNumber: ticket.ticket_number })
+            : t('Ticket {ticketNumber} no longer has live updates on this device.', { ticketNumber: ticket.ticket_number })
         }
         onResume={undefined}
       />
@@ -643,7 +621,7 @@ export function QueueStatus({
       <QueueSessionEnded
         title={statusMessage.title}
         description={statusMessage.description}
-        detail={`Ticket ${ticket.ticket_number}`}
+        detail={t('Ticket {number}', { number: ticket.ticket_number })}
       />
     );
   }
@@ -668,9 +646,9 @@ export function QueueStatus({
           isStopping={isStopping}
           onCancel={() => setShowStopDialog(false)}
           onConfirm={() => void handleStopTracking()}
-          title="Leave this queue?"
-          description="This removes the ticket from the queue and closes any remaining alerts on this device."
-          confirmLabel="Leave queue"
+          title={t('Leave this queue?')}
+          description={t('This removes the ticket from the queue and closes any remaining alerts on this device.')}
+          confirmLabel={t('Leave queue')}
         />
       </>
     );
@@ -688,87 +666,58 @@ export function QueueStatus({
   }
 
   if (ticket.status === 'serving') {
-    const timerMm = Math.floor(servingElapsed / 60).toString().padStart(2, '0');
-    const timerSs = (servingElapsed % 60).toString().padStart(2, '0');
-
     return (
       <>
-        <div className="flex min-h-[100dvh] flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
+        <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-8">
           <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
-            {/* ── Action Header (matches App Clip actionHeader) ── */}
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                {branchLine ? (
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300/70">{branchLine}</p>
-                ) : null}
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">{businessName}</h1>
-                <p className="mt-1.5 text-xs text-slate-400">{syncLabel}</p>
-                <div className="mt-3 inline-flex rounded-full bg-sky-400/12 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
-                  With staff now
-                </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">{businessName}</h1>
+                {branchLine ? <p className="mt-1 text-sm font-medium text-slate-300">{branchLine}</p> : null}
+                <p className="mt-2 text-sm text-slate-300">{syncLabel}</p>
               </div>
-              <div className="flex flex-col items-end gap-2 pt-1">
+              <div className="flex flex-col items-end gap-2">
                 <QueueActionPill
-                  label="Refresh"
+                  label={t('Refresh')}
                   onClick={() => void handleManualRefresh()}
                   tone="primary"
                   disabled={isRefreshing}
                   loading={isRefreshing}
                 />
-                <QueueActionPill label="End" onClick={() => setShowStopDialog(true)} tone="danger" />
+                <QueueActionPill label={t('End')} onClick={() => setShowStopDialog(true)} tone="danger" />
               </div>
             </div>
 
-            {/* ── Glass Card (matches App Clip glassCard) ── */}
-            <div className="mt-8 rounded-[30px] border border-white/10 bg-white/[0.08] p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur-xl">
-              {/* Person icon */}
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-200 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
-                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+            <div className="mt-8 rounded-[34px] border border-white/10 bg-slate-950/82 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.58)] backdrop-blur">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-sky-400/12 text-sky-100 shadow-[0_20px_60px_rgba(56,189,248,0.22)]">
+                <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
 
-              {/* Title */}
-              <h2 className="mt-6 text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[30px]">
-                You are being served
-              </h2>
+              <div className="mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-sky-100">
+                {t('With staff now')}
+              </div>
 
-              {/* Desk subtitle */}
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                {deskName ? `At ${deskName}` : 'Stay with your staff member'}
+              <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">{t('You are being served')}</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {t('Stay with the staff member at {deskName}. You can finish this visit after your service is complete.', {
+                  deskName: deskName ?? t('your desk'),
+                })}
               </p>
 
-              {/* ── 2×2 Metric Cards Grid (matches App Clip visitMetricCard layout) ── */}
-              <div className="mt-7 grid grid-cols-2 gap-3">
-                {/* Ticket — sky blue accent */}
+              <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 <WaitingMetric
-                  label="Ticket"
+                  label={t('Ticket')}
                   value={ticket.ticket_number}
-                  detail="Your ticket number"
-                  accentClass="bg-sky-400/15 text-[rgb(100,194,253)]"
+                  detail={t('Keep this visible in case the team asks for your number again.')}
+                  accentClass="bg-sky-400/15 text-sky-100"
                 />
-                {/* Desk — emerald accent */}
                 <WaitingMetric
-                  label="Desk"
-                  value={deskName ?? 'Assigned'}
-                  detail="Your service point"
-                  accentClass="bg-emerald-400/15 text-[rgb(125,219,161)]"
-                />
-                {/* With staff for — amber accent (live timer) */}
-                <WaitingMetric
-                  label="With staff for"
-                  value={`${timerMm}:${timerSs}`}
-                  detail="Elapsed time"
-                  accentClass="bg-amber-400/15 text-[rgb(250,199,79)]"
-                  valueClass="tabular-nums"
-                />
-                {/* Business — lavender accent */}
-                <WaitingMetric
-                  label="Business"
-                  value={businessName}
-                  detail={branchLine || serviceLabel}
-                  accentClass="bg-indigo-400/15 text-[rgb(174,194,253)]"
-                  valueClass="text-lg sm:text-xl"
+                  label={t('Desk')}
+                  value={deskName ?? t('Desk')}
+                  detail={t('This is the current service point handling your visit.')}
+                  accentClass="bg-emerald-400/15 text-emerald-100"
                 />
               </div>
             </div>
@@ -780,7 +729,7 @@ export function QueueStatus({
             ) : null}
 
             <div className="mt-auto pt-6 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Qflo</p>
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{t('QueueFlow')}</p>
             </div>
           </div>
         </div>
@@ -790,12 +739,15 @@ export function QueueStatus({
           isStopping={isStopping}
           onCancel={() => setShowStopDialog(false)}
           onConfirm={() => void handleStopTracking()}
+          title={t('Leave this queue?')}
+          description={t('This removes the ticket from the queue and closes any remaining alerts on this device.')}
+          confirmLabel={t('Leave queue')}
         />
       </>
     );
   }
 
-  const accentLabel = ticket.status === 'serving' ? 'Now at desk' : 'Waiting in line';
+  const accentLabel = ticket.status === 'serving' ? t('Now at desk') : t('Waiting in line');
   const accentTone =
     ticket.status === 'serving'
       ? 'bg-sky-400/15 text-sky-100'
@@ -808,7 +760,7 @@ export function QueueStatus({
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
             <div className="text-center">
               <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-              <p className="mt-3 text-xl font-bold text-white">Attention needed now</p>
+              <p className="mt-3 text-xl font-bold text-white">{t('Attention needed now')}</p>
             </div>
           </div>
         ) : null}
@@ -835,7 +787,7 @@ export function QueueStatus({
               <div className="flex items-center gap-2">
                 <QueueActionPill
                   icon={<RefreshCw className="h-3.5 w-3.5" />}
-                  label="Refresh"
+                  label={t('Refresh')}
                   onClick={() => void handleManualRefresh()}
                   tone="primary"
                   disabled={isRefreshing}
@@ -843,7 +795,7 @@ export function QueueStatus({
                 />
                 <QueueActionPill
                   icon={<XCircle className="h-3.5 w-3.5" />}
-                  label="End"
+                  label={t('End')}
                   onClick={() => setShowStopDialog(true)}
                   tone="danger"
                   disabled={isStopping}
@@ -855,7 +807,7 @@ export function QueueStatus({
           <section className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">Ticket</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">{t('Ticket')}</p>
                 <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
                   {ticket.ticket_number}
                 </p>
@@ -863,32 +815,24 @@ export function QueueStatus({
               </div>
 
               <div className="text-right">
-                {position === 1 ? (
-                  <>
-                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-emerald-300 animate-pulse">
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span className="text-sm font-bold">You&apos;re Next!</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-emerald-200/70">Get ready to be called</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
-                    <p className="mt-2 text-sm leading-5 text-cyan-50/70">
-                      {position && position <= 3 ? 'Almost there!' : position ? `${position - 1} ahead of you` : '--'}
-                    </p>
-                  </>
-                )}
+                <p className="mt-2 text-5xl font-semibold leading-none text-white">{position ? `#${position}` : '--'}</p>
+                <p className="mt-2 text-sm leading-5 text-cyan-50/70">
+                  {position === 1
+                    ? t('Almost there')
+                    : position && position <= 3
+                      ? t('You are nearly up')
+                      : position
+                        ? t('{count} ahead of you', { count: position - 1 })
+                        : '--'}
+                </p>
               </div>
             </div>
 
             <div className="mt-5">
               <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
-                <span>Queue progress</span>
+                <span>{t('Queue progress')}</span>
                 <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-400' : ''}>
-                  {ticket.status === 'serving' ? 'At the desk' : position === 1 ? "You're next!" : position ? `#${position} in line` : '--'}
+                  {ticket.status === 'serving' ? t('At the desk') : position ? `#${position} ${t('in line')}` : '--'}
                 </span>
               </div>
               <div className="h-3 rounded-full bg-white/8">
@@ -900,37 +844,25 @@ export function QueueStatus({
             </div>
           </section>
 
-          {position === 1 && (
-            <div className="mt-4 animate-pulse rounded-[24px] border border-emerald-400/30 bg-emerald-400/10 p-5 text-center shadow-[0_0_40px_rgba(16,185,129,0.15)]">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-400/20">
-                <svg className="h-7 w-7 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p className="mt-3 text-xl font-bold text-emerald-300">You&apos;re Next!</p>
-              <p className="mt-1 text-sm text-emerald-100/70">Get ready — you&apos;ll be called any moment</p>
-            </div>
-          )}
-
           <div className="mt-4 grid grid-cols-3 gap-3">
               <WaitingMetric
-                label="Wait"
-                value={position === 1 ? 'Now' : estimatedWait != null ? `${estimatedWait} min` : '--'}
-                detail={position === 1 ? 'Any moment now' : estimatedWait != null ? 'Approximate timing' : 'Calculating time'}
+                label={t('Wait')}
+                value={estimatedWait != null ? `${estimatedWait} min` : '--'}
+                detail={estimatedWait != null ? t('Approximate timing') : t('Calculating time')}
                 accentClass="text-sky-400"
               />
               <WaitingMetric
-                label="Now serving"
+                label={t('Now serving')}
                 value={nowServing ?? '--'}
-                detail="Current desk activity"
+                detail={t('Current desk activity')}
                 accentClass="text-emerald-400"
                 valueClass="text-[18px] leading-tight sm:text-[22px]"
                 detailClass="text-[10px] leading-4"
               />
               <WaitingMetric
-                label="Alerts"
-                value={alertsEnabled ? 'Ready' : 'Off'}
-                detail={alertsEnabled ? 'Background alerts on' : 'Turn alerts on'}
+                label={t('Alerts')}
+                value={alertsEnabled ? t('Ready') : t('Off')}
+                detail={alertsEnabled ? t('Background alerts on') : t('Turn alerts on')}
                 accentClass="text-amber-400"
               />
           </div>
@@ -944,20 +876,20 @@ export function QueueStatus({
               <BellRing className="h-4 w-4 shrink-0 text-amber-400" />
               <span className="text-sm font-medium text-amber-50">
                 {shouldShowIosSetupLabel
-                  ? 'Set up alerts \u2014 we\u2019ll notify you when it\u2019s your turn'
-                  : 'Enable alerts \u2014 we\u2019ll notify you when it\u2019s your turn'}
+                  ? t('Set up alerts — we’ll notify you when it’s your turn')
+                  : t('Enable alerts — we’ll notify you when it’s your turn')}
               </span>
             </button>
           ) : (
             <div className="mt-4 flex w-full items-center gap-3 rounded-full border border-white/8 bg-white/5 px-5 py-3">
               <BellRing className="h-4 w-4 shrink-0 text-emerald-400" />
-              <span className="text-sm font-medium text-slate-300">{"Alerts enabled \u2014 we\u2019ll notify you when it\u2019s your turn"}</span>
+              <span className="text-sm font-medium text-slate-300">{t('Alerts enabled — we’ll notify you when it’s your turn')}</span>
             </div>
           )}
 
           {sandboxMode ? (
             <div className="mt-4 rounded-2xl border border-sky-200/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-              Sandbox preview. Customer editing and live alert setup stay disabled here so the page never touches real data.
+              {t('Sandbox preview. Customer editing and live alert setup stay disabled here so the page never touches real data.')}
             </div>
           ) : (
             <div className="mt-4 space-y-3">
@@ -982,7 +914,7 @@ export function QueueStatus({
           ) : null}
 
           <div className="mt-auto pt-4 text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Qflo</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{t('QueueFlow')}</p>
           </div>
         </div>
       </div>
@@ -992,9 +924,9 @@ export function QueueStatus({
         isStopping={isStopping}
         onCancel={() => setShowStopDialog(false)}
         onConfirm={() => void handleStopTracking()}
-        title="Leave this queue?"
-        description="This removes the ticket from the queue for everyone and stops live updates on this device."
-        confirmLabel="Leave queue"
+        title={t('Leave this queue?')}
+        description={t('This removes the ticket from the queue and stops live updates on this device.')}
+        confirmLabel={t('Leave queue')}
       />
     </>
   );

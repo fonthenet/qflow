@@ -115,13 +115,6 @@ export async function createOffice(formData: FormData) {
 
   const settings = getOfficeSettingsFromForm(formData);
 
-  // Parse operating hours from form
-  const operatingHoursRaw = formData.get('operating_hours') as string | null;
-  let operatingHours: Record<string, any> | undefined;
-  if (operatingHoursRaw) {
-    try { operatingHours = JSON.parse(operatingHoursRaw); } catch { /* ignore */ }
-  }
-
   const { data: office, error } = await context.supabase
     .from('offices')
     .insert({
@@ -131,7 +124,6 @@ export async function createOffice(formData: FormData) {
       is_active: formData.get('is_active') === 'true',
       organization_id: context.staff.organization_id,
       settings,
-      ...(operatingHours ? { operating_hours: operatingHours } : {}),
     })
     .select('id, name')
     .single();
@@ -157,13 +149,6 @@ export async function updateOffice(id: string, formData: FormData) {
   const currentSettings = (office.settings as AnyRecord | null) ?? {};
   const settings = getOfficeSettingsFromForm(formData, currentSettings);
 
-  // Parse operating hours from form
-  const operatingHoursRaw = formData.get('operating_hours') as string | null;
-  let operatingHours: Record<string, any> | undefined;
-  if (operatingHoursRaw) {
-    try { operatingHours = JSON.parse(operatingHoursRaw); } catch { /* ignore */ }
-  }
-
   const { data: updatedOffice, error } = await context.supabase
     .from('offices')
     .update({
@@ -172,7 +157,6 @@ export async function updateOffice(id: string, formData: FormData) {
       timezone: (formData.get('timezone') as string) || null,
       is_active: formData.get('is_active') === 'true',
       settings,
-      ...(operatingHours ? { operating_hours: operatingHours } : {}),
     })
     .eq('id', id)
     .select('id, name')
@@ -576,8 +560,6 @@ export async function createStaffMember(formData: FormData) {
     }
   }
 
-  // Try to create auth user; if already exists (e.g. from a prior failed attempt), reuse it.
-  let authUserId: string;
   const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
     email,
     password,
@@ -588,47 +570,13 @@ export async function createStaffMember(formData: FormData) {
     },
   });
 
-  if (authError) {
-    // Check if user already exists — reuse them if no staff row is linked
-    if (authError.message.toLowerCase().includes('already') || authError.status === 422) {
-      const { data: { users } } = await adminSupabase.auth.admin.listUsers();
-      const existing = users?.find((u) => u.email?.toLowerCase() === email);
-      if (!existing) return { error: authError.message };
-
-      // Verify no staff record already uses this auth user in this org
-      const { data: linkedStaff } = await context.supabase
-        .from('staff')
-        .select('id')
-        .eq('auth_user_id', existing.id)
-        .eq('organization_id', context.staff.organization_id)
-        .maybeSingle();
-
-      if (linkedStaff) return { error: 'A user with this email address has already been registered.' };
-
-      // Update auth user metadata and password for the new attempt
-      await adminSupabase.auth.admin.updateUserById(existing.id, {
-        password,
-        user_metadata: {
-          full_name: fullName,
-          organization_id: context.staff.organization_id,
-        },
-      });
-
-      authUserId = existing.id;
-    } else {
-      return { error: authError.message };
-    }
-  } else {
-    if (!authData.user) return { error: 'Failed to create auth user' };
-    authUserId = authData.user.id;
-  }
-
-  const deskId = (formData.get('desk_id') as string) || null;
+  if (authError) return { error: authError.message };
+  if (!authData.user) return { error: 'Failed to create auth user' };
 
   const { data: staffMember, error: staffError } = await context.supabase
     .from('staff')
     .insert({
-      auth_user_id: authUserId,
+      auth_user_id: authData.user.id,
       email,
       full_name: fullName,
       role,
@@ -641,19 +589,6 @@ export async function createStaffMember(formData: FormData) {
     .single();
 
   if (staffError) return { error: staffError.message };
-
-  // Assign desk to the new staff member if selected
-  if (deskId && staffMember) {
-    const { error: deskError } = await context.supabase
-      .from('desks')
-      .update({ current_staff_id: staffMember.id })
-      .eq('id', deskId)
-      .is('current_staff_id', null); // Only assign if not already taken
-
-    if (deskError) {
-      console.error('Failed to assign desk:', deskError.message);
-    }
-  }
 
   if (sendSetupEmail) {
     await adminSupabase.auth.resetPasswordForEmail(email, {
@@ -672,13 +607,11 @@ export async function createStaffMember(formData: FormData) {
       role,
       officeId,
       departmentId,
-      deskId,
       sendSetupEmail,
     },
   });
 
   revalidatePath('/admin/staff');
-  revalidatePath('/admin/desks');
   return { success: true };
 }
 
@@ -930,6 +863,8 @@ export async function updateKioskSettings(settings: Record<string, any>) {
 
   revalidatePath('/admin/kiosk');
   revalidatePath('/admin/settings');
+  revalidatePath('/kiosk/[officeSlug]', 'page');
+  revalidatePath('/sandbox/[token]/kiosk', 'page');
   return { success: true };
 }
 
@@ -1025,89 +960,5 @@ export async function deleteDisplayScreen(screenId: string) {
   });
 
   revalidatePath('/admin/displays');
-  return { success: true };
-}
-
-// ─── Office Holidays ─────────────────────────────────────────────────────────
-
-export async function getOfficeHolidays(officeId: string) {
-  const context = await getStaffContext();
-  await getOfficeById(context, officeId);
-
-  const { data, error } = await context.supabase
-    .from('office_holidays')
-    .select('*')
-    .eq('office_id', officeId)
-    .order('holiday_date', { ascending: true });
-
-  if (error) return { error: error.message, data: [] };
-  return { data: data ?? [] };
-}
-
-export async function createOfficeHoliday(formData: FormData) {
-  const context = await getAdminContext();
-  const officeId = formData.get('office_id') as string;
-  const office = await getOfficeById(context, officeId);
-
-  const { data: holiday, error } = await context.supabase
-    .from('office_holidays')
-    .insert({
-      office_id: officeId,
-      holiday_date: formData.get('holiday_date') as string,
-      name: (formData.get('name') as string) || 'Holiday',
-      is_full_day: formData.get('is_full_day') !== 'false',
-      open_time: (formData.get('open_time') as string) || null,
-      close_time: (formData.get('close_time') as string) || null,
-      created_by: context.staff.id,
-    })
-    .select('id, name, holiday_date')
-    .single();
-
-  if (error) return { error: error.message };
-
-  await logAuditEvent(context, {
-    actionType: 'holiday_created',
-    entityType: 'office_holiday',
-    entityId: holiday.id,
-    officeId,
-    summary: `Added holiday "${holiday.name}" on ${holiday.holiday_date} for ${office.name}`,
-    metadata: { holiday_date: holiday.holiday_date, name: holiday.name },
-  });
-
-  revalidatePath('/admin/offices');
-  return { success: true };
-}
-
-export async function deleteOfficeHoliday(id: string) {
-  const context = await getAdminContext();
-
-  const { data: holiday } = await context.supabase
-    .from('office_holidays')
-    .select('id, office_id, name, holiday_date')
-    .eq('id', id)
-    .single();
-
-  if (!holiday) return { error: 'Holiday not found' };
-
-  // Verify access
-  await getOfficeById(context, holiday.office_id);
-
-  const { error } = await context.supabase
-    .from('office_holidays')
-    .delete()
-    .eq('id', id);
-
-  if (error) return { error: error.message };
-
-  await logAuditEvent(context, {
-    actionType: 'holiday_deleted',
-    entityType: 'office_holiday',
-    entityId: id,
-    officeId: holiday.office_id,
-    summary: `Removed holiday "${holiday.name}" on ${holiday.holiday_date}`,
-    metadata: {},
-  });
-
-  revalidatePath('/admin/offices');
   return { success: true };
 }

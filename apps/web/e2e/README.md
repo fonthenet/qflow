@@ -1,4 +1,4 @@
-# Qflo Admin E2E
+# QueueFlow Admin E2E
 
 These Playwright tests cover authenticated admin routes using a real browser and a running Next.js server.
 
@@ -38,7 +38,7 @@ Seeding environment:
 SUPABASE_SERVICE_ROLE_KEY=...
 QUEUEFLOW_E2E_EMAIL=admin@example.com
 QUEUEFLOW_E2E_PASSWORD=secret-password
-QUEUEFLOW_E2E_ORG_NAME=Qflo E2E
+QUEUEFLOW_E2E_ORG_NAME=QueueFlow E2E
 QUEUEFLOW_E2E_TEMPLATE_ID=bank-branch
 QUEUEFLOW_E2E_BRANCH_TYPE=branch_office
 QUEUEFLOW_E2E_OPERATING_MODEL=service_routing

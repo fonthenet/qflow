@@ -1,6 +1,6 @@
 # Sandbox Mirroring Rule
 
-Qflo sandbox is the pre-launch mirror of the real product.
+QueueFlow sandbox is the pre-launch mirror of the real product.
 
 ## Rule
 
@@ -26,7 +26,7 @@ Every business-facing and customer-facing runtime surface must have a sandbox eq
 
 ## Delivery rule
 
-When a new business or customer workflow is added to Qflo:
+When a new business or customer workflow is added to QueueFlow:
 
 1. Add or update the live/runtime surface.
 2. Add or update the sandbox equivalent in the same change.

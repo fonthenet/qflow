@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface IosInstallPromptProps {
   onDismiss: () => void;
@@ -15,6 +16,7 @@ interface IosInstallPromptProps {
 export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallPromptProps) {
   const [step, setStep] = useState(1);
   const [animateIn, setAnimateIn] = useState(false);
+  const { t } = useI18n();
 
   useEffect(() => {
     requestAnimationFrame(() => setAnimateIn(true));
@@ -52,7 +54,7 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
         <button
           onClick={onDismiss}
           className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500 active:bg-gray-200"
-          aria-label="Close"
+          aria-label={t('Close')}
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -67,10 +69,9 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                 <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
               </svg>
             </div>
-            <h2 className="text-lg font-bold text-gray-900">Open in Safari</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t('Open in Safari')}</h2>
             <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-              To get notifications, you need to use <strong>Safari</strong>.
-              Copy this page URL and open it in Safari.
+              {t('To get notifications, you need to use Safari. Copy this page URL and open it in Safari.')}
             </p>
             <button
               onClick={() => {
@@ -78,9 +79,9 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
               }}
               className="mt-4 w-full rounded-xl bg-blue-500 py-3.5 text-sm font-semibold text-white shadow-sm active:scale-[0.98] transition-transform"
             >
-              Copy Link
+              {t('Copy Link')}
             </button>
-            <p className="mt-3 text-xs text-gray-400">Then paste it in Safari&apos;s address bar</p>
+            <p className="mt-3 text-xs text-gray-400">{t("Then paste it in Safari's address bar")}</p>
           </div>
         ) : (
           <>
@@ -91,9 +92,9 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
               </div>
-              <h2 className="text-lg font-bold text-gray-900">Get Notified When Called</h2>
+              <h2 className="text-lg font-bold text-gray-900">{t('Get Notified When Called')}</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Install {appName} to receive push notifications — even when your phone is locked.
+                {t('Install {appName} to receive push notifications — even when your phone is locked.', { appName })}
               </p>
             </div>
 
@@ -113,7 +114,7 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${step === 1 ? 'text-gray-900' : 'text-gray-400'}`}>
-                    Tap the Share button
+                    {t('Tap the Share button')}
                   </p>
                   {step === 1 && (
                     <p className="mt-0.5 text-xs text-gray-500">
@@ -121,7 +122,7 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                       <span className="inline-flex items-center align-middle">
                         <ShareIcon className="inline h-4 w-4 text-blue-500" />
                       </span>
-                      {' '}icon at the bottom of Safari
+                      {' '}{t('icon at the bottom of Safari')}
                     </p>
                   )}
                 </div>
@@ -148,11 +149,11 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${step === 2 ? 'text-gray-900' : 'text-gray-400'}`}>
-                    Tap &quot;Add to Home Screen&quot;
+                    {t('Tap "Add to Home Screen"')}
                   </p>
                   {step === 2 && (
                     <p className="mt-0.5 text-xs text-gray-500">
-                      Scroll down in the share menu to find it
+                      {t('Scroll down in the share menu to find it')}
                     </p>
                   )}
                 </div>
@@ -180,11 +181,11 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${step === 3 ? 'text-gray-900' : 'text-gray-400'}`}>
-                    Open from Home Screen &amp; enable alerts
+                    {t('Open from Home Screen & enable alerts')}
                   </p>
                   {step === 3 && (
                     <p className="mt-0.5 text-xs text-gray-500">
-                      Tap the {appName} icon, then enable notifications
+                      {t('Tap the {appName} icon, then enable notifications', { appName })}
                     </p>
                   )}
                 </div>
@@ -202,7 +203,7 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
             {step === 1 && (
               <div className="mt-4 flex flex-col items-center">
                 <p className="text-xs font-medium text-blue-500 animate-pulse">
-                  ↓ Tap the share icon below ↓
+                  {t('↓ Tap the share icon below ↓')}
                 </p>
               </div>
             )}
@@ -212,7 +213,7 @@ export function IosInstallPrompt({ onDismiss, appName = 'Qflo' }: IosInstallProm
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>Takes about 10 seconds</span>
+              <span>{t('Takes about 10 seconds')}</span>
             </div>
           </>
         )}

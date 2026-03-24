@@ -1,16 +1,20 @@
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CheckInForm } from '@/components/queue/check-in-form';
 import { QueueStatus } from '@/components/queue/queue-status';
 import { GroupStatus } from '@/components/queue/group-status';
 import { getPriorityAlertConfig } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured } from '@/lib/sms';
+import { getServerI18n } from '@/lib/i18n';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 interface PageProps {
   params: Promise<{ token: string }>;
 }
 
 export default async function TicketStatusPage({ params }: PageProps) {
+  const { t } = await getServerI18n();
   const { token } = await params;
   const supabase = createAdminClient();
 
@@ -22,7 +26,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
     .single();
 
   if (error || !ticket) {
-    return (
+    return renderWithLanguageSwitcher(
       <div className="flex min-h-screen items-center justify-center bg-muted p-4">
         <div className="w-full max-w-sm rounded-xl bg-card p-8 text-center shadow-lg">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
@@ -41,11 +45,10 @@ export default async function TicketStatusPage({ params }: PageProps) {
             </svg>
           </div>
           <h1 className="mb-2 text-xl font-bold text-foreground">
-            Ticket Not Found
+            {t('Ticket Not Found')}
           </h1>
           <p className="text-sm text-muted-foreground">
-            This ticket link is invalid or has expired. Please check your QR code
-            and try again.
+            {t('This ticket link is invalid or has expired. Please check your QR code and try again.')}
           </p>
         </div>
       </div>
@@ -62,11 +65,13 @@ export default async function TicketStatusPage({ params }: PageProps) {
       .single();
 
     return (
-      <GroupStatus
-        groupId={ticket.group_id}
-        currentTicketId={ticket.id}
-        officeName={groupOffice?.name ?? 'Office'}
-      />
+      renderWithLanguageSwitcher(
+        <GroupStatus
+          groupId={ticket.group_id}
+          currentTicketId={ticket.id}
+          officeName={groupOffice?.name ?? t('Office')}
+        />
+      )
     );
   }
 
@@ -131,11 +136,13 @@ export default async function TicketStatusPage({ params }: PageProps) {
   // Status: issued with no customer data -> show check-in form
   if (ticket.status === 'issued' && !ticket.customer_data) {
     return (
-      <CheckInForm
+      renderWithLanguageSwitcher(
+        <CheckInForm
         ticket={ticket}
         officeName={contextInfo.officeName}
         serviceName={contextInfo.serviceName}
-      />
+        />
+      )
     );
   }
 
@@ -147,45 +154,47 @@ export default async function TicketStatusPage({ params }: PageProps) {
     ticket.status === 'served'
   ) {
     return (
-      <QueueStatus
+      renderWithLanguageSwitcher(
+        <QueueStatus
         ticket={ticket}
         organizationName={contextInfo.organizationName}
         officeName={contextInfo.officeName}
         departmentName={contextInfo.departmentName}
         serviceName={contextInfo.serviceName}
         priorityAlertConfig={priorityAlertConfig}
-      />
+        />
+      )
     );
   }
 
   // Status: no_show, cancelled, transferred
   const statusConfig: Record<string, { title: string; description: string; icon: string }> = {
     no_show: {
-      title: 'Missed Your Turn',
+      title: t('Missed Your Turn'),
       description:
-        'You were called but did not show up. Please visit the front desk if you still need service.',
+        t('You were called but did not show up. Please visit the front desk if you still need service.'),
       icon: 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
     },
     cancelled: {
-      title: 'Ticket Cancelled',
-      description: 'This ticket has been cancelled. Please take a new ticket if you need service.',
+      title: t('Ticket Cancelled'),
+      description: t('This ticket has been cancelled. Please take a new ticket if you need service.'),
       icon: 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z',
     },
     transferred: {
-      title: 'Ticket Transferred',
+      title: t('Ticket Transferred'),
       description:
-        'Your ticket has been transferred to another service. Please check your new ticket.',
+        t('Your ticket has been transferred to another service. Please check your new ticket.'),
       icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4',
     },
   };
 
   const config = statusConfig[ticket.status] ?? {
-    title: 'Ticket Status',
-    description: `Current status: ${ticket.status}`,
-    icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+      title: t('Ticket Status'),
+      description: t('Current status: {status}', { status: ticket.status }),
+      icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   };
 
-  return (
+  return renderWithLanguageSwitcher(
     <div className="flex min-h-screen items-center justify-center bg-muted p-4">
       <div className="w-full max-w-sm text-center">
         <div className="rounded-xl bg-card p-8 shadow-lg">
@@ -207,7 +216,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
           <h1 className="mb-2 text-xl font-bold text-foreground">{config.title}</h1>
           <p className="mb-6 text-sm text-muted-foreground">{config.description}</p>
           <div className="rounded-lg bg-muted p-4">
-            <p className="text-sm font-medium text-muted-foreground">Ticket Number</p>
+            <p className="text-sm font-medium text-muted-foreground">{t('Ticket Number')}</p>
             <p className="text-2xl font-bold text-foreground">{ticket.ticket_number}</p>
           </div>
         </div>
@@ -218,3 +227,13 @@ export default async function TicketStatusPage({ params }: PageProps) {
     </div>
   );
 }
+  function renderWithLanguageSwitcher(content: ReactNode) {
+    return (
+      <div className="relative">
+        <div className="fixed right-4 top-4 z-[60]">
+          <LanguageSwitcher />
+        </div>
+        {content}
+      </div>
+    );
+  }

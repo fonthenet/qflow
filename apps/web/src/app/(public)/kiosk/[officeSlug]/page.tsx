@@ -53,6 +53,8 @@ export default async function KioskPage({ params }: KioskPageProps) {
     themeColor: orgSettings.kiosk_theme_color ?? profile.themeColor,
     logoUrl: orgSettings.kiosk_logo_url ?? organizationLogoUrl,
     showLogo: orgSettings.kiosk_show_logo ?? Boolean(orgSettings.kiosk_logo_url ?? organizationLogoUrl),
+    vertical: platformConfig.template.vertical,
+    mode: orgSettings.kiosk_mode ?? profile.mode,
     showPriorities:
       orgSettings.kiosk_show_priorities ??
       (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities),
@@ -63,8 +65,6 @@ export default async function KioskPage({ params }: KioskPageProps) {
       orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
     buttonLabel: orgSettings.kiosk_button_label ?? profile.buttonLabel,
     idleTimeout: orgSettings.kiosk_idle_timeout ?? profile.idleTimeoutSeconds,
-    showAppointmentCheckIn: orgSettings.kiosk_show_appointment_checkin ?? true,
-    showGroupTickets: orgSettings.kiosk_show_group_tickets ?? true,
   };
 
   // Filter out hidden departments and services
@@ -84,8 +84,6 @@ export default async function KioskPage({ params }: KioskPageProps) {
       departments={filteredDepartments}
       priorityCategories={kioskSettings.showPriorities ? (priorityCategories || []) : []}
       kioskSettings={kioskSettings}
-      vertical={platformConfig.selection.vertical}
-      stationLocalUrl={officeSettings.station_local_url ?? null}
     />
   );
 }

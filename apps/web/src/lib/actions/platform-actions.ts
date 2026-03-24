@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { type BranchType, type TemplateSectionKey, type TrialTemplateStructure } from '@queueflow/shared';
+import { type TemplateSectionKey, type TrialTemplateStructure } from '@queueflow/shared';
 import { logAuditEvent } from '@/lib/audit';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import {
@@ -42,7 +42,12 @@ function generateSandboxShareToken() {
 type TemplateSetupInput = {
   templateId: string;
   operatingModel: 'department_first' | 'service_routing' | 'appointments_first' | 'waitlist';
-  branchType: BranchType;
+  branchType:
+    | 'service_center'
+    | 'branch_office'
+    | 'community_clinic'
+    | 'restaurant_floor'
+    | 'salon_shop';
   officeName: string;
   timezone: string;
   createStarterDisplay: boolean;
@@ -889,87 +894,4 @@ export async function rolloutIndustryTemplateToOffices(input: {
       updatedOffices,
     },
   };
-}
-
-export async function resetBusinessSetup() {
-  const context = await getStaffContext();
-  await requireOrganizationAdmin(context);
-
-  const orgId = context.staff.organization_id;
-
-  const { data: organization, error: orgError } = await context.supabase
-    .from('organizations')
-    .select('settings')
-    .eq('id', orgId)
-    .single();
-
-  if (orgError) return { error: orgError.message };
-
-  const currentSettings = (organization?.settings as Record<string, unknown> | null) ?? {};
-  const lifecycleState = getPlatformLifecycleState(currentSettings);
-
-  if (lifecycleState !== 'template_confirmed') {
-    return { error: 'Setup has not been confirmed yet — nothing to reset.' };
-  }
-
-  // Delete all offices (cascades to departments, services, desks, tickets, etc.)
-  const { data: offices } = await context.supabase
-    .from('offices')
-    .select('id, name')
-    .eq('organization_id', orgId);
-
-  if (offices && offices.length > 0) {
-    const { error: deleteError } = await context.supabase
-      .from('offices')
-      .delete()
-      .eq('organization_id', orgId);
-
-    if (deleteError) return { error: deleteError.message };
-  }
-
-  // Delete organization-level seeded data
-  await context.supabase
-    .from('priority_categories')
-    .delete()
-    .eq('organization_id', orgId);
-
-  // Clear all platform_* keys from settings to go back to fresh state
-  const nextSettings: Record<string, unknown> = {};
-  const platformPrefixes = ['platform_'];
-
-  for (const [key, value] of Object.entries(currentSettings)) {
-    const isPlatformKey = platformPrefixes.some((prefix) => key.startsWith(prefix));
-    if (!isPlatformKey) {
-      nextSettings[key] = value;
-    }
-  }
-
-  const { error: updateError } = await context.supabase
-    .from('organizations')
-    .update({ settings: nextSettings })
-    .eq('id', orgId);
-
-  if (updateError) return { error: updateError.message };
-
-  await logAuditEvent(context, {
-    actionType: 'business_setup_reset',
-    entityType: 'organization',
-    entityId: orgId,
-    summary: `Reset business setup — deleted ${offices?.length ?? 0} office(s) and cleared template configuration`,
-    metadata: {
-      deletedOffices: offices?.map((o) => ({ id: o.id, name: o.name })) ?? [],
-      previousTemplateId: currentSettings.platform_template_id ?? null,
-      previousLifecycleState: lifecycleState,
-    },
-  });
-
-  revalidatePath('/admin/onboarding');
-  revalidatePath('/admin/offices');
-  revalidatePath('/admin/departments');
-  revalidatePath('/admin/services');
-  revalidatePath('/admin/desks');
-  revalidatePath('/admin/settings');
-  revalidatePath('/admin/template-governance');
-
-  return { success: true };
 }

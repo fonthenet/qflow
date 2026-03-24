@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import type { Database } from '@/lib/supabase/database.types';
+import { useI18n } from '@/components/providers/locale-provider';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type NotificationRow = Database['public']['Tables']['notifications']['Row'];
@@ -29,10 +30,15 @@ function calcRemaining(calledAt: string | null) {
   return Math.max(0, CALL_WAIT_SECONDS - elapsed);
 }
 
-function formatSyncLabel(date: Date | null, isRefreshing: boolean) {
-  if (isRefreshing) return 'Refreshing…';
-  if (!date) return `Last update: ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  return `Last update: ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+function formatSyncLabel(
+  date: Date | null,
+  isRefreshing: boolean,
+  t: (key: string, variables?: Record<string, string | number>) => string,
+  formatTime: (value: Date | string | number, options?: Intl.DateTimeFormatOptions) => string
+) {
+  if (isRefreshing) return t('Refreshing...');
+  const time = formatTime(date ?? new Date(), { hour: 'numeric', minute: '2-digit' });
+  return t('Last update: {time}', { time });
 }
 
 function QueueActionPill({
@@ -48,6 +54,7 @@ function QueueActionPill({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { t } = useI18n();
   const toneClass = {
     secondary: 'border-white/12 bg-white/10 text-white hover:bg-white/14',
     danger: 'border-rose-200/20 bg-rose-500/15 text-rose-50 hover:bg-rose-500/22',
@@ -61,7 +68,7 @@ function QueueActionPill({
       disabled={disabled}
       className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
     >
-      {loading ? 'Working...' : label}
+      {loading ? t('Working...') : label}
     </button>
   );
 }
@@ -78,7 +85,8 @@ export function YourTurn({
   onStopTracking,
   sandboxMode = false,
 }: YourTurnProps) {
-  const [deskName, setDeskName] = useState(initialDeskName || 'your desk');
+  const { t, formatTime } = useI18n();
+  const [deskName, setDeskName] = useState(initialDeskName || t('your desk'));
   const [countdown, setCountdown] = useState(() => calcRemaining(ticket.called_at));
   const [calledAt, setCalledAt] = useState(ticket.called_at);
   const lastAlertedAt = useRef<string | null>(null);
@@ -88,16 +96,11 @@ export function YourTurn({
   const pendingAlert = useRef(true);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync calledAt from parent when ticket prop updates (e.g. from realtime/polling)
-  useEffect(() => {
-    if (ticket.called_at && ticket.called_at !== calledAt) {
-      setCalledAt(ticket.called_at);
-      setRecallCount(ticket.recall_count ?? 0);
-    }
-  }, [ticket.called_at, ticket.recall_count]);
-
   const phase = countdown > 30 ? 'green' : countdown > 10 ? 'yellow' : 'red';
-  const syncLabel = useMemo(() => formatSyncLabel(lastSyncedAt, isRefreshing), [isRefreshing, lastSyncedAt]);
+  const syncLabel = useMemo(
+    () => formatSyncLabel(lastSyncedAt, isRefreshing, t, formatTime),
+    [formatTime, isRefreshing, lastSyncedAt, t]
+  );
 
   const fireVibAndSound = () => {
     try {
@@ -384,8 +387,11 @@ export function YourTurn({
       if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
         navigator.serviceWorker.ready.then(async (reg) => {
           try {
-            await reg.showNotification('Your Turn!', {
-              body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+            await reg.showNotification(t('Your Turn!'), {
+              body: t('Ticket {number} — Please go to {deskName}', {
+                number: ticket.ticket_number,
+                deskName,
+              }),
               icon: '/icon-192x192.png',
               badge: '/badge-96x96.png',
               tag: `called-${ticket.id}`,
@@ -487,8 +493,11 @@ export function YourTurn({
         try {
           const existing = await reg.getNotifications();
           existing.forEach((notification) => notification.close());
-          await reg.showNotification('Your Turn!', {
-            body: `Ticket ${ticket.ticket_number} — Please go to ${deskName}`,
+          await reg.showNotification(t('Your Turn!'), {
+            body: t('Ticket {number} — Please go to {deskName}', {
+              number: ticket.ticket_number,
+              deskName,
+            }),
             icon: '/icon-192x192.png',
             badge: '/badge-96x96.png',
             tag: `called-${ticket.id}`,
@@ -523,10 +532,10 @@ export function YourTurn({
 
   const message =
     countdown === 0
-      ? 'Time expired. Please go to the desk immediately.'
+      ? t('Time expired. Please go to the desk immediately.')
       : phase === 'red'
-        ? 'Please head over now. Staff is waiting for you.'
-        : 'Show this screen if staff asks for your number.';
+        ? t('Please head over now. Staff is waiting for you.')
+        : t('Show this screen if staff asks for your number.');
   const bellShouldRipple = countdown > 0;
 
   return (
@@ -535,7 +544,7 @@ export function YourTurn({
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-red-600">
           <div className="text-center">
             <p className="text-7xl font-black text-white drop-shadow-lg">📳 BUZZ!</p>
-            <p className="mt-3 text-xl font-bold text-white">Go to your desk now</p>
+            <p className="mt-3 text-xl font-bold text-white">{t('Go to your desk now')}</p>
           </div>
         </div>
       ) : null}
@@ -552,11 +561,11 @@ export function YourTurn({
 
           <div className="flex flex-col items-end gap-2">
             <div className="rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-white/88">
-              Ticket {ticket.ticket_number}
+              {t('Ticket {number}', { number: ticket.ticket_number })}
             </div>
             <div className="flex items-center gap-2">
               <QueueActionPill
-                label="Refresh"
+                label={t('Refresh')}
                 onClick={() => {
                   void onRefresh();
                 }}
@@ -564,7 +573,7 @@ export function YourTurn({
                 disabled={isRefreshing}
                 loading={isRefreshing}
               />
-              <QueueActionPill label="End" onClick={onStopTracking} tone="danger" />
+              <QueueActionPill label={t('End')} onClick={onStopTracking} tone="danger" />
             </div>
           </div>
         </div>
@@ -581,21 +590,21 @@ export function YourTurn({
             </div>
           </div>
 
-          <h2 className="mt-6 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">Go to {deskName}</h2>
+          <h2 className="mt-6 text-[40px] font-black leading-[0.95] tracking-tight sm:text-5xl">{t('Go to {deskName}', { deskName })}</h2>
 
           {recallCount > 0 ? (
             <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/12 px-4 py-2 text-sm font-semibold text-white">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Recalled {recallCount} {recallCount === 1 ? 'time' : 'times'}
+              {t('Recalled {count} time(s)', { count: recallCount })}
             </div>
           ) : null}
 
           <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border backdrop-blur sm:h-44 sm:w-44 ${countdownCircleClass}`}>
             <p className="mt-2 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
             <p className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-              {countdown === 0 ? 'Expired' : 'Seconds'}
+              {countdown === 0 ? t('Expired') : t('Seconds')}
             </p>
           </div>
 
@@ -608,7 +617,7 @@ export function YourTurn({
                   <Info className="h-5 w-5 text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">Where to go</p>
+                  <p className="text-xs font-medium text-white/55">{t('Where to go')}</p>
                   <p className="text-base font-semibold text-white">{deskName}</p>
                 </div>
               </div>
@@ -617,8 +626,8 @@ export function YourTurn({
                   <Contact className="h-5 w-5 text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">What to show</p>
-                  <p className="text-base font-semibold text-white">Ticket {ticket.ticket_number}</p>
+                  <p className="text-xs font-medium text-white/55">{t('What to show')}</p>
+                  <p className="text-base font-semibold text-white">{t('Ticket {number}', { number: ticket.ticket_number })}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -626,8 +635,8 @@ export function YourTurn({
                   <Clock className="h-5 w-5 text-white/80" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-white/55">What to do now</p>
-                  <p className="text-base font-semibold text-white">Walk straight to the desk while the countdown is active.</p>
+                  <p className="text-xs font-medium text-white/55">{t('What to do now')}</p>
+                  <p className="text-base font-semibold text-white">{t('Walk straight to the desk while the countdown is active.')}</p>
                 </div>
               </div>
             </div>
@@ -641,7 +650,7 @@ export function YourTurn({
         </div>
 
         <div className="pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-white/42">POWERED BY QFLO</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-white/42">{t('Powered by QueueFlow')}</p>
         </div>
       </div>
     </div>
