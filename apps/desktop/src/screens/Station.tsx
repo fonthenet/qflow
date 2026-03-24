@@ -115,19 +115,32 @@ const STAFF_STATUS_LABELS: Record<StaffStatus, { label: string; color: string; i
 
 const DAYS_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-function OfficeHoursBadge({ locale }: { locale: DesktopLocale }) {
+function normalizeOfficeTimezone(timezone: string | null | undefined) {
+  const value = (timezone ?? '').trim();
+  if (!value) return 'UTC';
+  if (value === 'Europe/Algiers') return 'Africa/Algiers';
+  return value;
+}
+
+function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session: StaffSession }) {
   const [status, setStatus] = useState<{ isOpen: boolean; reason: string; todayHours: any; nextOpen?: any; currentDay: string } | null>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
     function check() {
       try {
-        const offices = (window as any).qf?.db?.query?.('SELECT operating_hours, timezone FROM offices LIMIT 1');
+        const officeIds = session.office_ids?.length ? session.office_ids : [session.office_id];
+        const targetOfficeId = officeIds[0];
+        if (!targetOfficeId) return;
+        const offices = (window as any).qf?.db?.query?.(
+          'SELECT operating_hours, timezone FROM offices WHERE id = ? LIMIT 1',
+          [targetOfficeId]
+        );
         const office = offices?.[0];
         if (!office?.operating_hours) return;
         const hours = typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours;
         if (!hours || Object.keys(hours).length === 0) return;
-        const tz = office.timezone || 'UTC';
+        const tz = normalizeOfficeTimezone(office.timezone);
         const now = new Date();
 
         let day: string, time: string;
@@ -164,7 +177,7 @@ function OfficeHoursBadge({ locale }: { locale: DesktopLocale }) {
     check();
     const t = setInterval(check, 60000);
     return () => clearInterval(t);
-  }, []);
+  }, [session.office_id, session.office_ids]);
 
   if (!status) return null;
 
@@ -913,7 +926,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         )}
 
         {/* Office Open/Closed Status */}
-        <OfficeHoursBadge locale={locale} />
+        <OfficeHoursBadge locale={locale} session={session} />
 
         {/* Device Status */}
         {deviceStatuses.length > 0 && (
