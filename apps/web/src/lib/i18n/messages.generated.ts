@@ -511,7 +511,6 @@ export const generatedMessages = {
     'Keep Current': 'Conserver l’actuel',
     'Preserve the current effective values for this section during the template refresh.':
       'Conservez les valeurs effectives actuelles de cette section pendant l’actualisation du modèle.',
-    'Use the new default': 'Utiliser la nouvelle valeur par défaut',
     'No business-wide custom changes need a decision right now.':
       'Aucun changement personnalisé à l’échelle de l’activité ne nécessite de décision pour le moment.',
     '{count} section(s) set to adopt defaults':
@@ -554,7 +553,6 @@ export const generatedMessages = {
       'Consultez l’historique récent des rendez-vous par catégorie et partagez le bon lien de réservation ou code QR pour chaque service.',
     'Recent bookings': 'Réservations récentes',
     'Pending': 'En attente',
-    'Checked in': 'Enregistré',
     'Cancelled': 'Annulé',
     '{count} recent appointment(s) across all booking categories.':
       '{count} rendez-vous récent(s) dans toutes les catégories de réservation.',
@@ -568,8 +566,6 @@ export const generatedMessages = {
     'Share when customers need to find an existing appointment and check in.':
       'Partagez ceci lorsque les clients doivent retrouver un rendez-vous existant et s’enregistrer.',
     '{name} appointment check-in': 'Enregistrement de rendez-vous {name}',
-    'Scan to look up and check in an appointment.':
-      'Scannez pour rechercher et enregistrer un rendez-vous.',
     '{count} recent booking(s) in this department.':
       '{count} réservation(s) récente(s) dans ce département.',
     'Department booking page': 'Page de réservation du département',
@@ -803,7 +799,6 @@ export const generatedMessages = {
     'Ref': 'Réf',
     'Arrival': 'Arrivée',
     'Source': 'Source',
-    'Choose table': 'Choisir une table',
     'Reservation ref': 'Réf. réservation',
     'Seated at': 'Installé à',
     'Notified at': 'Prévenu à',
@@ -828,7 +823,6 @@ export const generatedMessages = {
       'Prochains groupes en attente pour la zone de ce {label}',
     'Next people waiting for this {label}\'s department':
       'Prochaines personnes en attente pour le département de ce {label}',
-    'Up next': 'Suivant',
     'Notify now': 'Prévenir maintenant',
     'No parties are waiting right now.': 'Aucun groupe n’attend en ce moment.',
     'No one is waiting right now.': 'Personne n’attend en ce moment.',
@@ -858,7 +852,6 @@ export const generatedMessages = {
     'Party': 'Groupe',
     'Move Party': 'Déplacer le groupe',
     'Move party': 'Déplacer le groupe',
-    'Transferring ticket': 'Transfert du ticket',
     'Seating area': 'Zone de placement',
     'Select seating area...': 'Sélectionnez une zone de placement...',
     'Select department...': 'Sélectionnez un département...',
@@ -944,7 +937,6 @@ export const generatedMessages = {
       'Voici la configuration qui sera créée lors de votre confirmation.',
     '{count} active': '{count} actifs',
     'Displays': 'Affichages',
-    'Off': 'Désactivé',
     'Customer flow': 'Parcours client',
     'Customer-facing view': 'Vue côté client',
     'Hosts control seating and call parties when ready':
@@ -1521,7 +1513,6 @@ export const generatedMessages = {
     'Keep Current': 'الاحتفاظ بالحالي',
     'Preserve the current effective values for this section during the template refresh.':
       'احتفظ بالقيم الفعلية الحالية لهذا القسم أثناء تحديث القالب.',
-    'Use the new default': 'استخدام القيمة الافتراضية الجديدة',
     'No business-wide custom changes need a decision right now.':
       'لا توجد تغييرات مخصصة على مستوى النشاط تحتاج إلى قرار الآن.',
     '{count} section(s) set to adopt defaults':
@@ -1564,7 +1555,6 @@ export const generatedMessages = {
       'راجع سجل المواعيد الأخير حسب الفئة وشارك رابط الحجز الصحيح أو رمز QR لكل خدمة.',
     'Recent bookings': 'الحجوزات الأخيرة',
     'Pending': 'قيد الانتظار',
-    'Checked in': 'تم تسجيل الوصول',
     'Cancelled': 'ملغى',
     '{count} recent appointment(s) across all booking categories.':
       'يوجد {count} موعد/مواعيد أخيرة عبر جميع فئات الحجز.',
@@ -1578,8 +1568,6 @@ export const generatedMessages = {
     'Share when customers need to find an existing appointment and check in.':
       'شارك هذا عندما يحتاج العملاء إلى العثور على موعد موجود وتسجيل الوصول.',
     '{name} appointment check-in': 'تسجيل وصول موعد {name}',
-    'Scan to look up and check in an appointment.':
-      'امسح للبحث عن موعد وتسجيل الوصول إليه.',
     '{count} recent booking(s) in this department.':
       'يوجد {count} حجز/حجوزات أخيرة في هذا القسم.',
     'Department booking page': 'صفحة حجز القسم',
@@ -1813,7 +1801,6 @@ export const generatedMessages = {
     'Ref': 'مرجع',
     'Arrival': 'الوصول',
     'Source': 'المصدر',
-    'Choose table': 'اختر طاولة',
     'Reservation ref': 'مرجع الحجز',
     'Seated at': 'جلس عند',
     'Notified at': 'تم التنبيه عند',
@@ -1838,7 +1825,6 @@ export const generatedMessages = {
       'المجموعات التالية المنتظرة لمنطقة هذا {label}',
     'Next people waiting for this {label}\'s department':
       'الأشخاص التاليون المنتظرون لقسم هذا {label}',
-    'Up next': 'التالي',
     'Notify now': 'نبّه الآن',
     'No parties are waiting right now.': 'لا توجد مجموعات تنتظر الآن.',
     'No one is waiting right now.': 'لا أحد ينتظر الآن.',
@@ -1868,7 +1854,6 @@ export const generatedMessages = {
     'Party': 'مجموعة',
     'Move Party': 'نقل المجموعة',
     'Move party': 'نقل المجموعة',
-    'Transferring ticket': 'جارٍ نقل التذكرة',
     'Seating area': 'منطقة الجلوس',
     'Select seating area...': 'اختر منطقة الجلوس...',
     'Select department...': 'اختر القسم...',
@@ -1954,7 +1939,6 @@ export const generatedMessages = {
       'هذا هو الإعداد الذي سيتم إنشاؤه عند التأكيد.',
     '{count} active': '{count} نشط',
     'Displays': 'العروض',
-    'Off': 'إيقاف',
     'Customer flow': 'مسار العميل',
     'Customer-facing view': 'واجهة العميل',
     'Hosts control seating and call parties when ready':

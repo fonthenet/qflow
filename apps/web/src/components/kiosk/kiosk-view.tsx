@@ -862,7 +862,6 @@ export function KioskView({
               {qrDataUrl ? (
                 <img
                   src={qrDataUrl}
-                  alt="Scan to track your queue position"
                   alt={t('Scan to track your queue position')}
                   className="mx-auto h-56 w-56"
                 />

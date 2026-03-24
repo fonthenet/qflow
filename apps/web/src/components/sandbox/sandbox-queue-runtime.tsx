@@ -63,6 +63,7 @@ function buildSandboxTicket(
       is_remote: baseEntry?.source === 'remote_join',
       notes: 'Sandbox preview only',
       office_id: preview.organization.id,
+      parked_at: null,
       priority: null,
       priority_category_id: null,
       qr_token: 'sandbox-ticket',

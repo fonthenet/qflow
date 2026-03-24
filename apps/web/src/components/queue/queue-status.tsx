@@ -168,7 +168,7 @@ export function QueueStatus({
   priorityAlertConfig,
   sandbox,
 }: QueueStatusProps) {
-  const { t } = useI18n();
+  const { t, formatTime } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   // Build display hierarchy: Organization > Office/Branch > Service
   const businessName = organizationName || officeName || t('Business');
