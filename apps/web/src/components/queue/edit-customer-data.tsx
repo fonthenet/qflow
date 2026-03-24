@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/database.types';
 import { filterVisibleIntakeFields } from '@/lib/privacy';
+import { useI18n } from '@/components/providers/locale-provider';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type IntakeField = Database['public']['Tables']['intake_form_fields']['Row'];
@@ -15,6 +16,7 @@ interface EditCustomerDataProps {
 }
 
 export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
+  const { t, dir } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [fields, setFields] = useState<EditableField[]>([]);
   const [formData, setFormData] = useState<Record<string, string | boolean>>({});
@@ -30,7 +32,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       id: 'base-name',
       service_id: ticket.service_id,
       field_name: 'name',
-      field_label: 'Name',
+      field_label: t('Name'),
       field_type: 'text',
       is_required: false,
       options: null,
@@ -43,7 +45,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       id: 'base-phone',
       service_id: ticket.service_id,
       field_name: 'phone',
-      field_label: 'Phone',
+      field_label: t('Phone'),
       field_type: 'phone',
       is_required: false,
       options: null,
@@ -56,7 +58,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       id: 'base-email',
       service_id: ticket.service_id,
       field_name: 'email',
-      field_label: 'Email',
+      field_label: t('Email'),
       field_type: 'email',
       is_required: false,
       options: null,
@@ -128,13 +130,13 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       if (field.field_type === 'email' && formData[field.field_name]) {
         const v = formData[field.field_name] as string;
         if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-          newErrors[field.field_name] = 'Please enter a valid email';
+          newErrors[field.field_name] = t('Please enter a valid email');
         }
       }
       if (field.field_type === 'phone' && formData[field.field_name]) {
         const v = formData[field.field_name] as string;
         if (v && !/^[+]?[\d\s\-()]{7,}$/.test(v)) {
-          newErrors[field.field_name] = 'Please enter a valid phone number';
+          newErrors[field.field_name] = t('Please enter a valid phone number');
         }
       }
     });
@@ -159,7 +161,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       onUpdated?.(formData);
       setTimeout(() => setIsOpen(false), 1000);
     } catch {
-      setErrors({ _form: 'Failed to save. Please try again.' });
+      setErrors({ _form: t('Failed to save. Please try again.') });
     } finally {
       setIsSaving(false);
     }
@@ -169,7 +171,8 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
 
   const renderField = (field: IntakeField) => {
     const hasError = !!errors[field.field_name];
-    const baseClass = `w-full rounded-lg border px-3 py-2.5 text-sm transition-colors outline-none text-white placeholder:text-slate-500 ${
+    const textDirectionClass = dir === 'rtl' ? 'text-right' : 'text-left';
+    const baseClass = `w-full rounded-lg border px-3 py-2.5 text-sm transition-colors outline-none text-white placeholder:text-slate-500 ${textDirectionClass} ${
       hasError
         ? 'border-red-500/50 bg-red-500/10'
         : 'border-white/10 bg-white/5 focus:border-white/25 focus:ring-1 focus:ring-white/15'
@@ -182,7 +185,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
         const options = (field.options as string[]) ?? [];
         return (
           <select id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)}>
-            <option value="" className="bg-slate-900 text-slate-400">Select...</option>
+            <option value="" className="bg-slate-900 text-slate-400">{t('Select...')}</option>
             {options.map((opt) => <option key={opt} value={opt} className="bg-slate-900 text-white">{opt}</option>)}
           </select>
         );
@@ -197,11 +200,11 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
       case 'date':
         return <input type="date" id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} />;
       case 'email':
-        return <input type="email" id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} placeholder="email@example.com" />;
+        return <input type="email" id={field.field_name} dir="ltr" className={`${baseClass} text-left`} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} placeholder="email@example.com" />;
       case 'phone':
-        return <input type="tel" id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} placeholder="07 123 456 78" />;
+        return <input type="tel" id={field.field_name} dir="ltr" className={`${baseClass} text-left`} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} placeholder="07 123 456 78" />;
       default:
-        return <input type="text" id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} />;
+        return <input type="text" id={field.field_name} className={baseClass} value={(formData[field.field_name] as string) ?? ''} onChange={(e) => handleChange(field.field_name, e.target.value)} placeholder={field.field_name === 'name' ? t('Enter your name') : undefined} />;
     }
   };
 
@@ -216,9 +219,9 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          <span className="text-sm font-medium text-white">My Information</span>
+          <span className="text-sm font-medium text-white">{t('My Information')}</span>
           {hasData && !isOpen && (
-            <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-xs font-medium text-cyan-200">Filled</span>
+            <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-xs font-medium text-cyan-200">{t('Filled')}</span>
           )}
         </div>
         <svg
@@ -239,7 +242,7 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
             </div>
           ) : fields.length === 0 ? (
             <p className="py-4 text-center text-sm text-slate-400">
-              No additional information needed for this service.
+              {t('No additional information needed for this service.')}
             </p>
           ) : (
             <div className="space-y-3">
@@ -274,17 +277,17 @@ export function EditCustomerData({ ticket, onUpdated }: EditCustomerDataProps) {
                 {isSaving ? (
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Saving...
+                    {t('Saving...')}
                   </span>
                 ) : saved ? (
                   <span className="flex items-center justify-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
-                    Saved!
+                    {t('Saved!')}
                   </span>
                 ) : (
-                  'Save Changes'
+                  t('Save Changes')
                 )}
               </button>
             </div>

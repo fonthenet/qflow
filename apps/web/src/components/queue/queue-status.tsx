@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import { stopTicketTracking } from '@/lib/tracking';
 import { IosInstallPrompt } from '@/components/queue/ios-install-prompt';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import type { Database } from '@/lib/supabase/database.types';
 import type { PriorityAlertConfig } from '@/lib/priority-alerts';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -35,6 +36,40 @@ interface QueueStatusProps {
     nowServing?: string | null;
     deskName?: string | null;
   };
+}
+
+function getTrackingStopStorageKey(ticketId: string) {
+  return `qflo:tracking-stopped:${ticketId}`;
+}
+
+function readTrackingStopState(ticketId: string): { outcome: 'left_queue' | 'cleared' } | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getTrackingStopStorageKey(ticketId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { stopped?: boolean; outcome?: 'left_queue' | 'cleared' };
+    if (!parsed.stopped || !parsed.outcome) return null;
+    return { outcome: parsed.outcome };
+  } catch {
+    return null;
+  }
+}
+
+function storeTrackingStopState(ticketId: string, outcome: 'left_queue' | 'cleared') {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(
+      getTrackingStopStorageKey(ticketId),
+      JSON.stringify({
+        stopped: true,
+        outcome,
+      })
+    );
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function progressPercent(position: number | null) {
@@ -133,6 +168,7 @@ function WaitingMetric({
   value,
   detail,
   accentClass,
+  labelClassName,
   valueClass,
   detailClass,
 }: {
@@ -140,12 +176,13 @@ function WaitingMetric({
   value: string;
   detail: string;
   accentClass: string;
+  labelClassName?: string;
   valueClass?: string;
   detailClass?: string;
 }) {
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/6 p-4 shadow-[0_20px_40px_rgba(2,6,23,0.18)] backdrop-blur">
-      <p className={`mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] ${accentClass}`}>{label}</p>
+      <p className={`mb-1 text-[11px] font-semibold ${accentClass} ${labelClassName ?? 'uppercase tracking-[0.22em]'}`}>{label}</p>
       <p className={`text-2xl font-semibold leading-tight tracking-tight text-white sm:text-[28px] ${valueClass ?? ''}`}>{value}</p>
       <p className={`mt-1 text-[11px] leading-5 text-slate-400 ${detailClass ?? ''}`}>{detail}</p>
     </div>
@@ -183,7 +220,7 @@ export function QueueStatus({
   priorityAlertConfig,
   sandbox,
 }: QueueStatusProps) {
-  const { t, formatTime } = useI18n();
+  const { t, formatTime, dir } = useI18n();
   const ticketNumber =
     typeof initialTicket.ticket_number === 'string' || typeof initialTicket.ticket_number === 'number'
       ? String(initialTicket.ticket_number)
@@ -226,6 +263,7 @@ export function QueueStatus({
   const [stopError, setStopError] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const [servingElapsedSeconds, setServingElapsedSeconds] = useState(0);
+  const [hasResolvedTrackingStop, setHasResolvedTrackingStop] = useState(false);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -236,6 +274,9 @@ export function QueueStatus({
     window.matchMedia('(display-mode: standalone)').matches
   );
   const shouldShowIosSetupLabel = hasMounted && isIos && !isInStandaloneMode;
+  const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
+  const compactPillClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.20em]';
+  const compactMetaClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.18em]';
 
   const syncLabel = useMemo(() => {
     if (isUpdating || isRefreshing || !lastSyncedAt) return t('Syncing live updates');
@@ -332,6 +373,7 @@ export function QueueStatus({
       if (sandboxMode) {
         setStopOutcome('left_queue');
         setTrackingStopped(true);
+        storeTrackingStopState(ticket.id, 'left_queue');
         return;
       }
       const result = await stopTicketTracking(ticket.id);
@@ -340,8 +382,10 @@ export function QueueStatus({
         return;
       }
 
-      setStopOutcome(result.leftQueue ? 'left_queue' : 'cleared');
+      const outcome = result.leftQueue ? 'left_queue' : 'cleared';
+      setStopOutcome(outcome);
       setTrackingStopped(true);
+      storeTrackingStopState(ticket.id, outcome);
     } finally {
       setIsStopping(false);
       setShowStopDialog(false);
@@ -355,6 +399,15 @@ export function QueueStatus({
   useEffect(() => {
     setHasMounted(true);
   }, []);
+
+  useEffect(() => {
+    const storedState = readTrackingStopState(ticket.id);
+    if (storedState) {
+      setStopOutcome(storedState.outcome);
+      setTrackingStopped(true);
+    }
+    setHasResolvedTrackingStop(true);
+  }, [ticket.id]);
 
   useEffect(() => {
     if (sandboxMode) return;
@@ -624,6 +677,16 @@ export function QueueStatus({
     setAlertsEnabled(true);
   };
 
+  if (!hasResolvedTrackingStop) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.20),_transparent_38%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)] px-4 py-10">
+        <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
+          <p className="text-sm font-medium text-slate-300">{t('Loading...')}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (trackingStopped) {
     return (
       <QueueSessionEnded
@@ -737,7 +800,7 @@ export function QueueStatus({
                 </svg>
               </div>
 
-              <div className="mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-sky-100">
+              <div className={`mt-6 rounded-full bg-sky-400/12 px-4 py-2 text-xs font-semibold text-sky-100 ${compactPillClass}`}>
                 {t('With staff now')}
               </div>
 
@@ -749,18 +812,21 @@ export function QueueStatus({
                   value={ticketNumber}
                   detail={t('Keep this visible in case the team asks for your number again.')}
                   accentClass="bg-sky-400/15 text-sky-100"
+                  labelClassName={compactLabelClass}
                 />
                 <WaitingMetric
                   label={t('Desk')}
                   value={deskName ?? t('Desk')}
                   detail={t('This is the current service point handling your visit.')}
                   accentClass="bg-emerald-400/15 text-emerald-100"
+                  labelClassName={compactLabelClass}
                 />
                 <WaitingMetric
                   label={t('Time spent')}
                   value={formatServingElapsed(servingElapsedSeconds, t)}
                   detail={t('Service time since the desk started helping you.')}
                   accentClass="bg-amber-400/15 text-amber-100"
+                  labelClassName={compactLabelClass}
                 />
               </div>
             </div>
@@ -772,7 +838,7 @@ export function QueueStatus({
             ) : null}
 
             <div className="mt-auto pt-6 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
+              <p className={`text-xs text-slate-500 ${compactMetaClass}`}>Powered by QFlo</p>
             </div>
           </div>
         </div>
@@ -824,7 +890,7 @@ export function QueueStatus({
               <p className="mt-1 text-sm text-slate-400">{syncLabel}</p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.20em] ${accentTone}`}>
+              <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${compactPillClass} ${accentTone}`}>
                 {accentLabel}
               </div>
               <div className="flex items-center gap-2">
@@ -850,9 +916,9 @@ export function QueueStatus({
           <section className="rounded-[32px] border border-white/10 bg-white/6 p-5 shadow-[0_36px_120px_rgba(2,6,23,0.35)] backdrop-blur">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400">{t('Ticket')}</p>
+                <p className={`text-[11px] font-medium text-slate-400 ${compactMetaClass}`}>{t('Ticket')}</p>
                 <p className="mt-2 truncate whitespace-nowrap text-[34px] font-black leading-none tracking-[0.06em] text-white sm:text-[42px]">
-                  {ticket.ticket_number}
+                  {ticketNumber}
                 </p>
                 {serviceLabel ? <p className="mt-2 text-sm font-medium text-slate-300">{serviceLabel}</p> : null}
               </div>
@@ -872,7 +938,7 @@ export function QueueStatus({
             </div>
 
             <div className="mt-5">
-              <div className="mb-2 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+              <div className={`mb-2 flex items-center justify-between text-[11px] font-medium text-slate-400 ${compactMetaClass}`}>
                 <span>{t('Queue progress')}</span>
                 <span className={ticket.status !== 'serving' ? 'animate-pulse text-emerald-400' : ''}>
                   {ticket.status === 'serving' ? t('At the desk') : position ? `#${position} ${t('in line')}` : '--'}
@@ -893,12 +959,14 @@ export function QueueStatus({
                 value={estimatedWait != null ? `${estimatedWait} min` : '--'}
                 detail={estimatedWait != null ? t('Approximate timing') : t('Calculating time')}
                 accentClass="text-sky-400"
+                labelClassName={compactLabelClass}
               />
               <WaitingMetric
                 label={t('Now serving')}
                 value={nowServing ?? '--'}
                 detail={t('Current desk activity')}
                 accentClass="text-emerald-400"
+                labelClassName={compactLabelClass}
                 valueClass="text-[18px] leading-tight sm:text-[22px]"
                 detailClass="text-[10px] leading-4"
               />
@@ -907,6 +975,7 @@ export function QueueStatus({
                 value={alertsEnabled ? t('Ready') : t('Off')}
                 detail={alertsEnabled ? t('Background alerts on') : t('Turn alerts on')}
                 accentClass="text-amber-400"
+                labelClassName={compactLabelClass}
               />
           </div>
 
@@ -935,11 +1004,17 @@ export function QueueStatus({
               {t('Sandbox preview. Customer editing and live alert setup stay disabled here so the page never touches real data.')}
             </div>
           ) : (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
               <EditCustomerData ticket={ticket} />
-              <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
+              <LanguageSwitcher variant="embedded" />
             </div>
           )}
+
+          {!sandboxMode ? (
+            <div className="mt-3">
+              <PriorityAlertSetup ticket={ticket} config={priorityAlertConfig} />
+            </div>
+          ) : null}
 
           {stopError ? (
             <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
@@ -957,7 +1032,7 @@ export function QueueStatus({
           ) : null}
 
           <div className="mt-auto pt-4 text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
+            <p className={`text-xs text-slate-500 ${compactMetaClass}`}>Powered by QFlo</p>
           </div>
         </div>
       </div>

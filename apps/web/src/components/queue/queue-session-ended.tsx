@@ -15,7 +15,8 @@ export function QueueSessionEnded({
   detail,
   onResume,
 }: QueueSessionEndedProps) {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
+  const compactFooterClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
   return (
     <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_45%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
       <div className="w-full max-w-sm rounded-[32px] border border-white/10 bg-slate-950/85 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
@@ -44,7 +45,7 @@ export function QueueSessionEnded({
           </button>
         ) : null}
 
-        <p className="mt-5 text-xs uppercase tracking-[0.24em] text-slate-500">Powered by QFlo</p>
+        <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
       </div>
     </div>
   );

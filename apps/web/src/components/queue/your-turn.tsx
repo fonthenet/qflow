@@ -85,7 +85,7 @@ export function YourTurn({
   onStopTracking,
   sandboxMode = false,
 }: YourTurnProps) {
-  const { t, formatTime } = useI18n();
+  const { t, formatTime, dir } = useI18n();
   const ticketNumber =
     typeof ticket.ticket_number === 'string' || typeof ticket.ticket_number === 'number'
       ? String(ticket.ticket_number)
@@ -546,6 +546,10 @@ export function YourTurn({
         ? t('Please head over now. Staff is waiting for you.')
         : t('Show this screen if staff asks for your number.');
   const bellShouldRipple = countdown > 0;
+  const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.28em]';
+  const compactPillClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
+  const compactFooterClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.28em]';
+  const compactTimerClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.3em]';
 
   return (
     <div className={`relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-b ${backgroundClass}`}>
@@ -563,13 +567,13 @@ export function YourTurn({
       <div className="relative mx-auto flex w-full max-w-md flex-1 flex-col px-4 pb-8 pt-6">
         <div className="flex items-start justify-between gap-3 text-white">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.28em] text-white/80">{officeName}</p>
+            <p className={`text-xs font-bold text-white/80 ${compactLabelClass}`}>{officeName}</p>
             <p className="mt-1 text-sm font-medium text-white/65">{serviceName}</p>
             <p className="mt-0.5 text-xs text-white/50">{syncLabel}</p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
-            <div className="rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-white/88">
+            <div className={`rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold text-white/88 ${compactPillClass}`}>
               {t('Ticket {number}', { number: ticketNumber })}
             </div>
             <div className="flex items-center gap-2">
@@ -612,7 +616,7 @@ export function YourTurn({
 
           <div className={`mt-6 flex h-40 w-40 flex-col items-center justify-center rounded-full border backdrop-blur sm:h-44 sm:w-44 ${countdownCircleClass}`}>
             <p className="mt-2 text-5xl font-black tabular-nums sm:text-6xl">{countdown}</p>
-            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+            <p className={`mt-2 text-xs font-semibold text-white/70 ${compactTimerClass}`}>
               {countdown === 0 ? t('Expired') : t('Seconds')}
             </p>
           </div>
@@ -659,7 +663,7 @@ export function YourTurn({
         </div>
 
         <div className="pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-white/42">Powered by QFlo</p>
+          <p className={`text-xs text-white/42 ${compactFooterClass}`}>Powered by QFlo</p>
         </div>
       </div>
     </div>

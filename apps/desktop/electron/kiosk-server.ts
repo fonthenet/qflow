@@ -19,6 +19,17 @@ const MIME_TYPES: Record<string, string> = {
 // ── Business hours check (runs server-side, no npm dependency needed) ──
 const DAYS_OF_WEEK = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
+function normalizeOfficeTimezone(timezone: string | null | undefined) {
+  const value = (timezone ?? '').trim();
+  if (!value) return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  const aliases: Record<string, string> = {
+    'Europe/Algiers': 'Africa/Algiers',
+  };
+
+  return aliases[value] ?? value;
+}
+
 interface BusinessHoursStatus {
   isOpen: boolean;
   reason: string;
@@ -36,11 +47,12 @@ function checkBusinessHours(
 ): BusinessHoursStatus {
   const now = new Date();
   let day: string, time: string, dayIndex: number;
+  const normalizedTimezone = normalizeOfficeTimezone(timezone);
 
   try {
-    const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timezone });
+    const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: normalizedTimezone });
     day = dayFmt.format(now).toLowerCase();
-    const timeFmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone });
+    const timeFmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: normalizedTimezone });
     const parts = timeFmt.formatToParts(now);
     const h = parts.find(p => p.type === 'hour')?.value ?? '00';
     const m = parts.find(p => p.type === 'minute')?.value ?? '00';
@@ -62,7 +74,7 @@ function checkBusinessHours(
   let holidayName: string | undefined;
   try {
     const db = getDB();
-    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now);
+    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: normalizedTimezone }).format(now);
     const holiday = db.prepare('SELECT name FROM office_holidays WHERE office_id = ? AND holiday_date = ?').get(_officeId, dateStr) as any;
     if (holiday) {
       holidayName = holiday.name;
@@ -103,6 +115,51 @@ function findNextOpenDay(hours: Record<string, { open: string; close: string }>,
     }
   }
   return undefined;
+}
+
+async function refreshOfficeRuntimeConfig(officeId: string) {
+  const db = getDB();
+  const localOffice = db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+
+  if (!isCloudReachable) {
+    return localOffice;
+  }
+
+  try {
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const officeRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/offices?id=eq.${officeId}&select=id,name,address,organization_id,settings,operating_hours,timezone`,
+      { headers, signal: AbortSignal.timeout(3000) }
+    );
+
+    if (!officeRes.ok) {
+      return localOffice;
+    }
+
+    const offices = await officeRes.json();
+    const freshOffice = offices[0];
+    if (!freshOffice) {
+      return localOffice;
+    }
+
+    db.prepare(`
+      INSERT OR REPLACE INTO offices (id, name, address, organization_id, settings, operating_hours, timezone, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      freshOffice.id,
+      freshOffice.name,
+      freshOffice.address ?? null,
+      freshOffice.organization_id ?? null,
+      JSON.stringify(freshOffice.settings ?? {}),
+      JSON.stringify(freshOffice.operating_hours ?? {}),
+      freshOffice.timezone ?? null,
+      new Date().toISOString(),
+    );
+
+    return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+  } catch {
+    return localOffice;
+  }
 }
 
 let isCloudReachable = false;
@@ -392,7 +449,8 @@ function resolveRequestedOffice(url: URL) {
 
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const db = getDB();
-  const office = resolveRequestedOffice(url);
+  const requestedOffice = resolveRequestedOffice(url);
+  const office = requestedOffice?.id ? await refreshOfficeRuntimeConfig(requestedOffice.id) : null;
 
   if (!office) {
     res.writeHead(404, {
@@ -425,7 +483,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
 
   // ── Business hours check ──────────────────────────────────────
   const operatingHours = office.operating_hours ? (typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours) : null;
-  const timezone = office.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const timezone = normalizeOfficeTimezone(office.timezone);
   const businessStatus = checkBusinessHours(operatingHours, timezone, office.id);
 
   res.writeHead(200, {
@@ -506,10 +564,10 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       }
 
       // ── Business hours enforcement — reject if office is closed ──
-      const officeRow = db.prepare('SELECT operating_hours, timezone FROM offices WHERE id = ?').get(officeId) as any;
+      const officeRow = await refreshOfficeRuntimeConfig(officeId);
       if (officeRow) {
         const opHours = officeRow.operating_hours ? (typeof officeRow.operating_hours === 'string' ? JSON.parse(officeRow.operating_hours) : officeRow.operating_hours) : null;
-        const tz = officeRow.timezone || 'UTC';
+        const tz = normalizeOfficeTimezone(officeRow.timezone);
         const bh = checkBusinessHours(opHours, tz, officeId);
         if (!bh.isOpen) {
           const reason = bh.reason === 'holiday' ? `Closed for ${bh.holidayName || 'holiday'}` :

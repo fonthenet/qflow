@@ -147,12 +147,20 @@ export default async function TicketStatusPage({ params }: PageProps) {
   }
 
   // Main customer journey: waiting, called, serving, served
-  if (
-    ticket.status === 'waiting' ||
-    ticket.status === 'called' ||
-    ticket.status === 'serving' ||
-    ticket.status === 'served'
-  ) {
+  if (ticket.status === 'waiting' || ticket.status === 'called') {
+    return (
+      <QueueStatus
+        ticket={ticket}
+        organizationName={contextInfo.organizationName}
+        officeName={contextInfo.officeName}
+        departmentName={contextInfo.departmentName}
+        serviceName={contextInfo.serviceName}
+        priorityAlertConfig={priorityAlertConfig}
+      />
+    );
+  }
+
+  if (ticket.status === 'serving' || ticket.status === 'served') {
     return (
       renderWithLanguageSwitcher(
         <QueueStatus

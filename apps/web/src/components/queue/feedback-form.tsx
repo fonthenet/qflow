@@ -76,7 +76,7 @@ export function FeedbackForm({
   serviceName,
   onDone,
 }: FeedbackFormProps) {
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -85,6 +85,11 @@ export function FeedbackForm({
   const [existingRating, setExistingRating] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isCheckingExisting, setIsCheckingExisting] = useState(true);
+  const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.28em]';
+  const compactPillClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.18em]';
+  const compactMetaClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
+  const compactFooterClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.28em]';
 
   useEffect(() => {
     const storedFeedback = readStoredFeedback(ticket.id);
@@ -93,21 +98,26 @@ export function FeedbackForm({
       setRating(storedFeedback.rating);
       setComment(storedFeedback.comment);
       setIsSubmitted(true);
+      setIsCheckingExisting(false);
     }
 
     const checkExisting = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('feedback')
-        .select('rating, comment')
-        .eq('ticket_id', ticket.id)
-        .maybeSingle();
-      if (data) {
-        setExistingRating(data.rating);
-        setRating(data.rating);
-        setComment(data.comment ?? '');
-        setIsSubmitted(true);
-        storeFeedback(ticket.id, data.rating, data.comment ?? '');
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('feedback')
+          .select('rating, comment')
+          .eq('ticket_id', ticket.id)
+          .maybeSingle();
+        if (data) {
+          setExistingRating(data.rating);
+          setRating(data.rating);
+          setComment(data.comment ?? '');
+          setIsSubmitted(true);
+          storeFeedback(ticket.id, data.rating, data.comment ?? '');
+        }
+      } finally {
+        setIsCheckingExisting(false);
       }
     };
     void checkExisting();
@@ -155,6 +165,16 @@ export function FeedbackForm({
 
   const ratingLabel = <RatingLabel rating={hoveredRating || rating} t={t} />;
 
+  if (isCheckingExisting) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.18),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
+        <div className="w-full max-w-sm rounded-[34px] border border-white/10 bg-slate-950/88 p-7 text-center shadow-[0_30px_110px_rgba(15,23,42,0.65)] backdrop-blur">
+          <p className="text-sm font-medium text-slate-300">{t('Loading...')}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (isSubmitted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.20),_transparent_40%),linear-gradient(180deg,_#020617_0%,_#0f172a_100%)] px-4 py-10">
@@ -174,7 +194,7 @@ export function FeedbackForm({
 
           <div className="mt-4 rounded-[18px] border border-white/10 bg-white/5 px-3.5 py-2.5">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('Your rating')}</p>
+              <p className={`text-[10px] font-semibold text-slate-400 ${compactPillClass}`}>{t('Your rating')}</p>
               <div className="flex justify-center gap-0.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <svg
@@ -199,7 +219,7 @@ export function FeedbackForm({
             {isFinishing ? t('Closing...') : t('Done')}
           </button>
 
-          <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
+          <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
         </div>
       </div>
     );
@@ -211,7 +231,7 @@ export function FeedbackForm({
         <div className="rounded-[34px] border border-white/10 bg-slate-950/80 p-7 shadow-[0_30px_110px_rgba(15,23,42,0.55)] backdrop-blur">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
+              <p className={`text-xs font-semibold text-slate-400 ${compactLabelClass}`}>{officeName}</p>
               <h1 className="mt-3 whitespace-nowrap text-3xl font-semibold tracking-tight text-white">{t('Thanks for visiting')}</h1>
               <p className="mt-3 text-sm leading-6 text-slate-300">
                 {t('Ticket {number} is complete. If you have a moment, tell us how this visit felt.', {
@@ -219,14 +239,14 @@ export function FeedbackForm({
                 })}
               </p>
             </div>
-            <div className="rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+            <div className={`rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-semibold text-emerald-100 ${compactPillClass}`}>
               {t('Complete')}
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8">
             <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">{t('Your rating')}</p>
+              <p className={`text-xs font-semibold text-slate-400 ${compactMetaClass}`}>{t('Your rating')}</p>
               <div className="mt-5 flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -301,7 +321,7 @@ export function FeedbackForm({
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
+          <p className={`text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
         </div>
       </div>
     </div>

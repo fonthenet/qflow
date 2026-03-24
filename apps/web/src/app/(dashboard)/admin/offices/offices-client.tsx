@@ -24,7 +24,7 @@ const TIMEZONE_OPTIONS = [
   'Europe/Amsterdam',
   'Europe/Brussels',
   'Europe/Zurich',
-  'Europe/Algiers',
+  'Africa/Algiers',
   'Africa/Casablanca',
   'Africa/Tunis',
   'Africa/Cairo',
@@ -33,6 +33,11 @@ const TIMEZONE_OPTIONS = [
   'Asia/Qatar',
   'Asia/Kuwait',
 ] as const;
+
+function normalizeOfficeTimezone(timezone: string | null | undefined) {
+  if (timezone === 'Europe/Algiers') return 'Africa/Algiers';
+  return timezone ?? 'America/Los_Angeles';
+}
 
 const WEEK_DAYS = [
   { key: 'monday', label: 'Monday' },
@@ -247,7 +252,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                 </label>
                 <select
                   name="timezone"
-                  defaultValue={editing?.timezone ?? 'America/Los_Angeles'}
+                  defaultValue={normalizeOfficeTimezone(editing?.timezone)}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                 >
                   {TIMEZONE_OPTIONS.map((timezone) => (

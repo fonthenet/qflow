@@ -108,6 +108,17 @@ function getOfficeSettingsFromForm(formData: FormData, currentSettings: AnyRecor
   };
 }
 
+function normalizeOfficeTimezone(rawTimezone: string | null | undefined) {
+  const timezone = (rawTimezone ?? '').trim();
+  if (!timezone) return null;
+
+  const aliases: Record<string, string> = {
+    'Europe/Algiers': 'Africa/Algiers',
+  };
+
+  return aliases[timezone] ?? timezone;
+}
+
 function getOperatingHoursFromForm(formData: FormData) {
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
   const operatingHours: Record<string, { open: string; close: string }> = {};
@@ -135,7 +146,7 @@ export async function createOffice(formData: FormData) {
     .insert({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
-      timezone: (formData.get('timezone') as string) || null,
+      timezone: normalizeOfficeTimezone(formData.get('timezone') as string),
       operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       organization_id: context.staff.organization_id,
@@ -170,7 +181,7 @@ export async function updateOffice(id: string, formData: FormData) {
     .update({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
-      timezone: (formData.get('timezone') as string) || null,
+      timezone: normalizeOfficeTimezone(formData.get('timezone') as string),
       operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       settings,

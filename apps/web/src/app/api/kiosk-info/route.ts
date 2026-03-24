@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { matchesOfficePublicSlug } from '@/lib/office-links';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 
 let _supabase: SupabaseClient | null = null;
 
@@ -65,13 +66,20 @@ export async function GET(request: NextRequest) {
   // Build kiosk settings from office and organization settings
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
   const officeSettings = (office.settings as Record<string, any> | null) ?? {};
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: orgSettings,
+    officeSettings,
+  });
+  const profile = platformConfig.experienceProfile.kiosk;
 
   const settings = {
     kiosk_welcome_message: orgSettings.kiosk_welcome_message ?? null,
     kiosk_header_text: orgSettings.kiosk_header_text ?? null,
     kiosk_theme_color: orgSettings.kiosk_theme_color ?? null,
-    kiosk_show_priorities: orgSettings.kiosk_show_priorities ?? true,
-    kiosk_show_estimated_time: orgSettings.kiosk_show_estimated_time ?? true,
+    kiosk_show_priorities:
+      orgSettings.kiosk_show_priorities ??
+      (platformConfig.queuePolicy.priorityMode !== 'none' && profile.showPriorities),
+    kiosk_show_estimated_time: orgSettings.kiosk_show_estimated_time ?? profile.showEstimatedTime,
     kiosk_locked_department_id:
       orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
     kiosk_hidden_departments:

@@ -148,6 +148,7 @@ export interface KioskExperienceProfile {
   mode: 'normal' | 'quick_book';
   showPriorities: boolean;
   showEstimatedTime: boolean;
+  showGroupTickets: boolean;
   idleTimeoutSeconds: number;
 }
 

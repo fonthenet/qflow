@@ -251,7 +251,8 @@ export function getLocalDate(officeId?: string, dbInstance?: Database.Database):
   if (officeId) {
     const office = d.prepare('SELECT timezone FROM offices WHERE id = ?').get(officeId) as any;
     if (office?.timezone) {
-      return new Date().toLocaleDateString('en-CA', { timeZone: office.timezone }); // YYYY-MM-DD
+      const timezone = office.timezone === 'Europe/Algiers' ? 'Africa/Algiers' : office.timezone;
+      return new Date().toLocaleDateString('en-CA', { timeZone: timezone }); // YYYY-MM-DD
     }
   }
   // Fallback: system local date (NOT UTC)

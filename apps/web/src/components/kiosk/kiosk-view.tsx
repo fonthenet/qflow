@@ -11,10 +11,8 @@ import {
   Search,
   Stethoscope,
   Ticket,
-  Users,
 } from 'lucide-react';
 import { useI18n } from '@/components/providers/locale-provider';
-import { GroupTicketModal } from '@/components/kiosk/group-ticket-modal';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
 import { checkInAppointment, findAppointment } from '@/lib/actions/appointment-actions';
@@ -78,7 +76,7 @@ export function KioskView({
   kioskSettings,
   sandbox,
 }: KioskViewProps) {
-  const { t, formatDateTime, formatTime } = useI18n();
+  const { t, formatDateTime, formatTime, dir } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   const ks = kioskSettings ?? {
     welcomeMessage: t('Welcome'),
@@ -120,7 +118,6 @@ export function KioskView({
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [showGroupModal, setShowGroupModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [appointments, setAppointments] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -133,6 +130,8 @@ export function KioskView({
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
   const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
+  const businessName = organization?.name?.trim() || office.name;
+  const officeLine = office.name && office.name !== businessName ? office.name : null;
   const localizedWelcomeMessage = t(ks.welcomeMessage);
   const localizedButtonLabel = t(ks.buttonLabel);
   const bookingFirst = ks.mode === 'quick_book';
@@ -142,6 +141,8 @@ export function KioskView({
     borderColor: `${themeColor}22`,
     boxShadow: `0 10px 28px ${themeColor}10`,
   };
+  const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
+  const compactTicketLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
 
   function clearAppointmentSearch() {
     setSearchTerm('');
@@ -161,7 +162,6 @@ export function KioskView({
     setQrDataUrl('');
     clearAppointmentSearch();
     setLoading(false);
-    setShowGroupModal(false);
   }
 
   useEffect(() => {
@@ -484,21 +484,28 @@ export function KioskView({
         </div>
       ) : null}
       <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-4xl px-4 pb-8 pt-16 text-center sm:px-6 sm:pt-8 lg:px-8">
+        <div className={`mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8 ${step === 'ticket' ? 'pb-4 pt-8 sm:pb-5 sm:pt-5' : 'pb-8 pt-16 sm:pb-8 sm:pt-8'}`}>
           {hasLogo ? (
-            <div className="mb-5 flex justify-center">
+            <div className={`${step === 'ticket' ? 'mb-3' : 'mb-5'} flex justify-center`}>
               <img
                 src={ks.logoUrl!}
                 alt={`${organization?.name || 'Business'} logo`}
-                className="max-h-20 w-auto max-w-[220px] object-contain"
+                className={`${step === 'ticket' ? 'max-h-14 max-w-[150px]' : 'max-h-20 max-w-[220px]'} w-auto object-contain`}
               />
             </div>
           ) : null}
-          <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-            {kioskTitle}
-          </h1>
-          {office.name && office.name !== kioskTitle ? (
-            <p className="mt-2 text-base text-slate-500">{office.name}</p>
+          <div className={`${step === 'ticket' ? 'space-y-0.5' : 'space-y-1'}`}>
+            <p className={`${step === 'ticket' ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'} font-semibold text-slate-950`}>
+              {businessName}
+            </p>
+            {officeLine ? (
+              <p className={`${step === 'ticket' ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} text-slate-500`}>{officeLine}</p>
+            ) : null}
+          </div>
+          {step !== 'ticket' ? (
+            <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+              {kioskTitle}
+            </h1>
           ) : null}
           {showHeaderMessage ? (
             <p className="mt-4 text-2xl text-slate-700 sm:text-3xl">{localizedWelcomeMessage}</p>
@@ -506,7 +513,7 @@ export function KioskView({
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className={`mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 ${step === 'ticket' ? 'py-4' : 'py-8'}`}>
         {step === 'home' && (
           <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
             <div className="grid gap-4">
@@ -620,7 +627,7 @@ export function KioskView({
                       <div className="text-2xl font-semibold text-slate-950 sm:text-3xl">{t(service.name)}</div>
                       {ks.showEstimatedTime && service.estimated_service_time ? (
                         <div className="mt-2 text-base font-medium text-sky-700">
-                          {t('{count} min', { count: service.estimated_service_time })}
+                          {t('Approximate timing')}: {t('{count} min', { count: service.estimated_service_time })}
                         </div>
                       ) : null}
                     </div>
@@ -629,14 +636,6 @@ export function KioskView({
                   );
                 })}
               </div>
-              <button
-                onClick={() => setShowGroupModal(true)}
-                disabled={loading}
-                className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-50"
-              >
-                <Users className="h-5 w-5" />
-                {t('Group ticket')}
-              </button>
           </section>
         )}
 
@@ -809,67 +808,50 @@ export function KioskView({
         {step === 'ticket' && ticket && (
           <section
             ref={printRef}
-            className="mx-auto max-w-3xl rounded-[1.75rem] border bg-white p-6 print:border print:border-black print:shadow-none sm:p-8"
+            className="mx-auto max-w-3xl rounded-[1.75rem] border bg-white p-5 print:border print:border-black print:shadow-none sm:p-6"
             style={primaryCardStyle}
           >
             <div className="text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500 print:text-slate-700">
+              <p className={`text-sm font-semibold text-slate-500 print:text-slate-700 ${compactLabelClass}`}>
                 {t('Check-in complete')}
               </p>
-              <h2 className="mt-3 text-3xl font-bold text-slate-950 print:text-black sm:text-4xl">
+              <h2 className="mt-2 text-3xl font-bold text-slate-950 print:text-black sm:text-4xl">
                 {t("You're in the queue")}
               </h2>
-              <p className="mt-2 text-base text-slate-600 print:text-slate-700">
+              <p className="mt-1 text-sm text-slate-600 print:text-slate-700 sm:text-base">
                 {t('Keep this ticket and scan the QR code to follow your place in line.')}
               </p>
-              <div className="mt-4 flex justify-center">
+              <div className="mt-3 flex justify-center">
                 <PriorityBadge priorityCategory={ticket.priority_category} />
               </div>
             </div>
 
             <div
-              className="mt-8 rounded-[1.75rem] border border-slate-200 bg-slate-50 px-6 py-8 text-center text-slate-950 print:bg-white print:text-black"
+              className="mt-5 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5 text-center text-slate-950 print:bg-white print:text-black"
             >
-              <p className="text-sm uppercase tracking-[0.24em] text-slate-500 print:text-slate-500">
+              <p className={`text-sm text-slate-500 print:text-slate-500 ${compactTicketLabelClass}`}>
                 {t('Ticket number')}
               </p>
               <p
-                className="mt-3 text-7xl font-black tracking-tight print:text-black sm:text-8xl"
+                className="mt-2 text-6xl font-black tracking-tight print:text-black sm:text-7xl"
                 style={{ color: themeColor }}
               >
                 {ticket.ticket_number}
               </p>
-              <div className="mt-5 space-y-1 text-sm text-slate-700 print:text-slate-700">
-                <p>{organization?.name}</p>
-                <p>{office.name}</p>
-                <p>{ticket.department_name}</p>
-                <p>{ticket.service_name}</p>
-                {ticket.priority_name ? (
-                  <div className="pt-2">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold text-white print:text-black"
-                      style={{ backgroundColor: ticket.priority_color ?? '#6b7280' }}
-                    >
-                      {ticket.priority_icon ? <span>{ticket.priority_icon}</span> : null}
-                      {ticket.priority_name}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
             </div>
 
-            <div className="mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-6 text-center">
+            <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-center">
               {qrDataUrl ? (
                 <img
                   src={qrDataUrl}
                   alt={t('Scan to track your queue position')}
-                  className="mx-auto h-56 w-56"
+                  className="mx-auto h-44 w-44 sm:h-48 sm:w-48"
                 />
               ) : null}
-              <p className="mt-4 text-base font-semibold text-slate-800">
+              <p className="mt-3 text-sm font-semibold text-slate-800 sm:text-base">
                 {t('Scan to track your queue position')}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-[11px] text-slate-500">
                 {formatDateTime(new Date(), {
                   day: '2-digit',
                   month: '2-digit',
@@ -880,29 +862,10 @@ export function KioskView({
               </p>
             </div>
 
-            {ticket.group_tickets && ticket.group_tickets.length > 1 ? (
-              <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  {t('Group tickets')}
-                </p>
-                <div className="mt-4 space-y-2 text-sm text-slate-700">
-                  {ticket.group_tickets.map((groupTicket: any, index: number) => (
-                    <div
-                      key={groupTicket.id}
-                      className="flex items-center justify-between rounded-xl bg-white px-4 py-3"
-                    >
-                      <span>{groupTicket.person_name || t('Person {count}', { count: index + 1 })}</span>
-                      <span className="font-mono font-bold">{groupTicket.ticket_number}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-6 print:hidden">
+            <div className="mt-4 print:hidden">
               <button
                 onClick={resetSession}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100"
               >
                 <Check className="h-5 w-5" />
                 {t('Done')}
@@ -911,27 +874,6 @@ export function KioskView({
           </section>
         )}
       </div>
-
-      {showGroupModal && selectedDept ? (
-        <GroupTicketModal
-          office={office}
-          organization={organization}
-          department={selectedDept}
-          priorityCategories={priorityCategories}
-          onClose={() => setShowGroupModal(false)}
-          onComplete={(groupTickets, groupQrDataUrl) => {
-            setTicket({
-              ...groupTickets[0],
-              service_name: groupTickets[0].service_name,
-              department_name: selectedDept.name,
-              group_tickets: groupTickets,
-            });
-            setQrDataUrl(groupQrDataUrl);
-            setShowGroupModal(false);
-            setStep('ticket');
-          }}
-        />
-      ) : null}
     </div>
   );
 }
