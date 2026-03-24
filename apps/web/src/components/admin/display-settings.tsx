@@ -115,7 +115,7 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
   }
 
   function copyUrl(screenToken: string, screenId: string) {
-    const url = `${window.location.origin}/display/${screenToken}`;
+    const url = `${window.location.origin}/d/${screenToken}`;
     navigator.clipboard.writeText(url);
     setCopiedId(screenId);
     setTimeout(() => setCopiedId(null), 2000);
@@ -249,7 +249,7 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
 
               <div className="flex flex-wrap gap-2">
                 <a
-                  href={`/display/${screen.screen_token}`}
+                  href={`/d/${screen.screen_token}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"

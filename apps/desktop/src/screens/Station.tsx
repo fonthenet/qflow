@@ -284,6 +284,21 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       return url;
     }
   };
+  const getFriendlyPublicUrlLabel = (url: string, type: 'kiosk' | 'display') => {
+    try {
+      const parsed = new URL(url);
+      if (type === 'kiosk') {
+        const officeLabel = session.office_name?.trim() || 'office';
+        return `${parsed.origin}/kiosk/${officeLabel}`;
+      }
+
+      const token = parsed.pathname.split('/').filter(Boolean).at(-1) ?? '';
+      const shortToken = token.length > 10 ? `${token.slice(0, 10)}...` : token;
+      return `${parsed.origin}/d/${shortToken}`;
+    } catch {
+      return getDisplayUrlLabel(url);
+    }
+  };
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
@@ -1201,12 +1216,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 label: t('Kiosk (take tickets)'),
                 localUrl: kioskUrl,
                 publicUrl: publicLinks.kioskUrl,
+                publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
                 icon: '🎫',
               },
               {
                 label: t('Display (waiting room TV)'),
                 localUrl: kioskUrl.replace('/kiosk', '/display'),
                 publicUrl: publicLinks.displayUrl,
+                publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
                 icon: '📺',
               },
             ].map((item) => (
@@ -1241,7 +1258,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     title={t('Click to copy')}
                     onClick={() => navigator.clipboard?.writeText(item.publicUrl!)}
                   >
-                    {getDisplayUrlLabel(item.publicUrl)}
+                    {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
                   </div>
                 ) : null}
               </div>

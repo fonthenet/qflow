@@ -67,7 +67,7 @@ export function getOfficeSlug() {
 
 export function getDisplayPath() {
   const screenToken = process.env.QUEUEFLOW_E2E_DISPLAY_TOKEN ?? e2eState?.displayScreens?.[0]?.screenToken;
-  return screenToken ? `/display/${screenToken}` : null;
+  return screenToken ? `/d/${screenToken}` : null;
 }
 
 function toLocalDateInput(date: Date) {

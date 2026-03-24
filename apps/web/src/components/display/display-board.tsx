@@ -78,12 +78,15 @@ export function DisplayBoard({
         servingBorder: accentColor,
         calledText: '#166534',
         servingText: '#1d4ed8',
-        waitingCount: '#92400e',
+        waitingCount: '#f59e0b',
         badgeBg: 'rgba(15,23,42,0.08)',
         badgeText: '#0f172a',
         announceBg: 'rgba(255,255,255,0.96)',
         announceText: '#020617',
         announceGoTo: '#15803d',
+        surface: '#ffffff',
+        surfaceAlt: '#f8fbff',
+        queueItemBg: '#eff6ff',
       }
     : {
         text: '#f8fafc',
@@ -214,7 +217,7 @@ export function DisplayBoard({
   // Derive card/header/sidebar backgrounds from base
   const headerBg = isLight ? 'rgba(255,255,255,0.82)' : 'rgba(2,6,23,0.86)';
   const cardBg = colors.panelBg;
-  const sidebarBg = isLight ? 'rgba(241,245,249,0.92)' : 'rgba(10,18,33,0.94)';
+  const sidebarBg = isLight ? 'rgba(246,250,255,0.95)' : 'rgba(10,18,33,0.94)';
   const totalWaiting = filteredWaiting.length;
   const activeCount = nowServing.length;
 
@@ -274,16 +277,25 @@ export function DisplayBoard({
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="rounded-2xl border px-5 py-3" style={{ backgroundColor: colors.badgeBg, borderColor: colors.border }}>
+          <div
+            className="rounded-[1.15rem] border px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
+            style={{ backgroundColor: colors.surface ?? colors.badgeBg, borderColor: colors.border }}
+          >
             <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>Waiting</p>
             <p className="mt-1 text-4xl font-black" style={{ color: colors.waitingCount }}>{totalWaiting}</p>
           </div>
-          <div className="rounded-2xl border px-5 py-3" style={{ backgroundColor: colors.badgeBg, borderColor: colors.border }}>
+          <div
+            className="rounded-[1.15rem] border px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
+            style={{ backgroundColor: colors.surface ?? colors.badgeBg, borderColor: colors.border }}
+          >
             <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>Active</p>
             <p className="mt-1 text-4xl font-black" style={{ color: accentColor }}>{activeCount}</p>
           </div>
           {showClock && (
-            <div className="rounded-2xl border px-5 py-3 text-right" style={{ backgroundColor: colors.panelStrong, borderColor: colors.border }}>
+            <div
+              className="rounded-[1.15rem] border px-5 py-3 text-right shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
+              style={{ backgroundColor: colors.surface ?? colors.panelStrong, borderColor: colors.border }}
+            >
               <p className="text-5xl font-black tabular-nums">
               {currentTime.toLocaleTimeString([], {
                 hour: '2-digit',
@@ -565,7 +577,7 @@ function ListLayout({
                   <div
                     key={ticket.id}
                     className="flex items-center justify-between rounded-[1.35rem] border px-5 py-4"
-                    style={{ backgroundColor: cardBg, borderColor: colors.border }}
+                    style={{ backgroundColor: colors.queueItemBg ?? cardBg, borderColor: colors.border }}
                   >
                     <div>
                       <span className="block text-sm font-bold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>
@@ -726,6 +738,7 @@ function DepartmentSplitLayout({
   bodyClass,
   accentColor,
   cardBg,
+  sidebarBg,
   maxTicketsShown,
   colors,
   currentTime,
@@ -753,8 +766,8 @@ function DepartmentSplitLayout({
         return (
           <div
             key={dept.id}
-            className="overflow-hidden rounded-[1.75rem] border p-5 shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
-            style={{ backgroundColor: cardBg, borderColor: colors.border }}
+            className="overflow-hidden rounded-[1.75rem] border p-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]"
+            style={{ backgroundColor: sidebarBg ?? cardBg, borderColor: colors.border }}
           >
             <h3
               className={`${headingClass} font-black mb-4 pb-3 border-b`}
@@ -805,23 +818,32 @@ function DepartmentSplitLayout({
                 ))}
               </div>
             ) : (
-              <p className={`${bodyClass} mb-4`} style={{ color: colors.textFaint }}>No one being served</p>
+              <div
+                className="mb-4 rounded-[1.2rem] border px-4 py-4"
+                style={{ backgroundColor: colors.surfaceAlt ?? cardBg, borderColor: colors.border }}
+              >
+                <p className={bodyClass} style={{ color: colors.textFaint }}>No one being served</p>
+              </div>
             )}
 
-            {/* Next up in this dept */}
-            {deptWaiting.length > 0 && (
-              <div>
-                <p className="text-sm uppercase tracking-wider mb-2" style={{ color: colors.textMuted }}>
-                  Next Up
-                </p>
+            <div>
+              <p className="text-sm uppercase tracking-wider mb-2" style={{ color: colors.textMuted }}>
+                Queue
+              </p>
+              {deptWaiting.length > 0 ? (
                 <div className="space-y-1">
-                  {deptWaiting.map((t: any) => (
+                  {deptWaiting.map((t: any, index: number) => (
                     <div
                       key={t.id}
-                      className="flex items-center justify-between rounded-[1rem] border px-3 py-2"
-                      style={{ backgroundColor: colors.servingBg, borderColor: colors.border }}
+                      className="flex items-center justify-between rounded-[1rem] border px-3 py-3"
+                      style={{ backgroundColor: colors.queueItemBg ?? colors.servingBg, borderColor: colors.border }}
                     >
-                      <span className="text-2xl font-black tracking-tight">{t.ticket_number}</span>
+                      <div>
+                        <span className="block text-xs font-bold uppercase tracking-[0.2em]" style={{ color: colors.textMuted }}>
+                          #{index + 1}
+                        </span>
+                        <span className="text-2xl font-black tracking-tight">{t.ticket_number}</span>
+                      </div>
                       <span className="text-base font-medium" style={{ color: colors.textFaint }}>
                         {new Date(t.created_at).toLocaleTimeString([], {
                           hour: '2-digit',
@@ -831,8 +853,17 @@ function DepartmentSplitLayout({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div
+                  className="rounded-[1rem] border px-3 py-3"
+                  style={{ backgroundColor: colors.surfaceAlt ?? cardBg, borderColor: colors.border }}
+                >
+                  <span className="text-base font-medium" style={{ color: colors.textFaint }}>
+                    No tickets waiting right now
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         );
       })}

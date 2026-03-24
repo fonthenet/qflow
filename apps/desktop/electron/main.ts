@@ -428,7 +428,7 @@ async function getSessionScopedPublicLinks() {
         const screens = await response.json();
         const token = screens?.[0]?.screen_token;
         if (typeof token === 'string' && token.length > 0) {
-          displayUrl = `${CONFIG.CLOUD_URL}/display/${token}`;
+          displayUrl = `${CONFIG.CLOUD_URL}/d/${token}`;
         }
       }
     } catch {
