@@ -34,20 +34,20 @@
       'Take a Ticket': 'Prendre un ticket',
       'Loading...': 'Chargement...',
       'Cannot Connect': 'Connexion impossible',
-      'Make sure Qflo Station is running on this network and try refreshing.': 'Assurez-vous que la station Qflo fonctionne sur ce reseau puis actualisez.',
-      'Retry': 'Reessayer',
-      'Connected': 'Connecte',
+      'Make sure Qflo Station is running on this network and try refreshing.': 'Assurez-vous que la station Qflo fonctionne sur ce réseau puis actualisez.',
+      'Retry': 'Réessayer',
+      'Connected': 'Connecté',
       'Welcome - Take a ticket below': 'Bienvenue - prenez un ticket ci-dessous',
-      'Closed': 'Ferme',
+      'Closed': 'Fermé',
       'Business Hours': 'Horaires',
-      'We Are Currently Closed': 'Nous sommes actuellement fermes',
-      'Closed for {name}': 'Ferme pour {name}',
-      'We will be back soon.': 'Nous revenons bientot.',
+      'We Are Currently Closed': 'Nous sommes actuellement fermés',
+      'Closed for {name}': 'Fermé pour {name}',
+      'We will be back soon.': 'Nous revenons bientôt.',
       'Not Open Yet': 'Pas encore ouvert',
-      'We open at <strong>{time}</strong> today.': "Nous ouvrons a <strong>{time}</strong> aujourd'hui.",
-      'Closed for the Day': 'Ferme pour la journee',
+      'We open at <strong>{time}</strong> today.': "Nous ouvrons à <strong>{time}</strong> aujourd'hui.",
+      'Closed for the Day': 'Fermé pour la journée',
       'Closed Today': "Ferme aujourd'hui",
-      'Opens {day} at {time}': 'Ouvre {day} a {time}',
+      'Opens {day} at {time}': 'Ouvre {day} à {time}',
       'No wait': "Pas d'attente",
       'In Queue': 'En file',
       'Departments': 'Services',
@@ -58,22 +58,22 @@
       '{minutes} min': '{minutes} min',
       '{count} waiting': '{count} en attente',
       '{count} people ahead of you': '{count} personnes devant vous',
-      'You will be first in line': 'Vous serez premier dans la file',
+      'You will be first in line': 'Vous serez premier dans la file d’attente',
       'Your Details': 'Vos informations',
       'Name (optional)': 'Nom (facultatif)',
       'Enter your name': 'Entrez votre nom',
-      'Phone (optional)': 'Telephone (facultatif)',
+      'Phone (optional)': 'Téléphone (facultatif)',
       'For notifications': 'Pour les notifications',
       'Get Ticket': 'Prendre un ticket',
-      'Creating...': 'Creation...',
+      'Creating...': 'Création...',
       'Something went wrong. Please try again.': "Un probleme est survenu. Veuillez reessayer.",
-      'Your ticket is ready!': 'Votre ticket est pret !',
-      'YOUR TICKET NUMBER': 'VOTRE NUMERO DE TICKET',
+      'Your ticket is ready!': 'Votre ticket est prêt !',
+      'YOUR TICKET NUMBER': 'VOTRE NUMÉRO DE TICKET',
       'Track Your Position': 'Suivre votre position',
-      'Scan this QR code to follow your place in the queue from your phone.': 'Scannez ce code QR pour suivre votre place dans la file depuis votre telephone.',
-      'This screen will reset in {seconds} seconds': 'Cet ecran va se reinitialiser dans {seconds} secondes',
-      'Done': 'Termine',
+      'Scan this QR code to follow your place in the queue from your phone.': 'Scannez ce code QR pour suivre votre place dans la file d’attente depuis votre téléphone.',
+      'Done': 'Terminé',
       'Take Another Ticket': 'Prendre un autre ticket',
+      '#{position} in queue': '#{position} dans la file d’attente',
       'Sunday': 'Dimanche',
       'Monday': 'Lundi',
       'Tuesday': 'Mardi',
@@ -123,9 +123,9 @@
       'YOUR TICKET NUMBER': 'رقم تذكرتك',
       'Track Your Position': 'تتبع موقعك',
       'Scan this QR code to follow your place in the queue from your phone.': 'امسح رمز QR هذا لمتابعة مكانك في الطابور من هاتفك.',
-      'This screen will reset in {seconds} seconds': 'ستتم إعادة ضبط هذه الشاشة خلال {seconds} ثانية',
       'Done': 'تم',
       'Take Another Ticket': 'احصل على تذكرة أخرى',
+      '#{position} in queue': '#{position} في الطابور',
       'Sunday': 'الأحد',
       'Monday': 'الاثنين',
       'Tuesday': 'الثلاثاء',
@@ -153,6 +153,23 @@
     var loading = document.getElementById('kiosk-loading');
     if (loading) loading.innerHTML = tr('Loading...');
   }
+
+  window.setKioskLocale = async function (locale) {
+    try {
+      var res = await fetch(API + '/api/station/settings/locale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locale: locale })
+      });
+      var data = await res.json();
+      setLocale((data && data.locale) || locale);
+      render();
+      resetIdle();
+    } catch (e) {
+      setLocale(locale);
+      render();
+    }
+  };
 
   // ── Utilities ──────────────────────────────────────────────────
 
@@ -368,7 +385,6 @@
       S.ticket = data.ticket;
       S.step = 'done';
       render();
-      resetTimer = setTimeout(reset, 20000);
     } catch (err) {
       if (btn) {
         btn.disabled = false;
@@ -440,7 +456,16 @@
         '</button>';
     }
 
+    var localeToggle =
+      '<div class="locale-switcher" aria-label="Language switcher">' +
+      ['en', 'fr', 'ar'].map(function (locale) {
+        var active = S.locale === locale ? ' active' : '';
+        return '<button class="locale-pill' + active + '" onclick="setKioskLocale(\'' + locale + '\')">' + locale.toUpperCase() + '</button>';
+      }).join('') +
+      '</div>';
+
     return '<div class="kiosk-header" style="position:relative">' +
+      '<div style="position:absolute;top:16px;left:16px">' + localeToggle + '</div>' +
       (hoursBtn ? '<div style="position:absolute;top:16px;right:16px">' + hoursBtn + '</div>' : '') +
       '<div class="header-logo">' + logoHtml + '</div>' +
       '<h1>' + esc(displayName) + '</h1>' +
@@ -630,7 +655,6 @@
       var qrHtml = t.qr_data_url
         ? '<img src="' + t.qr_data_url + '" width="200" height="200" style="display:block;image-rendering:pixelated" alt="QR Code">'
         : '';
-      var AUTO_RESET = 20;
 
       app.innerHTML = renderHeader().replace(tr('Welcome - Take a ticket below'), tr('Your ticket is ready!')) +
         '<div class="kiosk-body"><div class="kiosk-content">' +
@@ -638,29 +662,16 @@
         '<div class="result-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>' +
         '<div class="result-label" style="font-size:15px;letter-spacing:2px">' + tr('YOUR TICKET NUMBER') + '</div>' +
         '<div class="result-number" style="font-size:72px;margin:8px 0">' + esc(t.ticket_number) + '</div>' +
-        '<div class="result-position" style="font-size:18px;padding:8px 20px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> #' + t.position + ' in queue</div>' +
+        '<div class="result-position" style="font-size:18px;padding:8px 20px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ' + tr('#{position} in queue', { position: t.position }) + '</div>' +
         '<div class="result-divider"></div>' +
         '<div class="qr-section" style="gap:20px;padding:20px">' +
         '<div class="qr-box" style="padding:8px">' + qrHtml + '</div>' +
         '<div class="qr-text" style="font-size:15px"><strong style="font-size:16px">' + tr('Track Your Position') + '</strong>' + tr('Scan this QR code to follow your place in the queue from your phone.') + '</div>' +
         '</div>' +
         '<a class="track-url" href="' + trackUrl + '" target="_blank">' + trackUrl + '</a>' +
-        '<div class="countdown-bar" style="margin-top:24px"><div class="fill" style="animation-duration:' + AUTO_RESET + 's"></div></div>' +
-        '<div id="countdown-text" style="text-align:center;font-size:13px;color:var(--text3);margin-top:8px">' + tr('This screen will reset in {seconds} seconds', { seconds: '<span id="countdown-num">' + AUTO_RESET + '</span>' }) + '</div>' +
         '</div>' +
         '<button class="btn btn-primary" style="margin-top:16px;font-size:18px" onclick="reset()">' + tr('Done') + '</button>' +
-        '<button class="btn btn-outline" style="margin-top:8px" onclick="reset()">' + tr('Take Another Ticket') + '</button>' +
         '</div></div>';
-
-      // Live countdown
-      var remaining = AUTO_RESET;
-      if (countdownInterval) clearInterval(countdownInterval);
-      countdownInterval = setInterval(function () {
-        remaining--;
-        var el = document.getElementById('countdown-num');
-        if (el) el.textContent = Math.max(0, remaining);
-        if (remaining <= 0) { clearInterval(countdownInterval); countdownInterval = null; }
-      }, 1000);
     }
   }
 

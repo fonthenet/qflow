@@ -506,8 +506,8 @@ export function KioskView({
         background: `linear-gradient(180deg, #f8fafc 0%, #ffffff 18%, ${themeColor}0a 100%)`,
       }}
     >
-      <div className="fixed right-4 top-6 z-40 sm:right-6 sm:top-6">
-        <LanguageSwitcher />
+      <div className="fixed left-4 top-6 z-50 sm:left-6 sm:top-6">
+        <LanguageSwitcher variant="embedded" />
       </div>
       {sandboxMode ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
@@ -581,7 +581,10 @@ export function KioskView({
                       }}
                       placeholder={t('Enter your phone number')}
                       autoComplete="tel"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                      dir={customerPhone.trim() ? 'ltr' : dir}
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl ${
+                        dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
+                      }`}
                     />
                   </div>
                 </div>
@@ -711,7 +714,10 @@ export function KioskView({
                         }}
                         placeholder={t('Enter your phone number')}
                         autoComplete="tel"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                        dir={customerPhone.trim() ? 'ltr' : dir}
+                        className={`w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl ${
+                          dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
+                        }`}
                       />
                     </div>
                   </div>

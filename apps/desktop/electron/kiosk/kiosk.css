@@ -43,6 +43,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .conn-dot { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11px; font-weight: 600; opacity: 0.8; }
 .conn-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
 .conn-dot.offline::before { background: #fbbf24; animation: pulse 2s infinite; }
+.locale-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.14);
+  backdrop-filter: blur(4px);
+}
+.locale-pill {
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.88);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.locale-pill:hover { background: rgba(255,255,255,0.16); }
+.locale-pill.active {
+  background: rgba(255,255,255,0.96);
+  color: var(--brand);
+}
 
 .kiosk-body { flex: 1; padding: 16px 20px 32px; display: flex; flex-direction: column; align-items: center; }
 .kiosk-content { width: 100%; max-width: 600px; }
