@@ -772,7 +772,7 @@ export function QueueStatus({
             ) : null}
 
             <div className="mt-auto pt-6 text-center">
-              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">QFlo</p>
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
             </div>
           </div>
         </div>
@@ -957,7 +957,7 @@ export function QueueStatus({
           ) : null}
 
           <div className="mt-auto pt-4 text-center">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">QFlo</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
           </div>
         </div>
       </div>

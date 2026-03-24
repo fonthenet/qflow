@@ -140,9 +140,7 @@ export function FeedbackForm({
             {isFinishing ? t('Closing...') : t('Done')}
           </button>
 
-          <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">
-            {officeName} · QFlo
-          </p>
+          <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
         </div>
       </div>
     );
@@ -244,7 +242,7 @@ export function FeedbackForm({
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · QFlo</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Powered by QFlo</p>
         </div>
       </div>
     </div>
