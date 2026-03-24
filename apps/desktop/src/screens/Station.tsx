@@ -1079,13 +1079,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
         <div className="sidebar-section queue-list queue-active">
           <h4>{t('Parked ({count})', { count: parked.length })}</h4>
-          <p style={{ fontSize: 11, color: 'var(--text3)', margin: '0 0 8px' }}>
-            {t('Resume parked tickets or send them back to the queue when you are ready.')}
-          </p>
           <div className="ticket-list" role="list" aria-label={t('Parked tickets')}>
-            {parked.length === 0 ? (
-              <div className="queue-empty">{t('No parked tickets')}</div>
-            ) : (
+            {parked.length > 0 ? (
               parked.map((ticket) => (
                 <div key={ticket.id} className="queue-item" role="listitem">
                   <div className="queue-item-dot" style={{ background: '#94a3b8' }} aria-hidden="true" />
@@ -1113,7 +1108,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   </div>
                 </div>
               ))
-            )}
+            ) : null}
           </div>
         </div>
 

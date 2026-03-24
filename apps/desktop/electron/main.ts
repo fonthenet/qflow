@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
@@ -135,6 +135,18 @@ function buildApplicationMenu() {
     {
       label: translate(currentLocale, 'Help'),
       submenu: [
+        {
+          label: translate(currentLocale, 'About'),
+          click: () => {
+            dialog.showMessageBox({
+              type: 'info',
+              title: translate(currentLocale, 'About Qflo Station'),
+              message: translate(currentLocale, 'Qflo Station'),
+              detail: `${translate(currentLocale, 'Version')} ${CONFIG.APP_VERSION}`,
+            });
+          },
+        },
+        { type: 'separator' },
         {
           label: translate(currentLocale, 'Check for Updates'),
           click: () => autoUpdater.checkForUpdates(),
