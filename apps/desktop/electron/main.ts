@@ -165,11 +165,7 @@ function createWindow() {
   }, 3000);
 
   mainWindow.on('close', (e) => {
-    if ((app as any).isQuitting) return; // Allow actual quit
     saveWindowBounds();
-    // Minimize to tray instead of closing
-    e.preventDefault();
-    mainWindow?.hide();
   });
 
   mainWindow.on('resize', () => saveWindowBounds());
@@ -906,7 +902,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Keep running in tray
+  app.quit();
 });
 
 app.on('activate', () => {
