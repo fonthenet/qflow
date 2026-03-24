@@ -2,10 +2,13 @@
 
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { nanoid } from 'nanoid';
 import QRCode from 'qrcode';
 import { useI18n } from '@/components/providers/locale-provider';
+import {
+  createVirtualCode,
+  deleteVirtualCode,
+  toggleVirtualCode,
+} from '@/lib/actions/admin-actions';
 
 interface VirtualCode {
   id: string;
@@ -196,51 +199,27 @@ export function VirtualCodesClient({
         return;
       }
 
-      const supabase = createClient();
-      const qrToken = nanoid(16);
-
-      const insertData: any = {
-        organization_id: organization.id,
-        office_id: scope === 'business' ? null : officeId,
-        department_id:
-          scope === 'department' || scope === 'service' ? departmentId : null,
-        qr_token: qrToken,
-        is_active: true,
-      };
-
-      if (scope === 'service' && serviceId) {
-        insertData.service_id = serviceId;
-      }
-
-      const { data: newCode, error: insertError } = await supabase
-        .from('virtual_queue_codes')
-        .insert(insertData)
-        .select('*')
-        .single();
-
-      if (insertError) {
-        setError(insertError.message);
+      const result = await createVirtualCode(formData);
+      if (result?.error) {
+        setError(result.error);
         return;
       }
 
-      setCodes((prev) => [newCode, ...prev]);
       setShowModal(false);
       setError(null);
+      setCodes((prev) => {
+        if (!result.code) return prev;
+        return [result.code, ...prev];
+      });
       router.refresh();
     });
   }
 
   function handleToggle(codeId: string, currentStatus: boolean) {
     startTransition(async () => {
-      const supabase = createClient();
-
-      const { error: updateError } = await supabase
-        .from('virtual_queue_codes')
-        .update({ is_active: !currentStatus })
-        .eq('id', codeId);
-
-      if (updateError) {
-        setError(updateError.message);
+      const result = await toggleVirtualCode(codeId, !currentStatus);
+      if (result?.error) {
+        setError(result.error);
         return;
       }
 
@@ -256,15 +235,9 @@ export function VirtualCodesClient({
   function handleDelete(codeId: string) {
     if (!confirm(t('Are you sure you want to delete this virtual code?'))) return;
     startTransition(async () => {
-      const supabase = createClient();
-
-      const { error: deleteError } = await supabase
-        .from('virtual_queue_codes')
-        .delete()
-        .eq('id', codeId);
-
-      if (deleteError) {
-        setError(deleteError.message);
+      const result = await deleteVirtualCode(codeId);
+      if (result?.error) {
+        setError(result.error);
         return;
       }
 

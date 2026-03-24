@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { nanoid } from 'nanoid';
 import { logAuditEvent } from '@/lib/audit';
 import {
   getDepartmentById,
@@ -196,6 +197,152 @@ export async function deleteOffice(id: string) {
   });
 
   revalidatePath('/admin/offices');
+  return { success: true };
+}
+
+// ─── Virtual Codes ──────────────────────────────────────────────────────────
+
+export async function createVirtualCode(formData: FormData) {
+  const context = await getAdminContext();
+  const scope = (formData.get('scope') as string) || 'department';
+  const officeId = (formData.get('office_id') as string) || null;
+  const departmentId = (formData.get('department_id') as string) || null;
+  const serviceId = (formData.get('service_id') as string) || null;
+
+  if (scope === 'business') {
+    await requireOrganizationAdmin(context);
+  }
+
+  if (scope !== 'business' && !officeId) {
+    return { error: 'Office is required for this code scope' };
+  }
+
+  if ((scope === 'department' || scope === 'service') && !departmentId) {
+    return { error: 'Department is required for this code scope' };
+  }
+
+  if (scope === 'service' && !serviceId) {
+    return { error: 'Service is required for this code scope' };
+  }
+
+  if (officeId) {
+    await getOfficeById(context, officeId);
+  }
+
+  if (departmentId && officeId) {
+    await assertDepartmentInOffice(context, departmentId, officeId);
+  }
+
+  if (serviceId && departmentId) {
+    const service = await getServiceById(context, serviceId);
+    if (service.department_id !== departmentId) {
+      return { error: 'Service does not belong to the selected department' };
+    }
+  }
+
+  const insertData = {
+    organization_id: context.staff.organization_id,
+    office_id: scope === 'business' ? null : officeId,
+    department_id:
+      scope === 'department' || scope === 'service' ? departmentId : null,
+    service_id: scope === 'service' ? serviceId : null,
+    qr_token: nanoid(16),
+    is_active: true,
+  };
+
+  const { data: code, error } = await context.supabase
+    .from('virtual_queue_codes')
+    .insert(insertData)
+    .select('*')
+    .single();
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'virtual_code_created',
+    entityType: 'virtual_code',
+    entityId: code.id,
+    officeId: code.office_id ?? undefined,
+    summary: 'Created virtual join link',
+    metadata: {
+      scope,
+      officeId: code.office_id,
+      departmentId: code.department_id,
+      serviceId: code.service_id,
+    },
+  });
+
+  revalidatePath('/admin/virtual-codes');
+  return { success: true, code };
+}
+
+async function getVirtualCodeForMutation(context: StaffContext, id: string) {
+  const { data: code } = await context.supabase
+    .from('virtual_queue_codes')
+    .select('id, organization_id, office_id, department_id, service_id, qr_token, is_active')
+    .eq('id', id)
+    .single();
+
+  if (!code || code.organization_id !== context.staff.organization_id) {
+    throw new Error('Virtual code not found in your organization');
+  }
+
+  if (code.office_id) {
+    await requireOfficeAccess(context, code.office_id);
+  } else {
+    await requireOrganizationAdmin(context);
+  }
+
+  return code;
+}
+
+export async function toggleVirtualCode(id: string, isActive: boolean) {
+  const context = await getAdminContext();
+  await getVirtualCodeForMutation(context, id);
+
+  const { error } = await context.supabase
+    .from('virtual_queue_codes')
+    .update({ is_active: isActive })
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: isActive ? 'virtual_code_activated' : 'virtual_code_deactivated',
+    entityType: 'virtual_code',
+    entityId: id,
+    summary: `${isActive ? 'Activated' : 'Deactivated'} virtual join link`,
+  });
+
+  revalidatePath('/admin/virtual-codes');
+  return { success: true };
+}
+
+export async function deleteVirtualCode(id: string) {
+  const context = await getAdminContext();
+  const code = await getVirtualCodeForMutation(context, id);
+
+  const { error } = await context.supabase
+    .from('virtual_queue_codes')
+    .delete()
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'virtual_code_deleted',
+    entityType: 'virtual_code',
+    entityId: id,
+    officeId: code.office_id ?? undefined,
+    summary: 'Deleted virtual join link',
+    metadata: {
+      departmentId: code.department_id,
+      serviceId: code.service_id,
+      qrToken: code.qr_token,
+    },
+  });
+
+  revalidatePath('/admin/virtual-codes');
   return { success: true };
 }
 

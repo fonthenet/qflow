@@ -1,13 +1,31 @@
-import { createClient } from '@/lib/supabase/server';
+import { getStaffContext } from '@/lib/authz';
 import { VirtualCodesClient } from './virtual-codes-client';
 
 export default async function VirtualCodesPage() {
-  const supabase = await createClient();
+  const context = await getStaffContext();
+  const scopedOfficeIds = context.accessibleOfficeIds;
 
-  const { data: codes, error } = await supabase
+  const { data: organization } = await context.supabase
+    .from('organizations')
+    .select('id, name')
+    .eq('id', context.staff.organization_id)
+    .maybeSingle();
+
+  let codesQuery = context.supabase
     .from('virtual_queue_codes')
     .select('*')
+    .eq('organization_id', context.staff.organization_id)
     .order('created_at', { ascending: false });
+
+  if (scopedOfficeIds.length > 0) {
+    codesQuery = codesQuery.or(
+      `office_id.is.null,office_id.in.(${scopedOfficeIds.join(',')})`
+    );
+  }
+
+  const { data: codes, error } = scopedOfficeIds.length > 0 || context.staff.organization_id
+    ? await codesQuery
+    : { data: [], error: null };
 
   if (error) {
     return (
@@ -19,35 +37,33 @@ export default async function VirtualCodesPage() {
     );
   }
 
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('id, name, organization_id')
-    .order('name');
+  const { data: offices } = scopedOfficeIds.length > 0
+    ? await context.supabase
+        .from('offices')
+        .select('id, name, organization_id')
+        .in('id', scopedOfficeIds)
+        .order('name')
+    : { data: [] };
 
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, office_id')
-    .order('name');
+  const officeIds = (offices ?? []).map((office) => office.id);
 
-  const { data: services } = await supabase
-    .from('services')
-    .select('id, name, department_id')
-    .order('name');
+  const { data: departments } = officeIds.length > 0
+    ? await context.supabase
+        .from('departments')
+        .select('id, name, office_id')
+        .in('office_id', officeIds)
+        .order('name')
+    : { data: [] };
 
-  let organization: { id: string; name: string } | null = null;
-  const organizationId = offices?.[0]?.organization_id;
+  const departmentIds = (departments ?? []).map((department) => department.id);
 
-  if (organizationId) {
-    const { data: organizationRow } = await supabase
-      .from('organizations')
-      .select('id, name')
-      .eq('id', organizationId)
-      .maybeSingle();
-
-    if (organizationRow) {
-      organization = organizationRow;
-    }
-  }
+  const { data: services } = departmentIds.length > 0
+    ? await context.supabase
+        .from('services')
+        .select('id, name, department_id')
+        .in('department_id', departmentIds)
+        .order('name')
+    : { data: [] };
 
   return (
     <VirtualCodesClient
