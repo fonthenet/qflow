@@ -3,20 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface ScreenSettings {
-  layout?: string;
-  theme?: string;
-  bg_color?: string;
-  accent_color?: string;
-  text_size?: string;
-  show_clock?: boolean;
-  show_next_up?: boolean;
-  show_department_breakdown?: boolean;
-  show_estimated_wait?: boolean;
-  max_tickets_shown?: number;
   announcement_sound?: boolean;
   announcement_duration?: number;
-  auto_scroll_interval?: number;
-  visible_department_ids?: string[];
 }
 
 interface DisplayBoardProps {
@@ -25,101 +13,68 @@ interface DisplayBoardProps {
   departments: any[];
   initialActiveTickets: any[];
   initialWaitingTickets: any[];
+  initialServedTodayCount?: number;
   calledTicketCountdownSeconds?: number;
   sandboxMode?: boolean;
+}
+
+function getCalledTicketRemainingSeconds(
+  ticket: any,
+  now: Date,
+  calledTicketCountdownSeconds: number
+) {
+  if (!ticket.called_at) return 0;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((now.getTime() - new Date(ticket.called_at).getTime()) / 1000)
+  );
+  return Math.max(0, calledTicketCountdownSeconds - elapsedSeconds);
+}
+
+function formatWait(createdAt: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function getTicketCustomerName(customerData: unknown) {
+  if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) {
+    return '';
+  }
+
+  const data = customerData as Record<string, unknown>;
+  const keys = ['name', 'full_name', 'customer_name', 'patient_name', 'guest_name', 'party_name'] as const;
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
 }
 
 export function DisplayBoard({
   screen,
   office,
-  departments,
   initialActiveTickets,
   initialWaitingTickets,
+  initialServedTodayCount = 0,
   calledTicketCountdownSeconds = 0,
   sandboxMode = false,
 }: DisplayBoardProps) {
   const [displayScreen, setDisplayScreen] = useState(screen);
   const [activeTickets, setActiveTickets] = useState(initialActiveTickets);
   const [waitingTickets, setWaitingTickets] = useState(initialWaitingTickets);
+  const [servedTodayCount, setServedTodayCount] = useState(initialServedTodayCount);
   const [lastCalledTicket, setLastCalledTicket] = useState<any>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const knownCalledAnchorsRef = useRef<Map<string, string>>(new Map());
 
-  // Extract settings with defaults
-  const s: ScreenSettings = displayScreen.settings ?? {};
-  const theme = s.theme ?? 'light';
-  const isLight = theme === 'light';
-  const bgColor = s.bg_color ?? (isLight ? '#f8fafc' : '#0a1628');
-  const accentColor = s.accent_color ?? (isLight ? '#2563eb' : '#3b82f6');
-  const textSize = s.text_size ?? 'md';
-  const showClock = s.show_clock ?? true;
-  const showNextUp = s.show_next_up ?? true;
-  const showDeptBreakdown = s.show_department_breakdown ?? true;
-  const maxTicketsShown = s.max_tickets_shown ?? 8;
-  const announcementSound = s.announcement_sound ?? true;
-  const announcementDuration = (s.announcement_duration ?? 8) * 1000;
-  const visibleDeptIds = s.visible_department_ids ?? departments.map((d) => d.id);
-  const layout = displayScreen.layout ?? s.layout ?? 'list';
-
-  // Theme-aware color palette
-  const colors = isLight
-    ? {
-        text: '#0f172a',
-        textMuted: '#334155',
-        textFaint: '#475569',
-        border: 'rgba(15, 23, 42, 0.18)',
-        headerBorder: 'rgba(15, 23, 42, 0.12)',
-        panelBg: 'rgba(255,255,255,0.92)',
-        panelStrong: '#ffffff',
-        calledBg: '#dcfce7',
-        calledBorder: '#15803d',
-        servingBg: '#dbeafe',
-        servingBorder: accentColor,
-        calledText: '#166534',
-        servingText: '#1d4ed8',
-        waitingCount: '#f59e0b',
-        badgeBg: 'rgba(15,23,42,0.08)',
-        badgeText: '#0f172a',
-        announceBg: 'rgba(255,255,255,0.96)',
-        announceText: '#020617',
-        announceGoTo: '#15803d',
-        surface: '#ffffff',
-        surfaceAlt: '#f8fbff',
-        queueItemBg: '#eff6ff',
-      }
-    : {
-        text: '#f8fafc',
-        textMuted: '#e2e8f0',
-        textFaint: '#cbd5e1',
-        border: 'rgba(148, 163, 184, 0.26)',
-        headerBorder: 'rgba(148, 163, 184, 0.18)',
-        panelBg: 'rgba(7, 12, 24, 0.92)',
-        panelStrong: '#020617',
-        calledBg: 'rgba(20, 83, 45, 0.98)',
-        calledBorder: '#4ade80',
-        servingBg: 'rgba(15, 23, 42, 0.98)',
-        servingBorder: accentColor,
-        calledText: '#dcfce7',
-        servingText: '#dbeafe',
-        waitingCount: '#fde68a',
-        badgeBg: 'rgba(255,255,255,0.12)',
-        badgeText: '#f8fafc',
-        announceBg: 'rgba(2,6,23,0.92)',
-        announceText: '#ffffff',
-        announceGoTo: '#4ade80',
-      };
-
-  // Text size classes
-  const ticketNumClass =
-    textSize === 'lg' ? 'text-[9rem]' : textSize === 'sm' ? 'text-6xl' : 'text-8xl';
-  const headingClass =
-    textSize === 'lg' ? 'text-4xl' : textSize === 'sm' ? 'text-2xl' : 'text-3xl';
-  const bodyClass =
-    textSize === 'lg' ? 'text-2xl' : textSize === 'sm' ? 'text-base' : 'text-xl';
-
-  // Filter departments by visibility setting
-  const visibleDepartments = departments.filter((d) => visibleDeptIds.includes(d.id));
+  const settings: ScreenSettings = displayScreen.settings ?? {};
+  const announcementSound = settings.announcement_sound ?? true;
+  const announcementDuration = (settings.announcement_duration ?? 8) * 1000;
 
   const updateCalledAnchors = useMemo(
     () => (tickets: any[]) => {
@@ -138,15 +93,14 @@ export function DisplayBoard({
     knownCalledAnchorsRef.current = updateCalledAnchors(initialActiveTickets);
   }, [initialActiveTickets, updateCalledAnchors]);
 
-  // Update clock every second
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Poll through a server route so public displays don't depend on public row access
   useEffect(() => {
     if (sandboxMode) return;
+
     const refreshData = async () => {
       try {
         const response = await fetch(`/api/display-status/${displayScreen.screen_token}`, {
@@ -184,6 +138,7 @@ export function DisplayBoard({
         setDisplayScreen(nextScreen);
         setActiveTickets(nextActive);
         setWaitingTickets(nextWaiting);
+        setServedTodayCount(typeof data.servedTodayCount === 'number' ? data.servedTodayCount : 0);
       } catch (error) {
         console.warn('[Display] Failed to refresh display status', error);
       }
@@ -191,694 +146,453 @@ export function DisplayBoard({
 
     refreshData();
     const pollInterval = setInterval(refreshData, 4000);
-
-    return () => {
-      clearInterval(pollInterval);
-    };
+    return () => clearInterval(pollInterval);
   }, [announcementDuration, announcementSound, displayScreen.screen_token, sandboxMode, updateCalledAnchors]);
 
-  // Filter active tickets by visible departments
-  const nowServing = activeTickets.filter((t) => {
-    if (!visibleDeptIds.includes(t.department_id)) return false;
-    if (t.status === 'serving') return true;
-    if (t.status !== 'called') return false;
-    return getCalledTicketRemainingSeconds(t, currentTime, calledTicketCountdownSeconds) > 0;
+  const visibleActiveTickets = activeTickets.filter((ticket) => {
+    if (ticket.status === 'serving') return true;
+    if (ticket.status !== 'called') return false;
+    return getCalledTicketRemainingSeconds(ticket, currentTime, calledTicketCountdownSeconds) > 0;
   });
 
-  const filteredWaiting = waitingTickets.filter((t) =>
-    visibleDeptIds.includes(t.department_id)
-  );
-
-  const waitingByDept = visibleDepartments.map((dept) => ({
-    ...dept,
-    count: filteredWaiting.filter((t) => t.department_id === dept.id).length,
-  })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-
-  // Derive card/header/sidebar backgrounds from base
-  const headerBg = isLight ? 'rgba(255,255,255,0.82)' : 'rgba(2,6,23,0.86)';
-  const cardBg = colors.panelBg;
-  const sidebarBg = isLight ? 'rgba(246,250,255,0.95)' : 'rgba(10,18,33,0.94)';
-  const totalWaiting = filteredWaiting.length;
-  const activeCount = nowServing.length;
+  const waitingCount = waitingTickets.length;
+  const calledCount = visibleActiveTickets.filter((ticket) => ticket.status === 'called').length;
+  const servingCount = visibleActiveTickets.filter((ticket) => ticket.status === 'serving').length;
 
   return (
     <div
-      className="min-h-screen overflow-hidden"
+      className="min-h-screen"
       style={{
-        color: colors.text,
-        background: isLight
-          ? `linear-gradient(180deg, #e2e8f0 0%, ${bgColor} 24%, #d8e4f5 100%)`
-          : `radial-gradient(circle at top, ${accentColor}30 0%, ${bgColor} 24%, #01040b 100%)`,
+        background: '#f8fafc',
+        color: '#0f172a',
+        fontFamily: `-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif`,
       }}
     >
-      {/* Announcement overlay */}
-      {showAnnouncement && lastCalledTicket && (
+      {showAnnouncement && lastCalledTicket ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center animate-pulse"
-          style={{ backgroundColor: colors.announceBg }}
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(255,255,255,0.97)' }}
         >
-          <div className="text-center space-y-4">
-            <p className="text-3xl font-medium" style={{ color: accentColor }}>
+          <div className="text-center">
+            <div className="text-3xl font-bold uppercase tracking-[0.3em]" style={{ color: '#3b82f6' }}>
               Now Calling
-            </p>
-            <p className="text-[10rem] font-black leading-none" style={{ color: colors.announceText }}>
+            </div>
+            <div className="mt-6 text-[9rem] font-black leading-none tracking-[-0.08em]">
               {lastCalledTicket.ticket_number}
-            </p>
-            <p className="text-4xl font-medium" style={{ color: colors.announceGoTo }}>
-              Go to:{' '}
-              {lastCalledTicket.desk?.display_name ||
-                lastCalledTicket.desk?.name ||
-                'Counter'}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <div
-        className="flex items-center justify-between border-b px-8 py-5"
-        style={{ backgroundColor: headerBg, borderColor: colors.headerBorder, backdropFilter: 'blur(12px)' }}
-      >
-        <div className="flex items-center gap-5">
-          {office.organization?.logo_url ? (
-            <div className="flex h-20 w-20 items-center justify-center rounded-3xl border" style={{ backgroundColor: colors.panelStrong, borderColor: colors.border }}>
-              <img
-                src={office.organization.logo_url}
-                alt={`${office.organization?.name || 'Business'} logo`}
-                className="max-h-14 w-auto max-w-[64px] object-contain"
-              />
             </div>
-          ) : null}
-          <div>
-            <h1 className={`${headingClass} font-bold`}>
-              {office.organization?.name || 'QueueFlow'}
-            </h1>
-            <p className="mt-1 text-2xl font-medium" style={{ color: colors.textMuted }}>{office.name}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div
-            className="rounded-[1.15rem] border px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
-            style={{ backgroundColor: colors.surface ?? colors.badgeBg, borderColor: colors.border }}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>Waiting</p>
-            <p className="mt-1 text-4xl font-black" style={{ color: colors.waitingCount }}>{totalWaiting}</p>
-          </div>
-          <div
-            className="rounded-[1.15rem] border px-5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
-            style={{ backgroundColor: colors.surface ?? colors.badgeBg, borderColor: colors.border }}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>Active</p>
-            <p className="mt-1 text-4xl font-black" style={{ color: accentColor }}>{activeCount}</p>
-          </div>
-          {showClock && (
-            <div
-              className="rounded-[1.15rem] border px-5 py-3 text-right shadow-[0_10px_28px_rgba(15,23,42,0.08)]"
-              style={{ backgroundColor: colors.surface ?? colors.panelStrong, borderColor: colors.border }}
-            >
-              <p className="text-5xl font-black tabular-nums">
-              {currentTime.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-              </p>
-              <p className="mt-2 text-xl font-semibold" style={{ color: accentColor }}>
-                {currentTime.toLocaleDateString([], {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
+            <div className="mt-4 text-4xl font-bold" style={{ color: '#16a34a' }}>
+              Go to {lastCalledTicket.desk?.display_name || lastCalledTicket.desk?.name || 'Desk'}
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      {/* Main content - layout dependent */}
-      {layout === 'department_split' ? (
-        <DepartmentSplitLayout
-          departments={waitingByDept}
-          nowServing={nowServing}
-          filteredWaiting={filteredWaiting}
-          ticketNumClass={ticketNumClass}
-          headingClass={headingClass}
-          bodyClass={bodyClass}
-          accentColor={accentColor}
-          cardBg={cardBg}
-          sidebarBg={sidebarBg}
-          maxTicketsShown={maxTicketsShown}
-          colors={colors}
-          currentTime={currentTime}
-          calledTicketCountdownSeconds={calledTicketCountdownSeconds}
-        />
-      ) : layout === 'grid' ? (
-        <GridLayout
-          nowServing={nowServing}
-          filteredWaiting={filteredWaiting}
-          waitingByDept={waitingByDept}
-          ticketNumClass={ticketNumClass}
-          headingClass={headingClass}
-          bodyClass={bodyClass}
-          accentColor={accentColor}
-          cardBg={cardBg}
-          sidebarBg={sidebarBg}
-          showNextUp={showNextUp}
-          showDeptBreakdown={showDeptBreakdown}
-          maxTicketsShown={maxTicketsShown}
-          colors={colors}
-          currentTime={currentTime}
-          calledTicketCountdownSeconds={calledTicketCountdownSeconds}
-        />
-      ) : (
-        <ListLayout
-          nowServing={nowServing}
-          filteredWaiting={filteredWaiting}
-          waitingByDept={waitingByDept}
-          ticketNumClass={ticketNumClass}
-          headingClass={headingClass}
-          bodyClass={bodyClass}
-          accentColor={accentColor}
-          cardBg={cardBg}
-          sidebarBg={sidebarBg}
-          showNextUp={showNextUp}
-          showDeptBreakdown={showDeptBreakdown}
-          maxTicketsShown={maxTicketsShown}
-          colors={colors}
-          currentTime={currentTime}
-          calledTicketCountdownSeconds={calledTicketCountdownSeconds}
-        />
-      )}
-    </div>
-  );
-}
-
-function formatTicketTimer(ticket: any, now: Date, calledTicketCountdownSeconds: number) {
-  if (ticket.status === 'called') {
-    const remainingSeconds = getCalledTicketRemainingSeconds(
-      ticket,
-      now,
-      calledTicketCountdownSeconds
-    );
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  const anchor = ticket.serving_started_at ?? ticket.called_at;
-
-  if (!anchor) return '--';
-
-  const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - new Date(anchor).getTime()) / 1000));
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function getCalledTicketRemainingSeconds(
-  ticket: any,
-  now: Date,
-  calledTicketCountdownSeconds: number
-) {
-  if (!ticket.called_at) return 0;
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((now.getTime() - new Date(ticket.called_at).getTime()) / 1000)
-  );
-
-  if (calledTicketCountdownSeconds <= 0) {
-    return 0;
-  }
-
-  return Math.max(0, calledTicketCountdownSeconds - elapsedSeconds);
-}
-
-// ─── List Layout (default, original 2/3 + 1/3 split) ────────────────────
-
-function ListLayout({
-  nowServing,
-  filteredWaiting,
-  waitingByDept,
-  ticketNumClass,
-  headingClass,
-  bodyClass,
-  accentColor,
-  cardBg,
-  sidebarBg,
-  showNextUp,
-  showDeptBreakdown,
-  maxTicketsShown,
-  colors,
-  currentTime,
-  calledTicketCountdownSeconds,
-}: any) {
-  return (
-    <div className="grid h-[calc(100vh-102px)] grid-cols-3 gap-0">
-      {/* Now Serving - 2/3 */}
-      <div className="col-span-2 border-r p-7" style={{ borderColor: colors.border }}>
-        <h2
-          className={`mb-6 ${headingClass} font-black uppercase tracking-[0.28em]`}
-          style={{ color: accentColor }}
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '16px 32px',
+            background: '#fff',
+            borderBottom: '2px solid #e2e8f0',
+          }}
         >
-          Now Serving
-        </h2>
-        <div className="grid grid-cols-2 gap-4">
-          {nowServing.length === 0 ? (
-            <div
-              className="col-span-2 min-h-[34rem] rounded-[2.25rem] border shadow-[0_24px_60px_rgba(15,23,42,0.12)]"
-              style={{
-                background: `linear-gradient(180deg, ${colors.panelStrong} 0%, ${colors.panelBg} 100%)`,
-                borderColor: colors.border,
-              }}
-            />
-          ) : (
-            nowServing.map((ticket: any) => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {office.organization?.logo_url ? (
               <div
-                key={ticket.id}
-                className={`rounded-[2rem] p-7 shadow-[0_20px_50px_rgba(15,23,42,0.18)] ${
-                  ticket.status === 'called' ? 'border-[3px] animate-pulse' : 'border-[3px]'
-                }`}
                 style={{
-                  backgroundColor:
-                    ticket.status === 'called' ? colors.calledBg : colors.servingBg,
-                  borderColor:
-                    ticket.status === 'called' ? colors.calledBorder : colors.servingBorder,
+                  width: 56,
+                  height: 56,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  flexShrink: 0,
                 }}
               >
-                <div className="flex h-full flex-col justify-between gap-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-base font-bold uppercase tracking-[0.24em]" style={{ color: colors.textMuted }}>
-                        {ticket.status === 'called' ? 'Go now' : 'Serving'}
-                      </p>
-                      <p className={`${ticketNumClass} font-black leading-none tracking-tight`}>
-                      {ticket.ticket_number}
-                      </p>
-                    </div>
-                    <div className="rounded-full px-5 py-3 text-lg font-bold" style={{ backgroundColor: colors.badgeBg, color: ticket.status === 'called' ? colors.calledText : colors.servingText }}>
-                      {ticket.desk?.display_name || ticket.desk?.name}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-semibold" style={{ color: colors.text }}>
-                      {ticket.service?.name}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <span className="rounded-full px-4 py-2 text-base font-semibold" style={{ backgroundColor: colors.badgeBg, color: colors.badgeText }}>
-                        {ticket.department?.name || ticket.department?.code || 'Queue'}
-                      </span>
-                      <span
-                        className="rounded-full px-4 py-2 text-base font-bold uppercase tracking-wide"
-                        style={{
-                          backgroundColor: ticket.status === 'called' ? 'rgba(22,163,74,0.16)' : colors.badgeBg,
-                          color: ticket.status === 'called' ? colors.calledText : colors.servingText,
-                        }}
-                      >
-                        {ticket.status === 'called' ? 'Proceed to desk' : 'In service'}
-                      </span>
-                    </div>
-                    <p className={`mt-4 ${bodyClass} font-medium`} style={{ color: colors.textMuted }}>
-                      Desk: {ticket.desk?.display_name || ticket.desk?.name || 'Counter'}
-                    </p>
-                    <p className="mt-2 text-2xl font-black tabular-nums" style={{ color: ticket.status === 'called' ? colors.calledText : colors.servingText }}>
-                      {ticket.status === 'called' ? 'Counter countdown ' : 'Serving '}
-                      {formatTicketTimer(ticket, currentTime, calledTicketCountdownSeconds)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Sidebar - 1/3 */}
-      <div
-        className="border-l p-6"
-        style={{ backgroundColor: sidebarBg, borderColor: colors.border }}
-      >
-        {showDeptBreakdown && (
-          <>
-            <h2
-              className={`mb-5 ${headingClass} font-black uppercase tracking-[0.22em]`}
-              style={{ color: accentColor }}
-            >
-              Queue Status
-            </h2>
-            <div className="space-y-4">
-              {waitingByDept.map((dept: any) => (
-                <div
-                  key={dept.id}
-                  className="rounded-[1.75rem] border px-6 py-5 shadow-[0_16px_36px_rgba(15,23,42,0.08)]"
-                  style={{
-                    background: dept.count > 0
-                      ? `linear-gradient(90deg, ${colors.panelStrong} 0%, ${cardBg} 100%)`
-                      : cardBg,
-                    borderColor: dept.count > 0 ? accentColor : colors.border,
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="text-3xl font-black leading-tight">{dept.name}</p>
-                      <p className="mt-2 text-lg font-semibold uppercase tracking-[0.18em]" style={{ color: colors.textMuted }}>
-                        Department {dept.code}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-6xl font-black leading-none" style={{ color: colors.waitingCount }}>{dept.count}</p>
-                      <p className="mt-1 text-lg font-semibold" style={{ color: colors.textMuted }}>waiting</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {showNextUp && (
-          <div className={showDeptBreakdown ? 'mt-8' : ''}>
-            <h3
-              className={`mb-4 ${bodyClass} font-bold uppercase tracking-[0.22em]`}
-              style={{ color: colors.textMuted }}
-            >
-              Next Up
-            </h3>
-            <div className="space-y-2">
-              {filteredWaiting.length === 0 ? (
-                <div
-                  className="rounded-[1.5rem] border px-5 py-6"
-                  style={{ backgroundColor: cardBg, borderColor: colors.border }}
-                >
-                  <p className="text-xl font-semibold" style={{ color: colors.textFaint }}>
-                    No tickets waiting right now
-                  </p>
-                </div>
-              ) : (
-                filteredWaiting.slice(0, maxTicketsShown).map((ticket: any, index: number) => (
-                  <div
-                    key={ticket.id}
-                    className="flex items-center justify-between rounded-[1.35rem] border px-5 py-4"
-                    style={{ backgroundColor: colors.queueItemBg ?? cardBg, borderColor: colors.border }}
-                  >
-                    <div>
-                      <span className="block text-sm font-bold uppercase tracking-[0.22em]" style={{ color: colors.textMuted }}>
-                        #{index + 1} in line
-                      </span>
-                      <span className="mt-1 block text-4xl font-black tracking-tight">{ticket.ticket_number}</span>
-                    </div>
-                    <span className="text-base font-medium" style={{ color: colors.textFaint }}>
-                      {new Date(ticket.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Grid Layout ─────────────────────────────────────────────────────────
-
-function GridLayout({
-  nowServing,
-  filteredWaiting,
-  waitingByDept,
-  ticketNumClass,
-  headingClass,
-  bodyClass,
-  accentColor,
-  cardBg,
-  showNextUp,
-  showDeptBreakdown,
-  maxTicketsShown,
-  colors,
-  currentTime,
-  calledTicketCountdownSeconds,
-}: any) {
-  return (
-    <div className="p-6 h-[calc(100vh-102px)] overflow-hidden">
-      <h2
-        className={`mb-6 ${headingClass} font-black uppercase tracking-[0.22em]`}
-        style={{ color: accentColor }}
-      >
-        Now Serving
-      </h2>
-
-      {nowServing.length === 0 ? (
-        <div className="flex items-center justify-center py-20">
-          <p className="text-2xl" style={{ color: colors.textFaint }}>No customers being served</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {nowServing.map((ticket: any) => (
-            <div
-              key={ticket.id}
-              className={`rounded-[1.75rem] p-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.18)] ${
-                ticket.status === 'called' ? 'border-[3px] animate-pulse' : 'border-[3px]'
-              }`}
-              style={{
-                backgroundColor:
-                  ticket.status === 'called' ? colors.calledBg : colors.servingBg,
-                borderColor:
-                  ticket.status === 'called' ? colors.calledBorder : colors.servingBorder,
-              }}
-            >
-              <p className={`${ticketNumClass} font-black leading-none tracking-tight`}>
-                {ticket.ticket_number}
-              </p>
-              <p className="mt-3 text-3xl font-bold" style={{ color: accentColor }}>
-                {ticket.desk?.display_name || ticket.desk?.name}
-              </p>
-              <p className="mt-2 text-xl font-semibold" style={{ color: colors.textMuted }}>
-                {ticket.service?.name || 'Service'}
-              </p>
-              <p className="mt-3 text-2xl font-black tabular-nums" style={{ color: ticket.status === 'called' ? colors.calledText : colors.servingText }}>
-                {ticket.status === 'called' ? 'Counter countdown ' : 'Serving '}
-                {formatTicketTimer(ticket, currentTime, calledTicketCountdownSeconds)}
-              </p>
-              <p
-                className="mt-2 text-base font-bold uppercase tracking-[0.2em]"
-                style={{
-                  color: ticket.status === 'called' ? colors.calledText : colors.textMuted,
-                }}
-              >
-                {ticket.status === 'called' ? 'Go Now' : 'Serving'}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Bottom row: dept summary + next up */}
-      <div className="grid grid-cols-2 gap-6">
-        {showDeptBreakdown && (
-          <div>
-            <h3
-              className={`mb-3 ${bodyClass} font-semibold uppercase tracking-wider`}
-              style={{ color: accentColor }}
-            >
-              Queue Status
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {waitingByDept.map((dept: any) => (
-                <div key={dept.id} className="rounded-[1.25rem] border p-4" style={{ backgroundColor: cardBg, borderColor: colors.border }}>
-                  <p className="text-xl font-bold">{dept.name}</p>
-                  <p className="mt-2 text-4xl font-black" style={{ color: colors.waitingCount }}>{dept.count}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {showNextUp && (
-          <div>
-            <h3
-              className={`mb-3 ${bodyClass} font-semibold uppercase tracking-wider`}
-              style={{ color: colors.textMuted }}
-            >
-              Next Up
-            </h3>
-            <div className="space-y-1.5">
-              {filteredWaiting.slice(0, maxTicketsShown).map((ticket: any) => (
-                <div
-                  key={ticket.id}
-                  className="flex items-center justify-between rounded-[1.15rem] border px-4 py-3"
-                  style={{ backgroundColor: cardBg, borderColor: colors.border }}
-                >
-                  <span className="text-2xl font-black tracking-tight">{ticket.ticket_number}</span>
-                  <span className="text-base font-medium" style={{ color: colors.textFaint }}>
-                    {new Date(ticket.created_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Department Split Layout ──────────────────────────────────────────────
-
-function DepartmentSplitLayout({
-  departments,
-  nowServing,
-  filteredWaiting,
-  ticketNumClass,
-  headingClass,
-  bodyClass,
-  accentColor,
-  cardBg,
-  sidebarBg,
-  maxTicketsShown,
-  colors,
-  currentTime,
-  calledTicketCountdownSeconds,
-}: any) {
-  const cols = departments.length <= 2 ? departments.length : departments.length <= 4 ? 2 : 3;
-
-  return (
-    <div
-      className="h-[calc(100vh-102px)] overflow-hidden p-6"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
-        gap: '1rem',
-      }}
-    >
-      {departments.map((dept: any) => {
-        const deptServing = nowServing.filter(
-          (t: any) => t.department_id === dept.id
-        );
-        const deptWaiting = filteredWaiting
-          .filter((t: any) => t.department_id === dept.id)
-          .slice(0, Math.floor(maxTicketsShown / departments.length) || 3);
-
-        return (
-          <div
-            key={dept.id}
-            className="overflow-hidden rounded-[1.75rem] border p-5 shadow-[0_18px_40px_rgba(15,23,42,0.12)]"
-            style={{ backgroundColor: sidebarBg ?? cardBg, borderColor: colors.border }}
-          >
-            <h3
-              className={`${headingClass} font-black mb-4 pb-3 border-b`}
-              style={{ color: accentColor, borderColor: colors.border }}
-            >
-              {dept.name}
-              <span className="ml-2 text-lg font-semibold" style={{ color: colors.waitingCount }}>
-                ({dept.count} waiting)
-              </span>
-            </h3>
-
-            {/* Now serving in this dept */}
-            {deptServing.length > 0 ? (
-              <div className="space-y-2 mb-4">
-                {deptServing.map((ticket: any) => (
-                  <div
-                    key={ticket.id}
-                    className={`rounded-[1.25rem] p-4 ${
-                      ticket.status === 'called' ? 'border-[3px] animate-pulse' : 'border-[3px]'
-                    }`}
-                    style={{
-                      backgroundColor:
-                        ticket.status === 'called' ? colors.calledBg : colors.servingBg,
-                      borderColor:
-                        ticket.status === 'called' ? colors.calledBorder : 'transparent',
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-6xl font-black leading-none tracking-tight">{ticket.ticket_number}</p>
-                      <div className="text-right">
-                        <p className={`${bodyClass} font-bold`} style={{ color: accentColor }}>
-                          {ticket.desk?.display_name || ticket.desk?.name}
-                        </p>
-                        <p className="mt-1 text-xl font-black tabular-nums" style={{ color: ticket.status === 'called' ? colors.calledText : colors.servingText }}>
-                          {formatTicketTimer(ticket, currentTime, calledTicketCountdownSeconds)}
-                        </p>
-                        <p
-                          className="text-base uppercase font-bold tracking-[0.18em]"
-                          style={{
-                            color: ticket.status === 'called' ? colors.calledText : colors.textMuted,
-                          }}
-                        >
-                          {ticket.status === 'called' ? 'Go Now' : 'Serving'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <img
+                  src={office.organization.logo_url}
+                  alt={`${office.organization?.name || 'Business'} logo`}
+                  style={{ height: 56, width: 'auto', objectFit: 'contain' }}
+                />
               </div>
             ) : (
               <div
-                className="mb-4 rounded-[1.2rem] border px-4 py-4"
-                style={{ backgroundColor: colors.surfaceAlt ?? cardBg, borderColor: colors.border }}
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
+                  background: '#3b82f6',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900,
+                  fontSize: 28,
+                }}
               >
-                <p className={bodyClass} style={{ color: colors.textFaint }}>No one being served</p>
+                Q
               </div>
             )}
-
             <div>
-              <p className="text-sm uppercase tracking-wider mb-2" style={{ color: colors.textMuted }}>
-                Queue
-              </p>
-              {deptWaiting.length > 0 ? (
-                <div className="space-y-1">
-                  {deptWaiting.map((t: any, index: number) => (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between rounded-[1rem] border px-3 py-3"
-                      style={{ backgroundColor: colors.queueItemBg ?? colors.servingBg, borderColor: colors.border }}
-                    >
-                      <div>
-                        <span className="block text-xs font-bold uppercase tracking-[0.2em]" style={{ color: colors.textMuted }}>
-                          #{index + 1}
-                        </span>
-                        <span className="text-2xl font-black tracking-tight">{t.ticket_number}</span>
-                      </div>
-                      <span className="text-base font-medium" style={{ color: colors.textFaint }}>
-                        {new Date(t.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  ))}
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#1e293b' }}>
+                {office.organization?.name || office.name}
+              </div>
+              <div style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>
+                {office.organization?.name ? office.name : office.organization?.name || office.name}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 14px',
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 700,
+                background: '#d1fae5',
+                color: '#065f46',
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                }}
+              />
+              Connected
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 42, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
+                {currentTime.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+              </div>
+              <div style={{ fontSize: 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
+                {currentTime.toLocaleDateString([], {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', background: '#fff', borderBottom: '1px solid #e2e8f0' }}>
+          {[
+            { label: 'Waiting', value: waitingCount, color: '#f59e0b' },
+            { label: 'Called', value: calledCount, color: '#3b82f6' },
+            { label: 'Serving', value: servingCount, color: '#22c55e' },
+            { label: 'Served Today', value: servedTodayCount, color: '#64748b' },
+          ].map((stat, index) => (
+            <div
+              key={stat.label}
+              style={{
+                flex: 1,
+                padding: '12px 24px',
+                textAlign: 'center',
+                borderRight: index < 3 ? '1px solid #e2e8f0' : 'none',
+              }}
+            >
+              <div style={{ fontSize: 36, fontWeight: 800, color: stat.color }}>{stat.value}</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 2,
+                  color: '#94a3b8',
+                  marginTop: 4,
+                }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          <div
+            style={{
+              flex: 55,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: '2px solid #e2e8f0',
+              background: '#fff',
+            }}
+          >
+            <div
+              style={{
+                padding: '18px 24px 14px',
+                fontSize: 18,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: 3,
+                color: '#64748b',
+                borderBottom: '1px solid #f1f5f9',
+              }}
+            >
+              Now Serving
+            </div>
+            <div
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                padding: '16px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              {visibleActiveTickets.length === 0 ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: 1,
+                    color: '#cbd5e1',
+                    fontSize: 28,
+                    fontWeight: 600,
+                  }}
+                >
+                  Waiting for customers...
                 </div>
               ) : (
-                <div
-                  className="rounded-[1rem] border px-3 py-3"
-                  style={{ backgroundColor: colors.surfaceAlt ?? cardBg, borderColor: colors.border }}
-                >
-                  <span className="text-base font-medium" style={{ color: colors.textFaint }}>
-                    No tickets waiting right now
-                  </span>
-                </div>
+                visibleActiveTickets.map((ticket) => {
+                  const countdown = getCalledTicketRemainingSeconds(
+                    ticket,
+                    currentTime,
+                    calledTicketCountdownSeconds
+                  );
+                  const urgencyColor =
+                    countdown <= 10 ? '#ef4444' : countdown <= 20 ? '#f59e0b' : '#3b82f6';
+
+                  return (
+                    <div
+                      key={ticket.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '24px 28px',
+                        borderRadius: 16,
+                        background: ticket.status === 'called' ? '#eff6ff' : '#f0fdf4',
+                        border: `3px solid ${ticket.status === 'called' ? '#bfdbfe' : '#bbf7d0'}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 72,
+                          fontWeight: 900,
+                          letterSpacing: -3,
+                          minWidth: 220,
+                          color: ticket.status === 'called' ? '#1e40af' : '#166534',
+                        }}
+                      >
+                        {ticket.ticket_number}
+                      </div>
+                      <div style={{ fontSize: 36, color: '#94a3b8', margin: '0 20px' }}>&rarr;</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#334155' }}>
+                          {ticket.desk?.display_name || ticket.desk?.name || 'Desk'}
+                        </div>
+                        <div style={{ fontSize: 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
+                          {ticket.department?.name || ticket.service?.name || ''}
+                        </div>
+                      </div>
+                      {ticket.status === 'called' ? (
+                        <>
+                          <div
+                            style={{
+                              fontSize: 32,
+                              fontWeight: 900,
+                              minWidth: 70,
+                              textAlign: 'center',
+                              fontVariantNumeric: 'tabular-nums',
+                              color: urgencyColor,
+                            }}
+                          >
+                            {countdown}s
+                          </div>
+                          <div
+                            style={{
+                              padding: '8px 20px',
+                              borderRadius: 24,
+                              fontSize: 16,
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              letterSpacing: 1,
+                              background: '#3b82f6',
+                              color: '#fff',
+                            }}
+                          >
+                            Please Proceed
+                          </div>
+                        </>
+                      ) : (
+                        <div
+                          style={{
+                            padding: '8px 20px',
+                            borderRadius: 24,
+                            fontSize: 16,
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: 1,
+                            background: '#22c55e',
+                            color: '#fff',
+                          }}
+                        >
+                          Serving
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
-        );
-      })}
+
+          <div
+            style={{
+              flex: 45,
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#f8fafc',
+            }}
+          >
+            <div
+              style={{
+                padding: '18px 24px 14px',
+                fontSize: 18,
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: 3,
+                color: '#64748b',
+                borderBottom: '1px solid #f1f5f9',
+                background: '#f8fafc',
+              }}
+            >
+              Queue
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+              {waitingTickets.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: 60,
+                    color: '#cbd5e1',
+                    fontSize: 22,
+                    fontWeight: 600,
+                  }}
+                >
+                  No customers in queue
+                </div>
+              ) : (
+                waitingTickets.map((ticket, index) => {
+                  const customerName = getTicketCustomerName(ticket.customer_data) || 'Walk-in';
+                  const isNext = index === 0;
+                  return (
+                    <div
+                      key={ticket.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '16px 20px',
+                        borderRadius: 12,
+                        marginBottom: 6,
+                        background: '#fff',
+                        border: `2px solid ${isNext ? '#fde68a' : '#e2e8f0'}`,
+                        boxShadow: isNext ? '0 8px 18px rgba(245,158,11,0.08)' : 'none',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: isNext ? 24 : 22,
+                          fontWeight: 900,
+                          color: isNext ? '#92400e' : '#94a3b8',
+                          minWidth: 50,
+                          textAlign: 'center',
+                        }}
+                      >
+                        #{index + 1}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 32,
+                          fontWeight: 900,
+                          color: '#1e293b',
+                          minWidth: 140,
+                          letterSpacing: -1,
+                        }}
+                      >
+                        {ticket.ticket_number}
+                      </div>
+                      <div
+                        style={{
+                          flex: 1,
+                          fontSize: 18,
+                          color: '#64748b',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {customerName}
+                        {ticket.department?.name ? (
+                          <span style={{ color: '#94a3b8', fontSize: 13 }}> &middot; {ticket.department.name}</span>
+                        ) : null}
+                      </div>
+                      {ticket.priority > 1 ? (
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            marginRight: 6,
+                            background: '#fef3c7',
+                            color: '#92400e',
+                          }}
+                        >
+                          P{ticket.priority}
+                        </span>
+                      ) : null}
+                      {ticket.appointment_id ? (
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            marginRight: 6,
+                            background: '#dbeafe',
+                            color: '#1e40af',
+                          }}
+                        >
+                          Booked
+                        </span>
+                      ) : null}
+                      <div style={{ fontSize: 18, color: '#94a3b8', fontWeight: 700 }}>
+                        {formatWait(ticket.created_at)}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
-
-// ─── Utility ──────────────────────────────────────────────────────────────
-
-function adjustBrightness(hex: string, percent: number): string {
-  // Parse hex color and lighten slightly
-  const num = parseInt(hex.replace('#', ''), 16);
-  if (isNaN(num)) return hex;
-  const r = Math.min(255, ((num >> 16) & 0xff) + percent);
-  const g = Math.min(255, ((num >> 8) & 0xff) + percent);
-  const b = Math.min(255, (num & 0xff) + percent);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }

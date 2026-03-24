@@ -3,6 +3,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { mergeDisplayScreenRuntime } from '@/lib/display-runtime';
 
+function getOfficeDayStartIso(timezone?: string | null) {
+  const now = new Date();
+  const localDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone || 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return `${localDate}T00:00:00`;
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ screenToken: string }> }
@@ -46,11 +57,19 @@ export async function GET(
       .order('called_at', { ascending: false }),
     supabase
       .from('tickets')
-      .select('id, department_id, ticket_number, created_at')
+      .select('id, department_id, ticket_number, created_at, priority, appointment_id, customer_data, department:departments(name, code)')
       .eq('office_id', screen.office_id)
       .eq('status', 'waiting')
       .order('created_at'),
   ]);
+
+  const officeDayStartIso = getOfficeDayStartIso(office.timezone);
+  const { count: servedTodayCount } = await supabase
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('office_id', screen.office_id)
+    .eq('status', 'served')
+    .gte('created_at', officeDayStartIso);
 
   const mergedScreen = mergeDisplayScreenRuntime(
     {
@@ -72,6 +91,7 @@ export async function GET(
       screen: mergedScreen,
       activeTickets: sanitizedActiveTickets,
       waitingTickets: waitingTickets ?? [],
+      servedTodayCount: servedTodayCount ?? 0,
     },
     {
       headers: {

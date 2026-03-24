@@ -9,6 +9,17 @@ interface DisplayPageProps {
   params: Promise<{ screenToken: string }>;
 }
 
+function getOfficeDayStartIso(timezone?: string | null) {
+  const now = new Date();
+  const localDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone || 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return `${localDate}T00:00:00`;
+}
+
 export default async function DisplayPage({ params }: DisplayPageProps) {
   const { screenToken } = await params;
   const supabase = createAdminClient();
@@ -55,10 +66,18 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
   // Get waiting count per department
   const { data: waitingTickets } = await supabase
     .from('tickets')
-    .select('id, department_id, ticket_number, created_at')
+    .select('id, department_id, ticket_number, created_at, priority, appointment_id, customer_data, department:departments(name, code)')
     .eq('office_id', screen.office_id)
     .eq('status', 'waiting')
     .order('created_at');
+
+  const officeDayStartIso = getOfficeDayStartIso(office.timezone);
+  const { count: servedTodayCount } = await supabase
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('office_id', screen.office_id)
+    .eq('status', 'served')
+    .gte('created_at', officeDayStartIso);
 
   const mergedScreen = mergeDisplayScreenRuntime(
     {
@@ -81,6 +100,7 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
       departments={departments || []}
       initialActiveTickets={sanitizedActiveTickets}
       initialWaitingTickets={waitingTickets || []}
+      initialServedTodayCount={servedTodayCount ?? 0}
       calledTicketCountdownSeconds={CALL_WAIT_SECONDS}
     />
   );
