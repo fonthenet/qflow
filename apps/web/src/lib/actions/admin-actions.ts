@@ -14,6 +14,7 @@ import {
   requireOrganizationAdmin,
   type StaffContext,
 } from '@/lib/authz';
+import { resolvePlatformConfig } from '@/lib/platform/config';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type AnyRecord = Record<string, unknown>;
@@ -1048,6 +1049,18 @@ export async function createDisplayScreen(officeId: string, name: string) {
   const context = await getAdminContext();
   await requireOfficeAccess(context, officeId);
 
+  const { data: office } = await context.supabase
+    .from('offices')
+    .select('settings, organization:organizations(settings)')
+    .eq('id', officeId)
+    .maybeSingle();
+
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings:
+      ((office?.organization as { settings?: Record<string, unknown> | null } | null)?.settings as Record<string, unknown> | null) ?? {},
+    officeSettings: (office?.settings as Record<string, unknown> | null) ?? {},
+  });
+
   const screenToken = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 
   const { data, error } = await context.supabase
@@ -1056,7 +1069,7 @@ export async function createDisplayScreen(officeId: string, name: string) {
       office_id: officeId,
       name,
       screen_token: screenToken,
-      layout: 'list',
+      layout: platformConfig.experienceProfile.display.defaultLayout,
       is_active: true,
       settings: {},
     })

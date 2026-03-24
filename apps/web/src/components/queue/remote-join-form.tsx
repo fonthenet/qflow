@@ -312,6 +312,9 @@ export function RemoteJoinForm({
     requireCustomerName: false,
     namedPartyLabel: 'Name',
   };
+  const publicJoinHeading = t('Join the Queue');
+  const publicJoinSubheadline = t(resolvedPublicJoin.subheadline);
+  const namedPartyLabel = t(resolvedPublicJoin.namedPartyLabel);
   const smsBackupEnabled = organization?.settings?.priority_alerts_sms_enabled === true;
   const displayService = serviceLocked && resolvedServices.length === 1 ? resolvedServices[0] : null;
   const displayOffice =
@@ -420,10 +423,10 @@ export function RemoteJoinForm({
                 {orgName}
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-5xl">
-                {resolvedPublicJoin.headline}
+                {publicJoinHeading}
               </h1>
               <p className="mt-2 text-base text-slate-600 sm:text-lg">
-                {displayOffice?.name ?? resolvedPublicJoin.subheadline}
+                {displayOffice?.name ?? publicJoinSubheadline}
               </p>
             </div>
           </div>
@@ -595,7 +598,7 @@ export function RemoteJoinForm({
         <form onSubmit={handleJoinQueue} className="space-y-5">
           <div>
             <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
-              {resolvedPublicJoin.namedPartyLabel}{' '}
+              {namedPartyLabel}{' '}
               <span className="text-muted-foreground font-normal">
                 {resolvedPublicJoin.requireCustomerName ? t('(required)') : t('(optional)')}
               </span>
@@ -605,7 +608,7 @@ export function RemoteJoinForm({
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder={t('Enter {label}', { label: resolvedPublicJoin.namedPartyLabel.toLowerCase() })}
+              placeholder={t('Enter {label}', { label: namedPartyLabel.toLowerCase() })}
               autoComplete="name"
               required={resolvedPublicJoin.requireCustomerName}
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"

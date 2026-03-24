@@ -9,7 +9,7 @@ import {
 
 interface SandboxDeskPageProps {
   params: Promise<{ token: string }>;
-  searchParams?: Promise<{ reset?: string }>;
+  searchParams?: Promise<{ reset?: string; view?: string }>;
 }
 
 function toSandboxTicket(
@@ -192,6 +192,7 @@ export default async function SandboxDeskPage({ params, searchParams }: SandboxD
             cancelled: [],
           },
         }}
+        initialDisplayMode={resolvedSearchParams?.view === 'minimal' ? 'minimal' : 'normal'}
       />
     </SandboxFrame>
   );

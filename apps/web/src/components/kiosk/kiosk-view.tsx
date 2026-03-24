@@ -115,6 +115,8 @@ export function KioskView({
   const [selectedDept, setSelectedDept] = useState<any>(defaultDept);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -158,6 +160,8 @@ export function KioskView({
     setSelectedDept(defaultDept);
     setSelectedService(null);
     setSelectedPriority(null);
+    setCustomerName('');
+    setCustomerPhone('');
     setTicket(null);
     setQrDataUrl('');
     clearAppointmentSearch();
@@ -247,6 +251,16 @@ export function KioskView({
     if (!selectedDept) return;
 
     setLoading(true);
+    const trimmedCustomerName = customerName.trim();
+    const trimmedCustomerPhone = customerPhone.trim();
+    const customerData =
+      trimmedCustomerName || trimmedCustomerPhone
+        ? {
+            ...(trimmedCustomerName ? { name: trimmedCustomerName } : {}),
+            ...(trimmedCustomerPhone ? { phone: trimmedCustomerPhone } : {}),
+          }
+        : null;
+
     if (sandboxMode) {
       const sandboxTicketId = `sandbox-kiosk-${Date.now()}`;
       const sandboxPath = `${sandbox?.queuePreviewBasePath ?? ''}?ticket=${encodeURIComponent('ticket-waiting-1')}&issued=${encodeURIComponent(sandboxTicketId)}`;
@@ -269,6 +283,7 @@ export function KioskView({
             }
           : null,
         tracking_url: sandboxPath,
+        customer_data: customerData,
       });
       setQrDataUrl(dataUrl);
       setStep('ticket');
@@ -281,6 +296,7 @@ export function KioskView({
       departmentId: selectedDept.id,
       serviceId: service.id,
       checkedInAt: new Date().toISOString(),
+      customerData,
       priority: priority?.weight ?? 0,
       priorityCategoryId: priority?.id ?? null,
     });
@@ -517,9 +533,42 @@ export function KioskView({
         {step === 'home' && (
           <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
             <div className="grid gap-4">
-              {bookingFirst ? bookingButton : walkInButton}
-              {bookingFirst ? walkInButton : appointmentsButton}
-              {bookingFirst ? appointmentsButton : bookingButton}
+              <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-900">
+                      {t('Name (optional)')}
+                    </label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      placeholder={t('Enter your name')}
+                      autoComplete="name"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-900">
+                      {t('Phone Number')} <span className="font-normal text-slate-500">{t('(optional)')}</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(event) => setCustomerPhone(event.target.value)}
+                      placeholder={t('Enter your phone number')}
+                      autoComplete="tel"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  {walkInButton}
+                </div>
+              </div>
+              {bookingFirst ? appointmentsButton : appointmentsButton}
+              {bookingFirst ? bookingButton : bookingButton}
             </div>
           </section>
         )}

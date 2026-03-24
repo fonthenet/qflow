@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface ScreenSettings {
   layout?: string;
@@ -39,8 +38,16 @@ export function DisplayBoard({
   calledTicketCountdownSeconds = 0,
   sandboxMode = false,
 }: DisplayBoardProps) {
+  const [displayScreen, setDisplayScreen] = useState(screen);
+  const [activeTickets, setActiveTickets] = useState(initialActiveTickets);
+  const [waitingTickets, setWaitingTickets] = useState(initialWaitingTickets);
+  const [lastCalledTicket, setLastCalledTicket] = useState<any>(null);
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const knownCalledAnchorsRef = useRef<Map<string, string>>(new Map());
+
   // Extract settings with defaults
-  const s: ScreenSettings = screen.settings ?? {};
+  const s: ScreenSettings = displayScreen.settings ?? {};
   const theme = s.theme ?? 'dark';
   const isLight = theme === 'light';
   const bgColor = s.bg_color ?? (isLight ? '#f8fafc' : '#0a1628');
@@ -53,7 +60,7 @@ export function DisplayBoard({
   const announcementSound = s.announcement_sound ?? true;
   const announcementDuration = (s.announcement_duration ?? 8) * 1000;
   const visibleDeptIds = s.visible_department_ids ?? departments.map((d) => d.id);
-  const layout = screen.layout ?? s.layout ?? 'list';
+  const layout = displayScreen.layout ?? s.layout ?? 'list';
 
   // Theme-aware color palette
   const colors = isLight
@@ -111,11 +118,22 @@ export function DisplayBoard({
   // Filter departments by visibility setting
   const visibleDepartments = departments.filter((d) => visibleDeptIds.includes(d.id));
 
-  const [activeTickets, setActiveTickets] = useState(initialActiveTickets);
-  const [waitingTickets, setWaitingTickets] = useState(initialWaitingTickets);
-  const [lastCalledTicket, setLastCalledTicket] = useState<any>(null);
-  const [showAnnouncement, setShowAnnouncement] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const updateCalledAnchors = useMemo(
+    () => (tickets: any[]) => {
+      const nextMap = new Map<string, string>();
+      for (const ticket of tickets) {
+        if (ticket.status === 'called' && ticket.called_at) {
+          nextMap.set(ticket.id, ticket.called_at);
+        }
+      }
+      return nextMap;
+    },
+    []
+  );
+
+  useEffect(() => {
+    knownCalledAnchorsRef.current = updateCalledAnchors(initialActiveTickets);
+  }, [initialActiveTickets, updateCalledAnchors]);
 
   // Update clock every second
   useEffect(() => {
@@ -123,97 +141,58 @@ export function DisplayBoard({
     return () => clearInterval(interval);
   }, []);
 
-  // Subscribe to real-time ticket changes
+  // Poll through a server route so public displays don't depend on public row access
   useEffect(() => {
     if (sandboxMode) return;
-    const supabase = createClient();
+    const refreshData = async () => {
+      try {
+        const response = await fetch(`/api/display-status/${displayScreen.screen_token}`, {
+          cache: 'no-store',
+        });
+        if (!response.ok) return;
 
-    const channel = supabase
-      .channel(`display-${screen.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tickets',
-          filter: `office_id=eq.${office.id}`,
-        },
-        async (payload) => {
-          // Refresh active tickets
-          const { data: active } = await supabase
-            .from('tickets')
-            .select('*, desk:desks(name, display_name), service:services(name), department:departments(name, code)')
-            .eq('office_id', office.id)
-            .in('status', ['called', 'serving'])
-            .order('called_at', { ascending: false });
+        const data = await response.json();
+        const nextActive = Array.isArray(data.activeTickets) ? data.activeTickets : [];
+        const nextWaiting = Array.isArray(data.waitingTickets) ? data.waitingTickets : [];
+        const nextScreen = data.screen ?? displayScreen;
+        const nextCalledAnchors = updateCalledAnchors(nextActive);
 
-          const { data: waiting } = await supabase
-            .from('tickets')
-            .select('id, department_id, ticket_number, created_at')
-            .eq('office_id', office.id)
-            .eq('status', 'waiting')
-            .order('created_at');
-
-          if (active) setActiveTickets(active);
-          if (waiting) setWaitingTickets(waiting);
-
-          // Show announcement for newly called tickets
-          if (
-            payload.eventType === 'UPDATE' &&
-            (payload.new as any).status === 'called'
-          ) {
-            const calledTicket = active?.find(
-              (t) => t.id === (payload.new as any).id
-            );
-            if (calledTicket) {
-              setLastCalledTicket(calledTicket);
-              setShowAnnouncement(true);
-              // Play chime sound (if enabled)
-              if (announcementSound) {
-                try {
-                  const audio = new Audio('/sounds/chime.mp3');
-                  audio.play().catch(() => {});
-                } catch {}
-              }
-              // Hide announcement after configured duration
-              setTimeout(() => setShowAnnouncement(false), announcementDuration);
+        for (const ticket of nextActive) {
+          if (ticket.status !== 'called' || !ticket.called_at) continue;
+          const previousCalledAt = knownCalledAnchorsRef.current.get(ticket.id);
+          if (!previousCalledAt || previousCalledAt !== ticket.called_at) {
+            setLastCalledTicket(ticket);
+            setShowAnnouncement(true);
+            if ((nextScreen.settings?.announcement_sound ?? announcementSound) === true) {
+              try {
+                const audio = new Audio('/sounds/chime.mp3');
+                audio.play().catch(() => {});
+              } catch {}
             }
+            window.setTimeout(
+              () => setShowAnnouncement(false),
+              ((nextScreen.settings?.announcement_duration ?? (announcementDuration / 1000)) as number) * 1000
+            );
+            break;
           }
         }
-      )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[Display] Realtime subscription failed:', status);
-        }
-      });
 
-    // Polling fallback
-    const refreshData = async () => {
-      const { data: active } = await supabase
-        .from('tickets')
-        .select('*, desk:desks(name, display_name), service:services(name), department:departments(name, code)')
-        .eq('office_id', office.id)
-        .in('status', ['called', 'serving'])
-        .order('called_at', { ascending: false });
-
-      const { data: waiting } = await supabase
-        .from('tickets')
-        .select('id, department_id, ticket_number, created_at')
-        .eq('office_id', office.id)
-        .eq('status', 'waiting')
-        .order('created_at');
-
-      if (active) setActiveTickets(active);
-      if (waiting) setWaitingTickets(waiting);
+        knownCalledAnchorsRef.current = nextCalledAnchors;
+        setDisplayScreen(nextScreen);
+        setActiveTickets(nextActive);
+        setWaitingTickets(nextWaiting);
+      } catch (error) {
+        console.warn('[Display] Failed to refresh display status', error);
+      }
     };
 
+    refreshData();
     const pollInterval = setInterval(refreshData, 4000);
 
     return () => {
       clearInterval(pollInterval);
-      supabase.removeChannel(channel);
     };
-  }, [announcementDuration, announcementSound, office.id, sandboxMode, screen.id]);
+  }, [announcementDuration, announcementSound, displayScreen.screen_token, sandboxMode, updateCalledAnchors]);
 
   // Filter active tickets by visible departments
   const nowServing = activeTickets.filter((t) => {

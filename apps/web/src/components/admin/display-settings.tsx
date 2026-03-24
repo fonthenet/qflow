@@ -357,6 +357,7 @@ function ScreenSettingsPanel({ screen, departments, onClose, onSaved }: ScreenSe
 
     startTransition(async () => {
       const settings = {
+        customized: true,
         layout,
         theme,
         bg_color: bgColor,

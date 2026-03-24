@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { DisplayBoard } from '@/components/display/display-board';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
+import { mergeDisplayScreenRuntime } from '@/lib/display-runtime';
 
 interface DisplayPageProps {
   params: Promise<{ screenToken: string }>;
@@ -59,18 +60,13 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
     .eq('status', 'waiting')
     .order('created_at');
 
-  const mergedScreen = {
-    ...screen,
-    layout: screen.layout ?? platformConfig.experienceProfile.display.defaultLayout,
-    settings: {
-      theme: platformConfig.experienceProfile.display.theme,
-      show_clock: platformConfig.experienceProfile.display.showClock,
-      show_next_up: platformConfig.experienceProfile.display.showNextUp,
-      show_department_breakdown: platformConfig.experienceProfile.display.showDepartmentBreakdown,
-      announcement_sound: platformConfig.experienceProfile.display.announcementSound,
-      ...screenSettings,
+  const mergedScreen = mergeDisplayScreenRuntime(
+    {
+      ...screen,
+      settings: screenSettings,
     },
-  };
+    platformConfig.experienceProfile.display
+  );
   const sanitizedActiveTickets = privacySafe
     ? (activeTickets ?? []).map((ticket: any) => ({
         ...ticket,

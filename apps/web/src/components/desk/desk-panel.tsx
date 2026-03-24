@@ -79,6 +79,7 @@ interface DeskPanelProps {
     enabled: boolean;
     initialQueue: QueueData;
   };
+  initialDisplayMode?: 'normal' | 'minimal';
 }
 
 type ToastType = 'success' | 'error' | 'info';
@@ -215,6 +216,7 @@ export function DeskPanel({
   restaurantTables = [],
   platformContext,
   sandbox,
+  initialDisplayMode = 'normal',
 }: DeskPanelProps) {
   const { t } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
@@ -241,8 +243,10 @@ export function DeskPanel({
   const [transferDeptId, setTransferDeptId] = useState('');
   const [transferServiceId, setTransferServiceId] = useState('');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [displayMode, setDisplayMode] = useState<'normal' | 'minimal'>(initialDisplayMode);
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const { queue: liveQueue, isLoading } = useRealtimeQueue({
     officeId: desk.office_id,
@@ -251,6 +255,36 @@ export function DeskPanel({
     initialQueue: sandbox?.initialQueue,
   });
   const queue = sandboxMode ? sandboxQueue : liveQueue;
+  const isMinimalView = displayMode === 'minimal';
+  const hasActiveDeskTicket = Boolean(
+    currentTicket && (currentTicket.status === 'called' || currentTicket.status === 'serving')
+  );
+
+  useEffect(() => {
+    const storageKey = `qf_desk_display_mode:${desk.id}`;
+    const saved =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem(storageKey)
+        : null;
+    if (saved === 'normal' || saved === 'minimal') {
+      setDisplayMode(saved);
+      return;
+    }
+    setDisplayMode(initialDisplayMode);
+  }, [desk.id, initialDisplayMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(`qf_desk_display_mode:${desk.id}`, displayMode);
+  }, [desk.id, displayMode]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     setTableState(restaurantTables);
   }, [restaurantTables]);
@@ -302,7 +336,9 @@ export function DeskPanel({
   const bookingLabel = vocabulary?.bookingLabel ?? 'Booking';
 
   const timer = useServiceTimer(
-    currentTicket?.status === 'serving' ? currentTicket.serving_started_at : null
+    currentTicket?.status === 'serving'
+      ? currentTicket.serving_started_at ?? currentTicket.called_at
+      : null
   );
 
   const callCountdown = useCallCountdown(
@@ -364,6 +400,19 @@ export function DeskPanel({
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const getDeskErrorMessage = useCallback(
+    (message: string) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized.includes('desk already has an active ticket')) {
+        return t('This {label} already has an active ticket. Finish service or send the current ticket back to the queue first.', {
+          label: deskLabel.toLowerCase(),
+        });
+      }
+      return message;
+    },
+    [deskLabel, t]
+  );
+
   const handleCallNext = () => {
     if (sandboxMode) {
       const nextTicket = queue.waiting[0];
@@ -391,7 +440,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await callNextTicket(desk.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setCurrentTicket(result.data);
@@ -429,7 +478,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await startServing(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setCurrentTicket(result.data);
@@ -466,7 +515,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await markServed(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'served', time: new Date() });
@@ -498,7 +547,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await markNoShow(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'no_show', time: new Date() });
@@ -524,7 +573,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await recallTicket(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       const smsSent = 'smsSent' in result && result.smsSent === true;
@@ -554,7 +603,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await buzzTicket(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       const smsSent = 'smsSent' in result && result.smsSent === true;
@@ -602,7 +651,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await resetTicketToQueue(currentTicket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
@@ -654,7 +703,7 @@ export function DeskPanel({
         transferServiceId
       );
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'transferred', time: new Date() });
@@ -697,7 +746,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await callBackTicketToDesk(ticket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setCurrentTicket(result.data);
@@ -755,7 +804,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await callSpecificTicket(desk.id, ticket.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       if (!currentTicket || currentTicket.status !== 'serving') {
@@ -835,7 +884,7 @@ export function DeskPanel({
     startTransition(async () => {
       const result = await assignRestaurantTable(currentTicket.id, table.id);
       if (result.error) {
-        addToast(result.error, 'error');
+        addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       if (!result.data) {
@@ -1047,7 +1096,7 @@ export function DeskPanel({
 
   const formatRelativeTime = useCallback((value: string | null | undefined) => {
     if (!value) return '--';
-    const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+    const elapsedMinutes = Math.max(0, Math.floor((nowMs - new Date(value).getTime()) / 60000));
     if (elapsedMinutes < 1) return t('Just now');
     if (elapsedMinutes === 1) return t('1 min ago');
     if (elapsedMinutes < 60) return t('{count} min ago', { count: elapsedMinutes });
@@ -1056,14 +1105,25 @@ export function DeskPanel({
     return minutes === 0
       ? t('{count}h ago', { count: hours })
       : t('{hours}h {minutes}m ago', { hours, minutes });
-  }, [t]);
+  }, [nowMs, t]);
+
+  const getWaitingAnchor = useCallback(
+    (ticket: Ticket | null | undefined) => ticket?.checked_in_at ?? ticket?.created_at ?? null,
+    []
+  );
+
+  const formatWaitMinutes = useCallback(
+    (minutes: number) => (minutes > 0 ? t('{count} min', { count: minutes }) : t('Just now')),
+    [t]
+  );
 
   const waitingTickets = queue.waiting;
   const activeElsewhere = [...queue.called, ...queue.serving].filter((ticket) => ticket.id !== currentTicket?.id);
   const nextWaitingTicket = waitingTickets[0] ?? null;
   const longestWaitingMinutes = waitingTickets.reduce((longest, ticket) => {
-    if (!ticket.created_at) return longest;
-    const elapsed = Math.max(0, Math.floor((Date.now() - new Date(ticket.created_at).getTime()) / 60000));
+    const anchor = getWaitingAnchor(ticket);
+    if (!anchor) return longest;
+    const elapsed = Math.max(0, Math.floor((nowMs - new Date(anchor).getTime()) / 60000));
     return Math.max(longest, elapsed);
   }, 0);
   const queueStateLabel = isRestaurantMode
@@ -1156,7 +1216,7 @@ export function DeskPanel({
   return (
     <div className="flex flex-col gap-6 h-full">
       {/* Header Bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             {desk.display_name ?? desk.name}
@@ -1167,6 +1227,30 @@ export function DeskPanel({
           <p className="mt-2 text-sm font-medium text-foreground/80">{queueStateLabel}</p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="inline-flex items-center rounded-full border border-border bg-card p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setDisplayMode('normal')}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                displayMode === 'normal'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {t('Normal')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayMode('minimal')}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                displayMode === 'minimal'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {t('Minimal')}
+            </button>
+          </div>
           <div className="flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2">
             <Users className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold text-primary">
@@ -1175,9 +1259,9 @@ export function DeskPanel({
                 : t('{count} waiting', { count: queue.waiting.length })}
             </span>
           </div>
-          <div className="hidden items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground md:flex">
+          <div className={`items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm font-medium text-muted-foreground md:flex ${isMinimalView ? 'hidden' : 'hidden md:flex'}`}>
             <TimerReset className="h-4 w-4" />
-            {t('Longest wait {minutes}m', { minutes: longestWaitingMinutes })}
+            {t('Longest wait')}: {formatWaitMinutes(longestWaitingMinutes)}
           </div>
           <div
             className={`h-3 w-3 rounded-full ${
@@ -1193,9 +1277,9 @@ export function DeskPanel({
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+      <div className={`grid grid-cols-1 gap-6 flex-1 min-h-0 ${isMinimalView ? 'lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]' : 'lg:grid-cols-3'}`}>
         {/* Left Column: Current Work Item */}
-        <div className="lg:col-span-2 flex flex-col gap-5">
+        <div className={`${isMinimalView ? '' : 'lg:col-span-2'} flex flex-col gap-5`}>
           {/* Current Ticket Card */}
           <div
             className={`rounded-2xl border-2 p-6 transition-all ${
@@ -1364,12 +1448,25 @@ export function DeskPanel({
                       {t('Ref')} {currentTicket.ticket_number}
                     </p>
                   )}
+                  {(!isRestaurantMode || isMinimalView) && (
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      {!isRestaurantMode && (
+                        <span className="rounded-full bg-background px-3 py-1 text-sm font-medium text-foreground shadow-sm">
+                          {getTicketCustomerName(currentTicket) ?? t('No name provided')}
+                        </span>
+                      )}
+                      <span className="rounded-full bg-background px-3 py-1 text-sm font-medium text-foreground shadow-sm">
+                        {t('Checked in')} {formatAbsoluteTime(currentTicket.checked_in_at)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
+                {!isMinimalView && (
                 <div className="mb-5 grid gap-3 md:grid-cols-4">
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {isRestaurantMode ? serviceLabel : 'Service'}
+                      {isRestaurantMode ? serviceLabel : t('Service')}
                       
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
@@ -1384,7 +1481,7 @@ export function DeskPanel({
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {isRestaurantMode ? currentTableCardLabel : 'Checked in'}
+                      {isRestaurantMode ? currentTableCardLabel : t('Checked in')}
                       
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
@@ -1421,8 +1518,9 @@ export function DeskPanel({
                     </p>
                   </div>
                 </div>
+                )}
 
-                {isRestaurantMode && (
+                {!isMinimalView && isRestaurantMode && (
                   <div className="mb-5 grid gap-3 lg:grid-cols-[1.35fr_0.95fr]">
                     <div className="rounded-xl border border-border bg-card">
                       <div className="border-b border-border px-4 py-3">
@@ -1603,26 +1701,26 @@ export function DeskPanel({
                 )}
 
                 {/* Customer Data */}
-                {!isRestaurantMode && currentTicket.customer_data ? (
+                {!isMinimalView && !isRestaurantMode && currentTicket.customer_data ? (
                   <CustomerDataCard
                     data={currentTicket.customer_data as Record<string, unknown> | null}
                     fields={currentTicketFields}
                     scope={customerDataScope}
                     className="mb-5"
                   />
-                ) : (
+                ) : !isMinimalView ? (
                   <div className="mb-5 grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {isRestaurantMode ? 'Party' : 'Customer'}
+                        {isRestaurantMode ? t('Party') : customerLabel}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {getTicketCustomerName(currentTicket) ?? (isRestaurantMode ? 'Walk-in party' : 'No intake collected')}
+                        {getTicketCustomerName(currentTicket) ?? (isRestaurantMode ? t('Walk-in party') : t('No intake collected'))}
                       </p>
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {isRestaurantMode ? 'Area' : 'Department'}
+                        {isRestaurantMode ? t('Area') : t('Department')}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
                         {isRestaurantMode
@@ -1632,14 +1730,16 @@ export function DeskPanel({
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {isRestaurantMode ? 'Wait quote' : 'Estimated wait'}
+                        {isRestaurantMode ? t('Wait quote') : t('Estimated wait')}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-foreground">
-                        {currentTicket.estimated_wait_minutes ? `${currentTicket.estimated_wait_minutes} min` : 'Not available'}
+                        {currentTicket.estimated_wait_minutes
+                          ? formatWaitMinutes(currentTicket.estimated_wait_minutes)
+                          : t('Not available')}
                       </p>
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-3">
@@ -1657,9 +1757,9 @@ export function DeskPanel({
                         )}
                         {isRestaurantMode
                           ? currentAssignedTableCode
-                            ? 'Seat Party'
-                            : 'Choose Table to Seat'
-                          : 'Start Serving'}
+                            ? t('Seat Party')
+                            : t('Choose Table to Seat')
+                          : t('Start Serving')}
                       </button>
                       <button
                         onClick={handleRecall}
@@ -1667,7 +1767,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
                       >
                         <Volume2 className="h-4 w-4" />
-                        {isRestaurantMode ? 'Notify Again' : 'Recall'}
+                        {isRestaurantMode ? t('Notify Again') : t('Recall')}
                       </button>
                       <button
                         onClick={handleBuzz}
@@ -1675,7 +1775,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-destructive/10 px-5 py-3 text-sm font-bold text-destructive hover:bg-destructive/20 disabled:opacity-50 transition-all"
                       >
                         <Smartphone className="h-4 w-4" />
-                        {isRestaurantMode ? 'Send Ready Alert' : 'Buzz'}
+                        {isRestaurantMode ? t('Send Ready Alert') : t('Buzz')}
                       </button>
                       <button
                         onClick={handleNoShow}
@@ -1683,7 +1783,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-warning/10 px-5 py-3 text-sm font-bold text-warning hover:bg-warning/20 disabled:opacity-50 transition-all"
                       >
                         <UserX className="h-4 w-4" />
-                        {isRestaurantMode ? 'Party Left' : 'No Show'}
+                        {isRestaurantMode ? t('Party Left') : t('No Show')}
                       </button>
                       <button
                         onClick={handleResetToQueue}
@@ -1691,7 +1791,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-gray-100 px-5 py-3 text-sm font-bold text-gray-600 hover:bg-gray-200 disabled:opacity-50 transition-all"
                       >
                         <ArrowRightLeft className="h-4 w-4" />
-                        {isRestaurantMode ? 'Back to Waitlist' : 'Reset to Queue'}
+                        {isRestaurantMode ? t('Back to Waitlist') : t('Reset to Queue')}
                       </button>
                     </>
                   )}
@@ -1708,7 +1808,7 @@ export function DeskPanel({
                         ) : (
                           <CheckCircle2 className="h-4 w-4" />
                         )}
-                        {isRestaurantMode ? 'Close Party' : 'Mark Served'}
+                        {isRestaurantMode ? t('Close Party') : t('Mark Served')}
                       </button>
                       <button
                         onClick={() => setShowTransferDialog(true)}
@@ -1716,7 +1816,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-xl bg-primary/10 px-5 py-3 text-sm font-bold text-primary hover:bg-primary/20 disabled:opacity-50 transition-all"
                       >
                         <ArrowRightLeft className="h-4 w-4" />
-                        {isRestaurantMode ? 'Reassign Area' : 'Transfer'}
+                        {isRestaurantMode ? t('Reassign Area') : t('Transfer')}
                       </button>
                     </>
                   )}
@@ -1740,6 +1840,7 @@ export function DeskPanel({
           </div>
 
           {/* Queue Health */}
+          {!isMinimalView && (
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1750,7 +1851,7 @@ export function DeskPanel({
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Longest wait')}</p>
               
-              <p className="mt-2 text-3xl font-bold text-foreground">{longestWaitingMinutes}m</p>
+              <p className="mt-2 text-3xl font-bold text-foreground">{formatWaitMinutes(longestWaitingMinutes)}</p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('Active elsewhere')}</p>
@@ -1761,6 +1862,7 @@ export function DeskPanel({
               <p className="mt-2 text-3xl font-bold text-foreground">{queue.recentlyServed.length}</p>
             </div>
           </div>
+          )}
         </div>
 
         {/* Right Column: Queue List */}
@@ -1788,16 +1890,22 @@ export function DeskPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">{t('Up next')}</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <p className="text-lg font-bold text-foreground">{nextWaitingTicket.ticket_number}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-foreground shadow-sm">
+                          {nextWaitingTicket.ticket_number}
+                        </span>
+                        <span className="rounded-full bg-white/80 px-3 py-1 text-sm font-medium text-foreground/80 shadow-sm">
+                          {getTicketCustomerName(nextWaitingTicket) ?? (isRestaurantMode ? t('Walk-in party') : t('No name provided'))}
+                        </span>
                         <PriorityBadge priorityCategory={getPriorityCategory(nextWaitingTicket)} />
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleCallWaitingTicket(nextWaitingTicket)}
-                      disabled={isPending}
-                      className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      disabled={isPending || hasActiveDeskTicket}
+                      title={hasActiveDeskTicket ? t('Finish service or send the current ticket back to the queue first.') : undefined}
+                      className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted disabled:opacity-100"
                     >
                       {isRestaurantMode ? t('Notify now') : t('Call now')}
                     </button>
@@ -1858,13 +1966,18 @@ export function DeskPanel({
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-bold text-foreground">
+                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-sm font-bold text-foreground">
                                       {ticket.ticket_number}
-                                    </p>
+                                    </span>
+                                    <span className="rounded-full bg-primary/5 px-2.5 py-1 text-sm font-medium text-foreground/80">
+                                      {getTicketCustomerName(ticket) ?? (isRestaurantMode ? t('Walk-in party') : t('No name provided'))}
+                                    </span>
                                     <PriorityBadge priorityCategory={getPriorityCategory(ticket)} className="shrink-0" />
+                                    {!isMinimalView && (
                                     <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                                       {getTicketSource(ticket)}
                                     </span>
+                                    )}
                                     {rowSuggestedTable && (
                                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                                         {rowSuggestedTable.code}
@@ -1875,8 +1988,9 @@ export function DeskPanel({
                                 <button
                                   type="button"
                                   onClick={() => handleCallWaitingTicket(ticket)}
-                                  disabled={isPending}
-                                  className="shrink-0 rounded-lg border border-border bg-background px-3 py-2 text-[11px] font-bold text-foreground hover:bg-muted disabled:opacity-50"
+                                  disabled={isPending || hasActiveDeskTicket}
+                                  title={hasActiveDeskTicket ? t('Finish service or send the current ticket back to the queue first.') : undefined}
+                                  className="shrink-0 rounded-lg border border-border bg-background px-3 py-2 text-[11px] font-bold text-foreground hover:bg-muted disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:hover:bg-muted disabled:opacity-100"
                                 >
                                   {isRestaurantMode ? t('Notify') : t('Call')}
                                 </button>
@@ -1892,7 +2006,7 @@ export function DeskPanel({
                                 <span>
                                   {isRestaurantMode
                                     ? getRestaurantSeatingPreference(ticket) ?? t('First available')
-                                    : getTicketCustomerName(ticket) ?? t('No name provided')}
+                                    : getTicketServiceName(ticket)}
                                 </span>
                                 <span>{formatRelativeTime(ticket.created_at)}</span>
                                 <span>{t('Checked in')} {formatAbsoluteTime(ticket.checked_in_at)}</span>
@@ -1914,7 +2028,7 @@ export function DeskPanel({
             </div>
           </div>
 
-          {isRestaurantMode && (
+          {!isMinimalView && isRestaurantMode && (
             <div className="rounded-2xl border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
                 <h3 className="text-sm font-semibold text-foreground">{t('Taken tables')}</h3>
@@ -2006,6 +2120,7 @@ export function DeskPanel({
           )}
 
           {/* Currently Called / Being Served by Others */}
+          {!isMinimalView && (
           <div className="rounded-2xl border border-border bg-card">
             <div className="border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">
@@ -2062,6 +2177,7 @@ export function DeskPanel({
               )}
             </div>
           </div>
+          )}
         </div>
       </div>
 

@@ -15,7 +15,15 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function DeskPage() {
+export default async function DeskPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ view?: string }>;
+}) {
+  return renderDeskPage(searchParams ? await searchParams : undefined);
+}
+
+async function renderDeskPage(searchParams?: { view?: string }) {
   const { t } = await getServerI18n();
   const supabase = await createClient();
 
@@ -196,6 +204,7 @@ export default async function DeskPage() {
         vocabulary: platformConfig.experienceProfile.vocabulary,
         officeSettings: platformConfig.officeSettings,
       }}
+      initialDisplayMode={searchParams?.view === 'minimal' ? 'minimal' : 'normal'}
     />
   );
 }
