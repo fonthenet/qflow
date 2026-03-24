@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
+import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 
 // ── Transfer Modal Component ──────────────────────────────────────
-function TransferModal({ desks, onTransfer, onClose }: {
+function TransferModal({ desks, onTransfer, onClose, locale }: {
   desks: [string, string][];
   onTransfer: (deskId: string, deskName: string) => void;
   onClose: () => void;
+  locale: DesktopLocale;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -29,14 +32,14 @@ function TransferModal({ desks, onTransfer, onClose }: {
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
-        aria-label="Transfer ticket to another desk"
+        aria-label={t('Transfer ticket to another desk')}
         style={{
           background: 'var(--surface)', borderRadius: 12, padding: 24,
           minWidth: 320, maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           outline: 'none',
         }}
       >
-        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>Transfer to Desk</h3>
+        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>{t('Transfer to Desk')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {desks.map(([id, name]) => (
             <button
@@ -66,7 +69,7 @@ function TransferModal({ desks, onTransfer, onClose }: {
             cursor: 'pointer', fontSize: 13, fontWeight: 600,
           }}
         >
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </div>
@@ -81,18 +84,14 @@ declare global {
 
 interface Props {
   session: StaffSession;
+  locale: DesktopLocale;
+  languageOptions: Array<{ value: DesktopLocale; label: string }>;
+  onLocaleChange: (locale: DesktopLocale) => void;
   isOnline: boolean;
   staffStatus: 'available' | 'on_break' | 'away';
   queuePaused: boolean;
   onStaffStatusChange: (status: 'available' | 'on_break' | 'away') => void;
   onQueuePausedChange: (paused: boolean) => void;
-}
-
-function formatWait(dateStr: string): string {
-  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (mins < 1) return '<1m';
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
 function statusColor(status: string): string {
@@ -118,8 +117,9 @@ const STAFF_STATUS_LABELS: Record<StaffStatus, { label: string; color: string; i
 
 const DAYS_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-function OfficeHoursBadge() {
+function OfficeHoursBadge({ locale }: { locale: DesktopLocale }) {
   const [status, setStatus] = useState<{ isOpen: boolean; reason: string; todayHours: any; nextOpen?: any; currentDay: string } | null>(null);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
     function check() {
@@ -170,12 +170,12 @@ function OfficeHoursBadge() {
 
   if (!status) return null;
 
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const cap = (s: string) => t(s.charAt(0).toUpperCase() + s.slice(1));
 
   return (
     <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-        Office Hours
+        {t('Office Hours')}
       </div>
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
@@ -189,19 +189,19 @@ function OfficeHoursBadge() {
           background: status.isOpen ? '#22c55e' : '#ef4444',
         }} />
         {status.isOpen
-          ? `Open until ${status.todayHours?.close || ''}`
+          ? t('Open until {time}', { time: status.todayHours?.close || '' })
           : status.reason === 'before_hours'
-          ? `Opens at ${status.todayHours?.open || ''}`
+          ? t('Opens at {time}', { time: status.todayHours?.open || '' })
           : status.nextOpen
-          ? `Closed — opens ${cap(status.nextOpen.day)} ${status.nextOpen.time}`
-          : 'Closed'
+          ? t('Closed - opens {day} {time}', { day: cap(status.nextOpen.day), time: status.nextOpen.time })
+          : t('Closed')
         }
       </div>
     </div>
   );
 }
 
-export function Station({ session, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
+export function Station({ session, locale, languageOptions, onLocaleChange, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -218,6 +218,24 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const servingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevWaitingCount = useRef(0);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+  const formatWait = useCallback((dateStr: string) => formatWaitLabel(dateStr, locale), [locale]);
+  const statusLabels = useMemo(() => ({
+    available: { ...STAFF_STATUS_LABELS.available, label: t('Available') },
+    on_break: { ...STAFF_STATUS_LABELS.on_break, label: t('On Break') },
+    away: { ...STAFF_STATUS_LABELS.away, label: t('Away') },
+  }), [locale]);
+  const translateAction = useCallback((action: string) => {
+    const normalized = action.toLowerCase();
+    if (normalized === 'served' || normalized === 'completed') return t('Completed');
+    if (normalized === 'no_show' || normalized === 'no show') return t('No Show');
+    if (normalized === 'requeued') return t('Requeued');
+    if (normalized === 'recalled') return t('Recalled');
+    if (normalized === 'cancelled') return t('Cancelled');
+    if (normalized === 'serving') return t('Serving');
+    if (normalized === 'called') return t('Called');
+    return action;
+  }, [locale]);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -329,13 +347,13 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
     try {
       const result = await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
       if (!result) {
-        showToast('No tickets waiting in queue', 'info');
+        showToast(t('No tickets waiting in queue'), 'info');
         return;
       }
       fetchTickets();
       window.qf.sync?.force?.().catch(() => {});
     } catch (err: any) {
-      showToast('Failed to call next ticket', 'error');
+      showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
     }
   };
@@ -344,34 +362,34 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
     try {
       const result = await window.qf.db.updateTicket(ticketId, updates);
       if (updates.status === 'called' && !result) {
-        showToast('Ticket already called by another desk', 'error');
+        showToast(t('Ticket already called by another desk'), 'error');
       }
       fetchTickets();
       window.qf.sync?.force?.().catch(() => {});
     } catch (err: any) {
-      showToast('Failed to update ticket', 'error');
+      showToast(t('Failed to update ticket'), 'error');
       console.error('[station] updateTicket error:', err);
     }
   };
 
   const startServing = (id: string) => {
     updateTicketStatus(id, { status: 'serving', serving_started_at: new Date().toISOString() });
-    const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, 'Serving');
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Serving'));
   };
 
   const complete = (id: string) => {
     updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString() });
-    const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, 'Completed');
-    showToast(`${t?.ticket_number ?? 'Ticket'} completed`, 'success');
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Completed'));
+    showToast(t('{ticket} completed', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'success');
   };
 
   const noShow = (id: string) => {
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString() });
-    const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, 'No Show');
-    showToast(`${t?.ticket_number ?? 'Ticket'} marked no-show`, 'info');
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
+    showToast(t('{ticket} marked no-show', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'info');
   };
 
   const recall = async (id: string) => {
@@ -380,19 +398,19 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
       called_at: new Date().toISOString(),
       recall_count: (t?.recall_count ?? 0) + 1,
     });
-    if (t) addActivity(t.ticket_number, 'Recalled');
+    if (t) addActivity(t.ticket_number, translate(locale, 'Recalled'));
   };
 
   const requeue = (id: string) => {
     updateTicketStatus(id, { status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null });
     const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, 'Requeued');
+    if (t) addActivity(t.ticket_number, translate(locale, 'Requeued'));
   };
 
   const cancel = (id: string) => {
     updateTicketStatus(id, { status: 'cancelled', cancelled_at: new Date().toISOString() });
     const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, 'Cancelled');
+    if (t) addActivity(t.ticket_number, translate(locale, 'Cancelled'));
   };
 
   // ── Keyboard shortcuts ──────────────────────────────────────────
@@ -464,23 +482,23 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
       if (rows?.length) {
         setRecentActivity(rows.map((r: any) => ({
           ticket: r.ticket,
-          action: r.action,
-          time: new Date(r.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          action: translateAction(r.action),
+          time: formatDesktopTime(r.time, locale),
         })));
       }
     }).catch(() => {});
-  }, [session?.office_id]);
+  }, [locale, session?.office_id, translateAction]);
 
   // Track completed actions — only keep the latest status per ticket
   const addActivity = useCallback((ticket: string, action: string) => {
     setRecentActivity((prev) => {
       const filtered = prev.filter((a) => a.ticket !== ticket);
       return [
-        { ticket, action, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) },
+        { ticket, action, time: formatDesktopTime(new Date(), locale) },
         ...filtered.slice(0, 9),
       ];
     });
-  }, []);
+  }, [locale]);
 
   // Sound alert when new ticket arrives
   useEffect(() => {
@@ -522,36 +540,36 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
   return (
     <div className="station" role="main">
       {/* Left panel — active ticket */}
-      <div className="station-main" aria-label="Active ticket area">
+      <div className="station-main" aria-label={t('Active tickets')}>
         {!session.desk_id ? (
           <div className="no-desk" role="alert">
-            <h2>No Desk Assigned</h2>
-            <p>Ask your admin to assign you to a desk before you can start serving.</p>
+            <h2>{t('No Desk Assigned')}</h2>
+            <p>{t('Ask your admin to assign you to a desk before you can start serving.')}</p>
           </div>
         ) : activeTicket ? (
           <div className="active-ticket-panel">
             {activeTicket.status === 'called' ? (
               <>
-                <div className="active-status called">CALLING</div>
+                <div className="active-status called">{t('CALLING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="active-customer">
-                  {(activeTicket.customer_data as any)?.name ?? 'Walk-in Customer'}
+                  {(activeTicket.customer_data as any)?.name ?? t('Walk-in Customer')}
                 </div>
                 {(activeTicket.customer_data as any)?.phone && (
                   <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
                   <div className="active-notes">
-                    <strong>Reason:</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
                   </div>
                 )}
                 <div className="active-meta">
-                  {names.services[activeTicket.service_id ?? ''] ?? 'Service'} &middot;{' '}
-                  {names.departments[activeTicket.department_id ?? ''] ?? 'Dept'}
+                  {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
+                  {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
                 </div>
 
                 {/* Countdown */}
-                <div className="countdown-ring" role="timer" aria-label={`${callCountdown} seconds remaining`}>
+                <div className="countdown-ring" role="timer" aria-label={t('{seconds} seconds remaining', { seconds: callCountdown })}>
                   <svg viewBox="0 0 100 100" aria-hidden="true">
                     <circle cx="50" cy="50" r="45" fill="none" stroke="#1e293b" strokeWidth="6" />
                     <circle
@@ -568,50 +586,50 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
 
                 <div className="active-actions">
                   <button className="btn-primary btn-lg" onClick={() => startServing(activeTicket.id)} title="F9">
-                    Start Serving <span className="shortcut-hint">F9</span>
+                    {t('Start Serving')} <span className="shortcut-hint">F9</span>
                   </button>
                   <div className="secondary-actions">
-                    <button className="btn-outline" onClick={() => recall(activeTicket.id)} aria-label={`Recall ticket ${activeTicket.ticket_number}, recalled ${activeTicket.recall_count} times`}>
-                      Recall ({activeTicket.recall_count})
+                    <button className="btn-outline" onClick={() => recall(activeTicket.id)} aria-label={`${t('Recall')} ${activeTicket.ticket_number}`}>
+                      {t('Recall')} ({activeTicket.recall_count})
                     </button>
-                    <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)} aria-label={`Mark ticket ${activeTicket.ticket_number} as no show`}>
-                      No Show
+                    <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)} aria-label={`${t('No Show')} ${activeTicket.ticket_number}`}>
+                      {t('No Show')}
                     </button>
-                    <button className="btn-outline" onClick={() => requeue(activeTicket.id)} aria-label={`Send ticket ${activeTicket.ticket_number} back to queue`}>
-                      Back to Queue
+                    <button className="btn-outline" onClick={() => requeue(activeTicket.id)} aria-label={`${t('Back to Queue')} ${activeTicket.ticket_number}`}>
+                      {t('Back to Queue')}
                     </button>
                     <button className="btn-outline" onClick={() => {
                       const deskList = Object.entries(names.desks).filter(([id]) => id !== session.desk_id);
-                      if (deskList.length === 0) { showToast('No other desks available', 'error'); return; }
+                      if (deskList.length === 0) { showToast(t('No other desks available'), 'error'); return; }
                       setShowTransferModal(true);
-                    }} aria-label={`Transfer ticket ${activeTicket.ticket_number} to another desk`}>
-                      Transfer
+                    }} aria-label={`${t('Transfer')} ${activeTicket.ticket_number}`}>
+                      {t('Transfer')}
                     </button>
                   </div>
                 </div>
               </>
             ) : (
               <>
-                <div className="active-status serving">NOW SERVING</div>
+                <div className="active-status serving">{t('NOW SERVING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="active-customer">
-                  {(activeTicket.customer_data as any)?.name ?? 'Walk-in Customer'}
+                  {(activeTicket.customer_data as any)?.name ?? t('Walk-in Customer')}
                 </div>
                 {(activeTicket.customer_data as any)?.phone && (
                   <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
                   <div className="active-notes">
-                    <strong>Reason:</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
                   </div>
                 )}
                 <div className="active-meta">
-                  {names.services[activeTicket.service_id ?? ''] ?? 'Service'} &middot;{' '}
-                  {names.departments[activeTicket.department_id ?? ''] ?? 'Dept'}
+                  {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
+                  {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
                 </div>
 
                 {/* Serving elapsed timer */}
-                <div className="serving-timer" role="timer" aria-label={`Serving for ${Math.floor(servingElapsed / 60)} minutes ${servingElapsed % 60} seconds`} style={{
+                <div className="serving-timer" role="timer" aria-label={t('Serving for {minutes} minutes {seconds} seconds', { minutes: Math.floor(servingElapsed / 60), seconds: servingElapsed % 60 })} style={{
                   margin: '1rem auto',
                   display: 'flex',
                   alignItems: 'center',
@@ -631,14 +649,14 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
 
                 <div className="active-actions">
                   <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
-                    Complete Service <span className="shortcut-hint">F10</span>
+                    {t('Complete Service')} <span className="shortcut-hint">F10</span>
                   </button>
                   <div className="secondary-actions">
                     <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)}>
-                      No Show
+                      {t('No Show')}
                     </button>
                     <button className="btn-outline btn-danger" onClick={() => cancel(activeTicket.id)}>
-                      Cancel
+                      {t('Cancel')}
                     </button>
                   </div>
                 </div>
@@ -654,7 +672,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
               <button
                 onClick={() => {
                   onQueuePausedChange(!queuePaused);
-                  showToast(queuePaused ? 'Queue resumed' : 'Queue paused — no new calls', queuePaused ? 'success' : 'info');
+                  showToast(queuePaused ? t('Queue resumed') : t('Queue paused - no new calls'), queuePaused ? 'success' : 'info');
                 }}
                 title="F7 — Toggle pause"
                 style={{
@@ -665,9 +683,9 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                   cursor: 'pointer', fontSize: 12, fontWeight: 600,
                   color: queuePaused ? '#f59e0b' : 'var(--text3)',
                 }}
-                aria-label={queuePaused ? 'Resume queue' : 'Pause queue'}
+                aria-label={queuePaused ? t('Resume queue') : t('Pause queue')}
               >
-                {queuePaused ? '▶ Resume' : '⏸ Pause'} <span className="shortcut-hint">F7</span>
+                {queuePaused ? `▶ ${t('Resume queue')}` : `⏸ ${t('Pause queue')}`} <span className="shortcut-hint">F7</span>
               </button>
             )}
             {/* Staff status dropdown */}
@@ -677,15 +695,15 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '5px 14px', borderRadius: 20,
-                  border: `1.5px solid ${STAFF_STATUS_LABELS[staffStatus].color}40`,
-                  background: `${STAFF_STATUS_LABELS[staffStatus].color}12`,
+                  border: `1.5px solid ${statusLabels[staffStatus].color}40`,
+                  background: `${statusLabels[staffStatus].color}12`,
                   cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: STAFF_STATUS_LABELS[staffStatus].color,
+                  color: statusLabels[staffStatus].color,
                 }}
-                aria-label={`Staff status: ${STAFF_STATUS_LABELS[staffStatus].label}. Click to change.`}
+                aria-label={t('Status: {label}', { label: statusLabels[staffStatus].label })}
               >
-                <span>{STAFF_STATUS_LABELS[staffStatus].icon}</span>
-                <span>{STAFF_STATUS_LABELS[staffStatus].label}</span>
+                <span>{statusLabels[staffStatus].icon}</span>
+                <span>{statusLabels[staffStatus].label}</span>
                 <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
               </button>
               {showStatusMenu && (
@@ -695,7 +713,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                   borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
                   boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
                 }}>
-                  {(Object.entries(STAFF_STATUS_LABELS) as [StaffStatus, typeof STAFF_STATUS_LABELS[StaffStatus]][]).map(([key, val]) => (
+                  {(Object.entries(statusLabels) as [StaffStatus, typeof statusLabels[StaffStatus]][]).map(([key, val]) => (
                     <button
                       key={key}
                       onClick={() => {
@@ -703,7 +721,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                         setShowStatusMenu(false);
                         if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
                         if (key === 'available' && queuePaused) onQueuePausedChange(false);
-                        showToast(`Status: ${val.label}`, 'info');
+                        showToast(t('Status: {label}', { label: val.label }), 'info');
                       }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8, width: '100%',
@@ -727,28 +745,28 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : staffStatus === 'away' ? '#ef4444' : '#64748b' }}>
                   {staffStatus === 'on_break' ? '☕' : staffStatus === 'away' ? '🚫' : '⏸'}
                 </div>
-                <h2>{staffStatus === 'on_break' ? 'On Break' : staffStatus === 'away' ? 'Away' : 'Queue Paused'}</h2>
-                <p>{waiting.length} waiting in queue</p>
+                <h2>{staffStatus === 'on_break' ? t('On Break') : staffStatus === 'away' ? t('Away') : t('Queue Paused')}</h2>
+                <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
                 <button
                   className="btn-primary btn-xl"
-                  onClick={() => { onQueuePausedChange(false); onStaffStatusChange('available'); showToast('Queue resumed', 'success'); }}
+                  onClick={() => { onQueuePausedChange(false); onStaffStatusChange('available'); showToast(t('Queue resumed'), 'success'); }}
                   style={{ background: '#22c55e' }}
                 >
-                  Resume Queue <span className="shortcut-hint">F7</span>
+                  {t('Resume Queue')} <span className="shortcut-hint">F7</span>
                 </button>
               </>
             ) : (
               <>
                 <div className="idle-icon">✓</div>
-                <h2>Ready for Next Customer</h2>
-                <p>{waiting.length} waiting in queue</p>
+                <h2>{t('Ready for Next Customer')}</h2>
+                <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
                 <button
                   className="btn-primary btn-xl"
                   onClick={callNext}
                   disabled={waiting.length === 0}
                   title="F8 or Ctrl+Enter"
                 >
-                  Call Next ({waiting.length}) <span className="shortcut-hint">F8</span>
+                  {t('Call Next ({count})', { count: waiting.length })} <span className="shortcut-hint">F8</span>
                 </button>
               </>
             )}
@@ -758,59 +776,59 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
       </div>
 
       {/* Right panel — queue overview */}
-      <div className="station-sidebar" role="complementary" aria-label="Queue sidebar">
+      <div className="station-sidebar" role="complementary" aria-label={t('Queue Overview')}>
         <div className="sidebar-section">
           <div className="sidebar-header">
-            <h3>Queue Overview</h3>
-            <div className="queue-stats" aria-label={`${waiting.length} waiting, ${called.length} called, ${serving.length} serving`}>
-              <span className="stat-pill waiting" aria-hidden="true">{waiting.length} waiting</span>
-              <span className="stat-pill called" aria-hidden="true">{called.length} called</span>
-              <span className="stat-pill serving" aria-hidden="true">{serving.length} serving</span>
+            <h3>{t('Queue Overview')}</h3>
+            <div className="queue-stats" aria-label={t('{waiting} waiting, {called} called, {serving} serving', { waiting: waiting.length, called: called.length, serving: serving.length })}>
+              <span className="stat-pill waiting" aria-hidden="true">{t('{count} waiting', { count: waiting.length })}</span>
+              <span className="stat-pill called" aria-hidden="true">{t('{count} called', { count: called.length })}</span>
+              <span className="stat-pill serving" aria-hidden="true">{t('{count} serving', { count: serving.length })}</span>
             </div>
           </div>
         </div>
 
         <div className="sidebar-section queue-list queue-waiting">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h4 style={{ margin: 0 }}>Waiting ({waiting.length})</h4>
+            <h4 style={{ margin: 0 }}>{t('Waiting ({count})', { count: waiting.length })}</h4>
             {waiting.length > 3 && (
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder={t('Search...')}
                 value={searchFilter}
                 onChange={(e) => { setSearchFilter(e.target.value); setShowAllWaiting(false); }}
                 className="queue-search"
-                aria-label="Search waiting queue by name, phone, or ticket number"
+                aria-label={t('Search waiting queue by name, phone, or ticket number')}
               />
             )}
           </div>
-          <div className="ticket-list" role="list" aria-label="Waiting tickets">
-            {visibleWaiting.map((t, i) => (
-              <div key={t.id} className="queue-item" role="listitem" aria-label={`Position ${i + 1}, ticket ${t.ticket_number}, ${(t.customer_data as any)?.name ?? 'Walk-in'}, waiting ${formatWait(t.created_at)}`}>
+          <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
+            {visibleWaiting.map((ticket, i) => (
+              <div key={ticket.id} className="queue-item" role="listitem" aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: i + 1, ticket: ticket.ticket_number, name: (ticket.customer_data as any)?.name ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}>
                 <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
-                  <span className="queue-item-number">{t.ticket_number}</span>
+                  <span className="queue-item-number">{ticket.ticket_number}</span>
                   <span className="queue-item-meta">
-                    {(t.customer_data as any)?.name ?? 'Walk-in'} &middot; {formatWait(t.created_at)}
+                    {(ticket.customer_data as any)?.name ?? translate(locale, 'Walk-in')} &middot; {formatWait(ticket.created_at)}
                   </span>
                 </div>
                 <div className="queue-item-badges">
-                  {t.priority > 1 && <span className="badge priority">P{t.priority}</span>}
-                  {t.appointment_id && <span className="badge booked">Booked</span>}
-                  {t.is_remote && <span className="badge remote">Remote</span>}
+                  {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
+                  {ticket.appointment_id && <span className="badge booked">{translate(locale, 'Booked')}</span>}
+                  {ticket.is_remote && <span className="badge remote">{translate(locale, 'Remote')}</span>}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
                   <button
                     className="btn-sm btn-call"
-                    aria-label={`Call ticket ${t.ticket_number}`}
-                    onClick={() => updateTicketStatus(t.id, {
+                    aria-label={`${translate(locale, 'Call')} ${ticket.ticket_number}`}
+                    onClick={() => updateTicketStatus(ticket.id, {
                       status: 'called',
                       desk_id: session.desk_id,
                       called_by_staff_id: session.staff_id,
                       called_at: new Date().toISOString(),
                     })}
                   >
-                    Call
+                    {translate(locale, 'Call')}
                   </button>
                 )}
               </div>
@@ -824,26 +842,25 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                   cursor: 'pointer', fontSize: 12, fontWeight: 700,
                 }}
               >
-                Show all {filteredWaiting.length} tickets ({filteredWaiting.length - VISIBLE_CHUNK} more)
+                {t('Show all {count} tickets ({more} more)', { count: filteredWaiting.length, more: filteredWaiting.length - VISIBLE_CHUNK })}
               </button>
             )}
             {filteredWaiting.length === 0 && (
-              <div className="queue-empty">{searchFilter ? 'No matches' : 'No customers waiting'}</div>
+              <div className="queue-empty">{searchFilter ? t('No matches') : t('No customers waiting')}</div>
             )}
           </div>
         </div>
 
         <div className="sidebar-section queue-list queue-active">
-          <h4>Active ({called.length + serving.length})</h4>
-          <div className="ticket-list" role="list" aria-label="Active tickets">
-            {[...called, ...serving].map((t) => (
-              <div key={t.id} className={`queue-item ${t.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem" aria-label={`Ticket ${t.ticket_number}, ${t.status} at ${names.desks[t.desk_id ?? ''] ?? 'desk'}`}>
-                <div className="queue-item-dot" style={{ background: statusColor(t.status) }} aria-hidden="true" />
+          <h4>{t('Active ({count})', { count: called.length + serving.length })}</h4>
+          <div className="ticket-list" role="list" aria-label={t('Active tickets')}>
+            {[...called, ...serving].map((ticket) => (
+              <div key={ticket.id} className={`queue-item ${ticket.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem" aria-label={translate(locale, 'Ticket {ticket}, {status} at {desk}', { ticket: ticket.ticket_number, status: ticket.status === 'called' ? translate(locale, 'Called') : translate(locale, 'Serving'), desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}>
+                <div className="queue-item-dot" style={{ background: statusColor(ticket.status) }} aria-hidden="true" />
                 <div className="queue-item-info">
-                  <span className="queue-item-number">{t.ticket_number}</span>
+                  <span className="queue-item-number">{ticket.ticket_number}</span>
                   <span className="queue-item-meta">
-                    {t.status === 'called' ? 'Called' : 'Serving'} at{' '}
-                    {names.desks[t.desk_id ?? ''] ?? 'desk'}
+                    {ticket.status === 'called' ? translate(locale, 'Called at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') }) : translate(locale, 'Serving at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}
                   </span>
                 </div>
               </div>
@@ -862,12 +879,12 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
               }}
             >
               <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
-                Recent Activity ({recentActivity.length})
+                {t('Recent Activity ({count})', { count: recentActivity.length })}
               </h4>
               <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showActivity ? '▲' : '▼'}</span>
             </button>
             {showActivity && (
-              <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6 }} role="list" aria-label="Recent activity">
+              <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6 }} role="list" aria-label={t('Recent activity')}>
                 {recentActivity.slice(0, 10).map((a, i) => (
                   <div key={i} role="listitem" style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -876,8 +893,8 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                     <span><strong>{a.ticket}</strong> {a.action} · {a.time}</span>
                     <span style={{
                       fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, marginLeft: 6, whiteSpace: 'nowrap',
-                      background: a.action === 'Completed' ? 'rgba(34,197,94,0.15)' : a.action === 'No Show' ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
-                      color: a.action === 'Completed' ? '#22c55e' : a.action === 'No Show' ? '#f97316' : '#3b82f6',
+                      background: a.action === t('Completed') ? 'rgba(34,197,94,0.15)' : a.action === t('No Show') ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
+                      color: a.action === t('Completed') ? '#22c55e' : a.action === t('No Show') ? '#f97316' : '#3b82f6',
                     }}>
                       {a.action}
                     </span>
@@ -889,13 +906,33 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
         )}
 
         {/* Office Open/Closed Status */}
-        <OfficeHoursBadge />
+        <OfficeHoursBadge locale={locale} />
+
+        <div className="sidebar-section">
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            {t('Settings')}
+          </div>
+          <div className="station-setting-row">
+            <label htmlFor="station-language-select" className="station-setting-label">{t('Language')}</label>
+            <select
+              id="station-language-select"
+              className="station-setting-select"
+              value={locale}
+              onChange={(e) => onLocaleChange(e.target.value as DesktopLocale)}
+              aria-label={t('Language')}
+            >
+              {languageOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         {/* Device Status */}
         {deviceStatuses.length > 0 && (
           <div className="sidebar-section">
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Devices
+              {t('Devices')}
             </div>
             {deviceStatuses.map((d: any) => (
               <div key={d.id} style={{
@@ -908,7 +945,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                 }} aria-hidden="true" />
                 <span style={{ flex: 1 }}>{d.name}</span>
                 <span style={{ fontSize: 11, color: d.connected ? 'var(--text3)' : 'var(--danger)' }}>
-                  {d.connected ? 'Online' : 'Offline'}
+                  {d.connected ? t('Online') : t('Offline')}
                 </span>
               </div>
             ))}
@@ -919,11 +956,11 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
         {kioskUrl && (
           <div className="sidebar-section">
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Local Network
+              {t('Local Network')}
             </div>
             {[
-              { label: 'Kiosk (take tickets)', url: kioskUrl, icon: '🎫' },
-              { label: 'Display (waiting room TV)', url: kioskUrl.replace('/kiosk', '/display'), icon: '📺' },
+              { label: t('Kiosk (take tickets)'), url: kioskUrl, icon: '🎫' },
+              { label: t('Display (waiting room TV)'), url: kioskUrl.replace('/kiosk', '/display'), icon: '📺' },
             ].map((item) => (
               <div key={item.label} style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
@@ -933,7 +970,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
                     fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
                     wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
                   }}
-                  title="Click to copy"
+                  title={t('Click to copy')}
                   onClick={() => navigator.clipboard?.writeText(item.url)}
                 >
                   {item.url}
@@ -941,7 +978,7 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
               </div>
             ))}
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-              Open on any device on this WiFi network. Works offline.
+              {t('Open on any device on this WiFi network. Works offline.')}
             </div>
           </div>
         )}
@@ -950,13 +987,14 @@ export function Station({ session, isOnline, staffStatus, queuePaused, onStaffSt
       {/* Transfer modal */}
       {showTransferModal && activeTicket && (
         <TransferModal
+          locale={locale}
           desks={Object.entries(names.desks).filter(([id]) => id !== session.desk_id)}
           onTransfer={(deskId, deskName) => {
             updateTicketStatus(activeTicket.id, {
               desk_id: deskId, status: 'waiting', called_at: null, called_by_staff_id: null,
             });
             addActivity(activeTicket.ticket_number, `→ ${deskName}`);
-            showToast(`Transferred to ${deskName}`, 'info');
+            showToast(t('Transferred to {deskName}', { deskName }), 'info');
             setShowTransferModal(false);
           }}
           onClose={() => setShowTransferModal(false)}

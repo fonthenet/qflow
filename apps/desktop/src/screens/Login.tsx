@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession } from '../lib/types';
+import { t as translate, type DesktopLocale } from '../lib/i18n';
 
 interface Props {
   onLogin: (session: StaffSession) => void;
+  locale: DesktopLocale;
+  onLocaleChange: (locale: DesktopLocale) => void;
+  languageOptions: Array<{ value: DesktopLocale; label: string }>;
 }
 
-export function Login({ onLogin }: Props) {
+export function Login({ onLogin, locale, onLocaleChange, languageOptions }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,6 +23,7 @@ export function Login({ onLogin }: Props) {
   const [licenseKey, setLicenseKey] = useState('');
   const [licenseError, setLicenseError] = useState('');
   const [activating, setActivating] = useState(false);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   // Check license on mount
   useEffect(() => {
@@ -56,10 +61,10 @@ export function Login({ onLogin }: Props) {
       if (result.success) {
         setLicensed(true);
       } else {
-        setLicenseError(result.error || 'Activation failed');
+        setLicenseError(result.error || t('Activation failed'));
       }
     } catch (err: any) {
-      setLicenseError(err?.message || 'Activation failed');
+      setLicenseError(err?.message || t('Activation failed'));
     } finally {
       setActivating(false);
     }
@@ -78,7 +83,7 @@ export function Login({ onLogin }: Props) {
       // Sign in
       const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
       if (authErr) throw authErr;
-      if (!auth.user) throw new Error('Login failed');
+      if (!auth.user) throw new Error(t('Login failed'));
 
       // Get staff record
       const { data: staff, error: staffErr } = await supabase
@@ -87,12 +92,12 @@ export function Login({ onLogin }: Props) {
         .eq('auth_user_id', auth.user.id)
         .single();
 
-      if (staffErr || !staff) throw new Error('No staff account found for this email');
+      if (staffErr || !staff) throw new Error(t('No staff account found for this email'));
 
       // Get all offices for the org
       const orgId = staff.organization_id;
       let officeIds: string[] = [];
-      let officeName = 'Office';
+      let officeName = t('Office');
 
       if (orgId) {
         const { data: offices } = await supabase
@@ -122,7 +127,7 @@ export function Login({ onLogin }: Props) {
         user_id: auth.user.id,
         staff_id: staff.id,
         email: auth.user.email ?? email,
-        full_name: staff.full_name ?? 'Operator',
+        full_name: staff.full_name ?? t('Operator'),
         role: staff.role,
         office_id: effectiveOfficeId,
         office_name: officeName,
@@ -137,21 +142,33 @@ export function Login({ onLogin }: Props) {
 
       onLogin(session);
     } catch (err: any) {
-      setError(err.message ?? 'Login failed');
+      setError(err.message ?? t('Login failed'));
     } finally {
       setLoading(false);
     }
   };
+
+  const languageControl = (
+    <div className="language-control">
+      <label>{t('Language')}</label>
+      <select value={locale} onChange={(e) => onLocaleChange(e.target.value as DesktopLocale)}>
+        {languageOptions.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
 
   // ── Loading state ──
   if (!licenseChecked) {
     return (
       <div className="login-container">
         <div className="login-card">
+          {languageControl}
           <div className="login-header">
             <div className="login-logo">Q</div>
-            <h1>Qflo Station</h1>
-            <p>Checking license...</p>
+            <h1>{t('Qflo Station')}</h1>
+            <p>{t('Checking license...')}</p>
           </div>
         </div>
       </div>
@@ -163,17 +180,18 @@ export function Login({ onLogin }: Props) {
     return (
       <div className="login-container">
         <div className="login-card">
+          {languageControl}
           <div className="login-header">
             <div className="login-logo" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>🔑</div>
-            <h1>Activate Station</h1>
-            <p>Waiting for administrator approval</p>
+            <h1>{t('Activate Station')}</h1>
+            <p>{t('Waiting for administrator approval')}</p>
           </div>
 
           <div className="login-form">
             {licenseError && <div className="login-error">{licenseError}</div>}
 
             <div className="form-field">
-              <label>Machine ID</label>
+              <label>{t('Machine ID')}</label>
               <div style={{
                 fontFamily: 'monospace',
                 fontSize: 20,
@@ -187,7 +205,7 @@ export function Login({ onLogin }: Props) {
                 userSelect: 'all',
                 cursor: 'pointer',
               }}
-                title="Click to copy"
+                title={t('Click to copy')}
                 onClick={() => navigator.clipboard?.writeText(machineId)}
               >
                 {machineId}
@@ -210,13 +228,13 @@ export function Login({ onLogin }: Props) {
                 marginRight: 8,
                 animation: 'pulse 1.5s ease-in-out infinite',
               }} />
-              This device has been registered. Your administrator will approve it remotely.
+              {t('This device has been registered. Your administrator will approve it remotely.')}
             </div>
 
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0' }}>
               <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>or enter key manually</span>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('or enter key manually')}</span>
               <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
             </div>
 
@@ -231,7 +249,7 @@ export function Login({ onLogin }: Props) {
                 />
               </div>
               <button type="submit" className="btn-primary btn-full" disabled={activating || !licenseKey.trim()}>
-                {activating ? 'Activating...' : 'Activate Manually'}
+                {activating ? t('Activating...') : t('Activate Manually')}
               </button>
             </form>
           </div>
@@ -244,7 +262,7 @@ export function Login({ onLogin }: Props) {
           `}</style>
 
           <p className="login-footer">
-            This station will activate automatically once approved by your administrator.
+            {t('This station will activate automatically once approved by your administrator.')}
           </p>
         </div>
       </div>
@@ -255,17 +273,18 @@ export function Login({ onLogin }: Props) {
   return (
     <div className="login-container">
       <div className="login-card">
+        {languageControl}
         <div className="login-header">
           <div className="login-logo">Q</div>
-          <h1>Qflo Station</h1>
-          <p>Sign in to your operator account</p>
+          <h1>{t('Qflo Station')}</h1>
+          <p>{t('Sign in to your operator account')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
           {error && <div className="login-error">{error}</div>}
 
           <div className="form-field">
-            <label>Email</label>
+            <label>{t('Email')}</label>
             <input
               type="email"
               value={email}
@@ -276,22 +295,22 @@ export function Login({ onLogin }: Props) {
           </div>
 
           <div className="form-field">
-            <label>Password</label>
+            <label>{t('Password')}</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
+              placeholder={t('Enter password')}
             />
           </div>
 
           <button type="submit" className="btn-primary btn-full" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? t('Signing in...') : t('Sign In')}
           </button>
         </form>
 
         <p className="login-footer">
-          This station works offline. Your queue data is stored locally and synced automatically.
+          {t('This station works offline. Your queue data is stored locally and synced automatically.')}
         </p>
       </div>
     </div>

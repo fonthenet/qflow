@@ -3,10 +3,11 @@ import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
 import type { StaffSession, SyncStatus } from './lib/types';
+import { DESKTOP_LOCALES, desktopLanguageLabel, getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
 import './styles.css';
 
 // ── Error Boundary — prevents full app crash on render errors ─────
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLocale }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
   componentDidCatch(error: Error, info: any) {
@@ -17,13 +18,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: '#0f172a', color: '#e2e8f0' }}>
           <div style={{ fontSize: 48 }}>⚠️</div>
-          <h2 style={{ fontSize: 22, fontWeight: 700 }}>Something went wrong</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 700 }}>{translate(this.props.locale, 'Something went wrong')}</h2>
           <p style={{ fontSize: 14, color: '#94a3b8', maxWidth: 400 }}>{this.state.error.message}</p>
           <button
             onClick={() => { this.setState({ error: null }); window.location.reload(); }}
             style={{ padding: '10px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
           >
-            Reload App
+            {translate(this.props.locale, 'Reload App')}
           </button>
         </div>
       );
@@ -34,6 +35,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 export function App() {
   const [session, setSession] = useState<StaffSession | null>(null);
+  const [locale, setLocale] = useState<DesktopLocale>('en');
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isOnline: false,
@@ -45,11 +47,22 @@ export function App() {
 
   // Load saved session on mount
   useEffect(() => {
-    window.qf.session.load().then((s: StaffSession | null) => {
+    Promise.all([
+      window.qf.session.load(),
+      Promise.resolve(window.qf.settings?.getLocale?.()).catch(() => 'en'),
+    ]).then(([s, savedLocale]: [StaffSession | null, string]) => {
       setSession(s);
+      setLocale(normalizeLocale(savedLocale));
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = getDirection(locale);
+    document.body.dir = getDirection(locale);
+    document.title = translate(locale, 'Qflo Station');
+  }, [locale]);
 
   // Listen for sync status changes
   useEffect(() => {
@@ -78,6 +91,16 @@ export function App() {
     setSession(null);
   }, []);
 
+  const updateLocale = useCallback(async (nextLocale: DesktopLocale) => {
+    const normalized = normalizeLocale(nextLocale);
+    setLocale(normalized);
+    await window.qf.settings?.setLocale?.(normalized);
+  }, []);
+
+  const t = useCallback((key: string, values?: Record<string, string | number | null | undefined>) => {
+    return translate(locale, key, values);
+  }, [locale]);
+
   // Note: we intentionally do NOT auto-logout on auth errors.
   // The sync engine logs token issues and retries automatically.
   // The user sees "Offline Mode" and can manually sign out/in if needed.
@@ -86,19 +109,36 @@ export function App() {
     return (
       <div className="app-loading">
         <div className="spinner" />
-        <p>Loading Qflo Station...</p>
+        <p>{t('Loading Qflo Station...')}</p>
       </div>
     );
   }
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary locale={locale}>
       <div className="app">
-        <StatusBar session={session} syncStatus={syncStatus} onLogout={handleLogout} staffStatus={staffStatus} queuePaused={queuePaused} />
+        <StatusBar
+          session={session}
+          syncStatus={syncStatus}
+          onLogout={handleLogout}
+          staffStatus={staffStatus}
+          queuePaused={queuePaused}
+          locale={locale}
+        />
         {session ? (
-          <Station session={session} isOnline={syncStatus.isOnline} staffStatus={staffStatus} queuePaused={queuePaused} onStaffStatusChange={setStaffStatus} onQueuePausedChange={setQueuePaused} />
+          <Station
+            session={session}
+            locale={locale}
+            languageOptions={DESKTOP_LOCALES.map((value) => ({ value, label: desktopLanguageLabel(locale, value) }))}
+            onLocaleChange={updateLocale}
+            isOnline={syncStatus.isOnline}
+            staffStatus={staffStatus}
+            queuePaused={queuePaused}
+            onStaffStatusChange={setStaffStatus}
+            onQueuePausedChange={setQueuePaused}
+          />
         ) : (
-          <Login onLogin={handleLogin} />
+          <Login onLogin={handleLogin} locale={locale} onLocaleChange={updateLocale} languageOptions={DESKTOP_LOCALES.map((value) => ({ value, label: desktopLanguageLabel(locale, value) }))} />
         )}
       </div>
     </ErrorBoundary>

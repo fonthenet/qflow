@@ -6,6 +6,7 @@ import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
+import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
 
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
@@ -19,8 +20,27 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
 let kioskUrl: string | null = null;
+let currentLocale: DesktopLocale = 'en';
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = CONFIG;
+
+function loadLocale(): DesktopLocale {
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = 'locale'").get() as { value?: string } | undefined;
+    return normalizeLocale(row?.value);
+  } catch {
+    return 'en';
+  }
+}
+
+function applyLocale(locale: DesktopLocale) {
+  currentLocale = locale;
+  if (mainWindow) {
+    mainWindow.setTitle(translate(currentLocale, 'Qflo Station'));
+  }
+  updateTrayMenu(syncEngine?.isOnline ? 'online' : 'connecting');
+}
 
 function loadWindowBounds(): { x?: number; y?: number; width: number; height: number } {
   try {
@@ -46,6 +66,7 @@ function saveWindowBounds() {
 }
 
 function createWindow() {
+  currentLocale = loadLocale();
   const bounds = loadWindowBounds();
   mainWindow = new BrowserWindow({
     width: bounds.width,
@@ -53,7 +74,7 @@ function createWindow() {
     center: true,
     minWidth: 900,
     minHeight: 600,
-    title: 'Qflo Station',
+    title: translate(currentLocale, 'Qflo Station'),
     icon: path.join(__dirname, '../assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -155,10 +176,10 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   if (!tray) return;
 
   const statusLabels: Record<string, string> = {
-    online: '● Online — Connected to cloud',
-    offline: '○ Offline — Using local data',
-    syncing: '↻ Syncing...',
-    connecting: '… Connecting...',
+    online: `● ${translate(currentLocale, 'Online - Connected to cloud')}`,
+    offline: `○ ${translate(currentLocale, 'Offline - Using local data')}`,
+    syncing: `↻ ${translate(currentLocale, 'Syncing...')}`,
+    connecting: `… ${translate(currentLocale, 'Connecting...')}`,
   };
 
   const menu = Menu.buildFromTemplate([
@@ -166,14 +187,14 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
     { type: 'separator' },
     { label: statusLabels[status], enabled: false },
     { type: 'separator' },
-    { label: 'Open Station', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-    { label: 'Check for Updates', click: () => autoUpdater.checkForUpdates() },
+    { label: translate(currentLocale, 'Open Station'), click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { label: translate(currentLocale, 'Check for Updates'), click: () => autoUpdater.checkForUpdates() },
     { type: 'separator' },
-    { label: 'Quit', click: () => { mainWindow?.destroy(); app.quit(); } },
+    { label: translate(currentLocale, 'Quit'), click: () => { mainWindow?.destroy(); app.quit(); } },
   ]);
 
   tray.setContextMenu(menu);
-  tray.setToolTip(`Qflo Station — ${status}`);
+  tray.setToolTip(`${translate(currentLocale, 'Qflo Station')} - ${translate(currentLocale, status === 'online' ? 'Connected' : status === 'offline' ? 'Offline Mode' : status === 'syncing' ? 'Syncing...' : 'Connecting...')}`);
 }
 
 // ── IPC Handlers ──────────────────────────────────────────────────────
@@ -523,6 +544,14 @@ function setupIPC() {
     syncEngine?.stop();
   });
 
+  ipcMain.handle('settings:get-locale', () => loadLocale());
+  ipcMain.handle('settings:set-locale', (_e, locale: string) => {
+    const nextLocale = normalizeLocale(locale);
+    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('locale', ?)").run(nextLocale);
+    applyLocale(nextLocale);
+    return nextLocale;
+  });
+
   // ── Debug ───────────────────────────────────────────────────────
   ipcMain.handle('debug:db-stats', () => {
     const tickets = db.prepare("SELECT COUNT(*) as c FROM tickets").get() as any;
@@ -770,14 +799,14 @@ app.whenReady().then(async () => {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', () => {
     new Notification({
-      title: 'Qflo Update',
-      body: 'A new version is downloading...',
+      title: translate(currentLocale, 'Qflo Update'),
+      body: translate(currentLocale, 'A new version is downloading...'),
     }).show();
   });
   autoUpdater.on('update-downloaded', () => {
     new Notification({
-      title: 'Qflo Update Ready',
-      body: 'Restart to apply the update.',
+      title: translate(currentLocale, 'Qflo Update Ready'),
+      body: translate(currentLocale, 'Restart to apply the update.'),
     }).show();
   });
 

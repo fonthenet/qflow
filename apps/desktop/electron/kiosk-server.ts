@@ -6,6 +6,7 @@ import { getDB, generateOfflineTicketNumber, logTicketEvent } from './db';
 import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
+import { normalizeLocale } from '../src/lib/i18n';
 
 // ── Static kiosk assets (loaded once at startup, served from memory) ──
 const KIOSK_DIR = join(__dirname, 'kiosk');
@@ -182,6 +183,23 @@ setTimeout(checkCloudReachability, 1000);
 let server: http.Server | null = null;
 let localPort = 3847;
 
+function loadStoredLocale() {
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = 'locale'").get() as { value?: string } | undefined;
+    return normalizeLocale(row?.value);
+  } catch {
+    return 'en';
+  }
+}
+
+function storeLocale(locale: string) {
+  const normalized = normalizeLocale(locale);
+  const db = getDB();
+  db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('locale', ?)").run(normalized);
+  return normalized;
+}
+
 // ── Get local network IP ──────────────────────────────────────────
 
 export function getLocalIP(): string {
@@ -274,6 +292,10 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleStationSyncStatus(res);
       } else if (path === '/api/station/session' && req.method === 'GET') {
         handleStationSessionLoad(res);
+      } else if (path === '/api/station/settings' && req.method === 'GET') {
+        handleStationSettings(res);
+      } else if (path === '/api/station/settings/locale' && req.method === 'POST') {
+        handleStationBody(req, res, handleStationSetLocale);
       } else if (path === '/api/station/activity' && req.method === 'GET') {
         handleStationActivity(url, res);
       } else if (path === '/api/station/events' && req.method === 'GET') {
@@ -355,6 +377,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     office,
     departments,
     services,
+    locale: loadStoredLocale(),
     logo_url: logoUrl,
     org_name: orgName,
     is_open: businessStatus.isOpen,
@@ -1544,6 +1567,11 @@ function serveStationIndex(res: http.ServerResponse) {
       clear: function() { return Promise.resolve(); },
     },
 
+    settings: {
+      getLocale: function() { return get('/api/station/settings').then(function(s) { return s.locale; }); },
+      setLocale: function(locale) { return post('/api/station/settings/locale', { locale: locale }).then(function(s) { return s.locale; }); },
+    },
+
     isOnline: function() { return get('/api/station/sync-status').then(function(s) { return s.isOnline; }); },
 
     auth: {
@@ -1655,6 +1683,17 @@ function handleStationSessionLoad(res: http.ServerResponse) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(row ? row.value : 'null');
   } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); }
+}
+
+function handleStationSettings(res: http.ServerResponse) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ locale: loadStoredLocale() }));
+}
+
+function handleStationSetLocale(body: any, res: http.ServerResponse) {
+  const locale = storeLocale(body?.locale);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ locale }));
 }
 
 function handleStationActivity(url: URL, res: http.ServerResponse) {

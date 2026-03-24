@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { StaffSession, SyncStatus } from '../lib/types';
+import { t as translate, type DesktopLocale } from '../lib/i18n';
 
 declare global {
   interface Window { qf: any; }
@@ -21,14 +22,16 @@ interface Props {
   onLogout: () => void;
   staffStatus?: 'available' | 'on_break' | 'away';
   queuePaused?: boolean;
+  locale: DesktopLocale;
 }
 
-export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePaused }: Props) {
+export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePaused, locale }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
     window.qf.org?.getBranding?.()
@@ -81,7 +84,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
   };
 
   const discardAll = async () => {
-    if (!confirm('Discard all pending sync items? This data will not be synced to the cloud.')) return;
+    if (!confirm(t('Discard all pending sync items? This data will not be synced to the cloud.'))) return;
     try {
       await window.qf.sync.discardAll();
       setPendingItems([]);
@@ -111,23 +114,23 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
 
   return (
     <>
-      <div className="status-bar" role="banner" aria-label="Status bar">
+      <div className="status-bar" role="banner" aria-label={t('Status bar')}>
         <div className="status-bar-left">
           {logoUrl ? (
             <img src={logoUrl} alt="Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', borderRadius: 4 }} onError={() => setLogoUrl(null)} />
           ) : (
             <span className="app-logo">Q</span>
           )}
-          <span className="app-name">{orgName ?? session?.office_name ?? 'Qflo Station'}</span>
+          <span className="app-name">{orgName ?? session?.office_name ?? t('Qflo Station')}</span>
           {orgName && session?.office_name && orgName !== session.office_name && (
             <span className="operator-role" style={{ marginLeft: 0 }}>{session.office_name}</span>
           )}
         </div>
 
         <div className="status-bar-center">
-          <div className={`connection-badge ${syncStatus.isOnline ? 'online' : 'offline'}`} role="status" aria-live="polite" aria-label={syncStatus.isOnline ? 'Connected to cloud' : 'Offline mode'}>
+          <div className={`connection-badge ${syncStatus.isOnline ? 'online' : 'offline'}`} role="status" aria-live="polite" aria-label={syncStatus.isOnline ? t('Connected to cloud') : t('Offline mode')}>
             <span className="connection-dot" aria-hidden="true" />
-            <span>{syncStatus.isOnline ? 'Connected' : 'Offline Mode'}</span>
+            <span>{syncStatus.isOnline ? t('Connected') : t('Offline Mode')}</span>
           </div>
           {!syncStatus.isOnline && (
             <span style={{
@@ -135,7 +138,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
               background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
               animation: 'pulse 2s infinite',
             }}>
-              No internet — running locally
+              {t('No internet - running locally')}
             </span>
           )}
           {syncStatus.pendingCount > 0 && (
@@ -143,9 +146,9 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
               className="pending-badge"
               onClick={openPanel}
               style={{ cursor: 'pointer', textDecoration: 'underline' }}
-              title="Click to see details"
+              title={t('Click to copy')}
             >
-              {syncStatus.pendingCount} pending sync
+              {t('{count} pending sync', { count: syncStatus.pendingCount })}
             </span>
           )}
         </div>
@@ -159,7 +162,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
                   background: staffStatus === 'on_break' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
                   color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444',
                 }}>
-                  {staffStatus === 'on_break' ? '☕ Break' : '🚫 Away'}
+                  {staffStatus === 'on_break' ? `☕ ${t('Break')}` : `🚫 ${t('Away')}`}
                 </span>
               )}
               {queuePaused && staffStatus === 'available' && (
@@ -167,7 +170,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
                   fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
                   background: 'rgba(100,116,139,0.15)', color: '#94a3b8',
                 }}>
-                  ⏸ Paused
+                  ⏸ {t('Paused')}
                 </span>
               )}
               <span className="operator-name">{session.full_name}</span>
@@ -175,7 +178,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
               {session.desk_name && (
                 <span className="desk-badge">{session.desk_name}</span>
               )}
-              <button className="btn-logout" onClick={onLogout} aria-label="Sign out of Qflo Station">Sign Out</button>
+              <button className="btn-logout" onClick={onLogout} aria-label={t('Sign out of Qflo Station')}>{t('Sign Out')}</button>
             </>
           )}
         </div>
@@ -185,7 +188,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
       {showPanel && (
         <div
           role="dialog"
-          aria-label="Pending sync items"
+          aria-label={t('Pending Sync Items')}
           aria-modal="true"
           style={{
             position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)',
@@ -195,18 +198,18 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
           }}>
           {/* Header */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>Pending Sync Items</span>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>{t('Pending Sync Items')}</span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn-sm btn-call" onClick={forceSync} disabled={retrying}>
-                {retrying ? 'Syncing...' : 'Retry All'}
+                {retrying ? t('Syncing...') : t('Retry All')}
               </button>
               {pendingItems.length > 0 && (
                 <button className="btn-sm" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }} onClick={discardAll}>
-                  Discard All
+                  {t('Discard All')}
                 </button>
               )}
               <button className="btn-sm" style={{ background: 'var(--surface2)', color: 'var(--text2)', border: 'none', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }} onClick={() => setShowPanel(false)}>
-                Close
+                {t('Close')}
               </button>
             </div>
           </div>
@@ -214,9 +217,9 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
           {/* Items */}
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {loading ? (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>Loading...</div>
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>{t('Loading...')}</div>
             ) : pendingItems.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>All synced!</div>
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>{t('All synced!')}</div>
             ) : (
               pendingItems.map((item) => (
                 <div key={item.id} style={{
@@ -229,7 +232,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
                       {item.operation} → {item.table_name}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      ID: {item.record_id.substring(0, 12)}... · Attempts: {item.attempts}
+                      {t('ID: {id}... - Attempts: {attempts}', { id: item.record_id.substring(0, 12), attempts: item.attempts })}
                       {item.last_error && <span style={{ color: '#ef4444' }}> · {item.last_error}</span>}
                     </div>
                   </div>
@@ -238,14 +241,14 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
                     style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
                     onClick={() => retryItem(item.id)}
                   >
-                    Retry
+                    {t('Retry')}
                   </button>
                   <button
                     className="btn-sm"
                     style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
                     onClick={() => discardItem(item.id)}
                   >
-                    Discard
+                    {t('Discard')}
                   </button>
                 </div>
               ))

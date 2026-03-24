@@ -22,6 +22,7 @@
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
 button { cursor: pointer; font-family: inherit; border: none; }
 input { font-family: inherit; }
+select { font-family: inherit; }
 
 /* ── App Layout ──────────────────────────────────────────────────── */
 .app { display: flex; flex-direction: column; height: 100vh; }
@@ -68,6 +69,18 @@ input { font-family: inherit; }
 .form-field label { font-size: 13px; font-weight: 600; color: var(--text2); }
 .form-field input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 12px 14px; border-radius: var(--radius-sm); font-size: 14px; outline: none; transition: border-color 0.15s; }
 .form-field input:focus { border-color: var(--primary); }
+.language-control { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+.language-control label { font-size: 13px; font-weight: 600; color: var(--text2); }
+.language-control select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  outline: none;
+}
+.language-control select:focus { border-color: var(--primary); }
 .login-footer { text-align: center; color: var(--text3); font-size: 12px; margin-top: 24px; }
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
@@ -259,6 +272,35 @@ button:focus-visible, .btn-sm:focus-visible, .btn-primary:focus-visible, .btn-su
   outline-offset: -2px;
   border-radius: var(--radius-sm);
 }
+.station-setting-row { display: flex; flex-direction: column; gap: 6px; }
+.station-setting-label { font-size: 12px; font-weight: 600; color: var(--text2); }
+.station-setting-select {
+  width: 100%;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.station-setting-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+html[dir="rtl"] body { text-align: right; }
+html[dir="rtl"] .status-bar { direction: rtl; }
+html[dir="rtl"] .status-bar-left,
+html[dir="rtl"] .status-bar-center,
+html[dir="rtl"] .status-bar-right,
+html[dir="rtl"] .queue-item,
+html[dir="rtl"] .queue-stats,
+html[dir="rtl"] .secondary-actions { flex-direction: row-reverse; }
+html[dir="rtl"] .station-sidebar { border-left: none; border-right: 1px solid var(--border); }
+html[dir="rtl"] .queue-item-meta,
+html[dir="rtl"] .active-notes,
+html[dir="rtl"] .no-desk,
+html[dir="rtl"] .idle-panel,
+html[dir="rtl"] .active-ticket-panel { text-align: right; }
+html[dir="rtl"] .station-main { direction: rtl; }
+html[dir="rtl"] .queue-search { text-align: right; }
 
 /* ── Skip link (accessibility) ───────────────────────────────────── */
 .skip-link {

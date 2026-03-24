@@ -164,3 +164,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   .result-card { padding: 48px 36px; }
   .qr-section .qr-box { padding: 10px; }
 }
+
+html[dir="rtl"] body,
+html[dir="rtl"] .kiosk,
+html[dir="rtl"] .kiosk-content { direction: rtl; }
+html[dir="rtl"] .qr-section { text-align: right; }
+html[dir="rtl"] .btn-back { flex-direction: row-reverse; }
+html[dir="rtl"] .hours-panel td:first-child::before { margin-right: 0; margin-left: 6px; }
+html[dir="rtl"] .hours-panel td:last-child { text-align: left; }

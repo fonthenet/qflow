@@ -50,6 +50,12 @@ contextBridge.exposeInMainWorld('qf', {
     clear: () => ipcRenderer.invoke('session:clear'),
   },
 
+  // Settings
+  settings: {
+    getLocale: () => ipcRenderer.invoke('settings:get-locale'),
+    setLocale: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
+  },
+
   // Connection
   isOnline: () => ipcRenderer.invoke('connection:status'),
 
