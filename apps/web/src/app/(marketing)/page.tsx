@@ -7,6 +7,8 @@ import {
   ArrowRight, Check, ChevronRight,
 } from 'lucide-react';
 
+const DESKTOP_DOWNLOAD_URL = 'https://github.com/fonthenet/qflow/releases/latest';
+
 const features = [
   {
     icon: QrCode,
@@ -148,6 +150,15 @@ export default async function HomePage() {
                     Open Desk
                     <ChevronRight className="h-4 w-4" />
                   </Link>
+                  <a
+                    href={DESKTOP_DOWNLOAD_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
+                  >
+                    Download Qflo Station
+                    <ChevronRight className="h-4 w-4" />
+                  </a>
                 </div>
                 <p className="mt-4 text-sm text-muted-foreground">
                   Use your dashboard to manage your business configuration, customer flow, and public pages.
@@ -183,6 +194,15 @@ export default async function HomePage() {
                     See How It Works
                     <ChevronRight className="h-4 w-4" />
                   </Link>
+                  <a
+                    href={DESKTOP_DOWNLOAD_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-4 text-base font-semibold shadow-sm transition-all hover:bg-muted"
+                  >
+                    Download Qflo Station
+                    <ChevronRight className="h-4 w-4" />
+                  </a>
                 </div>
                 <p className="mt-4 text-sm text-muted-foreground">
                   Free forever for up to 50 customers/month. No credit card required.
@@ -417,6 +437,14 @@ export default async function HomePage() {
             >
               Talk to Sales
             </Link>
+            <a
+              href={DESKTOP_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-primary-foreground/30 px-8 py-4 text-base font-semibold text-primary-foreground transition-all hover:bg-primary-foreground/10"
+            >
+              Download Qflo Station
+            </a>
           </div>
           <div className="mt-6 flex items-center justify-center gap-6 text-sm text-primary-foreground/70">
             <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Free forever plan</span>

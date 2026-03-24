@@ -117,6 +117,7 @@ export function KioskView({
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerInfoError, setCustomerInfoError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -145,6 +146,7 @@ export function KioskView({
   };
   const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
   const compactTicketLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
+  const hasRequiredCustomerInfo = customerName.trim().length > 0 && customerPhone.trim().length > 0;
 
   function clearAppointmentSearch() {
     setSearchTerm('');
@@ -162,6 +164,7 @@ export function KioskView({
     setSelectedPriority(null);
     setCustomerName('');
     setCustomerPhone('');
+    setCustomerInfoError(null);
     setTicket(null);
     setQrDataUrl('');
     clearAppointmentSearch();
@@ -195,6 +198,11 @@ export function KioskView({
 
   function startWalkInFlow() {
     setSearchError(null);
+    if (!hasRequiredCustomerInfo) {
+      setCustomerInfoError(t('Please enter your name and phone number.'));
+      return;
+    }
+    setCustomerInfoError(null);
     if (defaultDept) {
       setSelectedDept(defaultDept);
       setStep('service');
@@ -221,6 +229,11 @@ export function KioskView({
   }
 
   function handleServiceSelected(service: any) {
+    if (!hasRequiredCustomerInfo) {
+      setCustomerInfoError(t('Please enter your name and phone number.'));
+      return;
+    }
+    setCustomerInfoError(null);
     setSelectedService(service);
 
     if (priorityCategories.length > 0) {
@@ -253,13 +266,16 @@ export function KioskView({
     setLoading(true);
     const trimmedCustomerName = customerName.trim();
     const trimmedCustomerPhone = customerPhone.trim();
+    if (!trimmedCustomerName || !trimmedCustomerPhone) {
+      setCustomerInfoError(t('Please enter your name and phone number.'));
+      setLoading(false);
+      return;
+    }
     const customerData =
-      trimmedCustomerName || trimmedCustomerPhone
-        ? {
-            ...(trimmedCustomerName ? { name: trimmedCustomerName } : {}),
-            ...(trimmedCustomerPhone ? { phone: trimmedCustomerPhone } : {}),
-          }
-        : null;
+      {
+        name: trimmedCustomerName,
+        phone: trimmedCustomerPhone,
+      };
 
     if (sandboxMode) {
       const sandboxTicketId = `sandbox-kiosk-${Date.now()}`;
@@ -421,7 +437,8 @@ export function KioskView({
   const walkInButton = (
     <button
       onClick={startWalkInFlow}
-      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:min-h-[136px] sm:px-8"
+      disabled={!hasRequiredCustomerInfo}
+      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-[136px] sm:px-8"
     >
       <div
         className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white sm:h-20 sm:w-20"
@@ -534,36 +551,45 @@ export function KioskView({
           <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
             <div className="grid gap-4">
               <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+                  <div className="text-center">
                     <label className="mb-2 block text-sm font-semibold text-slate-900">
-                      {t('Name (optional)')}
+                      {t('Name')} <span className="font-normal text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={customerName}
-                      onChange={(event) => setCustomerName(event.target.value)}
+                      onChange={(event) => {
+                        setCustomerName(event.target.value);
+                        if (customerInfoError) setCustomerInfoError(null);
+                      }}
                       placeholder={t('Enter your name')}
                       autoComplete="name"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
                     />
                   </div>
-                  <div>
+                  <div className="text-center">
                     <label className="mb-2 block text-sm font-semibold text-slate-900">
-                      {t('Phone Number')} <span className="font-normal text-slate-500">{t('(optional)')}</span>
+                      {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
                     </label>
                     <input
                       type="tel"
                       value={customerPhone}
-                      onChange={(event) => setCustomerPhone(event.target.value)}
+                      onChange={(event) => {
+                        setCustomerPhone(event.target.value);
+                        if (customerInfoError) setCustomerInfoError(null);
+                      }}
                       placeholder={t('Enter your phone number')}
                       autoComplete="tel"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
                     />
                   </div>
                 </div>
+                {customerInfoError ? (
+                  <p className="mt-3 text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
+                ) : null}
 
-                <div className="mt-4">
+                <div className="mx-auto mt-4 max-w-3xl">
                   {walkInButton}
                 </div>
               </div>
@@ -653,7 +679,47 @@ export function KioskView({
                 </div>
               </div>
 
-              <div className="mt-5 space-y-3">
+              <div className="mt-5 space-y-4">
+                <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
+                  <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+                    <div className="text-center">
+                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                        {t('Name')} <span className="font-normal text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(event) => {
+                          setCustomerName(event.target.value);
+                          if (customerInfoError) setCustomerInfoError(null);
+                        }}
+                        placeholder={t('Enter your name')}
+                        autoComplete="name"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                        {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={customerPhone}
+                        onChange={(event) => {
+                          setCustomerPhone(event.target.value);
+                          if (customerInfoError) setCustomerInfoError(null);
+                        }}
+                        placeholder={t('Enter your phone number')}
+                        autoComplete="tel"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                      />
+                    </div>
+                  </div>
+                  {customerInfoError ? (
+                    <p className="mt-3 text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
+                  ) : null}
+                </div>
+
                 {selectedDept.services.map((service: any) => {
                   const showMedicalIcon =
                     isClinicKiosk ||
@@ -663,8 +729,8 @@ export function KioskView({
                   <button
                     key={service.id}
                     onClick={() => handleServiceSelected(service)}
-                    disabled={loading}
-                    className="group relative flex min-h-[104px] w-full flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-center transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 sm:px-7"
+                    disabled={loading || !hasRequiredCustomerInfo}
+                    className="group relative flex min-h-[104px] w-full flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-center transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:opacity-100 sm:px-7"
                   >
                     <div
                       className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"

@@ -7,7 +7,9 @@
   "license": "PROPRIETARY",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder --win --dir",
+    "build": "tsc && vite build && electron-builder --win",
+    "build:dir": "tsc && vite build && electron-builder --win --dir",
+    "build:installer": "tsc && vite build && electron-builder --win nsis",
     "build:vite": "tsc && vite build",
     "start": "electron dist-electron/main.js",
     "preview": "vite preview",
@@ -39,6 +41,8 @@
   "build": {
     "appId": "com.qflo.station",
     "productName": "Qflo Station",
+    "compression": "maximum",
+    "asar": true,
     "directories": {
       "output": "release"
     },
@@ -48,6 +52,7 @@
       "assets/**/*"
     ],
     "win": {
+      "artifactName": "Qflo-Station-Setup-${version}.${ext}",
       "target": [
         "nsis"
       ],
@@ -58,6 +63,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
       "shortcutName": "Qflo Station"
     },
     "publish": {
