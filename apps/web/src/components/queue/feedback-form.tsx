@@ -113,14 +113,14 @@ export function FeedbackForm({
             })}
           </p>
 
-          <div className="mt-5 rounded-[22px] border border-white/10 bg-white/5 px-4 py-3">
+          <div className="mt-4 rounded-[18px] border border-white/10 bg-white/5 px-3.5 py-2.5">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{t('Your rating')}</p>
-              <div className="flex justify-center gap-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{t('Your rating')}</p>
+              <div className="flex justify-center gap-0.5">
               {[1, 2, 3, 4, 5].map((star) => (
                 <svg
                   key={star}
-                  className={`h-5 w-5 ${star <= (existingRating ?? rating) ? 'text-amber-300' : 'text-slate-600'}`}
+                  className={`h-4 w-4 ${star <= (existingRating ?? rating) ? 'text-amber-300' : 'text-slate-600'}`}
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
