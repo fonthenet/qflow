@@ -139,7 +139,7 @@ export function FeedbackForm({
           </button>
 
           <p className="mt-5 text-xs uppercase tracking-[0.28em] text-slate-500">
-            {officeName} · {t('QueueFlow')}
+            {officeName} · QFlo
           </p>
         </div>
       </div>
@@ -242,7 +242,7 @@ export function FeedbackForm({
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · {t('QueueFlow')}</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-slate-500">{serviceName} · QFlo</p>
         </div>
       </div>
     </div>

@@ -659,7 +659,7 @@ export function YourTurn({
         </div>
 
         <div className="pt-6 text-center">
-          <p className="text-xs uppercase tracking-[0.28em] text-white/42">{t('Powered by QueueFlow')}</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-white/42">Powered by QFlo</p>
         </div>
       </div>
     </div>
