@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { getServerI18n } from '@/lib/i18n';
 import {
   QrCode, Bell, Monitor, Clock, Users, Shield,
   Smartphone, BarChart3, Zap, Globe, Tablet, Calendar,
@@ -72,6 +73,7 @@ const steps = [
 ];
 
 export default async function HomePage() {
+  const { t } = await getServerI18n();
   const supabase = await createClient();
   const {
     data: { user },
@@ -100,11 +102,17 @@ export default async function HomePage() {
   }
 
   const signedInHeroTitle = staffOrganizationName
-    ? `You’re signed in to ${staffOrganizationName}`
-    : 'You’re signed in to QueueFlow';
+    ? t('Signed in to {organization}', { organization: staffOrganizationName })
+    : t('You’re signed in to QueueFlow');
+  const signedInSuffix = staffFirstName ? `, ${staffFirstName}` : '';
   const signedInHeroMessage = staffOrganizationName
-    ? `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your business dashboard to manage queues, desks, bookings, and customer flow for ${staffOrganizationName}.`
-    : `Welcome back${staffFirstName ? `, ${staffFirstName}` : ''}. Open your dashboard to manage queues, desks, bookings, and customer flow.`;
+    ? t('Welcome back{suffix}. Open your business dashboard to manage queues, desks, bookings, and customer flow for {organization}.', {
+        suffix: signedInSuffix,
+        organization: staffOrganizationName,
+      })
+    : t('Welcome back{suffix}. Open your dashboard to manage queues, desks, bookings, and customer flow.', {
+        suffix: signedInSuffix,
+      });
 
   return (
     <>

@@ -803,3 +803,1208 @@ export const messages: Record<AppLocale, Record<string, string>> = {
 
 Object.assign(messages.fr, generatedMessages.fr);
 Object.assign(messages.ar, generatedMessages.ar);
+
+Object.assign(messages.fr, {
+  'Unlimited free push notifications': 'Notifications push gratuites illimitées',
+  'Smart Queue Management for': 'Gestion intelligente des files d’attente pour',
+  'Modern Business': 'les entreprises modernes',
+  'Customers scan a QR code to join your queue, track their position in real-time, and get notified when it\'s their turn. No app download. No SMS fees.':
+    'Les clients scannent un code QR pour rejoindre votre file, suivent leur position en temps réel et reçoivent une notification quand vient leur tour. Aucune application à télécharger. Aucun frais SMS.',
+  'See How It Works': 'Voir comment ça marche',
+  'Free forever for up to 50 customers/month. No credit card required.':
+    'Gratuit à vie jusqu’à 50 clients par mois. Aucune carte bancaire requise.',
+  'Cost per notification': 'Coût par notification',
+  'Setup time': 'Temps de mise en place',
+  'Apps to download': 'Applications à télécharger',
+  'Uptime SLA': 'SLA de disponibilité',
+  'Everything You Need to Manage Queues': 'Tout ce qu’il faut pour gérer vos files d’attente',
+  'From QR check-in to TV display boards — a complete queue management platform with zero per-message fees.':
+    'Du check-in par QR aux écrans d’affichage TV, une plateforme complète de gestion de file sans aucun frais par message.',
+  'Up and Running in 3 Steps': 'Prêt en 3 étapes',
+  'No complex setup. No training needed. Start managing queues in minutes.':
+    'Aucune configuration complexe. Aucune formation nécessaire. Commencez à gérer les files en quelques minutes.',
+  'Learn more about how it works': 'En savoir plus sur le fonctionnement',
+  'Built for Every Industry': 'Conçu pour chaque secteur',
+  'Pre-configured templates for your industry. Choose one and start in seconds.':
+    'Des modèles préconfigurés pour votre secteur. Choisissez-en un et démarrez en quelques secondes.',
+  'Simple, Transparent Pricing': 'Tarification simple et transparente',
+  'Start free. Upgrade as you grow. All plans include unlimited push notifications.':
+    'Commencez gratuitement. Passez à l’échelle au fur et à mesure. Tous les forfaits incluent des notifications push illimitées.',
+  '50 customers/mo': '50 clients/mois',
+  '500 customers/mo': '500 clients/mois',
+  '2,000 customers/mo': '2 000 clients/mois',
+  '10,000 customers/mo': '10 000 clients/mois',
+  '/month': '/mois',
+  'View Full Pricing': 'Voir tous les tarifs',
+  'Why Pay for SMS When Push Is Free?': 'Pourquoi payer le SMS quand le push est gratuit ?',
+  'Other queue systems charge $0.08-$0.15 per SMS. With QueueFlow, every notification is free.':
+    'D’autres systèmes de file facturent 0,08 à 0,15 $ par SMS. Avec Qflo, chaque notification est gratuite.',
+  'SMS-Based Systems': 'Systèmes basés sur le SMS',
+  'QueueFlow': 'Qflo',
+  '1,000 notifications/mo': '1 000 notifications/mois',
+  'Notification speed': 'Vitesse de notification',
+  'Works on locked phone': 'Fonctionne sur téléphone verrouillé',
+  'Rich content (links, images)': 'Contenu enrichi (liens, images)',
+  'No phone number required': 'Aucun numéro de téléphone requis',
+  'International coverage': 'Couverture internationale',
+  'Free worldwide': 'Gratuit dans le monde entier',
+  'Instant': 'Instantané',
+  'Limited': 'Limité',
+  'Extra cost': 'Coût supplémentaire',
+  'Ready to Eliminate Wait Time Frustration?': 'Prêt à éliminer la frustration liée à l’attente ?',
+  'Join businesses that have transformed their customer experience with smart queue management.':
+    'Rejoignez les entreprises qui ont transformé l’expérience client grâce à une gestion intelligente des files.',
+  'Talk to Sales': 'Parler aux ventes',
+  'Free forever plan': 'Forfait gratuit à vie',
+  'No credit card': 'Sans carte bancaire',
+  'Setup in 3 minutes': 'Installation en 3 minutes',
+  'QR Code Check-In': 'Check-in par code QR',
+  'Customers scan a QR code to join your queue — no app download, no signup required.':
+    'Les clients scannent un code QR pour rejoindre votre file, sans téléchargement d’application ni inscription.',
+  'Free Push Notifications': 'Notifications push gratuites',
+  'Unlimited push notifications on all plans. No SMS fees, no WhatsApp charges. Ever.':
+    'Notifications push illimitées sur tous les forfaits. Aucun frais SMS, aucun coût WhatsApp. Jamais.',
+  'TV Display Boards': 'Écrans d’affichage TV',
+  'Show real-time queue status on lobby screens with 3 layout options and dark/light themes.':
+    'Affichez l’état de la file en temps réel sur les écrans d’accueil avec 3 dispositions et des thèmes clair/sombre.',
+  'Real-Time Tracking': 'Suivi en temps réel',
+  'Customers see their exact position and estimated wait time, updated live on their phone.':
+    'Les clients voient leur position exacte et le temps d’attente estimé, mis à jour en direct sur leur téléphone.',
+  'Multi-Department': 'Multi-départements',
+  'Run separate queues for different departments — each with its own numbering and counters.':
+    'Faites fonctionner des files séparées pour différents départements, chacune avec sa propre numérotation et ses propres guichets.',
+  'Priority Queue': 'File prioritaire',
+  'Configurable priority categories for elderly, disabled, VIP, or any custom group.':
+    'Catégories de priorité configurables pour les personnes âgées, en situation de handicap, VIP, ou tout autre groupe personnalisé.',
+  'Self-Service Kiosk': 'Borne en libre-service',
+  'Touch-screen kiosk mode for lobbies — customers select their service and get a ticket.':
+    'Mode borne tactile pour les halls d’accueil, où les clients choisissent leur service et obtiennent un ticket.',
+  'Online booking with walk-in/appointment hybrid mode — automated interleaving.':
+    'Réservation en ligne avec mode hybride sans rendez-vous/rendez-vous et alternance automatisée.',
+  'Virtual Queue': 'File virtuelle',
+  'Customers join remotely from anywhere — wait at home and arrive when it\'s their turn.':
+    'Les clients rejoignent la file à distance depuis n’importe où, attendent chez eux et arrivent quand vient leur tour.',
+});
+
+Object.assign(messages.fr, {
+  'Clinics': 'Cliniques',
+  'Government': 'Administration',
+  'Hotels': 'Hôtels',
+  'Barbershops': 'Barbiers',
+  'Pharmacies': 'Pharmacies',
+  'Sign Up in 2 Minutes': 'Inscrivez-vous en 2 minutes',
+  'Create your account, choose your industry template, and your queue system is ready.':
+    'Créez votre compte, choisissez votre modèle métier et votre système de file est prêt.',
+  'Share Your QR Code': 'Partagez votre code QR',
+  'Print or display the QR code. Customers scan to join — no app needed.':
+    'Imprimez ou affichez le code QR. Les clients le scannent pour rejoindre la file, sans application.',
+  'Manage Your Queue': 'Gérez votre file',
+  'Call next, serve, track — all from your dashboard. Customers get notified instantly.':
+    'Appelez le suivant, servez, suivez tout depuis votre tableau de bord. Les clients sont notifiés instantanément.',
+  'Monthly': 'Mensuel',
+  'Yearly': 'Annuel',
+  'Save 20%': 'Économisez 20 %',
+  'Most Popular': 'Le plus populaire',
+  '/mo': '/mo',
+  'billed yearly': 'facturé annuellement',
+  'Full Feature Comparison': 'Comparaison complète des fonctionnalités',
+  'Every feature, every plan. See exactly what you get.':
+    'Chaque fonctionnalité, chaque forfait. Voyez exactement ce que vous obtenez.',
+  'Feature': 'Fonctionnalité',
+  'Free': 'Gratuit',
+  'Starter': 'Starter',
+  'Growth': 'Croissance',
+  'Pro': 'Pro',
+  'Enterprise': 'Entreprise',
+  'Frequently Asked Questions': 'Questions fréquentes',
+  'Is the free plan really free forever?': 'Le forfait gratuit est-il vraiment gratuit pour toujours ?',
+  'Yes. The free plan includes up to 50 customers per month, 1 location, and unlimited push notifications. No credit card required, no time limit.':
+    'Oui. Le forfait gratuit inclut jusqu’à 50 clients par mois, 1 site et des notifications push illimitées. Aucune carte bancaire requise, aucune limite de durée.',
+  'What counts as a "customer"?': 'Qu’est-ce qui compte comme un « client » ?',
+  'Each ticket created counts as one customer. If a customer visits twice in a month, that counts as 2 customers toward your plan limit.':
+    'Chaque ticket créé compte pour un client. Si un client visite deux fois dans le mois, cela compte comme 2 clients dans la limite de votre forfait.',
+  'How do push notifications work without SMS?': 'Comment fonctionnent les notifications push sans SMS ?',
+  'We use Web Push technology — the same system used by Gmail, YouTube, and other major platforms. Customers receive instant notifications on their phone browser without downloading an app. Works on Android, iOS, and desktop.':
+    'Nous utilisons la technologie Web Push, le même système que Gmail, YouTube et d’autres grandes plateformes. Les clients reçoivent des notifications instantanées dans le navigateur de leur téléphone sans télécharger d’application. Fonctionne sur Android, iOS et ordinateur.',
+  'Can I change plans anytime?': 'Puis-je changer de forfait à tout moment ?',
+  'Yes. Upgrade or downgrade anytime. Changes take effect immediately. If you downgrade, you keep your current plan until the end of the billing period.':
+    'Oui. Vous pouvez monter ou descendre de forfait à tout moment. Les changements prennent effet immédiatement. En cas de rétrogradation, vous conservez votre forfait actuel jusqu’à la fin de la période de facturation.',
+  'Do you offer discounts for nonprofits or education?': 'Proposez-vous des remises pour les associations ou l’éducation ?',
+  'Yes! Contact us for special pricing for nonprofits, educational institutions, and government organizations.':
+    'Oui ! Contactez-nous pour une tarification spéciale destinée aux associations, établissements éducatifs et organisations gouvernementales.',
+  'What payment methods do you accept?': 'Quels moyens de paiement acceptez-vous ?',
+  'We accept all major credit cards (Visa, Mastercard, American Express) via Stripe. Enterprise customers can pay by invoice.':
+    'Nous acceptons les principales cartes bancaires (Visa, Mastercard, American Express) via Stripe. Les clients entreprise peuvent payer par facture.',
+  'Start Managing Queues Today': 'Commencez à gérer les files aujourd’hui',
+  'Get in Touch': 'Contactez-nous',
+  'Have questions about Qflo? Want a demo? We\'d love to hear from you.':
+    'Vous avez des questions sur Qflo ? Vous voulez une démo ? Nous serions ravis d’échanger avec vous.',
+  'Send Us a Message': 'Envoyez-nous un message',
+  'We typically respond within 24 hours.': 'Nous répondons généralement sous 24 heures.',
+  'Message Sent!': 'Message envoyé !',
+  'Thank you for reaching out. We\'ll get back to you shortly.':
+    'Merci de nous avoir contactés. Nous reviendrons vers vous très bientôt.',
+  'Send another message': 'Envoyer un autre message',
+  'Name *': 'Nom *',
+  'Your name': 'Votre nom',
+  'Email *': 'E-mail *',
+  'you@company.com': 'vous@entreprise.com',
+  'Company': 'Entreprise',
+  'Your company name': 'Nom de votre entreprise',
+  'Message *': 'Message *',
+  'How can we help you?': 'Comment pouvons-nous vous aider ?',
+  'Sending...': 'Envoi...',
+  'Send Message': 'Envoyer le message',
+});
+
+Object.assign(messages.fr, {
+  'Failed to send message': 'Échec de l’envoi du message',
+  'Something went wrong. Please try again.': 'Un problème est survenu. Veuillez réessayer.',
+  'Other Ways to Reach Us': 'Autres moyens de nous joindre',
+  'Pick the method that works best for you.': 'Choisissez le moyen qui vous convient le mieux.',
+  'Response within 24 hours': 'Réponse sous 24 heures',
+  'Live Chat': 'Chat en direct',
+  'Available Mon-Fri, 9am-6pm CET': 'Disponible du lundi au vendredi, de 9h à 18h CET',
+  'Average response time: 5 minutes': 'Temps de réponse moyen : 5 minutes',
+  'Based in Algeria, serving businesses worldwide': 'Basé en Algérie, au service d’entreprises dans le monde entier',
+  'How Qflo Works': 'Comment Qflo fonctionne',
+  'From sign-up to your first customer notification — here\'s exactly how Qflo transforms your queue management.':
+    'De l’inscription à la première notification client, voici exactement comment Qflo transforme votre gestion des files.',
+  'Create Your Account': 'Créez votre compte',
+  'Sign up in 30 seconds. Choose your industry template (restaurant, clinic, retail, etc.) or start from scratch.':
+    'Inscrivez-vous en 30 secondes. Choisissez votre modèle métier (restaurant, clinique, commerce, etc.) ou partez de zéro.',
+  'No credit card required': 'Aucune carte bancaire requise',
+  'Industry-specific templates auto-configure departments, services, and desks':
+    'Les modèles propres à chaque secteur configurent automatiquement départements, services et guichets.',
+  'Or start blank and set up everything exactly how you need it':
+    'Ou commencez avec une base vide et configurez tout exactement comme vous le souhaitez.',
+  'Configure Your Queue': 'Configurez votre file',
+  'Set up your departments, services, counters, and staff. Customize everything from the admin dashboard.':
+    'Configurez vos départements, services, guichets et personnel. Personnalisez tout depuis le tableau de bord admin.',
+  'Create departments (e.g., Teller, Loans, Customer Service)':
+    'Créez des départements (ex. : caisse, crédits, service client)',
+  'Add services within each department': 'Ajoutez des services dans chaque département',
+  'Set up desks/counters and assign staff': 'Configurez les guichets/comptoirs et affectez le personnel',
+  'Configure priority categories (elderly, VIP, etc.)': 'Configurez les catégories prioritaires (personnes âgées, VIP, etc.)',
+  'Customize intake forms per service': 'Personnalisez les formulaires d’accueil par service',
+  'Print the QR code and place it at your entrance, counter, or on your website. Customers scan to join.':
+    'Imprimez le code QR et placez-le à l’entrée, au comptoir ou sur votre site. Les clients le scannent pour rejoindre la file.',
+  'QR codes work with any phone camera — no app download needed':
+    'Les codes QR fonctionnent avec n’importe quel appareil photo de téléphone, sans téléchargement d’application',
+  'Place at your entrance, on tables, or on your website':
+    'Placez-le à l’entrée, sur les tables ou sur votre site web',
+  'Customers can also join remotely before arriving':
+    'Les clients peuvent aussi rejoindre la file à distance avant d’arriver',
+  'Set up a self-service kiosk for walk-in customers':
+    'Mettez en place une borne en libre-service pour les clients sans rendez-vous',
+  'Manage from Your Dashboard': 'Gérez depuis votre tableau de bord',
+  'Call next customer, mark served, handle no-shows — everything from your operator panel.':
+    'Appelez le client suivant, marquez les services terminés, gérez les absences, tout depuis votre panneau opérateur.',
+  'One-click "Call Next" button respects queue order and priority':
+    'Le bouton « Appeler le suivant » en un clic respecte l’ordre de la file et les priorités',
+  'View customer info and intake form data before they arrive':
+    'Consultez les informations client et les formulaires avant leur arrivée',
+  'Transfer tickets between departments': 'Transférez les tickets entre départements',
+  'Track real-time queue statistics': 'Suivez les statistiques de file en temps réel',
+  'Customers Track in Real-Time': 'Les clients suivent en temps réel',
+  'After scanning the QR code, customers see their position, estimated wait time, and get live updates.':
+    'Après avoir scanné le code QR, les clients voient leur position, le temps d’attente estimé et reçoivent des mises à jour en direct.',
+  'Real-time position tracking — "You are #3 in queue"':
+    'Suivi de position en temps réel — « Vous êtes n°3 dans la file »',
+  'Estimated wait time based on average service duration':
+    'Temps d’attente estimé selon la durée moyenne de service',
+  'Live updates without refreshing the page': 'Mises à jour en direct sans recharger la page',
+  'Works on any phone browser — iOS, Android, desktop': 'Fonctionne sur tout navigateur téléphone, iOS, Android et ordinateur',
+  'Instant Push Notifications': 'Notifications push instantanées',
+  'When it\'s their turn, customers get an instant push notification — even with the screen locked.':
+    'Quand vient leur tour, les clients reçoivent une notification push instantanée, même écran verrouillé.',
+  'Free unlimited push notifications on ALL plans': 'Notifications push gratuites et illimitées sur TOUS les forfaits',
+  'Works on locked phones — no SMS needed': 'Fonctionne sur téléphone verrouillé, sans SMS',
+  'No per-message fees — $0 cost to you': 'Aucun frais par message, coût de 0 $ pour vous',
+  'Customers see "YOUR TURN — Go to Counter 3"': 'Les clients voient « C’EST VOTRE TOUR — Rendez-vous au guichet 3 »',
+  'Plus, Powerful Extras': 'Des extras puissants en plus',
+  'Connect any screen to show your queue in real-time. 3 layout options, dark/light themes, customizable colors.':
+    'Connectez n’importe quel écran pour afficher votre file en temps réel. 3 dispositions, thèmes clair/sombre et couleurs personnalisables.',
+  'Analytics & Insights': 'Analyses et insights',
+  'Track wait times, peak hours, staff performance, and customer satisfaction. Export reports as CSV or PDF.':
+    'Suivez les temps d’attente, heures de pointe, performances du personnel et satisfaction client. Exportez les rapports en CSV ou PDF.',
+});
+
+Object.assign(messages.fr, {
+  'Ready to Get Started?': 'Prêt à commencer ?',
+  'Set up your first queue in under 3 minutes. Free forever for up to 50 customers/month.':
+    'Configurez votre première file en moins de 3 minutes. Gratuit à vie jusqu’à 50 clients par mois.',
+  'Create Free Account': 'Créer un compte gratuit',
+  'Free push notifications': 'Notifications push gratuites',
+  'Cancel anytime': 'Résiliable à tout moment',
+  'Queue Management for Every Industry': 'Gestion de file pour chaque secteur',
+  'Pre-configured templates and features tailored to your business. Choose your industry and start managing queues in minutes.':
+    'Des modèles et fonctionnalités préconfigurés adaptés à votre activité. Choisissez votre secteur et commencez à gérer les files en quelques minutes.',
+  'Don\'t See Your Industry?': 'Vous ne voyez pas votre secteur ?',
+  'Qflo works for any business with a queue. Start with a blank template and customize everything.':
+    'Qflo fonctionne pour toute activité avec une file d’attente. Commencez avec un modèle vierge et personnalisez tout.',
+  'Contact Us': 'Nous contacter',
+  'All Solutions': 'Toutes les solutions',
+  'The Problem': 'Le problème',
+  'Sound familiar? Qflo solves all of these.': 'Cela vous parle ? Qflo résout tous ces problèmes.',
+  'The Solution': 'La solution',
+  'Features built specifically for {industry}.': 'Des fonctionnalités conçues spécifiquement pour {industry}.',
+  'Real-World Use Cases': 'Cas d’usage concrets',
+  'Ready to Transform Your {industry}?': 'Prêt à transformer votre activité {industry} ?',
+  'Start free with our {industry} template. Set up in under 3 minutes.':
+    'Commencez gratuitement avec notre modèle {industry}. Mise en place en moins de 3 minutes.',
+  '{industry} template included': 'Modèle {industry} inclus',
+  'You’re signed in to QueueFlow': 'Vous êtes connecté à Qflo',
+  'Welcome back{suffix}. Open your dashboard to manage queues, desks, bookings, and customer flow.':
+    'Bon retour{suffix}. Ouvrez votre tableau de bord pour gérer les files, guichets, réservations et le flux client.',
+  'Welcome back{suffix}. Open your business dashboard to manage queues, desks, bookings, and customer flow for {organization}.':
+    'Bon retour{suffix}. Ouvrez votre tableau de bord entreprise pour gérer les files, guichets, réservations et le flux client de {organization}.',
+  'Perfect for trying out Qflo': 'Parfait pour essayer Qflo',
+  'Up to 50 customers/month': 'Jusqu’à 50 clients/mois',
+  '1 location': '1 site',
+  '2 staff members': '2 membres du personnel',
+  'QR code check-in': 'Check-in par code QR',
+  'Unlimited push notifications': 'Notifications push illimitées',
+  'Real-time queue updates': 'Mises à jour de file en temps réel',
+  'Basic analytics': 'Analyses de base',
+  'Kiosk mode': 'Mode borne',
+  'Display screen (1)': 'Écran d’affichage (1)',
+  'For small businesses getting started': 'Pour les petites entreprises qui démarrent',
+  'Start Free Trial': 'Commencer l’essai gratuit',
+  'Up to 500 customers/month': 'Jusqu’à 500 clients/mois',
+  '5 staff members': '5 membres du personnel',
+  'Everything in Free, plus:': 'Tout ce qu’il y a dans Gratuit, plus :',
+  'Email notifications': 'Notifications par e-mail',
+  'Custom branding basics': 'Personnalisation visuelle de base',
+  'CSV & PDF export': 'Export CSV et PDF',
+  'Priority categories': 'Catégories prioritaires',
+  'Customer intake forms': 'Formulaires d’accueil client',
+  'Display screens (3)': 'Écrans d’affichage (3)',
+  'For growing businesses with multiple needs': 'Pour les entreprises en croissance avec plusieurs besoins',
+  'Up to 2,000 customers/month': 'Jusqu’à 2 000 clients/mois',
+  '3 locations': '3 sites',
+  '15 staff members': '15 membres du personnel',
+  'Everything in Starter, plus:': 'Tout ce qu’il y a dans Starter, plus :',
+  'REST API access': 'Accès API REST',
+  'Appointment scheduling': 'Planification de rendez-vous',
+  'Virtual queue (remote join)': 'File virtuelle (rejoindre à distance)',
+  'Group/family tickets': 'Tickets de groupe/famille',
+  'Priority support': 'Support prioritaire',
+  'Unlimited display screens': 'Écrans d’affichage illimités',
+  'For established businesses at scale': 'Pour les entreprises établies à grande échelle',
+  'Up to 10,000 customers/month': 'Jusqu’à 10 000 clients/mois',
+  'Unlimited locations': 'Sites illimités',
+  'Unlimited staff': 'Personnel illimité',
+  'Everything in Growth, plus:': 'Tout ce qu’il y a dans Croissance, plus :',
+  'White-label branding': 'Marque blanche',
+  'Custom QR codes (logo + colors)': 'Codes QR personnalisés (logo + couleurs)',
+  'Advanced analytics & forecasting': 'Analyses avancées et prévisions',
+  'Multi-language support': 'Prise en charge multilingue',
+  'Custom display themes': 'Thèmes d’affichage personnalisés',
+  'For large organizations with custom needs': 'Pour les grandes organisations aux besoins spécifiques',
+  'Contact Sales': 'Contacter les ventes',
+  'Unlimited everything': 'Tout illimité',
+  'Everything in Pro, plus:': 'Tout ce qu’il y a dans Pro, plus :',
+  'Dedicated account manager': 'Responsable de compte dédié',
+  'Custom integrations': 'Intégrations personnalisées',
+  'SLA guarantee (99.9%)': 'Garantie SLA (99,9 %)',
+  'On-premise deployment option': 'Option de déploiement sur site',
+  'Training & onboarding': 'Formation et onboarding',
+  'Phone support': 'Support téléphonique',
+  'Customers per month': 'Clients par mois',
+  'Staff members': 'Membres du personnel',
+  'Push notifications': 'Notifications push',
+  'Display screens (TV)': 'Écrans d’affichage (TV)',
+  'Analytics': 'Analyses',
+  'Custom branding': 'Personnalisation visuelle',
+  'Virtual queue (remote)': 'File virtuelle (à distance)',
+  'REST API': 'API REST',
+  'White-label': 'Marque blanche',
+  'Custom QR codes': 'Codes QR personnalisés',
+  'Multi-language': 'Multilingue',
+  'Dedicated support': 'Support dédié',
+  'SLA guarantee': 'Garantie SLA',
+  'On-premise option': 'Option sur site',
+});
+
+Object.assign(messages.ar, {
+  'Unlimited free push notifications': 'إشعارات فورية مجانية غير محدودة',
+  'Smart Queue Management for': 'إدارة ذكية للطوابير من أجل',
+  'Modern Business': 'الأعمال الحديثة',
+  'Customers scan a QR code to join your queue, track their position in real-time, and get notified when it\'s their turn. No app download. No SMS fees.':
+    'يقوم العملاء بمسح رمز QR للانضمام إلى طابورك، ومتابعة موقعهم في الوقت الفعلي، والحصول على إشعار عندما يحين دورهم. لا حاجة لتنزيل تطبيق. ولا توجد رسوم SMS.',
+  'See How It Works': 'شاهد كيف يعمل',
+  'Free forever for up to 50 customers/month. No credit card required.':
+    'مجاني إلى الأبد حتى 50 عميلًا شهريًا. لا حاجة إلى بطاقة ائتمان.',
+  'Cost per notification': 'التكلفة لكل إشعار',
+  'Setup time': 'وقت الإعداد',
+  'Apps to download': 'التطبيقات المطلوب تنزيلها',
+  'Uptime SLA': 'اتفاقية مستوى التوفر',
+  'Everything You Need to Manage Queues': 'كل ما تحتاجه لإدارة الطوابير',
+  'From QR check-in to TV display boards — a complete queue management platform with zero per-message fees.':
+    'من تسجيل الدخول عبر QR إلى شاشات العرض التلفزيونية، منصة متكاملة لإدارة الطوابير بدون أي رسوم لكل رسالة.',
+  'Up and Running in 3 Steps': 'جاهز للعمل في 3 خطوات',
+  'No complex setup. No training needed. Start managing queues in minutes.':
+    'لا إعداد معقد. لا حاجة إلى تدريب. ابدأ إدارة الطوابير خلال دقائق.',
+  'Learn more about how it works': 'تعرّف أكثر على طريقة العمل',
+  'Built for Every Industry': 'مصمم لكل قطاع',
+  'Pre-configured templates for your industry. Choose one and start in seconds.':
+    'قوالب معدّة مسبقًا لقطاعك. اختر واحدًا وابدأ خلال ثوانٍ.',
+  'Simple, Transparent Pricing': 'أسعار بسيطة وشفافة',
+  'Start free. Upgrade as you grow. All plans include unlimited push notifications.':
+    'ابدأ مجانًا ثم قم بالترقية مع نمو أعمالك. جميع الباقات تشمل إشعارات فورية غير محدودة.',
+  '50 customers/mo': '50 عميلًا/شهر',
+  '500 customers/mo': '500 عميل/شهر',
+  '2,000 customers/mo': '2,000 عميل/شهر',
+  '10,000 customers/mo': '10,000 عميل/شهر',
+  '/month': '/شهر',
+  'View Full Pricing': 'عرض جميع الأسعار',
+  'Why Pay for SMS When Push Is Free?': 'لماذا تدفع مقابل SMS بينما الإشعارات المجانية متاحة؟',
+  'Other queue systems charge $0.08-$0.15 per SMS. With QueueFlow, every notification is free.':
+    'أنظمة الطوابير الأخرى تفرض 0.08 إلى 0.15 دولارًا لكل رسالة SMS. مع Qflo، كل إشعار مجاني.',
+  'SMS-Based Systems': 'أنظمة تعتمد على SMS',
+  'QueueFlow': 'Qflo',
+  '1,000 notifications/mo': '1,000 إشعار/شهر',
+  'Notification speed': 'سرعة الإشعار',
+  'Works on locked phone': 'يعمل على الهاتف المقفل',
+  'Rich content (links, images)': 'محتوى غني (روابط، صور)',
+  'No phone number required': 'لا حاجة إلى رقم هاتف',
+  'International coverage': 'تغطية دولية',
+  'Free worldwide': 'مجاني عالميًا',
+  'Instant': 'فوري',
+  'Limited': 'محدود',
+  'Extra cost': 'تكلفة إضافية',
+  'Ready to Eliminate Wait Time Frustration?': 'هل أنت مستعد للتخلص من إزعاج وقت الانتظار؟',
+  'Join businesses that have transformed their customer experience with smart queue management.':
+    'انضم إلى الشركات التي حسّنت تجربة عملائها عبر إدارة ذكية للطوابير.',
+  'Talk to Sales': 'تحدث إلى المبيعات',
+  'Free forever plan': 'خطة مجانية مدى الحياة',
+  'No credit card': 'بدون بطاقة ائتمان',
+  'Setup in 3 minutes': 'إعداد خلال 3 دقائق',
+  'QR Code Check-In': 'تسجيل الدخول عبر رمز QR',
+  'Customers scan a QR code to join your queue — no app download, no signup required.':
+    'يمسح العملاء رمز QR للانضمام إلى طابورك دون تنزيل تطبيق ودون تسجيل.',
+  'Free Push Notifications': 'إشعارات فورية مجانية',
+  'Unlimited push notifications on all plans. No SMS fees, no WhatsApp charges. Ever.':
+    'إشعارات فورية غير محدودة في جميع الباقات. لا رسوم SMS ولا تكاليف واتساب، أبدًا.',
+  'TV Display Boards': 'شاشات عرض تلفزيونية',
+  'Show real-time queue status on lobby screens with 3 layout options and dark/light themes.':
+    'اعرض حالة الطابور في الوقت الفعلي على شاشات الاستقبال مع 3 تخطيطات وخيارات فاتحة وداكنة.',
+  'Real-Time Tracking': 'تتبع في الوقت الفعلي',
+  'Customers see their exact position and estimated wait time, updated live on their phone.':
+    'يرى العملاء ترتيبهم الدقيق ووقت الانتظار المتوقع مع تحديث مباشر على هواتفهم.',
+  'Multi-Department': 'متعدد الأقسام',
+  'Run separate queues for different departments — each with its own numbering and counters.':
+    'شغّل طوابير منفصلة للأقسام المختلفة، لكل منها ترقيمها ونوافذها الخاصة.',
+  'Priority Queue': 'طابور أولوية',
+  'Configurable priority categories for elderly, disabled, VIP, or any custom group.':
+    'فئات أولوية قابلة للتخصيص لكبار السن وذوي الإعاقة وVIP أو أي مجموعة مخصصة.',
+  'Self-Service Kiosk': 'كشك خدمة ذاتية',
+  'Touch-screen kiosk mode for lobbies — customers select their service and get a ticket.':
+    'وضع كشك بشاشة لمس لردهات الاستقبال حيث يختار العملاء الخدمة ويحصلون على تذكرة.',
+  'Online booking with walk-in/appointment hybrid mode — automated interleaving.':
+    'حجز عبر الإنترنت مع وضع هجين بين الحضور المباشر والمواعيد، مع دمج تلقائي.',
+  'Virtual Queue': 'طابور افتراضي',
+  'Customers join remotely from anywhere — wait at home and arrive when it\'s their turn.':
+    'ينضم العملاء عن بُعد من أي مكان، وينتظرون في المنزل ثم يصلون عندما يحين دورهم.',
+});
+
+Object.assign(messages.ar, {
+  'Clinics': 'العيادات',
+  'Government': 'الخدمات الحكومية',
+  'Hotels': 'الفنادق',
+  'Barbershops': 'محلات الحلاقة',
+  'Pharmacies': 'الصيدليات',
+  'Sign Up in 2 Minutes': 'سجّل خلال دقيقتين',
+  'Create your account, choose your industry template, and your queue system is ready.':
+    'أنشئ حسابك، واختر قالب قطاعك، وسيكون نظام الطوابير جاهزًا.',
+  'Share Your QR Code': 'شارك رمز QR الخاص بك',
+  'Print or display the QR code. Customers scan to join — no app needed.':
+    'اطبع رمز QR أو اعرضه. يقوم العملاء بمسحه للانضمام دون الحاجة إلى تطبيق.',
+  'Manage Your Queue': 'أدِر طابورك',
+  'Call next, serve, track — all from your dashboard. Customers get notified instantly.':
+    'نادِ التالي، وقدّم الخدمة، وتابع كل شيء من لوحة التحكم. العملاء يحصلون على إشعارات فورية.',
+  'Monthly': 'شهري',
+  'Yearly': 'سنوي',
+  'Save 20%': 'وفّر 20٪',
+  'Most Popular': 'الأكثر شيوعًا',
+  '/mo': '/شهر',
+  'billed yearly': 'تُفوتر سنويًا',
+  'Full Feature Comparison': 'مقارنة كاملة للميزات',
+  'Every feature, every plan. See exactly what you get.':
+    'كل ميزة، وكل باقة. شاهد بالضبط ما ستحصل عليه.',
+  'Feature': 'الميزة',
+  'Free': 'مجاني',
+  'Starter': 'بداية',
+  'Growth': 'نمو',
+  'Pro': 'احترافي',
+  'Enterprise': 'مؤسسات',
+  'Frequently Asked Questions': 'الأسئلة الشائعة',
+  'Is the free plan really free forever?': 'هل الخطة المجانية مجانية حقًا إلى الأبد؟',
+  'Yes. The free plan includes up to 50 customers per month, 1 location, and unlimited push notifications. No credit card required, no time limit.':
+    'نعم. تتضمن الخطة المجانية حتى 50 عميلًا شهريًا وموقعًا واحدًا وإشعارات فورية غير محدودة. لا حاجة إلى بطاقة ائتمان ولا يوجد حد زمني.',
+  'What counts as a "customer"?': 'ما الذي يُحتسب كـ "عميل"؟',
+  'Each ticket created counts as one customer. If a customer visits twice in a month, that counts as 2 customers toward your plan limit.':
+    'كل تذكرة يتم إنشاؤها تُحسب كعميل واحد. وإذا زار العميل مرتين في الشهر، فذلك يُحسب كعميلين ضمن حد باقتك.',
+  'How do push notifications work without SMS?': 'كيف تعمل الإشعارات الفورية بدون SMS؟',
+  'We use Web Push technology — the same system used by Gmail, YouTube, and other major platforms. Customers receive instant notifications on their phone browser without downloading an app. Works on Android, iOS, and desktop.':
+    'نحن نستخدم تقنية Web Push، وهي نفس التقنية المستخدمة في Gmail وYouTube ومنصات كبرى أخرى. يتلقى العملاء إشعارات فورية في متصفح الهاتف دون تنزيل تطبيق. تعمل على Android وiOS وسطح المكتب.',
+  'Can I change plans anytime?': 'هل يمكنني تغيير الباقة في أي وقت؟',
+  'Yes. Upgrade or downgrade anytime. Changes take effect immediately. If you downgrade, you keep your current plan until the end of the billing period.':
+    'نعم. يمكنك الترقية أو التخفيض في أي وقت. تسري التغييرات فورًا. وإذا خفّضت الباقة، فستحتفظ بباقتك الحالية حتى نهاية فترة الفوترة.',
+  'Do you offer discounts for nonprofits or education?': 'هل تقدمون خصومات للمنظمات غير الربحية أو التعليم؟',
+  'Yes! Contact us for special pricing for nonprofits, educational institutions, and government organizations.':
+    'نعم! تواصل معنا للحصول على أسعار خاصة للمنظمات غير الربحية والمؤسسات التعليمية والهيئات الحكومية.',
+  'What payment methods do you accept?': 'ما وسائل الدفع التي تقبلونها؟',
+  'We accept all major credit cards (Visa, Mastercard, American Express) via Stripe. Enterprise customers can pay by invoice.':
+    'نقبل جميع بطاقات الائتمان الرئيسية (Visa وMastercard وAmerican Express) عبر Stripe. ويمكن لعملاء المؤسسات الدفع عبر الفاتورة.',
+  'Start Managing Queues Today': 'ابدأ إدارة الطوابير اليوم',
+  'Get in Touch': 'تواصل معنا',
+  'Have questions about Qflo? Want a demo? We\'d love to hear from you.':
+    'هل لديك أسئلة حول Qflo؟ هل تريد عرضًا توضيحيًا؟ يسعدنا التواصل معك.',
+  'Send Us a Message': 'أرسل لنا رسالة',
+  'We typically respond within 24 hours.': 'نرد عادة خلال 24 ساعة.',
+  'Message Sent!': 'تم إرسال الرسالة!',
+  'Thank you for reaching out. We\'ll get back to you shortly.':
+    'شكرًا لتواصلك معنا. سنعود إليك قريبًا.',
+  'Send another message': 'أرسل رسالة أخرى',
+  'Name *': 'الاسم *',
+  'Your name': 'اسمك',
+  'Email *': 'البريد الإلكتروني *',
+  'Company': 'الشركة',
+  'Your company name': 'اسم شركتك',
+  'Message *': 'الرسالة *',
+  'How can we help you?': 'كيف يمكننا مساعدتك؟',
+  'Sending...': 'جارٍ الإرسال...',
+  'Send Message': 'إرسال الرسالة',
+});
+
+Object.assign(messages.ar, {
+  'Failed to send message': 'فشل إرسال الرسالة',
+  'Something went wrong. Please try again.': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
+  'Other Ways to Reach Us': 'طرق أخرى للتواصل معنا',
+  'Pick the method that works best for you.': 'اختر الطريقة الأنسب لك.',
+  'Response within 24 hours': 'الرد خلال 24 ساعة',
+  'Live Chat': 'الدردشة المباشرة',
+  'Available Mon-Fri, 9am-6pm CET': 'متاح من الاثنين إلى الجمعة، 9 صباحًا - 6 مساءً CET',
+  'Average response time: 5 minutes': 'متوسط وقت الرد: 5 دقائق',
+  'Based in Algeria, serving businesses worldwide': 'مقرنا في الجزائر ونخدم الشركات حول العالم',
+  'How Qflo Works': 'كيف يعمل Qflo',
+  'From sign-up to your first customer notification — here\'s exactly how Qflo transforms your queue management.':
+    'من التسجيل حتى أول إشعار لعميلك، إليك بالضبط كيف يغيّر Qflo إدارة طوابيرك.',
+  'Create Your Account': 'أنشئ حسابك',
+  'Sign up in 30 seconds. Choose your industry template (restaurant, clinic, retail, etc.) or start from scratch.':
+    'سجّل خلال 30 ثانية. اختر قالب قطاعك (مطعم، عيادة، متجر، إلخ) أو ابدأ من الصفر.',
+  'No credit card required': 'لا حاجة إلى بطاقة ائتمان',
+  'Industry-specific templates auto-configure departments, services, and desks':
+    'القوالب الخاصة بكل قطاع تضبط الأقسام والخدمات والنوافذ تلقائيًا.',
+  'Or start blank and set up everything exactly how you need it':
+    'أو ابدأ من قالب فارغ واضبط كل شيء كما تحتاج تمامًا.',
+  'Configure Your Queue': 'اضبط طابورك',
+  'Set up your departments, services, counters, and staff. Customize everything from the admin dashboard.':
+    'أعد الأقسام والخدمات والنوافذ والموظفين. خصص كل شيء من لوحة تحكم الإدارة.',
+  'Create departments (e.g., Teller, Loans, Customer Service)':
+    'أنشئ أقسامًا (مثل الصندوق والقروض وخدمة العملاء)',
+  'Add services within each department': 'أضف خدمات داخل كل قسم',
+  'Set up desks/counters and assign staff': 'أنشئ النوافذ/الكاونترات وعيّن الموظفين',
+  'Configure priority categories (elderly, VIP, etc.)': 'اضبط فئات الأولوية (كبار السن، VIP، إلخ)',
+  'Customize intake forms per service': 'خصص نماذج الاستقبال لكل خدمة',
+  'Print the QR code and place it at your entrance, counter, or on your website. Customers scan to join.':
+    'اطبع رمز QR وضعه عند المدخل أو الكاونتر أو على موقعك. يمسحه العملاء للانضمام.',
+  'QR codes work with any phone camera — no app download needed':
+    'رموز QR تعمل مع أي كاميرا هاتف، دون الحاجة إلى تنزيل تطبيق',
+  'Place at your entrance, on tables, or on your website':
+    'ضعه عند المدخل أو على الطاولات أو على موقعك الإلكتروني',
+  'Customers can also join remotely before arriving':
+    'يمكن للعملاء الانضمام عن بُعد قبل الوصول أيضًا',
+  'Set up a self-service kiosk for walk-in customers':
+    'أنشئ كشك خدمة ذاتية للعملاء الحاضرين مباشرة',
+  'Manage from Your Dashboard': 'أدر من لوحة التحكم',
+  'Call next customer, mark served, handle no-shows — everything from your operator panel.':
+    'نادِ العميل التالي، وعلّم الخدمة كمكتملة، وتعامل مع حالات الغياب، كل ذلك من لوحة المشغل.',
+  'One-click "Call Next" button respects queue order and priority':
+    'زر "استدعاء التالي" بضغطة واحدة يحافظ على ترتيب الطابور والأولوية',
+  'View customer info and intake form data before they arrive':
+    'اعرض معلومات العميل وبيانات النماذج قبل وصوله',
+  'Transfer tickets between departments': 'حوّل التذاكر بين الأقسام',
+  'Track real-time queue statistics': 'تابع إحصاءات الطابور في الوقت الفعلي',
+  'Customers Track in Real-Time': 'العملاء يتابعون في الوقت الفعلي',
+  'After scanning the QR code, customers see their position, estimated wait time, and get live updates.':
+    'بعد مسح رمز QR، يرى العملاء ترتيبهم ووقت الانتظار المتوقع ويحصلون على تحديثات مباشرة.',
+  'Real-time position tracking — "You are #3 in queue"':
+    'تتبع الترتيب في الوقت الفعلي — "أنت رقم 3 في الطابور"',
+  'Estimated wait time based on average service duration':
+    'وقت انتظار تقديري بناءً على متوسط مدة الخدمة',
+  'Live updates without refreshing the page': 'تحديثات مباشرة دون إعادة تحميل الصفحة',
+  'Works on any phone browser — iOS, Android, desktop': 'يعمل على أي متصفح هاتف وعلى iOS وAndroid وسطح المكتب',
+  'Instant Push Notifications': 'إشعارات فورية لحظية',
+  'When it\'s their turn, customers get an instant push notification — even with the screen locked.':
+    'عندما يحين دورهم، يتلقى العملاء إشعارًا فوريًا حتى مع قفل الشاشة.',
+  'Free unlimited push notifications on ALL plans': 'إشعارات فورية مجانية وغير محدودة في جميع الباقات',
+  'Works on locked phones — no SMS needed': 'يعمل على الهواتف المقفلة دون الحاجة إلى SMS',
+  'No per-message fees — $0 cost to you': 'لا رسوم لكل رسالة، بتكلفة 0 دولار عليك',
+  'Customers see "YOUR TURN — Go to Counter 3"': 'يرى العملاء "حان دورك - توجّه إلى الشباك 3"',
+  'Plus, Powerful Extras': 'ومزايا إضافية قوية',
+  'Connect any screen to show your queue in real-time. 3 layout options, dark/light themes, customizable colors.':
+    'صل أي شاشة لعرض طابورك في الوقت الفعلي. 3 تخطيطات وخيارات فاتحة/داكنة وألوان قابلة للتخصيص.',
+  'Analytics & Insights': 'تحليلات ورؤى',
+  'Track wait times, peak hours, staff performance, and customer satisfaction. Export reports as CSV or PDF.':
+    'تابع أوقات الانتظار وساعات الذروة وأداء الموظفين ورضا العملاء. صدّر التقارير بصيغة CSV أو PDF.',
+});
+
+Object.assign(messages.ar, {
+  'Ready to Get Started?': 'هل أنت مستعد للبدء؟',
+  'Set up your first queue in under 3 minutes. Free forever for up to 50 customers/month.':
+    'أنشئ أول طابور لك في أقل من 3 دقائق. مجاني إلى الأبد حتى 50 عميلًا شهريًا.',
+  'Create Free Account': 'إنشاء حساب مجاني',
+  'Free push notifications': 'إشعارات فورية مجانية',
+  'Cancel anytime': 'إلغاء في أي وقت',
+  'Queue Management for Every Industry': 'إدارة الطوابير لكل قطاع',
+  'Pre-configured templates and features tailored to your business. Choose your industry and start managing queues in minutes.':
+    'قوالب وميزات معدّة مسبقًا تناسب نشاطك. اختر قطاعك وابدأ إدارة الطوابير خلال دقائق.',
+  'Don\'t See Your Industry?': 'ألا ترى قطاعك؟',
+  'Qflo works for any business with a queue. Start with a blank template and customize everything.':
+    'يعمل Qflo مع أي نشاط لديه طابور. ابدأ بقالب فارغ وخصص كل شيء.',
+  'Contact Us': 'اتصل بنا',
+  'All Solutions': 'كل الحلول',
+  'The Problem': 'المشكلة',
+  'Sound familiar? Qflo solves all of these.': 'هل يبدو هذا مألوفًا؟ Qflo يحل كل هذه المشاكل.',
+  'The Solution': 'الحل',
+  'Features built specifically for {industry}.': 'ميزات مصممة خصيصًا لـ {industry}.',
+  'Real-World Use Cases': 'حالات استخدام واقعية',
+  'Ready to Transform Your {industry}?': 'هل أنت مستعد لتطوير {industry} لديك؟',
+  'Start free with our {industry} template. Set up in under 3 minutes.':
+    'ابدأ مجانًا مع قالب {industry} الخاص بنا. الإعداد في أقل من 3 دقائق.',
+  '{industry} template included': 'يتضمن قالب {industry}',
+  'You’re signed in to QueueFlow': 'أنت مسجّل الدخول إلى Qflo',
+  'Welcome back{suffix}. Open your dashboard to manage queues, desks, bookings, and customer flow.':
+    'مرحبًا بعودتك{suffix}. افتح لوحة التحكم لإدارة الطوابير والنوافذ والحجوزات وتدفق العملاء.',
+  'Welcome back{suffix}. Open your business dashboard to manage queues, desks, bookings, and customer flow for {organization}.':
+    'مرحبًا بعودتك{suffix}. افتح لوحة تحكم النشاط لإدارة الطوابير والنوافذ والحجوزات وتدفق العملاء في {organization}.',
+  'Perfect for trying out Qflo': 'مثالية لتجربة Qflo',
+  'Up to 50 customers/month': 'حتى 50 عميلًا شهريًا',
+  '1 location': 'موقع واحد',
+  '2 staff members': '2 من الموظفين',
+  'QR code check-in': 'تسجيل الدخول عبر رمز QR',
+  'Unlimited push notifications': 'إشعارات فورية غير محدودة',
+  'Real-time queue updates': 'تحديثات طابور لحظية',
+  'Basic analytics': 'تحليلات أساسية',
+  'Kiosk mode': 'وضع الكشك',
+  'Display screen (1)': 'شاشة عرض (1)',
+  'For small businesses getting started': 'للشركات الصغيرة التي تبدأ الآن',
+  'Start Free Trial': 'ابدأ التجربة المجانية',
+  'Up to 500 customers/month': 'حتى 500 عميل شهريًا',
+  '5 staff members': '5 من الموظفين',
+  'Everything in Free, plus:': 'كل ما في الخطة المجانية، بالإضافة إلى:',
+  'Email notifications': 'إشعارات البريد الإلكتروني',
+  'Custom branding basics': 'أساسيات الهوية المخصصة',
+  'CSV & PDF export': 'تصدير CSV وPDF',
+  'Priority categories': 'فئات الأولوية',
+  'Customer intake forms': 'نماذج استقبال العملاء',
+  'Display screens (3)': 'شاشات عرض (3)',
+  'For growing businesses with multiple needs': 'للشركات المتنامية ذات الاحتياجات المتعددة',
+  'Up to 2,000 customers/month': 'حتى 2,000 عميل شهريًا',
+  '3 locations': '3 مواقع',
+  '15 staff members': '15 من الموظفين',
+  'Everything in Starter, plus:': 'كل ما في خطة البداية، بالإضافة إلى:',
+  'REST API access': 'إتاحة REST API',
+  'Appointment scheduling': 'جدولة المواعيد',
+  'Virtual queue (remote join)': 'طابور افتراضي (انضمام عن بُعد)',
+  'Group/family tickets': 'تذاكر جماعية/عائلية',
+  'Priority support': 'دعم ذو أولوية',
+  'Unlimited display screens': 'شاشات عرض غير محدودة',
+  'For established businesses at scale': 'للشركات الراسخة على نطاق واسع',
+  'Up to 10,000 customers/month': 'حتى 10,000 عميل شهريًا',
+  'Unlimited locations': 'مواقع غير محدودة',
+  'Unlimited staff': 'موظفون غير محدودين',
+  'Everything in Growth, plus:': 'كل ما في خطة النمو، بالإضافة إلى:',
+  'White-label branding': 'هوية بيضاء',
+  'Custom QR codes (logo + colors)': 'رموز QR مخصصة (شعار + ألوان)',
+  'Advanced analytics & forecasting': 'تحليلات متقدمة وتنبؤات',
+  'Multi-language support': 'دعم متعدد اللغات',
+  'Custom display themes': 'سمات عرض مخصصة',
+  'For large organizations with custom needs': 'للمؤسسات الكبيرة ذات الاحتياجات الخاصة',
+  'Contact Sales': 'تواصل مع المبيعات',
+  'Unlimited everything': 'كل شيء غير محدود',
+  'Everything in Pro, plus:': 'كل ما في الخطة الاحترافية، بالإضافة إلى:',
+  'Dedicated account manager': 'مدير حساب مخصص',
+  'Custom integrations': 'تكاملات مخصصة',
+  'SLA guarantee (99.9%)': 'ضمان SLA (99.9٪)',
+  'On-premise deployment option': 'خيار النشر المحلي',
+  'Training & onboarding': 'التدريب والتأهيل',
+  'Phone support': 'دعم هاتفي',
+  'Customers per month': 'العملاء شهريًا',
+  'Staff members': 'أعضاء الفريق',
+  'Push notifications': 'الإشعارات الفورية',
+  'Display screens (TV)': 'شاشات العرض (TV)',
+  'Analytics': 'التحليلات',
+  'Custom branding': 'هوية مخصصة',
+  'Virtual queue (remote)': 'طابور افتراضي (عن بُعد)',
+  'REST API': 'واجهة REST API',
+  'White-label': 'علامة بيضاء',
+  'Custom QR codes': 'رموز QR مخصصة',
+  'Multi-language': 'متعدد اللغات',
+  'Dedicated support': 'دعم مخصص',
+  'SLA guarantee': 'ضمان SLA',
+  'On-premise option': 'خيار محلي',
+});
+
+Object.assign(messages.fr, {
+  'Eliminate walkouts with smart waitlist management': 'Éliminez les départs grâce à une gestion intelligente de la liste d’attente',
+  'Turn Wait Times into Happy Guests': 'Transformez l’attente en clients satisfaits',
+  'Let guests join your waitlist, track their position in real-time, and get notified instantly when their table is ready — no more crowded lobbies.':
+    'Permettez aux clients de rejoindre votre liste d’attente, de suivre leur position en temps réel et d’être notifiés dès que leur table est prête, sans hall bondé.',
+  'Guests leave when they see a long line': 'Les clients partent quand ils voient une longue file',
+  'Paper waitlists are messy and inaccurate': 'Les listes d’attente papier sont désordonnées et imprécises',
+  'Staff waste time calling out names': 'Le personnel perd du temps à appeler les noms',
+  'No visibility into actual wait times': 'Aucune visibilité sur les temps d’attente réels',
+  'QR Waitlist': 'Liste d’attente QR',
+  'Guests scan a QR code to join the waitlist from their phone — no app download needed.':
+    'Les clients scannent un code QR pour rejoindre la liste d’attente depuis leur téléphone, sans application.',
+  'Real-Time Position': 'Position en temps réel',
+  'Guests see their exact position and estimated wait time, updated live.':
+    'Les clients voient leur position exacte et le temps d’attente estimé, mis à jour en direct.',
+  'Instant Notifications': 'Notifications instantanées',
+  'Push notification sent to guest\'s phone the moment their table is ready.':
+    'Une notification push est envoyée au téléphone du client dès que sa table est prête.',
+  'Party Size Management': 'Gestion de la taille du groupe',
+  'Track party sizes and assign tables efficiently with group ticket support.':
+    'Suivez la taille des groupes et attribuez les tables efficacement grâce au support des tickets de groupe.',
+  'TV Display Board': 'Écran d’affichage TV',
+  'Show queue status on a TV in your lobby — guests always know where they stand.':
+    'Affichez l’état de la file sur une TV dans votre hall afin que les clients sachent toujours où ils en sont.',
+  'Track peak hours, average wait times, and table turnover to optimize operations.':
+    'Suivez les heures de pointe, les temps d’attente moyens et la rotation des tables pour optimiser les opérations.',
+  'Busy Weekend Service': 'Service chargé le week-end',
+  'Guests scan the QR code outside, join the virtual waitlist, and browse nearby shops while waiting. They get a push notification when their table is ready.':
+    'Les clients scannent le code QR dehors, rejoignent la liste d’attente virtuelle et visitent les commerces voisins en attendant. Ils reçoivent une notification push quand la table est prête.',
+  'Multiple Dining Areas': 'Plusieurs espaces de restauration',
+  'Use departments to separate indoor, outdoor, and bar seating. Each area manages its own queue independently.':
+    'Utilisez des départements pour séparer les places intérieures, extérieures et le bar. Chaque zone gère sa propre file indépendamment.',
+  'Reduction in walkouts': 'Réduction des départs',
+  'Average setup time': 'Temps moyen de mise en place',
+  'Reduce waiting room congestion and improve patient flow': 'Réduisez l’encombrement des salles d’attente et améliorez le parcours patient',
+  'Better Patient Experience, Less Waiting Room Stress': 'Une meilleure expérience patient, moins de stress en salle d’attente',
+  'Patients check in digitally, wait from anywhere, and get notified when the doctor is ready — reducing crowding and improving satisfaction.':
+    'Les patients s’enregistrent numériquement, attendent depuis n’importe où et reçoivent une notification lorsque le médecin est prêt, ce qui réduit l’affluence et améliore la satisfaction.',
+  'Crowded waiting rooms increase infection risk': 'Les salles d’attente bondées augmentent le risque d’infection',
+  'Patients don\'t know how long they\'ll wait': 'Les patients ne savent pas combien de temps ils vont attendre',
+  'Reception staff overwhelmed with check-ins': 'Le personnel d’accueil est débordé par les enregistrements',
+  'No-shows waste valuable appointment slots': 'Les absences gaspillent des créneaux de rendez-vous précieux',
+  'Digital Check-In': 'Enregistrement numérique',
+  'Patients scan a QR code to check in and fill out intake forms on their phone.':
+    'Les patients scannent un code QR pour s’enregistrer et remplir les formulaires sur leur téléphone.',
+  'Department Queues': 'Files par département',
+  'Separate queues for general consultation, lab work, pharmacy — patients flow smoothly.':
+    'Des files séparées pour la consultation générale, les analyses et la pharmacie afin de fluidifier le parcours patient.',
+  'Priority Patients': 'Patients prioritaires',
+  'Elderly, disabled, and emergency patients get priority with configurable categories.':
+    'Les personnes âgées, en situation de handicap et les urgences bénéficient d’une priorité configurable.',
+  'Intake Forms': 'Formulaires d’accueil',
+  'Custom forms per service — collect patient info, symptoms, insurance details before the visit.':
+    'Des formulaires personnalisés par service pour recueillir les informations patient, symptômes et détails d’assurance avant la visite.',
+  'Appointment + Walk-In': 'Rendez-vous + sans rendez-vous',
+  'Hybrid mode interleaves scheduled appointments with walk-in patients automatically.':
+    'Le mode hybride alterne automatiquement les rendez-vous planifiés et les patients sans rendez-vous.',
+  'Wait from Anywhere': 'Attendez depuis n’importe où',
+  'Patients wait in their car or nearby — get notified when it\'s their turn.':
+    'Les patients attendent dans leur voiture ou à proximité et reçoivent une notification lorsque c’est leur tour.',
+  'Multi-Department Clinic': 'Clinique multi-départements',
+  'A patient checks in for a consultation, gets lab work, then picks up a prescription — each department manages its own queue.':
+    'Un patient s’enregistre pour une consultation, passe au laboratoire puis récupère une ordonnance. Chaque département gère sa propre file.',
+  'Remote Waiting': 'Attente à distance',
+  'Patients check in from the parking lot, wait in their car, and walk in only when notified — reducing waiting room density.':
+    'Les patients s’enregistrent depuis le parking, attendent dans leur voiture et n’entrent qu’une fois notifiés, ce qui réduit la densité de la salle d’attente.',
+  'Less waiting room crowding': 'Moins d’encombrement en salle d’attente',
+  'Faster check-in': 'Enregistrement plus rapide',
+  'Reduction in no-shows': 'Réduction des absences',
+  'Transform your customer service experience': 'Transformez votre expérience de service client',
+  'No More Standing in Line': 'Fini l’attente en file',
+  'Customers join the queue digitally, browse the store while waiting, and get called to the counter when it\'s their turn.':
+    'Les clients rejoignent la file numériquement, parcourent le magasin pendant l’attente et sont appelés au comptoir quand vient leur tour.',
+  'Long lines at checkout or service counter': 'Longues files en caisse ou au comptoir de service',
+  'Customers leave without buying': 'Les clients partent sans acheter',
+  'Staff can\'t predict demand peaks': 'Le personnel ne peut pas anticiper les pics de demande',
+  'No way to prioritize service types': 'Aucun moyen de prioriser les types de service',
+  'Service Counter Queue': 'File du comptoir de service',
+  'Customers scan QR to join the returns, exchanges, or help desk queue.':
+    'Les clients scannent un QR pour rejoindre la file des retours, échanges ou du service client.',
+  'Browse While Waiting': 'Parcourir pendant l’attente',
+  'Customers continue shopping while tracking their position on their phone.':
+    'Les clients continuent leurs achats tout en suivant leur position sur leur téléphone.',
+  'Multiple Service Points': 'Plusieurs points de service',
+  'Run multiple counters for different service types simultaneously.':
+    'Faites fonctionner plusieurs comptoirs pour différents types de service en parallèle.',
+  'Display Board': 'Écran d’affichage',
+  'Large screen shows current queue status — customers know exactly when they\'re next.':
+    'Un grand écran affiche l’état actuel de la file afin que les clients sachent exactement quand ils sont les prochains.',
+  'Peak Hour Analytics': 'Analyses des heures de pointe',
+  'Identify busy periods and optimize staffing with real-time analytics.':
+    'Identifiez les périodes chargées et optimisez les effectifs grâce à l’analyse en temps réel.',
+  'Customer Feedback': 'Avis client',
+  'Automatic post-service satisfaction survey on the customer\'s phone.':
+    'Enquête de satisfaction automatique après le service sur le téléphone du client.',
+  'Electronics Store': 'Magasin d’électronique',
+  'Customers join the queue at the help desk kiosk, continue browsing, and get a push notification when a specialist is available.':
+    'Les clients rejoignent la file au kiosque du service client, continuent à parcourir le magasin et reçoivent une notification push lorsqu’un spécialiste est disponible.',
+  'Returns Counter': 'Comptoir des retours',
+  'Separate queue for returns and exchanges, with intake forms to capture order number and reason before the customer reaches the counter.':
+    'Une file séparée pour les retours et échanges, avec formulaires pour saisir le numéro de commande et le motif avant d’arriver au comptoir.',
+  'Increase in customer satisfaction': 'Hausse de la satisfaction client',
+  'More browsing time (more sales)': 'Plus de temps de navigation (plus de ventes)',
+  'Paper tickets needed': 'Tickets papier nécessaires',
+});
+
+Object.assign(messages.fr, {
+  'Government & Public Services': 'Administration et services publics',
+  'Modernize citizen services with digital queue management': 'Modernisez les services aux citoyens avec une gestion numérique des files',
+  'Efficient Public Services, Happy Citizens': 'Des services publics efficaces, des citoyens satisfaits',
+  'From DMV to city hall — replace take-a-number machines with a modern digital queue that citizens can join from their phone.':
+    'Du service des permis à la mairie, remplacez les distributeurs de tickets par une file numérique moderne accessible depuis le téléphone.',
+  'Citizens wait hours for simple services': 'Les citoyens attendent des heures pour des services simples',
+  'Old ticket machines break down': 'Les anciennes bornes à tickets tombent en panne',
+  'No way to predict wait times': 'Aucun moyen de prévoir les temps d’attente',
+  'Multiple departments with separate queues cause confusion': 'Plusieurs départements avec des files séparées créent de la confusion',
+  'Touch-screen kiosk replaces old ticket machines — citizens select their service and get a digital ticket.':
+    'Une borne tactile remplace les anciennes machines à tickets. Les citoyens choisissent leur service et reçoivent un ticket numérique.',
+  'Documents, payments, registration — each department runs its own numbered queue.':
+    'Documents, paiements, inscriptions : chaque département gère sa propre file numérotée.',
+  'Large screens in the lobby show which tickets are being served at which counter.':
+    'De grands écrans dans le hall montrent quels tickets sont servis et à quel guichet.',
+  'Priority Service': 'Service prioritaire',
+  'Elderly, disabled, veterans, and pregnant women get priority with configurable categories.':
+    'Les personnes âgées, en situation de handicap, les anciens combattants et les femmes enceintes obtiennent une priorité configurable.',
+  'Citizens book online and skip the walk-in queue — interleaved automatically.':
+    'Les citoyens réservent en ligne et évitent la file sans rendez-vous grâce à une alternance automatique.',
+  'Public page shows wait times at all branches — citizens choose the least busy location.':
+    'La page publique affiche les temps d’attente de toutes les agences afin que les citoyens choisissent la moins chargée.',
+  'DMV Office': 'Bureau administratif',
+  'Citizens select their service (license renewal, registration, etc.) at the kiosk, fill intake forms on their phone, and wait comfortably until called to the right counter.':
+    'Les citoyens choisissent leur service à la borne, remplissent les formulaires sur leur téléphone et attendent confortablement jusqu’à l’appel au bon guichet.',
+  'Multi-Branch Municipality': 'Municipalité multi-agences',
+  'Citizens check wait times at all branches online and go to the shortest queue. Each branch manages its own departments and counters independently.':
+    'Les citoyens consultent les temps d’attente de toutes les agences en ligne et se rendent dans la file la plus courte. Chaque agence gère ses départements et guichets indépendamment.',
+  'Reduction in perceived wait time': 'Réduction du temps d’attente perçu',
+  'Faster than paper ticket systems': 'Plus rapide que les systèmes papier',
+  'Citizen satisfaction rate': 'Taux de satisfaction des citoyens',
+  'Banks & Financial Services': 'Banques et services financiers',
+  'Streamline branch operations and reduce wait times': 'Fluidifiez les opérations d’agence et réduisez les temps d’attente',
+  'Modern Banking Starts with Zero Wait Times': 'Une banque moderne commence par zéro attente',
+  'Customers join the queue before arriving, get served faster, and your tellers focus on service — not crowd management.':
+    'Les clients rejoignent la file avant d’arriver, sont servis plus vite et vos agents se concentrent sur le service plutôt que sur la foule.',
+  'Long queues drive customers to competitors': 'Les longues files poussent les clients vers la concurrence',
+  'Tellers spend time managing the line': 'Les agents passent du temps à gérer la file',
+  'VIP customers wait alongside everyone else': 'Les clients VIP attendent avec tout le monde',
+  'No visibility into branch performance': 'Aucune visibilité sur la performance des agences',
+  'Customers join the queue from the mobile app before arriving at the branch.':
+    'Les clients rejoignent la file depuis l’application mobile avant d’arriver à l’agence.',
+  'VIP Priority': 'Priorité VIP',
+  'Premium customers automatically get priority service with configurable rules.':
+    'Les clients premium reçoivent automatiquement un service prioritaire via des règles configurables.',
+  'Service Routing': 'Routage de service',
+  'Route customers to the right teller based on service type — deposits, loans, accounts.':
+    'Orientez les clients vers le bon agent selon le type de service : dépôts, prêts, comptes.',
+  'Customer Identification': 'Identification client',
+  'Intake forms capture account details before the customer reaches the counter.':
+    'Les formulaires recueillent les détails du compte avant que le client n’atteigne le guichet.',
+  'Multi-Branch Analytics': 'Analyses multi-agences',
+  'Compare performance across all branches — wait times, throughput, satisfaction.':
+    'Comparez les performances de toutes les agences : temps d’attente, débit, satisfaction.',
+  'Customers book a slot for complex services like loan applications or account opening.':
+    'Les clients réservent un créneau pour des services complexes comme une demande de prêt ou l’ouverture de compte.',
+  'Branch Visit': 'Visite en agence',
+  'Customer opens the QR code outside, selects "Account Inquiry", joins the queue, and waits at the nearby coffee shop. Push notification arrives when the teller is ready.':
+    'Le client ouvre le QR code dehors, sélectionne « Demande de compte », rejoint la file et attend dans le café voisin. Une notification push arrive lorsque l’agent est prêt.',
+  'Loan Application': 'Demande de prêt',
+  'Customer books an appointment online, fills out pre-visit forms, and arrives at the scheduled time — skipping the walk-in queue entirely.':
+    'Le client réserve un rendez-vous en ligne, remplit les formulaires préalables et arrive à l’heure prévue, sans passer par la file sans rendez-vous.',
+  'Reduction in wait times': 'Réduction des temps d’attente',
+  'Increase in teller efficiency': 'Hausse de l’efficacité des agents',
+  'Customer satisfaction': 'Satisfaction client',
+  'Hotels & Hospitality': 'Hôtellerie et hospitalité',
+  'Elevate the guest experience from check-in to checkout': 'Élevez l’expérience client du check-in au checkout',
+  'Guest Experience Without the Wait': 'Une expérience client sans attente',
+  'From check-in to concierge — manage every guest touchpoint with a seamless digital queue.':
+    'Du check-in à la conciergerie, gérez chaque point de contact client avec une file numérique fluide.',
+  'Long check-in/checkout lines frustrate guests': 'Les longues files d’arrivée et de départ frustrent les clients',
+  'Concierge services are first-come, first-served': 'Les services de conciergerie sont gérés au premier arrivé',
+  'No way to manage pool/spa/restaurant queues': 'Aucun moyen de gérer les files du spa, de la piscine ou du restaurant',
+  'VIP guests expect priority treatment': 'Les clients VIP attendent un traitement prioritaire',
+  'Check-In Queue': 'File de check-in',
+  'Guests join the check-in queue on arrival — wait in the lobby, not in line.':
+    'Les clients rejoignent la file d’enregistrement à l’arrivée et attendent dans le hall, pas debout dans une file.',
+  'Concierge Services': 'Services de conciergerie',
+  'Guests request concierge help from their phone — get notified when available.':
+    'Les clients demandent l’aide de la conciergerie depuis leur téléphone et sont notifiés quand elle est disponible.',
+  'Multi-Service': 'Multi-service',
+  'Manage queues for restaurant, spa, pool, room service — all from one dashboard.':
+    'Gérez les files du restaurant, du spa, de la piscine et du room service depuis un seul tableau de bord.',
+  'VIP Treatment': 'Traitement VIP',
+  'Loyalty members and suite guests automatically get priority service.':
+    'Les membres du programme de fidélité et les clients en suite bénéficient automatiquement d’un service prioritaire.',
+  'TV Displays': 'Affichages TV',
+  'Show queue status on lobby screens with your hotel branding.':
+    'Affichez l’état de la file sur les écrans du hall avec l’identité visuelle de votre hôtel.',
+  'Guest Feedback': 'Avis clients',
+  'Automatic satisfaction survey after each service interaction.':
+    'Enquête de satisfaction automatique après chaque interaction de service.',
+  'Busy Check-In': 'Arrivées chargées',
+  'Guests arrive during peak hours, scan the lobby QR code, complete pre-check-in forms on their phone, and relax in the lounge until called to the desk.':
+    'Les clients arrivent pendant les heures de pointe, scannent le QR du hall, remplissent les formulaires de pré-enregistrement sur leur téléphone et se détendent au salon jusqu’à l’appel au comptoir.',
+  'Spa & Pool': 'Spa et piscine',
+  'Guests join the spa queue from their room, continue their day, and get notified when a slot opens up.':
+    'Les clients rejoignent la file du spa depuis leur chambre, poursuivent leur journée et reçoivent une notification lorsqu’un créneau se libère.',
+  'Average check-in time saved': 'Temps moyen gagné au check-in',
+  'Less lobby congestion': 'Moins d’encombrement dans le hall',
+  'Guest satisfaction': 'Satisfaction des clients',
+});
+
+Object.assign(messages.fr, {
+  'Barbershops & Salons': 'Barbiers et salons',
+  'Modernize your shop with a digital waitlist': 'Modernisez votre salon avec une liste d’attente numérique',
+  'Your Chair is Ready — No More Walk-In Chaos': 'Votre fauteuil est prêt, fini le chaos des passages sans rendez-vous',
+  'Clients join your waitlist digitally, see real-time wait times, and show up exactly when it\'s their turn.':
+    'Les clients rejoignent votre liste d’attente numériquement, voient les temps d’attente en temps réel et arrivent exactement quand vient leur tour.',
+  'Walk-ins leave when they see a long wait': 'Les clients de passage repartent lorsqu’ils voient une longue attente',
+  'Phone keeps ringing for "how long is the wait?"': 'Le téléphone n’arrête pas de sonner pour demander « combien de temps d’attente ? »',
+  'Paper sign-in sheets are unreliable': 'Les feuilles d’inscription papier ne sont pas fiables',
+  'Can\'t manage multiple barbers/stylists efficiently': 'Impossible de gérer efficacement plusieurs barbiers ou stylistes',
+  'Digital Waitlist': 'Liste d’attente numérique',
+  'Clients scan a QR code on your door to join the waitlist — no calls needed.':
+    'Les clients scannent un code QR sur votre porte pour rejoindre la liste d’attente, sans appel.',
+  'Live Wait Times': 'Temps d’attente en direct',
+  'Clients see estimated wait time on their phone — no more "how long?" calls.':
+    'Les clients voient le temps d’attente estimé sur leur téléphone, fini les appels « combien de temps ? »',
+  'Barber Selection': 'Choix du barbier',
+  'Clients can request a specific barber or join the general queue.':
+    'Les clients peuvent demander un barbier précis ou rejoindre la file générale.',
+  'Push Notifications': 'Notifications push',
+  'Free push notification when it\'s the client\'s turn — no SMS costs.':
+    'Notification push gratuite quand c’est le tour du client, sans frais SMS.',
+  'Offer online booking for regulars alongside walk-in availability.':
+    'Proposez la réservation en ligne pour les habitués tout en gardant la disponibilité sans rendez-vous.',
+  'Client History': 'Historique client',
+  'Track returning clients, visit frequency, and preferences.':
+    'Suivez les clients réguliers, la fréquence des visites et leurs préférences.',
+  'Saturday Morning Rush': 'Affluence du samedi matin',
+  'Clients scan the QR code on the shop window, join the waitlist, and grab coffee next door. Push notification arrives when the chair is ready.':
+    'Les clients scannent le QR sur la vitrine, rejoignent la liste d’attente et prennent un café à côté. Une notification push arrive quand le fauteuil est prêt.',
+  'Regular Client': 'Client régulier',
+  'A returning client books their usual Saturday 10am slot online. They arrive on time and skip the walk-in queue.':
+    'Un client fidèle réserve en ligne son créneau habituel du samedi à 10 h. Il arrive à l’heure et évite la file sans rendez-vous.',
+  'Fewer walkouts': 'Moins de départs',
+  'Pharmacies': 'Pharmacies',
+  'Reduce prescription wait times with digital queuing': 'Réduisez l’attente des ordonnances grâce à la file numérique',
+  'Prescriptions Ready? We\'ll Notify You.': 'Ordonnances prêtes ? Nous vous notifierons.',
+  'Patients drop off prescriptions and leave — get a push notification when it\'s ready for pickup. No more waiting at the counter.':
+    'Les patients déposent leur ordonnance puis repartent. Ils reçoivent une notification push lorsque c’est prêt à être récupéré. Plus besoin d’attendre au comptoir.',
+  'Patients crowd the counter waiting for prescriptions': 'Les patients encombrent le comptoir en attendant leurs ordonnances',
+  'Staff interrupted by "is it ready yet?" questions': 'Le personnel est interrompu par des questions du type « est-ce prêt ? »',
+  'No way to communicate preparation time': 'Aucun moyen de communiquer le temps de préparation',
+  'Confusion between drop-off and pickup queues': 'Confusion entre la file de dépôt et la file de retrait',
+  'Drop-Off Queue': 'File de dépôt',
+  'Patients submit their prescription and join the digital queue — no standing around.':
+    'Les patients déposent leur ordonnance et rejoignent la file numérique, sans faire la queue physiquement.',
+  'Preparation Tracking': 'Suivi de préparation',
+  'Patients see their prescription status in real-time: received, preparing, ready.':
+    'Les patients voient l’état de leur ordonnance en temps réel : reçue, en préparation, prête.',
+  'Ready Notification': 'Notification de disponibilité',
+  'Free push notification when the prescription is ready for pickup.':
+    'Notification push gratuite lorsque l’ordonnance est prête à être récupérée.',
+  'Pickup Queue': 'File de retrait',
+  'Separate queue for pickup — patients are called to the counter when their turn comes.':
+    'Une file séparée pour le retrait, les patients étant appelés au comptoir lorsque vient leur tour.',
+  'Priority Cases': 'Cas prioritaires',
+  'Urgent prescriptions and elderly patients get priority automatically.':
+    'Les ordonnances urgentes et les patients âgés bénéficient automatiquement de la priorité.',
+  'Counter Display': 'Affichage du comptoir',
+  'TV screen shows which ticket numbers are ready and which counter to go to.':
+    'L’écran TV indique quels numéros de ticket sont prêts et à quel comptoir se rendre.',
+  'Prescription Drop-Off': 'Dépôt d’ordonnance',
+  'Patient drops off the prescription, scans the QR code, and leaves to run errands. 20 minutes later, they get a push notification that it\'s ready.':
+    'Le patient dépose l’ordonnance, scanne le QR code et part faire d’autres courses. Vingt minutes plus tard, il reçoit une notification push indiquant que c’est prêt.',
+  'Busy Pharmacy': 'Pharmacie très fréquentée',
+  'Multiple pharmacists work in parallel. The TV display shows which prescriptions are ready and at which counter to pick up.':
+    'Plusieurs pharmaciens travaillent en parallèle. L’affichage TV montre quelles ordonnances sont prêtes et à quel comptoir les récupérer.',
+  'Less counter congestion': 'Moins d’encombrement au comptoir',
+  'Average time saved per patient': 'Temps moyen gagné par patient',
+  'Patient satisfaction': 'Satisfaction patient',
+});
+
+Object.assign(messages.ar, {
+  'Eliminate walkouts with smart waitlist management': 'قلّل مغادرة العملاء عبر إدارة ذكية لقائمة الانتظار',
+  'Turn Wait Times into Happy Guests': 'حوّل وقت الانتظار إلى تجربة ضيوف سعيدة',
+  'Let guests join your waitlist, track their position in real-time, and get notified instantly when their table is ready — no more crowded lobbies.':
+    'اسمح للضيوف بالانضمام إلى قائمة الانتظار ومتابعة ترتيبهم لحظيًا وتلقي إشعار فور جهوز الطاولة، بدون ازدحام في المدخل.',
+  'Guests leave when they see a long line': 'يغادر الضيوف عندما يرون طابورًا طويلًا',
+  'Paper waitlists are messy and inaccurate': 'قوائم الانتظار الورقية فوضوية وغير دقيقة',
+  'Staff waste time calling out names': 'يهدر الموظفون الوقت في مناداة الأسماء',
+  'No visibility into actual wait times': 'لا توجد رؤية واضحة لوقت الانتظار الفعلي',
+  'QR Waitlist': 'قائمة انتظار عبر QR',
+  'Guests scan a QR code to join the waitlist from their phone — no app download needed.':
+    'يقوم الضيوف بمسح رمز QR للانضمام إلى قائمة الانتظار من هواتفهم، دون تنزيل تطبيق.',
+  'Real-Time Position': 'الترتيب في الوقت الفعلي',
+  'Guests see their exact position and estimated wait time, updated live.':
+    'يرى الضيوف ترتيبهم الدقيق ووقت الانتظار المتوقع مع تحديث مباشر.',
+  'Instant Notifications': 'إشعارات فورية',
+  'Push notification sent to guest\'s phone the moment their table is ready.':
+    'يتم إرسال إشعار فوري إلى هاتف الضيف فور جهوز طاولته.',
+  'Party Size Management': 'إدارة حجم المجموعة',
+  'Track party sizes and assign tables efficiently with group ticket support.':
+    'تابع أحجام المجموعات ووزّع الطاولات بكفاءة مع دعم تذاكر المجموعات.',
+  'TV Display Board': 'لوحة عرض تلفزيونية',
+  'Show queue status on a TV in your lobby — guests always know where they stand.':
+    'اعرض حالة الطابور على شاشة تلفاز في الاستقبال ليعرف الضيوف وضعهم دائمًا.',
+  'Track peak hours, average wait times, and table turnover to optimize operations.':
+    'تابع أوقات الذروة ومتوسطات الانتظار ودوران الطاولات لتحسين التشغيل.',
+  'Busy Weekend Service': 'خدمة عطلة نهاية أسبوع مزدحمة',
+  'Guests scan the QR code outside, join the virtual waitlist, and browse nearby shops while waiting. They get a push notification when their table is ready.':
+    'يمسح الضيوف رمز QR خارج المطعم وينضمون إلى قائمة الانتظار الافتراضية ويتجولون في المتاجر القريبة أثناء الانتظار. وعندما تصبح الطاولة جاهزة يصلهم إشعار فوري.',
+  'Multiple Dining Areas': 'مناطق طعام متعددة',
+  'Use departments to separate indoor, outdoor, and bar seating. Each area manages its own queue independently.':
+    'استخدم الأقسام لفصل الجلوس الداخلي والخارجي ومنطقة البار. كل منطقة تدير طابورها بشكل مستقل.',
+  'Reduction in walkouts': 'انخفاض مغادرة العملاء',
+  'Average setup time': 'متوسط وقت الإعداد',
+  'Reduce waiting room congestion and improve patient flow': 'خفف ازدحام غرفة الانتظار وحسّن تدفق المرضى',
+  'Better Patient Experience, Less Waiting Room Stress': 'تجربة أفضل للمرضى وضغط أقل في غرفة الانتظار',
+  'Patients check in digitally, wait from anywhere, and get notified when the doctor is ready — reducing crowding and improving satisfaction.':
+    'يسجل المرضى حضورهم رقميًا وينتظرون من أي مكان ويتلقون إشعارًا عندما يصبح الطبيب جاهزًا، مما يقلل الازدحام ويرفع الرضا.',
+  'Crowded waiting rooms increase infection risk': 'ازدحام غرف الانتظار يزيد خطر العدوى',
+  'Patients don\'t know how long they\'ll wait': 'المرضى لا يعرفون مدة الانتظار',
+  'Reception staff overwhelmed with check-ins': 'موظفو الاستقبال مثقلون بعمليات التسجيل',
+  'No-shows waste valuable appointment slots': 'عدم الحضور يهدر مواعيد ثمينة',
+  'Digital Check-In': 'تسجيل دخول رقمي',
+  'Patients scan a QR code to check in and fill out intake forms on their phone.':
+    'يمسح المرضى رمز QR لتسجيل الحضور وملء النماذج على هواتفهم.',
+  'Department Queues': 'طوابير الأقسام',
+  'Separate queues for general consultation, lab work, pharmacy — patients flow smoothly.':
+    'طوابير منفصلة للاستشارة العامة والتحاليل والصيدلية، ما يجعل حركة المرضى أكثر سلاسة.',
+  'Priority Patients': 'مرضى ذوو أولوية',
+  'Elderly, disabled, and emergency patients get priority with configurable categories.':
+    'يحصل كبار السن وذوو الإعاقة والحالات الطارئة على أولوية عبر فئات قابلة للتخصيص.',
+  'Intake Forms': 'نماذج الاستقبال',
+  'Custom forms per service — collect patient info, symptoms, insurance details before the visit.':
+    'نماذج مخصصة لكل خدمة لجمع معلومات المريض والأعراض وبيانات التأمين قبل الزيارة.',
+  'Appointment + Walk-In': 'موعد + حضور مباشر',
+  'Hybrid mode interleaves scheduled appointments with walk-in patients automatically.':
+    'الوضع الهجين يدمج المواعيد المحجوزة مع المرضى الحاضرين مباشرة بشكل تلقائي.',
+  'Wait from Anywhere': 'انتظر من أي مكان',
+  'Patients wait in their car or nearby — get notified when it\'s their turn.':
+    'ينتظر المرضى في سياراتهم أو بالقرب من المكان ويتلقون إشعارًا عندما يحين دورهم.',
+  'Multi-Department Clinic': 'عيادة متعددة الأقسام',
+  'A patient checks in for a consultation, gets lab work, then picks up a prescription — each department manages its own queue.':
+    'يسجل المريض حضوره للاستشارة ثم يجري التحاليل ثم يستلم الوصفة، وكل قسم يدير طابوره الخاص.',
+  'Remote Waiting': 'انتظار عن بُعد',
+  'Patients check in from the parking lot, wait in their car, and walk in only when notified — reducing waiting room density.':
+    'يسجل المرضى حضورهم من الموقف وينتظرون في سياراتهم ويدخلون فقط عند وصول الإشعار، مما يقلل كثافة غرفة الانتظار.',
+  'Less waiting room crowding': 'ازدحام أقل في غرفة الانتظار',
+  'Faster check-in': 'تسجيل أسرع',
+  'Reduction in no-shows': 'انخفاض حالات عدم الحضور',
+  'Transform your customer service experience': 'طوّر تجربة خدمة العملاء لديك',
+  'No More Standing in Line': 'لا مزيد من الوقوف في الطوابير',
+  'Customers join the queue digitally, browse the store while waiting, and get called to the counter when it\'s their turn.':
+    'ينضم العملاء إلى الطابور رقميًا ويتسوقون أثناء الانتظار ويتم استدعاؤهم إلى الكاونتر عند حلول دورهم.',
+  'Long lines at checkout or service counter': 'طوابير طويلة عند الدفع أو كاونتر الخدمة',
+  'Customers leave without buying': 'يغادر العملاء دون شراء',
+  'Staff can\'t predict demand peaks': 'لا يستطيع الموظفون توقع فترات الذروة',
+  'No way to prioritize service types': 'لا توجد طريقة لترتيب أنواع الخدمة حسب الأولوية',
+  'Service Counter Queue': 'طابور كاونتر الخدمة',
+  'Customers scan QR to join the returns, exchanges, or help desk queue.':
+    'يمسح العملاء رمز QR للانضمام إلى طابور الإرجاع أو الاستبدال أو مكتب المساعدة.',
+  'Browse While Waiting': 'تسوّق أثناء الانتظار',
+  'Customers continue shopping while tracking their position on their phone.':
+    'يواصل العملاء التسوق بينما يتابعون ترتيبهم على هواتفهم.',
+  'Multiple Service Points': 'نقاط خدمة متعددة',
+  'Run multiple counters for different service types simultaneously.':
+    'شغّل عدة كاونترات لأنواع خدمات مختلفة في الوقت نفسه.',
+  'Display Board': 'لوحة عرض',
+  'Large screen shows current queue status — customers know exactly when they\'re next.':
+    'تعرض شاشة كبيرة حالة الطابور الحالية ليعرف العملاء بدقة متى سيحين دورهم.',
+  'Peak Hour Analytics': 'تحليلات ساعات الذروة',
+  'Identify busy periods and optimize staffing with real-time analytics.':
+    'حدّد الفترات المزدحمة وحسّن توزيع الموظفين عبر تحليلات لحظية.',
+  'Customer Feedback': 'ملاحظات العملاء',
+  'Automatic post-service satisfaction survey on the customer\'s phone.':
+    'استبيان رضا تلقائي بعد الخدمة على هاتف العميل.',
+  'Electronics Store': 'متجر إلكترونيات',
+  'Customers join the queue at the help desk kiosk, continue browsing, and get a push notification when a specialist is available.':
+    'ينضم العملاء إلى الطابور من كشك مكتب المساعدة ويواصلون التسوق ويتلقون إشعارًا عندما يصبح المختص متاحًا.',
+  'Returns Counter': 'كاونتر الإرجاع',
+  'Separate queue for returns and exchanges, with intake forms to capture order number and reason before the customer reaches the counter.':
+    'طابور منفصل للإرجاع والاستبدال مع نماذج لاستلام رقم الطلب والسبب قبل وصول العميل إلى الكاونتر.',
+  'Increase in customer satisfaction': 'زيادة رضا العملاء',
+  'More browsing time (more sales)': 'وقت تصفح أكثر (مبيعات أكثر)',
+  'Paper tickets needed': 'الحاجة إلى تذاكر ورقية',
+});
+
+Object.assign(messages.ar, {
+  'Government & Public Services': 'الحكومة والخدمات العامة',
+  'Modernize citizen services with digital queue management': 'حدّث خدمات المواطنين عبر إدارة رقمية للطوابير',
+  'Efficient Public Services, Happy Citizens': 'خدمات عامة فعالة ومواطنون أكثر رضا',
+  'From DMV to city hall — replace take-a-number machines with a modern digital queue that citizens can join from their phone.':
+    'من مكاتب التراخيص إلى البلدية، استبدل أجهزة الأرقام القديمة بطابور رقمي حديث يمكن للمواطنين الانضمام إليه من الهاتف.',
+  'Citizens wait hours for simple services': 'ينتظر المواطنون ساعات للحصول على خدمات بسيطة',
+  'Old ticket machines break down': 'أجهزة التذاكر القديمة تتعطل باستمرار',
+  'No way to predict wait times': 'لا توجد طريقة لتوقع أوقات الانتظار',
+  'Multiple departments with separate queues cause confusion': 'تعدد الأقسام والطوابير المنفصلة يسبب ارتباكًا',
+  'Touch-screen kiosk replaces old ticket machines — citizens select their service and get a digital ticket.':
+    'كشك بشاشة لمس يحل محل أجهزة التذاكر القديمة، حيث يختار المواطن الخدمة ويحصل على تذكرة رقمية.',
+  'Documents, payments, registration — each department runs its own numbered queue.':
+    'الوثائق والمدفوعات والتسجيل، كل قسم يدير طابوره المرقّم الخاص.',
+  'Large screens in the lobby show which tickets are being served at which counter.':
+    'تعرض الشاشات الكبيرة في المدخل التذاكر التي تتم خدمتها وعلى أي شباك.',
+  'Priority Service': 'خدمة ذات أولوية',
+  'Elderly, disabled, veterans, and pregnant women get priority with configurable categories.':
+    'يحصل كبار السن وذوو الإعاقة والمحاربون القدامى والحوامل على أولوية ضمن فئات قابلة للتخصيص.',
+  'Citizens book online and skip the walk-in queue — interleaved automatically.':
+    'يحجز المواطنون عبر الإنترنت ويتجاوزون طابور الحضور المباشر مع دمج تلقائي.',
+  'Public page shows wait times at all branches — citizens choose the least busy location.':
+    'تعرض الصفحة العامة أوقات الانتظار في جميع الفروع ليختار المواطن أقلها ازدحامًا.',
+  'DMV Office': 'مكتب خدمات حكومية',
+  'Citizens select their service (license renewal, registration, etc.) at the kiosk, fill intake forms on their phone, and wait comfortably until called to the right counter.':
+    'يختار المواطنون خدمتهم من الكشك ويملؤون النماذج على الهاتف ثم ينتظرون براحة حتى يتم استدعاؤهم إلى الشباك المناسب.',
+  'Multi-Branch Municipality': 'بلدية متعددة الفروع',
+  'Citizens check wait times at all branches online and go to the shortest queue. Each branch manages its own departments and counters independently.':
+    'يتحقق المواطنون من أوقات الانتظار في جميع الفروع عبر الإنترنت ويتجهون إلى أقصر طابور. كل فرع يدير أقسامه وشبابيكه بشكل مستقل.',
+  'Reduction in perceived wait time': 'انخفاض وقت الانتظار المتصور',
+  'Faster than paper ticket systems': 'أسرع من أنظمة التذاكر الورقية',
+  'Citizen satisfaction rate': 'معدل رضا المواطنين',
+  'Banks & Financial Services': 'البنوك والخدمات المالية',
+  'Streamline branch operations and reduce wait times': 'بسّط عمليات الفروع وخفف أوقات الانتظار',
+  'Modern Banking Starts with Zero Wait Times': 'الخدمات البنكية الحديثة تبدأ من دون انتظار',
+  'Customers join the queue before arriving, get served faster, and your tellers focus on service — not crowd management.':
+    'ينضم العملاء إلى الطابور قبل الوصول ويحصلون على الخدمة بشكل أسرع، ويتركز عمل الموظفين على الخدمة بدل إدارة الازدحام.',
+  'Long queues drive customers to competitors': 'الطوابير الطويلة تدفع العملاء إلى المنافسين',
+  'Tellers spend time managing the line': 'يقضي الموظفون وقتًا في إدارة الطابور',
+  'VIP customers wait alongside everyone else': 'ينتظر عملاء VIP مثل الجميع',
+  'No visibility into branch performance': 'لا توجد رؤية واضحة لأداء الفروع',
+  'Customers join the queue from the mobile app before arriving at the branch.':
+    'ينضم العملاء إلى الطابور من التطبيق قبل الوصول إلى الفرع.',
+  'VIP Priority': 'أولوية VIP',
+  'Premium customers automatically get priority service with configurable rules.':
+    'يحصل العملاء المميزون تلقائيًا على خدمة ذات أولوية عبر قواعد قابلة للتخصيص.',
+  'Service Routing': 'توجيه الخدمة',
+  'Route customers to the right teller based on service type — deposits, loans, accounts.':
+    'وجّه العملاء إلى الموظف المناسب حسب نوع الخدمة، مثل الإيداعات أو القروض أو الحسابات.',
+  'Customer Identification': 'تحديد هوية العميل',
+  'Intake forms capture account details before the customer reaches the counter.':
+    'تلتقط نماذج الاستقبال تفاصيل الحساب قبل وصول العميل إلى الكاونتر.',
+  'Multi-Branch Analytics': 'تحليلات متعددة الفروع',
+  'Compare performance across all branches — wait times, throughput, satisfaction.':
+    'قارن الأداء عبر جميع الفروع من حيث أوقات الانتظار والإنتاجية والرضا.',
+  'Customers book a slot for complex services like loan applications or account opening.':
+    'يحجز العملاء موعدًا للخدمات المعقدة مثل طلب القرض أو فتح حساب.',
+  'Branch Visit': 'زيارة الفرع',
+  'Customer opens the QR code outside, selects "Account Inquiry", joins the queue, and waits at the nearby coffee shop. Push notification arrives when the teller is ready.':
+    'يفتح العميل رمز QR خارج الفرع ويختار "استفسار عن حساب" وينضم إلى الطابور وينتظر في المقهى القريب حتى يصله إشعار عندما يصبح الموظف جاهزًا.',
+  'Loan Application': 'طلب قرض',
+  'Customer books an appointment online, fills out pre-visit forms, and arrives at the scheduled time — skipping the walk-in queue entirely.':
+    'يحجز العميل موعدًا عبر الإنترنت ويملأ النماذج المسبقة ويصل في الوقت المحدد متجاوزًا طابور الحضور المباشر بالكامل.',
+  'Reduction in wait times': 'انخفاض أوقات الانتظار',
+  'Increase in teller efficiency': 'زيادة كفاءة الموظفين',
+  'Customer satisfaction': 'رضا العملاء',
+  'Hotels & Hospitality': 'الفنادق والضيافة',
+  'Elevate the guest experience from check-in to checkout': 'ارتقِ بتجربة الضيف من الدخول حتى المغادرة',
+  'Guest Experience Without the Wait': 'تجربة ضيف بدون انتظار',
+  'From check-in to concierge — manage every guest touchpoint with a seamless digital queue.':
+    'من تسجيل الدخول إلى خدمة الكونسيرج، أدر كل نقاط تواصل الضيف عبر طابور رقمي سلس.',
+  'Long check-in/checkout lines frustrate guests': 'طوابير الوصول والمغادرة الطويلة تزعج الضيوف',
+  'Concierge services are first-come, first-served': 'خدمات الكونسيرج تعمل بأسبقية الحضور',
+  'No way to manage pool/spa/restaurant queues': 'لا توجد طريقة لإدارة طوابير المسبح أو السبا أو المطعم',
+  'VIP guests expect priority treatment': 'يتوقع ضيوف VIP معاملة ذات أولوية',
+  'Check-In Queue': 'طابور تسجيل الدخول',
+  'Guests join the check-in queue on arrival — wait in the lobby, not in line.':
+    'ينضم الضيوف إلى طابور تسجيل الدخول عند الوصول وينتظرون في الردهة بدل الوقوف في الصف.',
+  'Concierge Services': 'خدمات الكونسيرج',
+  'Guests request concierge help from their phone — get notified when available.':
+    'يطلب الضيوف خدمة الكونسيرج من هواتفهم ويتلقون إشعارًا عند توفرها.',
+  'Multi-Service': 'خدمات متعددة',
+  'Manage queues for restaurant, spa, pool, room service — all from one dashboard.':
+    'أدر طوابير المطعم والسبا والمسبح وخدمة الغرف من لوحة تحكم واحدة.',
+  'VIP Treatment': 'معاملة VIP',
+  'Loyalty members and suite guests automatically get priority service.':
+    'يحصل أعضاء الولاء وضيوف الأجنحة تلقائيًا على خدمة ذات أولوية.',
+  'TV Displays': 'شاشات عرض',
+  'Show queue status on lobby screens with your hotel branding.':
+    'اعرض حالة الطابور على شاشات الردهة مع هوية الفندق.',
+  'Guest Feedback': 'ملاحظات الضيوف',
+  'Automatic satisfaction survey after each service interaction.':
+    'استبيان رضا تلقائي بعد كل تفاعل خدمي.',
+  'Busy Check-In': 'وصول مزدحم',
+  'Guests arrive during peak hours, scan the lobby QR code, complete pre-check-in forms on their phone, and relax in the lounge until called to the desk.':
+    'يصل الضيوف في ساعات الذروة ويمسحون رمز QR في الردهة ويكملون نماذج ما قبل التسجيل على الهاتف ثم يستريحون حتى يتم استدعاؤهم إلى المكتب.',
+  'Spa & Pool': 'السبا والمسبح',
+  'Guests join the spa queue from their room, continue their day, and get notified when a slot opens up.':
+    'ينضم الضيوف إلى طابور السبا من غرفهم ويتابعون يومهم ويتلقون إشعارًا عند توفر موعد.',
+  'Average check-in time saved': 'متوسط الوقت الموفر في تسجيل الدخول',
+  'Less lobby congestion': 'ازدحام أقل في الردهة',
+  'Guest satisfaction': 'رضا الضيوف',
+  'Barbershops & Salons': 'محلات الحلاقة والصالونات',
+  'Modernize your shop with a digital waitlist': 'حدّث متجرك عبر قائمة انتظار رقمية',
+  'Your Chair is Ready — No More Walk-In Chaos': 'كرسيك جاهز، لا مزيد من فوضى الحضور المباشر',
+  'Clients join your waitlist digitally, see real-time wait times, and show up exactly when it\'s their turn.':
+    'ينضم العملاء إلى قائمة الانتظار رقميًا ويرون وقت الانتظار لحظيًا ويصلون بالضبط عندما يحين دورهم.',
+  'Walk-ins leave when they see a long wait': 'يغادر الزبائن الحاضرون مباشرة عند رؤية انتظار طويل',
+  'Phone keeps ringing for "how long is the wait?"': 'الهاتف لا يتوقف عن الرنين للسؤال عن مدة الانتظار',
+  'Paper sign-in sheets are unreliable': 'دفاتر التسجيل الورقية غير موثوقة',
+  'Can\'t manage multiple barbers/stylists efficiently': 'يصعب إدارة عدة حلاقين أو مصففين بكفاءة',
+  'Digital Waitlist': 'قائمة انتظار رقمية',
+  'Clients scan a QR code on your door to join the waitlist — no calls needed.':
+    'يمسح العملاء رمز QR على الباب للانضمام إلى قائمة الانتظار دون الحاجة إلى الاتصال.',
+  'Live Wait Times': 'أوقات انتظار مباشرة',
+  'Clients see estimated wait time on their phone — no more "how long?" calls.':
+    'يرى العملاء وقت الانتظار المتوقع على الهاتف، فلا مزيد من اتصالات "كم المدة؟".',
+  'Barber Selection': 'اختيار الحلاق',
+  'Clients can request a specific barber or join the general queue.':
+    'يمكن للعملاء طلب حلاق معين أو الانضمام إلى الطابور العام.',
+  'Push Notifications': 'إشعارات فورية',
+  'Free push notification when it\'s the client\'s turn — no SMS costs.':
+    'إشعار فوري مجاني عندما يحين دور العميل دون أي تكلفة SMS.',
+  'Offer online booking for regulars alongside walk-in availability.':
+    'وفّر الحجز عبر الإنترنت للعملاء الدائمين إلى جانب خدمة الحضور المباشر.',
+  'Client History': 'سجل العميل',
+  'Track returning clients, visit frequency, and preferences.':
+    'تابع العملاء العائدين وتكرار الزيارة والتفضيلات.',
+  'Saturday Morning Rush': 'ازدحام صباح السبت',
+  'Clients scan the QR code on the shop window, join the waitlist, and grab coffee next door. Push notification arrives when the chair is ready.':
+    'يمسح العملاء رمز QR على واجهة المحل وينضمون إلى قائمة الانتظار ويشربون قهوة بالجوار حتى يصلهم إشعار عندما يصبح الكرسي جاهزًا.',
+  'Regular Client': 'عميل دائم',
+  'A returning client books their usual Saturday 10am slot online. They arrive on time and skip the walk-in queue.':
+    'يحجز العميل الدائم موعده المعتاد يوم السبت الساعة 10 صباحًا عبر الإنترنت ويصل في الوقت المحدد ويتجاوز طابور الحضور المباشر.',
+  'Fewer walkouts': 'مغادرة أقل للعملاء',
+  'Reduce prescription wait times with digital queuing': 'قلّل انتظار الوصفات عبر طابور رقمي',
+  'Prescriptions Ready? We\'ll Notify You.': 'هل أصبحت الوصفة جاهزة؟ سنبلغك.',
+  'Patients drop off prescriptions and leave — get a push notification when it\'s ready for pickup. No more waiting at the counter.':
+    'يسلم المرضى الوصفة ثم يغادرون ويتلقون إشعارًا عندما تصبح جاهزة للاستلام، دون انتظار عند الكاونتر.',
+  'Patients crowd the counter waiting for prescriptions': 'يتكدس المرضى عند الكاونتر انتظارًا للوصفات',
+  'Staff interrupted by "is it ready yet?" questions': 'ينقطع عمل الموظفين بسبب أسئلة "هل أصبحت جاهزة؟"',
+  'No way to communicate preparation time': 'لا توجد وسيلة لإبلاغ المريض بوقت التحضير',
+  'Confusion between drop-off and pickup queues': 'ارتباك بين طوابير التسليم والاستلام',
+  'Drop-Off Queue': 'طابور تسليم الوصفات',
+  'Patients submit their prescription and join the digital queue — no standing around.':
+    'يقدم المرضى وصفاتهم وينضمون إلى الطابور الرقمي دون وقوف طويل.',
+  'Preparation Tracking': 'متابعة التحضير',
+  'Patients see their prescription status in real-time: received, preparing, ready.':
+    'يرى المرضى حالة الوصفة لحظيًا: تم الاستلام، قيد التحضير، جاهزة.',
+  'Ready Notification': 'إشعار الجاهزية',
+  'Free push notification when the prescription is ready for pickup.':
+    'إشعار فوري مجاني عندما تصبح الوصفة جاهزة للاستلام.',
+  'Pickup Queue': 'طابور الاستلام',
+  'Separate queue for pickup — patients are called to the counter when their turn comes.':
+    'طابور منفصل للاستلام حيث يتم استدعاء المرضى إلى الكاونتر عند حلول دورهم.',
+  'Priority Cases': 'حالات ذات أولوية',
+  'Urgent prescriptions and elderly patients get priority automatically.':
+    'تحصل الوصفات العاجلة وكبار السن على أولوية تلقائيًا.',
+  'Counter Display': 'شاشة الكاونتر',
+  'TV screen shows which ticket numbers are ready and which counter to go to.':
+    'تعرض الشاشة التلفزيونية أرقام التذاكر الجاهزة وإلى أي كاونتر يجب التوجه.',
+  'Prescription Drop-Off': 'تسليم وصفة',
+  'Patient drops off the prescription, scans the QR code, and leaves to run errands. 20 minutes later, they get a push notification that it\'s ready.':
+    'يسلّم المريض الوصفة ويمسح رمز QR ثم يغادر لإنجاز أموره. وبعد 20 دقيقة يتلقى إشعارًا بأن الوصفة أصبحت جاهزة.',
+  'Busy Pharmacy': 'صيدلية مزدحمة',
+  'Multiple pharmacists work in parallel. The TV display shows which prescriptions are ready and at which counter to pick up.':
+    'يعمل عدة صيادلة بالتوازي وتعرض الشاشة التلفزيونية الوصفات الجاهزة والكاونتر المخصص للاستلام.',
+  'Less counter congestion': 'ازدحام أقل عند الكاونتر',
+  'Average time saved per patient': 'متوسط الوقت الموفر لكل مريض',
+  'Patient satisfaction': 'رضا المرضى',
+});
