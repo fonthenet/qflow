@@ -42,6 +42,7 @@ interface KioskSettingsType {
   lockedDepartmentId: string | null;
   buttonLabel: string;
   idleTimeout: number;
+  visitIntakeOverrideMode?: 'business_hours' | 'always_open' | 'always_closed';
 }
 
 interface KioskViewProps {
@@ -93,6 +94,7 @@ export function KioskView({
     lockedDepartmentId: null,
     buttonLabel: t('Get Ticket'),
     idleTimeout: 60,
+    visitIntakeOverrideMode: 'business_hours',
   };
 
   const lockedDept = ks.lockedDepartmentId
@@ -147,6 +149,7 @@ export function KioskView({
   const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
   const compactTicketLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
   const hasRequiredCustomerInfo = customerName.trim().length > 0 && customerPhone.trim().length > 0;
+  const intakePaused = ks.visitIntakeOverrideMode === 'always_closed';
 
   function clearAppointmentSearch() {
     setSearchTerm('');
@@ -318,7 +321,7 @@ export function KioskView({
     });
 
     if (result.error || !result.data) {
-      alert(result.error ?? t('Error creating ticket. Please try again.'));
+      alert(result.error ? t(result.error) : t('Error creating ticket. Please try again.'));
       setLoading(false);
       return;
     }
@@ -373,7 +376,7 @@ export function KioskView({
     const result = await findAppointment(office.id, searchTerm.trim());
 
     if (result.error) {
-      setSearchError(result.error);
+      setSearchError(t(result.error));
     } else {
       setAppointments(result.data ?? []);
       setSearched(true);
@@ -408,7 +411,7 @@ export function KioskView({
     const result = await checkInAppointment(appointmentId);
 
     if (result.error || !result.data?.ticket) {
-      setSearchError(result.error ?? t('Unable to check in this appointment.'));
+      setSearchError(result.error ? t(result.error) : t('Unable to check in this appointment.'));
       setCheckingIn(null);
       return;
     }
@@ -547,7 +550,24 @@ export function KioskView({
       </div>
 
       <div className={`mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 ${step === 'ticket' ? 'py-4' : 'py-8'}`}>
-        {step === 'home' && (
+        {intakePaused ? (
+          <section className="rounded-[1.75rem] border bg-white p-6 text-center sm:p-8" style={primaryCardStyle}>
+            <div
+              className="mx-auto flex h-20 w-20 items-center justify-center rounded-full text-white"
+              style={{ backgroundColor: `${themeColor}22`, color: themeColor }}
+            >
+              <Clock3 className="h-10 w-10" />
+            </div>
+            <h2 className="mt-5 text-3xl font-semibold text-slate-950 sm:text-4xl">
+              {t('Visit intake is currently closed')}
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600 sm:text-lg">
+              {t('This business is not taking visits right now. Please check back later or contact the business directly.')}
+            </p>
+          </section>
+        ) : null}
+
+        {!intakePaused && step === 'home' && (
           <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
             <div className="grid gap-4">
               <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
@@ -602,7 +622,7 @@ export function KioskView({
           </section>
         )}
 
-        {step !== 'home' && step !== 'ticket' && !(step === 'service' && directServiceEntry) && (
+        {!intakePaused && step !== 'home' && step !== 'ticket' && !(step === 'service' && directServiceEntry) && (
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <button
               onClick={() => {
@@ -640,7 +660,7 @@ export function KioskView({
           </div>
         )}
 
-        {step === 'department' && (
+        {!intakePaused && step === 'department' && (
           <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-semibold text-slate-950 sm:text-4xl">{t('Choose a department')}</h2>
@@ -672,7 +692,7 @@ export function KioskView({
           </section>
         )}
 
-        {step === 'service' && selectedDept && (
+        {!intakePaused && step === 'service' && selectedDept && (
           <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
               <div className="border-b border-slate-100 pb-5 text-center">
                 <div className="mx-auto max-w-2xl">
@@ -760,7 +780,7 @@ export function KioskView({
           </section>
         )}
 
-        {step === 'priority' && selectedService && (
+        {!intakePaused && step === 'priority' && selectedService && (
           <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
             <div className="mx-auto max-w-2xl text-center">
               <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -819,7 +839,7 @@ export function KioskView({
           </section>
         )}
 
-        {step === 'appointment' && (
+        {!intakePaused && step === 'appointment' && (
             <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
               <div className="text-center">
                 <div className="mx-auto max-w-2xl">
@@ -926,7 +946,7 @@ export function KioskView({
             </section>
         )}
 
-        {step === 'ticket' && ticket && (
+        {!intakePaused && step === 'ticket' && ticket && (
           <section
             ref={printRef}
             className="mx-auto max-w-3xl rounded-[1.75rem] border bg-white p-5 print:border print:border-black print:shadow-none sm:p-6"

@@ -232,6 +232,26 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Send a stronger “staff is trying to reach you” text.':
       'Envoyer un message plus fort du type « le personnel essaie de vous joindre ».',
     'Queue Defaults': 'Paramètres par défaut de file',
+    'Visit Intake Availability': 'Disponibilité de prise de visite',
+    'Choose whether customer-facing queue intake follows your business hours, stays open all the time, or stays closed until you reopen it.':
+      "Choisissez si la prise de visite côté client suit vos horaires d'ouverture, reste ouverte en permanence ou reste fermée jusqu'à réouverture.",
+    'Use business hours': "Utiliser les horaires de l'entreprise",
+    'Follow each location schedule for kiosk and public queue intake.':
+      "Suivre les horaires de chaque site pour la borne et l'entrée dans la file publique.",
+    'Always open': 'Toujours ouvert',
+    'Keep taking walk-in and remote queue visits even outside scheduled hours.':
+      'Continuer à accepter les visites sur place et à distance même en dehors des horaires prévus.',
+    'Always closed': 'Toujours fermé',
+    'Pause all customer visit intake until you switch it back on.':
+      'Mettre en pause toute prise de visite client jusqu’à réactivation.',
+    'Visit intake is currently closed': 'La prise de visite est actuellement fermée',
+    'This business is not taking visits right now. Please check back later or contact the business directly.':
+      "Cette entreprise n'accepte pas de visites pour le moment. Revenez plus tard ou contactez-la directement.",
+    'This business is not taking visits right now.':
+      "Cette entreprise n'accepte pas de visites pour le moment.",
+    'Closed today': "Fermé aujourd'hui",
+    'Closed for the day': 'Fermé pour la journée',
+    'Failed to join queue. Please try again.': "Impossible de rejoindre la file d’attente. Veuillez réessayer.",
     'Check-in mode': 'Mode d’enregistrement',
     'Self Service': 'Libre-service',
     'Manual': 'Manuel',
@@ -708,6 +728,26 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Send a stronger “staff is trying to reach you” text.':
       'أرسل رسالة أقوى بمعنى "الموظفون يحاولون الوصول إليك".',
     'Queue Defaults': 'الإعدادات الافتراضية للطابور',
+    'Visit Intake Availability': 'توفر استقبال الزيارات',
+    'Choose whether customer-facing queue intake follows your business hours, stays open all the time, or stays closed until you reopen it.':
+      'اختر ما إذا كان استقبال العملاء في الطابور يتبع ساعات العمل، أو يبقى مفتوحاً دائماً، أو يبقى مغلقاً حتى تعيد فتحه.',
+    'Use business hours': 'استخدام ساعات العمل',
+    'Follow each location schedule for kiosk and public queue intake.':
+      'اتّباع جدول كل موقع للكشك واستقبال الطابور العام.',
+    'Always open': 'مفتوح دائماً',
+    'Keep taking walk-in and remote queue visits even outside scheduled hours.':
+      'الاستمرار في استقبال الزيارات الحضورية وعن بُعد حتى خارج ساعات العمل المحددة.',
+    'Always closed': 'مغلق دائماً',
+    'Pause all customer visit intake until you switch it back on.':
+      'إيقاف كل استقبال زيارات العملاء حتى تعيد تشغيله.',
+    'Visit intake is currently closed': 'استقبال الزيارات مغلق حالياً',
+    'This business is not taking visits right now. Please check back later or contact the business directly.':
+      'هذه المنشأة لا تستقبل الزيارات حالياً. يرجى المحاولة لاحقاً أو التواصل معها مباشرة.',
+    'This business is not taking visits right now.':
+      'هذه المنشأة لا تستقبل الزيارات حالياً.',
+    'Closed today': 'مغلق اليوم',
+    'Closed for the day': 'مغلق لباقي اليوم',
+    'Failed to join queue. Please try again.': 'تعذر الانضمام إلى الطابور. يرجى المحاولة مرة أخرى.',
     'Check-in mode': 'وضع تسجيل الوصول',
     'Self Service': 'خدمة ذاتية',
     'Manual': 'يدوي',

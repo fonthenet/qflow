@@ -41,6 +41,8 @@
       'Closed': 'Fermé',
       'Business Hours': 'Horaires',
       'We Are Currently Closed': 'Nous sommes actuellement fermés',
+      'Visit intake is currently closed': "La prise de visites est actuellement fermee",
+      'This business is not taking visits right now. Please check back later or contact the business directly.': "Cette entreprise n'accepte pas de visites pour le moment. Veuillez revenir plus tard ou contacter directement l'entreprise.",
       'Closed for {name}': 'Fermé pour {name}',
       'We will be back soon.': 'Nous revenons bientôt.',
       'Not Open Yet': 'Pas encore ouvert',
@@ -93,6 +95,8 @@
       'Closed': 'مغلق',
       'Business Hours': 'ساعات العمل',
       'We Are Currently Closed': 'نحن مغلقون حالياً',
+      'Visit intake is currently closed': 'استقبال الزيارات مغلق حالياً',
+      'This business is not taking visits right now. Please check back later or contact the business directly.': 'هذه المنشأة لا تستقبل الزيارات حالياً. يرجى المحاولة لاحقاً أو التواصل معها مباشرة.',
       'Closed for {name}': 'مغلق بسبب {name}',
       'We will be back soon.': 'سنعود قريباً.',
       'Not Open Yet': 'لم نفتتح بعد',
@@ -549,7 +553,10 @@
       var title = tr('We Are Currently Closed');
       var subtitle = '';
 
-      if (reason === 'holiday' && bh.holidayName) {
+      if (reason === 'always_closed') {
+        title = tr('Visit intake is currently closed');
+        subtitle = tr('This business is not taking visits right now. Please check back later or contact the business directly.');
+      } else if (reason === 'holiday' && bh.holidayName) {
         title = tr('Closed for {name}', { name: esc(bh.holidayName) });
         subtitle = tr('We will be back soon.');
       } else if (reason === 'before_hours' && bh.todayHours) {

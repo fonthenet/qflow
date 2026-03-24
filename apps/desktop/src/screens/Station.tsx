@@ -133,13 +133,17 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
         const targetOfficeId = officeIds[0];
         if (!targetOfficeId) return;
         const offices = (window as any).qf?.db?.query?.(
-          'SELECT operating_hours, timezone FROM offices WHERE id = ? LIMIT 1',
+          'SELECT operating_hours, timezone, settings FROM offices WHERE id = ? LIMIT 1',
           [targetOfficeId]
         );
         const office = offices?.[0];
-        if (!office?.operating_hours) return;
+        if (!office?.operating_hours && !office?.settings) return;
         const hours = typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours;
-        if (!hours || Object.keys(hours).length === 0) return;
+        const settings = typeof office.settings === 'string' ? JSON.parse(office.settings) : office.settings ?? {};
+        const overrideMode =
+          typeof settings.visit_intake_override_mode === 'string'
+            ? settings.visit_intake_override_mode
+            : 'business_hours';
         const tz = normalizeOfficeTimezone(office.timezone);
         const now = new Date();
 
@@ -155,7 +159,16 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
           time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         }
 
-        const todayH = hours[day];
+        const todayH = hours?.[day];
+        if (overrideMode === 'always_open') {
+          setStatus({ isOpen: true, reason: 'always_open', todayHours: todayH ?? null, currentDay: day });
+          return;
+        }
+        if (overrideMode === 'always_closed') {
+          setStatus({ isOpen: false, reason: 'always_closed', todayHours: todayH ?? null, currentDay: day });
+          return;
+        }
+        if (!hours || Object.keys(hours).length === 0) return;
         const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
         if (!todayH || (todayH.open === '00:00' && todayH.close === '00:00')) {
           // Find next open
@@ -199,7 +212,11 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
           width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
           background: status.isOpen ? '#22c55e' : '#ef4444',
         }} />
-        {status.isOpen
+        {status.reason === 'always_open'
+          ? t('Always open')
+          : status.reason === 'always_closed'
+          ? t('Always closed')
+          : status.isOpen
           ? t('Open until {time}', { time: status.todayHours?.close || '' })
           : status.reason === 'before_hours'
           ? t('Opens at {time}', { time: status.todayHours?.open || '' })

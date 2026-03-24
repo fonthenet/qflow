@@ -5,6 +5,104 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { hasVerifiedBookingEmail } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
+import { resolvePlatformConfig } from '@/lib/platform/config';
+
+const DAYS_OF_WEEK = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
+
+function normalizeOfficeTimezone(timezone: string | null | undefined) {
+  const value = (timezone ?? '').trim();
+  if (!value) return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  if (value === 'Europe/Algiers') return 'Africa/Algiers';
+  return value;
+}
+
+function getBusinessHoursStatus(
+  operatingHours: Record<string, { open: string; close: string }> | null,
+  timezone: string | null | undefined
+) {
+  const now = new Date();
+  const normalizedTimezone = normalizeOfficeTimezone(timezone);
+  let day: string;
+  let time: string;
+
+  try {
+    const dayFmt = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      timeZone: normalizedTimezone,
+    });
+    day = dayFmt.format(now).toLowerCase();
+
+    const timeFmt = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: normalizedTimezone,
+    });
+    const parts = timeFmt.formatToParts(now);
+    const hour = parts.find((part) => part.type === 'hour')?.value ?? '00';
+    const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
+    time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+  } catch {
+    day = DAYS_OF_WEEK[now.getDay()];
+    time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  if (!operatingHours || Object.keys(operatingHours).length === 0) {
+    return {
+      isOpen: true,
+      reason: 'no_hours',
+      todayHours: null as { open: string; close: string } | null,
+    };
+  }
+
+  const todayHours = operatingHours[day];
+  if (!todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00')) {
+    return {
+      isOpen: false,
+      reason: 'closed_today',
+      todayHours: null as { open: string; close: string } | null,
+    };
+  }
+
+  const toMinutes = (value: string) => {
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const currentMinutes = toMinutes(time);
+  const openMinutes = toMinutes(todayHours.open);
+  const closeMinutes = toMinutes(todayHours.close);
+
+  if (currentMinutes < openMinutes) {
+    return {
+      isOpen: false,
+      reason: 'before_hours',
+      todayHours,
+    };
+  }
+
+  if (currentMinutes >= closeMinutes) {
+    return {
+      isOpen: false,
+      reason: 'after_hours',
+      todayHours,
+    };
+  }
+
+  return {
+    isOpen: true,
+    reason: 'open',
+    todayHours,
+  };
+}
 
 interface CreatePublicTicketInput {
   officeId: string;
@@ -55,7 +153,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
 
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('id, organization:organizations(settings)')
+    .select('id, settings, operating_hours, timezone, organization:organizations(settings)')
     .eq('id', input.officeId)
     .single();
 
@@ -67,6 +165,46 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
       | Record<string, unknown>
       | undefined) ?? {};
+  const officeSettings = (office.settings as Record<string, unknown> | null) ?? {};
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings,
+    officeSettings,
+  });
+  const visitIntakeOverrideMode =
+    (typeof organizationSettings.visit_intake_override_mode === 'string'
+      ? organizationSettings.visit_intake_override_mode
+      : typeof officeSettings.visit_intake_override_mode === 'string'
+        ? officeSettings.visit_intake_override_mode
+        : 'business_hours') as 'business_hours' | 'always_open' | 'always_closed';
+
+  if (visitIntakeOverrideMode === 'always_closed') {
+    return { error: 'This business is not taking visits right now.' };
+  }
+
+  if (visitIntakeOverrideMode === 'business_hours') {
+    const operatingHours =
+      (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
+    const businessHoursStatus = getBusinessHoursStatus(operatingHours, office.timezone);
+
+    if (!businessHoursStatus.isOpen) {
+      if (businessHoursStatus.reason === 'before_hours') {
+        return {
+          error: `Opens at ${businessHoursStatus.todayHours?.open ?? ''}`.trim(),
+        };
+      }
+
+      if (businessHoursStatus.reason === 'after_hours') {
+        return { error: 'Closed for the day' };
+      }
+
+      if (businessHoursStatus.reason === 'closed_today') {
+        return { error: 'Closed today' };
+      }
+
+      return { error: 'This business is not taking visits right now.' };
+    }
+  }
+
   const emailOtpEnabled = Boolean(organizationSettings.email_otp_enabled);
   const emailOtpRequiredForBooking = Boolean(
     organizationSettings.email_otp_required_for_booking
@@ -144,6 +282,8 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       to_status: ticket.status,
       metadata: {
         source: input.isRemote ? 'remote_join' : 'public_join',
+        visitIntakeOverrideMode,
+        templateId: platformConfig.template.id,
       },
     });
   }

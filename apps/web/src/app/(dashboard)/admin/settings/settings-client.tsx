@@ -131,6 +131,9 @@ export function SettingsClient({
   const [defaultLanguage, setDefaultLanguage] = useState<string>(
     settings.default_language ?? 'en'
   );
+  const [visitIntakeOverrideMode, setVisitIntakeOverrideMode] = useState<string>(
+    settings.visit_intake_override_mode ?? 'business_hours'
+  );
   const [priorityAlertsEnabled, setPriorityAlertsEnabled] = useState<boolean>(
     settings.priority_alerts_sms_enabled ?? false
   );
@@ -195,6 +198,7 @@ export function SettingsClient({
           display_refresh_interval: refreshInterval,
           supported_languages: supportedLanguages,
           default_language: defaultLanguage,
+          visit_intake_override_mode: visitIntakeOverrideMode,
           email_otp_enabled: emailOtpEnabled,
           email_otp_required_for_booking: emailOtpRequiredForBooking,
           email_otp_required_for_booking_changes: emailOtpRequiredForBookingChanges,
@@ -545,6 +549,48 @@ export function SettingsClient({
         <h2 className="text-lg font-semibold text-foreground">
           {t('Queue Defaults')}
         </h2>
+
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-2">
+            {t('Visit Intake Availability')}
+          </label>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {t('Choose whether customer-facing queue intake follows your business hours, stays open all the time, or stays closed until you reopen it.')}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                value: 'business_hours',
+                title: t('Use business hours'),
+                description: t('Follow each location schedule for kiosk and public queue intake.'),
+              },
+              {
+                value: 'always_open',
+                title: t('Always open'),
+                description: t('Keep taking walk-in and remote queue visits even outside scheduled hours.'),
+              },
+              {
+                value: 'always_closed',
+                title: t('Always closed'),
+                description: t('Pause all customer visit intake until you switch it back on.'),
+              },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setVisitIntakeOverrideMode(option.value)}
+                className={`rounded-xl border p-4 text-left transition-colors ${
+                  visitIntakeOverrideMode === option.value
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                    : 'border-border hover:bg-muted'
+                }`}
+              >
+                <div className="text-sm font-semibold text-foreground">{option.title}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>

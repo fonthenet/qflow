@@ -88,6 +88,10 @@ export async function GET(request: NextRequest) {
       orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
     booking_mode: orgSettings.booking_mode ?? 'simple',
     booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 7),
+    visit_intake_override_mode:
+      orgSettings.visit_intake_override_mode ??
+      officeSettings.visit_intake_override_mode ??
+      'business_hours',
   };
 
   // Filter out hidden departments and services, flatten services

@@ -65,6 +65,10 @@ export default async function KioskPage({ params }: KioskPageProps) {
       orgSettings.kiosk_locked_department_id ?? officeSettings.kiosk_locked_department_id ?? null,
     buttonLabel: orgSettings.kiosk_button_label ?? profile.buttonLabel,
     idleTimeout: orgSettings.kiosk_idle_timeout ?? profile.idleTimeoutSeconds,
+    visitIntakeOverrideMode:
+      orgSettings.visit_intake_override_mode ??
+      officeSettings.visit_intake_override_mode ??
+      'business_hours',
   };
 
   // Filter out hidden departments and services

@@ -208,7 +208,7 @@ export function RemoteJoinForm({
       });
 
       if (result.error || !result.data) {
-        throw new Error(result.error ?? 'Failed to join queue. Please try again.');
+        throw new Error(result.error ? t(result.error) : t('Failed to join queue. Please try again.'));
       }
 
       setTicket({
@@ -216,7 +216,7 @@ export function RemoteJoinForm({
         qr_token: result.data.qr_token,
       });
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to join queue. Please try again.');
+      setError(err?.message ?? t('Failed to join queue. Please try again.'));
     } finally {
       setJoining(false);
     }

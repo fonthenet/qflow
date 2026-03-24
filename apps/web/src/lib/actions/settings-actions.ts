@@ -44,6 +44,32 @@ export async function updateOrganizationSettings(data: {
 
   if (error) return { error: error.message };
 
+  if (typeof data.settings?.visit_intake_override_mode === 'string') {
+    const { data: offices, error: officesError } = await context.supabase
+      .from('offices')
+      .select('id, settings')
+      .eq('organization_id', context.staff.organization_id);
+
+    if (officesError) return { error: officesError.message };
+
+    for (const office of offices ?? []) {
+      const officeSettings = (office.settings as Record<string, any> | null) ?? {};
+      const { error: officeUpdateError } = await context.supabase
+        .from('offices')
+        .update({
+          settings: {
+            ...officeSettings,
+            visit_intake_override_mode: data.settings.visit_intake_override_mode,
+          },
+        })
+        .eq('id', office.id);
+
+      if (officeUpdateError) {
+        return { error: officeUpdateError.message };
+      }
+    }
+  }
+
   await logAuditEvent(context, {
     actionType: 'organization_settings_updated',
     entityType: 'organization',

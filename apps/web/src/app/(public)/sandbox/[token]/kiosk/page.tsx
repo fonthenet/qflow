@@ -100,6 +100,7 @@ export default async function SandboxKioskPage({
           lockedDepartmentId: null,
           buttonLabel: preview.kioskProfile.buttonLabel,
           idleTimeout: preview.kioskProfile.idleTimeoutSeconds,
+          visitIntakeOverrideMode: 'business_hours',
         }}
         sandbox={{
           enabled: true,

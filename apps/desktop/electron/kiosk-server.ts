@@ -40,6 +40,8 @@ interface BusinessHoursStatus {
   holidayName?: string;
 }
 
+type VisitIntakeOverrideMode = 'business_hours' | 'always_open' | 'always_closed';
+
 function checkBusinessHours(
   operatingHours: Record<string, { open: string; close: string }> | null,
   timezone: string,
@@ -103,6 +105,68 @@ function checkBusinessHours(
   }
 
   return { ...base, isOpen: true, reason: 'open', todayHours };
+}
+
+function parseSettings(settings: unknown): Record<string, any> {
+  if (!settings) return {};
+  if (typeof settings === 'string') {
+    try {
+      return JSON.parse(settings);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof settings === 'object') {
+    return settings as Record<string, any>;
+  }
+  return {};
+}
+
+function resolveVisitIntakeOverrideMode(
+  organizationSettings: unknown,
+  officeSettings: unknown
+): VisitIntakeOverrideMode {
+  const orgSettings = parseSettings(organizationSettings);
+  const branchSettings = parseSettings(officeSettings);
+  const value =
+    typeof orgSettings.visit_intake_override_mode === 'string'
+      ? orgSettings.visit_intake_override_mode
+      : typeof branchSettings.visit_intake_override_mode === 'string'
+        ? branchSettings.visit_intake_override_mode
+        : 'business_hours';
+
+  if (value === 'always_open' || value === 'always_closed') {
+    return value;
+  }
+
+  return 'business_hours';
+}
+
+function resolveBusinessAvailability(
+  overrideMode: VisitIntakeOverrideMode,
+  operatingHours: Record<string, { open: string; close: string }> | null,
+  timezone: string,
+  officeId?: string
+): BusinessHoursStatus {
+  const fallback = checkBusinessHours(operatingHours, timezone, officeId);
+  if (overrideMode === 'always_open') {
+    return {
+      ...fallback,
+      isOpen: true,
+      reason: 'always_open',
+    };
+  }
+
+  if (overrideMode === 'always_closed') {
+    return {
+      ...fallback,
+      isOpen: false,
+      reason: 'always_closed',
+      todayHours: fallback.todayHours ?? null,
+    };
+  }
+
+  return fallback;
 }
 
 function findNextOpenDay(hours: Record<string, { open: string; close: string }>, currentDayIndex: number) {
@@ -469,6 +533,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   // Try to get org name + logo from Supabase
   let logoUrl: string | null = null;
   let orgName: string | null = null;
+  let organizationSettings: Record<string, any> = {};
   if (isCloudReachable && office.organization_id) {
     try {
       const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
@@ -477,6 +542,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
         const orgs = await orgRes.json();
         orgName = orgs[0]?.name ?? null;
         logoUrl = orgs[0]?.logo_url ?? orgs[0]?.settings?.logo_url ?? null;
+        organizationSettings = parseSettings(orgs[0]?.settings);
       }
     } catch { /* ignore */ }
   }
@@ -484,7 +550,16 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   // ── Business hours check ──────────────────────────────────────
   const operatingHours = office.operating_hours ? (typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours) : null;
   const timezone = normalizeOfficeTimezone(office.timezone);
-  const businessStatus = checkBusinessHours(operatingHours, timezone, office.id);
+  const visitIntakeOverrideMode = resolveVisitIntakeOverrideMode(
+    organizationSettings,
+    office.settings
+  );
+  const businessStatus = resolveBusinessAvailability(
+    visitIntakeOverrideMode,
+    operatingHours,
+    timezone,
+    office.id
+  );
 
   res.writeHead(200, {
     'Content-Type': 'application/json',
@@ -501,6 +576,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     org_name: orgName,
     is_open: businessStatus.isOpen,
     business_hours: businessStatus,
+    visit_intake_override_mode: visitIntakeOverrideMode,
   }));
 }
 
@@ -568,9 +644,12 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       if (officeRow) {
         const opHours = officeRow.operating_hours ? (typeof officeRow.operating_hours === 'string' ? JSON.parse(officeRow.operating_hours) : officeRow.operating_hours) : null;
         const tz = normalizeOfficeTimezone(officeRow.timezone);
-        const bh = checkBusinessHours(opHours, tz, officeId);
+        const visitIntakeOverrideMode = resolveVisitIntakeOverrideMode(null, officeRow.settings);
+        const bh = resolveBusinessAvailability(visitIntakeOverrideMode, opHours, tz, officeId);
         if (!bh.isOpen) {
-          const reason = bh.reason === 'holiday' ? `Closed for ${bh.holidayName || 'holiday'}` :
+          const reason = bh.reason === 'always_closed'
+            ? 'This business is not taking visits right now.'
+            : bh.reason === 'holiday' ? `Closed for ${bh.holidayName || 'holiday'}` :
             bh.reason === 'closed_today' ? 'Closed today' :
             bh.reason === 'before_hours' ? `Opens at ${bh.todayHours?.open || ''}` :
             bh.reason === 'after_hours' ? 'Closed for the day' : 'Office is closed';
