@@ -34,18 +34,34 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
+    if (!session) {
+      setLogoUrl(null);
+      setOrgName(null);
+      document.documentElement.style.removeProperty('--primary');
+      document.documentElement.style.removeProperty('--called');
+      return;
+    }
+
     window.qf.org?.getBranding?.()
       .then((b: { orgName: string | null; logoUrl: string | null; brandColor: string | null }) => {
-        if (b?.logoUrl) setLogoUrl(b.logoUrl);
-        if (b?.orgName) setOrgName(b.orgName);
+        setLogoUrl(b?.logoUrl ?? null);
+        setOrgName(b?.orgName ?? null);
         // Apply org brand color as CSS variable for white-label
         if (b?.brandColor) {
           document.documentElement.style.setProperty('--primary', b.brandColor);
           document.documentElement.style.setProperty('--called', b.brandColor);
+        } else {
+          document.documentElement.style.removeProperty('--primary');
+          document.documentElement.style.removeProperty('--called');
         }
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => {
+        setLogoUrl(null);
+        setOrgName(null);
+        document.documentElement.style.removeProperty('--primary');
+        document.documentElement.style.removeProperty('--called');
+      });
+  }, [session]);
 
   const [retrying, setRetrying] = useState(false);
 
