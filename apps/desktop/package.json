@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -64,6 +64,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
       "shortcutName": "Qflo Station"
     },
     "publish": {

@@ -235,6 +235,28 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   tray.setToolTip(`${translate(currentLocale, 'Qflo Station')} - ${translate(currentLocale, status === 'online' ? 'Connected' : status === 'offline' ? 'Offline Mode' : status === 'syncing' ? 'Syncing...' : 'Connecting...')}`);
 }
 
+function shutdownDesktopRuntime() {
+  syncEngine?.stop();
+  stopAutoBackup();
+  stopKioskServer();
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {
+      // ignore tray cleanup errors during shutdown
+    }
+    tray = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.destroy();
+    } catch {
+      // ignore window cleanup errors during shutdown
+    }
+  }
+  mainWindow = null;
+}
+
 function getSessionScopedKioskUrl() {
   if (!kioskUrl) return null;
 
@@ -893,8 +915,9 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   (app as any).isQuitting = true;
-  syncEngine?.stop();
-  stopAutoBackup();
-  stopKioskServer();
-  mainWindow?.destroy();
+  shutdownDesktopRuntime();
+});
+
+app.on('will-quit', () => {
+  shutdownDesktopRuntime();
 });
