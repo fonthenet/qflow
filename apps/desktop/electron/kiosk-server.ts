@@ -1273,6 +1273,94 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     /* ── Audio chime (hidden) ── */
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+    /* ── Tablet ── */
+    @media (max-width: 1100px) {
+      .header { padding: 14px 18px; }
+      .office-name { font-size: 20px; }
+      .branch-name { font-size: 13px; }
+      .clock { font-size: 36px; }
+      .stat-box { padding: 10px 14px; }
+      .stat-num { font-size: 30px; }
+      .panel-title { padding: 14px 18px 12px; font-size: 16px; letter-spacing: 2px; }
+      .serving-list { padding: 12px 14px; }
+      .serving-row { padding: 18px 18px; }
+      .serving-row .ticket-num { font-size: 56px; min-width: 170px; }
+      .serving-row .desk-name { font-size: 24px; }
+      .queue-list { padding: 8px 10px; }
+      .queue-row { padding: 14px 14px; }
+      .queue-row .q-ticket { font-size: 26px; min-width: 110px; }
+      .queue-row .q-name, .queue-row .q-wait { font-size: 16px; }
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 767px) {
+      body { overflow: hidden; }
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 14px;
+      }
+      .header-left { width: 100%; gap: 12px; }
+      .logo, .logo img { width: 44px; height: 44px; }
+      .logo.fallback { font-size: 22px; border-radius: 12px; }
+      .office-name { font-size: 18px; }
+      .branch-name { font-size: 12px; }
+      .header-right { width: 100%; display: flex; align-items: center; justify-content: space-between; text-align: left; }
+      .clock { font-size: 28px; }
+      .date { font-size: 12px; }
+
+      .stats-strip {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .stat-box {
+        padding: 10px 10px;
+        border-right: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .stat-box:nth-child(2n) { border-right: none; }
+      .stat-box:nth-last-child(-n+2) { border-bottom: none; }
+      .stat-num { font-size: 28px; }
+      .stat-label { font-size: 11px; letter-spacing: 1.2px; }
+
+      .content { flex-direction: column; min-height: 0; }
+      .now-serving-panel {
+        flex: 0 0 46vh;
+        border-right: none;
+        border-bottom: 2px solid #e2e8f0;
+        min-height: 0;
+      }
+      .queue-panel { flex: 1 1 auto; min-height: 0; }
+      .panel-title { padding: 14px 14px 12px; font-size: 15px; letter-spacing: 2px; }
+      .serving-list { padding: 10px 10px 14px; overflow: auto; }
+      .serving-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 16px 14px;
+      }
+      .serving-row .ticket-num { font-size: 52px; min-width: auto; }
+      .serving-row .arrow { font-size: 24px; margin: 0; }
+      .serving-row .desk-name { font-size: 22px; }
+      .serving-row .dept-name { font-size: 14px; }
+      .serving-row .status-pill { font-size: 14px; }
+      .countdown { font-size: 24px; min-width: auto; text-align: left; }
+      .no-active { font-size: 20px; padding: 0 20px; text-align: center; }
+
+      .dept-tabs { padding: 0 10px; }
+      .dept-tab { padding: 12px 16px; font-size: 14px; }
+      .dept-tab .count { font-size: 12px; }
+      .queue-list { padding: 10px 10px 16px; }
+      .queue-row { padding: 12px 12px; }
+      .queue-row .pos { font-size: 18px; min-width: 34px; }
+      .queue-row .q-ticket { font-size: 24px; min-width: 92px; }
+      .queue-row .q-name { font-size: 15px; }
+      .queue-row .q-wait { font-size: 14px; }
+      .queue-row .q-badge { font-size: 11px; padding: 3px 8px; }
+      .queue-empty { padding: 32px 18px; font-size: 18px; }
+    }
   </style>
 </head>
 <body>

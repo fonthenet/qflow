@@ -70,6 +70,7 @@ export function DisplayBoard({
   const [lastCalledTicket, setLastCalledTicket] = useState<any>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [viewportWidth, setViewportWidth] = useState<number>(1280);
   const knownCalledAnchorsRef = useRef<Map<string, string>>(new Map());
 
   const settings: ScreenSettings = displayScreen.settings ?? {};
@@ -96,6 +97,13 @@ export function DisplayBoard({
   useEffect(() => {
     const interval = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const updateViewport = () => setViewportWidth(window.innerWidth);
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
   }, []);
 
   useEffect(() => {
@@ -158,6 +166,9 @@ export function DisplayBoard({
   const waitingCount = waitingTickets.length;
   const calledCount = visibleActiveTickets.filter((ticket) => ticket.status === 'called').length;
   const servingCount = visibleActiveTickets.filter((ticket) => ticket.status === 'serving').length;
+  const isMobile = viewportWidth < 768;
+  const isTablet = viewportWidth >= 768 && viewportWidth < 1100;
+  const logoSize = isMobile ? 44 : 56;
 
   return (
     <div
@@ -174,13 +185,26 @@ export function DisplayBoard({
           style={{ background: 'rgba(255,255,255,0.97)' }}
         >
           <div className="text-center">
-            <div className="text-3xl font-bold uppercase tracking-[0.3em]" style={{ color: '#3b82f6' }}>
+            <div
+              className="font-bold uppercase"
+              style={{
+                color: '#3b82f6',
+                letterSpacing: isMobile ? '0.18em' : '0.3em',
+                fontSize: isMobile ? '1.25rem' : '1.875rem',
+              }}
+            >
               Now Calling
             </div>
-            <div className="mt-6 text-[9rem] font-black leading-none tracking-[-0.08em]">
+            <div
+              className="mt-6 font-black leading-none"
+              style={{
+                fontSize: isMobile ? '4.5rem' : '9rem',
+                letterSpacing: '-0.08em',
+              }}
+            >
               {lastCalledTicket.ticket_number}
             </div>
-            <div className="mt-4 text-4xl font-bold" style={{ color: '#16a34a' }}>
+            <div className="mt-4 font-bold" style={{ color: '#16a34a', fontSize: isMobile ? '1.75rem' : '2.25rem' }}>
               Go to {lastCalledTicket.desk?.display_name || lastCalledTicket.desk?.name || 'Desk'}
             </div>
           </div>
@@ -192,18 +216,20 @@ export function DisplayBoard({
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '16px 32px',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: isMobile ? 16 : 0,
+            padding: isMobile ? '16px 18px' : '16px 32px',
             background: '#fff',
             borderBottom: '2px solid #e2e8f0',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 16, width: isMobile ? '100%' : 'auto' }}>
             {office.organization?.logo_url ? (
               <div
                 style={{
-                  width: 56,
-                  height: 56,
+                  width: logoSize,
+                  height: logoSize,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -214,14 +240,14 @@ export function DisplayBoard({
                 <img
                   src={office.organization.logo_url}
                   alt={`${office.organization?.name || 'Business'} logo`}
-                  style={{ height: 56, width: 'auto', objectFit: 'contain' }}
+                  style={{ height: logoSize, width: 'auto', objectFit: 'contain' }}
                 />
               </div>
             ) : (
               <div
                 style={{
-                  width: 56,
-                  height: 56,
+                  width: logoSize,
+                  height: logoSize,
                   borderRadius: 14,
                   background: '#3b82f6',
                   color: '#fff',
@@ -229,22 +255,22 @@ export function DisplayBoard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontWeight: 900,
-                  fontSize: 28,
+                  fontSize: isMobile ? 22 : 28,
                 }}
               >
                 Q
               </div>
             )}
             <div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#1e293b' }}>
+              <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: '#1e293b' }}>
                 {office.organization?.name || office.name}
               </div>
-              <div style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>
+              <div style={{ fontSize: isMobile ? 13 : 14, color: '#64748b', fontWeight: 500 }}>
                 {office.organization?.name ? office.name : office.organization?.name || office.name}
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-start' }}>
             <div
               style={{
                 display: 'inline-flex',
@@ -268,15 +294,15 @@ export function DisplayBoard({
               />
               Connected
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 42, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
+            <div style={{ textAlign: isMobile ? 'left' : 'right' }}>
+              <div style={{ fontSize: isMobile ? 28 : 42, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
                 {currentTime.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
                   second: '2-digit',
                 })}
               </div>
-              <div style={{ fontSize: 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
+              <div style={{ fontSize: isMobile ? 12 : 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
                 {currentTime.toLocaleDateString([], {
                   weekday: 'long',
                   year: 'numeric',
@@ -288,7 +314,14 @@ export function DisplayBoard({
           </div>
         </div>
 
-        <div style={{ display: 'flex', background: '#fff', borderBottom: '1px solid #e2e8f0' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
+            background: '#fff',
+            borderBottom: '1px solid #e2e8f0',
+          }}
+        >
           {[
             { label: 'Waiting', value: waitingCount, color: '#f59e0b' },
             { label: 'Called', value: calledCount, color: '#3b82f6' },
@@ -298,19 +331,20 @@ export function DisplayBoard({
             <div
               key={stat.label}
               style={{
-                flex: 1,
-                padding: '12px 24px',
+                padding: isMobile ? '12px 10px' : '12px 24px',
                 textAlign: 'center',
-                borderRight: index < 3 ? '1px solid #e2e8f0' : 'none',
+                borderRight:
+                  isMobile ? (index % 2 === 0 ? '1px solid #e2e8f0' : 'none') : index < 3 ? '1px solid #e2e8f0' : 'none',
+                borderBottom: isMobile && index < 2 ? '1px solid #e2e8f0' : 'none',
               }}
             >
-              <div style={{ fontSize: 36, fontWeight: 800, color: stat.color }}>{stat.value}</div>
+              <div style={{ fontSize: isMobile ? 30 : 36, fontWeight: 800, color: stat.color }}>{stat.value}</div>
               <div
                 style={{
-                  fontSize: 14,
+                  fontSize: isMobile ? 11 : 14,
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  letterSpacing: 2,
+                  letterSpacing: isMobile ? 1.3 : 2,
                   color: '#94a3b8',
                   marginTop: 4,
                 }}
@@ -321,23 +355,33 @@ export function DisplayBoard({
           ))}
         </div>
 
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            overflow: 'hidden',
+            minHeight: 0,
+          }}
+        >
           <div
             style={{
-              flex: 55,
+              flex: isMobile ? '0 0 46vh' : 55,
               display: 'flex',
               flexDirection: 'column',
-              borderRight: '2px solid #e2e8f0',
+              borderRight: isMobile ? 'none' : '2px solid #e2e8f0',
+              borderBottom: isMobile ? '2px solid #e2e8f0' : 'none',
               background: '#fff',
+              minHeight: 0,
             }}
           >
             <div
               style={{
-                padding: '18px 24px 14px',
-                fontSize: 18,
+                padding: isMobile ? '14px 16px 12px' : '18px 24px 14px',
+                fontSize: isMobile ? 15 : 18,
                 fontWeight: 800,
                 textTransform: 'uppercase',
-                letterSpacing: 3,
+                letterSpacing: isMobile ? 2 : 3,
                 color: '#64748b',
                 borderBottom: '1px solid #f1f5f9',
               }}
@@ -347,11 +391,11 @@ export function DisplayBoard({
             <div
               style={{
                 flex: 1,
-                overflow: 'hidden',
-                padding: '16px 20px',
+                overflow: 'auto',
+                padding: isMobile ? '12px 12px 14px' : '16px 20px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 12,
+                gap: isMobile ? 10 : 12,
               }}
             >
               {visibleActiveTickets.length === 0 ? (
@@ -382,31 +426,33 @@ export function DisplayBoard({
                     <div
                       key={ticket.id}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '24px 28px',
-                        borderRadius: 16,
-                        background: ticket.status === 'called' ? '#eff6ff' : '#f0fdf4',
-                        border: `3px solid ${ticket.status === 'called' ? '#bfdbfe' : '#bbf7d0'}`,
+                    display: 'flex',
+                    alignItems: isMobile ? 'flex-start' : 'center',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: isMobile ? 12 : 0,
+                    padding: isMobile ? '18px 16px' : '24px 28px',
+                    borderRadius: 16,
+                    background: ticket.status === 'called' ? '#eff6ff' : '#f0fdf4',
+                    border: `3px solid ${ticket.status === 'called' ? '#bfdbfe' : '#bbf7d0'}`,
                       }}
                     >
                       <div
                         style={{
-                          fontSize: 72,
+                          fontSize: isMobile ? 54 : 72,
                           fontWeight: 900,
                           letterSpacing: -3,
-                          minWidth: 220,
+                          minWidth: isMobile ? 'auto' : 220,
                           color: ticket.status === 'called' ? '#1e40af' : '#166534',
                         }}
                       >
                         {ticket.ticket_number}
                       </div>
-                      <div style={{ fontSize: 36, color: '#94a3b8', margin: '0 20px' }}>&rarr;</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#334155' }}>
+                      <div style={{ fontSize: isMobile ? 24 : 36, color: '#94a3b8', margin: isMobile ? '0' : '0 20px' }}>&rarr;</div>
+                      <div style={{ flex: 1, width: isMobile ? '100%' : 'auto' }}>
+                        <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, color: '#334155' }}>
                           {ticket.desk?.display_name || ticket.desk?.name || 'Desk'}
                         </div>
-                        <div style={{ fontSize: 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
+                        <div style={{ fontSize: isMobile ? 14 : 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
                           {ticket.department?.name || ticket.service?.name || ''}
                         </div>
                       </div>
@@ -414,10 +460,10 @@ export function DisplayBoard({
                         <>
                           <div
                             style={{
-                              fontSize: 32,
+                              fontSize: isMobile ? 26 : 32,
                               fontWeight: 900,
                               minWidth: 70,
-                              textAlign: 'center',
+                              textAlign: isMobile ? 'left' : 'center',
                               fontVariantNumeric: 'tabular-nums',
                               color: urgencyColor,
                             }}
@@ -428,7 +474,7 @@ export function DisplayBoard({
                             style={{
                               padding: '8px 20px',
                               borderRadius: 24,
-                              fontSize: 16,
+                              fontSize: isMobile ? 14 : 16,
                               fontWeight: 800,
                               textTransform: 'uppercase',
                               letterSpacing: 1,
@@ -444,7 +490,7 @@ export function DisplayBoard({
                           style={{
                             padding: '8px 20px',
                             borderRadius: 24,
-                            fontSize: 16,
+                            fontSize: isMobile ? 14 : 16,
                             fontWeight: 800,
                             textTransform: 'uppercase',
                             letterSpacing: 1,
@@ -464,19 +510,20 @@ export function DisplayBoard({
 
           <div
             style={{
-              flex: 45,
+              flex: isMobile ? 1 : 45,
               display: 'flex',
               flexDirection: 'column',
               background: '#f8fafc',
+              minHeight: 0,
             }}
           >
             <div
               style={{
-                padding: '18px 24px 14px',
-                fontSize: 18,
+                padding: isMobile ? '14px 16px 12px' : '18px 24px 14px',
+                fontSize: isMobile ? 15 : 18,
                 fontWeight: 800,
                 textTransform: 'uppercase',
-                letterSpacing: 3,
+                letterSpacing: isMobile ? 2 : 3,
                 color: '#64748b',
                 borderBottom: '1px solid #f1f5f9',
                 background: '#f8fafc',
@@ -484,14 +531,14 @@ export function DisplayBoard({
             >
               Queue
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '10px 12px 16px' : '8px 16px' }}>
               {waitingTickets.length === 0 ? (
                 <div
                   style={{
                     textAlign: 'center',
-                    padding: 60,
+                    padding: isMobile ? 32 : 60,
                     color: '#cbd5e1',
-                    fontSize: 22,
+                    fontSize: isMobile ? 18 : 22,
                     fontWeight: 600,
                   }}
                 >
@@ -507,7 +554,7 @@ export function DisplayBoard({
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        padding: '16px 20px',
+                        padding: isMobile ? '14px 14px' : '16px 20px',
                         borderRadius: 12,
                         marginBottom: 6,
                         background: '#fff',
@@ -517,10 +564,10 @@ export function DisplayBoard({
                     >
                       <div
                         style={{
-                          fontSize: isNext ? 24 : 22,
+                          fontSize: isMobile ? 18 : isNext ? 24 : 22,
                           fontWeight: 900,
                           color: isNext ? '#92400e' : '#94a3b8',
-                          minWidth: 50,
+                          minWidth: isMobile ? 34 : 50,
                           textAlign: 'center',
                         }}
                       >
@@ -528,10 +575,10 @@ export function DisplayBoard({
                       </div>
                       <div
                         style={{
-                          fontSize: 32,
+                          fontSize: isMobile ? 24 : 32,
                           fontWeight: 900,
                           color: '#1e293b',
-                          minWidth: 140,
+                          minWidth: isMobile ? 96 : 140,
                           letterSpacing: -1,
                         }}
                       >
@@ -540,7 +587,7 @@ export function DisplayBoard({
                       <div
                         style={{
                           flex: 1,
-                          fontSize: 18,
+                          fontSize: isMobile ? 15 : 18,
                           color: '#64748b',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -557,7 +604,7 @@ export function DisplayBoard({
                           style={{
                             padding: '4px 10px',
                             borderRadius: 8,
-                            fontSize: 13,
+                            fontSize: isMobile ? 11 : 13,
                             fontWeight: 700,
                             marginRight: 6,
                             background: '#fef3c7',
@@ -572,7 +619,7 @@ export function DisplayBoard({
                           style={{
                             padding: '4px 10px',
                             borderRadius: 8,
-                            fontSize: 13,
+                            fontSize: isMobile ? 11 : 13,
                             fontWeight: 700,
                             marginRight: 6,
                             background: '#dbeafe',
@@ -582,7 +629,7 @@ export function DisplayBoard({
                           Booked
                         </span>
                       ) : null}
-                      <div style={{ fontSize: 18, color: '#94a3b8', fontWeight: 700 }}>
+                      <div style={{ fontSize: isMobile ? 14 : 18, color: '#94a3b8', fontWeight: 700 }}>
                         {formatWait(ticket.created_at)}
                       </div>
                     </div>
