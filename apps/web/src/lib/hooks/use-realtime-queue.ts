@@ -9,6 +9,7 @@ type Ticket = Database['public']['Tables']['tickets']['Row'];
 
 const EMPTY_QUEUE: QueueData = {
   waiting: [],
+  parked: [],
   called: [],
   serving: [],
   recentlyServed: [],
@@ -17,6 +18,7 @@ const EMPTY_QUEUE: QueueData = {
 
 export interface QueueData {
   waiting: Ticket[];
+  parked: Ticket[];
   called: Ticket[];
   serving: Ticket[];
   recentlyServed: Ticket[];
@@ -75,9 +77,11 @@ export function useRealtimeQueue({
     }
 
     const tickets = data ?? [];
+    const waitingTickets = tickets.filter((t) => t.status === 'waiting');
 
     setQueue({
-      waiting: tickets.filter((t) => t.status === 'waiting'),
+      waiting: waitingTickets.filter((t) => !t.parked_at),
+      parked: waitingTickets.filter((t) => !!t.parked_at),
       called: tickets.filter((t) => t.status === 'called'),
       serving: tickets.filter((t) => t.status === 'serving'),
       recentlyServed: tickets

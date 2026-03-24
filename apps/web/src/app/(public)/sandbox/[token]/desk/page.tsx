@@ -188,6 +188,7 @@ export default async function SandboxDeskPage({ params, searchParams }: SandboxD
             waiting: waitingEntries.map(buildMappedTicket),
             called: calledEntries.map(buildMappedTicket),
             serving: servingEntries.map(buildMappedTicket),
+            parked: [],
             recentlyServed: [],
             cancelled: [],
           },

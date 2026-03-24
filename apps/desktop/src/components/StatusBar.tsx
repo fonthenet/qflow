@@ -32,12 +32,14 @@ export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffSt
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [liveDeskName, setLiveDeskName] = useState<string | null>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
   useEffect(() => {
     if (!session) {
       setLogoUrl(null);
       setOrgName(null);
+      setLiveDeskName(null);
       document.documentElement.style.removeProperty('--primary');
       document.documentElement.style.removeProperty('--called');
       return;
@@ -63,6 +65,29 @@ export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffSt
         document.documentElement.style.removeProperty('--called');
       });
   }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!session?.desk_id) {
+      setLiveDeskName(null);
+      return;
+    }
+
+    window.qf.db?.query?.('desks', session.office_ids ?? [session.office_id])
+      .then((desks: Array<{ id?: string; name?: string }> | null | undefined) => {
+        if (cancelled) return;
+        const match = (desks ?? []).find((desk) => desk?.id === session.desk_id);
+        setLiveDeskName(match?.name?.trim() || null);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveDeskName(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.desk_id, session?.office_id, session?.office_ids]);
 
   const [retrying, setRetrying] = useState(false);
 
@@ -148,6 +173,14 @@ export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffSt
 
     if (updateStatus.status === 'checking') {
       return <span className="update-badge neutral">{t('Checking for updates...')}</span>;
+    }
+
+    if (updateStatus.status === 'no_update') {
+      return (
+        <button className="update-badge neutral" onClick={handleCheckForUpdates} title={updateStatus.message ?? undefined}>
+          {t('No updates available')}
+        </button>
+      );
     }
 
     if (updateStatus.status === 'available' || updateStatus.status === 'downloading') {
@@ -245,8 +278,8 @@ export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffSt
               )}
               <span className="operator-name">{session.full_name}</span>
               <span className="operator-role">{session.role}</span>
-              {session.desk_name && (
-                <span className="desk-badge">{session.desk_name}</span>
+              {(liveDeskName ?? session.desk_name) && (
+                <span className="desk-badge">{liveDeskName ?? session.desk_name}</span>
               )}
               <button className="btn-logout" onClick={onLogout} aria-label={t('Sign out of Qflo Station')}>{t('Sign Out')}</button>
             </>

@@ -32,6 +32,8 @@ import {
   buzzTicket,
   callBackTicketToDesk,
   resetTicketToQueue,
+  parkTicket,
+  resumeParkedTicket,
   assignRestaurantTable,
   clearRestaurantTable,
 } from '@/lib/actions/ticket-actions';
@@ -226,6 +228,7 @@ export function DeskPanel({
   const [sandboxQueue, setSandboxQueue] = useState<QueueData>(
     sandbox?.initialQueue ?? {
       waiting: [],
+      parked: [],
       called: [],
       serving: [],
       recentlyServed: [],
@@ -235,7 +238,7 @@ export function DeskPanel({
   const [tableState, setTableState] = useState<RestaurantTable[]>(restaurantTables);
   const [lastAction, setLastAction] = useState<{
     ticketNumber: string;
-    action: 'served' | 'no_show' | 'cancelled' | 'transferred' | 'reset';
+    action: 'served' | 'no_show' | 'cancelled' | 'transferred' | 'reset' | 'parked' | 'resumed';
     time: Date;
   } | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
@@ -364,6 +367,13 @@ export function DeskPanel({
 
     const waitingTicket = queue.waiting.find((t) => t.id === currentTicket.id);
     if (waitingTicket) {
+      setCurrentTicket(null);
+      return;
+    }
+
+    const parkedTicket = queue.parked.find((t) => t.id === currentTicket.id);
+    if (parkedTicket) {
+      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'parked', time: new Date() });
       setCurrentTicket(null);
       return;
     }
@@ -661,6 +671,79 @@ export function DeskPanel({
       setLastAction({ ticketNumber: ticket.ticket_number, action: 'reset', time: new Date() });
       setCurrentTicket((current) => (current?.id === ticket.id ? null : current));
       addToast(isRestaurantMode ? 'Party sent back to waitlist' : 'Ticket reset to queue', 'info');
+    });
+  };
+
+  const handleParkCurrentTicket = () => {
+    if (!currentTicket) return;
+    parkSpecificTicket(currentTicket);
+  };
+
+  const parkSpecificTicket = (ticket: Ticket) => {
+    if (sandboxMode) {
+      const parkedTicket = {
+        ...ticket,
+        status: 'waiting' as const,
+        called_at: null,
+        serving_started_at: null,
+        desk_id: null,
+        parked_at: new Date().toISOString(),
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        called: current.called.filter((entry) => entry.id !== ticket.id),
+        serving: current.serving.filter((entry) => entry.id !== ticket.id),
+        waiting: current.waiting.filter((entry) => entry.id !== ticket.id),
+        parked: [parkedTicket, ...current.parked.filter((entry) => entry.id !== ticket.id)],
+      }));
+      setTableState((current) =>
+        current.map((table) =>
+          table.current_ticket_id === ticket.id
+            ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
+            : table
+        )
+      );
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'parked', time: new Date() });
+      setCurrentTicket((current) => (current?.id === ticket.id ? null : current));
+      addToast(isRestaurantMode ? 'Party parked for later' : 'Ticket parked for later', 'info');
+      return;
+    }
+    startTransition(async () => {
+      const result = await parkTicket(ticket.id);
+      if (result.error) {
+        addToast(getDeskErrorMessage(result.error), 'error');
+        return;
+      }
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'parked', time: new Date() });
+      setCurrentTicket((current) => (current?.id === ticket.id ? null : current));
+      addToast(isRestaurantMode ? 'Party parked for later' : 'Ticket parked for later', 'info');
+    });
+  };
+
+  const handleResumeParkedTicket = (ticket: Ticket) => {
+    if (sandboxMode) {
+      const resumedTicket = {
+        ...ticket,
+        status: 'waiting' as const,
+        parked_at: null,
+      };
+      setSandboxQueue((current) => ({
+        ...current,
+        parked: current.parked.filter((entry) => entry.id !== ticket.id),
+        waiting: [...current.waiting, resumedTicket],
+      }));
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'resumed', time: new Date() });
+      addToast(isRestaurantMode ? 'Party returned to waitlist' : 'Ticket returned to queue', 'info');
+      return;
+    }
+    startTransition(async () => {
+      const result = await resumeParkedTicket(ticket.id);
+      if (result.error) {
+        addToast(getDeskErrorMessage(result.error), 'error');
+        return;
+      }
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'resumed', time: new Date() });
+      addToast(isRestaurantMode ? 'Party returned to waitlist' : 'Ticket returned to queue', 'info');
     });
   };
 
@@ -1122,6 +1205,7 @@ export function DeskPanel({
   );
 
   const waitingTickets = queue.waiting;
+  const parkedTickets = queue.parked;
   const activeElsewhere = [...queue.called, ...queue.serving].filter((ticket) => ticket.id !== currentTicket?.id);
   const nextWaitingTicket = waitingTickets[0] ?? null;
   const longestWaitingMinutes = waitingTickets.reduce((longest, ticket) => {
@@ -1302,6 +1386,8 @@ export function DeskPanel({
                       lastAction.action === 'served' ? 'bg-success/10' :
                       lastAction.action === 'no_show' ? 'bg-warning/10' :
                       lastAction.action === 'cancelled' ? 'bg-destructive/10' :
+                      lastAction.action === 'parked' ? 'bg-slate-100' :
+                      lastAction.action === 'resumed' ? 'bg-primary/10' :
                       'bg-muted'
                     }`}>
                       {lastAction.action === 'served' ? (
@@ -1310,6 +1396,10 @@ export function DeskPanel({
                         <UserX className="h-8 w-8 text-warning" />
                       ) : lastAction.action === 'cancelled' ? (
                         <AlertCircle className="h-8 w-8 text-destructive" />
+                      ) : lastAction.action === 'parked' ? (
+                        <Clock className="h-8 w-8 text-slate-500" />
+                      ) : lastAction.action === 'resumed' ? (
+                        <Play className="h-8 w-8 text-primary" />
                       ) : lastAction.action === 'transferred' ? (
                         <ArrowRightLeft className="h-8 w-8 text-primary" />
                       ) : (
@@ -1320,6 +1410,8 @@ export function DeskPanel({
                       {lastAction.action === 'served' ? t('Visit Complete') :
                        lastAction.action === 'no_show' ? t('Marked No-Show') :
                        lastAction.action === 'cancelled' ? t('Customer Left Queue') :
+                       lastAction.action === 'parked' ? t('Ticket Parked') :
+                       lastAction.action === 'resumed' ? t('Ticket Resumed') :
                        lastAction.action === 'transferred' ? t('Ticket Transferred') :
                        t('Ticket Reset')}
                     </h2>
@@ -1328,6 +1420,8 @@ export function DeskPanel({
                       {lastAction.action === 'served' ? t(' was served by you') :
                        lastAction.action === 'no_show' ? t(' did not show up') :
                        lastAction.action === 'cancelled' ? t(' ended their visit') :
+                       lastAction.action === 'parked' ? t(' was parked for later') :
+                       lastAction.action === 'resumed' ? t(' was returned to the queue') :
                        lastAction.action === 'transferred' ? t(' was transferred') :
                        t(' was sent back to queue')}
                     </p>
@@ -1797,6 +1891,14 @@ export function DeskPanel({
                         <ArrowRightLeft className="h-4 w-4" />
                         {isRestaurantMode ? t('Back to Waitlist') : t('Reset to Queue')}
                       </button>
+                      <button
+                        onClick={handleParkCurrentTicket}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition-all"
+                      >
+                        <Clock className="h-4 w-4" />
+                        {isRestaurantMode ? t('Park party') : t('Park ticket')}
+                      </button>
                     </>
                   )}
 
@@ -1821,6 +1923,14 @@ export function DeskPanel({
                       >
                         <ArrowRightLeft className="h-4 w-4" />
                         {isRestaurantMode ? t('Reassign Area') : t('Transfer')}
+                      </button>
+                      <button
+                        onClick={handleParkCurrentTicket}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 transition-all"
+                      >
+                        <Clock className="h-4 w-4" />
+                        {isRestaurantMode ? t('Park party') : t('Park ticket')}
                       </button>
                     </>
                   )}
@@ -2121,6 +2231,69 @@ export function DeskPanel({
                 )}
               </div>
             </div>
+          )}
+
+          {!isMinimalView && (
+          <div className="rounded-2xl border border-border bg-card">
+            <div className="border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                {isRestaurantMode ? t('Parked parties') : t('Parked tickets')}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {isRestaurantMode
+                  ? t('Temporarily move a party out of the active flow, then resume them later.')
+                  : t('Temporarily move a visit out of the active flow, then resume it later.')}
+              </p>
+            </div>
+            <div className="p-2 space-y-1 max-h-56 overflow-y-auto">
+              {parkedTickets.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  {isRestaurantMode ? t('No parties are parked right now.') : t('No tickets are parked right now.')}
+                </p>
+              ) : (
+                parkedTickets.map((ticket) => (
+                  <div key={ticket.id} className="rounded-xl border border-border px-3 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="h-2 w-2 rounded-full flex-shrink-0 bg-slate-400" />
+                      <span className="text-sm font-bold text-foreground">{ticket.ticket_number}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 ml-auto">
+                        {t('Parked')}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>
+                        {isRestaurantMode
+                          ? `${getTicketCustomerName(ticket) ?? t('Party')}${getRestaurantPartySize(ticket) ? ` · ${t('Party of {count}', { count: getRestaurantPartySize(ticket) })}` : ''}`
+                          : getTicketServiceName(ticket)}
+                      </span>
+                      <span>{getTicketSource(ticket)}</span>
+                      <span>{formatRelativeTime(ticket.parked_at ?? ticket.called_at ?? ticket.serving_started_at)}</span>
+                    </div>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleResumeParkedTicket(ticket)}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/20 disabled:opacity-50"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                        {t('Resume')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => resetSpecificTicketToQueue(ticket)}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs font-bold text-warning hover:bg-warning/20 disabled:opacity-50"
+                      >
+                        <TimerReset className="h-3.5 w-3.5" />
+                        {isRestaurantMode ? t('Back to Waitlist') : t('Reset to Queue')}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
           )}
 
           {/* Currently Called / Being Served by Others */}

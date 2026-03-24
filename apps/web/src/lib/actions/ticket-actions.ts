@@ -1441,7 +1441,14 @@ export async function resetTicketToQueue(ticketId: string) {
 
   const { error } = await supabase
     .from('tickets')
-    .update({ status: 'waiting', desk_id: null, called_at: null })
+    .update({
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      called_by_staff_id: null,
+      serving_started_at: null,
+      parked_at: null,
+    })
     .eq('id', ticketId)
     .in('status', ['called', 'serving']);
 
@@ -1462,6 +1469,82 @@ export async function resetTicketToQueue(ticketId: string) {
     metadata: {
       previousStatus: ticket.status,
       previousDeskId: ticket.desk_id,
+    },
+  });
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+export async function parkTicket(ticketId: string) {
+  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+
+  const parkedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      called_by_staff_id: null,
+      serving_started_at: null,
+      parked_at: parkedAt,
+    })
+    .eq('id', ticketId)
+    .in('status', ['called', 'serving']);
+
+  if (error) {
+    return { error: 'Failed to park ticket' };
+  }
+
+  await releaseRestaurantTablesForTicket(supabase, ticketId);
+  await syncLiveActivity(ticketId, 'ParkTicket');
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_parked',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Parked ticket ${ticket.ticket_number}`,
+    metadata: {
+      previousStatus: ticket.status,
+      previousDeskId: ticket.desk_id,
+      parkedAt,
+    },
+  });
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+export async function resumeParkedTicket(ticketId: string) {
+  const { context, ticket } = await getTicketOperationContext(ticketId);
+  const supabase = context.supabase;
+
+  const { error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'waiting',
+      parked_at: null,
+    })
+    .eq('id', ticketId)
+    .eq('status', 'waiting');
+
+  if (error) {
+    return { error: 'Failed to resume ticket' };
+  }
+
+  await syncLiveActivity(ticketId, 'ResumeParkedTicket');
+
+  await logAuditEvent(context, {
+    actionType: 'ticket_resumed',
+    entityType: 'ticket',
+    entityId: ticket.id,
+    officeId: ticket.office_id,
+    summary: `Resumed ticket ${ticket.ticket_number}`,
+    metadata: {
+      previousParkedAt: ticket.parked_at,
     },
   });
 

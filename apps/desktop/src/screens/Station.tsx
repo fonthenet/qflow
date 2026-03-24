@@ -485,9 +485,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const requeue = (id: string) => {
-    updateTicketStatus(id, { status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null });
+    updateTicketStatus(id, {
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      called_by_staff_id: null,
+      serving_started_at: null,
+      parked_at: null,
+    });
     const t = tickets.find((t) => t.id === id);
     if (t) addActivity(t.ticket_number, translate(locale, 'Requeued'));
+  };
+
+  const park = (id: string) => {
+    updateTicketStatus(id, {
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      called_by_staff_id: null,
+      serving_started_at: null,
+      parked_at: new Date().toISOString(),
+    });
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) {
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket parked'));
+      showToast(t('Ticket parked'), 'info');
+    }
+  };
+
+  const resumeParked = (id: string) => {
+    updateTicketStatus(id, {
+      status: 'waiting',
+      parked_at: null,
+    });
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) {
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket resumed'));
+      showToast(t('Ticket resumed'), 'success');
+    }
   };
 
   const cancel = (id: string) => {
@@ -601,6 +636,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, []);
 
   const waiting = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !t.parked_at), [tickets]);
+  const parked = useMemo(() => tickets.filter((t) => t.status === 'waiting' && !!t.parked_at), [tickets]);
   const called = useMemo(() => tickets.filter((t) => t.status === 'called'), [tickets]);
   const serving = useMemo(() => tickets.filter((t) => t.status === 'serving'), [tickets]);
 
@@ -727,6 +763,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)} aria-label={`${t('No Show')} ${activeTicket.ticket_number}`}>
                       {t('No Show')}
                     </button>
+                    <button className="btn-outline" onClick={() => park(activeTicket.id)} aria-label={`${t('Park')} ${activeTicket.ticket_number}`}>
+                      {t('Park')}
+                    </button>
                     <button className="btn-outline" onClick={() => requeue(activeTicket.id)} aria-label={`${t('Back to Queue')} ${activeTicket.ticket_number}`}>
                       {t('Back to Queue')}
                     </button>
@@ -784,6 +823,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     {t('Complete Service')} <span className="shortcut-hint">F10</span>
                   </button>
                   <div className="secondary-actions">
+                    <button className="btn-outline" onClick={() => park(activeTicket.id)}>
+                      {t('Park')}
+                    </button>
                     <button className="btn-outline btn-warning" onClick={() => noShow(activeTicket.id)}>
                       {t('No Show')}
                     </button>
@@ -1006,9 +1048,72 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <span className="queue-item-meta">
                     {ticket.status === 'called' ? translate(locale, 'Called at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') }) : translate(locale, 'Serving at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}
                   </span>
+                  {getTicketCustomerName(ticket.customer_data) || getTicketCustomerPhone(ticket.customer_data) ? (
+                    <span className="queue-item-meta">
+                      {[getTicketCustomerName(ticket.customer_data), getTicketCustomerPhone(ticket.customer_data)].filter(Boolean).join(' · ')}
+                    </span>
+                  ) : null}
                 </div>
+                {ticket.id !== activeTicket?.id ? (
+                  <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                    <button
+                      className="btn-sm btn-outline"
+                      onClick={() => park(ticket.id)}
+                      aria-label={`${t('Park')} ${ticket.ticket_number}`}
+                    >
+                      {t('Park')}
+                    </button>
+                    <button
+                      className="btn-sm btn-outline"
+                      onClick={() => requeue(ticket.id)}
+                      aria-label={`${t('Reset stuck ticket')} ${ticket.ticket_number}`}
+                    >
+                      {t('Reset to Queue')}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="sidebar-section queue-list queue-active">
+          <h4>{t('Parked ({count})', { count: parked.length })}</h4>
+          <p style={{ fontSize: 11, color: 'var(--text3)', margin: '0 0 8px' }}>
+            {t('Resume parked tickets or send them back to the queue when you are ready.')}
+          </p>
+          <div className="ticket-list" role="list" aria-label={t('Parked tickets')}>
+            {parked.length === 0 ? (
+              <div className="queue-empty">{t('No parked tickets')}</div>
+            ) : (
+              parked.map((ticket) => (
+                <div key={ticket.id} className="queue-item" role="listitem">
+                  <div className="queue-item-dot" style={{ background: '#94a3b8' }} aria-hidden="true" />
+                  <div className="queue-item-info">
+                    <span className="queue-item-number">{ticket.ticket_number}</span>
+                    <span className="queue-item-meta">
+                      {[getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), formatWait(ticket.parked_at ?? ticket.created_at)].join(' · ')}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                    <button
+                      className="btn-sm btn-outline"
+                      onClick={() => resumeParked(ticket.id)}
+                      aria-label={`${t('Resume ticket')} ${ticket.ticket_number}`}
+                    >
+                      {t('Resume')}
+                    </button>
+                    <button
+                      className="btn-sm btn-outline"
+                      onClick={() => requeue(ticket.id)}
+                      aria-label={`${t('Reset stuck ticket')} ${ticket.ticket_number}`}
+                    >
+                      {t('Reset to Queue')}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
