@@ -36,6 +36,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLoca
 export function App() {
   const [session, setSession] = useState<StaffSession | null>(null);
   const [locale, setLocale] = useState<DesktopLocale>('en');
+  const [stationVersion, setStationVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isOnline: false,
@@ -61,6 +62,16 @@ export function App() {
       setLocale(normalizeLocale(savedLocale));
       setLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    window.qf.getConfig?.()
+      .then((config: { APP_VERSION?: string } | null | undefined) => {
+        setStationVersion(config?.APP_VERSION ?? null);
+      })
+      .catch(() => {
+        setStationVersion(null);
+      });
   }, []);
 
   useEffect(() => {
@@ -136,6 +147,7 @@ export function App() {
           session={session}
           syncStatus={syncStatus}
           updateStatus={updateStatus}
+          stationVersion={stationVersion}
           onLogout={handleLogout}
           staffStatus={staffStatus}
           queuePaused={queuePaused}

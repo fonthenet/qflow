@@ -20,13 +20,14 @@ interface Props {
   session: StaffSession | null;
   syncStatus: SyncStatus;
   updateStatus: UpdateStatus;
+  stationVersion: string | null;
   onLogout: () => void;
   staffStatus?: 'available' | 'on_break' | 'away';
   queuePaused?: boolean;
   locale: DesktopLocale;
 }
 
-export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffStatus, queuePaused, locale }: Props) {
+export function StatusBar({ session, syncStatus, updateStatus, stationVersion, onLogout, staffStatus, queuePaused, locale }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -234,6 +235,11 @@ export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffSt
             <span className="connection-dot" aria-hidden="true" />
             <span>{syncStatus.isOnline ? t('Connected') : t('Offline Mode')}</span>
           </div>
+          {stationVersion && (
+            <span className="update-badge neutral" title={t('Station version')}>
+              {t('Version')} {stationVersion}
+            </span>
+          )}
           {renderUpdateBadge()}
           {!syncStatus.isOnline && (
             <span style={{
