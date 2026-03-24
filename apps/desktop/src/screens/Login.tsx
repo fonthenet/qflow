@@ -6,11 +6,9 @@ import { t as translate, type DesktopLocale } from '../lib/i18n';
 interface Props {
   onLogin: (session: StaffSession) => void;
   locale: DesktopLocale;
-  onLocaleChange: (locale: DesktopLocale) => void;
-  languageOptions: Array<{ value: DesktopLocale; label: string }>;
 }
 
-export function Login({ onLogin, locale, onLocaleChange, languageOptions }: Props) {
+export function Login({ onLogin, locale }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -148,23 +146,11 @@ export function Login({ onLogin, locale, onLocaleChange, languageOptions }: Prop
     }
   };
 
-  const languageControl = (
-    <div className="language-control">
-      <label>{t('Language')}</label>
-      <select value={locale} onChange={(e) => onLocaleChange(e.target.value as DesktopLocale)}>
-        {languageOptions.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </div>
-  );
-
   // ── Loading state ──
   if (!licenseChecked) {
     return (
       <div className="login-container">
         <div className="login-card">
-          {languageControl}
           <div className="login-header">
             <div className="login-logo">Q</div>
             <h1>{t('Qflo Station')}</h1>
@@ -180,7 +166,6 @@ export function Login({ onLogin, locale, onLocaleChange, languageOptions }: Prop
     return (
       <div className="login-container">
         <div className="login-card">
-          {languageControl}
           <div className="login-header">
             <div className="login-logo" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>🔑</div>
             <h1>{t('Activate Station')}</h1>
@@ -273,7 +258,6 @@ export function Login({ onLogin, locale, onLocaleChange, languageOptions }: Prop
   return (
     <div className="login-container">
       <div className="login-card">
-        {languageControl}
         <div className="login-header">
           <div className="login-logo">Q</div>
           <h1>{t('Qflo Station')}</h1>

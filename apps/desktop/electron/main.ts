@@ -38,8 +38,45 @@ function applyLocale(locale: DesktopLocale) {
   currentLocale = locale;
   if (mainWindow) {
     mainWindow.setTitle(translate(currentLocale, 'Qflo Station'));
+    mainWindow.webContents.send('settings:locale-changed', currentLocale);
   }
+  buildApplicationMenu();
   updateTrayMenu(syncEngine?.isOnline ? 'online' : 'connecting');
+}
+
+function persistLocale(locale: DesktopLocale) {
+  const db = getDB();
+  db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('locale', ?)").run(locale);
+}
+
+function buildApplicationMenu() {
+  const languageSubmenu = [
+    { code: 'en' as DesktopLocale, label: translate(currentLocale, 'English') },
+    { code: 'fr' as DesktopLocale, label: translate(currentLocale, 'French') },
+    { code: 'ar' as DesktopLocale, label: translate(currentLocale, 'Arabic') },
+  ].map((item) => ({
+    label: item.label,
+    type: 'radio' as const,
+    checked: currentLocale === item.code,
+    click: () => {
+      persistLocale(item.code);
+      applyLocale(item.code);
+    },
+  }));
+
+  const menu = Menu.buildFromTemplate([
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+    {
+      label: translate(currentLocale, 'Language'),
+      submenu: languageSubmenu,
+    },
+    { role: 'help' },
+  ]);
+
+  Menu.setApplicationMenu(menu);
 }
 
 function loadWindowBounds(): { x?: number; y?: number; width: number; height: number } {
@@ -67,6 +104,7 @@ function saveWindowBounds() {
 
 function createWindow() {
   currentLocale = loadLocale();
+  buildApplicationMenu();
   const bounds = loadWindowBounds();
   mainWindow = new BrowserWindow({
     width: bounds.width,
@@ -547,7 +585,7 @@ function setupIPC() {
   ipcMain.handle('settings:get-locale', () => loadLocale());
   ipcMain.handle('settings:set-locale', (_e, locale: string) => {
     const nextLocale = normalizeLocale(locale);
-    db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('locale', ?)").run(nextLocale);
+    persistLocale(nextLocale);
     applyLocale(nextLocale);
     return nextLocale;
   });

@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('qf', {
   settings: {
     getLocale: () => ipcRenderer.invoke('settings:get-locale'),
     setLocale: (locale: string) => ipcRenderer.invoke('settings:set-locale', locale),
+    onLocaleChange: (callback: (locale: string) => void) => {
+      const handler = (_: any, locale: string) => callback(locale);
+      ipcRenderer.on('settings:locale-changed', handler);
+      return () => ipcRenderer.removeListener('settings:locale-changed', handler);
+    },
   },
 
   // Connection

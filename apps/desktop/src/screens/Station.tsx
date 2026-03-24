@@ -85,8 +85,6 @@ declare global {
 interface Props {
   session: StaffSession;
   locale: DesktopLocale;
-  languageOptions: Array<{ value: DesktopLocale; label: string }>;
-  onLocaleChange: (locale: DesktopLocale) => void;
   isOnline: boolean;
   staffStatus: 'available' | 'on_break' | 'away';
   queuePaused: boolean;
@@ -201,7 +199,7 @@ function OfficeHoursBadge({ locale }: { locale: DesktopLocale }) {
   );
 }
 
-export function Station({ session, locale, languageOptions, onLocaleChange, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
+export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -907,26 +905,6 @@ export function Station({ session, locale, languageOptions, onLocaleChange, isOn
 
         {/* Office Open/Closed Status */}
         <OfficeHoursBadge locale={locale} />
-
-        <div className="sidebar-section">
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-            {t('Settings')}
-          </div>
-          <div className="station-setting-row">
-            <label htmlFor="station-language-select" className="station-setting-label">{t('Language')}</label>
-            <select
-              id="station-language-select"
-              className="station-setting-select"
-              value={locale}
-              onChange={(e) => onLocaleChange(e.target.value as DesktopLocale)}
-              aria-label={t('Language')}
-            >
-              {languageOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
 
         {/* Device Status */}
         {deviceStatuses.length > 0 && (

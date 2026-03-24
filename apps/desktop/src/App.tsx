@@ -3,7 +3,7 @@ import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
 import type { StaffSession, SyncStatus } from './lib/types';
-import { DESKTOP_LOCALES, desktopLanguageLabel, getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
+import { getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
 import './styles.css';
 
 // ── Error Boundary — prevents full app crash on render errors ─────
@@ -58,6 +58,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const unsub = window.qf.settings?.onLocaleChange?.((nextLocale: string) => {
+      setLocale(normalizeLocale(nextLocale));
+    });
+    return () => { unsub?.(); };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dir = getDirection(locale);
     document.body.dir = getDirection(locale);
@@ -89,12 +96,6 @@ export function App() {
   const handleLogout = useCallback(async () => {
     await window.qf.session.clear();
     setSession(null);
-  }, []);
-
-  const updateLocale = useCallback(async (nextLocale: DesktopLocale) => {
-    const normalized = normalizeLocale(nextLocale);
-    setLocale(normalized);
-    await window.qf.settings?.setLocale?.(normalized);
   }, []);
 
   const t = useCallback((key: string, values?: Record<string, string | number | null | undefined>) => {
@@ -129,8 +130,6 @@ export function App() {
           <Station
             session={session}
             locale={locale}
-            languageOptions={DESKTOP_LOCALES.map((value) => ({ value, label: desktopLanguageLabel(locale, value) }))}
-            onLocaleChange={updateLocale}
             isOnline={syncStatus.isOnline}
             staffStatus={staffStatus}
             queuePaused={queuePaused}
@@ -138,7 +137,7 @@ export function App() {
             onQueuePausedChange={setQueuePaused}
           />
         ) : (
-          <Login onLogin={handleLogin} locale={locale} onLocaleChange={updateLocale} languageOptions={DESKTOP_LOCALES.map((value) => ({ value, label: desktopLanguageLabel(locale, value) }))} />
+          <Login onLogin={handleLogin} locale={locale} />
         )}
       </div>
     </ErrorBoundary>
