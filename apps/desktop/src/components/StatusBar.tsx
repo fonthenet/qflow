@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { StaffSession, SyncStatus } from '../lib/types';
+import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 
 declare global {
@@ -19,13 +19,14 @@ interface PendingItem {
 interface Props {
   session: StaffSession | null;
   syncStatus: SyncStatus;
+  updateStatus: UpdateStatus;
   onLogout: () => void;
   staffStatus?: 'available' | 'on_break' | 'away';
   queuePaused?: boolean;
   locale: DesktopLocale;
 }
 
-export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePaused, locale }: Props) {
+export function StatusBar({ session, syncStatus, updateStatus, onLogout, staffStatus, queuePaused, locale }: Props) {
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -118,6 +119,58 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
     setRetrying(false);
   };
 
+  const handleCheckForUpdates = async () => {
+    try {
+      await window.qf.updater?.checkForUpdates?.();
+    } catch {
+      // handled by update status events
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    try {
+      await window.qf.updater?.installUpdate?.();
+    } catch {
+      // handled by update status events
+    }
+  };
+
+  const renderUpdateBadge = () => {
+    if (!session) return null;
+
+    if (updateStatus.status === 'downloaded') {
+      return (
+        <button className="update-badge ready" onClick={handleInstallUpdate}>
+          {t('Restart to update')}
+        </button>
+      );
+    }
+
+    if (updateStatus.status === 'checking') {
+      return <span className="update-badge neutral">{t('Checking for updates...')}</span>;
+    }
+
+    if (updateStatus.status === 'available' || updateStatus.status === 'downloading') {
+      return (
+        <span className="update-badge info">
+          {updateStatus.progress !== null && updateStatus.progress > 0
+            ? t('Downloading update ({progress}%)', { progress: updateStatus.progress })
+            : t('A new version is downloading...')}
+        </span>
+      );
+    }
+
+    if (updateStatus.status === 'error') {
+      return (
+        <button className="update-badge error" onClick={handleCheckForUpdates} title={updateStatus.message ?? undefined}>
+          {t('Update check failed')}
+        </button>
+      );
+    }
+
+    return null;
+  };
+
   // Focus trap: keep Tab within the panel when open
   useEffect(() => {
     if (!showPanel) return;
@@ -148,6 +201,7 @@ export function StatusBar({ session, syncStatus, onLogout, staffStatus, queuePau
             <span className="connection-dot" aria-hidden="true" />
             <span>{syncStatus.isOnline ? t('Connected') : t('Offline Mode')}</span>
           </div>
+          {renderUpdateBadge()}
           {!syncStatus.isOnline && (
             <span style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,

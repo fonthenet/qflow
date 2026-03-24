@@ -129,6 +129,42 @@ function getSafeElapsedSeconds(value: string | null | undefined) {
   return Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
 }
 
+function getTicketCustomerName(customerData: unknown) {
+  if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) {
+    return null;
+  }
+
+  const data = customerData as Record<string, unknown>;
+  const nameKeys = ['party_name', 'name', 'full_name', 'customer_name', 'patient_name', 'guest_name'] as const;
+
+  for (const key of nameKeys) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getTicketCustomerPhone(customerData: unknown) {
+  if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) {
+    return null;
+  }
+
+  const data = customerData as Record<string, unknown>;
+  const phoneKeys = ['phone', 'mobile', 'telephone', 'cell', 'cell_phone', 'mobile_number', 'customer_phone'] as const;
+
+  for (const key of phoneKeys) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
 function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session: StaffSession }) {
   const [status, setStatus] = useState<{ isOpen: boolean; reason: string; todayHours: any; nextOpen?: any; currentDay: string } | null>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
@@ -617,8 +653,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const q = debouncedSearch.toLowerCase();
     return waiting.filter((t) =>
       t.ticket_number.toLowerCase().includes(q)
-      || ((t.customer_data as any)?.name ?? '').toLowerCase().includes(q)
-      || ((t.customer_data as any)?.phone ?? '').includes(q)
+      || (getTicketCustomerName(t.customer_data) ?? '').toLowerCase().includes(q)
+      || (getTicketCustomerPhone(t.customer_data) ?? '').includes(q)
     );
   }, [waiting, debouncedSearch]);
 
@@ -649,10 +685,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="active-status called">{t('CALLING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="active-customer">
-                  {(activeTicket.customer_data as any)?.name ?? t('Walk-in Customer')}
+                  {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
                 </div>
-                {(activeTicket.customer_data as any)?.phone && (
-                  <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
+                {getTicketCustomerPhone(activeTicket.customer_data) && (
+                  <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
                   <div className="active-notes">
@@ -709,10 +745,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="active-status serving">{t('NOW SERVING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="active-customer">
-                  {(activeTicket.customer_data as any)?.name ?? t('Walk-in Customer')}
+                  {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
                 </div>
-                {(activeTicket.customer_data as any)?.phone && (
-                  <div className="active-phone">{(activeTicket.customer_data as any).phone}</div>
+                {getTicketCustomerPhone(activeTicket.customer_data) && (
+                  <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
                   <div className="active-notes">
@@ -912,12 +948,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
           <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
             {visibleWaiting.map((ticket, i) => (
-              <div key={ticket.id} className="queue-item" role="listitem" aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: i + 1, ticket: ticket.ticket_number, name: (ticket.customer_data as any)?.name ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}>
+              <div key={ticket.id} className="queue-item" role="listitem" aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: i + 1, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}>
                 <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
                   <span className="queue-item-meta">
-                    {(ticket.customer_data as any)?.name ?? translate(locale, 'Walk-in')} &middot; {formatWait(ticket.created_at)}
+                    {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')} &middot; {formatWait(ticket.created_at)}
                   </span>
                 </div>
                 <div className="queue-item-badges">

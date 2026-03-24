@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, Component, type ReactNode } from 'rea
 import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
-import type { StaffSession, SyncStatus } from './lib/types';
+import type { StaffSession, SyncStatus, UpdateStatus } from './lib/types';
 import { getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
 import './styles.css';
 
@@ -41,6 +41,12 @@ export function App() {
     isOnline: false,
     pendingCount: 0,
     lastSyncAt: null,
+  });
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
+    status: 'idle',
+    version: null,
+    progress: null,
+    message: null,
   });
   const [staffStatus, setStaffStatus] = useState<'available' | 'on_break' | 'away'>('available');
   const [queuePaused, setQueuePaused] = useState(false);
@@ -86,6 +92,14 @@ export function App() {
     return () => { unsub1(); unsub2(); };
   }, []);
 
+  useEffect(() => {
+    const unsub = window.qf.updater?.onStatusChange?.((status: UpdateStatus) => {
+      setUpdateStatus(status);
+    });
+    window.qf.updater?.getStatus?.().then(setUpdateStatus).catch(() => {});
+    return () => { unsub?.(); };
+  }, []);
+
   const handleLogin = useCallback(async (s: StaffSession) => {
     await window.qf.session.save(s);
     setSession(s);
@@ -121,6 +135,7 @@ export function App() {
         <StatusBar
           session={session}
           syncStatus={syncStatus}
+          updateStatus={updateStatus}
           onLogout={handleLogout}
           staffStatus={staffStatus}
           queuePaused={queuePaused}

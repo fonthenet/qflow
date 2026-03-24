@@ -9,7 +9,7 @@ export interface PriorityAlertConfig {
   phoneLabel: string;
 }
 
-const PHONE_KEYS = ['phone', 'mobile', 'telephone', 'cell', 'cell_phone'] as const;
+const PHONE_KEYS = ['phone', 'mobile', 'telephone', 'cell', 'cell_phone', 'mobile_number', 'customer_phone'] as const;
 
 export function getPriorityAlertConfig(
   settings: Record<string, any> | null | undefined,

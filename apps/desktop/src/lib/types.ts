@@ -27,6 +27,13 @@ export interface SyncStatus {
   lastSyncAt: string | null;
 }
 
+export interface UpdateStatus {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'no_update' | 'error';
+  version: string | null;
+  progress: number | null;
+  message: string | null;
+}
+
 export interface StaffSession {
   user_id: string;
   staff_id: string;

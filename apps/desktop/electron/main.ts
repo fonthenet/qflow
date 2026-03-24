@@ -21,8 +21,31 @@ let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
 let kioskUrl: string | null = null;
 let currentLocale: DesktopLocale = 'en';
+let updateStatus: {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'no_update' | 'error';
+  version: string | null;
+  progress: number | null;
+  message: string | null;
+} = {
+  status: 'idle',
+  version: null,
+  progress: null,
+  message: null,
+};
 
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = CONFIG;
+
+function emitUpdateStatus() {
+  mainWindow?.webContents.send('update:status', updateStatus);
+}
+
+function setUpdateStatus(next: Partial<typeof updateStatus>) {
+  updateStatus = {
+    ...updateStatus,
+    ...next,
+  };
+  emitUpdateStatus();
+}
 
 function loadLocale(): DesktopLocale {
   try {
@@ -738,6 +761,38 @@ function setupIPC() {
 
   ipcMain.handle('connection:status', () => syncEngine?.isOnline ?? false);
 
+  // ── Auto updater ──────────────────────────────────────────────────
+
+  ipcMain.handle('update:get-status', () => updateStatus);
+  ipcMain.handle('update:check', async () => {
+    try {
+      setUpdateStatus({
+        status: 'checking',
+        message: translate(currentLocale, 'Checking for updates...'),
+        progress: null,
+      });
+      await autoUpdater.checkForUpdates();
+      return { ok: true };
+    } catch (error: any) {
+      const message = error?.message || 'Failed to check for updates';
+      setUpdateStatus({
+        status: 'error',
+        message,
+        progress: null,
+      });
+      return { ok: false, error: message };
+    }
+  });
+  ipcMain.handle('update:install', () => {
+    if (updateStatus.status !== 'downloaded') {
+      return { ok: false, error: 'No update ready to install' };
+    }
+    setImmediate(() => {
+      autoUpdater.quitAndInstall(false, true);
+    });
+    return { ok: true };
+  });
+
   // ── Kiosk Server ────────────────────────────────────────────────
 
   ipcMain.handle('kiosk:url', () => getSessionScopedKioskUrl());
@@ -932,23 +987,69 @@ app.whenReady().then(async () => {
   // Auto-update check (silent)
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', () => {
+  autoUpdater.on('checking-for-update', () => {
+    setUpdateStatus({
+      status: 'checking',
+      message: translate(currentLocale, 'Checking for updates...'),
+      version: null,
+      progress: null,
+    });
+  });
+  autoUpdater.on('update-available', (info) => {
+    setUpdateStatus({
+      status: 'available',
+      version: info.version,
+      progress: 0,
+      message: translate(currentLocale, 'A new version is downloading...'),
+    });
     new Notification({
       title: translate(currentLocale, 'Qflo Update'),
       body: translate(currentLocale, 'A new version is downloading...'),
     }).show();
   });
-  autoUpdater.on('update-downloaded', () => {
+  autoUpdater.on('download-progress', (progress) => {
+    setUpdateStatus({
+      status: 'downloading',
+      progress: Math.round(progress.percent),
+      message: translate(currentLocale, 'Downloading update ({progress}%)', { progress: Math.round(progress.percent) }),
+    });
+  });
+  autoUpdater.on('update-not-available', () => {
+    setUpdateStatus({
+      status: 'no_update',
+      version: CONFIG.APP_VERSION,
+      progress: null,
+      message: translate(currentLocale, 'Qflo Station is up to date.'),
+    });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    setUpdateStatus({
+      status: 'downloaded',
+      version: info.version,
+      progress: 100,
+      message: translate(currentLocale, 'Restart to apply the update.'),
+    });
     new Notification({
       title: translate(currentLocale, 'Qflo Update Ready'),
       body: translate(currentLocale, 'Restart to apply the update.'),
     }).show();
   });
+  autoUpdater.on('error', (error) => {
+    setUpdateStatus({
+      status: 'error',
+      progress: null,
+      message: error?.message || translate(currentLocale, 'Update check failed'),
+    });
+  });
 
   try {
     await autoUpdater.checkForUpdates();
   } catch {
-    // No update server configured yet — ignore
+    setUpdateStatus({
+      status: 'idle',
+      progress: null,
+      message: null,
+    });
   }
 });
 

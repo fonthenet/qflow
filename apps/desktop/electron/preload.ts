@@ -64,6 +64,18 @@ contextBridge.exposeInMainWorld('qf', {
   // Connection
   isOnline: () => ipcRenderer.invoke('connection:status'),
 
+  // Updater
+  updater: {
+    getStatus: () => ipcRenderer.invoke('update:get-status'),
+    checkForUpdates: () => ipcRenderer.invoke('update:check'),
+    installUpdate: () => ipcRenderer.invoke('update:install'),
+    onStatusChange: (callback: (status: any) => void) => {
+      const handler = (_: any, status: any) => callback(status);
+      ipcRenderer.on('update:status', handler);
+      return () => ipcRenderer.removeListener('update:status', handler);
+    },
+  },
+
   // Auth events
   auth: {
     onSessionExpired: (callback: () => void) => {
