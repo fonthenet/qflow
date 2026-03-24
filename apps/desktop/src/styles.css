@@ -91,7 +91,38 @@ select { font-family: inherit; }
 /* ── Station Layout ──────────────────────────────────────────────── */
 .station { display: flex; flex: 1; overflow: hidden; }
 .station-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; }
-.station-sidebar { width: 380px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+.station-sidebar { width: 380px; min-width: 320px; max-width: 720px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; position: relative; }
+.station-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 10px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 10;
+}
+.station-sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 64px;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.35);
+  transform: translate(-50%, -50%);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.station-sidebar-resizer:hover::after,
+.station-sidebar-resizer:focus-visible::after {
+  background: rgba(59,130,246,0.8);
+  box-shadow: 0 0 0 4px rgba(59,130,246,0.15);
+}
+.station-sidebar-resizer:focus-visible {
+  outline: none;
+}
 
 /* ── No Desk ─────────────────────────────────────────────────────── */
 .no-desk { text-align: center; color: var(--text2); }
@@ -270,6 +301,7 @@ html[dir="rtl"] .queue-item,
 html[dir="rtl"] .queue-stats,
 html[dir="rtl"] .secondary-actions { flex-direction: row-reverse; }
 html[dir="rtl"] .station-sidebar { border-left: none; border-right: 1px solid var(--border); }
+html[dir="rtl"] .station-sidebar-resizer { left: auto; right: -5px; }
 html[dir="rtl"] .queue-item-meta,
 html[dir="rtl"] .active-notes,
 html[dir="rtl"] .no-desk,

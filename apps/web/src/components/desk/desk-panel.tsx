@@ -622,9 +622,13 @@ export function DeskPanel({
 
   const handleResetToQueue = () => {
     if (!currentTicket) return;
+    resetSpecificTicketToQueue(currentTicket);
+  };
+
+  const resetSpecificTicketToQueue = (ticket: Ticket) => {
     if (sandboxMode) {
       const resetTicket = {
-        ...currentTicket,
+        ...ticket,
         status: 'waiting' as const,
         called_at: null,
         serving_started_at: null,
@@ -632,30 +636,30 @@ export function DeskPanel({
       };
       setSandboxQueue((current) => ({
         ...current,
-        called: current.called.filter((ticket) => ticket.id !== currentTicket.id),
-        serving: current.serving.filter((ticket) => ticket.id !== currentTicket.id),
+        called: current.called.filter((entry) => entry.id !== ticket.id),
+        serving: current.serving.filter((entry) => entry.id !== ticket.id),
         waiting: [...current.waiting, resetTicket],
       }));
       setTableState((current) =>
         current.map((table) =>
-          table.current_ticket_id === currentTicket.id
+          table.current_ticket_id === ticket.id
             ? { ...table, status: 'available', current_ticket_id: null, assigned_at: null }
             : table
         )
       );
-      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
-      setCurrentTicket(null);
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'reset', time: new Date() });
+      setCurrentTicket((current) => (current?.id === ticket.id ? null : current));
       addToast(isRestaurantMode ? 'Party sent back to waitlist' : 'Ticket reset to queue', 'info');
       return;
     }
     startTransition(async () => {
-      const result = await resetTicketToQueue(currentTicket.id);
+      const result = await resetTicketToQueue(ticket.id);
       if (result.error) {
         addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
-      setLastAction({ ticketNumber: currentTicket.ticket_number, action: 'reset', time: new Date() });
-      setCurrentTicket(null);
+      setLastAction({ ticketNumber: ticket.ticket_number, action: 'reset', time: new Date() });
+      setCurrentTicket((current) => (current?.id === ticket.id ? null : current));
       addToast(isRestaurantMode ? 'Party sent back to waitlist' : 'Ticket reset to queue', 'info');
     });
   };
@@ -2171,6 +2175,17 @@ export function DeskPanel({
                         <span>{getRestaurantSeatingPreference(ticket)}</span>
                       )}
                       <span>{formatRelativeTime(ticket.called_at ?? ticket.serving_started_at)}</span>
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => resetSpecificTicketToQueue(ticket)}
+                        disabled={isPending}
+                        className="inline-flex items-center gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs font-bold text-warning hover:bg-warning/20 disabled:opacity-50"
+                      >
+                        <TimerReset className="h-3.5 w-3.5" />
+                        {isRestaurantMode ? t('Back to Waitlist') : t('Reset to Queue')}
+                      </button>
                     </div>
                   </div>
                 ))

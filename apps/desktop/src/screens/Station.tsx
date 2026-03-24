@@ -122,6 +122,13 @@ function normalizeOfficeTimezone(timezone: string | null | undefined) {
   return value;
 }
 
+function getSafeElapsedSeconds(value: string | null | undefined) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+}
+
 function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session: StaffSession }) {
   const [status, setStatus] = useState<{ isOpen: boolean; reason: string; todayHours: any; nextOpen?: any; currentDay: string } | null>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
@@ -230,6 +237,9 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
 }
 
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
+  const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
+  const MIN_SIDEBAR_WIDTH = 320;
+  const MAX_SIDEBAR_WIDTH = 720;
   const getDisplayUrlLabel = (url: string) => {
     try {
       const parsed = new URL(url);
@@ -340,7 +350,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
     // Countdown for called tickets
     if (mine?.status === 'called' && mine.called_at) {
-      const elapsed = Math.floor((Date.now() - new Date(mine.called_at).getTime()) / 1000);
+      const elapsed = getSafeElapsedSeconds(mine.called_at);
       const remaining = Math.max(0, CALL_TIMEOUT - elapsed);
       setCallCountdown(remaining);
 
@@ -362,7 +372,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     // Elapsed timer for serving tickets
     if (mine?.status === 'serving' && mine.serving_started_at) {
       const updateElapsed = () => {
-        setServingElapsed(Math.floor((Date.now() - new Date(mine.serving_started_at!).getTime()) / 1000));
+        setServingElapsed(getSafeElapsedSeconds(mine.serving_started_at));
       };
       updateElapsed();
       if (servingTimerRef.current) clearInterval(servingTimerRef.current);
@@ -482,6 +492,55 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const [kioskUrl, setKioskUrl] = useState<string | null>(null);
   const [deviceStatuses, setDeviceStatuses] = useState<any[]>([]);
+  const [sidebarWidth, setSidebarWidth] = useState(380);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (!stored) return;
+      const parsed = Number(stored);
+      if (!Number.isFinite(parsed)) return;
+      setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed)));
+    } catch {
+      // ignore persistence failures
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [sidebarWidth]);
+
+  const startSidebarResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const isRtl = document.documentElement.dir === 'rtl';
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = isRtl ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+      const nextWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, startWidth + delta)
+      );
+      setSidebarWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, [sidebarWidth]);
 
   useEffect(() => {
     window.qf.kiosk?.getUrl?.().then((url: string | null) => setKioskUrl(url));
@@ -813,7 +872,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       </div>
 
       {/* Right panel — queue overview */}
-      <div className="station-sidebar" role="complementary" aria-label={t('Queue Overview')}>
+      <div
+        className="station-sidebar"
+        role="complementary"
+        aria-label={t('Queue Overview')}
+        style={{ width: sidebarWidth }}
+      >
+        <button
+          type="button"
+          className="station-sidebar-resizer"
+          onPointerDown={startSidebarResize}
+          aria-label={t('Resize queue panel')}
+          title={t('Resize queue panel')}
+        />
         <div className="sidebar-section">
           <div className="sidebar-header">
             <h3>{t('Queue Overview')}</h3>
