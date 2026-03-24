@@ -6,6 +6,9 @@
   'use strict';
 
   var API = window.location.origin;
+  var PAGE_PARAMS = new URLSearchParams(window.location.search || '');
+  var REQUESTED_OFFICE_ID = PAGE_PARAMS.get('officeId');
+  var OFFICE_QUERY = REQUESTED_OFFICE_ID ? ('?officeId=' + encodeURIComponent(REQUESTED_OFFICE_ID)) : '';
   var CLOUD = ''; // fetched from /api/health
   var S = {
     step: 'loading',
@@ -231,13 +234,13 @@
       // If no cloud URL from health, try config
       if (!CLOUD) {
         try {
-          var cfgRes = await fetch(API + '/api/kiosk-info');
+          var cfgRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
           var cfgData = await cfgRes.json();
           // Fallback: use the kiosk-info data directly
         } catch (e) {}
       }
 
-      var res = await fetch(API + '/api/kiosk-info');
+      var res = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
       var data = await res.json();
       if (data.error) throw new Error(data.error);
 

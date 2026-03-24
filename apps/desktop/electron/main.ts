@@ -235,6 +235,30 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
   tray.setToolTip(`${translate(currentLocale, 'Qflo Station')} - ${translate(currentLocale, status === 'online' ? 'Connected' : status === 'offline' ? 'Offline Mode' : status === 'syncing' ? 'Syncing...' : 'Connecting...')}`);
 }
 
+function getSessionScopedKioskUrl() {
+  if (!kioskUrl) return null;
+
+  try {
+    const db = getDB();
+    const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+    const officeId =
+      typeof session?.office_id === 'string' && session.office_id.length > 0
+        ? session.office_id
+        : Array.isArray(session?.office_ids) && typeof session.office_ids[0] === 'string'
+          ? session.office_ids[0]
+          : null;
+
+    if (!officeId) return kioskUrl;
+
+    const scopedUrl = new URL(kioskUrl);
+    scopedUrl.searchParams.set('officeId', officeId);
+    return scopedUrl.toString();
+  } catch {
+    return kioskUrl;
+  }
+}
+
 // ── IPC Handlers ──────────────────────────────────────────────────────
 
 function setupIPC() {
@@ -643,7 +667,7 @@ function setupIPC() {
 
   // ── Kiosk Server ────────────────────────────────────────────────
 
-  ipcMain.handle('kiosk:url', () => kioskUrl);
+  ipcMain.handle('kiosk:url', () => getSessionScopedKioskUrl());
   ipcMain.handle('kiosk:local-ip', () => getLocalIP());
 
   ipcMain.handle('org:branding', async () => {

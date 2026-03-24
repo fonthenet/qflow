@@ -353,15 +353,22 @@ function getSessionDefaultOffice() {
   }
 }
 
+function resolveRequestedOffice(url: URL) {
+  const db = getDB();
+  const officeId = url.searchParams.get('officeId');
+
+  if (officeId) {
+    return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+  }
+
+  return getSessionDefaultOffice();
+}
+
 // ── API Handlers ──────────────────────────────────────────────────
 
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const db = getDB();
-  const officeId = url.searchParams.get('officeId');
-
-  const office = officeId
-    ? db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any
-    : getSessionDefaultOffice() ?? db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
+  const office = resolveRequestedOffice(url);
 
   if (!office) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -770,11 +777,7 @@ async function handleTrackTicket(url: URL, res: http.ServerResponse) {
 
 async function handleDisplayData(url: URL, res: http.ServerResponse) {
   const db = getDB();
-  const officeId = url.searchParams.get('officeId');
-
-  const office = officeId
-    ? db.prepare("SELECT * FROM offices WHERE id = ?").get(officeId) as any
-    : getSessionDefaultOffice() ?? db.prepare("SELECT * FROM offices LIMIT 1").get() as any;
+  const office = resolveRequestedOffice(url);
 
   if (!office) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1138,6 +1141,9 @@ function serveDisplayPage(res: http.ServerResponse) {
 
   <script>
     var API = '${apiBase}';
+    var PAGE_PARAMS = new URLSearchParams(window.location.search || '');
+    var REQUESTED_OFFICE_ID = PAGE_PARAMS.get('officeId');
+    var OFFICE_QUERY = REQUESTED_OFFICE_ID ? ('?officeId=' + encodeURIComponent(REQUESTED_OFFICE_ID)) : '';
     var lastServingHash = '';
     var lastQueueHash = '';
     var activeDept = 'all';
@@ -1316,7 +1322,7 @@ function serveDisplayPage(res: http.ServerResponse) {
       // show the old cloud state instead of the real local state.
       try {
         // Fetch office info (includes logo + org name)
-        var officeRes = await fetch(API + '/api/kiosk-info');
+        var officeRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
         var officeData = await officeRes.json();
         if (officeData.office) {
           var orgName = officeData.org_name || officeData.office.name;
@@ -1336,7 +1342,7 @@ function serveDisplayPage(res: http.ServerResponse) {
         }
 
         // Fetch live queue data from local SQLite (always instant, always fresh)
-        var res = await fetch(API + '/api/display-data');
+        var res = await fetch(API + '/api/display-data' + OFFICE_QUERY);
         var d = await res.json();
         if (d.error) throw new Error(d.error);
 
@@ -1740,7 +1746,11 @@ function handleStationKioskInfo(res: http.ServerResponse) {
   const office = getSessionDefaultOffice();
   const officeIdQuery = office?.id ? `?officeId=${encodeURIComponent(office.id)}` : '';
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ kioskUrl: `http://${ip}:${localPort}/kiosk${officeIdQuery}`, localIP: ip }));
+  res.end(JSON.stringify({
+    kioskUrl: `http://${ip}:${localPort}/kiosk${officeIdQuery}`,
+    displayUrl: `http://${ip}:${localPort}/display${officeIdQuery}`,
+    localIP: ip,
+  }));
 }
 
 function handleStationBranding(res: http.ServerResponse) {
