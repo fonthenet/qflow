@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
 import { createClient } from '@/lib/supabase/client';
+import { useI18n } from '@/components/providers/locale-provider';
 import {
   clearBookingEmailOtpVerification,
   markBookingEmailOtpVerified,
@@ -47,6 +48,7 @@ export function RemoteJoinForm({
   vocabulary,
 }: RemoteJoinFormProps) {
   const router = useRouter();
+  const { t } = useI18n();
   // If a single service prop is passed (from simplified page), use it
   const resolvedServices = service ? [service] : services;
   const resolvedHasSpecific = service ? true : hasSpecificService;
@@ -448,21 +450,20 @@ export function RemoteJoinForm({
       </div>
 
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-6">
+        <div className="mx-auto max-w-4xl space-y-6">
         {/* Estimated wait */}
         {(currentWait !== null || waitingCount > 0) && (
           <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
             <div className="grid gap-4 text-center sm:grid-cols-2">
               <div>
-                <p className="text-xs font-medium text-muted-foreground">Estimated Wait Time</p>
+                <p className="text-xs font-medium text-muted-foreground">{t('Estimated Wait Time')}</p>
                 <p className="mt-1 text-3xl font-black text-primary sm:text-4xl">
                   {currentWait ?? '--'}
                   <span className="text-sm font-normal text-muted-foreground"> min</span>
                 </p>
               </div>
               <div>
-                <p className="text-xs font-medium text-muted-foreground">People Waiting</p>
+                <p className="text-xs font-medium text-muted-foreground">{t('People Waiting')}</p>
                 <p className="mt-1 text-3xl font-black text-slate-950 sm:text-4xl">
                   {waitingCount}
                 </p>
@@ -563,12 +564,12 @@ export function RemoteJoinForm({
                   )}
                   {svc.estimated_service_time && (
                         <p className="mt-2 text-sm font-medium text-primary/80">
-                      Est. {svc.estimated_service_time} min
+                      {t('Approximate timing')}: {t('{count} min', { count: svc.estimated_service_time })}
                     </p>
                   )}
                     </div>
                     <div className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                      Select
+                      {t('Select')}
                     </div>
                   </div>
                 </button>
@@ -584,9 +585,11 @@ export function RemoteJoinForm({
         )}
 
         <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
-        <h2 className="mb-1 text-xl font-semibold text-foreground">Your Details</h2>
+        <h2 className="mb-1 text-xl font-semibold text-foreground">{t('Your Details')}</h2>
         <p className="mb-6 text-sm text-muted-foreground">
-          Enter your information to join the {resolvedVocabulary.queueLabel.toLowerCase()}.
+          {t('Enter your information to join the {queueLabel}.', {
+            queueLabel: resolvedVocabulary.queueLabel.toLowerCase(),
+          })}
         </p>
 
         <form onSubmit={handleJoinQueue} className="space-y-5">
@@ -594,7 +597,7 @@ export function RemoteJoinForm({
             <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-foreground">
               {resolvedPublicJoin.namedPartyLabel}{' '}
               <span className="text-muted-foreground font-normal">
-                {resolvedPublicJoin.requireCustomerName ? '(required)' : '(optional)'}
+                {resolvedPublicJoin.requireCustomerName ? t('(required)') : t('(optional)')}
               </span>
             </label>
             <input
@@ -602,7 +605,7 @@ export function RemoteJoinForm({
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder={`Enter ${resolvedPublicJoin.namedPartyLabel.toLowerCase()}`}
+              placeholder={t('Enter {label}', { label: resolvedPublicJoin.namedPartyLabel.toLowerCase() })}
               autoComplete="name"
               required={resolvedPublicJoin.requireCustomerName}
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -611,31 +614,31 @@ export function RemoteJoinForm({
 
           <div>
             <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-foreground">
-              Phone <span className="text-muted-foreground font-normal">(optional)</span>
+              {t('Phone')} <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
             </label>
             <input
               id="phone"
               type="tel"
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
-              placeholder="Enter your phone number"
+              placeholder={t('Enter your phone number')}
               autoComplete="tel"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
             {smsBackupEnabled && (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Add a mobile number if you want guaranteed text backup alerts for urgent queue updates.
+                {t('Add a mobile number if you want guaranteed text backup alerts for urgent queue updates.')}
               </p>
             )}
           </div>
 
           <div>
             <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-foreground">
-              Email{' '}
+              {t('Email')}{' '}
               {emailOtpRequired ? (
                 <span className="text-destructive">*</span>
               ) : (
-                <span className="text-muted-foreground font-normal">(optional)</span>
+                <span className="text-muted-foreground font-normal">{t('(optional)')}</span>
               )}
             </label>
             <input
@@ -643,13 +646,13 @@ export function RemoteJoinForm({
               type="email"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="Enter your email address"
+              placeholder={t('Enter your email address')}
               autoComplete="email"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
             {emailOtpRequired ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                This business requires email verification before customers can join the queue.
+                {t('This business requires email verification before customers can join the queue.')}
               </p>
             ) : null}
           </div>
@@ -657,15 +660,15 @@ export function RemoteJoinForm({
           {emailOtpRequired ? (
             <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
               <div>
-                <p className="text-sm font-semibold text-foreground">Email verification</p>
+                <p className="text-sm font-semibold text-foreground">{t('Email verification')}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Send a short code to your email, then enter it here to continue.
+                  {t('Send a short code to your email, then enter it here to continue.')}
                 </p>
               </div>
 
               {emailOtpVerified ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  Email verified. You can join the queue now.
+                  {t('Email verified. You can join the queue now.')}
                 </div>
               ) : (
                 <>
@@ -681,15 +684,17 @@ export function RemoteJoinForm({
                       className="rounded-xl border border-primary/20 bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {sendingEmailOtp
-                        ? 'Sending code...'
+                        ? t('Sending code...')
                         : emailOtpSent
                           ? emailOtpResendRemainingSeconds > 0
-                            ? `Resend in ${emailOtpResendRemainingSeconds}s`
-                            : 'Resend code'
-                          : 'Send verification code'}
+                            ? t('Resend in {seconds}s', { seconds: emailOtpResendRemainingSeconds })
+                            : t('Resend code')
+                          : t('Send verification code')}
                     </button>
                     <p className="text-xs text-muted-foreground">
-                      Resend available after about {emailOtpResendCooldownSeconds} seconds.
+                      {t('Resend available after about {seconds} seconds.', {
+                        seconds: emailOtpResendCooldownSeconds,
+                      })}
                     </p>
                   </div>
 
@@ -700,7 +705,7 @@ export function RemoteJoinForm({
                           htmlFor="email-otp"
                           className="mb-1.5 block text-sm font-medium text-foreground"
                         >
-                          Verification code
+                          {t('Verification code')}
                         </label>
                         <input
                           id="email-otp"
@@ -708,7 +713,7 @@ export function RemoteJoinForm({
                           inputMode="numeric"
                           value={emailOtpCode}
                           onChange={(e) => setEmailOtpCode(e.target.value.replace(/\s+/g, ''))}
-                          placeholder="Enter the code from your email"
+                          placeholder={t('Enter the code from your email')}
                           className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
                         />
                       </div>
@@ -718,7 +723,7 @@ export function RemoteJoinForm({
                         disabled={verifyingEmailOtp || !emailOtpCode.trim()}
                         className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {verifyingEmailOtp ? 'Verifying...' : 'Verify email'}
+                        {verifyingEmailOtp ? t('Verifying...') : t('Verify email')}
                       </button>
                     </div>
                   ) : null}
@@ -745,56 +750,20 @@ export function RemoteJoinForm({
             {joining ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                Joining Queue...
+                {t('Joining Queue...')}
               </span>
             ) : (
-              `Join ${resolvedVocabulary.queueLabel}`
+              t('Join {queueLabel}', { queueLabel: resolvedVocabulary.queueLabel })
             )}
           </button>
         </form>
         </div>
 
-          </div>
-
-          <aside className="space-y-6">
-            <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                How it works
-              </p>
-              <div className="mt-4 space-y-4 text-sm text-slate-600">
-                <div>
-                  <p className="font-semibold text-slate-950">1. Choose your queue</p>
-                  <p className="mt-1">
-                    Pick the right {resolvedVocabulary.officeLabel.toLowerCase()},
-                    {' '}{resolvedVocabulary.departmentLabel.toLowerCase()}, and {resolvedVocabulary.serviceLabel.toLowerCase()} for your visit.
-                  </p>
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-950">2. Join remotely</p>
-                  <p className="mt-1">Get a live ticket without standing in line on site.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-950">3. Track your turn</p>
-                  <p className="mt-1">Follow your ticket and come forward when you are called.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-border bg-white p-5 shadow-sm">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Before you join
-              </p>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Use your normal phone number if you want alert backups. You can wait anywhere after joining and track your place live.
-              </p>
-            </div>
-          </aside>
         </div>
 
         <div className="mt-6 rounded-[1.25rem] border border-border/70 bg-white/70 p-4 shadow-sm">
           <p className="text-center text-xs text-muted-foreground">
-            After joining, you&apos;ll receive a ticket to track your position.
-            You can wait anywhere and come when it&apos;s almost your turn.
+            {t("After joining, you'll receive a ticket to track your position. You can wait anywhere and come when it's almost your turn.")}
           </p>
         </div>
       </div>
