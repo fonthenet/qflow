@@ -200,6 +200,15 @@ function OfficeHoursBadge({ locale }: { locale: DesktopLocale }) {
 }
 
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
+  const getDisplayUrlLabel = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      return url;
+    }
+  };
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -951,7 +960,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   title={t('Click to copy')}
                   onClick={() => navigator.clipboard?.writeText(item.url)}
                 >
-                  {item.url}
+                  {getDisplayUrlLabel(item.url)}
                 </div>
               </div>
             ))}

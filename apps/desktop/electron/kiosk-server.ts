@@ -333,35 +333,59 @@ export function stopKioskServer() {
   server = null;
 }
 
-function getSessionDefaultOffice() {
+function getCurrentSessionOfficeIds() {
   const db = getDB();
   try {
     const session = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
     if (!session?.value) return null;
     const parsed = JSON.parse(session.value);
-    const officeId =
-      typeof parsed?.office_id === 'string' && parsed.office_id.length > 0
-        ? parsed.office_id
-        : Array.isArray(parsed?.office_ids) && typeof parsed.office_ids[0] === 'string'
-          ? parsed.office_ids[0]
-          : null;
-
-    if (!officeId) return null;
-    return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+    const officeIds = new Set<string>();
+    if (typeof parsed?.office_id === 'string' && parsed.office_id.length > 0) {
+      officeIds.add(parsed.office_id);
+    }
+    if (Array.isArray(parsed?.office_ids)) {
+      parsed.office_ids.forEach((officeId: unknown) => {
+        if (typeof officeId === 'string' && officeId.length > 0) {
+          officeIds.add(officeId);
+        }
+      });
+    }
+    if (officeIds.size === 0) return null;
+    return {
+      primaryOfficeId:
+        typeof parsed?.office_id === 'string' && parsed.office_id.length > 0
+          ? parsed.office_id
+          : Array.from(officeIds)[0],
+      officeIds: Array.from(officeIds),
+    };
   } catch {
     return null;
   }
 }
 
+function getSessionDefaultOffice() {
+  const db = getDB();
+  const sessionOfficeIds = getCurrentSessionOfficeIds();
+  const officeId = sessionOfficeIds?.primaryOfficeId;
+  if (!officeId) return null;
+  return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+}
+
 function resolveRequestedOffice(url: URL) {
   const db = getDB();
+  const sessionOfficeIds = getCurrentSessionOfficeIds();
+  if (!sessionOfficeIds) return null;
+
   const officeId = url.searchParams.get('officeId');
 
   if (officeId) {
+    if (!sessionOfficeIds.officeIds.includes(officeId)) {
+      return null;
+    }
     return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
   }
 
-  return getSessionDefaultOffice();
+  return db.prepare('SELECT * FROM offices WHERE id = ?').get(sessionOfficeIds.primaryOfficeId) as any;
 }
 
 // ── API Handlers ──────────────────────────────────────────────────
@@ -371,8 +395,13 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const office = resolveRequestedOffice(url);
 
   if (!office) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'No office configured' }));
+    res.writeHead(404, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    res.end(JSON.stringify({ error: 'No active office configured' }));
     return;
   }
 
@@ -399,7 +428,12 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const timezone = office.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const businessStatus = checkBusinessHours(operatingHours, timezone, office.id);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
   res.end(JSON.stringify({
     office,
     departments,
@@ -780,8 +814,13 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
   const office = resolveRequestedOffice(url);
 
   if (!office) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'No office found' }));
+    res.writeHead(404, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    res.end(JSON.stringify({ error: 'No active office configured' }));
     return;
   }
 
@@ -817,7 +856,12 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'served' AND created_at >= ?"
   ).get(office.id, todayISO) as any;
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
   res.end(JSON.stringify({
     office_name: office.name,
     cloud_connected: isCloudReachable,
@@ -1322,8 +1366,9 @@ function serveDisplayPage(res: http.ServerResponse) {
       // show the old cloud state instead of the real local state.
       try {
         // Fetch office info (includes logo + org name)
-        var officeRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
+        var officeRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY, { cache: 'no-store' });
         var officeData = await officeRes.json();
+        if (officeData.error) throw new Error(officeData.error);
         if (officeData.office) {
           var orgName = officeData.org_name || officeData.office.name;
           var branchName = officeData.org_name ? officeData.office.name : '';
@@ -1342,7 +1387,7 @@ function serveDisplayPage(res: http.ServerResponse) {
         }
 
         // Fetch live queue data from local SQLite (always instant, always fresh)
-        var res = await fetch(API + '/api/display-data' + OFFICE_QUERY);
+        var res = await fetch(API + '/api/display-data' + OFFICE_QUERY, { cache: 'no-store' });
         var d = await res.json();
         if (d.error) throw new Error(d.error);
 
@@ -1373,6 +1418,26 @@ function serveDisplayPage(res: http.ServerResponse) {
         renderQueue(d.waiting || []);
       } catch(e) {
         console.error('Display fetch error:', e);
+        updateText('office-name', 'QFlo Station');
+        updateText('branch-name', 'No active office connected');
+        updateText('s-waiting', '0');
+        updateText('s-called', '0');
+        updateText('s-serving', '0');
+        updateText('s-served', '0');
+        setConnStatus(false);
+        lastServingHash = '';
+        lastQueueHash = '';
+        lastActive = [];
+        var servingEl = document.getElementById('serving-list');
+        if (servingEl) {
+          servingEl.innerHTML = '<div class="no-active">Connect Qflo Station to load this display</div>';
+        }
+        var queueEl = document.getElementById('queue-list');
+        if (queueEl) {
+          queueEl.innerHTML = '<div class="queue-empty">No active office connected</div>';
+        }
+        var tabsEl = document.getElementById('dept-tabs');
+        if (tabsEl) tabsEl.innerHTML = '';
       }
     }
 
@@ -1706,9 +1771,22 @@ function handleStationSessionLoad(res: http.ServerResponse) {
   const db = getDB();
   try {
     const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
     res.end(row ? row.value : 'null');
-  } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); }
+  } catch {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    res.end('null');
+  }
 }
 
 function handleStationSettings(res: http.ServerResponse) {
@@ -1745,7 +1823,12 @@ function handleStationKioskInfo(res: http.ServerResponse) {
   const ip = getLocalIP();
   const office = getSessionDefaultOffice();
   const officeIdQuery = office?.id ? `?officeId=${encodeURIComponent(office.id)}` : '';
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
   res.end(JSON.stringify({
     kioskUrl: `http://${ip}:${localPort}/kiosk${officeIdQuery}`,
     displayUrl: `http://${ip}:${localPort}/display${officeIdQuery}`,
@@ -1757,12 +1840,34 @@ function handleStationBranding(res: http.ServerResponse) {
   const db = getDB();
   try {
     const session = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
-    if (!session) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); return; }
+    if (!session) {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+      res.end('{}');
+      return;
+    }
     const s = JSON.parse(session.value);
     const office = db.prepare('SELECT * FROM offices WHERE id = ?').get(s.office_id) as any;
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
     res.end(JSON.stringify({ office_name: office?.name || s.office_name, organization_id: office?.organization_id }));
-  } catch { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); }
+  } catch {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+    });
+    res.end('{}');
+  }
 }
 
 function handleStationSSE(req: http.IncomingMessage, res: http.ServerResponse) {

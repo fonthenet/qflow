@@ -234,13 +234,13 @@
       // If no cloud URL from health, try config
       if (!CLOUD) {
         try {
-          var cfgRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
+          var cfgRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY, { cache: 'no-store' });
           var cfgData = await cfgRes.json();
           // Fallback: use the kiosk-info data directly
         } catch (e) {}
       }
 
-      var res = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY);
+      var res = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY, { cache: 'no-store' });
       var data = await res.json();
       if (data.error) throw new Error(data.error);
 

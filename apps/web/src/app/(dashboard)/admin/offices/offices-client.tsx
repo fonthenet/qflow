@@ -208,7 +208,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
             className="fixed inset-0 bg-black/50"
             onClick={() => setShowModal(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+          <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-semibold text-foreground">
               {editing ? t('Edit Location') : t('Create Location')}
             </h2>

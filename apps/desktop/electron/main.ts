@@ -592,6 +592,8 @@ function setupIPC() {
 
     // Register Station's local IP in office settings so web kiosk can discover it
     registerStationIP(session);
+    notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
+    notifyStationClients({ type: 'session_changed' });
   });
 
   ipcMain.handle('session:load', () => {
@@ -604,6 +606,8 @@ function setupIPC() {
     db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
     // Stop sync engine on logout to prevent stale token errors
     syncEngine?.stop();
+    notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
+    notifyStationClients({ type: 'session_cleared' });
   });
 
   ipcMain.handle('settings:get-locale', () => loadLocale());
