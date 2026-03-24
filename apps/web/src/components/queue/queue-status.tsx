@@ -742,11 +742,6 @@ export function QueueStatus({
               </div>
 
               <h2 className="mt-5 text-3xl font-semibold tracking-tight text-white">{t('You are being served')}</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                {t('Stay with the staff member at {deskName}. You can finish this visit after your service is complete.', {
-                  deskName: deskName ?? t('your desk'),
-                })}
-              </p>
 
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 <WaitingMetric
