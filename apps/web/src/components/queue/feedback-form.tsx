@@ -153,7 +153,7 @@ export function FeedbackForm({
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{officeName}</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">{t('Thanks for visiting')}</h1>
+              <h1 className="mt-3 whitespace-nowrap text-3xl font-semibold tracking-tight text-white">{t('Thanks for visiting')}</h1>
               <p className="mt-3 text-sm leading-6 text-slate-300">
                 {t('Ticket {number} is complete. If you have a moment, tell us how this visit felt.', {
                   number: ticket.ticket_number,
