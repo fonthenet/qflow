@@ -86,6 +86,10 @@ export function YourTurn({
   sandboxMode = false,
 }: YourTurnProps) {
   const { t, formatTime } = useI18n();
+  const ticketNumber =
+    typeof ticket.ticket_number === 'string' || typeof ticket.ticket_number === 'number'
+      ? String(ticket.ticket_number)
+      : '';
   const [deskName, setDeskName] = useState(initialDeskName || t('your desk'));
   const [countdown, setCountdown] = useState(() => calcRemaining(ticket.called_at));
   const [calledAt, setCalledAt] = useState(ticket.called_at);
@@ -394,7 +398,7 @@ export function YourTurn({
           try {
             await reg.showNotification(t('Your Turn!'), {
               body: t('Ticket {number} — Please go to {deskName}', {
-                number: ticket.ticket_number,
+                number: ticketNumber,
                 deskName,
               }),
               icon: '/icon-192x192.png',
@@ -425,7 +429,7 @@ export function YourTurn({
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [sandboxMode, ticket.id, ticket.ticket_number, deskName, calledAt]);
+  }, [sandboxMode, ticket.id, ticketNumber, deskName, calledAt]);
 
   useEffect(() => {
     if (sandboxMode) return;
@@ -500,7 +504,7 @@ export function YourTurn({
           existing.forEach((notification) => notification.close());
           await reg.showNotification(t('Your Turn!'), {
             body: t('Ticket {number} — Please go to {deskName}', {
-              number: ticket.ticket_number,
+              number: ticketNumber,
               deskName,
             }),
             icon: '/icon-192x192.png',
@@ -515,7 +519,7 @@ export function YourTurn({
         }
       });
     }
-  }, [sandboxMode, calledAt, ticket.ticket_number, ticket.id, deskName]);
+  }, [sandboxMode, calledAt, ticketNumber, ticket.id, deskName]);
 
   const backgroundClass = {
     green: 'from-[#1f8758] via-[#1a6f49] to-[#0d4d32]',
@@ -566,7 +570,7 @@ export function YourTurn({
 
           <div className="flex flex-col items-end gap-2">
             <div className="rounded-full border border-white/15 bg-white/14 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-white/88">
-              {t('Ticket {number}', { number: ticket.ticket_number })}
+              {t('Ticket {number}', { number: ticketNumber })}
             </div>
             <div className="flex items-center gap-2">
               <QueueActionPill
@@ -632,7 +636,7 @@ export function YourTurn({
                 </div>
                 <div>
                   <p className="text-xs font-medium text-white/55">{t('What to show')}</p>
-                  <p className="text-base font-semibold text-white">{t('Ticket {number}', { number: ticket.ticket_number })}</p>
+                  <p className="text-base font-semibold text-white">{t('Ticket {number}', { number: ticketNumber })}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

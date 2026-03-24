@@ -169,6 +169,10 @@ export function QueueStatus({
   sandbox,
 }: QueueStatusProps) {
   const { t, formatTime } = useI18n();
+  const ticketNumber =
+    typeof initialTicket.ticket_number === 'string' || typeof initialTicket.ticket_number === 'number'
+      ? String(initialTicket.ticket_number)
+      : '';
   const sandboxMode = Boolean(sandbox?.enabled);
   // Build display hierarchy: Organization > Office/Branch > Service
   const businessName = organizationName || officeName || t('Business');
@@ -593,8 +597,8 @@ export function QueueStatus({
         }
         detail={
           stopOutcome === 'left_queue'
-            ? t('Ticket {ticketNumber} is no longer active in line.', { ticketNumber: ticket.ticket_number })
-            : t('Ticket {ticketNumber} no longer has live updates on this device.', { ticketNumber: ticket.ticket_number })
+            ? t('Ticket {ticketNumber} is no longer active in line.', { ticketNumber })
+            : t('Ticket {ticketNumber} no longer has live updates on this device.', { ticketNumber })
         }
         onResume={undefined}
       />
@@ -621,7 +625,7 @@ export function QueueStatus({
       <QueueSessionEnded
         title={statusMessage.title}
         description={statusMessage.description}
-        detail={t('Ticket {number}', { number: ticket.ticket_number })}
+        detail={t('Ticket {number}', { number: ticketNumber })}
       />
     );
   }
