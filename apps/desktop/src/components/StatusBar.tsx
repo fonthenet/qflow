@@ -164,16 +164,28 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
   const renderUpdateBadge = () => {
     if (!session) return null;
 
+    if (updateStatus.status === 'idle') {
+      return (
+        <button className="update-badge neutral" onClick={handleCheckForUpdates}>
+          {t('Check for Updates')}
+        </button>
+      );
+    }
+
     if (updateStatus.status === 'downloaded') {
       return (
-        <button className="update-badge ready" onClick={handleInstallUpdate}>
+        <button className="update-badge ready" onClick={handleInstallUpdate} title={updateStatus.message ?? undefined}>
           {t('Restart to update')}
         </button>
       );
     }
 
     if (updateStatus.status === 'checking') {
-      return <span className="update-badge neutral">{t('Checking for updates...')}</span>;
+      return (
+        <span className="update-badge info" title={updateStatus.message ?? undefined}>
+          {t('Checking for updates...')}
+        </span>
+      );
     }
 
     if (updateStatus.status === 'no_update') {
@@ -186,7 +198,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
 
     if (updateStatus.status === 'available' || updateStatus.status === 'downloading') {
       return (
-        <span className="update-badge info">
+        <span className="update-badge info" title={updateStatus.message ?? undefined}>
           {updateStatus.progress !== null && updateStatus.progress > 0
             ? t('Downloading update ({progress}%)', { progress: updateStatus.progress })
             : t('A new version is downloading...')}

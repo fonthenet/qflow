@@ -119,6 +119,10 @@ contextBridge.exposeInMainWorld('qf', {
     getLocalIP: () => ipcRenderer.invoke('kiosk:local-ip'),
   },
 
+  links: {
+    getPublic: () => ipcRenderer.invoke('links:public'),
+  },
+
   // Org branding
   org: {
     getBranding: () => ipcRenderer.invoke('org:branding'),

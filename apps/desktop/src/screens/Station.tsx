@@ -562,6 +562,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Derived data ────────────────────────────────────────────────
 
   const [kioskUrl, setKioskUrl] = useState<string | null>(null);
+  const [publicLinks, setPublicLinks] = useState<{ kioskUrl: string | null; displayUrl: string | null }>({
+    kioskUrl: null,
+    displayUrl: null,
+  });
   const [deviceStatuses, setDeviceStatuses] = useState<any[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(380);
 
@@ -615,6 +619,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   useEffect(() => {
     window.qf.kiosk?.getUrl?.().then((url: string | null) => setKioskUrl(url));
+    window.qf.links?.getPublic?.()
+      .then((links: { kioskUrl: string | null; displayUrl: string | null } | null | undefined) => {
+        setPublicLinks({
+          kioskUrl: links?.kioskUrl ?? null,
+          displayUrl: links?.displayUrl ?? null,
+        });
+      })
+      .catch(() => {
+        setPublicLinks({ kioskUrl: null, displayUrl: null });
+      });
   }, []);
 
   // Ping as station device + check all device statuses
@@ -1183,8 +1197,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               {t('Local Network')}
             </div>
             {[
-              { label: t('Kiosk (take tickets)'), url: kioskUrl, icon: '🎫' },
-              { label: t('Display (waiting room TV)'), url: kioskUrl.replace('/kiosk', '/display'), icon: '📺' },
+              {
+                label: t('Kiosk (take tickets)'),
+                localUrl: kioskUrl,
+                publicUrl: publicLinks.kioskUrl,
+                icon: '🎫',
+              },
+              {
+                label: t('Display (waiting room TV)'),
+                localUrl: kioskUrl.replace('/kiosk', '/display'),
+                publicUrl: publicLinks.displayUrl,
+                icon: '📺',
+              },
             ].map((item) => (
               <div key={item.label} style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
@@ -1195,10 +1219,31 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
                   }}
                   title={t('Click to copy')}
-                  onClick={() => navigator.clipboard?.writeText(item.url)}
+                  onClick={() => navigator.clipboard?.writeText(item.localUrl)}
                 >
-                  {getDisplayUrlLabel(item.url)}
+                  {getDisplayUrlLabel(item.localUrl)}
                 </div>
+                {item.publicUrl ? (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      background: 'var(--surface2)',
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: 'var(--primary)',
+                      wordBreak: 'break-all',
+                      userSelect: 'all',
+                      cursor: 'pointer',
+                    }}
+                    title={t('Click to copy')}
+                    onClick={() => navigator.clipboard?.writeText(item.publicUrl!)}
+                  >
+                    {getDisplayUrlLabel(item.publicUrl)}
+                  </div>
+                ) : null}
               </div>
             ))}
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>

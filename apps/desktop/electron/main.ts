@@ -363,6 +363,84 @@ function getSessionScopedKioskUrl() {
   }
 }
 
+function slugifyOfficeName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function getOfficePublicSlug(office: { id?: string | null; name?: string | null; settings?: unknown }) {
+  const settings =
+    office.settings && typeof office.settings === 'object' && !Array.isArray(office.settings)
+      ? (office.settings as Record<string, unknown>)
+      : {};
+  const configuredSlug = settings.platform_office_slug;
+  const baseSlug =
+    typeof configuredSlug === 'string' && configuredSlug.trim().length > 0
+      ? configuredSlug.trim()
+      : slugifyOfficeName(office.name ?? '');
+
+  return office.id ? `${baseSlug}--${office.id}` : baseSlug;
+}
+
+async function getSessionScopedPublicLinks() {
+  try {
+    const db = getDB();
+    const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+    const officeId =
+      typeof session?.office_id === 'string' && session.office_id.length > 0
+        ? session.office_id
+        : Array.isArray(session?.office_ids) && typeof session.office_ids[0] === 'string'
+          ? session.office_ids[0]
+          : null;
+
+    if (!officeId) return { kioskUrl: null, displayUrl: null };
+
+    const office = db
+      .prepare('SELECT id, name, settings FROM offices WHERE id = ? LIMIT 1')
+      .get(officeId) as { id?: string; name?: string; settings?: unknown } | undefined;
+
+    if (!office?.name) return { kioskUrl: null, displayUrl: null };
+
+    const kioskUrl = `${CONFIG.CLOUD_URL}/kiosk/${getOfficePublicSlug(office)}`;
+    let displayUrl: string | null = null;
+
+    try {
+      const authToken =
+        typeof session?.access_token === 'string' && session.access_token.length > 0
+          ? session.access_token
+          : SUPABASE_ANON_KEY;
+      const headers: Record<string, string> = {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${authToken}`,
+      };
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/display_screens?office_id=eq.${officeId}&is_active=is.true&select=screen_token&order=created_at.desc&limit=1`,
+        {
+          headers,
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+
+      if (response.ok) {
+        const screens = await response.json();
+        const token = screens?.[0]?.screen_token;
+        if (typeof token === 'string' && token.length > 0) {
+          displayUrl = `${CONFIG.CLOUD_URL}/display/${token}`;
+        }
+      }
+    } catch {
+      // Public display link is optional when cloud metadata is unavailable.
+    }
+
+    return { kioskUrl, displayUrl };
+  } catch {
+    return { kioskUrl: null, displayUrl: null };
+  }
+}
+
 // ── IPC Handlers ──────────────────────────────────────────────────────
 
 function setupIPC() {
@@ -372,6 +450,7 @@ function setupIPC() {
   ipcMain.handle('get-config', () => ({
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
+    APP_VERSION: CONFIG.APP_VERSION,
   }));
 
   // ── Offline Queue Operations ──────────────────────────────────────
@@ -809,6 +888,7 @@ function setupIPC() {
 
   ipcMain.handle('kiosk:url', () => getSessionScopedKioskUrl());
   ipcMain.handle('kiosk:local-ip', () => getLocalIP());
+  ipcMain.handle('links:public', () => getSessionScopedPublicLinks());
 
   ipcMain.handle('org:branding', async () => {
     // Try to get org name + logo from Supabase
