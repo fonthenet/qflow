@@ -32,6 +32,21 @@ interface UseRealtimeTicketReturn {
   refresh: () => Promise<void>;
 }
 
+function normalizeQueuePosition(data: unknown): number | null {
+  if (typeof data === 'number' && Number.isFinite(data)) {
+    return data;
+  }
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const rawPosition = (data as { position?: unknown }).position;
+    if (typeof rawPosition === 'number' && Number.isFinite(rawPosition)) {
+      return rawPosition;
+    }
+  }
+
+  return null;
+}
+
 export function useRealtimeTicket({
   ticketId,
   qrToken,
@@ -55,10 +70,8 @@ export function useRealtimeTicket({
       const { data } = await supabase.rpc('get_queue_position', {
         p_ticket_id: ticketId,
       });
-      if (data !== null && data !== undefined) {
-        setPosition(data);
-        setLastSyncedAt(new Date());
-      }
+      setPosition(normalizeQueuePosition(data));
+      setLastSyncedAt(new Date());
     } catch {
       // Silently handle - position will remain stale
     }

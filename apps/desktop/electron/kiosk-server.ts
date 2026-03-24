@@ -333,6 +333,26 @@ export function stopKioskServer() {
   server = null;
 }
 
+function getSessionDefaultOffice() {
+  const db = getDB();
+  try {
+    const session = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    if (!session?.value) return null;
+    const parsed = JSON.parse(session.value);
+    const officeId =
+      typeof parsed?.office_id === 'string' && parsed.office_id.length > 0
+        ? parsed.office_id
+        : Array.isArray(parsed?.office_ids) && typeof parsed.office_ids[0] === 'string'
+          ? parsed.office_ids[0]
+          : null;
+
+    if (!officeId) return null;
+    return db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any;
+  } catch {
+    return null;
+  }
+}
+
 // ── API Handlers ──────────────────────────────────────────────────
 
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
@@ -341,7 +361,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
 
   const office = officeId
     ? db.prepare('SELECT * FROM offices WHERE id = ?').get(officeId) as any
-    : db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
+    : getSessionDefaultOffice() ?? db.prepare('SELECT * FROM offices LIMIT 1').get() as any;
 
   if (!office) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -754,7 +774,7 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
 
   const office = officeId
     ? db.prepare("SELECT * FROM offices WHERE id = ?").get(officeId) as any
-    : db.prepare("SELECT * FROM offices LIMIT 1").get() as any;
+    : getSessionDefaultOffice() ?? db.prepare("SELECT * FROM offices LIMIT 1").get() as any;
 
   if (!office) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1717,8 +1737,10 @@ function handleStationActivity(url: URL, res: http.ServerResponse) {
 
 function handleStationKioskInfo(res: http.ServerResponse) {
   const ip = getLocalIP();
+  const office = getSessionDefaultOffice();
+  const officeIdQuery = office?.id ? `?officeId=${encodeURIComponent(office.id)}` : '';
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ kioskUrl: `http://${ip}:${localPort}/kiosk`, localIP: ip }));
+  res.end(JSON.stringify({ kioskUrl: `http://${ip}:${localPort}/kiosk${officeIdQuery}`, localIP: ip }));
 }
 
 function handleStationBranding(res: http.ServerResponse) {
