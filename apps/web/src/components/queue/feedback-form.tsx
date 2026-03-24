@@ -14,6 +14,53 @@ interface FeedbackFormProps {
   onDone?: () => Promise<void> | void;
 }
 
+function getFeedbackStorageKey(ticketId: string) {
+  return `qflo:feedback:${ticketId}`;
+}
+
+function readStoredFeedback(ticketId: string) {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getFeedbackStorageKey(ticketId));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as {
+      rating?: number;
+      comment?: string | null;
+      submitted?: boolean;
+    };
+
+    if (!parsed.submitted || typeof parsed.rating !== 'number') {
+      return null;
+    }
+
+    return {
+      rating: parsed.rating,
+      comment: parsed.comment ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function storeFeedback(ticketId: string, rating: number, comment: string) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(
+      getFeedbackStorageKey(ticketId),
+      JSON.stringify({
+        submitted: true,
+        rating,
+        comment,
+      })
+    );
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function RatingLabel({ rating, t }: { rating: number; t: (key: string) => string }) {
   if (rating === 1) return t('Poor');
   if (rating === 2) return t('Fair');
@@ -40,17 +87,27 @@ export function FeedbackForm({
   const [isFinishing, setIsFinishing] = useState(false);
 
   useEffect(() => {
+    const storedFeedback = readStoredFeedback(ticket.id);
+    if (storedFeedback) {
+      setExistingRating(storedFeedback.rating);
+      setRating(storedFeedback.rating);
+      setComment(storedFeedback.comment);
+      setIsSubmitted(true);
+    }
+
     const checkExisting = async () => {
       const supabase = createClient();
       const { data } = await supabase
         .from('feedback')
-        .select('rating')
+        .select('rating, comment')
         .eq('ticket_id', ticket.id)
         .maybeSingle();
       if (data) {
         setExistingRating(data.rating);
         setRating(data.rating);
+        setComment(data.comment ?? '');
         setIsSubmitted(true);
+        storeFeedback(ticket.id, data.rating, data.comment ?? '');
       }
     };
     void checkExisting();
@@ -75,7 +132,9 @@ export function FeedbackForm({
 
       if (insertError) throw insertError;
 
+      setExistingRating(rating);
       setIsSubmitted(true);
+      storeFeedback(ticket.id, rating, comment.trim());
     } catch {
       setError(t('Failed to submit feedback. Please try again.'));
     } finally {
