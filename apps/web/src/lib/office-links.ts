@@ -9,6 +9,11 @@ type BookingLinkOptions = {
   serviceId?: string | null;
 };
 
+export function getOfficePublicToken(office: { id?: string | null }) {
+  const rawId = typeof office.id === 'string' ? office.id.replace(/-/g, '') : '';
+  return rawId.slice(0, 16);
+}
+
 export function slugifyOfficeName(name: string) {
   return name
     .toLowerCase()
@@ -41,7 +46,11 @@ export function matchesOfficePublicSlug(office: OfficeWithSettings, officeSlug: 
 }
 
 export function buildKioskPath(office: OfficeWithSettings) {
-  return `/kiosk/${getOfficePublicSlug(office)}`;
+  return `/k/${getOfficePublicToken(office)}`;
+}
+
+export function matchesOfficePublicToken(office: { id?: string | null }, officeToken: string) {
+  return getOfficePublicToken(office) === officeToken;
 }
 
 export function buildBookingPath(office: OfficeWithSettings, options: BookingLinkOptions = {}) {

@@ -363,25 +363,9 @@ function getSessionScopedKioskUrl() {
   }
 }
 
-function slugifyOfficeName(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function getOfficePublicSlug(office: { id?: string | null; name?: string | null; settings?: unknown }) {
-  const settings =
-    office.settings && typeof office.settings === 'object' && !Array.isArray(office.settings)
-      ? (office.settings as Record<string, unknown>)
-      : {};
-  const configuredSlug = settings.platform_office_slug;
-  const baseSlug =
-    typeof configuredSlug === 'string' && configuredSlug.trim().length > 0
-      ? configuredSlug.trim()
-      : slugifyOfficeName(office.name ?? '');
-
-  return office.id ? `${baseSlug}--${office.id}` : baseSlug;
+function getOfficePublicToken(office: { id?: string | null }) {
+  const rawId = typeof office.id === 'string' ? office.id.replace(/-/g, '') : '';
+  return rawId.slice(0, 16);
 }
 
 async function getSessionScopedPublicLinks() {
@@ -404,7 +388,7 @@ async function getSessionScopedPublicLinks() {
 
     if (!office?.name) return { kioskUrl: null, displayUrl: null };
 
-    const kioskUrl = `${CONFIG.CLOUD_URL}/kiosk/${getOfficePublicSlug(office)}`;
+    const kioskUrl = `${CONFIG.CLOUD_URL}/k/${getOfficePublicToken(office)}`;
     let displayUrl: string | null = null;
 
     try {

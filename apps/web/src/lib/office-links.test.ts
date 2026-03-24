@@ -3,7 +3,9 @@ import {
   buildBookingCheckInPath,
   buildBookingPath,
   buildKioskPath,
+  getOfficePublicToken,
   getOfficePublicSlug,
+  matchesOfficePublicToken,
   matchesOfficePublicSlug,
 } from './office-links';
 
@@ -23,7 +25,9 @@ describe('office public links', () => {
   });
 
   it('builds public kiosk, booking, and check-in paths', () => {
-    expect(buildKioskPath(office)).toBe('/kiosk/main-branch-custom--office-123');
+    expect(getOfficePublicToken(office)).toBe('office123');
+    expect(matchesOfficePublicToken(office, 'office123')).toBe(true);
+    expect(buildKioskPath(office)).toBe('/k/office123');
     expect(
       buildBookingPath(office, {
         departmentId: 'dept-1',

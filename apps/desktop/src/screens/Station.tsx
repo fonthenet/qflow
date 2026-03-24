@@ -287,14 +287,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const getFriendlyPublicUrlLabel = (url: string, type: 'kiosk' | 'display') => {
     try {
       const parsed = new URL(url);
-      if (type === 'kiosk') {
-        const officeLabel = session.office_name?.trim() || 'office';
-        return `${parsed.origin}/kiosk/${officeLabel}`;
-      }
-
       const token = parsed.pathname.split('/').filter(Boolean).at(-1) ?? '';
-      const shortToken = token.length > 10 ? `${token.slice(0, 10)}...` : token;
-      return `${parsed.origin}/d/${shortToken}`;
+      return `${parsed.origin}/${type === 'kiosk' ? 'k' : 'd'}/${token}`;
     } catch {
       return getDisplayUrlLabel(url);
     }
