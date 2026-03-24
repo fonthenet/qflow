@@ -42,6 +42,21 @@ function progressPercent(position: number | null) {
   return Math.max(0.08, Math.min(0.92, (14 - Math.min(position, 14)) / 14));
 }
 
+function formatServingElapsed(seconds: number, t: (key: string, variables?: Record<string, string | number>) => string) {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  if (minutes <= 0) {
+    return t('{seconds}s', { seconds: remainingSeconds });
+  }
+
+  return t('{minutes}m {seconds}s', {
+    minutes,
+    seconds: String(remainingSeconds).padStart(2, '0'),
+  });
+}
+
 function playBuzzSound() {
   try {
     const existing = (window as unknown as Record<string, unknown>).__queueAudioCtx as AudioContext | undefined;
@@ -210,6 +225,7 @@ export function QueueStatus({
   const [stopOutcome, setStopOutcome] = useState<'left_queue' | 'cleared'>('left_queue');
   const [stopError, setStopError] = useState<string | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
+  const [servingElapsedSeconds, setServingElapsedSeconds] = useState(0);
   const notificationRequested = useRef(false);
   const lastBuzzNotificationId = useRef<string | null>(null);
   const buzzTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -422,6 +438,28 @@ export function QueueStatus({
       if (buzzTimerRef.current) clearInterval(buzzTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (ticket.status !== 'serving') {
+      setServingElapsedSeconds(0);
+      return;
+    }
+
+    const startedAt = ticket.serving_started_at ?? ticket.called_at;
+    if (!startedAt) {
+      setServingElapsedSeconds(0);
+      return;
+    }
+
+    const startedAtMs = new Date(startedAt).getTime();
+    const tick = () => {
+      setServingElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000)));
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [ticket.called_at, ticket.serving_started_at, ticket.status]);
 
   useEffect(() => {
     if (sandboxMode) {
@@ -713,7 +751,7 @@ export function QueueStatus({
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 <WaitingMetric
                   label={t('Ticket')}
-                  value={ticket.ticket_number}
+                  value={ticketNumber}
                   detail={t('Keep this visible in case the team asks for your number again.')}
                   accentClass="bg-sky-400/15 text-sky-100"
                 />
@@ -722,6 +760,12 @@ export function QueueStatus({
                   value={deskName ?? t('Desk')}
                   detail={t('This is the current service point handling your visit.')}
                   accentClass="bg-emerald-400/15 text-emerald-100"
+                />
+                <WaitingMetric
+                  label={t('Time spent')}
+                  value={formatServingElapsed(servingElapsedSeconds, t)}
+                  detail={t('Service time since the desk started helping you.')}
+                  accentClass="bg-amber-400/15 text-amber-100"
                 />
               </div>
             </div>
