@@ -473,7 +473,7 @@ export function KioskView({
         background: `linear-gradient(180deg, #f8fafc 0%, #ffffff 18%, ${themeColor}0a 100%)`,
       }}
     >
-      <div className="fixed right-4 top-4 z-40 sm:right-6 sm:top-6">
+      <div className="fixed right-4 top-6 z-40 sm:right-6 sm:top-6">
         <LanguageSwitcher />
       </div>
       {sandboxMode ? (
@@ -484,7 +484,7 @@ export function KioskView({
         </div>
       ) : null}
       <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-4xl px-4 py-8 text-center sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl px-4 pb-8 pt-16 text-center sm:px-6 sm:pt-8 lg:px-8">
           {hasLogo ? (
             <div className="mb-5 flex justify-center">
               <img
