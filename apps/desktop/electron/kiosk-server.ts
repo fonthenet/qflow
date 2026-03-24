@@ -445,27 +445,6 @@ function resolveRequestedOffice(url: URL) {
   return db.prepare('SELECT * FROM offices WHERE id = ?').get(sessionOfficeIds.primaryOfficeId) as any;
 }
 
-async function getCloudDisplayScreenToken(officeId: string) {
-  if (!isCloudReachable) return null;
-
-  try {
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/display_screens?office_id=eq.${officeId}&is_active=eq.true&select=screen_token&order=name.asc&limit=1`,
-      { headers, signal: AbortSignal.timeout(3000) }
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const screens = await response.json();
-    return typeof screens?.[0]?.screen_token === 'string' ? screens[0].screen_token : null;
-  } catch {
-    return null;
-  }
-}
-
 // ── API Handlers ──────────────────────────────────────────────────
 
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
@@ -1108,22 +1087,6 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
 // ── Display Page (Waiting Room TV) ────────────────────────────────
 
 async function serveDisplayPage(url: URL, res: http.ServerResponse) {
-  const requestedOffice = resolveRequestedOffice(url);
-  const officeId = requestedOffice?.id;
-  const screenToken = officeId ? await getCloudDisplayScreenToken(officeId) : null;
-
-  if (screenToken) {
-    const remoteDisplayUrl = `${CLOUD_URL}/display/${encodeURIComponent(screenToken)}`;
-    res.writeHead(302, {
-      Location: remoteDisplayUrl,
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-      Pragma: 'no-cache',
-      Expires: '0',
-    });
-    res.end();
-    return;
-  }
-
   const ip = getLocalIP();
   const apiBase = `http://${ip}:${localPort}`;
 

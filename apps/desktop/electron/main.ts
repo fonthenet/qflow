@@ -65,15 +65,66 @@ function buildApplicationMenu() {
   }));
 
   const menu = Menu.buildFromTemplate([
-    { role: 'fileMenu', label: translate(currentLocale, 'File') },
-    { role: 'editMenu', label: translate(currentLocale, 'Edit') },
-    { role: 'viewMenu', label: translate(currentLocale, 'View') },
-    { role: 'windowMenu', label: translate(currentLocale, 'Window') },
+    {
+      label: translate(currentLocale, 'File'),
+      submenu: [
+        { label: translate(currentLocale, 'Quit'), click: () => { mainWindow?.destroy(); app.quit(); } },
+      ],
+    },
+    {
+      label: translate(currentLocale, 'Edit'),
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: translate(currentLocale, 'View'),
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: translate(currentLocale, 'Window'),
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { role: 'close' },
+      ],
+    },
     {
       label: translate(currentLocale, 'Language'),
       submenu: languageSubmenu,
     },
-    { role: 'help', label: translate(currentLocale, 'Help') },
+    {
+      label: translate(currentLocale, 'Help'),
+      submenu: [
+        {
+          label: translate(currentLocale, 'Check for Updates'),
+          click: () => autoUpdater.checkForUpdates(),
+        },
+        {
+          label: translate(currentLocale, 'Open Station'),
+          click: () => {
+            mainWindow?.show();
+            mainWindow?.focus();
+          },
+        },
+      ],
+    },
   ]);
 
   Menu.setApplicationMenu(menu);

@@ -330,8 +330,12 @@ function ScreenSettingsPanel({ screen, departments, onClose, onSaved }: ScreenSe
   // Settings state
   const [name, setName] = useState(screen.name);
   const [layout, setLayout] = useState<string>(screen.layout ?? s.layout ?? 'list');
-  const [theme, setTheme] = useState<string>(s.theme ?? 'dark');
-  const [bgColor, setBgColor] = useState<string>(s.bg_color ?? '#0a1628');
+  const [theme, setTheme] = useState<string>('light');
+  const [bgColor, setBgColor] = useState<string>(
+    typeof s.bg_color === 'string' && s.bg_color !== '#0a1628' && s.bg_color !== '#020617'
+      ? s.bg_color
+      : '#f8fafc'
+  );
   const [accentColor, setAccentColor] = useState<string>(s.accent_color ?? '#3b82f6');
   const [textSize, setTextSize] = useState<string>(s.text_size ?? 'md');
   const [showClock, setShowClock] = useState<boolean>(s.show_clock ?? true);
@@ -359,7 +363,7 @@ function ScreenSettingsPanel({ screen, departments, onClose, onSaved }: ScreenSe
       const settings = {
         customized: true,
         layout,
-        theme,
+        theme: 'light',
         bg_color: bgColor,
         accent_color: accentColor,
         text_size: textSize,
@@ -445,43 +449,8 @@ function ScreenSettingsPanel({ screen, departments, onClose, onSaved }: ScreenSe
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground">{t('Appearance')}</h3>
 
-            {/* Theme Mode */}
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-2">
-                {t('Theme Mode')}
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    setTheme('dark');
-                    setBgColor('#0a1628');
-                    setAccentColor('#3b82f6');
-                  }}
-                  className={`rounded-lg border px-3 py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
-                    theme === 'dark'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:bg-muted'
-                  }`}
-                >
-                  <span className="inline-block h-4 w-4 rounded-full bg-[#0a1628] border border-gray-400" />
-                  {t('Dark')}
-                </button>
-                <button
-                  onClick={() => {
-                    setTheme('light');
-                    setBgColor('#f8fafc');
-                    setAccentColor('#2563eb');
-                  }}
-                  className={`rounded-lg border px-3 py-3 text-sm font-medium transition-colors flex items-center gap-2 ${
-                    theme === 'light'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:bg-muted'
-                  }`}
-                >
-                  <span className="inline-block h-4 w-4 rounded-full bg-[#f8fafc] border border-gray-300" />
-                  {t('Light')}
-                </button>
-              </div>
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+              {t('Display theme is standardized to the light board experience.')}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

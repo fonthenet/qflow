@@ -49,6 +49,8 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Join Links & QR': 'Liens d’accès et QR',
     'Lobby Kiosk': 'Borne d’accueil',
     'Display Screens': 'Écrans d’affichage',
+    'Display theme is standardized to the light board experience.':
+      'Le thème d’affichage est désormais standardisé sur la version claire du tableau.',
     'Reports': 'Rapports',
     'Business Overview': 'Aperçu de l’entreprise',
     'Activity Log': 'Journal d’activité',
@@ -528,6 +530,8 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Join Links & QR': 'روابط الانضمام ورموز QR',
     'Lobby Kiosk': 'شاشة الكشك',
     'Display Screens': 'شاشات العرض',
+    'Display theme is standardized to the light board experience.':
+      'تم توحيد مظهر شاشة العرض على النسخة الفاتحة من لوحة العرض.',
     'Reports': 'التقارير',
     'Business Overview': 'نظرة عامة على النشاط',
     'Activity Log': 'سجل النشاط',

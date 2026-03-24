@@ -48,7 +48,7 @@ export function DisplayBoard({
 
   // Extract settings with defaults
   const s: ScreenSettings = displayScreen.settings ?? {};
-  const theme = s.theme ?? 'dark';
+  const theme = s.theme ?? 'light';
   const isLight = theme === 'light';
   const bgColor = s.bg_color ?? (isLight ? '#f8fafc' : '#0a1628');
   const accentColor = s.accent_color ?? (isLight ? '#2563eb' : '#3b82f6');

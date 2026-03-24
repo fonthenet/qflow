@@ -1071,7 +1071,16 @@ export async function createDisplayScreen(officeId: string, name: string) {
       screen_token: screenToken,
       layout: platformConfig.experienceProfile.display.defaultLayout,
       is_active: true,
-      settings: {},
+      settings: {
+        theme: 'light',
+        bg_color: '#f8fafc',
+        accent_color: '#2563eb',
+        show_clock: platformConfig.experienceProfile.display.showClock,
+        show_next_up: platformConfig.experienceProfile.display.showNextUp,
+        show_department_breakdown:
+          platformConfig.experienceProfile.display.showDepartmentBreakdown,
+        announcement_sound: platformConfig.experienceProfile.display.announcementSound,
+      },
     })
     .select()
     .single();

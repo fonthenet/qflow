@@ -439,7 +439,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
       display: {
         defaultLayout: 'department_split',
-        theme: 'dark',
+        theme: 'light',
         showClock: true,
         showNextUp: true,
         showDepartmentBreakdown: true,
@@ -501,13 +501,13 @@ export const industryTemplates: IndustryTemplate[] = [
           ],
           displayScreens: [
             starterDisplay('Main Hall Screen', 'department_split', {
-              theme: 'dark',
+              theme: 'light',
               show_clock: true,
               show_next_up: true,
               zone: 'main_lobby',
             }),
             starterDisplay('Parcel Pickup Screen', 'list', {
-              theme: 'dark',
+              theme: 'light',
               show_department_breakdown: false,
               zone: 'parcel_wall',
             }),
@@ -646,7 +646,7 @@ export const industryTemplates: IndustryTemplate[] = [
       },
       display: {
         defaultLayout: 'list',
-        theme: 'dark',
+        theme: 'light',
         showClock: true,
         showNextUp: false,
         showDepartmentBreakdown: true,
@@ -708,7 +708,7 @@ export const industryTemplates: IndustryTemplate[] = [
           ],
           displayScreens: [
             starterDisplay('Lobby Display', 'list', {
-              theme: 'dark',
+              theme: 'light',
               show_next_up: false,
               privacy_mode: 'ticket_only',
             }),
