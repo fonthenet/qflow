@@ -1317,49 +1317,52 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       }
       .stat-box {
         padding: 10px 10px;
+        min-height: 72px;
         border-right: 1px solid #e2e8f0;
         border-bottom: 1px solid #e2e8f0;
       }
       .stat-box:nth-child(2n) { border-right: none; }
       .stat-box:nth-last-child(-n+2) { border-bottom: none; }
-      .stat-num { font-size: 28px; }
-      .stat-label { font-size: 11px; letter-spacing: 1.2px; }
+      .stat-num { font-size: 24px; line-height: 1; }
+      .stat-label { font-size: 10px; letter-spacing: 1.1px; margin-top: 3px; }
 
       .content { flex-direction: column; min-height: 0; }
       .now-serving-panel {
-        flex: 0 0 46vh;
+        flex: 0 0 32vh;
         border-right: none;
         border-bottom: 2px solid #e2e8f0;
         min-height: 0;
       }
       .queue-panel { flex: 1 1 auto; min-height: 0; }
       .panel-title { padding: 14px 14px 12px; font-size: 15px; letter-spacing: 2px; }
-      .serving-list { padding: 10px 10px 14px; overflow: auto; }
+      .serving-list { padding: 10px 10px 14px; overflow: auto; gap: 8px; }
       .serving-row {
         flex-direction: column;
         align-items: flex-start;
         gap: 10px;
-        padding: 16px 14px;
+        padding: 14px 14px;
+        border-radius: 14px;
       }
-      .serving-row .ticket-num { font-size: 52px; min-width: auto; }
-      .serving-row .arrow { font-size: 24px; margin: 0; }
-      .serving-row .desk-name { font-size: 22px; }
-      .serving-row .dept-name { font-size: 14px; }
-      .serving-row .status-pill { font-size: 14px; }
-      .countdown { font-size: 24px; min-width: auto; text-align: left; }
-      .no-active { font-size: 20px; padding: 0 20px; text-align: center; }
+      .serving-row.called, .serving-row.serving { border-width: 2px; }
+      .serving-row .ticket-num { font-size: 42px; min-width: auto; line-height: 1; letter-spacing: -2px; }
+      .serving-row .arrow { font-size: 18px; margin: 0; }
+      .serving-row .desk-name { font-size: 18px; }
+      .serving-row .dept-name { font-size: 12px; }
+      .serving-row .status-pill { font-size: 12px; padding: 6px 14px; }
+      .countdown { font-size: 22px; min-width: auto; text-align: left; }
+      .no-active { font-size: 22px; padding: 0 20px; text-align: center; }
 
       .dept-tabs { padding: 0 10px; }
       .dept-tab { padding: 12px 16px; font-size: 14px; }
       .dept-tab .count { font-size: 12px; }
       .queue-list { padding: 10px 10px 16px; }
       .queue-row { padding: 12px 12px; }
-      .queue-row .pos { font-size: 18px; min-width: 34px; }
-      .queue-row .q-ticket { font-size: 24px; min-width: 92px; }
-      .queue-row .q-name { font-size: 15px; }
-      .queue-row .q-wait { font-size: 14px; }
+      .queue-row .pos { font-size: 18px; min-width: 28px; }
+      .queue-row .q-ticket { font-size: 22px; min-width: 88px; }
+      .queue-row .q-name { font-size: 14px; }
+      .queue-row .q-wait { font-size: 12px; margin-left: 8px; }
       .queue-row .q-badge { font-size: 11px; padding: 3px 8px; }
-      .queue-empty { padding: 32px 18px; font-size: 18px; }
+      .queue-empty { padding: 22px 18px; font-size: 16px; }
     }
   </style>
 </head>

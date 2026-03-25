@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 interface ScreenSettings {
   announcement_sound?: boolean;
@@ -169,6 +170,7 @@ export function DisplayBoard({
   const isMobile = viewportWidth < 768;
   const isTablet = viewportWidth >= 768 && viewportWidth < 1100;
   const logoSize = isMobile ? 44 : 56;
+  const nowServingPaneHeight = isMobile ? '32vh' : undefined;
 
   return (
     <div
@@ -270,42 +272,44 @@ export function DisplayBoard({
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-start' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 14px',
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 700,
-                background: '#d1fae5',
-                color: '#065f46',
-              }}
-            >
-              <span
+          <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 12, width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'space-between' : 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: 10 }}>
+              <div
                 style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: '#22c55e',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 14px',
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: '#d1fae5',
+                  color: '#065f46',
                 }}
-              />
-              Connected
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: '#22c55e',
+                  }}
+                />
+                Connected
+              </div>
+              <LanguageSwitcher />
             </div>
-            <div style={{ textAlign: isMobile ? 'left' : 'right' }}>
-              <div style={{ fontSize: isMobile ? 28 : 42, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
+            <div style={{ textAlign: 'right', marginLeft: isMobile ? 'auto' : 0 }}>
+              <div style={{ fontSize: isMobile ? 24 : 42, fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>
                 {currentTime.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
-                  second: '2-digit',
+                  second: isMobile ? undefined : '2-digit',
                 })}
               </div>
-              <div style={{ fontSize: isMobile ? 12 : 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
+              <div style={{ fontSize: isMobile ? 11 : 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
                 {currentTime.toLocaleDateString([], {
                   weekday: 'long',
-                  year: 'numeric',
                   month: 'long',
                   day: 'numeric',
                 })}
@@ -332,21 +336,24 @@ export function DisplayBoard({
               key={stat.label}
               style={{
                 padding: isMobile ? '12px 10px' : '12px 24px',
+                minHeight: isMobile ? 72 : 96,
                 textAlign: 'center',
                 borderRight:
                   isMobile ? (index % 2 === 0 ? '1px solid #e2e8f0' : 'none') : index < 3 ? '1px solid #e2e8f0' : 'none',
                 borderBottom: isMobile && index < 2 ? '1px solid #e2e8f0' : 'none',
               }}
             >
-              <div style={{ fontSize: isMobile ? 30 : 36, fontWeight: 800, color: stat.color }}>{stat.value}</div>
+              <div style={{ fontSize: isMobile ? 24 : 36, fontWeight: 800, color: stat.color, lineHeight: 1 }}>
+                {stat.value}
+              </div>
               <div
                 style={{
-                  fontSize: isMobile ? 11 : 14,
+                  fontSize: isMobile ? 10 : 14,
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  letterSpacing: isMobile ? 1.3 : 2,
+                  letterSpacing: isMobile ? 1.1 : 2,
                   color: '#94a3b8',
-                  marginTop: 4,
+                  marginTop: isMobile ? 3 : 4,
                 }}
               >
                 {stat.label}
@@ -366,7 +373,7 @@ export function DisplayBoard({
         >
           <div
             style={{
-              flex: isMobile ? '0 0 46vh' : 55,
+              flex: isMobile ? `0 0 ${nowServingPaneHeight}` : 55,
               display: 'flex',
               flexDirection: 'column',
               borderRight: isMobile ? 'none' : '2px solid #e2e8f0',
@@ -395,7 +402,7 @@ export function DisplayBoard({
                 padding: isMobile ? '12px 12px 14px' : '16px 20px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: isMobile ? 10 : 12,
+                gap: isMobile ? 8 : 12,
               }}
             >
               {visibleActiveTickets.length === 0 ? (
@@ -406,8 +413,9 @@ export function DisplayBoard({
                     justifyContent: 'center',
                     flex: 1,
                     color: '#cbd5e1',
-                    fontSize: 28,
+                    fontSize: isMobile ? 22 : 28,
                     fontWeight: 600,
+                    textAlign: 'center',
                   }}
                 >
                   Waiting for customers...
@@ -429,30 +437,31 @@ export function DisplayBoard({
                     display: 'flex',
                     alignItems: isMobile ? 'flex-start' : 'center',
                     flexDirection: isMobile ? 'column' : 'row',
-                    gap: isMobile ? 12 : 0,
-                    padding: isMobile ? '18px 16px' : '24px 28px',
-                    borderRadius: 16,
+                    gap: isMobile ? 10 : 0,
+                    padding: isMobile ? '14px 14px' : '24px 28px',
+                    borderRadius: isMobile ? 14 : 16,
                     background: ticket.status === 'called' ? '#eff6ff' : '#f0fdf4',
-                    border: `3px solid ${ticket.status === 'called' ? '#bfdbfe' : '#bbf7d0'}`,
+                    border: `${isMobile ? 2 : 3}px solid ${ticket.status === 'called' ? '#bfdbfe' : '#bbf7d0'}`,
                       }}
                     >
                       <div
                         style={{
-                          fontSize: isMobile ? 54 : 72,
+                          fontSize: isMobile ? 42 : 72,
                           fontWeight: 900,
-                          letterSpacing: -3,
+                          letterSpacing: isMobile ? -2 : -3,
                           minWidth: isMobile ? 'auto' : 220,
                           color: ticket.status === 'called' ? '#1e40af' : '#166534',
+                          lineHeight: 1,
                         }}
                       >
                         {ticket.ticket_number}
                       </div>
-                      <div style={{ fontSize: isMobile ? 24 : 36, color: '#94a3b8', margin: isMobile ? '0' : '0 20px' }}>&rarr;</div>
+                      <div style={{ fontSize: isMobile ? 18 : 36, color: '#94a3b8', margin: isMobile ? '0' : '0 20px' }}>&rarr;</div>
                       <div style={{ flex: 1, width: isMobile ? '100%' : 'auto' }}>
-                        <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, color: '#334155' }}>
+                        <div style={{ fontSize: isMobile ? 18 : 28, fontWeight: 700, color: '#334155' }}>
                           {ticket.desk?.display_name || ticket.desk?.name || 'Desk'}
                         </div>
-                        <div style={{ fontSize: isMobile ? 14 : 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
+                        <div style={{ fontSize: isMobile ? 12 : 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
                           {ticket.department?.name || ticket.service?.name || ''}
                         </div>
                       </div>
@@ -460,7 +469,7 @@ export function DisplayBoard({
                         <>
                           <div
                             style={{
-                              fontSize: isMobile ? 26 : 32,
+                              fontSize: isMobile ? 22 : 32,
                               fontWeight: 900,
                               minWidth: 70,
                               textAlign: isMobile ? 'left' : 'center',
@@ -472,9 +481,9 @@ export function DisplayBoard({
                           </div>
                           <div
                             style={{
-                              padding: '8px 20px',
+                              padding: isMobile ? '6px 14px' : '8px 20px',
                               borderRadius: 24,
-                              fontSize: isMobile ? 14 : 16,
+                              fontSize: isMobile ? 12 : 16,
                               fontWeight: 800,
                               textTransform: 'uppercase',
                               letterSpacing: 1,
@@ -488,9 +497,9 @@ export function DisplayBoard({
                       ) : (
                         <div
                           style={{
-                            padding: '8px 20px',
+                            padding: isMobile ? '6px 14px' : '8px 20px',
                             borderRadius: 24,
-                            fontSize: isMobile ? 14 : 16,
+                            fontSize: isMobile ? 12 : 16,
                             fontWeight: 800,
                             textTransform: 'uppercase',
                             letterSpacing: 1,
@@ -536,9 +545,9 @@ export function DisplayBoard({
                 <div
                   style={{
                     textAlign: 'center',
-                    padding: isMobile ? 32 : 60,
+                    padding: isMobile ? 22 : 60,
                     color: '#cbd5e1',
-                    fontSize: isMobile ? 18 : 22,
+                    fontSize: isMobile ? 16 : 22,
                     fontWeight: 600,
                   }}
                 >
@@ -554,7 +563,7 @@ export function DisplayBoard({
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        padding: isMobile ? '14px 14px' : '16px 20px',
+                        padding: isMobile ? '12px 12px' : '16px 20px',
                         borderRadius: 12,
                         marginBottom: 6,
                         background: '#fff',
@@ -567,7 +576,7 @@ export function DisplayBoard({
                           fontSize: isMobile ? 18 : isNext ? 24 : 22,
                           fontWeight: 900,
                           color: isNext ? '#92400e' : '#94a3b8',
-                          minWidth: isMobile ? 34 : 50,
+                          minWidth: isMobile ? 28 : 50,
                           textAlign: 'center',
                         }}
                       >
@@ -575,10 +584,10 @@ export function DisplayBoard({
                       </div>
                       <div
                         style={{
-                          fontSize: isMobile ? 24 : 32,
+                          fontSize: isMobile ? 22 : 32,
                           fontWeight: 900,
                           color: '#1e293b',
-                          minWidth: isMobile ? 96 : 140,
+                          minWidth: isMobile ? 88 : 140,
                           letterSpacing: -1,
                         }}
                       >
@@ -587,7 +596,7 @@ export function DisplayBoard({
                       <div
                         style={{
                           flex: 1,
-                          fontSize: isMobile ? 15 : 18,
+                          fontSize: isMobile ? 14 : 18,
                           color: '#64748b',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -596,7 +605,7 @@ export function DisplayBoard({
                       >
                         {customerName}
                         {ticket.department?.name ? (
-                          <span style={{ color: '#94a3b8', fontSize: 13 }}> &middot; {ticket.department.name}</span>
+                          <span style={{ color: '#94a3b8', fontSize: isMobile ? 11 : 13 }}> &middot; {ticket.department.name}</span>
                         ) : null}
                       </div>
                       {ticket.priority > 1 ? (
@@ -629,7 +638,7 @@ export function DisplayBoard({
                           Booked
                         </span>
                       ) : null}
-                      <div style={{ fontSize: isMobile ? 14 : 18, color: '#94a3b8', fontWeight: 700 }}>
+                      <div style={{ fontSize: isMobile ? 12 : 18, color: '#94a3b8', fontWeight: 700, marginLeft: 8 }}>
                         {formatWait(ticket.created_at)}
                       </div>
                     </div>
