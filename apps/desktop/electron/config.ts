@@ -2,6 +2,9 @@
 // Single source of truth for all configurable values.
 // In future, these can be read from environment or a config file.
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require('../package.json');
+
 export const CONFIG = {
   // Supabase
   SUPABASE_URL: 'https://ofyyzuocifigyyhqxxqw.supabase.co',
@@ -21,5 +24,5 @@ export const CONFIG = {
 
   // App
   APP_NAME: 'Qflo Station',
-  APP_VERSION: '1.0.23',
+  APP_VERSION: pkg.version as string,
 } as const;
