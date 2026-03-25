@@ -246,6 +246,66 @@ async function maybeSendWhatsAppTurnNotification(
   return { sent: data?.sent ?? false, reason: data?.error };
 }
 
+/**
+ * Notify the next person in line (position 1) via WhatsApp that they're next.
+ * Called after a ticket is called, served, or marked no-show.
+ */
+async function notifyNextInLineViaWhatsApp(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  departmentId: string,
+  officeId: string,
+  excludeTicketId: string,
+  deskName: string,
+): Promise<void> {
+  // Find the next waiting ticket (position 1)
+  const { data: nextTickets } = await supabase
+    .from('tickets')
+    .select('id, ticket_number, qr_token, office_id, desk_id')
+    .eq('department_id', departmentId)
+    .eq('office_id', officeId)
+    .eq('status', 'waiting')
+    .neq('id', excludeTicketId)
+    .order('checked_in_at', { ascending: true })
+    .limit(1);
+
+  const nextTicket = nextTickets?.[0];
+  if (!nextTicket) return;
+
+  // Check if this ticket has an active WhatsApp session
+  const { data: session } = await (supabase as any)
+    .from('whatsapp_sessions')
+    .select('id')
+    .eq('ticket_id', nextTicket.id)
+    .eq('state', 'active')
+    .maybeSingle();
+
+  if (!session) return; // No WhatsApp session — skip
+
+  // Send "you're next" notification via the API route
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_CLIP_BASE_URL ||
+    'https://qflo.net'
+  ).replace(/\/+$/, '');
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+  console.log(`[WhatsApp:next_in_line] Notifying next ticket ${nextTicket.ticket_number}`);
+
+  await fetch(`${baseUrl}/api/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({
+      ticketId: nextTicket.id,
+      event: 'next_in_line',
+      deskName: deskName || '',
+    }),
+  }).catch((err) => console.error('[WhatsApp:next_in_line] Fetch error:', err));
+}
+
 async function getDeskOperationContext(deskId: string) {
   const context = await getStaffContext();
   const desk = await requireDeskOperatorForDesk(context, deskId);
@@ -616,6 +676,11 @@ export async function callNextTicket(deskId: string) {
     notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[CallNext] notifyWaitingAndroidTickets error:', err)
     );
+
+    // WhatsApp "you're next" notification to the person now at position 1
+    notifyNextInLineViaWhatsApp(supabase, ticket.department_id, ticket.office_id, ticketId, deskName).catch((err) =>
+      console.error('[CallNext] notifyNextInLine error:', err)
+    );
   }
 
   revalidatePath('/desk');
@@ -753,6 +818,11 @@ export async function callSpecificTicket(deskId: string, ticketId: string) {
   );
   notifyWaitingAndroidTickets(updatedTicket.department_id, updatedTicket.office_id, ticketId).catch((err) =>
     console.error('[CallSpecificTicket] notifyWaitingAndroidTickets error:', err)
+  );
+
+  // WhatsApp "you're next" notification to the person now at position 1
+  notifyNextInLineViaWhatsApp(supabase, updatedTicket.department_id, updatedTicket.office_id, ticketId, deskName).catch((err) =>
+    console.error('[CallSpecificTicket] notifyNextInLine error:', err)
   );
 
   revalidatePath('/desk');
@@ -917,6 +987,11 @@ export async function markServed(ticketId: string) {
     notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[MarkServed] notifyWaitingAndroidTickets error:', err)
     );
+
+    // WhatsApp "you're next" to the person now at position 1
+    notifyNextInLineViaWhatsApp(supabase, ticket.department_id, ticket.office_id, ticketId, '').catch((err) =>
+      console.error('[MarkServed] notifyNextInLine error:', err)
+    );
   }
 
   await syncLiveActivity(ticketId, 'MarkServed');
@@ -996,6 +1071,11 @@ export async function markNoShow(ticketId: string) {
     );
     notifyWaitingAndroidTickets(ticket.department_id, ticket.office_id, ticketId).catch((err) =>
       console.error('[MarkNoShow] notifyWaitingAndroidTickets error:', err)
+    );
+
+    // WhatsApp "you're next" to the person now at position 1
+    notifyNextInLineViaWhatsApp(supabase, ticket.department_id, ticket.office_id, ticketId, '').catch((err) =>
+      console.error('[MarkNoShow] notifyNextInLine error:', err)
     );
   }
 

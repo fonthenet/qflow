@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { ticketId, event, deskName } = body as {
       ticketId: string;
-      event: 'called' | 'recall' | 'buzz' | 'no_show' | 'served' | 'cancelled';
+      event: 'called' | 'recall' | 'buzz' | 'no_show' | 'served' | 'cancelled' | 'next_in_line';
       deskName: string;
     };
 
@@ -94,6 +94,9 @@ export async function POST(request: NextRequest) {
       case 'cancelled':
         message = tNotification('cancelled_notify', locale, vars);
         completeSession = true;
+        break;
+      case 'next_in_line':
+        message = tNotification('next_in_line', locale, vars);
         break;
       default:
         message = tNotification('default', locale, vars);

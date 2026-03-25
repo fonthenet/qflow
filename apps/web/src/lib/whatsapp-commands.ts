@@ -153,6 +153,11 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     ar: '✅ التذكرة *{ticket}* مكتملة. شكرًا لزيارتكم!\n\nنتمنى رؤيتكم مجددًا.',
     en: '✅ Ticket *{ticket}* is complete. Thank you for visiting!\n\nWe hope to see you again.',
   },
+  next_in_line: {
+    fr: '⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
+    ar: '⏳ *أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا.\n\nتتبع: {url}',
+    en: '⏳ *You\'re next!* Ticket *{ticket}* — get ready, it\'s almost your turn.\n\nTrack: {url}',
+  },
   cancelled_notify: {
     fr: '🚫 Le ticket *{ticket}* a été annulé.',
     ar: '🚫 تم إلغاء التذكرة *{ticket}*.',
