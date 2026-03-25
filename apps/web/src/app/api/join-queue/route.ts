@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
       customer_data: Object.keys(customerData).length > 0 ? customerData : null,
       estimated_wait_minutes: estimatedWait,
       is_remote: true,
+      source: 'mobile_app',
       priority: 0,
     })
     .select('id, qr_token, ticket_number, status, estimated_wait_minutes')

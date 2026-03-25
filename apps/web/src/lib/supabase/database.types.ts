@@ -722,6 +722,7 @@ export type Database = {
           recall_count: number
           service_id: string
           serving_started_at: string | null
+          source: string | null
           status: string
           ticket_number: string
           transferred_from_ticket_id: string | null
@@ -751,6 +752,7 @@ export type Database = {
           recall_count?: number
           service_id: string
           serving_started_at?: string | null
+          source?: string | null
           status?: string
           ticket_number: string
           transferred_from_ticket_id?: string | null
@@ -780,6 +782,7 @@ export type Database = {
           recall_count?: number
           service_id?: string
           serving_started_at?: string | null
+          source?: string | null
           status?: string
           ticket_number?: string
           transferred_from_ticket_id?: string | null

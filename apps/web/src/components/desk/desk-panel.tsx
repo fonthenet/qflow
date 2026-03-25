@@ -1169,8 +1169,20 @@ export function DeskPanel({
   const getTicketSource = useCallback((ticket: Ticket | null | undefined) => {
     if (!ticket) return t('Unknown');
     if (ticket.appointment_id) return isRestaurantMode ? bookingLabel : t('Appointment');
-    if (ticket.is_remote) return isRestaurantMode ? t('Remote waitlist') : t('Remote join');
-    return isRestaurantMode ? t('Walk-in party') : t('Walk-in');
+    const src = ticket.source;
+    switch (src) {
+      case 'whatsapp': return t('WhatsApp');
+      case 'mobile_app': return t('Mobile App');
+      case 'kiosk': return t('Kiosk');
+      case 'app_clip': return t('App Clip');
+      case 'qr_code': return isRestaurantMode ? t('Remote waitlist') : t('QR Code');
+      case 'web': return t('Web');
+      case 'walk_in': return isRestaurantMode ? t('Walk-in party') : t('Walk-in');
+      default:
+        // Fallback for old tickets without source column
+        if (ticket.is_remote) return isRestaurantMode ? t('Remote waitlist') : t('Remote join');
+        return isRestaurantMode ? t('Walk-in party') : t('Walk-in');
+    }
   }, [bookingLabel, isRestaurantMode, t]);
 
   const formatAbsoluteTime = useCallback((value: string | null | undefined) => {

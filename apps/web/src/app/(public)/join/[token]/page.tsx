@@ -115,8 +115,10 @@ export default async function RemoteJoinPage({ params }: PageProps) {
   });
 
   const orgSettings = (organization.settings ?? {}) as Record<string, any>;
-  const whatsappEnabled = Boolean(orgSettings.whatsapp_enabled);
-  const whatsappBusinessPhone = (orgSettings.whatsapp_business_phone as string) ?? '';
+  const whatsappEnabled = Boolean(orgSettings.whatsapp_enabled) && Boolean(orgSettings.whatsapp_code);
+  const whatsappCode = (orgSettings.whatsapp_code as string) ?? '';
+  // Shared QFlow WhatsApp number (env var or fallback to test number)
+  const whatsappPhone = process.env.WHATSAPP_SHARED_PHONE_NUMBER ?? process.env.NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER ?? '';
 
   return (
     <RemoteJoinForm
@@ -133,7 +135,8 @@ export default async function RemoteJoinPage({ params }: PageProps) {
       publicJoinProfile={platformConfig.experienceProfile.publicJoin}
       vocabulary={platformConfig.experienceProfile.vocabulary}
       whatsappEnabled={whatsappEnabled}
-      whatsappBusinessPhone={whatsappBusinessPhone}
+      whatsappBusinessPhone={whatsappPhone}
+      whatsappCode={whatsappCode}
     />
   );
 }

@@ -165,6 +165,9 @@ export function SettingsClient({
   const [whatsappEnabled, setWhatsappEnabled] = useState<boolean>(
     settings.whatsapp_enabled ?? false
   );
+  const [whatsappCode, setWhatsappCode] = useState<string>(
+    settings.whatsapp_code ?? ''
+  );
   const [whatsappBusinessPhone, setWhatsappBusinessPhone] = useState<string>(
     settings.whatsapp_business_phone ?? ''
   );
@@ -219,6 +222,7 @@ export function SettingsClient({
           priority_alerts_sms_on_buzz: priorityAlertsOnBuzz,
           priority_alerts_phone_label: priorityAlertsPhoneLabel,
           whatsapp_enabled: whatsappEnabled,
+          whatsapp_code: whatsappCode.toUpperCase().trim(),
           whatsapp_business_phone: whatsappBusinessPhone,
           whatsapp_default_virtual_code_id: whatsappDefaultVirtualCodeId,
         },
@@ -563,7 +567,7 @@ export function SettingsClient({
             {t('WhatsApp Queue')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('Let customers join the queue by sending "JOIN" via WhatsApp. Requires a Twilio account with WhatsApp enabled.')}
+            {t('Let customers join the queue by sending a message via WhatsApp. One shared QFlow number serves all businesses.')}
           </p>
         </div>
 
@@ -588,17 +592,18 @@ export function SettingsClient({
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('WhatsApp Business Phone Number')}
+                {t('Business Code')}
               </label>
               <input
                 type="text"
-                value={whatsappBusinessPhone}
-                onChange={(e) => setWhatsappBusinessPhone(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="+213555123456"
+                value={whatsappCode}
+                onChange={(e) => setWhatsappCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="HADABI"
+                maxLength={30}
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                {t('Your Twilio WhatsApp-enabled number in E.164 format (e.g. +213555123456).')}
+                {t('Short unique code for your business. Customers will text "JOIN HADABI" to join your queue. Letters, numbers, hyphens and underscores only.')}
               </p>
             </div>
 
@@ -618,13 +623,14 @@ export function SettingsClient({
               </p>
             </div>
 
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              <p className="font-medium">{t('Webhook URL')}</p>
-              <code className="mt-1 block text-xs font-mono break-all select-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp-webhook` : '/api/whatsapp-webhook'}
-              </code>
-              <p className="mt-1 text-xs">{t('Add this URL as a webhook in your Twilio WhatsApp Sandbox or Production settings.')}</p>
-            </div>
+            {whatsappCode && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                <p className="font-medium">{t('How customers join')}</p>
+                <p className="mt-1 text-sm">
+                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the QFlow WhatsApp number, or scan the QR code on your join page.')}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </section>

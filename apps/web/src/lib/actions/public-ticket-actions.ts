@@ -113,6 +113,7 @@ interface CreatePublicTicketInput {
   checkedInAt?: string;
   estimatedWaitMinutes?: number | null;
   isRemote?: boolean;
+  source?: string;
   priority?: number | null;
   priorityCategoryId?: string | null;
   groupId?: string | null;
@@ -264,6 +265,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       customer_data: (input.customerData ?? null) as any,
       estimated_wait_minutes: waitResult.data ?? null,
       is_remote: input.isRemote ?? false,
+      source: input.source ?? (input.isRemote ? 'qr_code' : 'walk_in'),
       priority: input.priority ?? 0,
       priority_category_id: input.priorityCategoryId ?? null,
       group_id: input.groupId ?? null,

@@ -48,6 +48,7 @@ function toSandboxTicket(
     estimated_wait_minutes: entry.status === 'waiting' ? entry.estimatedWaitMinutes : 0,
     group_id: null,
     is_remote: entry.source === 'remote_join',
+    source: entry.source === 'remote_join' ? 'qr_code' : 'walk_in',
     notes: `Sandbox preview only · ${preview.scenario.name}`,
     office_id: `${preview.organization.id}-sandbox-office`,
     priority: null,

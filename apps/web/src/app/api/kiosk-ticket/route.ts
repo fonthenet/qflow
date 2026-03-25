@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       priority: priority ?? 0,
       priority_category_id: priorityCategoryId ?? null,
       is_remote: false,
+      source: 'kiosk',
     })
     .select('id, qr_token, ticket_number, status, estimated_wait_minutes')
     .single();

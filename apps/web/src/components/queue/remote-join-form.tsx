@@ -32,6 +32,7 @@ interface RemoteJoinFormProps {
   vocabulary?: TemplateVocabulary;
   whatsappEnabled?: boolean;
   whatsappBusinessPhone?: string;
+  whatsappCode?: string;
 }
 
 export function RemoteJoinForm({
@@ -50,6 +51,7 @@ export function RemoteJoinForm({
   vocabulary,
   whatsappEnabled = false,
   whatsappBusinessPhone = '',
+  whatsappCode = '',
 }: RemoteJoinFormProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -209,6 +211,7 @@ export function RemoteJoinForm({
         customerData: Object.keys(customerData).length > 0 ? customerData : null,
         estimatedWaitMinutes: currentWait,
         isRemote: true,
+        source: 'qr_code',
       });
 
       if (result.error || !result.data) {
@@ -765,7 +768,7 @@ export function RemoteJoinForm({
           </button>
 
           {/* WhatsApp join option */}
-          {whatsappEnabled && whatsappBusinessPhone && (
+          {whatsappEnabled && whatsappBusinessPhone && whatsappCode && (
             <>
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
@@ -776,7 +779,7 @@ export function RemoteJoinForm({
                 </div>
               </div>
               <a
-                href={`https://wa.me/${whatsappBusinessPhone.replace(/\D/g, '')}?text=JOIN`}
+                href={`https://wa.me/${whatsappBusinessPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`JOIN ${whatsappCode}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex w-full items-center justify-center gap-2 rounded-[1.1rem] px-6 py-4 text-base font-semibold text-white shadow-lg transition-all hover:opacity-90 active:scale-[0.98]"

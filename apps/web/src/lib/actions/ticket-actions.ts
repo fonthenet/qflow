@@ -214,65 +214,36 @@ async function maybeSendWhatsAppTurnNotification(
 ): Promise<{ sent: boolean; reason?: string }> {
   const { ticket, event, deskName } = params;
 
-  // Check if this ticket has an active WhatsApp session
-  const adminClient = createAdminClient();
-  const { data: session } = await (adminClient as any)
-    .from('whatsapp_sessions')
-    .select('id, whatsapp_phone, organization_id')
-    .eq('ticket_id', ticket.id)
-    .eq('state', 'active')
-    .maybeSingle();
+  // Call the Vercel API endpoint to send the WhatsApp notification.
+  // This is needed because the desk may run locally (QFlo Station)
+  // where the WHATSAPP_META_ACCESS_TOKEN env var is not available.
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_CLIP_BASE_URL ||
+    'https://qflo.net'
+  ).replace(/\/+$/, '');
 
-  if (!session?.whatsapp_phone) {
-    return { sent: false, reason: 'no whatsapp session' };
-  }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
-  const trackUrl = buildAbsoluteTicketUrl(ticket.qr_token);
-  let message: string;
+  console.log(`[WhatsApp:${event}] Calling /api/whatsapp-send for ticket ${ticket.ticket_number}`);
 
-  switch (event) {
-    case 'called':
-      message = `🔔 *It's your turn!* Ticket *${ticket.ticket_number}* — please go to *${deskName}*.\n\nTrack: ${trackUrl}`;
-      break;
-    case 'recall':
-      message = `⏰ *Reminder:* Ticket *${ticket.ticket_number}* is still waiting for you at *${deskName}*.\n\nTrack: ${trackUrl}`;
-      break;
-    case 'buzz':
-      message = `📢 *Buzz:* Staff is trying to reach you (ticket *${ticket.ticket_number}*). Please go to *${deskName}*.\n\nTrack: ${trackUrl}`;
-      break;
-    default:
-      message = `📋 Update for ticket *${ticket.ticket_number}*: ${trackUrl}`;
-  }
-
-  const result = await sendWhatsAppMessage({
-    to: session.whatsapp_phone,
-    body: message,
-  });
-
-  if (!result.ok) {
-    console.warn(`[${event}] WhatsApp notification not sent for ticket ${ticket.id}:`, result.error);
-    return { sent: false, reason: result.error };
-  }
-
-  // Log the notification
-  await adminClient.from('notifications').insert({
-    ticket_id: ticket.id,
-    type: `whatsapp_${event}`,
-    channel: 'whatsapp',
-    payload: {
-      to: result.to,
-      sid: result.sid,
-      provider: result.provider,
+  const res = await fetch(`${baseUrl}/api/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
     },
-    sent_at: new Date().toISOString(),
+    body: JSON.stringify({
+      ticketId: ticket.id,
+      event,
+      deskName,
+    }),
   });
 
-  // If called/completed, mark session as completed
-  if (event === 'called') {
-    // Session stays active so customer can still check STATUS
-  }
+  const data = await res.json().catch(() => ({}));
+  console.log(`[WhatsApp:${event}] API response:`, JSON.stringify(data));
 
-  return { sent: true };
+  return { sent: data?.sent ?? false, reason: data?.error };
 }
 
 async function getDeskOperationContext(deskId: string) {
@@ -379,6 +350,7 @@ interface CreatePublicTicketInput {
   checkedInAt?: string;
   estimatedWaitMinutes?: number | null;
   isRemote?: boolean;
+  source?: string;
   priority?: number | null;
   priorityCategoryId?: string | null;
   groupId?: string | null;
@@ -451,6 +423,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       customer_data: (input.customerData ?? null) as any,
       estimated_wait_minutes: waitResult.data ?? null,
       is_remote: input.isRemote ?? false,
+      source: input.source ?? (input.isRemote ? 'qr_code' : 'walk_in'),
       priority: input.priority ?? 0,
       priority_category_id: input.priorityCategoryId ?? null,
       group_id: input.groupId ?? null,
@@ -609,15 +582,17 @@ export async function callNextTicket(deskId: string) {
     });
     smsSent = smsResult.sent;
 
-    // WhatsApp turn notification (non-blocking)
+    // WhatsApp turn notification
+    console.log('[CallNext] Attempting WhatsApp notification for ticket:', ticket.id, ticket.ticket_number);
     const whatsappResult = await maybeSendWhatsAppTurnNotification(supabase, {
       ticket,
       event: 'called',
       deskName,
     }).catch((err) => {
-      console.error('[CallNext] WhatsApp notification error:', err);
+      console.error('[CallNext] WhatsApp notification EXCEPTION:', err?.message ?? err);
       return { sent: false, reason: 'exception' };
     });
+    console.log('[CallNext] WhatsApp result:', JSON.stringify(whatsappResult));
 
     await logAuditEvent(context, {
       actionType: 'ticket_called',
