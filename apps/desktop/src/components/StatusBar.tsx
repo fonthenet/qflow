@@ -247,6 +247,15 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
             <span className="connection-dot" aria-hidden="true" />
             <span>{syncStatus.isOnline ? t('Connected') : t('Offline Mode')}</span>
           </div>
+          {syncStatus.connectionQuality === 'flaky' && (
+            <span style={{
+              padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+              animation: 'pulse 2s infinite',
+            }}>
+              {t('Slow connection')}
+            </span>
+          )}
           {stationVersion && (
             <span className="update-badge neutral" title={t('Station version')}>
               {t('Version')} {stationVersion}

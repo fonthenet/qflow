@@ -25,6 +25,7 @@ export interface SyncStatus {
   isOnline: boolean;
   pendingCount: number;
   lastSyncAt: string | null;
+  connectionQuality?: 'good' | 'slow' | 'flaky' | 'offline';
 }
 
 export interface UpdateStatus {

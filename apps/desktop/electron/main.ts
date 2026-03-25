@@ -1036,7 +1036,7 @@ app.whenReady().then(async () => {
       notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
       // Tell renderer to refresh tickets immediately (event-driven, no polling needed)
       mainWindow?.webContents.send('tickets:changed');
-    notifyStationClients({ type: 'tickets_changed' });
+      notifyStationClients({ type: 'tickets_changed' });
     },
     (error) => {
       // Surface sync/reconciliation errors to the Station UI
@@ -1054,7 +1054,7 @@ app.whenReady().then(async () => {
     // Also push to cloud immediately so QR tracking works remotely
     setOnTicketCreated((syncQueueId: string) => {
       mainWindow?.webContents.send('tickets:changed');
-    notifyStationClients({ type: 'tickets_changed' });
+      notifyStationClients({ type: 'tickets_changed' });
       syncEngine?.pushImmediate(syncQueueId);
     });
   } catch (err) {
