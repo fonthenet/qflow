@@ -34,6 +34,8 @@ class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLoca
 }
 
 export function App() {
+  const STAFF_STATUS_KEY = 'qflo_station_staff_status';
+  const QUEUE_PAUSED_KEY = 'qflo_station_queue_paused';
   const [session, setSession] = useState<StaffSession | null>(null);
   const [locale, setLocale] = useState<DesktopLocale>('en');
   const [stationVersion, setStationVersion] = useState<string | null>(null);
@@ -58,11 +60,39 @@ export function App() {
       window.qf.session.load(),
       Promise.resolve(window.qf.settings?.getLocale?.()).catch(() => 'en'),
     ]).then(([s, savedLocale]: [StaffSession | null, string]) => {
+      try {
+        const storedStaffStatus = window.localStorage.getItem(STAFF_STATUS_KEY);
+        if (storedStaffStatus === 'available' || storedStaffStatus === 'on_break' || storedStaffStatus === 'away') {
+          setStaffStatus(storedStaffStatus);
+        }
+        const storedQueuePaused = window.localStorage.getItem(QUEUE_PAUSED_KEY);
+        if (storedQueuePaused === 'true' || storedQueuePaused === 'false') {
+          setQueuePaused(storedQueuePaused === 'true');
+        }
+      } catch {
+        // ignore persistence failures
+      }
       setSession(s);
       setLocale(normalizeLocale(savedLocale));
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STAFF_STATUS_KEY, staffStatus);
+    } catch {
+      // ignore persistence failures
+    }
+  }, [staffStatus]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(QUEUE_PAUSED_KEY, String(queuePaused));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [queuePaused]);
 
   useEffect(() => {
     window.qf.getConfig?.()

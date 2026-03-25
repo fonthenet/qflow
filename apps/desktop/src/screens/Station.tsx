@@ -274,6 +274,8 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
 
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
+  const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
+  const SHOW_LOCAL_NETWORK_KEY = 'qflo_station_show_local_network';
   const MIN_SIDEBAR_WIDTH = 320;
   const MAX_SIDEBAR_WIDTH = 720;
   const getDisplayUrlLabel = (url: string) => {
@@ -721,10 +723,42 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const VISIBLE_CHUNK = 50;
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  const [showLocalNetwork, setShowLocalNetwork] = useState(true);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
     return filteredWaiting.slice(0, VISIBLE_CHUNK);
   }, [filteredWaiting, showAllWaiting]);
+
+  useEffect(() => {
+    try {
+      const storedShowActivity = window.localStorage.getItem(SHOW_ACTIVITY_KEY);
+      if (storedShowActivity === 'true' || storedShowActivity === 'false') {
+        setShowActivity(storedShowActivity === 'true');
+      }
+      const storedShowLocalNetwork = window.localStorage.getItem(SHOW_LOCAL_NETWORK_KEY);
+      if (storedShowLocalNetwork === 'true' || storedShowLocalNetwork === 'false') {
+        setShowLocalNetwork(storedShowLocalNetwork === 'true');
+      }
+    } catch {
+      // ignore persistence failures
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHOW_ACTIVITY_KEY, String(showActivity));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [showActivity]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHOW_LOCAL_NETWORK_KEY, String(showLocalNetwork));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [showLocalNetwork]);
 
   // ── Render ──────────────────────────────────────────────────────
 
@@ -1202,64 +1236,77 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* Local Network URLs */}
         {kioskUrl && (
           <div className="sidebar-section">
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              {t('Local Network')}
-            </div>
-            {[
-              {
-                label: t('Kiosk (take tickets)'),
-                localUrl: kioskUrl,
-                publicUrl: publicLinks.kioskUrl,
-                publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
-                icon: '🎫',
-              },
-              {
-                label: t('Display (waiting room TV)'),
-                localUrl: kioskUrl.replace('/kiosk', '/display'),
-                publicUrl: publicLinks.displayUrl,
-                publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
-                icon: '📺',
-              },
-            ].map((item) => (
-              <div key={item.label} style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
-                <div
-                  style={{
-                    background: 'var(--surface2)', padding: '6px 10px', borderRadius: 6,
-                    fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
-                    wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
-                  }}
-                  title={t('Click to copy')}
-                  onClick={() => navigator.clipboard?.writeText(item.localUrl)}
-                >
-                  {getDisplayUrlLabel(item.localUrl)}
-                </div>
-                {item.publicUrl ? (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      background: 'var(--surface2)',
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: 'var(--primary)',
-                      wordBreak: 'break-all',
-                      userSelect: 'all',
-                      cursor: 'pointer',
-                    }}
-                    title={t('Click to copy')}
-                    onClick={() => navigator.clipboard?.writeText(item.publicUrl!)}
-                  >
-                    {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
+            <button
+              onClick={() => setShowLocalNetwork((value) => !value)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+              }}
+            >
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                {t('Local Network')}
+              </h4>
+              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showLocalNetwork ? '▲' : '▼'}</span>
+            </button>
+            {showLocalNetwork && (
+              <>
+                {[
+                  {
+                    label: t('Kiosk (take tickets)'),
+                    localUrl: kioskUrl,
+                    publicUrl: publicLinks.kioskUrl,
+                    publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
+                    icon: '🎫',
+                  },
+                  {
+                    label: t('Display (waiting room TV)'),
+                    localUrl: kioskUrl.replace('/kiosk', '/display'),
+                    publicUrl: publicLinks.displayUrl,
+                    publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
+                    icon: '📺',
+                  },
+                ].map((item) => (
+                  <div key={item.label} style={{ marginTop: 8, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
+                    <div
+                      style={{
+                        background: 'var(--surface2)', padding: '6px 10px', borderRadius: 6,
+                        fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
+                        wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
+                      }}
+                      title={t('Click to copy')}
+                      onClick={() => navigator.clipboard?.writeText(item.localUrl)}
+                    >
+                      {getDisplayUrlLabel(item.localUrl)}
+                    </div>
+                    {item.publicUrl ? (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          background: 'var(--surface2)',
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: 'var(--primary)',
+                          wordBreak: 'break-all',
+                          userSelect: 'all',
+                          cursor: 'pointer',
+                        }}
+                        title={t('Click to copy')}
+                        onClick={() => navigator.clipboard?.writeText(item.publicUrl!)}
+                      >
+                        {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-              {t('Open on any device on this WiFi network. Works offline.')}
-            </div>
+                ))}
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                  {t('Open on any device on this WiFi network. Works offline.')}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
