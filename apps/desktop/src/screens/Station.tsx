@@ -1060,7 +1060,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
                   {ticket.appointment_id && <span className="badge booked">{translate(locale, 'Booked')}</span>}
-                  {ticket.is_remote && <span className="badge remote">{translate(locale, 'Remote')}</span>}
+                  {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
+                  {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
+                  {ticket.source === 'mobile_app' && <span className="badge mobile-app">{translate(locale, 'Mobile App')}</span>}
+                  {ticket.source === 'kiosk' && <span className="badge kiosk">{translate(locale, 'Kiosk')}</span>}
+                  {ticket.is_remote && (!ticket.source || ticket.source === 'walk_in') && <span className="badge remote">{translate(locale, 'Remote')}</span>}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
                   <button

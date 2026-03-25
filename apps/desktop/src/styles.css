@@ -198,6 +198,10 @@ select { font-family: inherit; }
 .badge.priority { background: rgba(245,158,11,0.15); color: var(--warning); }
 .badge.booked { background: rgba(59,130,246,0.15); color: var(--primary); }
 .badge.remote { background: rgba(168,85,247,0.15); color: #a855f7; }
+.badge.whatsapp { background: rgba(37,211,102,0.15); color: #25d366; }
+.badge.qr-code { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.badge.mobile-app { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.badge.kiosk { background: rgba(99,102,241,0.15); color: #6366f1; }
 
 .queue-empty { text-align: center; padding: 24px; color: var(--text3); font-size: 13px; }
 

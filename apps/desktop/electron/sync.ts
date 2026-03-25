@@ -1127,8 +1127,8 @@ export class SyncEngine {
         INSERT OR REPLACE INTO tickets
         (id, ticket_number, office_id, department_id, service_id, desk_id, status, priority,
          customer_data, created_at, called_at, called_by_staff_id, serving_started_at,
-         completed_at, cancelled_at, parked_at, recall_count, notes, is_remote, appointment_id, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         completed_at, cancelled_at, parked_at, recall_count, notes, is_remote, appointment_id, source, synced_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       // IDs of locally-modified tickets — protect ALL unsynced items regardless of age.
@@ -1199,7 +1199,7 @@ export class SyncEngine {
             typeof t.customer_data === 'string' ? t.customer_data : JSON.stringify(t.customer_data ?? {}),
             t.created_at, t.called_at, t.called_by_staff_id, t.serving_started_at,
             t.completed_at, t.cancelled_at, t.parked_at, t.recall_count ?? 0,
-            t.notes, t.is_remote ? 1 : 0, t.appointment_id,
+            t.notes, t.is_remote ? 1 : 0, t.appointment_id, t.source ?? 'walk_in',
             new Date().toISOString()
           );
         }

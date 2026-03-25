@@ -17,6 +17,7 @@ export interface Ticket {
   recall_count: number;
   notes?: string;
   is_remote: boolean;
+  source?: string | null;
   is_offline: boolean;
   appointment_id?: string;
 }
