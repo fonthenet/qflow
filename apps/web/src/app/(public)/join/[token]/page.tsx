@@ -114,6 +114,10 @@ export default async function RemoteJoinPage({ params }: PageProps) {
     officeSettings: office?.settings ?? {},
   });
 
+  const orgSettings = (organization.settings ?? {}) as Record<string, any>;
+  const whatsappEnabled = Boolean(orgSettings.whatsapp_enabled);
+  const whatsappBusinessPhone = (orgSettings.whatsapp_business_phone as string) ?? '';
+
   return (
     <RemoteJoinForm
       virtualCode={virtualCode}
@@ -128,6 +132,8 @@ export default async function RemoteJoinPage({ params }: PageProps) {
       waitingTickets={waitingTickets ?? []}
       publicJoinProfile={platformConfig.experienceProfile.publicJoin}
       vocabulary={platformConfig.experienceProfile.vocabulary}
+      whatsappEnabled={whatsappEnabled}
+      whatsappBusinessPhone={whatsappBusinessPhone}
     />
   );
 }

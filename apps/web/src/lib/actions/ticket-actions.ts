@@ -29,6 +29,7 @@ import {
   type PriorityAlertEvent,
 } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
@@ -192,6 +193,84 @@ async function maybeSendPriorityAlertSms(
     },
     sent_at: new Date().toISOString(),
   });
+
+  return { sent: true };
+}
+
+async function maybeSendWhatsAppTurnNotification(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: {
+    ticket: {
+      id: string;
+      office_id: string;
+      qr_token: string;
+      ticket_number: string;
+      status: string;
+      desk_id: string | null;
+    };
+    event: PriorityAlertEvent;
+    deskName: string;
+  }
+): Promise<{ sent: boolean; reason?: string }> {
+  const { ticket, event, deskName } = params;
+
+  // Check if this ticket has an active WhatsApp session
+  const adminClient = createAdminClient();
+  const { data: session } = await (adminClient as any)
+    .from('whatsapp_sessions')
+    .select('id, whatsapp_phone, organization_id')
+    .eq('ticket_id', ticket.id)
+    .eq('state', 'active')
+    .maybeSingle();
+
+  if (!session?.whatsapp_phone) {
+    return { sent: false, reason: 'no whatsapp session' };
+  }
+
+  const trackUrl = buildAbsoluteTicketUrl(ticket.qr_token);
+  let message: string;
+
+  switch (event) {
+    case 'called':
+      message = `🔔 *It's your turn!* Ticket *${ticket.ticket_number}* — please go to *${deskName}*.\n\nTrack: ${trackUrl}`;
+      break;
+    case 'recall':
+      message = `⏰ *Reminder:* Ticket *${ticket.ticket_number}* is still waiting for you at *${deskName}*.\n\nTrack: ${trackUrl}`;
+      break;
+    case 'buzz':
+      message = `📢 *Buzz:* Staff is trying to reach you (ticket *${ticket.ticket_number}*). Please go to *${deskName}*.\n\nTrack: ${trackUrl}`;
+      break;
+    default:
+      message = `📋 Update for ticket *${ticket.ticket_number}*: ${trackUrl}`;
+  }
+
+  const result = await sendWhatsAppMessage({
+    to: session.whatsapp_phone,
+    body: message,
+  });
+
+  if (!result.ok) {
+    console.warn(`[${event}] WhatsApp notification not sent for ticket ${ticket.id}:`, result.error);
+    return { sent: false, reason: result.error };
+  }
+
+  // Log the notification
+  await adminClient.from('notifications').insert({
+    ticket_id: ticket.id,
+    type: `whatsapp_${event}`,
+    channel: 'whatsapp',
+    payload: {
+      to: result.to,
+      sid: result.sid,
+      provider: result.provider,
+    },
+    sent_at: new Date().toISOString(),
+  });
+
+  // If called/completed, mark session as completed
+  if (event === 'called') {
+    // Session stays active so customer can still check STATUS
+  }
 
   return { sent: true };
 }
@@ -530,6 +609,16 @@ export async function callNextTicket(deskId: string) {
     });
     smsSent = smsResult.sent;
 
+    // WhatsApp turn notification (non-blocking)
+    const whatsappResult = await maybeSendWhatsAppTurnNotification(supabase, {
+      ticket,
+      event: 'called',
+      deskName,
+    }).catch((err) => {
+      console.error('[CallNext] WhatsApp notification error:', err);
+      return { sent: false, reason: 'exception' };
+    });
+
     await logAuditEvent(context, {
       actionType: 'ticket_called',
       entityType: 'ticket',
@@ -539,6 +628,7 @@ export async function callNextTicket(deskId: string) {
       metadata: {
         deskId,
         smsSent,
+        whatsappSent: whatsappResult.sent,
       },
     });
 
@@ -660,6 +750,13 @@ export async function callSpecificTicket(deskId: string, ticketId: string) {
     deskName,
   });
   smsSent = smsResult.sent;
+
+  // WhatsApp turn notification
+  await maybeSendWhatsAppTurnNotification(supabase, {
+    ticket: updatedTicket,
+    event: 'called',
+    deskName,
+  }).catch((err) => console.error('[CallSpecificTicket] WhatsApp error:', err));
 
   await logAuditEvent(context, {
     actionType: 'ticket_called',
@@ -1169,6 +1266,13 @@ export async function recallTicket(ticketId: string) {
     deskName,
   });
 
+  // WhatsApp recall notification
+  await maybeSendWhatsAppTurnNotification(supabase, {
+    ticket: updatedTicket,
+    event: 'recall',
+    deskName,
+  }).catch((err) => console.error('[Recall] WhatsApp error:', err));
+
   await syncLiveActivityAfterAlert(ticketId, 'Recall');
 
   // Log event
@@ -1406,6 +1510,13 @@ export async function buzzTicket(ticketId: string) {
     event: 'buzz',
     deskName,
   });
+
+  // WhatsApp buzz notification
+  await maybeSendWhatsAppTurnNotification(supabase, {
+    ticket,
+    event: 'buzz',
+    deskName,
+  }).catch((err) => console.error('[Buzz] WhatsApp error:', err));
 
   // Persist buzz so clients can detect missed events even if broadcast is dropped.
   await supabase.from('notifications').insert({
