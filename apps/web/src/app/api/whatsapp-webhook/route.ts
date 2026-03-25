@@ -15,7 +15,21 @@ export async function GET(request: NextRequest) {
 
   const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
 
-  if (mode === 'subscribe' && token === verifyToken && challenge) {
+  // Debug: log what we're comparing
+  console.log('[whatsapp-webhook] GET verification:', {
+    mode,
+    tokenMatch: token === verifyToken,
+    hasVerifyToken: !!verifyToken,
+    hasChallenge: !!challenge,
+  });
+
+  if (mode === 'subscribe' && token && token === verifyToken && challenge) {
+    return new NextResponse(challenge, { status: 200 });
+  }
+
+  // If no verify token is configured, accept any token for initial setup
+  if (!verifyToken && mode === 'subscribe' && challenge) {
+    console.warn('[whatsapp-webhook] WHATSAPP_WEBHOOK_VERIFY_TOKEN not set, accepting verification anyway');
     return new NextResponse(challenge, { status: 200 });
   }
 
