@@ -21,5 +21,5 @@ export const CONFIG = {
 
   // App
   APP_NAME: 'Qflo Station',
-  APP_VERSION: '1.0.22',
+  APP_VERSION: '1.0.23',
 } as const;
