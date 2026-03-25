@@ -161,6 +161,10 @@ export function App() {
   // The sync engine logs token issues and retries automatically.
   // The user sees "Offline Mode" and can manually sign out/in if needed.
 
+  const handleInstallNow = useCallback(() => {
+    window.qf.updater?.installUpdate?.();
+  }, []);
+
   if (loading) {
     return (
       <div className="app-loading">
@@ -169,10 +173,6 @@ export function App() {
       </div>
     );
   }
-
-  const handleInstallNow = useCallback(() => {
-    window.qf.updater?.installUpdate?.();
-  }, []);
 
   return (
     <ErrorBoundary locale={locale}>
