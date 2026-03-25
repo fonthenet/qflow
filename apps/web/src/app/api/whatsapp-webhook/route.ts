@@ -47,7 +47,11 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST — Receive incoming WhatsApp messages from Twilio.
+ * POST — Receive incoming WhatsApp messages (shared number routing).
+ *
+ * One QFlow WhatsApp number serves ALL businesses. Routing is done by
+ * parsing a business code from the message (e.g. "JOIN HADABI") or by
+ * looking up an existing active session for STATUS / CANCEL commands.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -80,9 +84,8 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (contentType.includes('application/json')) {
-      // Meta Cloud API sends JSON (future support)
+      // Meta Cloud API sends JSON
       const json = await request.json();
-      // Meta webhook format
       const entry = json?.entry?.[0];
       const change = entry?.changes?.[0];
       const message = change?.value?.messages?.[0];
@@ -104,32 +107,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Find the organization that owns this business WhatsApp number
-    const supabase = createAdminClient();
-    const { data: orgs } = await supabase
-      .from('organizations')
-      .select('id, name, settings');
+    console.log(`[whatsapp-webhook] Message from ${fromPhone}: "${messageBody}"`);
 
-    const org = (orgs ?? []).find((o: any) => {
-      const settings = (o.settings ?? {}) as Record<string, any>;
-      if (!settings.whatsapp_enabled) return false;
-      const bizPhone = (settings.whatsapp_business_phone ?? '').replace(/\D/g, '');
-      const incoming = toPhone.replace(/\D/g, '');
-      return bizPhone && incoming && (bizPhone === incoming || incoming.endsWith(bizPhone) || bizPhone.endsWith(incoming));
-    });
+    // Handle the message with shared-number routing
+    await handleWhatsAppMessage(fromPhone, messageBody);
 
-    if (!org) {
-      console.warn(`[whatsapp-webhook] No org found for business phone: ${toPhone}`);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Handle the message
-    await handleWhatsAppMessage(fromPhone, messageBody, {
-      id: org.id,
-      name: org.name,
-      settings: (org.settings ?? {}) as Record<string, any>,
-    });
-
+    console.log(`[whatsapp-webhook] Handled successfully`);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[whatsapp-webhook] Error:', err);
