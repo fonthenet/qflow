@@ -708,6 +708,7 @@ function setupIPC() {
     isOnline: syncEngine?.isOnline ?? false,
     pendingCount: syncEngine?.pendingCount ?? 0,
     lastSyncAt: syncEngine?.lastSyncAt ?? null,
+    connectionQuality: syncEngine?.connectionQuality ?? 'offline',
   }));
 
   ipcMain.handle('sync:force', async () => {
@@ -1137,9 +1138,20 @@ app.on('activate', () => {
   if (!mainWindow) createWindow();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async (e) => {
+  if ((app as any).isQuitting) return; // already flushing — let quit proceed
   (app as any).isQuitting = true;
+
+  // Graceful shutdown: flush pending sync items before quitting
+  if (syncEngine?.isOnline) {
+    e.preventDefault(); // hold quit until flush completes
+    try {
+      await syncEngine.stopGraceful(5000);
+    } catch { /* don't block quit on errors */ }
+  }
+
   shutdownDesktopRuntime();
+  app.quit(); // re-trigger quit after flush
 });
 
 app.on('will-quit', () => {

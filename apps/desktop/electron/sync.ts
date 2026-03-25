@@ -27,6 +27,15 @@ export class SyncEngine {
   public lastSyncAt: string | null = null;
   public pendingCount = 0;
 
+  // ── Connection quality tracking ────────────────────────────────────
+  // Distinguishes "fully offline" from "flaky connection" (high latency/timeouts).
+  // Flaky connections are the most dangerous: sync starts but may time out halfway.
+  private healthLatencyMs = 0;
+  private consecutiveSlowChecks = 0;
+  private static SLOW_THRESHOLD_MS = 3000; // health check taking >3s = slow
+  private static FLAKY_THRESHOLD = 3;      // 3 consecutive slow checks = flaky
+  public connectionQuality: 'good' | 'slow' | 'flaky' | 'offline' = 'offline';
+
   // ── Token management ──────────────────────────────────────────────
   // Single source of truth for the current valid access token
   private cachedAccessToken: string | null = null;
@@ -114,6 +123,19 @@ export class SyncEngine {
   }
 
   start() {
+    // ── STARTUP RECOVERY: Reset sync items that were mid-flight when app crashed/restarted ──
+    // Items with attempts > 0 but no synced_at may have been interrupted mid-push.
+    // Reset their next_retry_at so they're immediately eligible for the next sync cycle.
+    const recovered = this.db.prepare(`
+      UPDATE sync_queue
+      SET next_retry_at = NULL
+      WHERE synced_at IS NULL AND next_retry_at IS NOT NULL
+    `).run();
+    if (recovered.changes > 0) {
+      console.log(`[sync:startup] Recovered ${recovered.changes} sync item(s) stuck from previous session`);
+    }
+    this.updatePendingCount();
+
     // Check connectivity
     this.healthInterval = setInterval(() => this.checkHealth(), CONFIG.HEALTH_CHECK_INTERVAL);
     this.checkHealth();
@@ -136,6 +158,7 @@ export class SyncEngine {
         this.reconcileLPrefixTickets();
       }
       this.recoverStuckItems();
+      this.revertStaleCalled();
     }, CONFIG.AUTO_RESOLVE_INTERVAL);
   }
 
@@ -161,6 +184,51 @@ export class SyncEngine {
       }
     } catch (err: any) {
       console.warn('[sync:startup] Startup refresh error:', err?.message);
+    }
+  }
+
+  /**
+   * Graceful shutdown: attempt one final push of pending items before stopping.
+   * Called from app 'before-quit' — gives a short window to flush critical changes.
+   */
+  async stopGraceful(timeoutMs = 5000): Promise<void> {
+    // Clear all intervals first to prevent new work
+    if (this.interval) clearInterval(this.interval);
+    if (this.healthInterval) clearInterval(this.healthInterval);
+    if (this.pullInterval) clearInterval(this.pullInterval);
+    if (this.autoResolveInterval) clearInterval(this.autoResolveInterval);
+    this.disconnectRealtime();
+
+    if (!this.isOnline) {
+      console.log('[sync:shutdown] Offline — skipping flush');
+      return;
+    }
+
+    const pending = this.db.prepare(
+      "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL"
+    ).get() as any;
+    if (!pending?.c) {
+      console.log('[sync:shutdown] No pending items — clean shutdown');
+      return;
+    }
+
+    console.log(`[sync:shutdown] Flushing ${pending.c} pending item(s) before quit...`);
+    try {
+      // Race: sync vs timeout — whichever finishes first
+      await Promise.race([
+        this.syncNow(),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+      const remaining = this.db.prepare(
+        "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL"
+      ).get() as any;
+      if (remaining?.c > 0) {
+        console.warn(`[sync:shutdown] ${remaining.c} item(s) still pending — will retry on next launch`);
+      } else {
+        console.log('[sync:shutdown] All items flushed successfully');
+      }
+    } catch (err: any) {
+      console.warn('[sync:shutdown] Flush failed:', err?.message);
     }
   }
 
@@ -283,13 +351,44 @@ export class SyncEngine {
     }
 
     try {
+      const healthStart = Date.now();
       const res = await fetch(`${this.supabaseUrl}/rest/v1/offices?select=id&limit=1`, {
         method: 'GET',
         headers: { apikey: this.supabaseKey, Authorization: `Bearer ${this.supabaseKey}` },
         signal: AbortSignal.timeout(5000),
       });
+      this.healthLatencyMs = Date.now() - healthStart;
+
       const wasOffline = !this.isOnline;
       this.isOnline = res.ok;
+
+      // ── Connection quality detection ──
+      if (this.isOnline) {
+        if (this.healthLatencyMs > SyncEngine.SLOW_THRESHOLD_MS) {
+          this.consecutiveSlowChecks++;
+          if (this.consecutiveSlowChecks >= SyncEngine.FLAKY_THRESHOLD) {
+            if (this.connectionQuality !== 'flaky') {
+              console.warn(`[sync:health] Connection is FLAKY — ${this.consecutiveSlowChecks} consecutive slow responses (${this.healthLatencyMs}ms)`);
+              this.onTicketError({
+                message: `Slow connection detected (${this.healthLatencyMs}ms latency). Sync may be delayed.`,
+                type: 'connection_flaky',
+              });
+            }
+            this.connectionQuality = 'flaky';
+          } else {
+            this.connectionQuality = 'slow';
+          }
+        } else {
+          if (this.connectionQuality === 'flaky' && this.consecutiveSlowChecks > 0) {
+            console.log(`[sync:health] Connection recovered — latency back to ${this.healthLatencyMs}ms`);
+          }
+          this.consecutiveSlowChecks = 0;
+          this.connectionQuality = 'good';
+        }
+      } else {
+        this.consecutiveSlowChecks = 0;
+        this.connectionQuality = 'offline';
+      }
 
       if (wasOffline && this.isOnline) {
         // CRITICAL: Push local changes first, then pull, then notify online
@@ -309,6 +408,8 @@ export class SyncEngine {
       this.onStatus(this.isOnline ? 'online' : 'offline');
     } catch {
       this.isOnline = false;
+      this.connectionQuality = 'offline';
+      this.consecutiveSlowChecks = 0;
       this.onStatus('offline');
       this.disconnectRealtime();
     }
@@ -325,12 +426,28 @@ export class SyncEngine {
     this.lastTokenRefreshAt = 0;
   }
 
+  private lastQueueWarningAt = 0;
+  private static QUEUE_WARNING_THRESHOLD = 50;
+  private static QUEUE_WARNING_COOLDOWN_MS = 300_000; // warn at most every 5 min
+
   public updatePendingCount() {
     const row = this.db.prepare(
       "SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL"
     ).get() as any;
     this.pendingCount = row?.count ?? 0;
     this.onProgress(this.pendingCount);
+
+    // ── Sync queue size warning ──
+    // Alert operator if pending items pile up beyond threshold
+    if (this.pendingCount >= SyncEngine.QUEUE_WARNING_THRESHOLD &&
+        Date.now() - this.lastQueueWarningAt > SyncEngine.QUEUE_WARNING_COOLDOWN_MS) {
+      this.lastQueueWarningAt = Date.now();
+      console.warn(`[sync:queue] WARNING: ${this.pendingCount} pending sync items — check connection`);
+      this.onTicketError({
+        message: `${this.pendingCount} changes waiting to sync. Check your internet connection.`,
+        type: 'sync_queue_warning',
+      });
+    }
   }
 
   // ── Bulletproof Token Management ─────────────────────────────────
@@ -1275,6 +1392,52 @@ export class SyncEngine {
     if (recovered.changes > 0) {
       console.log(`[sync:recover] Reset ${recovered.changes} stuck item(s) for retry`);
     }
+  }
+
+  /**
+   * Revert stale "called" tickets back to "waiting" if no desk action within 30 minutes.
+   * This handles the case where a ticket is called but the customer never shows up
+   * and the operator forgets to mark it as no-show. Runs locally — no cloud dependency.
+   */
+  private revertStaleCalled() {
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const stale = this.db.prepare(`
+      SELECT id, ticket_number, desk_id FROM tickets
+      WHERE status = 'called' AND called_at IS NOT NULL AND called_at < ?
+        AND serving_started_at IS NULL
+    `).all(thirtyMinAgo) as any[];
+
+    if (stale.length === 0) return;
+
+    const now = new Date().toISOString();
+    const revert = this.db.prepare(
+      "UPDATE tickets SET status = 'waiting', desk_id = NULL, called_at = NULL, called_by_staff_id = NULL WHERE id = ? AND status = 'called'"
+    );
+    for (const t of stale) {
+      revert.run(t.id);
+      logTicketEvent(t.id, 'requeued', {
+        ticketNumber: t.ticket_number,
+        fromStatus: 'called',
+        toStatus: 'waiting',
+        source: 'auto_stale_revert',
+        details: { reason: 'called_30min_no_action', previousDesk: t.desk_id },
+      });
+
+      // Queue sync so cloud also gets the revert
+      const syncId = `${t.id}-stale-revert-${Date.now()}`;
+      this.db.prepare(`
+        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+        VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
+      `).run(syncId, t.id, JSON.stringify({ status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null }), now);
+    }
+
+    console.log(`[sync:staleCalled] Reverted ${stale.length} ticket(s) called 30+ min ago back to waiting`);
+    this.onTicketError({
+      message: `${stale.length} ticket(s) returned to queue — called 30+ min ago with no action`,
+      type: 'stale_called_reverted',
+    });
+    this.onDataPulled(); // refresh UI
+    this.updatePendingCount();
   }
 
   // ── Commercial-grade auto-resolve: call the DB function that cleans up stale tickets ──
