@@ -290,7 +290,8 @@ function formatPosition(pos: any, locale: Locale): string {
 
 export async function handleWhatsAppMessage(
   phone: string,
-  messageBody: string
+  messageBody: string,
+  profileName?: string,
 ): Promise<void> {
   const command = messageBody.trim().toUpperCase();
   const detectedLocale = detectLocale(messageBody);
@@ -330,7 +331,7 @@ export async function handleWhatsAppMessage(
   if (parsed) {
     const org = await findOrgByCode(parsed.code);
     if (org) {
-      await handleJoin(phone, org, parsed.locale);
+      await handleJoin(phone, org, parsed.locale, profileName);
     } else {
       await sendWhatsAppMessage({
         to: phone,
@@ -367,7 +368,7 @@ export async function handleWhatsAppMessage(
   if (maybeCode.length >= 2 && maybeCode.length <= 30 && /^[A-Z0-9_-]+$/.test(maybeCode)) {
     const org = await findOrgByCode(maybeCode);
     if (org) {
-      await handleJoin(phone, org, detectedLocale);
+      await handleJoin(phone, org, detectedLocale, profileName);
       return;
     }
   }
@@ -390,7 +391,7 @@ export async function handleWhatsAppMessage(
 
 // ── JOIN ────────────────────────────────────────────────────────────
 
-async function handleJoin(phone: string, org: OrgContext, locale: Locale): Promise<void> {
+async function handleJoin(phone: string, org: OrgContext, locale: Locale, profileName?: string): Promise<void> {
   const supabase = createAdminClient() as any;
 
   // Check for an existing active session at this org
@@ -453,7 +454,7 @@ async function handleJoin(phone: string, org: OrgContext, locale: Locale): Promi
     officeId,
     departmentId,
     serviceId,
-    customerData: { phone, source: 'whatsapp' },
+    customerData: { phone, source: 'whatsapp', ...(profileName ? { name: profileName } : {}) },
     isRemote: true,
     source: 'whatsapp',
   });

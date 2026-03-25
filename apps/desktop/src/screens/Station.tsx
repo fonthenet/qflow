@@ -76,6 +76,280 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
   );
 }
 
+// ── In-House Booking Modal Component ──────────────────────────────
+function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale }: {
+  departments: [string, string][]; // [id, name][]
+  services: { id: string; name: string; department_id: string }[];
+  officeId: string;
+  onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string }; priority: number; source: string }) => Promise<any>;
+  onClose: () => void;
+  locale: DesktopLocale;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+  const [selectedDept, setSelectedDept] = useState(departments.length === 1 ? departments[0][0] : '');
+  const [selectedService, setSelectedService] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerReason, setCustomerReason] = useState('');
+  const [isPriority, setIsPriority] = useState(false);
+  const [createdTicket, setCreatedTicket] = useState<{ ticket_number: string; qr_token: string } | null>(null);
+
+  const deptServices = useMemo(() =>
+    services.filter(s => s.department_id === selectedDept),
+    [services, selectedDept]
+  );
+
+  useEffect(() => {
+    if (!createdTicket) {
+      // Focus name input on open
+      setTimeout(() => nameRef.current?.focus(), 50);
+    }
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose, createdTicket]);
+
+  const handleSubmit = async () => {
+    if (!selectedDept) return;
+    const result = await onBook({
+      department_id: selectedDept,
+      service_id: selectedService || undefined,
+      customer_data: {
+        name: customerName.trim() || undefined,
+        phone: customerPhone.trim() || undefined,
+        reason: customerReason.trim() || undefined,
+      },
+      priority: isPriority ? 2 : 0,
+      source: 'in_house',
+    });
+    if (result?.ticket_number) {
+      setCreatedTicket({ ticket_number: result.ticket_number, qr_token: result.qr_token });
+    }
+  };
+
+  const handleNewTicket = () => {
+    setCreatedTicket(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerReason('');
+    setIsPriority(false);
+    setTimeout(() => nameRef.current?.focus(), 50);
+  };
+
+  const trackUrl = createdTicket ? `https://qflo.net/q/${createdTicket.qr_token}` : '';
+  const qrUrl = createdTicket ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(trackUrl)}` : '';
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', border: '1px solid var(--border)',
+    borderRadius: 8, background: 'var(--surface2)', color: 'var(--text)',
+    fontSize: 14, outline: 'none', boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 };
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-label={t('In-House Booking')}
+        style={{
+          background: 'var(--surface)', borderRadius: 12, padding: 24,
+          minWidth: 360, maxWidth: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          outline: 'none',
+        }}
+      >
+        {createdTicket ? (
+          /* ── Confirmation Screen ── */
+          <>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>&#10003;</div>
+              <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: '#22c55e' }}>
+                {t('Ticket Created')}
+              </h3>
+              <div style={{
+                fontSize: 28, fontWeight: 800, color: '#8b5cf6',
+                background: 'rgba(139,92,246,0.1)', borderRadius: 10,
+                padding: '12px 24px', margin: '12px 0', display: 'inline-block',
+              }}>
+                {createdTicket.ticket_number}
+              </div>
+              {customerName.trim() && (
+                <p style={{ margin: '4px 0', fontSize: 13, color: 'var(--text2)' }}>{customerName.trim()}</p>
+              )}
+            </div>
+
+            {/* QR Code + URL */}
+            <div style={{ textAlign: 'center', margin: '16px 0' }}>
+              <img src={qrUrl} alt="QR" style={{ width: 140, height: 140, borderRadius: 8, border: '1px solid var(--border)' }} />
+              <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 0', wordBreak: 'break-all' }}>
+                {trackUrl}
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={onClose}
+                style={{
+                  flex: 1, padding: '10px', border: '1px solid var(--border)',
+                  borderRadius: 8, background: 'transparent', color: 'var(--text2)',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                {t('Close')}
+              </button>
+              <button
+                onClick={handleNewTicket}
+                style={{
+                  flex: 1, padding: '10px', border: 'none',
+                  borderRadius: 8, background: '#8b5cf6', color: '#fff',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                }}
+              >
+                + {t('New Ticket')}
+              </button>
+            </div>
+          </>
+        ) : (
+          /* ── Booking Form ── */
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{
+                width: 32, height: 32, borderRadius: 8,
+                background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, fontWeight: 700, flexShrink: 0,
+              }}>+</span>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{t('In-House Booking')}</h3>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Department */}
+              <div>
+                <label style={labelStyle}>{t('Department')} *</label>
+                <select
+                  value={selectedDept}
+                  onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">{t('Select Department')}</option>
+                  {departments.map(([id, name]) => (
+                    <option key={id} value={id}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Service (if department has services) */}
+              {selectedDept && deptServices.length > 0 && (
+                <div>
+                  <label style={labelStyle}>{t('Service')}</label>
+                  <select
+                    value={selectedService}
+                    onChange={(e) => setSelectedService(e.target.value)}
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                  >
+                    <option value="">{t('General')}</option>
+                    {deptServices.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Customer Name */}
+              <div>
+                <label style={labelStyle}>{t('Customer Name')}</label>
+                <input
+                  ref={nameRef}
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder={t('Enter customer name')}
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Customer Phone */}
+              <div>
+                <label style={labelStyle}>{t('Customer Phone')}</label>
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder={t('Enter phone number')}
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Reason / Visit Purpose */}
+              <div>
+                <label style={labelStyle}>{t('Reason for Visit')}</label>
+                <input
+                  type="text"
+                  value={customerReason}
+                  onChange={(e) => setCustomerReason(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder={t('Enter reason for visit')}
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Priority toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text2)' }}>
+                <input
+                  type="checkbox"
+                  checked={isPriority}
+                  onChange={(e) => setIsPriority(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: '#f59e0b' }}
+                />
+                {t('Priority Customer')}
+              </label>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={onClose}
+                style={{
+                  flex: 1, padding: '10px', border: '1px solid var(--border)',
+                  borderRadius: 8, background: 'transparent', color: 'var(--text2)',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                {t('Cancel')}
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!selectedDept}
+                style={{
+                  flex: 1, padding: '10px', border: 'none',
+                  borderRadius: 8, background: selectedDept ? '#8b5cf6' : 'var(--surface2)',
+                  color: selectedDept ? '#fff' : 'var(--text3)',
+                  cursor: selectedDept ? 'pointer' : 'not-allowed',
+                  fontSize: 13, fontWeight: 700,
+                }}
+              >
+                {t('Create Ticket')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 declare global {
   interface Window {
     qf: any;
@@ -307,6 +581,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -361,6 +637,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           services: Object.fromEntries((svcs ?? []).map((s: any) => [s.id, s.name])),
           desks: Object.fromEntries((desks ?? []).map((d: any) => [d.id, d.name])),
         });
+        setAllServices((svcs ?? []).map((s: any) => ({ id: s.id, name: s.name, department_id: s.department_id })));
       } catch {
         // Names will be empty until sync pulls data
       }
@@ -542,9 +819,37 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (t) addActivity(t.ticket_number, translate(locale, 'Cancelled'));
   };
 
+  const bookInHouse = async (data: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string }; priority: number; source: string }) => {
+    try {
+      const result = await window.qf.db.createTicket({
+        id: crypto.randomUUID(),
+        ticket_number: '', // auto-generated by IPC handler
+        office_id: session.office_id,
+        department_id: data.department_id,
+        service_id: data.service_id ?? null,
+        priority: data.priority,
+        customer_data: data.customer_data,
+        source: data.source,
+        created_at: new Date().toISOString(),
+      });
+      fetchTickets();
+      const customerLabel = data.customer_data.name || translate(locale, 'Walk-in');
+      showToast(translate(locale, 'Ticket created: {ticket} for {name}', { ticket: result.ticket_number, name: customerLabel }), 'success');
+      addActivity(result.ticket_number, translate(locale, 'In-house booking'));
+      return result; // return to modal for confirmation screen
+    } catch (err: any) {
+      showToast(translate(locale, 'Failed to create ticket'), 'error');
+      console.error('[station] bookInHouse error:', err);
+      return null;
+    }
+  };
+
   // ── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      // Skip shortcuts when a modal with inputs is open (let typing work normally)
+      if (showBookingModal && e.key !== 'F6') return;
+
       // Ctrl+Enter or F8: Call Next (respects pause)
       if (((e.ctrlKey && e.key === 'Enter') || e.key === 'F8') && !activeTicket && session.desk_id && !queuePaused && staffStatus === 'available') {
         e.preventDefault();
@@ -560,6 +865,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         e.preventDefault();
         startServing(activeTicket.id);
       }
+      // F6: In-House Booking (toggle)
+      if (e.key === 'F6' && session.desk_id) {
+        e.preventDefault();
+        setShowBookingModal(prev => !prev);
+      }
       // F10: Complete (when serving)
       if (e.key === 'F10' && activeTicket?.status === 'serving') {
         e.preventDefault();
@@ -568,7 +878,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [activeTicket, session.desk_id, queuePaused, staffStatus]);
+  }, [activeTicket, session.desk_id, queuePaused, staffStatus, showBookingModal]);
 
   // ── Derived data ────────────────────────────────────────────────
 
@@ -919,6 +1229,21 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 {queuePaused ? `▶ ${t('Resume queue')}` : `⏸ ${t('Pause queue')}`} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
               </button>
             )}
+            {/* In-House Booking pill */}
+            <button
+              onClick={() => setShowBookingModal(true)}
+              title="F6"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(139,92,246,0.4)',
+                background: 'rgba(139,92,246,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#8b5cf6',
+              }}
+            >
+              + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
+            </button>
             {/* Staff status dropdown — only show when not available */}
             {staffStatus !== 'available' && (
             <div style={{ position: 'relative' }}>
@@ -1064,6 +1389,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
                   {ticket.source === 'mobile_app' && <span className="badge mobile-app">{translate(locale, 'Mobile App')}</span>}
                   {ticket.source === 'kiosk' && <span className="badge kiosk">{translate(locale, 'Kiosk')}</span>}
+                  {ticket.source === 'in_house' && <span className="badge in-house">{translate(locale, 'In-House')}</span>}
                   {ticket.is_remote && (!ticket.source || ticket.source === 'walk_in') && <span className="badge remote">{translate(locale, 'Remote')}</span>}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
@@ -1331,6 +1657,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             setShowTransferModal(false);
           }}
           onClose={() => setShowTransferModal(false)}
+        />
+      )}
+
+      {/* In-House Booking Modal */}
+      {showBookingModal && (
+        <InHouseBookingModal
+          locale={locale}
+          departments={Object.entries(names.departments)}
+          services={allServices}
+          officeId={session.office_id}
+          onBook={bookInHouse}
+          onClose={() => setShowBookingModal(false)}
         />
       )}
 

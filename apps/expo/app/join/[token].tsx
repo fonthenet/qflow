@@ -34,6 +34,7 @@ export default function JoinScreen() {
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [name, setName] = useState(savedName);
   const [phone, setPhone] = useState(savedPhone);
+  const [reason, setReason] = useState('');
 
   // Result
   const [ticketNumber, setTicketNumber] = useState('');
@@ -124,6 +125,7 @@ export default function JoinScreen() {
       serviceId: selectedServiceId,
       customerName: name.trim() || undefined,
       customerPhone: phone.trim() || undefined,
+      reason: reason.trim() || undefined,
     });
     if ('error' in result) {
       setStep('select');
@@ -347,6 +349,14 @@ export default function JoinScreen() {
           onChangeText={setPhone}
           keyboardType="phone-pad"
           autoCorrect={false}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Reason for visit (optional)"
+          placeholderTextColor={colors.textMuted}
+          value={reason}
+          onChangeText={setReason}
+          autoCapitalize="sentences"
         />
       </View>
 

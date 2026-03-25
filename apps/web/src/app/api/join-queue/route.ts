@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     serviceId?: string;
     customerName?: string;
     customerPhone?: string;
+    reason?: string;
   };
 
   try {
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone } = body;
+  const { officeId, departmentId, serviceId, customerName, customerPhone, reason } = body;
 
   if (!officeId || !departmentId || !serviceId) {
     return NextResponse.json(
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
   const customerData: Record<string, string> = {};
   if (customerName?.trim()) customerData.name = customerName.trim();
   if (customerPhone?.trim()) customerData.phone = customerPhone.trim();
+  if (reason?.trim()) customerData.reason = reason.trim();
 
   // Create ticket
   const { data: ticket, error } = await supabase

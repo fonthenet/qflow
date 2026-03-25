@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { initDB, getDB, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
+import { initDB, getDB, generateOfflineTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -454,23 +454,64 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:create-ticket', (_e, ticket: any) => {
+    // Auto-generate ticket number if not provided (for in-house bookings)
+    if (!ticket.ticket_number) {
+      const dept = db.prepare('SELECT code FROM departments WHERE id = ?').get(ticket.department_id) as any;
+      const deptCode = dept?.code || 'G';
+      ticket.ticket_number = generateOfflineTicketNumber(ticket.office_id, deptCode);
+    }
+
+    // Generate qr_token if not provided (needed by Supabase NOT NULL constraint)
+    if (!ticket.qr_token) {
+      const { randomUUID } = require('crypto');
+      ticket.qr_token = randomUUID().replace(/-/g, '').slice(0, 12);
+    }
+
+    // Generate daily_sequence if not provided (needed by Supabase NOT NULL constraint)
+    if (!ticket.daily_sequence) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const seqRow = db.prepare(
+        "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
+      ).get(ticket.office_id, ticket.department_id, todayStart.toISOString()) as any;
+      ticket.daily_sequence = (seqRow?.c ?? 0) + 1;
+    }
+
+    const now = ticket.created_at ?? new Date().toISOString();
+
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, 1)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), ticket.created_at ?? new Date().toISOString());
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, 1, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.source ?? 'walk_in');
+
+      // Build clean sync payload with all Supabase NOT NULL fields
+      const syncPayload = {
+        id: ticket.id,
+        ticket_number: ticket.ticket_number,
+        office_id: ticket.office_id,
+        department_id: ticket.department_id,
+        service_id: ticket.service_id || null,
+        status: 'waiting',
+        priority: ticket.priority ?? 0,
+        customer_data: ticket.customer_data ?? {},
+        created_at: now,
+        qr_token: ticket.qr_token,
+        daily_sequence: ticket.daily_sequence,
+        source: ticket.source ?? 'walk_in',
+      };
 
       db.prepare(`
         INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
         VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-      `).run(ticket.id + '-create', ticket.id, JSON.stringify(ticket), new Date().toISOString());
+      `).run(ticket.id + '-create', ticket.id, JSON.stringify(syncPayload), now);
     })();
 
     logTicketEvent(ticket.id, 'created', {
       ticketNumber: ticket.ticket_number,
       toStatus: 'waiting',
-      source: 'station_offline',
+      source: ticket.source ?? 'station_offline',
       details: { officeId: ticket.office_id, departmentId: ticket.department_id, serviceId: ticket.service_id, isOffline: true },
     });
 
@@ -481,7 +522,7 @@ function setupIPC() {
     // Immediately push to cloud so web/mobile displays update within 1-2s
     syncEngine?.pushImmediate(ticket.id + '-create');
 
-    return ticket;
+    return { ...ticket, qr_token: ticket.qr_token };
   });
 
   ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any) => {

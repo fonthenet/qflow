@@ -161,6 +161,7 @@ export async function joinQueue(params: {
   serviceId: string;
   customerName?: string;
   customerPhone?: string;
+  reason?: string;
 }): Promise<JoinQueueResult | { error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/join-queue`, {

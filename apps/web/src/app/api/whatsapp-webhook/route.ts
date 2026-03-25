@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
     let fromPhone: string;
     let toPhone: string;
     let messageBody: string;
+    let profileName: string | undefined;
 
     if (contentType.includes('application/x-www-form-urlencoded')) {
       // Twilio sends form-encoded data
@@ -95,6 +96,8 @@ export async function POST(request: NextRequest) {
       fromPhone = message.from ?? '';
       toPhone = change?.value?.metadata?.display_phone_number ?? '';
       messageBody = message.text?.body ?? '';
+      // Extract WhatsApp profile name (Meta provides it in contacts array)
+      profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
     } else {
       return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
     console.log(`[whatsapp-webhook] Message from ${fromPhone}: "${messageBody}"`);
 
     // Handle the message with shared-number routing
-    await handleWhatsAppMessage(fromPhone, messageBody);
+    await handleWhatsAppMessage(fromPhone, messageBody, profileName);
 
     console.log(`[whatsapp-webhook] Handled successfully`);
     return NextResponse.json({ ok: true });
