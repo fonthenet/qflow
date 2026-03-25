@@ -170,9 +170,60 @@ export function App() {
     );
   }
 
+  const handleInstallNow = useCallback(() => {
+    window.qf.updater?.installUpdate?.();
+  }, []);
+
   return (
     <ErrorBoundary locale={locale}>
       <div className="app">
+        {/* Update progress overlay — visible during download and when ready to install */}
+        {(updateStatus.status === 'downloading' || updateStatus.status === 'available') && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+            color: 'white', padding: '10px 20px',
+            display: 'flex', alignItems: 'center', gap: 12,
+            boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          }}>
+            <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+            <span style={{ fontWeight: 600, fontSize: 13 }}>
+              {updateStatus.progress != null && updateStatus.progress > 0
+                ? t('Downloading update... {progress}%', { progress: Math.round(updateStatus.progress) })
+                : t('Downloading update...')}
+            </span>
+            {updateStatus.progress != null && updateStatus.progress > 0 && (
+              <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: `${updateStatus.progress}%`, height: '100%', background: 'white', borderRadius: 2, transition: 'width 0.3s ease' }} />
+              </div>
+            )}
+            <span style={{ fontSize: 11, opacity: 0.8 }}>{t('Do not close the app')}</span>
+          </div>
+        )}
+        {updateStatus.status === 'downloaded' && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+            color: 'white', padding: '10px 20px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>
+              {t('Update ready! Restart to apply.')}
+              {updateStatus.version && <span style={{ opacity: 0.8, marginLeft: 8, fontSize: 11 }}>v{updateStatus.version}</span>}
+            </span>
+            <button
+              onClick={handleInstallNow}
+              style={{
+                background: 'white', color: '#15803d', border: 'none',
+                padding: '6px 16px', borderRadius: 6, fontWeight: 700,
+                fontSize: 12, cursor: 'pointer',
+              }}
+            >
+              {t('Restart Now')}
+            </button>
+          </div>
+        )}
         <StatusBar
           session={session}
           syncStatus={syncStatus}

@@ -909,17 +909,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '5px 14px', borderRadius: 20,
-                  border: queuePaused ? '1.5px solid #f59e0b40' : '1.5px solid var(--border)',
-                  background: queuePaused ? 'rgba(245,158,11,0.12)' : 'transparent',
+                  border: queuePaused ? '1.5px solid #f59e0b40' : '1.5px solid #f97316',
+                  background: queuePaused ? 'rgba(245,158,11,0.12)' : 'rgba(249,115,22,0.12)',
                   cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: queuePaused ? '#f59e0b' : 'var(--text3)',
+                  color: queuePaused ? '#f59e0b' : '#f97316',
                 }}
                 aria-label={queuePaused ? t('Resume queue') : t('Pause queue')}
               >
-                {queuePaused ? `▶ ${t('Resume queue')}` : `⏸ ${t('Pause queue')}`} <span className="shortcut-hint">F7</span>
+                {queuePaused ? `▶ ${t('Resume queue')}` : `⏸ ${t('Pause queue')}`} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
               </button>
             )}
-            {/* Staff status dropdown */}
+            {/* Staff status dropdown — only show when not available */}
+            {staffStatus !== 'available' && (
             <div style={{ position: 'relative' }}>
               <button
                 onClick={() => setShowStatusMenu((v) => !v)}
@@ -968,6 +969,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 </div>
               )}
             </div>
+            )}
           </div>
 
           <div className="idle-panel">
@@ -1274,8 +1276,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
                         wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
                       }}
-                      title={t('Click to copy')}
-                      onClick={() => navigator.clipboard?.writeText(item.localUrl)}
+                      title={t('Click to open')}
+                      onClick={() => { window.open(item.localUrl, '_blank'); }}
                     >
                       {getDisplayUrlLabel(item.localUrl)}
                     </div>
@@ -1294,8 +1296,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           userSelect: 'all',
                           cursor: 'pointer',
                         }}
-                        title={t('Click to copy')}
-                        onClick={() => navigator.clipboard?.writeText(item.publicUrl!)}
+                        title={t('Click to open')}
+                        onClick={() => { window.open(item.publicUrl!, '_blank'); }}
                       >
                         {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
                       </div>
