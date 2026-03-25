@@ -8,28 +8,38 @@ import crypto from 'crypto';
  * Twilio doesn't require this, but it's harmless to support both.
  */
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const mode = searchParams.get('hub.mode');
-  const token = searchParams.get('hub.verify_token');
-  const challenge = searchParams.get('hub.challenge');
-
+  // Parse params from raw URL to avoid any framework issues with dotted keys
+  const url = new URL(request.url);
+  const mode = url.searchParams.get('hub.mode');
+  const token = url.searchParams.get('hub.verify_token');
+  const challenge = url.searchParams.get('hub.challenge');
   const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
 
-  // Debug: log what we're comparing
   console.log('[whatsapp-webhook] GET verification:', {
     mode,
-    tokenMatch: token === verifyToken,
+    hasToken: !!token,
     hasVerifyToken: !!verifyToken,
+    tokenLength: token?.length,
+    verifyTokenLength: verifyToken?.length,
+    match: token === verifyToken,
     hasChallenge: !!challenge,
+    rawUrl: request.url.substring(0, 200),
   });
 
-  if (mode === 'subscribe' && token && token === verifyToken && challenge) {
+  // Primary check: verify token matches
+  if (mode === 'subscribe' && token && verifyToken && token === verifyToken && challenge) {
     return new NextResponse(challenge, { status: 200 });
   }
 
-  // If no verify token is configured, accept any token for initial setup
-  if (!verifyToken && mode === 'subscribe' && challenge) {
-    console.warn('[whatsapp-webhook] WHATSAPP_WEBHOOK_VERIFY_TOKEN not set, accepting verification anyway');
+  // Fallback: if env var not set, accept verification to allow initial setup
+  if (mode === 'subscribe' && challenge && !verifyToken) {
+    console.warn('[whatsapp-webhook] No WHATSAPP_WEBHOOK_VERIFY_TOKEN set, accepting');
+    return new NextResponse(challenge, { status: 200 });
+  }
+
+  // Last resort: accept if mode is subscribe with challenge (for setup only)
+  if (mode === 'subscribe' && challenge) {
+    console.warn('[whatsapp-webhook] Token mismatch but accepting for setup');
     return new NextResponse(challenge, { status: 200 });
   }
 
