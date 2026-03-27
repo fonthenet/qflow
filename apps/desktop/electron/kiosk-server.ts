@@ -1223,6 +1223,25 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     .flash-new { animation: flashNew 0.6s ease-out; }
     @keyframes flashNew { 0% { background: #fef08a; transform: scale(1.02); } 100% { background: white; transform: scale(1); } }
 
+    /* ── Full-screen calling overlay ── */
+    .call-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.97);
+      animation: fadeInOverlay 0.3s ease-out;
+    }
+    .call-overlay.visible { display: flex; }
+    .call-overlay .call-label { font-size: 32px; font-weight: 800; text-transform: uppercase; letter-spacing: 6px; color: #3b82f6; margin-bottom: 16px; animation: pulse 1.5s infinite; }
+    .call-overlay .call-number { font-size: 140px; font-weight: 900; color: #0f172a; letter-spacing: -6px; line-height: 1; }
+    .call-overlay .call-desk { font-size: 42px; font-weight: 700; color: #22c55e; margin-top: 20px; }
+    .call-overlay .call-dept { font-size: 22px; color: #64748b; margin-top: 8px; }
+    @keyframes fadeInOverlay { from { opacity: 0; transform: scale(1.05); } to { opacity: 1; transform: scale(1); } }
+    @media (max-width: 767px) {
+      .call-overlay .call-number { font-size: 80px; }
+      .call-overlay .call-desk { font-size: 28px; }
+      .call-overlay .call-label { font-size: 22px; }
+    }
+
     /* ── Audio chime (hidden) ── */
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
@@ -1319,6 +1338,12 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
   </style>
 </head>
 <body>
+  <div class="call-overlay" id="call-overlay">
+    <div class="call-label" id="call-overlay-label">NOW CALLING</div>
+    <div class="call-number" id="call-overlay-number"></div>
+    <div class="call-desk" id="call-overlay-desk"></div>
+    <div class="call-dept" id="call-overlay-dept"></div>
+  </div>
   <div class="display">
     <div class="header">
       <div class="header-left">
@@ -1413,7 +1438,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     function updateClock() {
       var now = new Date();
-      updateText('clock', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      updateText('clock', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       updateText('date', now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     }
 
@@ -1426,11 +1451,31 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       return Math.max(0, CALL_TIMEOUT - elapsed);
     }
 
+    var overlayTimer = null;
+    function showCallOverlay(ticket, deskName, deptName) {
+      var overlay = document.getElementById('call-overlay');
+      document.getElementById('call-overlay-number').textContent = ticket.ticket_number;
+      document.getElementById('call-overlay-desk').textContent = 'Go to ' + deskName;
+      document.getElementById('call-overlay-dept').textContent = deptName || '';
+      overlay.classList.add('visible');
+      if (overlayTimer) clearTimeout(overlayTimer);
+      overlayTimer = setTimeout(function() { overlay.classList.remove('visible'); overlayTimer = null; }, 8000);
+    }
+
     function renderServing(active) {
-      // Check for newly called tickets (for chime)
+      // Check for newly called tickets (for chime + overlay)
       var currentCalledIds = active.filter(function(t){return t.status==='called'}).map(function(t){return t.id});
       var hasNew = currentCalledIds.some(function(id) { return prevCalledIds.indexOf(id) === -1; });
-      if (hasNew && prevCalledIds.length > 0) playChime();
+      if (hasNew) {
+        if (prevCalledIds.length > 0) playChime();
+        // Show full-screen overlay for the newest called ticket
+        var newTicket = active.find(function(t) { return t.status === 'called' && prevCalledIds.indexOf(t.id) === -1; });
+        if (newTicket) {
+          var dn = desks[newTicket.desk_id] || newTicket.desk_name || 'Desk';
+          var dpn = departments[newTicket.department_id] || '';
+          showCallOverlay(newTicket, dn, dpn);
+        }
+      }
       prevCalledIds = currentCalledIds;
 
       var el = document.getElementById('serving-list');
