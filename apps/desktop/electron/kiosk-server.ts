@@ -802,6 +802,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
           position: position?.pos ?? 1,
           created_at: now,
           qr_data_url: qrDataUrl,
+          qr_token: qrToken,
+          has_phone: Boolean(safePhone),
         },
       }));
     } catch (err: any) {
