@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
+import { useI18n } from '@/components/providers/locale-provider';
 
 interface ScreenSettings {
   announcement_sound?: boolean;
@@ -73,6 +74,7 @@ export function DisplayBoard({
   const [currentTime, setCurrentTime] = useState(new Date());
   const [viewportWidth, setViewportWidth] = useState<number>(1280);
   const knownCalledAnchorsRef = useRef<Map<string, string>>(new Map());
+  const { t } = useI18n();
 
   const settings: ScreenSettings = displayScreen.settings ?? {};
   const announcementSound = settings.announcement_sound ?? true;
@@ -195,7 +197,7 @@ export function DisplayBoard({
                 fontSize: isMobile ? '1.25rem' : '1.875rem',
               }}
             >
-              Now Calling
+              {t('Now Calling')}
             </div>
             <div
               className="mt-6 font-black leading-none"
@@ -207,7 +209,7 @@ export function DisplayBoard({
               {lastCalledTicket.ticket_number}
             </div>
             <div className="mt-4 font-bold" style={{ color: '#16a34a', fontSize: isMobile ? '1.75rem' : '2.25rem' }}>
-              Go to {lastCalledTicket.desk?.display_name || lastCalledTicket.desk?.name || 'Desk'}
+              {t('Go to {name}', { name: lastCalledTicket.desk?.display_name || lastCalledTicket.desk?.name || t('Desk') })}
             </div>
           </div>
         </div>
@@ -295,7 +297,7 @@ export function DisplayBoard({
                     background: '#22c55e',
                   }}
                 />
-                Connected
+                {t('Connected')}
               </div>
               <LanguageSwitcher />
             </div>
@@ -327,10 +329,10 @@ export function DisplayBoard({
           }}
         >
           {[
-            { label: 'Waiting', value: waitingCount, color: '#f59e0b' },
-            { label: 'Called', value: calledCount, color: '#3b82f6' },
-            { label: 'Serving', value: servingCount, color: '#22c55e' },
-            { label: 'Served Today', value: servedTodayCount, color: '#64748b' },
+            { label: t('Waiting'), value: waitingCount, color: '#f59e0b' },
+            { label: t('Called'), value: calledCount, color: '#3b82f6' },
+            { label: t('Serving'), value: servingCount, color: '#22c55e' },
+            { label: t('Served Today'), value: servedTodayCount, color: '#64748b' },
           ].map((stat, index) => (
             <div
               key={stat.label}
@@ -393,7 +395,7 @@ export function DisplayBoard({
                 borderBottom: '1px solid #f1f5f9',
               }}
             >
-              Now Serving
+              {t('Now Serving')}
             </div>
             <div
               style={{
@@ -418,7 +420,7 @@ export function DisplayBoard({
                     textAlign: 'center',
                   }}
                 >
-                  Waiting for customers...
+                  {t('Waiting for customers...')}
                 </div>
               ) : (
                 visibleActiveTickets.map((ticket) => {
@@ -491,7 +493,7 @@ export function DisplayBoard({
                               color: '#fff',
                             }}
                           >
-                            Please Proceed
+                            {t('Please Proceed')}
                           </div>
                         </>
                       ) : (
@@ -507,7 +509,7 @@ export function DisplayBoard({
                             color: '#fff',
                           }}
                         >
-                          Serving
+                          {t('Serving')}
                         </div>
                       )}
                     </div>
@@ -538,7 +540,7 @@ export function DisplayBoard({
                 background: '#f8fafc',
               }}
             >
-              Queue
+              {t('Queue')}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '10px 12px 16px' : '8px 16px' }}>
               {waitingTickets.length === 0 ? (
@@ -551,7 +553,7 @@ export function DisplayBoard({
                     fontWeight: 600,
                   }}
                 >
-                  No customers in queue
+                  {t('No customers in queue')}
                 </div>
               ) : (
                 waitingTickets.map((ticket, index) => {
@@ -635,7 +637,7 @@ export function DisplayBoard({
                             color: '#1e40af',
                           }}
                         >
-                          Booked
+                          {t('Booked')}
                         </span>
                       ) : null}
                       <div style={{ fontSize: isMobile ? 12 : 18, color: '#94a3b8', fontWeight: 700, marginLeft: 8 }}>

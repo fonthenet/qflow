@@ -6,11 +6,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/components/providers/locale-provider';
 import type { AppLocale } from '@/lib/i18n/messages';
 
+const STORAGE_KEY = 'qflo_preferred_locale';
+const SUPPORTED_LOCALES: AppLocale[] = ['en', 'fr', 'ar'];
 const localeLabels: Record<AppLocale, string> = {
   en: 'EN',
   fr: 'FR',
   ar: 'AR',
 };
+
+/** Save the user's language choice so it persists across visits. */
+function persistLocale(locale: AppLocale) {
+  try { localStorage.setItem(STORAGE_KEY, locale); } catch {}
+}
 
 export function LanguageSwitcher({ variant = 'floating' }: { variant?: 'floating' | 'embedded' }) {
   const pathname = usePathname();
@@ -18,6 +25,29 @@ export function LanguageSwitcher({ variant = 'floating' }: { variant?: 'floating
   const { locale } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Save current locale to localStorage whenever it changes
+  useEffect(() => { persistLocale(locale); }, [locale]);
+
+  // On first visit, if no ?lang= param, auto-detect from saved pref or browser language
+  useEffect(() => {
+    if (searchParams?.get('lang')) return; // explicit param — respect it
+    let preferred: AppLocale | null = null;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY) as AppLocale | null;
+      if (saved && SUPPORTED_LOCALES.includes(saved)) preferred = saved;
+    } catch {}
+    if (!preferred) {
+      const browserLang = navigator.language?.slice(0, 2).toLowerCase();
+      if (browserLang && SUPPORTED_LOCALES.includes(browserLang as AppLocale)) {
+        preferred = browserLang as AppLocale;
+      }
+    }
+    if (preferred && preferred !== locale) {
+      window.location.replace(buildHref(preferred));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function buildHref(nextLocale: AppLocale) {
     const params = new URLSearchParams(searchParams?.toString());

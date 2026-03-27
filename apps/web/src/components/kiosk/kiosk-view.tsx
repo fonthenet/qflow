@@ -129,6 +129,7 @@ export function KioskView({
   const [searched, setSearched] = useState(false);
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const themeColor = ks.themeColor || '#2563eb';
@@ -175,6 +176,7 @@ export function KioskView({
     setCustomerInfoError(null);
     setTicket(null);
     setQrDataUrl('');
+    setTicketError(null);
     clearAppointmentSearch();
     setLoading(false);
   }
@@ -326,10 +328,13 @@ export function KioskView({
     });
 
     if (result.error || !result.data) {
-      alert(result.error ? t(result.error) : t('Error creating ticket. Please try again.'));
+      const msg = result.error ? t(result.error) : t('Error creating ticket. Please try again.');
+      setTicketError(msg);
+      setTimeout(() => setTicketError(null), 6000);
       setLoading(false);
       return;
     }
+    setTicketError(null);
 
     const newTicket = result.data;
     const dataUrl = await buildQrDataUrl(newTicket.qr_token);
@@ -611,6 +616,9 @@ export function KioskView({
                         dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
                       }`}
                     />
+                    {whatsappEnabled && (
+                      <p className="mt-1.5 text-xs text-slate-500">{t('To receive WhatsApp queue updates')}</p>
+                    )}
                   </div>
                 </div>
                 {customerInfoError ? (
@@ -708,6 +716,8 @@ export function KioskView({
               </div>
 
               <div className="mt-5 space-y-4">
+                {/* Show name/phone form only when service is the entry point (single dept — home screen was skipped) */}
+                {directServiceEntry && (
                 <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
                   <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
                     <div className="text-center">
@@ -744,12 +754,25 @@ export function KioskView({
                           dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
                         }`}
                       />
+                      {whatsappEnabled && (
+                        <p className="mt-1.5 text-xs text-slate-500">{t('To receive WhatsApp queue updates')}</p>
+                      )}
                     </div>
                   </div>
                   {customerInfoError ? (
                     <p className="mt-3 text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
                   ) : null}
                 </div>
+                )}
+                {!directServiceEntry && customerInfoError && (
+                  <p className="text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
+                )}
+
+                {ticketError && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-700">
+                    {ticketError}
+                  </div>
+                )}
 
                 {selectedDept.services.map((service: any) => {
                   const showMedicalIcon =
@@ -799,6 +822,12 @@ export function KioskView({
               </p>
             </div>
 
+            {ticketError && (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-700">
+                {ticketError}
+              </div>
+            )}
+
             <div className="mt-6 space-y-3">
               <button
                 onClick={() => handlePrioritySelected(null)}
@@ -809,7 +838,7 @@ export function KioskView({
                   STD
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">Standard</div>
+                  <div className="text-xl font-bold text-slate-950">{t('Standard')}</div>
                   <div className="mt-1 text-sm text-slate-600">
                     {t('Continue with the normal queue order.')}
                   </div>
@@ -991,14 +1020,14 @@ export function KioskView({
               </p>
             </div>
 
-            {/* ── Notification Buttons (Hero Section) ── */}
+            {/* ── Notifications ── */}
             {ticket.qr_token && (whatsappEnabled || messengerPageId) && (
               <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 print:hidden sm:p-5">
                 <p className="text-center text-sm font-semibold text-slate-700">
                   {t('Get notified when called')}
                 </p>
 
-                {/* Show "already active" if phone was entered */}
+                {/* WhatsApp active confirmation — phone was entered */}
                 {customerPhone.trim() && whatsappEnabled && (
                   <div className="mt-3 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100">
@@ -1008,43 +1037,41 @@ export function KioskView({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-green-800">{t('WhatsApp notifications active')}</p>
-                      <p className="text-xs text-green-600">{customerPhone}</p>
+                      <p className="text-xs text-green-600">{t("We'll message you when it's your turn")}</p>
                     </div>
                     <Check className="h-5 w-5 shrink-0 text-green-500" />
                   </div>
                 )}
 
-                {/* Deep link buttons for customers who didn't enter phone or want another channel */}
-                <div className={`${customerPhone.trim() && whatsappEnabled ? 'mt-2' : 'mt-3'} flex flex-col gap-2`}>
-                  {whatsappEnabled && whatsappPhone && !customerPhone.trim() && (
-                    <a
-                      href={`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`TRACK qflo_${ticket.qr_token}`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-green-200 bg-green-50 px-4 py-3.5 text-base font-semibold text-green-700 transition-all hover:bg-green-100 hover:shadow-sm active:scale-[0.98]"
-                    >
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                      </svg>
-                      {t('Get WhatsApp notifications')}
-                    </a>
-                  )}
-                  {messengerPageId && (
-                    <a
-                      href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3.5 text-base font-semibold text-blue-700 transition-all hover:bg-blue-100 hover:shadow-sm active:scale-[0.98]"
-                    >
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
-                      </svg>
-                      {customerPhone.trim() && whatsappEnabled
-                        ? t('Switch to Messenger')
-                        : t('Get Messenger notifications')}
-                    </a>
-                  )}
-                </div>
+                {/* WhatsApp deep link — no phone entered */}
+                {whatsappEnabled && whatsappPhone && !customerPhone.trim() && (
+                  <a
+                    href={`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`TRACK qflo_${ticket.qr_token}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-green-200 bg-green-50 px-4 py-3.5 text-base font-semibold text-green-700 transition-all hover:bg-green-100 hover:shadow-sm active:scale-[0.98]"
+                  >
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    </svg>
+                    {t('Get WhatsApp notifications')}
+                  </a>
+                )}
+
+                {/* Messenger — secondary option */}
+                {messengerPageId && (
+                  <a
+                    href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${customerPhone.trim() && whatsappEnabled ? 'mt-2' : 'mt-3'} inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm active:scale-[0.98]`}
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
+                    </svg>
+                    {t('Or use Messenger instead')}
+                  </a>
+                )}
               </div>
             )}
 
@@ -1059,6 +1086,9 @@ export function KioskView({
               ) : null}
               <p className="mt-2 text-sm font-semibold text-slate-800 sm:text-base">
                 {t('Scan to track your queue position')}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {t('Use your phone camera to check your place in line')}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-500">
                 {formatDateTime(new Date(), {
