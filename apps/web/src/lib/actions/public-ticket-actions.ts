@@ -6,7 +6,7 @@ import { hasVerifiedBookingEmail } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { resolvePlatformConfig } from '@/lib/platform/config';
-import { normalizePhone } from '@/lib/whatsapp';
+
 
 const DAYS_OF_WEEK = [
   'sunday',
@@ -311,28 +311,10 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       },
     });
 
-    // Auto-create notification session if customer has a phone number
-    // (skip if source is whatsapp/messenger — those create sessions via messaging-commands)
-    const ticketSource = input.source ?? (input.isRemote ? 'qr_code' : 'walk_in');
-    if (ticketSource !== 'whatsapp' && ticketSource !== 'messenger') {
-      const cd = input.customerData as Record<string, unknown> | null;
-      const rawPhone = typeof cd?.phone === 'string' ? cd.phone.trim() : null;
-      const officeCountryCode = (officeSettings as Record<string, unknown>)?.country_code as string | undefined;
-      const normalizedPhone = rawPhone ? normalizePhone(rawPhone, office.timezone, officeCountryCode) : null;
-      if (normalizedPhone && orgId) {
-        await (supabase as any).from('whatsapp_sessions').insert({
-          organization_id: orgId,
-          ticket_id: ticket.id,
-          office_id: input.officeId,
-          department_id: input.departmentId,
-          service_id: input.serviceId,
-          whatsapp_phone: normalizedPhone,
-          channel: 'whatsapp',
-          state: 'active',
-          locale: 'fr',
-        }).then(() => {}).catch(() => {});
-      }
-    }
+    // NOTE: Notification session creation + "joined" notification is handled by
+    // the Postgres trigger `auto_create_notification_session` on ticket INSERT.
+    // Do NOT duplicate session creation here — it causes `.maybeSingle()` failures
+    // in the whatsapp-send route when two active sessions exist for the same ticket.
   }
 
   revalidatePath('/desk');

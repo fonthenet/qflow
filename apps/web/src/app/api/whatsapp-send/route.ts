@@ -53,12 +53,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Look up active session for this ticket (supports both WhatsApp and Messenger)
-    const { data: session } = await (supabase as any)
+    // Use .limit(1) instead of .maybeSingle() to handle duplicate sessions gracefully
+    const { data: sessions } = await (supabase as any)
       .from('whatsapp_sessions')
       .select('id, whatsapp_phone, messenger_psid, organization_id, locale, channel, otn_token')
       .eq('ticket_id', ticketId)
       .eq('state', 'active')
-      .maybeSingle();
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const session = sessions?.[0] ?? null;
 
     if (!session) {
       return NextResponse.json({ sent: false, reason: 'no active session' });

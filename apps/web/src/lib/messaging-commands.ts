@@ -319,6 +319,15 @@ export async function handleInboundMessage(
   const command = messageBody.trim().toUpperCase();
   const detectedLocale = detectLocale(messageBody);
 
+  // ── TRACK qflo_QRTOKEN (link WhatsApp/Messenger to existing ticket) ──
+  if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
+    const qrToken = messageBody.trim().substring('TRACK qflo_'.length).trim();
+    if (qrToken) {
+      await handleTrackLink(identifier, qrToken, detectedLocale, channel, sendMessage, profileName);
+      return;
+    }
+  }
+
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || messageBody.trim() === 'حالة') {
     const found = await findOrgByActiveSession(identifier, channel);
@@ -398,6 +407,102 @@ export async function handleInboundMessage(
 }
 
 // ── JOIN ──────────────────────────────────────────────────────────────
+
+// ── TRACK LINK (link WhatsApp/Messenger to existing ticket via qr_token) ──
+
+async function handleTrackLink(
+  identifier: string,
+  qrToken: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  profileName?: string,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+
+  // Look up ticket by qr_token
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('id, ticket_number, qr_token, status, office_id, department_id, service_id')
+    .eq('qr_token', qrToken)
+    .single();
+
+  if (!ticket) {
+    await sendMessage({ to: identifier, body: t('not_in_queue', locale) });
+    return;
+  }
+
+  if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
+    await sendMessage({ to: identifier, body: t('not_in_queue', locale) });
+    return;
+  }
+
+  // Get org info
+  const { data: office } = await supabase
+    .from('offices')
+    .select('organization_id')
+    .eq('id', ticket.office_id)
+    .single();
+  if (!office) return;
+
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('name')
+    .eq('id', office.organization_id)
+    .single();
+
+  const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+
+  // Check if there's already an active session for this ticket
+  const { data: existingSession } = await supabase
+    .from('whatsapp_sessions')
+    .select('id, channel')
+    .eq('ticket_id', ticket.id)
+    .eq('state', 'active')
+    .limit(1);
+
+  if (existingSession && existingSession.length > 0) {
+    // Update existing session to this channel
+    await supabase
+      .from('whatsapp_sessions')
+      .update({
+        channel,
+        [identifierColumn]: identifier,
+        ...(channel === 'messenger' ? { whatsapp_phone: null } : { messenger_psid: null }),
+      })
+      .eq('id', existingSession[0].id);
+  } else {
+    // Create new session
+    await supabase.from('whatsapp_sessions').insert({
+      organization_id: office.organization_id,
+      ticket_id: ticket.id,
+      office_id: ticket.office_id,
+      department_id: ticket.department_id,
+      service_id: ticket.service_id,
+      [identifierColumn]: identifier,
+      channel,
+      state: 'active',
+      locale,
+    });
+  }
+
+  // Build and send rich "joined" message
+  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+  const pos = await getQueuePosition(ticket.id);
+  const positionText = pos.position != null
+    ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
+    : '';
+
+  const message = tNotification('joined', locale, {
+    name: org?.name ?? '',
+    ticket: ticket.ticket_number,
+    position: positionText,
+    url: trackUrl,
+  });
+
+  await sendMessage({ to: identifier, body: message });
+}
 
 async function handleJoin(
   identifier: string,
