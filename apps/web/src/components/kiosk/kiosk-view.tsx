@@ -480,7 +480,7 @@ export function KioskView({
   return (
     <div className="flex min-h-screen flex-col bg-[#f1f5f9]">
       {/* ── Header — clean white, matches local kiosk ── */}
-      <div className="relative border-b border-slate-200 bg-white px-6 pb-5 pt-7 text-center sm:px-8 sm:pb-6 sm:pt-8">
+      <div className="relative border-b border-slate-200 bg-white px-6 pb-5 pt-7 text-center sm:px-8">
         {/* Language switcher — top left */}
         <div className="absolute left-4 top-4 sm:left-6">
           <LanguageSwitcher variant="floating" />
@@ -500,9 +500,9 @@ export function KioskView({
           </div>
         )}
 
-        {/* Logo badge */}
+        {/* Logo badge — 52×52, brand bg, margin-bottom 12px */}
         {hasLogo ? (
-          <div className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-2xl" style={{ backgroundColor: themeColor }}>
+          <div className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-[16px]" style={{ backgroundColor: themeColor }}>
             <img
               src={ks.logoUrl!}
               alt={`${organization?.name || 'Business'} logo`}
@@ -511,23 +511,26 @@ export function KioskView({
           </div>
         ) : (
           <div
-            className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center rounded-2xl text-2xl font-black text-white"
+            className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] text-2xl font-black text-white"
             style={{ backgroundColor: themeColor }}
           >
             {(businessName ?? 'Q').charAt(0)}
           </div>
         )}
 
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-[28px]">
-          {kioskTitle}
+        {/* h1 = business name (matches local: 24px, 800 weight) */}
+        <h1 className="text-2xl font-extrabold tracking-[-0.5px] text-slate-950">
+          {businessName}
         </h1>
-        {officeLine ? (
-          <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>{officeLine}</div>
-        ) : (
-          <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>
-            {step === 'ticket' ? t('Your ticket is ready!') : localizedWelcomeMessage}
-          </div>
-        )}
+        {/* subtitle = office name or welcome (matches local: 14px, brand color, 500 weight) */}
+        <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>
+          {step === 'ticket'
+            ? t('Your ticket is ready!')
+            : officeLine
+              ? officeLine
+              : localizedWelcomeMessage}
+        </div>
+        {/* conn-dot (matches local: 11px, margin-top 8px) */}
         <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
           <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />
           {t('Connected')}
