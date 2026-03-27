@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * Auth: service role key or internal trigger
  */
 
-const PAGE_ID = '61576407447066';
+const PAGE_ID = '1097672690089929';
 const GRAPH_API = 'https://graph.facebook.com/v22.0';
 
 export async function POST(request: NextRequest) {
