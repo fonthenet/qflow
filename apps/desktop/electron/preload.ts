@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('qf', {
   // Connection
   isOnline: () => ipcRenderer.invoke('connection:status'),
 
+  // Kiosk
+  getKioskPort: () => ipcRenderer.invoke('kiosk:get-port'),
+
   // Updater
   updater: {
     getStatus: () => ipcRenderer.invoke('update:get-status'),

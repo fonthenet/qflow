@@ -20,6 +20,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let syncEngine: SyncEngine | null = null;
 let kioskUrl: string | null = null;
+let kioskPort: number | null = null;
 let currentLocale: DesktopLocale = 'en';
 let updateStatus: {
   status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'no_update' | 'error';
@@ -999,6 +1000,7 @@ function setupIPC() {
   // ── Connection status ─────────────────────────────────────────────
 
   ipcMain.handle('connection:status', () => syncEngine?.isOnline ?? false);
+  ipcMain.handle('kiosk:get-port', () => kioskPort);
 
   // ── Auto updater ──────────────────────────────────────────────────
 
@@ -1214,6 +1216,7 @@ app.whenReady().then(async () => {
   try {
     const kiosk = await startKioskServer(CONFIG.KIOSK_PORT);
     kioskUrl = kiosk.url + '/kiosk';
+    kioskPort = kiosk.port;
     console.log(`Kiosk available at: ${kioskUrl}`);
     // Notify Station UI instantly when a ticket is created from the local kiosk
     // Also push to cloud immediately so QR tracking works remotely

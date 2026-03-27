@@ -108,9 +108,13 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   }, []);
 
   // Listen for ticket number rewrite after sync (L-G-007 → G-026)
+  // Uses both event listener AND polling fallback to catch rewrites quickly
   useEffect(() => {
     if (!createdTicket?.id) return;
-    const unsub = window.qf.tickets.onChange(async () => {
+    // Skip if already rewritten (no L- prefix)
+    if (!createdTicket.ticket_number.startsWith('L-')) return;
+
+    const checkRewrite = async () => {
       try {
         const fresh = await window.qf.db.getTickets([officeId], ['waiting', 'called', 'serving']);
         const updated = (fresh as any[]).find((t: any) => t.id === createdTicket.id);
@@ -118,8 +122,15 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
           setCreatedTicket(prev => prev ? { ...prev, ticket_number: updated.ticket_number } : null);
         }
       } catch { /* ignore */ }
-    });
-    return unsub;
+    };
+
+    // Event-driven: listen for sync changes
+    const unsub = window.qf.tickets.onChange(checkRewrite);
+
+    // Polling fallback: check every 1s in case event is missed
+    const iv = setInterval(checkRewrite, 1000);
+
+    return () => { unsub(); clearInterval(iv); };
   }, [createdTicket?.id, createdTicket?.ticket_number, officeId]);
 
   useEffect(() => {
@@ -1012,9 +1023,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // Ping as station device + check all device statuses
   useEffect(() => {
+    let port: number | null = null;
     const checkDevices = async () => {
       try {
-        const res = await fetch('http://localhost:3847/api/device-status', {
+        if (!port) port = await (window as any).qf.getKioskPort();
+        if (!port) return;
+        const res = await fetch(`http://localhost:${port}/api/device-status`, {
           signal: AbortSignal.timeout(3000),
         });
         if (res.ok) {

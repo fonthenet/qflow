@@ -65,7 +65,7 @@
       'Name (optional)': 'Nom (facultatif)',
       'Enter your name': 'Entrez votre nom',
       'Phone (optional)': 'Téléphone (facultatif)',
-      'For notifications': 'Pour les notifications',
+      'For WhatsApp alerts': 'Pour les alertes WhatsApp',
       'Get Ticket': 'Prendre un ticket',
       'Creating...': 'Création...',
       'Something went wrong. Please try again.': "Un problème est survenu. Veuillez réessayer.",
@@ -121,7 +121,7 @@
       'Name (optional)': 'الاسم (اختياري)',
       'Enter your name': 'أدخل اسمك',
       'Phone (optional)': 'الهاتف (اختياري)',
-      'For notifications': 'للإشعارات',
+      'For WhatsApp alerts': 'لتنبيهات واتساب',
       'Get Ticket': 'احصل على تذكرة',
       'Creating...': 'جار الإنشاء...',
       'Something went wrong. Please try again.': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
@@ -393,6 +393,26 @@
       S.ticket = data.ticket;
       S.step = 'done';
       render();
+
+      // Poll for ticket number rewrite (L-G-004 → G-032) if offline ticket
+      if (S.ticket && S.ticket.ticket_number && S.ticket.ticket_number.startsWith('L-')) {
+        var ticketIdForPoll = S.ticket.id;
+        var pollId = setInterval(async function () {
+          try {
+            var r = await fetch(API + '/api/track?id=' + encodeURIComponent(ticketIdForPoll));
+            if (!r.ok) return;
+            var d = await r.json();
+            if (d.ticket && d.ticket.ticket_number && !d.ticket.ticket_number.startsWith('L-')) {
+              S.ticket.ticket_number = d.ticket.ticket_number;
+              var numEl = document.querySelector('.result-number');
+              if (numEl) numEl.textContent = S.ticket.ticket_number;
+              clearInterval(pollId);
+            }
+          } catch (e) { /* ignore */ }
+        }, 1500);
+        // Stop polling after 30s
+        setTimeout(function () { clearInterval(pollId); }, 30000);
+      }
     } catch (err) {
       if (btn) {
         btn.disabled = false;
@@ -655,7 +675,7 @@
         '</div>' +
         '<div id="kiosk-error" style="display:none;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#dc2626;font-size:13px;font-weight:600;margin-bottom:14px;text-align:center"></div>' +
         '<div class="form-group"><label>' + tr('Name (optional)') + '</label><input id="cname" placeholder="' + tr('Enter your name') + '" autocomplete="off"></div>' +
-        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For notifications') + '" type="tel" autocomplete="off"></div>' +
+        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
         '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
         '</div>' +
         '</div></div>';
