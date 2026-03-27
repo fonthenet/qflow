@@ -771,7 +771,7 @@
     }).catch(function () {});
   }
   pingKiosk();
-  setInterval(pingKiosk, 15000);
+  setInterval(pingKiosk, 5000);
 
   // ── SSE: live updates from Station ─────────────────────────────
 

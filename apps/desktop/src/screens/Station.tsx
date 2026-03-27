@@ -405,7 +405,7 @@ function statusColor(status: string): string {
 // ── Constants ────────────────────────────────────────────────────
 const CALL_TIMEOUT = 60;
 const FALLBACK_POLL_INTERVAL = 10000; // 10s fallback (event-driven is primary)
-const DEVICE_CHECK_INTERVAL = 10000;
+const DEVICE_CHECK_INTERVAL = 5000;
 
 type StaffStatus = 'available' | 'on_break' | 'away';
 

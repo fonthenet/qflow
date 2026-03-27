@@ -983,7 +983,7 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
         for (const [existingId, d] of devices) {
           if (d.type === type && existingId !== deviceKey && existingId !== 'station') {
             // Check if this old entry is from the same IP (embedded in id or stale)
-            if ((Date.now() - d.lastPing) > 30000 || existingId.startsWith(`${type}-`)) {
+            if ((Date.now() - d.lastPing) > 12000 || existingId.startsWith(`${type}-`)) {
               devices.delete(existingId);
             }
           }
@@ -1002,8 +1002,8 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function handleDeviceStatus(res: http.ServerResponse) {
   const now = Date.now();
-  const TIMEOUT = 30_000; // 30s = considered disconnected
-  const STALE = 120_000;  // 2min = remove from list entirely
+  const TIMEOUT = 12_000; // 12s = considered disconnected
+  const STALE = 60_000;   // 1min = remove from list entirely
 
   // Prune devices that haven't pinged in 2+ minutes (closed tabs, disconnected devices)
   for (const [id, d] of devices) {
@@ -1631,7 +1631,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       }).catch(function(){});
     }
     pingDevice();
-    setInterval(pingDevice, 15000);
+    setInterval(pingDevice, 5000);
 
     // Check device statuses and show disconnected warnings
     async function checkDevices() {
