@@ -118,6 +118,7 @@ export function KioskView({
   const [selectedPriority, setSelectedPriority] = useState<PriorityCategory | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerReason, setCustomerReason] = useState('');
   const [customerInfoError, setCustomerInfoError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -185,6 +186,7 @@ export function KioskView({
     setSelectedPriority(null);
     setCustomerName('');
     setCustomerPhone('');
+    setCustomerReason('');
     setCustomerInfoError(null);
     setTicket(null);
     setQrDataUrl('');
@@ -278,10 +280,12 @@ export function KioskView({
       setLoading(false);
       return;
     }
+    const trimmedReason = customerReason.trim();
     const customerData =
       {
         name: trimmedCustomerName,
         phone: trimmedCustomerPhone,
+        ...(trimmedReason ? { reason: trimmedReason } : {}),
       };
 
     if (sandboxMode) {
@@ -635,6 +639,22 @@ export function KioskView({
                     />
                   </div>
                 </div>
+                <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
+                  <div className="text-center">
+                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
+                      {t('Reason for visit')} <span className="font-normal text-slate-400">({t('optional')})</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customerReason}
+                      onChange={(event) => setCustomerReason(event.target.value)}
+                      placeholder={t('Brief description')}
+                      autoComplete="off"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
+                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+                    />
+                  </div>
+                </div>
                 {customerInfoError ? (
                   <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
                     {customerInfoError}
@@ -741,6 +761,22 @@ export function KioskView({
                         autoComplete="tel"
                         dir="ltr"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
+                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
+                    <div className="text-center">
+                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
+                        {t('Reason for visit')} <span className="font-normal text-slate-400">({t('optional')})</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerReason}
+                        onChange={(event) => setCustomerReason(event.target.value)}
+                        placeholder={t('Brief description')}
+                        autoComplete="off"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
                         style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                     </div>

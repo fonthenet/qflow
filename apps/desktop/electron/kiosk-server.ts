@@ -603,7 +603,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
         return;
       }
-      const { officeId, departmentId, serviceId, customerName, customerPhone } = parsed;
+      const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason } = parsed;
 
       if (!officeId || !departmentId || !serviceId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -622,6 +622,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // Input sanitization
       const safeName = typeof customerName === 'string' ? customerName.replace(/[<>&"']/g, '').slice(0, 200).trim() : null;
       const safePhone = typeof customerPhone === 'string' ? customerPhone.replace(/[^\d+\-() ]/g, '').slice(0, 30) : null;
+      const safeReason = typeof customerReason === 'string' ? customerReason.replace(/[<>&"']/g, '').slice(0, 500).trim() : null;
 
       const db = getDB();
 
@@ -675,6 +676,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const customerData = JSON.stringify({
         name: safeName || null,
         phone: safePhone || null,
+        ...(safeReason ? { reason: safeReason } : {}),
       });
 
       // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
@@ -698,7 +700,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             service_id: serviceId,
             status: 'waiting',
             priority: 0,
-            customer_data: { name: safeName || null, phone: safePhone || null },
+            customer_data: { name: safeName || null, phone: safePhone || null, ...(safeReason ? { reason: safeReason } : {}) },
             created_at: now,
             qr_token: qrToken,
             daily_sequence: dailySequence,

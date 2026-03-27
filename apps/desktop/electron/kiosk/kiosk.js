@@ -66,6 +66,8 @@
       'Enter your name': 'Entrez votre nom',
       'Phone (optional)': 'Téléphone (facultatif)',
       'For WhatsApp alerts': 'Pour les alertes WhatsApp',
+      'Reason for visit (optional)': 'Motif de visite (facultatif)',
+      'Brief description': 'Brève description',
       'Get Ticket': 'Prendre un ticket',
       'Creating...': 'Création...',
       'Something went wrong. Please try again.': "Un problème est survenu. Veuillez réessayer.",
@@ -122,6 +124,8 @@
       'Enter your name': 'أدخل اسمك',
       'Phone (optional)': 'الهاتف (اختياري)',
       'For WhatsApp alerts': 'لتنبيهات واتساب',
+      'Reason for visit (optional)': 'سبب الزيارة (اختياري)',
+      'Brief description': 'وصف مختصر',
       'Get Ticket': 'احصل على تذكرة',
       'Creating...': 'جار الإنشاء...',
       'Something went wrong. Please try again.': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
@@ -364,6 +368,7 @@
   window.takeTicket = async function () {
     var nameInput = document.getElementById('cname');
     var phoneInput = document.getElementById('cphone');
+    var reasonInput = document.getElementById('creason');
     var btn = document.getElementById('submit-btn');
     if (btn) {
       btn.disabled = true;
@@ -379,6 +384,7 @@
           serviceId: S.selectedService.id,
           customerName: nameInput ? nameInput.value : '',
           customerPhone: phoneInput ? phoneInput.value : '',
+          customerReason: reasonInput ? reasonInput.value : '',
         }),
       });
       var data = await res.json();
@@ -703,6 +709,7 @@
         '<div class="form-fields">' +
         '<div class="form-group"><label>' + tr('Name (optional)') + '</label><input id="cname" placeholder="' + tr('Enter your name') + '" autocomplete="off"></div>' +
         '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
+        '<div class="form-group"><label>' + tr('Reason for visit (optional)') + '</label><input id="creason" placeholder="' + tr('Brief description') + '" autocomplete="off"></div>' +
         '</div>' +
         '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
         '</div>' +
