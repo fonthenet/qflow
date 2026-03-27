@@ -656,7 +656,6 @@
       app.innerHTML = renderHeader() + renderHoursPanel() +
         '<div class="kiosk-body"><div class="kiosk-content">' +
         renderSteps() +
-        '<button class="btn-back" onclick="goBack(\'' + backStep + '\')">&larr; ' + tr('Back') + '</button>' +
         '<div class="section-title">' + tr('Select Service') + '</div><div class="section-subtitle">' + esc(S.selectedDept.name) + '</div>' +
         '<div class="card-list">' + cards + '</div>' +
         '</div></div>';
@@ -672,7 +671,6 @@
       app.innerHTML = renderHeader() + renderHoursPanel() +
         '<div class="kiosk-body"><div class="kiosk-content">' +
         renderSteps() +
-        '<button class="btn-back" onclick="' + backHandler + '">&larr; ' + tr('Back') + '</button>' +
         '<div class="form-card scale-in">' +
         '<div class="form-header">' +
         '<div class="dept-service">' + esc(tr(S.selectedDept.name)) + (S.selectedService ? ' &mdash; ' + esc(tr(S.selectedService.name)) : '') + '</div>' +
