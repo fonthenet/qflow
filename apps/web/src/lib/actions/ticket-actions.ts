@@ -197,11 +197,9 @@ async function maybeSendPriorityAlertSms(
   return { sent: true };
 }
 
-// WhatsApp/Messenger notifications are now handled by the Postgres trigger → Edge Function.
-// This function is kept as a no-op to avoid breaking call sites.
 async function maybeSendWhatsAppTurnNotification(
-  _supabase: Awaited<ReturnType<typeof createClient>>,
-  _params: {
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  params: {
     ticket: {
       id: string;
       office_id: string;
@@ -214,19 +212,98 @@ async function maybeSendWhatsAppTurnNotification(
     deskName: string;
   }
 ): Promise<{ sent: boolean; reason?: string }> {
-  return { sent: false, reason: 'handled by trigger' };
+  const { ticket, event, deskName } = params;
+
+  // Call the Vercel API endpoint to send the WhatsApp notification.
+  // This is needed because the desk may run locally (QFlo Station)
+  // where the WHATSAPP_META_ACCESS_TOKEN env var is not available.
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_CLIP_BASE_URL ||
+    'https://qflo.net'
+  ).replace(/\/+$/, '');
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+  console.log(`[WhatsApp:${event}] Calling /api/whatsapp-send for ticket ${ticket.ticket_number}`);
+
+  const res = await fetch(`${baseUrl}/api/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({
+      ticketId: ticket.id,
+      event,
+      deskName,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  console.log(`[WhatsApp:${event}] API response:`, JSON.stringify(data));
+
+  return { sent: data?.sent ?? false, reason: data?.error };
 }
 
-// "Next in line" notifications are now handled by the Postgres trigger → Edge Function.
-// This function is kept as a no-op to avoid breaking call sites.
+/**
+ * Notify the next person in line (position 1) via WhatsApp that they're next.
+ * Called after a ticket is called, served, or marked no-show.
+ */
 async function notifyNextInLineViaWhatsApp(
-  _supabase: Awaited<ReturnType<typeof createClient>>,
-  _departmentId: string,
-  _officeId: string,
-  _excludeTicketId: string,
-  _deskName: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  departmentId: string,
+  officeId: string,
+  excludeTicketId: string,
+  deskName: string,
 ): Promise<void> {
-  // No-op — trigger handles this
+  // Find the next waiting ticket (position 1)
+  const { data: nextTickets } = await supabase
+    .from('tickets')
+    .select('id, ticket_number, qr_token, office_id, desk_id')
+    .eq('department_id', departmentId)
+    .eq('office_id', officeId)
+    .eq('status', 'waiting')
+    .neq('id', excludeTicketId)
+    .order('checked_in_at', { ascending: true })
+    .limit(1);
+
+  const nextTicket = nextTickets?.[0];
+  if (!nextTicket) return;
+
+  // Check if this ticket has an active WhatsApp session
+  const { data: session } = await (supabase as any)
+    .from('whatsapp_sessions')
+    .select('id')
+    .eq('ticket_id', nextTicket.id)
+    .eq('state', 'active')
+    .maybeSingle();
+
+  if (!session) return; // No WhatsApp session — skip
+
+  // Send "you're next" notification via the API route
+  const baseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_CLIP_BASE_URL ||
+    'https://qflo.net'
+  ).replace(/\/+$/, '');
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+
+  console.log(`[WhatsApp:next_in_line] Notifying next ticket ${nextTicket.ticket_number}`);
+
+  await fetch(`${baseUrl}/api/whatsapp-send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({
+      ticketId: nextTicket.id,
+      event: 'next_in_line',
+      deskName: deskName || '',
+    }),
+  }).catch((err) => console.error('[WhatsApp:next_in_line] Fetch error:', err));
 }
 
 async function getDeskOperationContext(deskId: string) {
