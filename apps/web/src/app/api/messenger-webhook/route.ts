@@ -107,6 +107,19 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // ── Referral from m.me link (in-house/kiosk Messenger opt-in) ──
+        // MUST be checked BEFORE postback — new users get postback with
+        // payload "GET_STARTED" AND postback.referral.ref at the same time.
+        const referralRef =
+          event.referral?.ref ||              // returning user clicks m.me link
+          event.postback?.referral?.ref;       // new user taps "Get Started" via m.me link
+        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
+          const qrToken = referralRef.replace('qflo_', '');
+          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
+          await handleMessengerReferral(senderId, qrToken);
+          continue;
+        }
+
         // ── Postback (button tap) ──
         if (event.postback?.payload) {
           const payload = event.postback.payload;
@@ -129,17 +142,6 @@ export async function POST(request: NextRequest) {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);
           }
-          continue;
-        }
-
-        // ── Referral from m.me link (in-house/kiosk Messenger opt-in) ──
-        const referralRef =
-          event.referral?.ref ||              // returning user clicks m.me link
-          event.postback?.referral?.ref;       // new user taps "Get Started" via m.me link
-        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
-          const qrToken = referralRef.replace('qflo_', '');
-          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
-          await handleMessengerReferral(senderId, qrToken);
           continue;
         }
 
