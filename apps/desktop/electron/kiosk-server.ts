@@ -983,7 +983,7 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
         for (const [existingId, d] of devices) {
           if (d.type === type && existingId !== deviceKey && existingId !== 'station') {
             // Check if this old entry is from the same IP (embedded in id or stale)
-            if ((Date.now() - d.lastPing) > 12000 || existingId.startsWith(`${type}-`)) {
+            if ((Date.now() - d.lastPing) > 20000 || existingId.startsWith(`${type}-`)) {
               devices.delete(existingId);
             }
           }
@@ -1002,7 +1002,7 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function handleDeviceStatus(res: http.ServerResponse) {
   const now = Date.now();
-  const TIMEOUT = 12_000; // 12s = considered disconnected
+  const TIMEOUT = 20_000; // 20s = considered disconnected (tolerates 3 missed 5s pings)
   const STALE = 60_000;   // 1min = remove from list entirely
 
   // Prune devices that haven't pinged in 2+ minutes (closed tabs, disconnected devices)
@@ -1633,7 +1633,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     pingDevice();
     setInterval(pingDevice, 5000);
 
-    // Check device statuses and show disconnected warnings
+    // Check device statuses and show disconnected warnings (with grace period)
+    var disconnectCount = 0;
     async function checkDevices() {
       try {
         var res = await fetch(API + '/api/device-status');
@@ -1641,9 +1642,14 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         var disconnected = (d.devices || []).filter(function(dev) { return !dev.connected && dev.type !== 'display'; });
         var el = document.getElementById('device-warn');
         if (disconnected.length > 0) {
-          var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
-          if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
+          disconnectCount++;
+          // Only show banner after 3 consecutive disconnected checks (~30s)
+          if (disconnectCount >= 3) {
+            var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
+            if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
+          }
         } else {
+          disconnectCount = 0;
           if (el) el.style.display = 'none';
         }
       } catch(e) {}
