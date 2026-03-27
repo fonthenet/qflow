@@ -131,7 +131,7 @@ export function KioskView({
   const [ticketError, setTicketError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#16a34a';
+  const themeColor = ks.themeColor || '#059669';
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
   const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
@@ -146,7 +146,6 @@ export function KioskView({
   const localizedButtonLabel = t(ks.buttonLabel);
   const bookingFirst = ks.mode === 'quick_book';
   const isClinicKiosk = ks.vertical === 'clinic';
-  const showHeaderMessage = step === 'home' || step === 'department' || step === 'appointment';
   const primaryCardStyle = {
     borderColor: `${themeColor}22`,
     boxShadow: `0 10px 28px ${themeColor}10`,
@@ -496,17 +495,15 @@ export function KioskView({
         </h1>
         {officeLine ? (
           <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>{officeLine}</div>
-        ) : null}
-
-        {showHeaderMessage ? (
-          <div className="mt-2 text-[32px] font-extrabold tracking-tight text-slate-950 sm:text-[36px]">
-            {localizedWelcomeMessage}
+        ) : (
+          <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>
+            {step === 'ticket' ? t('Your ticket is ready!') : localizedWelcomeMessage}
           </div>
-        ) : null}
-
-        {step === 'ticket' ? (
-          <div className="mt-1.5 text-sm font-medium" style={{ color: themeColor }}>{t('Your ticket is ready!')}</div>
-        ) : null}
+        )}
+        <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
+          <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />
+          {t('Connected')}
+        </div>
       </div>
 
       {sandboxMode ? (
@@ -623,11 +620,17 @@ export function KioskView({
           {/* ── DEPARTMENT step ── */}
           {!intakePaused && step === 'department' && (
             <>
-              <div className="mb-6 text-center">
-                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Choose a department')}</div>
+              <div className="mb-6 flex gap-3">
+                <div className="flex-1 rounded-[14px] border border-slate-200 bg-white p-3.5 text-center">
+                  <div className="text-2xl font-extrabold" style={{ color: themeColor }}>{activeDepartments.length}</div>
+                  <div className="mt-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">{t('Departments')}</div>
+                </div>
+              </div>
+              <div className="mb-1 text-center">
+                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select Department')}</div>
                 <div className="mt-1 text-[15px] text-slate-500">{t('Choose the service area you need')}</div>
               </div>
-              <div className="flex flex-col gap-3">
+              <div className="mt-6 flex flex-col gap-3">
                 {activeDepartments.map((department) => (
                   <KioskCard
                     key={department.id}
@@ -714,7 +717,7 @@ export function KioskView({
                 </div>
               )}
 
-              <div className="mb-2 text-center">
+              <div className="mb-1 text-center">
                 <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select Service')}</div>
                 <div className="mt-1 text-[15px] text-slate-500">{t(selectedDept.name)}</div>
               </div>
@@ -893,22 +896,24 @@ export function KioskView({
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColor}15` }}>
                 <Check className="h-7 w-7" strokeWidth={2.5} style={{ color: themeColor }} />
               </div>
-              <div className="mt-3 text-[28px] font-extrabold text-slate-950">{t("You're in the queue")}</div>
+              <div className="mt-3 text-[28px] font-extrabold text-slate-950">{t('Your ticket is ready!')}</div>
               <div className="mt-1 flex justify-center">
                 <PriorityBadge priorityCategory={ticket.priority_category} />
               </div>
 
               {/* Ticket number box */}
               <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] px-5 py-4 print:bg-white">
-                <div className={`text-[10px] font-bold text-slate-400 ${compactTicketLabelClass}`}>
-                  {t('Ticket number')}
+                <div className={`text-[10px] font-bold uppercase tracking-[2px] text-slate-400`}>
+                  {t('YOUR TICKET NUMBER')}
                 </div>
-                <div className="mt-1 text-[64px] font-black leading-none tracking-tight sm:text-[80px]" style={{ color: themeColor }}>
+                <div className="mt-1 text-[64px] font-black leading-none tracking-tight sm:text-[80px]" style={{ color: themeColor, letterSpacing: '-3px' }}>
                   {ticket.ticket_number}
                 </div>
                 <div className="mt-2 flex items-center justify-center gap-1.5 text-[15px] text-slate-500">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                  {ticket.department_name} · {ticket.service_name}
+                  {ticket.position_in_queue != null
+                    ? t('#{position} in queue', { position: ticket.position_in_queue })
+                    : `${ticket.department_name} · ${ticket.service_name}`}
                 </div>
                 {ticket.estimated_service_time ? (
                   <div className="mt-1 text-[13px] text-slate-400">
@@ -994,10 +999,10 @@ export function KioskView({
                 </div>
               </div>
 
-              {/* Done button */}
+              {/* Done button — matches local kiosk */}
               <button
                 onClick={resetSession}
-                className="mt-4 block w-full rounded-2xl border border-slate-200 bg-[#f8fafc] px-4 py-[18px] text-[18px] font-bold text-slate-950 transition-colors hover:bg-slate-100 print:hidden"
+                className="mt-4 block w-full rounded-2xl border border-slate-200 bg-[#f8fafc] px-4 py-[18px] text-[17px] font-bold text-slate-950 transition-colors hover:bg-slate-100 print:hidden"
               >
                 {t('Take Another Ticket')}
               </button>
