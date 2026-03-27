@@ -174,6 +174,12 @@ export function SettingsClient({
   const [whatsappDefaultVirtualCodeId, setWhatsappDefaultVirtualCodeId] = useState<string>(
     settings.whatsapp_default_virtual_code_id ?? ''
   );
+  const [messengerEnabled, setMessengerEnabled] = useState<boolean>(
+    settings.messenger_enabled ?? false
+  );
+  const [messengerPageId, setMessengerPageId] = useState<string>(
+    settings.messenger_page_id ?? ''
+  );
 
   const languageOptions = [
     { code: 'en', label: t('English') },
@@ -225,6 +231,8 @@ export function SettingsClient({
           whatsapp_code: whatsappCode.toUpperCase().trim(),
           whatsapp_business_phone: whatsappBusinessPhone,
           whatsapp_default_virtual_code_id: whatsappDefaultVirtualCodeId,
+          messenger_enabled: messengerEnabled,
+          messenger_page_id: messengerPageId.trim(),
         },
       });
 
@@ -628,6 +636,64 @@ export function SettingsClient({
                 <p className="font-medium">{t('How customers join')}</p>
                 <p className="mt-1 text-sm">
                   {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the QFlow WhatsApp number, or scan the QR code on your join page.')}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ── Messenger Notifications ────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            {t('Messenger Notifications')}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('Let customers receive queue notifications via Facebook Messenger. Customers tap a link to opt in after booking.')}
+          </p>
+        </div>
+
+        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4">
+          <input
+            type="checkbox"
+            checked={messengerEnabled}
+            onChange={(e) => setMessengerEnabled(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+          />
+          <div>
+            <span className="text-sm font-medium text-foreground">
+              {t('Enable Messenger Notifications')}
+            </span>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t('Show a "Get Messenger notifications" button on the tracking page, kiosk, and Station.')}
+            </p>
+          </div>
+        </label>
+
+        {messengerEnabled && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                {t('Facebook Page ID')}
+              </label>
+              <input
+                type="text"
+                value={messengerPageId}
+                onChange={(e) => setMessengerPageId(e.target.value.replace(/[^0-9]/g, ''))}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="123456789012345"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('The numeric Page ID of your Facebook Page connected to the QFlow Messenger app. Find this in your Facebook Page settings under "About".')}
+              </p>
+            </div>
+
+            {messengerPageId && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <p className="font-medium">{t('How it works')}</p>
+                <p className="mt-1 text-sm">
+                  {t('After booking, customers see a "Get Messenger notifications" button. Tapping it opens Messenger and automatically links their ticket for live updates.')}
                 </p>
               </div>
             )}

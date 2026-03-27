@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { handleInboundMessage } from '@/lib/messaging-commands';
+import { handleInboundMessage, tNotification } from '@/lib/messaging-commands';
 import {
   sendMessengerMessage,
   sendMessengerMessageWithTag,
   getMessengerProfile,
   verifyMessengerSignature,
 } from '@/lib/messenger';
+import { getQueuePosition } from '@/lib/queue-position';
 
 /**
  * GET — Webhook verification (required by Meta Messenger Platform).
@@ -131,6 +132,17 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // ── Referral from m.me link (in-house/kiosk Messenger opt-in) ──
+        const referralRef =
+          event.referral?.ref ||              // returning user clicks m.me link
+          event.postback?.referral?.ref;       // new user taps "Get Started" via m.me link
+        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
+          const qrToken = referralRef.replace('qflo_', '');
+          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
+          await handleMessengerReferral(senderId, qrToken);
+          continue;
+        }
+
         // ── One-Time Notification opt-in ──
         if (event.optin?.one_time_notif_token) {
           const otnToken = event.optin.one_time_notif_token;
@@ -160,5 +172,111 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[messenger-webhook] Error:', err);
     return NextResponse.json({ ok: true }); // Always 200 to prevent retries
+  }
+}
+
+/**
+ * Handle m.me referral: customer clicked "Get Messenger notifications" link
+ * from the tracking page, kiosk, or Station confirmation.
+ *
+ * Flow: look up ticket by qr_token → create Messenger session → send joined message
+ */
+async function handleMessengerReferral(psid: string, qrToken: string) {
+  const supabase = createAdminClient() as any;
+
+  // Look up ticket by qr_token
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('id, ticket_number, qr_token, status, office_id, department_id, service_id')
+    .eq('qr_token', qrToken)
+    .single();
+
+  if (!ticket) {
+    console.warn(`[messenger-referral] No ticket found for qr_token: ${qrToken}`);
+    await sendMessengerMessage({ recipientId: psid, text: '❌ Ticket not found. The link may have expired.' });
+    return;
+  }
+
+  // Check ticket is still active
+  if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
+    await sendMessengerMessage({ recipientId: psid, text: '❌ This ticket has already been completed.' });
+    return;
+  }
+
+  // Get org info
+  const { data: office } = await supabase
+    .from('offices')
+    .select('organization_id')
+    .eq('id', ticket.office_id)
+    .single();
+
+  if (!office) return;
+
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('name')
+    .eq('id', office.organization_id)
+    .single();
+
+  // Check if there's already an active session for this ticket
+  const { data: existingSession } = await supabase
+    .from('whatsapp_sessions')
+    .select('id, channel')
+    .eq('ticket_id', ticket.id)
+    .eq('state', 'active')
+    .maybeSingle();
+
+  if (existingSession) {
+    // Update existing session to Messenger
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ channel: 'messenger', messenger_psid: psid, whatsapp_phone: null })
+      .eq('id', existingSession.id);
+    console.log(`[messenger-referral] Switched session ${existingSession.id} to Messenger for ${ticket.ticket_number}`);
+  } else {
+    // Create new Messenger session
+    await supabase
+      .from('whatsapp_sessions')
+      .insert({
+        organization_id: office.organization_id,
+        ticket_id: ticket.id,
+        office_id: ticket.office_id,
+        department_id: ticket.department_id,
+        service_id: ticket.service_id,
+        messenger_psid: psid,
+        channel: 'messenger',
+        state: 'active',
+        locale: 'fr',
+      });
+    console.log(`[messenger-referral] Created Messenger session for ${ticket.ticket_number}`);
+  }
+
+  // Fetch profile name
+  let profileName = '';
+  try {
+    const profile = await getMessengerProfile(psid);
+    if (profile?.firstName) profileName = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
+  } catch { /* non-critical */ }
+
+  // Build and send rich "joined" message
+  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+  const pos = await getQueuePosition(ticket.id);
+  const positionText = pos.position != null
+    ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
+    : '';
+
+  const message = tNotification('joined', 'fr', {
+    name: org?.name ?? '',
+    ticket: ticket.ticket_number,
+    position: positionText,
+    url: trackUrl,
+  });
+
+  const result = await sendMessengerMessage({ recipientId: psid, text: message });
+  if (result.ok) {
+    console.log(`[messenger-referral] Sent joined message to ${psid} for ${ticket.ticket_number}`);
+  } else {
+    console.error(`[messenger-referral] Failed to send: ${result.error}`);
   }
 }

@@ -1058,10 +1058,12 @@ function setupIPC() {
           orgName: org?.name ?? null,
           logoUrl: org?.logo_url ?? null,
           brandColor: settings?.brand_color ?? null,
+          messengerPageId: settings?.messenger_enabled && settings?.messenger_page_id
+            ? String(settings.messenger_page_id) : null,
         };
       }
     } catch {}
-    return { orgName: null, logoUrl: null, brandColor: null };
+    return { orgName: null, logoUrl: null, brandColor: null, messengerPageId: null };
   });
 
   // ── License ──────────────────────────────────────────────────────

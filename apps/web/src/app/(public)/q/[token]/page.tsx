@@ -85,6 +85,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
   // Fetch organization info
   let organizationName = '';
   let priorityAlertConfig = null;
+  let messengerPageId: string | null = null;
   if (office?.organization_id) {
     const { data: organization } = await supabase
       .from('organizations')
@@ -93,10 +94,11 @@ export default async function TicketStatusPage({ params }: PageProps) {
       .single();
 
     organizationName = organization?.name ?? '';
-    priorityAlertConfig = getPriorityAlertConfig(
-      (organization?.settings as Record<string, any> | null) ?? null,
-      isSmsProviderConfigured()
-    );
+    const orgSettings = (organization?.settings as Record<string, any> | null) ?? null;
+    priorityAlertConfig = getPriorityAlertConfig(orgSettings, isSmsProviderConfigured());
+    if (orgSettings?.messenger_enabled && orgSettings?.messenger_page_id) {
+      messengerPageId = orgSettings.messenger_page_id as string;
+    }
   }
 
   // Fetch department info
@@ -156,6 +158,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
         departmentName={contextInfo.departmentName}
         serviceName={contextInfo.serviceName}
         priorityAlertConfig={priorityAlertConfig}
+        messengerPageId={messengerPageId}
       />
     );
   }
@@ -170,6 +173,7 @@ export default async function TicketStatusPage({ params }: PageProps) {
         departmentName={contextInfo.departmentName}
         serviceName={contextInfo.serviceName}
         priorityAlertConfig={priorityAlertConfig}
+        messengerPageId={messengerPageId}
         />
       )
     );

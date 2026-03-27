@@ -137,6 +137,9 @@ export function KioskView({
   const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
   const businessName = organization?.name?.trim() || office.name;
   const officeLine = office.name && office.name !== businessName ? office.name : null;
+  const orgSettings = (organization?.settings as Record<string, any> | null) ?? {};
+  const messengerPageId = orgSettings.messenger_enabled && orgSettings.messenger_page_id
+    ? (orgSettings.messenger_page_id as string) : null;
   const localizedWelcomeMessage = t(ks.welcomeMessage);
   const localizedButtonLabel = t(ks.buttonLabel);
   const bookingFirst = ks.mode === 'quick_book';
@@ -1002,6 +1005,22 @@ export function KioskView({
                 })}
               </p>
             </div>
+
+            {messengerPageId && ticket.qr_token && (
+              <div className="mt-4 print:hidden">
+                <a
+                  href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex w-full items-center justify-center gap-2.5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3.5 text-base font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
+                  </svg>
+                  {t('Get Messenger notifications')}
+                </a>
+              </div>
+            )}
 
             <div className="mt-4 print:hidden">
               <button

@@ -77,13 +77,14 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Modal Component ──────────────────────────────
-function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale }: {
+function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale, messengerPageId }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
   onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string }; priority: number; source: string }) => Promise<any>;
   onClose: () => void;
   locale: DesktopLocale;
+  messengerPageId?: string | null;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -212,7 +213,26 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            {messengerPageId && createdTicket?.qr_token && (
+              <a
+                href={`https://m.me/${messengerPageId}?ref=qflo_${createdTicket.qr_token}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  margin: '12px 0 0', padding: '10px 16px', border: '1px solid rgba(59,130,246,0.3)',
+                  borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: '#60a5fa',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
+                </svg>
+                {t('Get Messenger notifications')}
+              </a>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 onClick={onClose}
                 style={{
@@ -599,6 +619,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
+  const [messengerPageId, setMessengerPageId] = useState<string | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -626,6 +647,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // ── Fetch Messenger Page ID from org branding ───────────────────
+  useEffect(() => {
+    window.qf.org?.getBranding?.()
+      .then((b: { messengerPageId?: string | null }) => {
+        setMessengerPageId(b?.messengerPageId ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   // ── Fetch tickets ────────────────────────────────────────────────
@@ -1722,6 +1752,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           officeId={session.office_id}
           onBook={bookInHouse}
           onClose={() => setShowBookingModal(false)}
+          messengerPageId={messengerPageId}
         />
       )}
 
