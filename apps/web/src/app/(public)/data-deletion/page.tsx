@@ -5,12 +5,12 @@ export const metadata: Metadata = {
   description: 'Request deletion of your data from Qflo or check the status of a deletion request.',
 };
 
-export default function DataDeletionPage({
+export default async function DataDeletionPage({
   searchParams,
 }: {
-  searchParams: { code?: string };
+  searchParams: Promise<{ code?: string }>;
 }) {
-  const confirmationCode = searchParams.code;
+  const { code: confirmationCode } = await searchParams;
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-16 text-foreground">

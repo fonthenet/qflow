@@ -132,7 +132,7 @@ export function KioskView({
   const [hoursOpen, setHoursOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#4a8c72';
+  const themeColor = ks.themeColor || '#5b8a72';
 
   // ── Business hours (matches local kiosk) ──
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
@@ -514,7 +514,7 @@ export function KioskView({
             className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] text-2xl font-black text-white"
             style={{ backgroundColor: themeColor }}
           >
-            Q
+            {businessName?.charAt(0)?.toUpperCase() || 'Q'}
           </div>
         )}
 
