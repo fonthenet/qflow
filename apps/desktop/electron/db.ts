@@ -177,6 +177,7 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN appointment_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN synced_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN source TEXT DEFAULT 'walk_in'`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN daily_sequence INTEGER DEFAULT 0`); } catch { /* already exists */ }
 
   // Indexes that depend on migrated columns (must come after ALTER TABLEs)
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }
