@@ -1206,9 +1206,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     /* ── Queue list ── */
     .queue-list { flex: 1; overflow-y: auto; padding: 8px 16px; }
-    .queue-row { display: flex; align-items: center; padding: 16px 20px; border-radius: 12px; margin-bottom: 6px; background: white; border: 2px solid #e2e8f0; transition: all 0.3s; }
-    .queue-row.next { background: #fef9c3; border-color: #fde68a; border-width: 3px; }
-    .queue-row .pos { font-size: 22px; font-weight: 900; color: #94a3b8; min-width: 50px; text-align: center; }
+    .queue-row { display: flex; align-items: center; padding: 16px 20px; border-radius: 12px; margin-bottom: 6px; background: #fefce8; border: 2px solid #fde68a; transition: all 0.3s; }
+    .queue-row.next { background: #fef9c3; border-color: #facc15; border-width: 3px; }
+    .queue-row .pos { font-size: 22px; font-weight: 900; color: #94a3b8; min-width: 50px; text-align: center; margin-right: 12px; }
     .queue-row.next .pos { color: #92400e; font-size: 24px; }
     .queue-row .q-ticket { font-size: 32px; font-weight: 900; color: #1e293b; min-width: 140px; letter-spacing: -1px; }
     .queue-row .q-name { flex: 1; font-size: 18px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1355,6 +1355,11 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       </div>
       <div class="header-right" style="display:flex;align-items:center;gap:16px">
         <div class="conn-badge connected" id="conn-badge"><span class="dot"></span><span id="conn-text">Connected</span></div>
+        <select id="lang-select" style="padding:6px 12px;border-radius:8px;border:2px solid #e2e8f0;font-size:14px;font-weight:700;background:white;cursor:pointer" onchange="setLang(this.value)">
+          <option value="en">EN</option>
+          <option value="fr">FR</option>
+          <option value="ar">AR</option>
+        </select>
         <div style="text-align:right">
           <div class="clock" id="clock"></div>
           <div class="date" id="date"></div>
@@ -1436,6 +1441,40 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       return Math.floor(mins/60) + 'h ' + (mins%60) + 'm';
     }
 
+    var displayLang = localStorage.getItem('qf_display_lang') || 'en';
+    var displayI18n = {
+      en: { waiting: 'WAITING', called: 'CALLED', serving: 'SERVING', served: 'SERVED TODAY', nowServing: 'NOW SERVING', queue: 'QUEUE', waitingFor: 'Waiting for customers...', noQueue: 'No customers in queue', proceed: 'Please Proceed', nowCalling: 'NOW CALLING', goTo: 'Go to', connected: 'Connected' },
+      fr: { waiting: 'EN ATTENTE', called: 'APPEL\u00c9', serving: 'EN SERVICE', served: 'SERVIS AUJOURD\\'HUI', nowServing: 'EN COURS', queue: 'FILE D\\'ATTENTE', waitingFor: 'En attente de clients...', noQueue: 'Aucun client en file', proceed: 'Veuillez vous pr\u00e9senter', nowCalling: 'APPEL EN COURS', goTo: 'Rendez-vous \u00e0', connected: 'Connect\u00e9' },
+      ar: { waiting: '\u0641\u064a \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631', called: '\u062a\u0645 \u0627\u0644\u0627\u0633\u062a\u062f\u0639\u0627\u0621', serving: '\u0642\u064a\u062f \u0627\u0644\u062e\u062f\u0645\u0629', served: '\u062a\u0645\u062a \u062e\u062f\u0645\u062a\u0647\u0645 \u0627\u0644\u064a\u0648\u0645', nowServing: '\u0642\u064a\u062f \u0627\u0644\u062e\u062f\u0645\u0629 \u0627\u0644\u0622\u0646', queue: '\u0637\u0627\u0628\u0648\u0631', waitingFor: '\u0641\u064a \u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0639\u0645\u0644\u0627\u0621...', noQueue: '\u0644\u0627 \u064a\u0648\u062c\u062f \u0639\u0645\u0644\u0627\u0621 \u0641\u064a \u0627\u0644\u0637\u0627\u0628\u0648\u0631', proceed: '\u064a\u0631\u062c\u0649 \u0627\u0644\u062a\u0642\u062f\u0645', nowCalling: '\u062c\u0627\u0631\u064d \u0627\u0644\u0627\u0633\u062a\u062f\u0639\u0627\u0621', goTo: '\u062a\u0648\u062c\u0647 \u0625\u0644\u0649', connected: '\u0645\u062a\u0635\u0644' }
+    };
+    function dt(key) { return (displayI18n[displayLang] || displayI18n.en)[key] || key; }
+    function setLang(lang) {
+      displayLang = lang;
+      localStorage.setItem('qf_display_lang', lang);
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      applyLabels();
+      if (allTickets.length) { renderServing(allTickets.filter(function(t){return t.status==='called'||t.status==='serving'})); renderQueue(allTickets.filter(function(t){return t.status==='waiting'})); }
+    }
+    function applyLabels() {
+      document.querySelectorAll('.stat-label').forEach(function(el, i) {
+        el.textContent = [dt('waiting'), dt('called'), dt('serving'), dt('served')][i] || el.textContent;
+      });
+      document.querySelectorAll('.panel-title').forEach(function(el, i) {
+        el.textContent = i === 0 ? dt('nowServing') : dt('queue');
+      });
+      var langSel = document.getElementById('lang-select');
+      if (langSel) langSel.value = displayLang;
+      var connText = document.getElementById('conn-text');
+      if (connText) connText.textContent = dt('connected');
+    }
+    // Apply saved lang on load
+    (function() {
+      var langSel = document.getElementById('lang-select');
+      if (langSel) langSel.value = displayLang;
+      if (displayLang === 'ar') document.documentElement.dir = 'rtl';
+      applyLabels();
+    })();
+
     function updateClock() {
       var now = new Date();
       updateText('clock', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -1454,8 +1493,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     var overlayTimer = null;
     function showCallOverlay(ticket, deskName, deptName) {
       var overlay = document.getElementById('call-overlay');
+      document.getElementById('call-overlay-label').textContent = dt('nowCalling');
       document.getElementById('call-overlay-number').textContent = ticket.ticket_number;
-      document.getElementById('call-overlay-desk').textContent = 'Go to ' + deskName;
+      document.getElementById('call-overlay-desk').textContent = dt('goTo') + ' ' + deskName;
       document.getElementById('call-overlay-dept').textContent = deptName || '';
       overlay.classList.add('visible');
       if (overlayTimer) clearTimeout(overlayTimer);
@@ -1480,7 +1520,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
       var el = document.getElementById('serving-list');
       if (active.length === 0) {
-        el.innerHTML = '<div class="no-active">Waiting for customers...</div>';
+        el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>';
         lastServingHash = '';
         return;
       }
@@ -1492,7 +1532,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       });
 
       if (visible.length === 0) {
-        el.innerHTML = '<div class="no-active">Waiting for customers...</div>';
+        el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>';
         lastServingHash = '';
         return;
       }
@@ -1511,7 +1551,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
             '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
             (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
             '<div class="countdown ' + urgency + '">' + secs + 's</div>' +
-            '<div class="status-pill">Please Proceed</div>' +
+            '<div class="status-pill">' + dt('proceed') + '</div>' +
             '</div>';
         }
 
@@ -1520,7 +1560,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           '<div class="arrow">&rarr;</div>' +
           '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
           (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
-          '<div class="status-pill">Serving</div>' +
+          '<div class="status-pill">' + dt('serving') + '</div>' +
           '</div>';
       }).join('');
     }
@@ -1557,7 +1597,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
       var el = document.getElementById('queue-list');
       if (filtered.length === 0) {
-        if (lastQueueHash !== hash) el.innerHTML = '<div class="queue-empty">No customers in queue</div>';
+        if (lastQueueHash !== hash) el.innerHTML = '<div class="queue-empty">' + dt('noQueue') + '</div>';
         lastQueueHash = hash;
         return;
       }
@@ -1566,7 +1606,6 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       lastQueueHash = hash;
 
       el.innerHTML = filtered.map(function(t, i) {
-        var name = t.customer_data?.name || 'Walk-in';
         var isNext = i === 0;
         var badges = '';
         if (t.priority > 1) badges += '<span class="q-badge priority">P' + t.priority + '</span> ';
@@ -1575,7 +1614,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         return '<div class="queue-row' + (isNext ? ' next' : '') + '">' +
           '<div class="pos">#' + (i+1) + '</div>' +
           '<div class="q-ticket">' + t.ticket_number + '</div>' +
-          '<div class="q-name">' + name + (deptLabel ? ' <span style="color:#94a3b8;font-size:13px">&middot; ' + deptLabel + '</span>' : '') + '</div>' +
+          '<div class="q-name">' + (deptLabel || '') + '</div>' +
           badges +
           '<div class="q-wait">' + formatWait(t.created_at) + '</div>' +
           '</div>';
@@ -1689,7 +1728,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         if (disconnected.length > 0) {
           disconnectCount++;
           // Only show banner after 3 consecutive disconnected checks (~30s)
-          if (disconnectCount >= 3) {
+          if (disconnectCount >= 5) {
             var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
             if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
           }
