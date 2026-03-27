@@ -514,7 +514,7 @@ export function KioskView({
             className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center rounded-[16px] text-2xl font-black text-white"
             style={{ backgroundColor: themeColor }}
           >
-            {businessName?.charAt(0)?.toUpperCase() || 'Q'}
+            Q
           </div>
         )}
 
