@@ -439,8 +439,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
     });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE') {
-        // Try next port
+      if (port < 9000) {
+        // Try next port on any error (EADDRINUSE, EACCES, EPERM, etc.)
         startKioskServer(port + 1).then(resolve).catch(reject);
       } else {
         reject(err);
