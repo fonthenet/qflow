@@ -228,13 +228,15 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
     .eq('state', 'active')
     .maybeSingle();
 
+  const switchedFromWhatsApp = existingSession?.channel === 'whatsapp';
+
   if (existingSession) {
-    // Update existing session to Messenger
+    // Update existing session to Messenger (switches from WhatsApp if that was active)
     await supabase
       .from('whatsapp_sessions')
       .update({ channel: 'messenger', messenger_psid: psid, whatsapp_phone: null })
       .eq('id', existingSession.id);
-    console.log(`[messenger-referral] Switched session ${existingSession.id} to Messenger for ${ticket.ticket_number}`);
+    console.log(`[messenger-referral] Switched session ${existingSession.id} from ${existingSession.channel} to Messenger for ${ticket.ticket_number}`);
   } else {
     // Create new Messenger session
     await supabase
@@ -260,24 +262,32 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
     if (profile?.firstName) profileName = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
   } catch { /* non-critical */ }
 
-  // Build and send rich "joined" message
   const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
-  const pos = await getQueuePosition(ticket.id);
-  const positionText = pos.position != null
-    ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
-    : '';
 
-  const message = tNotification('joined', 'fr', {
-    name: org?.name ?? '',
-    ticket: ticket.ticket_number,
-    position: positionText,
-    url: trackUrl,
-  });
+  let message: string;
+
+  if (switchedFromWhatsApp) {
+    // Already got "joined" via WhatsApp — just confirm the switch
+    message = `✅ Notifications switched to Messenger!\n\n🎫 Ticket: *${ticket.ticket_number}*\n📍 Track: ${trackUrl}`;
+  } else {
+    // New Messenger session — send full "joined" message
+    const pos = await getQueuePosition(ticket.id);
+    const positionText = pos.position != null
+      ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
+      : '';
+
+    message = tNotification('joined', 'fr', {
+      name: org?.name ?? '',
+      ticket: ticket.ticket_number,
+      position: positionText,
+      url: trackUrl,
+    });
+  }
 
   const result = await sendMessengerMessage({ recipientId: psid, text: message });
   if (result.ok) {
-    console.log(`[messenger-referral] Sent joined message to ${psid} for ${ticket.ticket_number}`);
+    console.log(`[messenger-referral] Sent ${switchedFromWhatsApp ? 'switch confirmation' : 'joined message'} to ${psid} for ${ticket.ticket_number}`);
   } else {
     console.error(`[messenger-referral] Failed to send: ${result.error}`);
   }

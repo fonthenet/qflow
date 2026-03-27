@@ -1039,7 +1039,9 @@ export function KioskView({
                       <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
                       </svg>
-                      {t('Get Messenger notifications')}
+                      {customerPhone.trim() && whatsappEnabled
+                        ? t('Switch to Messenger')
+                        : t('Get Messenger notifications')}
                     </a>
                   )}
                 </div>
