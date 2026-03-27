@@ -129,9 +129,23 @@ export function KioskView({
   const [checkingIn, setCheckingIn] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [ticketError, setTicketError] = useState<string | null>(null);
+  const [hoursOpen, setHoursOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   const themeColor = ks.themeColor || '#059669';
+
+  // ── Business hours (matches local kiosk) ──
+  const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+  const currentDayName = dayNames[new Date().getDay()];
+  const todayHours = operatingHours?.[currentDayName] ?? null;
+  const isTodayClosed = !todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00');
+  const isCurrentlyOpen = (() => {
+    if (!operatingHours || isTodayClosed) return false;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return hhmm >= todayHours!.open && hhmm < todayHours!.close;
+  })();
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
   const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
@@ -472,6 +486,20 @@ export function KioskView({
           <LanguageSwitcher variant="floating" />
         </div>
 
+        {/* Business hours toggle — top right */}
+        {operatingHours && (
+          <div className="absolute right-4 top-4 sm:right-6">
+            <button
+              onClick={() => setHoursOpen(!hoursOpen)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-500 transition-all hover:border-slate-300 hover:bg-[#f8fafc]"
+            >
+              <span className={`h-[7px] w-[7px] rounded-full ${isCurrentlyOpen ? 'bg-emerald-500' : 'bg-red-500'}`} />
+              {isCurrentlyOpen ? (isTodayClosed ? t('Connected') : todayHours!.close) : t('Closed')}
+              <span className="text-[10px] opacity-60">▼</span>
+            </button>
+          </div>
+        )}
+
         {/* Logo badge */}
         {hasLogo ? (
           <div className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-2xl" style={{ backgroundColor: themeColor }}>
@@ -505,6 +533,33 @@ export function KioskView({
           {t('Connected')}
         </div>
       </div>
+
+      {/* ── Business hours panel (collapsible) ── */}
+      {operatingHours && hoursOpen && (
+        <div className="mx-auto max-w-[360px] rounded-2xl border border-slate-200 bg-white p-5 shadow-md"
+          style={{ marginTop: 16, marginBottom: -8 }}>
+          <div className="mb-3 text-center text-sm font-bold text-slate-950">{t('Business Hours')}</div>
+          <table className="w-full border-collapse">
+            {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((day) => {
+              const h = operatingHours[day];
+              const closed = !h || (h.open === '00:00' && h.close === '00:00');
+              const isCurrent = day === currentDayName;
+              return (
+                <tr key={day} className="border-b border-slate-100 last:border-0">
+                  <td className={`py-[7px] text-[13px] ${isCurrent ? 'font-bold' : 'font-semibold text-slate-500'}`}
+                    style={isCurrent ? { color: themeColor } : undefined}>
+                    {t(day.charAt(0).toUpperCase() + day.slice(1))}
+                  </td>
+                  <td className={`py-[7px] text-right text-[13px] ${isCurrent ? 'font-bold' : 'text-slate-500'}`}
+                    style={isCurrent ? { color: themeColor } : undefined}>
+                    {closed ? <span className="text-slate-400">{t('Closed')}</span> : `${h.open} – ${h.close}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </table>
+        </div>
+      )}
 
       {sandboxMode ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-semibold text-amber-900">
