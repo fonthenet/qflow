@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
-import { tNotification } from '@/lib/whatsapp-commands';
+import {
+  sendMessengerMessage,
+  sendMessengerMessageWithTag,
+  sendOneTimeNotification,
+} from '@/lib/messenger';
+import { tNotification } from '@/lib/messaging-commands';
 
 /**
  * POST /api/whatsapp-send
  *
- * Sends a WhatsApp notification for a ticket event.
- * Called from server actions (which may run locally on QFlo Station)
- * to ensure the message is sent from Vercel where the Meta API token lives.
+ * Sends a notification for a ticket event via WhatsApp OR Messenger,
+ * depending on which channel the session uses.
+ *
+ * Called from server actions and Postgres triggers.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -45,19 +51,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ sent: false, reason: 'ticket not found' });
     }
 
-    // Look up active WhatsApp session for this ticket (include locale)
+    // Look up active session for this ticket (supports both WhatsApp and Messenger)
     const { data: session } = await (supabase as any)
       .from('whatsapp_sessions')
-      .select('id, whatsapp_phone, organization_id, locale')
+      .select('id, whatsapp_phone, messenger_psid, organization_id, locale, channel, otn_token')
       .eq('ticket_id', ticketId)
       .eq('state', 'active')
       .maybeSingle();
 
-    if (!session?.whatsapp_phone) {
-      return NextResponse.json({ sent: false, reason: 'no active whatsapp session' });
+    if (!session) {
+      return NextResponse.json({ sent: false, reason: 'no active session' });
     }
 
-    // Session locale — default to 'fr' for Algeria
+    const channel = session.channel ?? 'whatsapp';
     const locale = (session.locale as 'fr' | 'ar' | 'en') || 'fr';
 
     // Build tracking URL
@@ -102,23 +108,77 @@ export async function POST(request: NextRequest) {
         message = tNotification('default', locale, vars);
     }
 
-    console.log(`[whatsapp-send] Sending ${event} (${locale}) to ${session.whatsapp_phone} for ${ticket.ticket_number}`);
+    console.log(`[whatsapp-send] Sending ${event} (${locale}) via ${channel} for ${ticket.ticket_number}`);
 
-    const result = await sendWhatsAppMessage({
-      to: session.whatsapp_phone,
-      body: message,
-    });
+    let sent = false;
+    let provider = channel;
+    let error: string | undefined;
+    let messageId: string | undefined;
 
-    console.log(`[whatsapp-send] Result:`, JSON.stringify(result));
+    if (channel === 'messenger') {
+      // ── Messenger dispatch ──
+      const recipientId = session.messenger_psid;
+      if (!recipientId) {
+        return NextResponse.json({ sent: false, reason: 'no messenger PSID in session' });
+      }
 
-    if (result.ok) {
+      // For terminal events outside 24h window, try OTN first, then message tag
+      const isTerminal = ['no_show', 'served', 'cancelled'].includes(event);
+
+      let result;
+      if (isTerminal && session.otn_token) {
+        // Use One-Time Notification token
+        result = await sendOneTimeNotification({
+          recipientId,
+          text: message,
+          otnToken: session.otn_token,
+        });
+        // Clear OTN token after use (single-use)
+        if (result.ok) {
+          await (supabase as any)
+            .from('whatsapp_sessions')
+            .update({ otn_token: null })
+            .eq('id', session.id);
+        }
+      } else {
+        // Try standard send first (within 24h), fallback to CONFIRMED_EVENT_UPDATE tag
+        result = await sendMessengerMessage({ recipientId, text: message });
+        if (!result.ok && result.error?.includes('outside')) {
+          // Outside 24h window — use message tag
+          result = await sendMessengerMessageWithTag({ recipientId, text: message });
+        }
+      }
+
+      sent = result.ok;
+      error = result.error;
+      messageId = result.messageId;
+    } else {
+      // ── WhatsApp dispatch ──
+      if (!session.whatsapp_phone) {
+        return NextResponse.json({ sent: false, reason: 'no whatsapp phone in session' });
+      }
+
+      const result = await sendWhatsAppMessage({
+        to: session.whatsapp_phone,
+        body: message,
+      });
+
+      sent = result.ok;
+      error = result.error;
+      messageId = result.sid;
+      provider = result.provider;
+    }
+
+    console.log(`[whatsapp-send] Result: sent=${sent}, provider=${provider}, error=${error}`);
+
+    if (sent) {
       // Log notification
       try {
         await supabase.from('notifications').insert({
           ticket_id: ticketId,
-          type: `whatsapp_${event}` as any,
-          channel: 'whatsapp' as any,
-          payload: { to: result.to, sid: result.sid, provider: result.provider, locale },
+          type: `${channel}_${event}` as any,
+          channel: channel as any,
+          payload: { messageId, provider, locale, channel },
           sent_at: new Date().toISOString(),
         });
       } catch { /* non-critical */ }
@@ -132,7 +192,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ sent: result.ok, provider: result.provider, error: result.error });
+    return NextResponse.json({ sent, provider, channel, error });
   } catch (err: any) {
     console.error('[whatsapp-send] Error:', err?.message ?? err);
     return NextResponse.json({ sent: false, error: err?.message }, { status: 500 });
