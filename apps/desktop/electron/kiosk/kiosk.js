@@ -404,7 +404,7 @@
             var d = await r.json();
             if (d.ticket && d.ticket.ticket_number && !d.ticket.ticket_number.startsWith('L-')) {
               S.ticket.ticket_number = d.ticket.ticket_number;
-              var numEl = document.querySelector('.result-number');
+              var numEl = document.querySelector('.ticket-box .number');
               if (numEl) numEl.textContent = S.ticket.ticket_number;
               clearInterval(pollId);
             }
@@ -423,7 +423,7 @@
       if (errEl) {
         errEl.textContent = err.message || tr('Something went wrong. Please try again.');
         errEl.style.display = 'block';
-        setTimeout(function () { errEl.style.display = 'none'; }, 5000);
+        setTimeout(function () { if (errEl) errEl.style.display = 'none'; }, 6000);
       }
     }
   };
@@ -615,15 +615,18 @@
 
     if (S.step === 'department') {
       var totalWaiting = 0;
-      var cards = S.departments.map(function (d) {
+      var cards = S.departments.map(function (d, i) {
         var counts = S.queueCounts[d.id] || { waiting: 0, estimated_wait: 0 };
         totalWaiting += counts.waiting;
         var waitText = counts.waiting > 0
           ? '<span class="wait-dot"></span>' + tr('{count} waiting', { count: counts.waiting })
           : tr('No wait');
-        return '<div class="card fade-up" onclick="selectDept(' + JSON.stringify(d).replace(/"/g, '&quot;') + ')">' +
-          '<span class="card-icon">&#127973;</span>' + esc(d.name) +
-          '<div class="card-meta">' + waitText + '</div>' +
+        var initial = d.name ? d.name.charAt(0).toUpperCase() : '?';
+        return '<div class="card fade-up" style="animation-delay:' + (i * 0.06) + 's" onclick="selectDept(' + JSON.stringify(d).replace(/"/g, '&quot;') + ')">' +
+          '<div class="card-icon">' + initial + '</div>' +
+          '<div class="card-body"><div class="card-name">' + esc(d.name) + '</div>' +
+          '<div class="card-meta">' + waitText + '</div></div>' +
+          '<div class="card-chevron">&#8250;</div>' +
           '</div>';
       }).join('');
 
@@ -633,16 +636,19 @@
         '<div class="queue-stats fade-up"><div class="stat-pill"><div class="stat-num">' + totalWaiting + '</div><div class="stat-label">' + tr('In Queue') + '</div></div>' +
         '<div class="stat-pill"><div class="stat-num">' + S.departments.length + '</div><div class="stat-label">' + tr('Departments') + '</div></div></div>' +
         '<div class="section-title">' + tr('Select Department') + '</div><div class="section-subtitle">' + tr('Choose the service area you need') + '</div>' +
-        '<div class="card-grid">' + cards + '</div>' +
+        '<div class="card-list">' + cards + '</div>' +
         '</div></div>';
 
     } else if (S.step === 'service') {
       var svcs = S.services.filter(function (s) { return s.department_id === S.selectedDept.id; });
       var cards = svcs.map(function (s, i) {
         var est = s.estimated_service_time || 10;
+        var initial = s.name ? s.name.charAt(0).toUpperCase() : '?';
         return '<div class="card fade-up" style="animation-delay:' + (i * 0.06) + 's" onclick="selectService(' + JSON.stringify(s).replace(/"/g, '&quot;') + ')">' +
-          '<span class="card-icon">&#128203;</span>' + esc(s.name) +
-          '<div class="card-meta">~' + tr('{minutes} min', { minutes: est }) + '</div>' +
+          '<div class="card-icon">' + initial + '</div>' +
+          '<div class="card-body"><div class="card-name">' + esc(s.name) + '</div>' +
+          '<div class="card-meta">~' + tr('{minutes} min', { minutes: est }) + '</div></div>' +
+          '<div class="card-chevron">&#8250;</div>' +
           '</div>';
       }).join('');
 
@@ -652,7 +658,7 @@
         renderSteps() +
         '<button class="btn-back" onclick="goBack(\'' + backStep + '\')">&larr; ' + tr('Back') + '</button>' +
         '<div class="section-title">' + tr('Select Service') + '</div><div class="section-subtitle">' + esc(S.selectedDept.name) + '</div>' +
-        '<div class="card-grid">' + cards + '</div>' +
+        '<div class="card-list">' + cards + '</div>' +
         '</div></div>';
 
     } else if (S.step === 'confirm') {
@@ -668,14 +674,16 @@
         renderSteps() +
         '<button class="btn-back" onclick="' + backHandler + '">&larr; ' + tr('Back') + '</button>' +
         '<div class="form-card scale-in">' +
-        '<div style="text-align:center;margin-bottom:20px">' +
-        '<div style="font-size:11px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">' + esc(tr(S.selectedDept.name)) + (S.selectedService ? ' &mdash; ' + esc(tr(S.selectedService.name)) : '') + '</div>' +
-        '<div style="font-size:20px;font-weight:800">' + tr('Your Details') + '</div>' +
-        '<div style="font-size:13px;color:var(--text3);margin-top:4px">' + waitMsg + '</div>' +
+        '<div class="form-header">' +
+        '<div class="dept-service">' + esc(tr(S.selectedDept.name)) + (S.selectedService ? ' &mdash; ' + esc(tr(S.selectedService.name)) : '') + '</div>' +
+        '<div class="title">' + tr('Your Details') + '</div>' +
+        '<div class="subtitle">' + waitMsg + '</div>' +
         '</div>' +
-        '<div id="kiosk-error" style="display:none;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#dc2626;font-size:13px;font-weight:600;margin-bottom:14px;text-align:center"></div>' +
+        '<div id="kiosk-error" class="form-error"></div>' +
+        '<div class="form-fields">' +
         '<div class="form-group"><label>' + tr('Name (optional)') + '</label><input id="cname" placeholder="' + tr('Enter your name') + '" autocomplete="off"></div>' +
-        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
+        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"><div class="hint">' + tr('For WhatsApp alerts') + '</div></div>' +
+        '</div>' +
         '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
         '</div>' +
         '</div></div>';
@@ -687,15 +695,21 @@
         ? '<img src="' + t.qr_data_url + '" width="200" height="200" style="display:block;image-rendering:pixelated" alt="QR Code">'
         : '';
 
+      // Estimated wait
+      var estWait = '';
+      if (t.estimated_service_time) {
+        estWait = '<div class="est-wait">~' + tr('{minutes} min', { minutes: t.estimated_service_time }) + '</div>';
+      }
+
       // WhatsApp notification badge (shown when phone was entered)
       var whatsappBadge = t.has_phone
-        ? '<div style="display:flex;align-items:center;gap:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 16px;margin-top:16px">' +
-          '<div style="width:36px;height:36px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+        ? '<div class="whatsapp-badge">' +
+          '<div class="icon">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="#16a34a"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>' +
           '</div>' +
           '<div style="flex:1;min-width:0">' +
-          '<div style="font-size:14px;font-weight:700;color:#166534">' + tr('WhatsApp notifications active') + '</div>' +
-          '<div style="font-size:12px;color:#16a34a;margin-top:1px">' + tr('You will receive updates on WhatsApp') + '</div>' +
+          '<div class="label">' + tr('WhatsApp notifications active') + '</div>' +
+          '<div class="sublabel">' + tr('You will receive updates on WhatsApp') + '</div>' +
           '</div>' +
           '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>' +
           '</div>'
@@ -705,18 +719,21 @@
         '<div class="kiosk-body"><div class="kiosk-content">' +
         '<div class="result-card scale-in">' +
         '<div class="result-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>' +
-        '<div class="result-label" style="font-size:15px;letter-spacing:2px">' + tr('YOUR TICKET NUMBER') + '</div>' +
-        '<div class="result-number" style="font-size:72px;margin:8px 0">' + esc(t.ticket_number) + '</div>' +
-        '<div class="result-position" style="font-size:18px;padding:8px 20px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ' + tr('#{position} in queue', { position: t.position }) + '</div>' +
+        '<div class="result-title">' + tr('Your ticket is ready!') + '</div>' +
+        '<div class="ticket-box">' +
+        '<div class="label">' + tr('YOUR TICKET NUMBER') + '</div>' +
+        '<div class="number">' + esc(t.ticket_number) + '</div>' +
+        '<div class="card-meta" style="justify-content:center;font-size:15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ' + tr('#{position} in queue', { position: t.position }) + '</div>' +
+        estWait +
+        '</div>' +
         whatsappBadge +
         '<div class="result-divider"></div>' +
-        '<div class="qr-section" style="gap:20px;padding:20px">' +
-        '<div class="qr-box" style="padding:8px">' + qrHtml + '</div>' +
-        '<div class="qr-text" style="font-size:15px"><strong style="font-size:16px">' + tr('Track Your Position') + '</strong>' + tr('Scan this QR code to follow your place in the queue from your phone.') + '</div>' +
+        '<div class="qr-section">' +
+        '<div class="qr-box">' + qrHtml + '</div>' +
+        '<div class="qr-text"><strong>' + tr('Track Your Position') + '</strong>' + tr('Scan this QR code to follow your place in the queue from your phone.') + '</div>' +
         '</div>' +
-        '<a class="track-url" href="' + trackUrl + '" target="_blank">' + trackUrl + '</a>' +
         '</div>' +
-        '<button class="btn btn-primary" style="margin-top:16px;font-size:18px" onclick="reset()">' + tr('Done') + '</button>' +
+        '<button class="btn btn-done btn-large" onclick="reset()">' + tr('Take Another Ticket') + '</button>' +
         '</div></div>';
     }
   }

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
-  ArrowLeft,
   CalendarClock,
   Check,
   ChevronRight,
@@ -132,7 +131,7 @@ export function KioskView({
   const [ticketError, setTicketError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#2563eb';
+  const themeColor = ks.themeColor || '#16a34a';
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
   const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
@@ -220,21 +219,6 @@ export function KioskView({
     }
 
     setSelectedDept(null);
-    setStep('department');
-  }
-
-  function goBackFromService() {
-    if (directServiceEntry) {
-      setStep(defaultStep);
-      setSelectedDept(defaultDept);
-      return;
-    }
-
-    if (lockedDept) {
-      setStep('home');
-      return;
-    }
-
     setStep('department');
   }
 
@@ -449,143 +433,119 @@ export function KioskView({
     });
   }
 
-  const walkInButton = (
-    <button
-      onClick={startWalkInFlow}
-      disabled={!hasRequiredCustomerInfo}
-      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-[136px] sm:px-8"
-    >
-      <div
-        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white sm:h-20 sm:w-20"
-        style={{ backgroundColor: themeColor }}
+  /* ── Card component matching local kiosk design ── */
+  function KioskCard({ icon, label, meta, onClick, disabled, style: cardStyle }: {
+    icon: React.ReactNode; label: string; meta?: string; onClick?: () => void;
+    disabled?: boolean; style?: React.CSSProperties;
+  }) {
+    return (
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className="flex w-full items-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5 text-left transition-all hover:border-slate-300 hover:bg-[#f8fafc] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:px-6"
+        style={cardStyle}
       >
-        <Ticket className="h-8 w-8 sm:h-10 sm:w-10" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-          {localizedButtonLabel}
+        <div
+          className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[14px] text-[22px] font-extrabold text-white"
+          style={{ backgroundColor: themeColor }}
+        >
+          {icon}
         </div>
-      </div>
-      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
-    </button>
-  );
-
-  const appointmentsButton = (
-    <button
-      onClick={() => {
-        clearAppointmentSearch();
-        setStep('appointment');
-      }}
-      className="group flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-6 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:min-h-[136px] sm:px-8"
-    >
-      <div
-        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white sm:h-20 sm:w-20"
-        style={{ backgroundColor: themeColor }}
-      >
-        <CalendarClock className="h-8 w-8 sm:h-10 sm:w-10" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-          {t('Appointments')}
-        </div>
-      </div>
-      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
-    </button>
-  );
-
-  const bookingButton = (
-    <a
-      href={bookingPath}
-      className={`flex min-h-[120px] w-full items-center gap-5 rounded-[1.5rem] border px-6 py-6 text-left transition-colors sm:min-h-[136px] sm:px-8 ${
-        bookingFirst
-          ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-          : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
-      }`}
-    >
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-700 sm:h-20 sm:w-20">
-        <Clock3 className="h-8 w-8 sm:h-10 sm:w-10" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-          {t('Book')}
-        </div>
-      </div>
-      <ChevronRight className="h-8 w-8 text-slate-300 sm:h-10 sm:w-10" />
-    </a>
-  );
-
-  return (
-    <div
-      className="min-h-screen"
-      style={{
-        background: `linear-gradient(180deg, #f8fafc 0%, #ffffff 18%, ${themeColor}0a 100%)`,
-      }}
-    >
-      <div className="fixed left-4 top-6 z-50 sm:left-6 sm:top-6">
-        <LanguageSwitcher variant="floating" />
-      </div>
-      {sandboxMode ? (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
-          {t(
-            'Sandbox mode. This kiosk uses the real layout, but tickets, appointment check-ins, and QR scans stay in a safe preview environment.'
+        <div className="min-w-0 flex-1">
+          <div className="text-[22px] font-bold text-slate-950">{label}</div>
+          {meta && (
+            <div className="mt-1 flex items-center gap-1.5 text-[13px] font-medium text-slate-400">
+              {meta}
+            </div>
           )}
         </div>
-      ) : null}
-      <div className="border-b border-slate-200 bg-white">
-        <div className={`mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8 ${step === 'ticket' ? 'pb-4 pt-8 sm:pb-5 sm:pt-5' : 'pb-8 pt-16 sm:pb-8 sm:pt-8'}`}>
-          {hasLogo ? (
-            <div className={`${step === 'ticket' ? 'mb-3' : 'mb-5'} flex justify-center`}>
-              <img
-                src={ks.logoUrl!}
-                alt={`${organization?.name || 'Business'} logo`}
-                className={`${step === 'ticket' ? 'max-h-14 max-w-[150px]' : 'max-h-20 max-w-[220px]'} w-auto object-contain`}
-              />
-            </div>
-          ) : null}
-          <div className={`${step === 'ticket' ? 'space-y-0.5' : 'space-y-1'}`}>
-            <p className={`${step === 'ticket' ? 'text-base sm:text-lg' : 'text-lg sm:text-xl'} font-semibold text-slate-950`}>
-              {businessName}
-            </p>
-            {officeLine ? (
-              <p className={`${step === 'ticket' ? 'text-xs sm:text-sm' : 'text-sm sm:text-base'} text-slate-500`}>{officeLine}</p>
-            ) : null}
-          </div>
-          {step !== 'ticket' ? (
-            <h1 className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-              {kioskTitle}
-            </h1>
-          ) : null}
-          {showHeaderMessage ? (
-            <p className="mt-4 text-2xl text-slate-700 sm:text-3xl">{localizedWelcomeMessage}</p>
-          ) : null}
-        </div>
-      </div>
+        <ChevronRight className="h-6 w-6 shrink-0 text-slate-200" />
+      </button>
+    );
+  }
 
-      <div className={`mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 ${step === 'ticket' ? 'py-4' : 'py-8'}`}>
-        {intakePaused ? (
-          <section className="rounded-[1.75rem] border bg-white p-6 text-center sm:p-8" style={primaryCardStyle}>
-            <div
-              className="mx-auto flex h-20 w-20 items-center justify-center rounded-full text-white"
-              style={{ backgroundColor: `${themeColor}22`, color: themeColor }}
-            >
-              <Clock3 className="h-10 w-10" />
-            </div>
-            <h2 className="mt-5 text-3xl font-semibold text-slate-950 sm:text-4xl">
-              {t('Visit intake is currently closed')}
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600 sm:text-lg">
-              {t('This business is not taking visits right now. Please check back later or contact the business directly.')}
-            </p>
-          </section>
+  return (
+    <div className="flex min-h-screen flex-col bg-[#f1f5f9]">
+      {/* ── Header — clean white, matches local kiosk ── */}
+      <div className="relative border-b border-slate-200 bg-white px-6 pb-5 pt-7 text-center sm:px-8 sm:pb-6 sm:pt-8">
+        {/* Language switcher — top left */}
+        <div className="absolute left-4 top-4 sm:left-6">
+          <LanguageSwitcher variant="floating" />
+        </div>
+
+        {/* Logo badge */}
+        {hasLogo ? (
+          <div className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center overflow-hidden rounded-2xl" style={{ backgroundColor: themeColor }}>
+            <img
+              src={ks.logoUrl!}
+              alt={`${organization?.name || 'Business'} logo`}
+              className="h-9 w-auto rounded-lg object-contain"
+            />
+          </div>
+        ) : (
+          <div
+            className="mx-auto mb-3 flex h-[52px] w-[52px] items-center justify-center rounded-2xl text-2xl font-black text-white"
+            style={{ backgroundColor: themeColor }}
+          >
+            {(businessName ?? 'Q').charAt(0)}
+          </div>
+        )}
+
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-[28px]">
+          {kioskTitle}
+        </h1>
+        {officeLine ? (
+          <div className="mt-0.5 text-sm font-medium" style={{ color: themeColor }}>{officeLine}</div>
         ) : null}
 
-        {!intakePaused && step === 'home' && (
-          <section className="rounded-[1.75rem] border bg-white p-4 sm:p-6" style={primaryCardStyle}>
-            <div className="grid gap-4">
-              <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
-                <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+        {showHeaderMessage ? (
+          <div className="mt-2 text-[32px] font-extrabold tracking-tight text-slate-950 sm:text-[36px]">
+            {localizedWelcomeMessage}
+          </div>
+        ) : null}
+
+        {step === 'ticket' ? (
+          <div className="mt-1.5 text-sm font-medium" style={{ color: themeColor }}>{t('Your ticket is ready!')}</div>
+        ) : null}
+      </div>
+
+      {sandboxMode ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-semibold text-amber-900">
+          {t('Sandbox mode. This kiosk uses the real layout, but tickets, appointment check-ins, and QR scans stay in a safe preview environment.')}
+        </div>
+      ) : null}
+
+      {/* ── Body ── */}
+      <div className="flex flex-1 flex-col items-center px-5 pb-8 pt-5 sm:px-6">
+        <div className="w-full max-w-[640px]">
+
+          {/* ── Intake paused ── */}
+          {intakePaused ? (
+            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColor}15` }}>
+                <Clock3 className="h-10 w-10" style={{ color: themeColor }} />
+              </div>
+              <div className="text-[28px] font-extrabold text-slate-950">
+                {t('Visit intake is currently closed')}
+              </div>
+              <p className="mx-auto mt-2 max-w-md text-base text-slate-500">
+                {t('This business is not taking visits right now. Please check back later or contact the business directly.')}
+              </p>
+            </div>
+          ) : null}
+
+          {/* ── HOME step ── */}
+          {!intakePaused && step === 'home' && (
+            <>
+              {/* Name/phone form card */}
+              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+                <div className="border-b border-slate-100 pb-5 text-center">
+                  <div className="text-[28px] font-bold text-slate-950">{t('Your Details')}</div>
+                  <div className="mt-1 text-sm text-slate-400">{t('Fill in your details to get started')}</div>
+                </div>
+                <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
                   <div className="text-center">
-                    <label className="mb-2 block text-sm font-semibold text-slate-900">
+                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
                       {t('Name')} <span className="font-normal text-rose-500">*</span>
                     </label>
                     <input
@@ -597,11 +557,12 @@ export function KioskView({
                       }}
                       placeholder={t('Enter your name')}
                       autoComplete="name"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
+                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                   </div>
                   <div className="text-center">
-                    <label className="mb-2 block text-sm font-semibold text-slate-900">
+                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
                       {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
                     </label>
                     <input
@@ -614,116 +575,86 @@ export function KioskView({
                       placeholder={t('Enter your phone number')}
                       autoComplete="tel"
                       dir={customerPhone.trim() ? 'ltr' : dir}
-                      className={`w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl ${
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${
                         dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
                       }`}
+                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                     {whatsappEnabled && (
-                      <p className="mt-1.5 text-xs text-slate-500">{t('To receive WhatsApp queue updates')}</p>
+                      <p className="mt-1 text-[11px] text-slate-400">{t('To receive WhatsApp queue updates')}</p>
                     )}
                   </div>
                 </div>
                 {customerInfoError ? (
-                  <p className="mt-3 text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
+                  <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
+                    {customerInfoError}
+                  </div>
                 ) : null}
-
-                <div className="mx-auto mt-4 max-w-3xl">
-                  {walkInButton}
-                </div>
-              </div>
-              {bookingFirst ? appointmentsButton : appointmentsButton}
-              {bookingFirst ? bookingButton : bookingButton}
-            </div>
-          </section>
-        )}
-
-        {!intakePaused && step !== 'home' && step !== 'ticket' && !(step === 'service' && directServiceEntry) && (
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => {
-                if (step === 'department' || step === 'appointment') {
-                  setStep('home');
-                  clearAppointmentSearch();
-                  return;
-                }
-
-                if (step === 'service') {
-                  goBackFromService();
-                  return;
-                }
-
-                if (step === 'priority') {
-                  setStep('service');
-                }
-              }}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              {t('Back')}
-            </button>
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-sm text-slate-600 shadow-sm backdrop-blur">
-              <span className={step === 'department' ? 'font-semibold text-slate-950' : ''}>{t('Department')}</span>
-              <ChevronRight className="h-4 w-4 text-slate-300" />
-              <span className={step === 'service' ? 'font-semibold text-slate-950' : ''}>{t('Service')}</span>
-              {priorityCategories.length > 0 ? (
-                <>
-                  <ChevronRight className="h-4 w-4 text-slate-300" />
-                  <span className={step === 'priority' ? 'font-semibold text-slate-950' : ''}>{t('Priority')}</span>
-                </>
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        {!intakePaused && step === 'department' && (
-          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
-            <div className="mx-auto max-w-2xl text-center">
-              <h2 className="text-3xl font-semibold text-slate-950 sm:text-4xl">{t('Choose a department')}</h2>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              {activeDepartments.map((department) => (
                 <button
-                  key={department.id}
-                  onClick={() => {
-                    setSelectedDept(department);
-                    setStep('service');
-                  }}
-                  className="group flex min-h-[104px] w-full items-center gap-5 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 sm:px-7"
+                  onClick={startWalkInFlow}
+                  disabled={!hasRequiredCustomerInfo}
+                  className="mt-5 block w-full rounded-2xl px-4 py-[18px] text-[18px] font-bold text-white transition-all hover:brightness-105 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ backgroundColor: themeColor }}
                 >
-                  <div
-                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
-                    style={{ backgroundColor: themeColor }}
-                  >
-                    {department.code || 'D'}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-2xl font-semibold text-slate-950 sm:text-3xl">{t(department.name)}</div>
-                  </div>
-                  <ChevronRight className="h-7 w-7 text-slate-300" />
+                  {localizedButtonLabel}
                 </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {!intakePaused && step === 'service' && selectedDept && (
-          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
-              <div className="border-b border-slate-100 pb-5 text-center">
-                <div className="mx-auto max-w-2xl">
-                  <h2 className="text-3xl font-semibold text-slate-950 sm:text-4xl">
-                    {t(selectedDept.name)}
-                  </h2>
-                </div>
               </div>
 
-              <div className="mt-5 space-y-4">
-                {/* Show name/phone form only when service is the entry point (single dept — home screen was skipped) */}
-                {directServiceEntry && (
-                <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
-                  <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+              {/* Action cards below form */}
+              <div className="mt-4 flex flex-col gap-3">
+                <KioskCard
+                  icon={<CalendarClock className="h-6 w-6" />}
+                  label={t('Appointments')}
+                  meta={t('Check in for a reservation')}
+                  onClick={() => { clearAppointmentSearch(); setStep('appointment'); }}
+                />
+                <KioskCard
+                  icon={<Clock3 className="h-6 w-6" />}
+                  label={t('Book')}
+                  meta={t('Schedule for later')}
+                  onClick={() => { window.location.href = bookingPath; }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Back button removed — navigation is forward-only on kiosk */}
+
+          {/* ── DEPARTMENT step ── */}
+          {!intakePaused && step === 'department' && (
+            <>
+              <div className="mb-6 text-center">
+                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Choose a department')}</div>
+                <div className="mt-1 text-[15px] text-slate-500">{t('Choose the service area you need')}</div>
+              </div>
+              <div className="flex flex-col gap-3">
+                {activeDepartments.map((department) => (
+                  <KioskCard
+                    key={department.id}
+                    icon={department.code || department.name?.charAt(0)?.toUpperCase() || 'D'}
+                    label={t(department.name)}
+                    onClick={() => { setSelectedDept(department); setStep('service'); }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* ── SERVICE step ── */}
+          {!intakePaused && step === 'service' && selectedDept && (
+            <>
+              {/* Service entry form (single dept path) */}
+              {directServiceEntry && (
+                <div className="mb-4 rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+                  <div className="border-b border-slate-100 pb-5 text-center">
+                    <div className="text-xs font-bold uppercase tracking-wide" style={{ color: themeColor }}>
+                      {t(selectedDept.name)}
+                    </div>
+                    <div className="mt-1 text-[28px] font-bold text-slate-950">{t('Your Details')}</div>
+                  </div>
+                  <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
                     <div className="text-center">
-                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
                         {t('Name')} <span className="font-normal text-rose-500">*</span>
                       </label>
                       <input
@@ -735,11 +666,12 @@ export function KioskView({
                         }}
                         placeholder={t('Enter your name')}
                         autoComplete="name"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
+                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                     </div>
                     <div className="text-center">
-                      <label className="mb-2 block text-sm font-semibold text-slate-900">
+                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
                         {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
                       </label>
                       <input
@@ -752,155 +684,126 @@ export function KioskView({
                         placeholder={t('Enter your phone number')}
                         autoComplete="tel"
                         dir={customerPhone.trim() ? 'ltr' : dir}
-                        className={`w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300 sm:py-5 sm:text-xl ${
+                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${
                           dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
                         }`}
+                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                       {whatsappEnabled && (
-                        <p className="mt-1.5 text-xs text-slate-500">{t('To receive WhatsApp queue updates')}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{t('To receive WhatsApp queue updates')}</p>
                       )}
                     </div>
                   </div>
                   {customerInfoError ? (
-                    <p className="mt-3 text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
+                      {customerInfoError}
+                    </div>
                   ) : null}
                 </div>
-                )}
-                {!directServiceEntry && customerInfoError && (
-                  <p className="text-center text-sm font-medium text-rose-600">{customerInfoError}</p>
-                )}
+              )}
 
-                {ticketError && (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-700">
-                    {ticketError}
-                  </div>
-                )}
+              {!directServiceEntry && customerInfoError && (
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
+                  {customerInfoError}
+                </div>
+              )}
 
+              {ticketError && (
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
+                  {ticketError}
+                </div>
+              )}
+
+              <div className="mb-2 text-center">
+                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select Service')}</div>
+                <div className="mt-1 text-[15px] text-slate-500">{t(selectedDept.name)}</div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3">
                 {selectedDept.services.map((service: any) => {
                   const showMedicalIcon =
                     isClinicKiosk ||
                     /medical|doctor|visit|check.?up|consult/i.test(service.name ?? '');
 
                   return (
-                  <button
-                    key={service.id}
-                    onClick={() => handleServiceSelected(service)}
-                    disabled={loading || !hasRequiredCustomerInfo}
-                    className="group relative flex min-h-[104px] w-full flex-col items-center justify-center gap-4 rounded-[1.5rem] border border-slate-200 bg-white px-6 py-5 text-center transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:opacity-100 sm:px-7"
-                  >
-                    <div
-                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-bold text-white"
-                      style={{ backgroundColor: themeColor }}
-                    >
-                      {showMedicalIcon ? <Stethoscope className="h-7 w-7" /> : service.code || 'S'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-2xl font-semibold text-slate-950 sm:text-3xl">{t(service.name)}</div>
-                      {ks.showEstimatedTime && service.estimated_service_time ? (
-                        <div className="mt-2 text-base font-medium text-sky-700">
-                          {t('Approximate timing')}: {t('{count} min', { count: service.estimated_service_time })}
-                        </div>
-                      ) : null}
-                    </div>
-                    <ChevronRight className="absolute right-6 top-1/2 h-7 w-7 -translate-y-1/2 text-slate-300" />
-                  </button>
+                    <KioskCard
+                      key={service.id}
+                      icon={showMedicalIcon ? <Stethoscope className="h-6 w-6" /> : (service.code || service.name?.charAt(0)?.toUpperCase() || 'S')}
+                      label={t(service.name)}
+                      meta={ks.showEstimatedTime && service.estimated_service_time ? `~${service.estimated_service_time} ${t('min')}` : undefined}
+                      onClick={() => handleServiceSelected(service)}
+                      disabled={loading || !hasRequiredCustomerInfo}
+                    />
                   );
                 })}
               </div>
-          </section>
-        )}
+            </>
+          )}
 
-        {!intakePaused && step === 'priority' && selectedService && (
-          <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
-            <div className="mx-auto max-w-2xl text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                {t('Priority')}
-              </p>
-              <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                {t('Select a priority level')}
-              </h2>
-              <p className="mt-2 text-base text-slate-600">
-                {t('Choose a priority category only if it applies to your visit.')}
-              </p>
-            </div>
-
-            {ticketError && (
-              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-700">
-                {ticketError}
+          {/* ── PRIORITY step ── */}
+          {!intakePaused && step === 'priority' && selectedService && (
+            <>
+              <div className="mb-6 text-center">
+                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select a priority level')}</div>
+                <div className="mt-1 text-[15px] text-slate-500">{t('Choose a priority category only if it applies to your visit.')}</div>
               </div>
-            )}
 
-            <div className="mt-6 space-y-3">
-              <button
-                onClick={() => handlePrioritySelected(null)}
-                disabled={loading}
-                className="flex w-full items-center gap-4 rounded-[1.25rem] border border-slate-200 bg-white px-5 py-5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-              >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-700">
-                  STD
+              {ticketError && (
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
+                  {ticketError}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xl font-bold text-slate-950">{t('Standard')}</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {t('Continue with the normal queue order.')}
-                  </div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
-              </button>
+              )}
 
-              {priorityCategories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => handlePrioritySelected(category)}
+              <div className="flex flex-col gap-3">
+                <KioskCard
+                  icon="STD"
+                  label={t('Standard')}
+                  meta={t('Continue with the normal queue order.')}
+                  onClick={() => handlePrioritySelected(null)}
                   disabled={loading}
-                  className="flex w-full items-center gap-4 rounded-[1.25rem] border bg-white px-5 py-5 text-left transition-colors hover:bg-slate-50 disabled:opacity-50"
-                  style={{ borderColor: category.color ?? '#94a3b8' }}
-                >
-                  <div
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl text-white"
-                    style={{ backgroundColor: category.color ?? '#64748b' }}
+                  style={{ borderColor: undefined }}
+                />
+                {priorityCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    onClick={() => handlePrioritySelected(category)}
+                    disabled={loading}
+                    className="flex w-full items-center gap-4 rounded-[1.5rem] border bg-white px-5 py-5 text-left transition-all hover:bg-[#f8fafc] active:scale-[0.98] disabled:opacity-50 sm:px-6"
+                    style={{ borderColor: category.color ?? '#e2e8f0' }}
                   >
-                    {category.icon || 'P'}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xl font-bold text-slate-950">{category.name}</div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {t('Served ahead of standard visits')}
+                    <div
+                      className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[14px] text-xl text-white"
+                      style={{ backgroundColor: category.color ?? '#64748b' }}
+                    >
+                      {category.icon || 'P'}
                     </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-slate-400" />
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[22px] font-bold text-slate-950">{category.name}</div>
+                      <div className="mt-1 text-[13px] font-medium text-slate-400">{t('Served ahead of standard visits')}</div>
+                    </div>
+                    <ChevronRight className="h-6 w-6 shrink-0 text-slate-200" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
-        {!intakePaused && step === 'appointment' && (
-            <section className="rounded-[1.75rem] border bg-white p-5 sm:p-6" style={primaryCardStyle}>
-              <div className="text-center">
-                <div className="mx-auto max-w-2xl">
-                  <p className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    {t('Appointment check-in')}
-                  </p>
-                  <h2 className="mt-3 text-3xl font-bold text-slate-950 sm:text-4xl">
-                    {t("Find today's reservation")}
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-base text-slate-600">
-                    {t('Search using your name or phone number, then confirm your arrival right here.')}
-                  </p>
-                </div>
+          {/* ── APPOINTMENT step ── */}
+          {!intakePaused && step === 'appointment' && (
+            <>
+              <div className="mb-6 text-center">
+                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t("Find today's reservation")}</div>
+                <div className="mt-1 text-[15px] text-slate-500">{t('Search using your name or phone number, then confirm your arrival right here.')}</div>
               </div>
 
               {searchError ? (
-                <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
                   {searchError}
                 </div>
               ) : null}
 
-              <div className="mt-6 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
-                <label className="block text-sm font-semibold text-slate-900">
-                  {t('Name or phone number')}
-                </label>
+              <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <label className="block text-[13px] font-bold text-slate-950">{t('Name or phone number')}</label>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                   <div className="relative flex-1">
                     <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -910,13 +813,14 @@ export function KioskView({
                       onChange={(event) => setSearchTerm(event.target.value)}
                       onKeyDown={(event) => event.key === 'Enter' && handleSearchAppointment()}
                       placeholder={t('Enter your name or phone number')}
-                      className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-12 pr-4 text-base text-slate-900 outline-none transition-shadow focus:ring-2 focus:ring-slate-300"
+                      className="w-full rounded-2xl border border-slate-200 bg-[#f8fafc] py-4 pl-12 pr-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
+                      style={{ '--tw-ring-color': `${themeColor}40` } as any}
                     />
                   </div>
                   <button
                     onClick={handleSearchAppointment}
                     disabled={searching}
-                    className="inline-flex items-center justify-center rounded-xl px-6 py-4 text-base font-semibold text-white transition-opacity disabled:opacity-60"
+                    className="rounded-2xl px-6 py-4 text-[17px] font-bold text-white transition-opacity disabled:opacity-60"
                     style={{ backgroundColor: themeColor }}
                   >
                     {searching ? t('Searching...') : t('Search')}
@@ -925,33 +829,30 @@ export function KioskView({
               </div>
 
               {searched ? (
-                <div className="mt-6 space-y-4">
+                <div className="mt-4 flex flex-col gap-3">
                   {appointments.length === 0 ? (
-                    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-6 text-center">
-                      <h3 className="text-xl font-bold text-slate-950">{t('No appointment found')}</h3>
-                      <p className="mt-2 text-base text-slate-600">
+                    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center">
+                      <div className="text-xl font-bold text-slate-950">{t('No appointment found')}</div>
+                      <p className="mt-2 text-[15px] text-slate-500">
                         {t("We couldn't find a reservation for today with that search.")}
                       </p>
                       <a
                         href={bookingPath}
-                        className="mt-5 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100"
+                        className="mt-4 inline-flex items-center rounded-full border border-slate-200 bg-[#f8fafc] px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-white"
                       >
                         {t('Book an appointment instead')}
                       </a>
                     </div>
                   ) : (
                     appointments.map((appointment) => (
-                      <div
-                        key={appointment.id}
-                        className="rounded-[1.25rem] border border-slate-200 bg-white p-5"
-                      >
+                      <div key={appointment.id} className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
                             <p className="text-xl font-bold text-slate-950">{appointment.customer_name}</p>
-                            <p className="mt-1 text-base text-slate-600">
+                            <p className="mt-1 text-[15px] text-slate-500">
                               {appointment.department?.name} · {appointment.service?.name}
                             </p>
-                            <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                            <p className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">
                               {t('Scheduled for {time}', { time: formatAppointmentTime(appointment.scheduled_at) })}
                             </p>
                           </div>
@@ -962,7 +863,7 @@ export function KioskView({
                         <button
                           onClick={() => handleAppointmentCheckIn(appointment.id)}
                           disabled={checkingIn === appointment.id}
-                          className="mt-5 inline-flex w-full items-center justify-center rounded-xl px-4 py-4 text-base font-semibold text-white transition-opacity disabled:opacity-60"
+                          className="mt-4 w-full rounded-2xl px-4 py-4 text-[17px] font-bold text-white transition-opacity disabled:opacity-60"
                           style={{ backgroundColor: themeColor }}
                         >
                           {checkingIn === appointment.id ? t('Checking in...') : t('Check in now')}
@@ -974,152 +875,135 @@ export function KioskView({
               ) : null}
               <a
                 href={bookingPath}
-                className="mt-5 flex items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-900 transition-colors hover:bg-white"
+                className="mt-4 flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4 text-[15px] font-semibold text-slate-700 transition-colors hover:bg-[#f8fafc]"
               >
                 <span>{t('Need to book instead?')}</span>
-                <ChevronRight className="h-5 w-5 text-slate-400" />
+                <ChevronRight className="h-5 w-5 text-slate-300" />
               </a>
-            </section>
-        )}
+            </>
+          )}
 
-        {!intakePaused && step === 'ticket' && ticket && (
-          <section
-            ref={printRef}
-            className="mx-auto max-w-3xl rounded-[1.75rem] border bg-white p-5 print:border print:border-black print:shadow-none sm:p-6"
-            style={primaryCardStyle}
-          >
-            {/* ── Header ── */}
-            <div className="text-center">
-              <div
-                className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
-                style={{ backgroundColor: `${themeColor}15`, color: themeColor }}
-              >
-                <Check className="h-7 w-7" strokeWidth={2.5} />
+          {/* ── TICKET (done) step ── */}
+          {!intakePaused && step === 'ticket' && ticket && (
+            <section
+              ref={printRef}
+              className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-sm print:border print:border-black print:shadow-none sm:p-8"
+            >
+              {/* Animated check */}
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColor}15` }}>
+                <Check className="h-7 w-7" strokeWidth={2.5} style={{ color: themeColor }} />
               </div>
-              <p className={`mt-3 text-sm font-semibold text-slate-500 print:text-slate-700 ${compactLabelClass}`}>
-                {t('Check-in complete')}
-              </p>
-              <h2 className="mt-1 text-3xl font-bold text-slate-950 print:text-black sm:text-4xl">
-                {t("You're in the queue")}
-              </h2>
-              <div className="mt-2 flex justify-center">
+              <div className="mt-3 text-[28px] font-extrabold text-slate-950">{t("You're in the queue")}</div>
+              <div className="mt-1 flex justify-center">
                 <PriorityBadge priorityCategory={ticket.priority_category} />
               </div>
-            </div>
 
-            {/* ── Ticket Number ── */}
-            <div
-              className="mt-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 text-center text-slate-950 print:bg-white print:text-black"
-            >
-              <p className={`text-xs text-slate-500 print:text-slate-500 ${compactTicketLabelClass}`}>
-                {t('Ticket number')}
-              </p>
-              <p
-                className="mt-1 text-5xl font-black tracking-tight print:text-black sm:text-6xl"
-                style={{ color: themeColor }}
-              >
-                {ticket.ticket_number}
-              </p>
-              {ticket.estimated_service_time ? (
-                <p className="mt-2 text-sm font-medium text-slate-500">
-                  {t('Estimated wait')}: ~{ticket.estimated_service_time} {t('min')}
-                </p>
-              ) : null}
-            </div>
+              {/* Ticket number box */}
+              <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] px-5 py-4 print:bg-white">
+                <div className={`text-[10px] font-bold text-slate-400 ${compactTicketLabelClass}`}>
+                  {t('Ticket number')}
+                </div>
+                <div className="mt-1 text-[64px] font-black leading-none tracking-tight sm:text-[80px]" style={{ color: themeColor }}>
+                  {ticket.ticket_number}
+                </div>
+                <div className="mt-2 flex items-center justify-center gap-1.5 text-[15px] text-slate-500">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                  {ticket.department_name} · {ticket.service_name}
+                </div>
+                {ticket.estimated_service_time ? (
+                  <div className="mt-1 text-[13px] text-slate-400">
+                    ~{ticket.estimated_service_time} {t('min')}
+                  </div>
+                ) : null}
+              </div>
 
-            {/* ── Notifications ── */}
-            {ticket.qr_token && (whatsappEnabled || messengerPageId) && (
-              <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 print:hidden sm:p-5">
-                <p className="text-center text-sm font-semibold text-slate-700">
-                  {t('Get notified when called')}
-                </p>
+              {/* WhatsApp / Messenger notifications */}
+              {ticket.qr_token && (whatsappEnabled || messengerPageId) && (
+                <div className="mt-4 print:hidden">
+                  {customerPhone.trim() && whatsappEnabled && (
+                    <div className="flex items-center gap-3 rounded-[14px] border border-green-200 bg-green-50 px-4 py-3.5 text-left">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100">
+                        <svg className="h-[18px] w-[18px] text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                        </svg>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-green-800">{t('WhatsApp notifications active')}</div>
+                        <div className="text-xs text-green-600">{t("We'll message you when it's your turn")}</div>
+                      </div>
+                      <Check className="h-5 w-5 shrink-0 text-green-500" />
+                    </div>
+                  )}
 
-                {/* WhatsApp active confirmation — phone was entered */}
-                {customerPhone.trim() && whatsappEnabled && (
-                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100">
-                      <svg className="h-4.5 w-4.5 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                  {whatsappEnabled && whatsappPhone && !customerPhone.trim() && (
+                    <a
+                      href={`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`TRACK qflo_${ticket.qr_token}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2.5 rounded-[14px] border border-green-200 bg-green-50 px-4 py-3.5 text-[15px] font-bold text-green-700 transition-all hover:bg-green-100 active:scale-[0.98]"
+                    >
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                       </svg>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-green-800">{t('WhatsApp notifications active')}</p>
-                      <p className="text-xs text-green-600">{t("We'll message you when it's your turn")}</p>
-                    </div>
-                    <Check className="h-5 w-5 shrink-0 text-green-500" />
+                      {t('Get WhatsApp notifications')}
+                    </a>
+                  )}
+
+                  {messengerPageId && (
+                    <a
+                      href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`${customerPhone.trim() && whatsappEnabled ? 'mt-2' : 'mt-3'} inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-500 transition-all hover:bg-[#f8fafc] active:scale-[0.98]`}
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
+                      </svg>
+                      {t('Or use Messenger instead')}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Divider */}
+              <div className="my-5 h-px bg-slate-200" />
+
+              {/* QR section — side by side like local kiosk */}
+              <div className="flex items-center gap-5 rounded-[1.25rem] border border-slate-200 bg-white p-5 text-left">
+                {qrDataUrl ? (
+                  <div className="shrink-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white p-1.5">
+                    <img
+                      src={qrDataUrl}
+                      alt={t('Scan to track your queue position')}
+                      className="h-[120px] w-[120px] sm:h-[140px] sm:w-[140px]"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
                   </div>
-                )}
-
-                {/* WhatsApp deep link — no phone entered */}
-                {whatsappEnabled && whatsappPhone && !customerPhone.trim() && (
-                  <a
-                    href={`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent(`TRACK qflo_${ticket.qr_token}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-green-200 bg-green-50 px-4 py-3.5 text-base font-semibold text-green-700 transition-all hover:bg-green-100 hover:shadow-sm active:scale-[0.98]"
-                  >
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                    </svg>
-                    {t('Get WhatsApp notifications')}
-                  </a>
-                )}
-
-                {/* Messenger — secondary option */}
-                {messengerPageId && (
-                  <a
-                    href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`${customerPhone.trim() && whatsappEnabled ? 'mt-2' : 'mt-3'} inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-all hover:bg-slate-50 hover:shadow-sm active:scale-[0.98]`}
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
-                    </svg>
-                    {t('Or use Messenger instead')}
-                  </a>
-                )}
+                ) : null}
+                <div>
+                  <div className="text-[15px] font-bold text-slate-950">{t('Track Your Position')}</div>
+                  <div className="mt-1 text-sm leading-relaxed text-slate-500">
+                    {t('Scan this QR code to follow your place in the queue from your phone.')}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    {formatDateTime(new Date(), {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: 'numeric', minute: '2-digit',
+                    })}
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* ── QR Code ── */}
-            <div className="mt-4 rounded-[1.5rem] border border-slate-200 bg-white p-4 text-center sm:p-5">
-              {qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt={t('Scan to track your queue position')}
-                  className="mx-auto h-36 w-36 sm:h-44 sm:w-44"
-                />
-              ) : null}
-              <p className="mt-2 text-sm font-semibold text-slate-800 sm:text-base">
-                {t('Scan to track your queue position')}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-400">
-                {t('Use your phone camera to check your place in line')}
-              </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                {formatDateTime(new Date(), {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-              </p>
-            </div>
-
-            {/* ── Done ── */}
-            <div className="mt-4 print:hidden">
+              {/* Done button */}
               <button
                 onClick={resetSession}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-100"
+                className="mt-4 block w-full rounded-2xl border border-slate-200 bg-[#f8fafc] px-4 py-[18px] text-[18px] font-bold text-slate-950 transition-colors hover:bg-slate-100 print:hidden"
               >
-                <Check className="h-5 w-5" />
-                {t('Done')}
+                {t('Take Another Ticket')}
               </button>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
+        </div>
       </div>
     </div>
   );
