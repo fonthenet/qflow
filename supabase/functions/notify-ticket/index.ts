@@ -176,6 +176,8 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
+const VERSION = "5";
+
 Deno.serve(async (req) => {
   try {
     const body = await req.json();
@@ -185,6 +187,8 @@ Deno.serve(async (req) => {
       deskName: string;
       pushPayload?: Record<string, unknown>;
     };
+
+    console.log(`[notify-ticket v${VERSION}] event=${event} ticketId=${ticketId} hasMessengerToken=${!!MESSENGER_PAGE_ACCESS_TOKEN} hasWAToken=${!!WA_ACCESS_TOKEN}`);
 
     if (!ticketId || !event) {
       return new Response(JSON.stringify({ error: "Missing ticketId or event" }), { status: 400 });
@@ -216,8 +220,11 @@ Deno.serve(async (req) => {
 
     if (!session) {
       await pushPromise;
-      return Response.json({ sent: false, reason: "no active session" });
+      console.log(`[notify-ticket v${VERSION}] No active session for ticket ${ticketId}`);
+      return Response.json({ sent: false, reason: "no active session", version: VERSION });
     }
+
+    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} psid=${session.messenger_psid} phone=${session.whatsapp_phone}`);
 
     const locale = (session.locale as Locale) || "fr";
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
@@ -258,8 +265,8 @@ Deno.serve(async (req) => {
 
     await pushPromise;
 
-    console.log(`[notify-ticket] ${event} via ${session.channel}: sent=${sent} ticket=${ticket.ticket_number}`);
-    return Response.json({ sent, channel: session.channel });
+    console.log(`[notify-ticket v${VERSION}] ${event} via ${session.channel}: sent=${sent} ticket=${ticket.ticket_number}`);
+    return Response.json({ sent, channel: session.channel, version: VERSION });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[notify-ticket] Error:", message);
