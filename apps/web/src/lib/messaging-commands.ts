@@ -333,7 +333,7 @@ export async function handleInboundMessage(
     const found = await findOrgByActiveSession(identifier, channel);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
-      await handleStatus(identifier, found.org, sessionLocale, channel, sendMessage);
+      await handleStatus(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
     } else {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
     }
@@ -345,7 +345,7 @@ export async function handleInboundMessage(
     const found = await findOrgByActiveSession(identifier, channel);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
-      await handleCancel(identifier, found.org, sessionLocale, channel, sendMessage);
+      await handleCancel(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
     } else {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
     }
@@ -666,18 +666,26 @@ async function handleStatus(
   locale: Locale,
   channel: Channel,
   sendMessage: SendFn,
+  activeSession?: { id: string; ticket_id: string },
 ): Promise<void> {
   const supabase = createAdminClient() as any;
-  const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
 
-  const { data: session } = await supabase
-    .from('whatsapp_sessions')
-    .select('ticket_id')
-    .eq(identifierColumn, identifier)
-    .eq('organization_id', org.id)
-    .eq('state', 'active')
-    .eq('channel', channel)
-    .maybeSingle();
+  // Use the session already found by findOrgByActiveSession to avoid
+  // maybeSingle() failing when multiple active sessions exist
+  let session: { ticket_id: string } | null = activeSession ?? null;
+  if (!session) {
+    const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: sessions } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id')
+      .eq(identifierColumn, identifier)
+      .eq('organization_id', org.id)
+      .eq('state', 'active')
+      .eq('channel', channel)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    session = sessions?.[0] ?? null;
+  }
 
   if (!session?.ticket_id) {
     await sendMessage({ to: identifier, body: t('not_in_queue_rejoin', locale) });
@@ -724,18 +732,26 @@ async function handleCancel(
   locale: Locale,
   channel: Channel,
   sendMessage: SendFn,
+  activeSession?: { id: string; ticket_id: string },
 ): Promise<void> {
   const supabase = createAdminClient() as any;
-  const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
 
-  const { data: session } = await supabase
-    .from('whatsapp_sessions')
-    .select('id, ticket_id')
-    .eq(identifierColumn, identifier)
-    .eq('organization_id', org.id)
-    .eq('state', 'active')
-    .eq('channel', channel)
-    .maybeSingle();
+  // Use the session already found by findOrgByActiveSession to avoid
+  // maybeSingle() failing when multiple active sessions exist
+  let session = activeSession;
+  if (!session) {
+    const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: sessions } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id')
+      .eq(identifierColumn, identifier)
+      .eq('organization_id', org.id)
+      .eq('state', 'active')
+      .eq('channel', channel)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    session = sessions?.[0] ?? null;
+  }
 
   if (!session?.ticket_id) {
     await sendMessage({ to: identifier, body: t('not_in_queue_rejoin', locale) });
