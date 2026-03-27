@@ -250,6 +250,10 @@ const FR: Messages = {
   'New Ticket': 'Nouveau ticket',
   'Reason for Visit': 'Motif de la visite',
   'Enter reason for visit': 'Entrez le motif de la visite',
+  'Ban': 'Bloquer',
+  'Banned': 'Bloqué',
+  '{name} has been banned': '{name} a été bloqué',
+  'Reason for ban (optional):': 'Raison du blocage (optionnel) :',
 };
 
 const AR: Messages = {
@@ -498,6 +502,10 @@ const AR: Messages = {
   'New Ticket': 'تذكرة جديدة',
   'Reason for Visit': 'سبب الزيارة',
   'Enter reason for visit': 'أدخل سبب الزيارة',
+  'Ban': 'حظر',
+  'Banned': 'محظور',
+  '{name} has been banned': 'تم حظر {name}',
+  'Reason for ban (optional):': 'سبب الحظر (اختياري):',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

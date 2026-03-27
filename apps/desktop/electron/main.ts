@@ -734,6 +734,7 @@ function setupIPC() {
     syncEngine?.pushImmediate(syncId);
 
     const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
+
     notifyDisplays({
       type: 'ticket_called',
       ticket_number: ticket.ticket_number,
@@ -741,6 +742,66 @@ function setupIPC() {
       timestamp: now,
     });
     return ticket;
+  });
+
+  // ── Ban customer ─────────────────────────────────────────────────
+  ipcMain.handle('db:ban-customer', async (_e, ticketId: string, reason?: string) => {
+    if (!ticketId) return { error: 'Missing ticketId' };
+
+    const ticket = db.prepare('SELECT id, customer_data FROM tickets WHERE id = ?').get(ticketId) as any;
+    if (!ticket) return { error: 'Ticket not found' };
+
+    let cd: Record<string, any> = {};
+    try { cd = JSON.parse(ticket.customer_data || '{}'); } catch { /* empty */ }
+
+    const phone = cd.phone || null;
+    const email = cd.email || null;
+    const psid = cd.messenger_psid || null;
+    const name = cd.name || null;
+
+    if (!phone && !email && !psid) {
+      return { error: 'No identifiable info on this ticket' };
+    }
+
+    // Get organization_id from local offices table
+    const officeRow = db.prepare('SELECT organization_id FROM offices LIMIT 1').get() as any;
+    const orgId = officeRow?.organization_id;
+    if (!orgId) return { error: 'Organization not found' };
+
+    // Push ban to cloud
+    if (syncEngine?.isOnline) {
+      try {
+        const token = await syncEngine.ensureFreshToken();
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/banned_customers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'apikey': SUPABASE_ANON_KEY,
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            organization_id: orgId,
+            phone,
+            email,
+            messenger_psid: psid,
+            customer_name: name,
+            reason: reason || null,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          if (err.includes('23505')) return { error: 'Customer is already banned' };
+          return { error: `Failed to ban: ${res.status}` };
+        }
+      } catch (err: any) {
+        return { error: err?.message ?? 'Network error' };
+      }
+    } else {
+      return { error: 'Cannot ban while offline' };
+    }
+
+    return { data: true, name: name || phone || psid || email };
   });
 
   // ── Sync Status ───────────────────────────────────────────────────

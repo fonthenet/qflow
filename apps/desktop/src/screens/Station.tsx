@@ -722,7 +722,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         return;
       }
       fetchTickets();
-      window.qf.sync?.force?.().catch(() => {});
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
@@ -736,7 +735,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         showToast(t('Ticket already called by another desk'), 'error');
       }
       fetchTickets();
-      window.qf.sync?.force?.().catch(() => {});
     } catch (err: any) {
       showToast(t('Failed to update ticket'), 'error');
       console.error('[station] updateTicket error:', err);
@@ -761,6 +759,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
     showToast(t('{ticket} marked no-show', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'info');
+  };
+
+  const banCustomer = async (id: string) => {
+    const ticket = tickets.find((t) => t.id === id);
+    const name = ticket?.customer_data?.name || ticket?.customer_data?.phone || ticket?.ticket_number;
+    const reason = prompt(t('Reason for ban (optional):'));
+    if (reason === null) return; // user cancelled
+    const result = await window.qf.db.banCustomer(id, reason || undefined);
+    if (result?.error) {
+      showToast(result.error, 'error');
+    } else {
+      showToast(t('{name} has been banned', { name: result?.name || name || 'Customer' }), 'info');
+      if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Banned'));
+    }
   };
 
   const recall = async (id: string) => {
@@ -1087,6 +1099,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               <>
                 <div className="active-status called">{t('CALLING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
+                <div className="queue-item-badges" style={{ justifyContent: 'center', marginBottom: 4 }}>
+                  {activeTicket.source === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+                  {activeTicket.source === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
+                  {activeTicket.source === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
+                  {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
+                  {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
+                  {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
+                </div>
                 <div className="active-customer">
                   {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
                 </div>
@@ -1143,6 +1163,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     }} aria-label={`${t('Transfer')} ${activeTicket.ticket_number}`}>
                       {t('Transfer')}
                     </button>
+                    <button className="btn-outline btn-danger" onClick={() => banCustomer(activeTicket.id)} aria-label={`${t('Ban')} ${activeTicket.ticket_number}`}>
+                      {t('Ban')}
+                    </button>
                   </div>
                 </div>
               </>
@@ -1150,6 +1173,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               <>
                 <div className="active-status serving">{t('NOW SERVING')}</div>
                 <div className="active-number">{activeTicket.ticket_number}</div>
+                <div className="queue-item-badges" style={{ justifyContent: 'center', marginBottom: 4 }}>
+                  {activeTicket.source === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+                  {activeTicket.source === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
+                  {activeTicket.source === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
+                  {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
+                  {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
+                  {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
+                </div>
                 <div className="active-customer">
                   {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
                 </div>
@@ -1198,6 +1229,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     </button>
                     <button className="btn-outline btn-danger" onClick={() => cancel(activeTicket.id)}>
                       {t('Cancel')}
+                    </button>
+                    <button className="btn-outline btn-danger" onClick={() => banCustomer(activeTicket.id)}>
+                      {t('Ban')}
                     </button>
                   </div>
                 </div>

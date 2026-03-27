@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:call-next', officeId, deskId, staffId),
     query: (table: string, officeIds: string[]) =>
       ipcRenderer.invoke('db:query', table, officeIds),
+    banCustomer: (ticketId: string, reason?: string) =>
+      ipcRenderer.invoke('db:ban-customer', ticketId, reason),
   },
 
   // Sync

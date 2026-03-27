@@ -154,7 +154,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
 
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('id, settings, operating_hours, timezone, organization:organizations(settings)')
+    .select('id, organization_id, settings, operating_hours, timezone, organization:organizations(settings)')
     .eq('id', input.officeId)
     .single();
 
@@ -203,6 +203,27 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       }
 
       return { error: 'This business is not taking visits right now.' };
+    }
+  }
+
+  // ── Ban check ──────────────────────────────────────────────────────
+  const orgId = (office as any).organization_id as string | undefined;
+  if (orgId && input.customerData) {
+    const cd = input.customerData as Record<string, unknown>;
+    const phone = typeof cd.phone === 'string' ? cd.phone : null;
+    const email = typeof cd.email === 'string' ? cd.email : null;
+    const psid = typeof cd.messenger_psid === 'string' ? cd.messenger_psid : null;
+
+    if (phone || email || psid) {
+      const { data: banned } = await supabase.rpc('is_customer_banned', {
+        p_org_id: orgId,
+        p_phone: phone,
+        p_email: email,
+        p_psid: psid,
+      });
+      if (banned) {
+        return { error: 'You are not allowed to join this queue.' };
+      }
     }
   }
 

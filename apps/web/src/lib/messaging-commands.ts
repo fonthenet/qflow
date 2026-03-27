@@ -128,6 +128,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'أنت لست في أي طابور. أرسل *انضم <الرمز>* للانضمام.',
     en: 'You\'re not in any queue. Send *JOIN <code>* to join.',
   },
+  banned: {
+    fr: '🚫 Vous avez été bloqué et ne pouvez pas rejoindre cette file.',
+    ar: '🚫 تم حظرك ولا يمكنك الانضمام إلى هذا الطابور.',
+    en: '🚫 You have been blocked and cannot join this queue.',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
@@ -450,6 +455,18 @@ async function handleJoin(
 
   if (!officeId || !departmentId || !serviceId) {
     await sendMessage({ to: identifier, body: t('queue_requires_service', locale) });
+    return;
+  }
+
+  // ── Ban check ──
+  const { data: banned } = await supabase.rpc('is_customer_banned', {
+    p_org_id: org.id,
+    p_phone: channel === 'whatsapp' ? identifier : null,
+    p_email: null,
+    p_psid: channel === 'messenger' ? identifier : null,
+  });
+  if (banned) {
+    await sendMessage({ to: identifier, body: t('banned', locale) });
     return;
   }
 

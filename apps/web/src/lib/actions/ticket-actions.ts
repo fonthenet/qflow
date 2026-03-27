@@ -1909,3 +1909,87 @@ export async function unassignDesk(deskId: string) {
   revalidatePath('/desk');
   return { data: true };
 }
+
+// ── Ban / Unban ──────────────────────────────────────────────────────
+
+export async function banCustomerFromTicket(
+  ticketId: string,
+  reason?: string,
+) {
+  const context = await getStaffContext();
+  const supabase = context.supabase;
+
+  const { data: ticket } = await supabase
+    .from('tickets')
+    .select('id, office_id, customer_data')
+    .eq('id', ticketId)
+    .single();
+
+  if (!ticket) return { error: 'Ticket not found' };
+
+  const cd = (ticket.customer_data ?? {}) as Record<string, unknown>;
+  const phone = typeof cd.phone === 'string' ? cd.phone : null;
+  const email = typeof cd.email === 'string' ? cd.email : null;
+  const psid = typeof cd.messenger_psid === 'string' ? cd.messenger_psid : null;
+  const name = typeof cd.name === 'string' ? cd.name : null;
+
+  if (!phone && !email && !psid) {
+    return { error: 'No identifiable info on this ticket to ban' };
+  }
+
+  const { error } = await supabase.from('banned_customers').insert({
+    organization_id: context.staff.organization_id,
+    phone,
+    email,
+    messenger_psid: psid,
+    customer_name: name,
+    reason: reason || null,
+    banned_by: context.staff.id,
+  });
+
+  if (error) {
+    if (error.code === '23505') return { error: 'Customer is already banned' };
+    return { error: error.message };
+  }
+
+  await logAuditEvent(context, {
+    actionType: 'customer_banned',
+    entityType: 'ticket',
+    entityId: ticketId,
+    officeId: ticket.office_id,
+    summary: `Banned customer ${name || phone || psid || email} from ticket ${ticketId}`,
+    metadata: { phone, email, psid, reason },
+  });
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+export async function unbanCustomer(banId: string) {
+  const context = await getStaffContext();
+
+  const { error } = await context.supabase
+    .from('banned_customers')
+    .update({ is_active: false })
+    .eq('id', banId)
+    .eq('organization_id', context.staff.organization_id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+export async function getBannedCustomers() {
+  const context = await getStaffContext();
+
+  const { data, error } = await context.supabase
+    .from('banned_customers')
+    .select('*')
+    .eq('organization_id', context.staff.organization_id)
+    .eq('is_active', true)
+    .order('banned_at', { ascending: false });
+
+  if (error) return { error: error.message };
+  return { data: data ?? [] };
+}

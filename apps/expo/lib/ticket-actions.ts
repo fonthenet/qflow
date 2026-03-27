@@ -467,6 +467,18 @@ export async function checkInAppointment(appointmentId: string, officeId: string
 
   if (apptErr || !appt) throw new Error('Appointment not found');
 
+  // Ban check
+  const { data: office } = await supabase.from('offices').select('organization_id').eq('id', officeId).single();
+  if (office?.organization_id) {
+    const { data: banned } = await supabase.rpc('is_customer_banned', {
+      p_org_id: office.organization_id,
+      p_phone: appt.customer_phone || null,
+      p_email: appt.customer_email || null,
+      p_psid: null,
+    });
+    if (banned) throw new Error('This customer has been blocked');
+  }
+
   // Generate ticket number
   const { data: ticketNumber, error: rpcErr } = await supabase.rpc('generate_daily_ticket_number', {
     p_department_id: departmentId,
