@@ -215,7 +215,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     const psid = typeof cd.messenger_psid === 'string' ? cd.messenger_psid : null;
 
     if (phone || email || psid) {
-      const { data: banned } = await supabase.rpc('is_customer_banned', {
+      const { data: banned } = await (supabase as any).rpc('is_customer_banned', {
         p_org_id: orgId,
         p_phone: phone,
         p_email: email,

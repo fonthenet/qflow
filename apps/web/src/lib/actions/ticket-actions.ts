@@ -1937,7 +1937,7 @@ export async function banCustomerFromTicket(
     return { error: 'No identifiable info on this ticket to ban' };
   }
 
-  const { error } = await supabase.from('banned_customers').insert({
+  const { error } = await (supabase as any).from('banned_customers').insert({
     organization_id: context.staff.organization_id,
     phone,
     email,
@@ -1968,7 +1968,7 @@ export async function banCustomerFromTicket(
 export async function unbanCustomer(banId: string) {
   const context = await getStaffContext();
 
-  const { error } = await context.supabase
+  const { error } = await (context.supabase as any)
     .from('banned_customers')
     .update({ is_active: false })
     .eq('id', banId)
@@ -1983,7 +1983,7 @@ export async function unbanCustomer(banId: string) {
 export async function getBannedCustomers() {
   const context = await getStaffContext();
 
-  const { data, error } = await context.supabase
+  const { data, error } = await (context.supabase as any)
     .from('banned_customers')
     .select('*')
     .eq('organization_id', context.staff.organization_id)

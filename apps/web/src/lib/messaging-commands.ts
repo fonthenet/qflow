@@ -459,7 +459,7 @@ async function handleJoin(
   }
 
   // ── Ban check ──
-  const { data: banned } = await supabase.rpc('is_customer_banned', {
+  const { data: banned } = await (supabase as any).rpc('is_customer_banned', {
     p_org_id: org.id,
     p_phone: channel === 'whatsapp' ? identifier : null,
     p_email: null,
