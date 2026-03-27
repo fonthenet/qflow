@@ -297,6 +297,7 @@ export function KioskView({
         ticket_number: `${selectedDept.code}-${String(21).padStart(3, '0')}`,
         service_name: service.name,
         department_name: selectedDept.name,
+        estimated_service_time: service.estimated_service_time ?? null,
         priority_name: priority?.name ?? null,
         priority_icon: priority?.icon ?? null,
         priority_color: priority?.color ?? null,
@@ -343,6 +344,7 @@ export function KioskView({
       ...newTicket,
       service_name: service.name,
       department_name: selectedDept.name,
+      estimated_service_time: service.estimated_service_time ?? null,
       priority_name: priority?.name ?? null,
       priority_icon: priority?.icon ?? null,
       priority_color: priority?.color ?? null,
@@ -1018,6 +1020,11 @@ export function KioskView({
               >
                 {ticket.ticket_number}
               </p>
+              {ticket.estimated_service_time ? (
+                <p className="mt-2 text-sm font-medium text-slate-500">
+                  {t('Estimated wait')}: ~{ticket.estimated_service_time} {t('min')}
+                </p>
+              ) : null}
             </div>
 
             {/* ── Notifications ── */}
