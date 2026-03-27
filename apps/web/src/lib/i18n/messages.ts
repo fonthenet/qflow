@@ -520,7 +520,31 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'This ticket moved to a different service flow.': 'Ce ticket a été transféré vers un autre parcours de service.',
     'This removes the ticket from the queue and closes any remaining alerts on this device.':
       'Cela retire le ticket de la file et ferme toutes les alertes restantes sur cet appareil.',
-    'Attention needed now': 'Attention requise maintenant'
+    'Attention needed now': 'Attention requise maintenant',
+
+    // ── Kiosk translations ──
+    'Welcome': 'Bienvenue',
+    'Please enter your name and phone number.': 'Veuillez entrer votre nom et numéro de téléphone.',
+    'Connected': 'Connecté',
+    'Your ticket is ready!': 'Votre ticket est prêt !',
+    'Business Hours': 'Horaires d\'ouverture',
+    'Fill in your details to get started': 'Remplissez vos informations pour commencer',
+    'For WhatsApp alerts': 'Pour les alertes WhatsApp',
+    'Check in for a reservation': 'Enregistrer une réservation',
+    'Schedule for later': 'Planifier pour plus tard',
+    'Select Department': 'Sélectionner un département',
+    'Choose the service area you need': 'Choisissez le service dont vous avez besoin',
+    'To receive WhatsApp queue updates': 'Pour recevoir les mises à jour de file via WhatsApp',
+    'Please wait…': 'Veuillez patienter…',
+    'min': 'min',
+    'YOUR TICKET NUMBER': 'VOTRE NUMÉRO DE TICKET',
+    'WhatsApp notifications active': 'Notifications WhatsApp actives',
+    'Get WhatsApp notifications': 'Recevoir les notifications WhatsApp',
+    'Or use Messenger instead': 'Ou utiliser Messenger à la place',
+    'Track Your Position': 'Suivre votre position',
+    'Scan this QR code to follow your place in the queue from your phone.':
+      'Scannez ce QR code pour suivre votre place dans la file depuis votre téléphone.',
+    'Take Another Ticket': 'Prendre un autre ticket'
   },
   ar: {
     'My Counter': 'الكاونتر الخاص بي',
@@ -1031,7 +1055,31 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'This ticket moved to a different service flow.': 'تم نقل هذه التذكرة إلى مسار خدمة مختلف.',
     'This removes the ticket from the queue and closes any remaining alerts on this device.':
       'يؤدي هذا إلى إزالة التذكرة من الطابور وإيقاف أي تنبيهات متبقية على هذا الجهاز.',
-    'Attention needed now': 'مطلوب الانتباه الآن'
+    'Attention needed now': 'مطلوب الانتباه الآن',
+
+    // ── Kiosk translations ──
+    'Welcome': 'مرحبًا',
+    'Please enter your name and phone number.': 'يرجى إدخال اسمك ورقم هاتفك.',
+    'Connected': 'متصل',
+    'Your ticket is ready!': 'تذكرتك جاهزة!',
+    'Business Hours': 'ساعات العمل',
+    'Fill in your details to get started': 'أدخل بياناتك للبدء',
+    'For WhatsApp alerts': 'لتنبيهات واتساب',
+    'Check in for a reservation': 'تسجيل الوصول لحجز',
+    'Schedule for later': 'جدولة لوقت لاحق',
+    'Select Department': 'اختر القسم',
+    'Choose the service area you need': 'اختر مجال الخدمة الذي تحتاجه',
+    'To receive WhatsApp queue updates': 'لتلقي تحديثات الطابور عبر واتساب',
+    'Please wait…': 'يرجى الانتظار…',
+    'min': 'د',
+    'YOUR TICKET NUMBER': 'رقم تذكرتك',
+    'WhatsApp notifications active': 'إشعارات واتساب مفعّلة',
+    'Get WhatsApp notifications': 'تلقي إشعارات واتساب',
+    'Or use Messenger instead': 'أو استخدم ماسنجر بدلاً من ذلك',
+    'Track Your Position': 'تتبع موقعك',
+    'Scan this QR code to follow your place in the queue from your phone.':
+      'امسح رمز QR هذا لمتابعة مكانك في الطابور من هاتفك.',
+    'Take Another Ticket': 'أخذ تذكرة أخرى'
   },
 };
 

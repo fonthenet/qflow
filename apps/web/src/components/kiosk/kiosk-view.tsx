@@ -132,7 +132,7 @@ export function KioskView({
   const [hoursOpen, setHoursOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#059669';
+  const themeColor = ks.themeColor || '#2d8a6e';
 
   // ── Business hours (matches local kiosk) ──
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
@@ -634,7 +634,7 @@ export function KioskView({
                       style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                     {whatsappEnabled && (
-                      <p className="mt-1 text-[11px] text-slate-400">{t('To receive WhatsApp queue updates')}</p>
+                      <p className="mt-1 text-[11px] text-slate-400">{t('For WhatsApp alerts')}</p>
                     )}
                   </div>
                 </div>
@@ -756,6 +756,17 @@ export function KioskView({
                       {customerInfoError}
                     </div>
                   ) : null}
+                  {/* Single-service: show Get Ticket button directly */}
+                  {selectedDept.services.length === 1 && (
+                    <button
+                      className="mt-5 w-full rounded-2xl py-4 text-[17px] font-bold text-white shadow-md transition-all active:scale-[.98] disabled:opacity-50"
+                      style={{ background: themeColor }}
+                      disabled={loading}
+                      onClick={() => handleServiceSelected(selectedDept.services[0])}
+                    >
+                      {loading ? t('Please wait…') : t('Get Ticket')}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -771,29 +782,34 @@ export function KioskView({
                 </div>
               )}
 
-              <div className="mb-1 text-center">
-                <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select Service')}</div>
-                <div className="mt-1 text-[15px] text-slate-500">{t(selectedDept.name)}</div>
-              </div>
+              {/* Hide service list when single-dept + single-service (auto-select on form submit) */}
+              {!(directServiceEntry && selectedDept.services.length === 1) && (
+                <>
+                  <div className="mb-1 text-center">
+                    <div className="text-[28px] font-bold tracking-tight text-slate-950">{t('Select a service')}</div>
+                    <div className="mt-1 text-[15px] text-slate-500">{t(selectedDept.name)}</div>
+                  </div>
 
-              <div className="mt-4 flex flex-col gap-3">
-                {selectedDept.services.map((service: any) => {
-                  const showMedicalIcon =
-                    isClinicKiosk ||
-                    /medical|doctor|visit|check.?up|consult/i.test(service.name ?? '');
+                  <div className="mt-4 flex flex-col gap-3">
+                    {selectedDept.services.map((service: any) => {
+                      const showMedicalIcon =
+                        isClinicKiosk ||
+                        /medical|doctor|visit|check.?up|consult/i.test(service.name ?? '');
 
-                  return (
-                    <KioskCard
-                      key={service.id}
-                      icon={showMedicalIcon ? <Stethoscope className="h-6 w-6" /> : (service.code || service.name?.charAt(0)?.toUpperCase() || 'S')}
-                      label={t(service.name)}
-                      meta={ks.showEstimatedTime && service.estimated_service_time ? `~${service.estimated_service_time} ${t('min')}` : undefined}
-                      onClick={() => handleServiceSelected(service)}
-                      disabled={loading || !hasRequiredCustomerInfo}
-                    />
-                  );
-                })}
-              </div>
+                      return (
+                        <KioskCard
+                          key={service.id}
+                          icon={showMedicalIcon ? <Stethoscope className="h-6 w-6" /> : (service.code || service.name?.charAt(0)?.toUpperCase() || 'S')}
+                          label={t(service.name)}
+                          meta={ks.showEstimatedTime && service.estimated_service_time ? `~${service.estimated_service_time} ${t('min')}` : undefined}
+                          onClick={() => handleServiceSelected(service)}
+                          disabled={loading || !hasRequiredCustomerInfo}
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </>
           )}
 

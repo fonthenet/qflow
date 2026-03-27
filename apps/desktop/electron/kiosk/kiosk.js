@@ -486,10 +486,12 @@
 
     var localeToggle =
       '<div class="locale-switcher" aria-label="Language switcher">' +
-      ['en', 'fr', 'ar'].map(function (locale) {
-        var active = S.locale === locale ? ' active' : '';
-        return '<button class="locale-pill' + active + '" onclick="setKioskLocale(\'' + locale + '\')">' + locale.toUpperCase() + '</button>';
+      '<button class="locale-btn" onclick="toggleLocaleMenu()">' + S.locale.toUpperCase() + ' <span class="locale-chevron" id="locale-chev">&#9660;</span></button>' +
+      '<div class="locale-menu" id="locale-menu">' +
+      ['en', 'fr', 'ar'].filter(function (l) { return l !== S.locale; }).map(function (locale) {
+        return '<button class="locale-option" onclick="setKioskLocale(\'' + locale + '\')">' + locale.toUpperCase() + '</button>';
       }).join('') +
+      '</div>' +
       '</div>';
 
     return '<div class="kiosk-header" style="position:relative">' +
@@ -501,6 +503,26 @@
       '<div class="conn-dot" id="kconn">' + tr('Connected') + '</div>' +
       '</div>';
   }
+
+  // ── Locale menu toggle ─────────────────────────────────────────
+  window.toggleLocaleMenu = function () {
+    var menu = document.getElementById('locale-menu');
+    var chev = document.getElementById('locale-chev');
+    if (!menu) return;
+    var open = menu.classList.toggle('open');
+    if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+  };
+
+  // Close locale menu on outside click
+  document.addEventListener('click', function (e) {
+    var switcher = document.querySelector('.locale-switcher');
+    var menu = document.getElementById('locale-menu');
+    if (menu && switcher && !switcher.contains(e.target)) {
+      menu.classList.remove('open');
+      var chev = document.getElementById('locale-chev');
+      if (chev) chev.style.transform = '';
+    }
+  });
 
   // ── Hours panel toggle ──────────────────────────────────────────
   window.toggleHours = function () {
@@ -680,7 +702,7 @@
         '<div id="kiosk-error" class="form-error"></div>' +
         '<div class="form-fields">' +
         '<div class="form-group"><label>' + tr('Name (optional)') + '</label><input id="cname" placeholder="' + tr('Enter your name') + '" autocomplete="off"></div>' +
-        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"><div class="hint">' + tr('For WhatsApp alerts') + '</div></div>' +
+        '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
         '</div>' +
         '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
         '</div>' +
