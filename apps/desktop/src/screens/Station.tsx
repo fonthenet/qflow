@@ -94,7 +94,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerReason, setCustomerReason] = useState('');
   const [isPriority, setIsPriority] = useState(false);
-  const [createdTicket, setCreatedTicket] = useState<{ ticket_number: string; qr_token: string } | null>(null);
+  const [createdTicket, setCreatedTicket] = useState<{ id: string; ticket_number: string; qr_token: string } | null>(null);
 
   const deptServices = useMemo(() =>
     services.filter(s => s.department_id === selectedDept),
@@ -106,11 +106,20 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
     setTimeout(() => nameRef.current?.focus(), 50);
   }, []);
 
-  // Reset focus when ticket is created and user clicks "New Ticket"
+  // Listen for ticket number rewrite after sync (L-G-007 → G-026)
   useEffect(() => {
-    if (!createdTicket) return;
-    // no focus change needed — handleNewTicket already focuses nameRef
-  }, [createdTicket]);
+    if (!createdTicket?.id) return;
+    const unsub = window.qf.tickets.onChange(async () => {
+      try {
+        const fresh = await window.qf.db.getTickets([officeId], ['waiting', 'called', 'serving']);
+        const updated = (fresh as any[]).find((t: any) => t.id === createdTicket.id);
+        if (updated && updated.ticket_number !== createdTicket.ticket_number) {
+          setCreatedTicket(prev => prev ? { ...prev, ticket_number: updated.ticket_number } : null);
+        }
+      } catch { /* ignore */ }
+    });
+    return unsub;
+  }, [createdTicket?.id, createdTicket?.ticket_number, officeId]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -132,7 +141,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
       source: 'in_house',
     });
     if (result?.ticket_number) {
-      setCreatedTicket({ ticket_number: result.ticket_number, qr_token: result.qr_token });
+      setCreatedTicket({ id: result.id, ticket_number: result.ticket_number, qr_token: result.qr_token });
     }
   };
 
