@@ -7,6 +7,7 @@ import {
   sendOneTimeNotification,
 } from '@/lib/messenger';
 import { tNotification } from '@/lib/messaging-commands';
+import { getQueuePosition } from '@/lib/queue-position';
 
 /**
  * POST /api/whatsapp-send
@@ -77,12 +78,29 @@ export async function POST(request: NextRequest) {
     // Build localized message
     let message: string;
     let completeSession = false;
-    const vars = { ticket: ticket.ticket_number, desk: deskName, url: trackUrl };
+    const vars: Record<string, string> = { ticket: ticket.ticket_number, desk: deskName, url: trackUrl };
 
     switch (event) {
-      case 'joined':
+      case 'joined': {
+        // Enrich with business name + queue position
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', session.organization_id)
+          .single();
+        vars.name = org?.name ?? '';
+
+        const pos = await getQueuePosition(ticketId);
+        if (pos.position != null) {
+          const wait = pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : '';
+          vars.position = `📍 Position: *${pos.position}*${wait}`;
+        } else {
+          vars.position = '';
+        }
+
         message = tNotification('joined', locale, vars);
         break;
+      }
       case 'called':
         message = tNotification('called', locale, vars);
         break;

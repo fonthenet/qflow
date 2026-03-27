@@ -174,9 +174,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '🚫 Ticket *{ticket}* has been cancelled.',
   },
   joined: {
-    fr: '✅ Vous êtes dans la file d\'attente !\n\n🎫 Ticket : *{ticket}*\n\n📍 Suivez votre position : {url}',
-    ar: '✅ أنت في الطابور!\n\n🎫 التذكرة: *{ticket}*\n\n📍 تتبع موقعك: {url}',
-    en: '✅ You\'re in the queue!\n\n🎫 Ticket: *{ticket}*\n\n📍 Track your position: {url}',
+    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
+    ar: '✅ أنت في الطابور في *{name}*!\n\n🎫 التذكرة: *{ticket}*\n{position}\n\n📍 تتبع موقعك: {url}',
+    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
   },
   default: {
     fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
