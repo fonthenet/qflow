@@ -700,10 +700,11 @@ async function handleStatus(
   }
 
   if (pos.position === null) {
+    const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
     await supabase
       .from('whatsapp_sessions')
       .update({ state: 'completed' })
-      .eq(identifierColumn, identifier)
+      .eq(idCol, identifier)
       .eq('organization_id', org.id)
       .eq('state', 'active')
       .eq('channel', channel);
