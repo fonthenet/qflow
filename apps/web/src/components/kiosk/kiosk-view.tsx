@@ -132,7 +132,7 @@ export function KioskView({
   const [hoursOpen, setHoursOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const themeColor = ks.themeColor || '#2d8a6e';
+  const themeColor = ks.themeColor || '#4a8c72';
 
   // ── Business hours (matches local kiosk) ──
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
