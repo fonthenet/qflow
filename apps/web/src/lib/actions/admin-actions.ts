@@ -101,9 +101,11 @@ async function getStaffMember(
 }
 
 function getOfficeSettingsFromForm(formData: FormData, currentSettings: AnyRecord = {}) {
+  const country = (formData.get('country') as string) || null;
   return {
     ...currentSettings,
     branch_type: (formData.get('branch_type') as string) || null,
+    country_code: country, // derived from country selector for phone normalization
     platform_operating_model: (formData.get('platform_operating_model') as string) || null,
     privacy_safe_display: formData.get('privacy_safe_display') === 'true',
   };
@@ -147,12 +149,14 @@ export async function createOffice(formData: FormData) {
     .insert({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
+      city: (formData.get('city') as string) || null,
+      country: (formData.get('country') as string) || null,
       timezone: normalizeOfficeTimezone(formData.get('timezone') as string),
       operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       organization_id: context.staff.organization_id,
       settings,
-    })
+    } as any)
     .select('id, name')
     .single();
 
@@ -182,11 +186,13 @@ export async function updateOffice(id: string, formData: FormData) {
     .update({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
+      city: (formData.get('city') as string) || null,
+      country: (formData.get('country') as string) || null,
       timezone: normalizeOfficeTimezone(formData.get('timezone') as string),
       operating_hours: getOperatingHoursFromForm(formData),
       is_active: formData.get('is_active') === 'true',
       settings,
-    })
+    } as any)
     .eq('id', id)
     .select('id, name')
     .single();

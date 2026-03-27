@@ -508,6 +508,22 @@ export async function checkInAppointment(appointmentId: string, officeId: string
     ticket_id: ticket.id,
   }).eq('id', appointmentId);
 
+  // Auto-create notification session if customer has a phone number
+  const phone = appt.customer_phone?.trim();
+  if (phone && office?.organization_id) {
+    await supabase.from('whatsapp_sessions' as any).insert({
+      organization_id: office.organization_id,
+      ticket_id: ticket.id,
+      office_id: officeId,
+      department_id: departmentId,
+      service_id: serviceId,
+      whatsapp_phone: phone,
+      channel: 'whatsapp',
+      state: 'active',
+      locale: 'fr',
+    } as any).then(() => {}).catch(() => {});
+  }
+
   return ticket;
 }
 

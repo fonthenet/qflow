@@ -47,12 +47,81 @@ export function isWhatsAppConfigured(): boolean {
   return getMetaWhatsAppConfig() !== null || getTwilioWhatsAppConfig() !== null;
 }
 
+// ── Timezone → country calling code mapping ─────────────────────
+const TIMEZONE_COUNTRY_CODE: Record<string, string> = {
+  'Africa/Algiers': '213',
+  'Africa/Tunis': '216',
+  'Africa/Casablanca': '212',
+  'Africa/Cairo': '20',
+  'Africa/Lagos': '234',
+  'Africa/Nairobi': '254',
+  'Africa/Johannesburg': '27',
+  'Europe/Paris': '33',
+  'Europe/London': '44',
+  'Europe/Berlin': '49',
+  'Europe/Madrid': '34',
+  'Europe/Rome': '39',
+  'Europe/Brussels': '32',
+  'Europe/Amsterdam': '31',
+  'Europe/Zurich': '41',
+  'Europe/Istanbul': '90',
+  'Asia/Riyadh': '966',
+  'Asia/Dubai': '971',
+  'Asia/Qatar': '974',
+  'Asia/Kuwait': '965',
+  'Asia/Bahrain': '973',
+  'Asia/Muscat': '968',
+  'Asia/Amman': '962',
+  'Asia/Beirut': '961',
+  'Asia/Baghdad': '964',
+  'America/New_York': '1',
+  'America/Chicago': '1',
+  'America/Denver': '1',
+  'America/Los_Angeles': '1',
+  'America/Toronto': '1',
+  'America/Sao_Paulo': '55',
+  'America/Mexico_City': '52',
+  'Asia/Kolkata': '91',
+  'Asia/Shanghai': '86',
+  'Asia/Tokyo': '81',
+  'Australia/Sydney': '61',
+};
+
+// ── ISO country code → calling code mapping ─────────────────────
+const ISO_COUNTRY_DIAL: Record<string, string> = {
+  DZ: '213', TN: '216', MA: '212', EG: '20', NG: '234', KE: '254', ZA: '27',
+  FR: '33', GB: '44', DE: '49', ES: '34', IT: '39', BE: '32', NL: '31',
+  CH: '41', TR: '90', SA: '966', AE: '971', QA: '974', KW: '965',
+  BH: '973', OM: '968', JO: '962', LB: '961', IQ: '964',
+  US: '1', CA: '1', MX: '52', BR: '55',
+  IN: '91', CN: '86', JP: '81', AU: '61',
+};
+
 /**
  * Normalize phone to digits-only with country code (no + prefix for Meta API).
+ * If the phone starts with 0 (local format), the leading 0 is replaced
+ * with the country calling code derived from countryCode or timezone.
  */
-function normalizePhone(phone: string): string | null {
+export function normalizePhone(phone: string, timezone?: string | null, countryCode?: string | null): string | null {
   const digits = phone.replace(/[^\d]/g, '');
   if (digits.length < 7) return null;
+
+  const dialCode = (countryCode && ISO_COUNTRY_DIAL[countryCode.toUpperCase()])
+    || (timezone && TIMEZONE_COUNTRY_CODE[timezone])
+    || null;
+
+  // Local format: starts with 0 → strip it and prepend country dial code
+  // (common in Algeria, France, UK, etc.)
+  if (digits.startsWith('0') && dialCode) {
+    return dialCode + digits.slice(1);
+  }
+
+  // US/Canada: 10-digit local number without country code → prepend 1
+  // e.g. 6612346622 or (661) 234-6622 → 16612346622
+  if (digits.length === 10 && !digits.startsWith('0') && !digits.startsWith('1') && dialCode === '1') {
+    return '1' + digits;
+  }
+
   return digits;
 }
 

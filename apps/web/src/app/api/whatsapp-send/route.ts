@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { ticketId, event, deskName } = body as {
       ticketId: string;
-      event: 'called' | 'recall' | 'buzz' | 'no_show' | 'served' | 'cancelled' | 'next_in_line';
+      event: 'joined' | 'called' | 'recall' | 'buzz' | 'no_show' | 'served' | 'cancelled' | 'next_in_line';
       deskName: string;
     };
 
@@ -80,6 +80,9 @@ export async function POST(request: NextRequest) {
     const vars = { ticket: ticket.ticket_number, desk: deskName, url: trackUrl };
 
     switch (event) {
+      case 'joined':
+        message = tNotification('joined', locale, vars);
+        break;
       case 'called':
         message = tNotification('called', locale, vars);
         break;

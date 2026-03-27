@@ -522,6 +522,67 @@ function setupIPC() {
     // Immediately push to cloud so web/mobile displays update within 1-2s
     syncEngine?.pushImmediate(ticket.id + '-create');
 
+    // Auto-create WhatsApp notification session if customer has a phone number
+    // (skip if source is whatsapp/messenger — those create sessions via messaging flow)
+    const ticketSource = ticket.source ?? 'walk_in';
+    if (ticketSource !== 'whatsapp' && ticketSource !== 'messenger') {
+      let cd: Record<string, any> = {};
+      try { cd = typeof ticket.customer_data === 'string' ? JSON.parse(ticket.customer_data) : (ticket.customer_data ?? {}); } catch { /* empty */ }
+      const rawPhone = typeof cd.phone === 'string' ? cd.phone.trim() : null;
+      if (rawPhone && syncEngine?.isOnline) {
+        const officeRow = db.prepare('SELECT organization_id, timezone, settings FROM offices WHERE id = ?').get(ticket.office_id) as any;
+        const orgId = officeRow?.organization_id;
+        const tz = officeRow?.timezone;
+        let officeCC: string | null = null;
+        try { const s = JSON.parse(officeRow?.settings || '{}'); officeCC = s.country_code || null; } catch { /* empty */ }
+        // Normalize local phone format
+        const TZ_COUNTRY: Record<string, string> = {
+          'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
+          'Africa/Cairo': '20', 'Europe/Paris': '33', 'Europe/London': '44',
+          'America/New_York': '1', 'America/Chicago': '1', 'America/Denver': '1',
+          'America/Los_Angeles': '1', 'America/Toronto': '1',
+          'Asia/Riyadh': '966', 'Asia/Dubai': '971', 'Asia/Beirut': '961',
+        };
+        const ISO_DIAL: Record<string, string> = {
+          DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44',
+          US: '1', CA: '1', SA: '966', AE: '971', LB: '961',
+          TR: '90', DE: '49', ES: '34', IT: '39', BE: '32', NL: '31',
+        };
+        const dialCode = (officeCC && ISO_DIAL[officeCC.toUpperCase()]) || (tz && TZ_COUNTRY[tz]) || null;
+        let phone = rawPhone.replace(/[^\d]/g, '');
+        if (phone.startsWith('0') && dialCode) {
+          phone = dialCode + phone.slice(1);
+        } else if (phone.length === 10 && !phone.startsWith('0') && !phone.startsWith('1') && dialCode === '1') {
+          // US/Canada 10-digit local → prepend 1
+          phone = '1' + phone;
+        }
+        if (orgId && phone.length >= 7) {
+          syncEngine.ensureFreshToken().then((token: string) => {
+            fetch(`${SUPABASE_URL}/rest/v1/whatsapp_sessions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'apikey': SUPABASE_ANON_KEY,
+                'Prefer': 'return=minimal',
+              },
+              body: JSON.stringify({
+                organization_id: orgId,
+                ticket_id: ticket.id,
+                office_id: ticket.office_id,
+                department_id: ticket.department_id,
+                service_id: ticket.service_id || null,
+                whatsapp_phone: phone,
+                channel: 'whatsapp',
+                state: 'active',
+                locale: 'fr',
+              }),
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+    }
+
     return { ...ticket, qr_token: ticket.qr_token };
   });
 

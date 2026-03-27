@@ -101,15 +101,22 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
     [services, selectedDept]
   );
 
+  // Focus name input only once on mount
   useEffect(() => {
-    if (!createdTicket) {
-      // Focus name input on open
-      setTimeout(() => nameRef.current?.focus(), 50);
-    }
+    setTimeout(() => nameRef.current?.focus(), 50);
+  }, []);
+
+  // Reset focus when ticket is created and user clicks "New Ticket"
+  useEffect(() => {
+    if (!createdTicket) return;
+    // no focus change needed — handleNewTicket already focuses nameRef
+  }, [createdTicket]);
+
+  useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose, createdTicket]);
+  }, [onClose]);
 
   const handleSubmit = async () => {
     if (!selectedDept) return;
@@ -1101,6 +1108,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="queue-item-badges" style={{ justifyContent: 'center', marginBottom: 4 }}>
                   {activeTicket.source === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+                  {activeTicket.source === 'messenger' && <span className="badge messenger">{t('Messenger')}</span>}
                   {activeTicket.source === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
                   {activeTicket.source === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
                   {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
@@ -1175,6 +1183,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="active-number">{activeTicket.ticket_number}</div>
                 <div className="queue-item-badges" style={{ justifyContent: 'center', marginBottom: 4 }}>
                   {activeTicket.source === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+                  {activeTicket.source === 'messenger' && <span className="badge messenger">{t('Messenger')}</span>}
                   {activeTicket.source === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
                   {activeTicket.source === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
                   {activeTicket.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
@@ -1420,6 +1429,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
                   {ticket.appointment_id && <span className="badge booked">{translate(locale, 'Booked')}</span>}
                   {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
+                  {ticket.source === 'messenger' && <span className="badge messenger">{translate(locale, 'Messenger')}</span>}
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
                   {ticket.source === 'mobile_app' && <span className="badge mobile-app">{translate(locale, 'Mobile App')}</span>}
                   {ticket.source === 'kiosk' && <span className="badge kiosk">{translate(locale, 'Kiosk')}</span>}

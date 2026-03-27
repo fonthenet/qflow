@@ -9,6 +9,13 @@ import { useI18n } from '@/components/providers/locale-provider';
 type Office = Database['public']['Tables']['offices']['Row'];
 
 const TIMEZONE_OPTIONS = [
+  'Africa/Algiers',
+  'Africa/Casablanca',
+  'Africa/Tunis',
+  'Africa/Cairo',
+  'Africa/Lagos',
+  'Africa/Nairobi',
+  'Africa/Johannesburg',
   'America/Los_Angeles',
   'America/Denver',
   'America/Chicago',
@@ -16,6 +23,20 @@ const TIMEZONE_OPTIONS = [
   'America/Phoenix',
   'America/Toronto',
   'America/Mexico_City',
+  'America/Sao_Paulo',
+  'Asia/Beirut',
+  'Asia/Baghdad',
+  'Asia/Amman',
+  'Asia/Dubai',
+  'Asia/Riyadh',
+  'Asia/Qatar',
+  'Asia/Kuwait',
+  'Asia/Bahrain',
+  'Asia/Muscat',
+  'Asia/Kolkata',
+  'Asia/Shanghai',
+  'Asia/Tokyo',
+  'Australia/Sydney',
   'Europe/London',
   'Europe/Paris',
   'Europe/Berlin',
@@ -24,14 +45,43 @@ const TIMEZONE_OPTIONS = [
   'Europe/Amsterdam',
   'Europe/Brussels',
   'Europe/Zurich',
-  'Africa/Algiers',
-  'Africa/Casablanca',
-  'Africa/Tunis',
-  'Africa/Cairo',
-  'Asia/Dubai',
-  'Asia/Riyadh',
-  'Asia/Qatar',
-  'Asia/Kuwait',
+  'Europe/Istanbul',
+] as const;
+
+const COUNTRY_CODE_OPTIONS = [
+  { code: 'DZ', label: 'Algeria (+213)', dialCode: '213' },
+  { code: 'BH', label: 'Bahrain (+973)', dialCode: '973' },
+  { code: 'BR', label: 'Brazil (+55)', dialCode: '55' },
+  { code: 'CA', label: 'Canada (+1)', dialCode: '1' },
+  { code: 'CN', label: 'China (+86)', dialCode: '86' },
+  { code: 'EG', label: 'Egypt (+20)', dialCode: '20' },
+  { code: 'FR', label: 'France (+33)', dialCode: '33' },
+  { code: 'DE', label: 'Germany (+49)', dialCode: '49' },
+  { code: 'IN', label: 'India (+91)', dialCode: '91' },
+  { code: 'IQ', label: 'Iraq (+964)', dialCode: '964' },
+  { code: 'JO', label: 'Jordan (+962)', dialCode: '962' },
+  { code: 'JP', label: 'Japan (+81)', dialCode: '81' },
+  { code: 'KE', label: 'Kenya (+254)', dialCode: '254' },
+  { code: 'KW', label: 'Kuwait (+965)', dialCode: '965' },
+  { code: 'LB', label: 'Lebanon (+961)', dialCode: '961' },
+  { code: 'MX', label: 'Mexico (+52)', dialCode: '52' },
+  { code: 'MA', label: 'Morocco (+212)', dialCode: '212' },
+  { code: 'NL', label: 'Netherlands (+31)', dialCode: '31' },
+  { code: 'NG', label: 'Nigeria (+234)', dialCode: '234' },
+  { code: 'OM', label: 'Oman (+968)', dialCode: '968' },
+  { code: 'QA', label: 'Qatar (+974)', dialCode: '974' },
+  { code: 'SA', label: 'Saudi Arabia (+966)', dialCode: '966' },
+  { code: 'ZA', label: 'South Africa (+27)', dialCode: '27' },
+  { code: 'ES', label: 'Spain (+34)', dialCode: '34' },
+  { code: 'CH', label: 'Switzerland (+41)', dialCode: '41' },
+  { code: 'TN', label: 'Tunisia (+216)', dialCode: '216' },
+  { code: 'TR', label: 'Turkey (+90)', dialCode: '90' },
+  { code: 'AE', label: 'UAE (+971)', dialCode: '971' },
+  { code: 'GB', label: 'United Kingdom (+44)', dialCode: '44' },
+  { code: 'US', label: 'United States (+1)', dialCode: '1' },
+  { code: 'BE', label: 'Belgium (+32)', dialCode: '32' },
+  { code: 'IT', label: 'Italy (+39)', dialCode: '39' },
+  { code: 'AU', label: 'Australia (+61)', dialCode: '61' },
 ] as const;
 
 function normalizeOfficeTimezone(timezone: string | null | undefined) {
@@ -141,7 +191,7 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
             <tr className="border-b border-border bg-muted/50">
               <th className="px-4 py-3 font-medium text-muted-foreground">{t('Name')}</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">{t('Branch Type')}</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Address')}</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">{t('Location')}</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">{t('Timezone')}</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">{t('Status')}</th>
               <th className="px-4 py-3 font-medium text-muted-foreground text-right">{t('Actions')}</th>
@@ -164,7 +214,9 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                     t
                   )}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{office.address || '---'}</td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {[(office as any).city, COUNTRY_CODE_OPTIONS.find(c => c.code === (office as any).country)?.label?.split(' (')[0]].filter(Boolean).join(', ') || office.address || '---'}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground">{office.timezone || '---'}</td>
                 <td className="px-4 py-3">
                   <span
@@ -261,6 +313,34 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('Country')}
+                </label>
+                <select
+                  name="country"
+                  defaultValue={(editing as any)?.country ?? ''}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">{t('Select country')}</option>
+                  {COUNTRY_CODE_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  {t('City')}
+                </label>
+                <input
+                  name="city"
+                  defaultValue={(editing as any)?.city ?? ''}
+                  placeholder={t('e.g. Algiers')}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">

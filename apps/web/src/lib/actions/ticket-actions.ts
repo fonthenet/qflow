@@ -29,7 +29,7 @@ import {
   type PriorityAlertEvent,
 } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
@@ -315,6 +315,31 @@ export async function createTicket(
         source: status === 'issued' ? 'issued' : 'queue_join',
       },
     });
+
+    // Auto-create notification session if customer has a phone number
+    const rawPhone = typeof customerData?.phone === 'string' ? (customerData.phone as string).trim() : null;
+    if (rawPhone) {
+      const { data: officeRow } = await supabase
+        .from('offices')
+        .select('organization_id, timezone, settings')
+        .eq('id', officeId)
+        .single();
+      const officeCC = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
+      const normalizedPhone = normalizePhone(rawPhone, officeRow?.timezone, officeCC);
+      if (normalizedPhone && officeRow?.organization_id) {
+        await (supabase as any).from('whatsapp_sessions').insert({
+          organization_id: officeRow.organization_id,
+          ticket_id: ticket.id,
+          office_id: officeId,
+          department_id: departmentId,
+          service_id: serviceId,
+          whatsapp_phone: normalizedPhone,
+          channel: 'whatsapp',
+          state: 'active',
+          locale: 'fr',
+        }).then(() => {}).catch(() => {});
+      }
+    }
   }
 
   revalidatePath('/desk');
@@ -424,6 +449,35 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
         source: input.isRemote ? 'remote_join' : 'public_join',
       },
     });
+
+    // Auto-create notification session if customer has a phone number
+    const ticketSource = input.source ?? (input.isRemote ? 'qr_code' : 'walk_in');
+    if (ticketSource !== 'whatsapp' && ticketSource !== 'messenger') {
+      const cd = input.customerData as Record<string, unknown> | null;
+      const rawPhone2 = typeof cd?.phone === 'string' ? cd.phone.trim() : null;
+      if (rawPhone2) {
+        const { data: officeRow } = await supabase
+          .from('offices')
+          .select('organization_id, timezone, settings')
+          .eq('id', input.officeId)
+          .single();
+        const officeCC2 = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
+        const normalizedPhone2 = normalizePhone(rawPhone2, officeRow?.timezone, officeCC2);
+        if (normalizedPhone2 && officeRow?.organization_id) {
+          await (supabase as any).from('whatsapp_sessions').insert({
+            organization_id: officeRow.organization_id,
+            ticket_id: ticket.id,
+            office_id: input.officeId,
+            department_id: input.departmentId,
+            service_id: input.serviceId,
+            whatsapp_phone: normalizedPhone2,
+            channel: 'whatsapp',
+            state: 'active',
+            locale: 'fr',
+          }).then(() => {}).catch(() => {});
+        }
+      }
+    }
   }
 
   revalidatePath('/desk');
@@ -1084,6 +1138,14 @@ export async function transferTicket(
   }
 
   await releaseRestaurantTablesForTicket(supabase, ticketId);
+
+  // Transfer notification session to new ticket
+  await (supabase as any)
+    .from('whatsapp_sessions')
+    .update({ ticket_id: newTicket.id, department_id: targetDepartmentId, service_id: targetServiceId })
+    .eq('ticket_id', ticketId)
+    .eq('state', 'active')
+    .then(() => {}).catch(() => {});
 
   // Log event
   await supabase.from('ticket_events').insert({

@@ -1172,6 +1172,7 @@ export function DeskPanel({
     const src = ticket.source;
     switch (src) {
       case 'whatsapp': return t('WhatsApp');
+      case 'messenger': return t('Messenger');
       case 'mobile_app': return t('Mobile App');
       case 'kiosk': return t('Kiosk');
       case 'app_clip': return t('App Clip');
@@ -1184,6 +1185,19 @@ export function DeskPanel({
         return isRestaurantMode ? t('Walk-in party') : t('Walk-in');
     }
   }, [bookingLabel, isRestaurantMode, t]);
+
+  const getSourceBadgeClasses = useCallback((ticket: Ticket | null | undefined) => {
+    const base = 'rounded-full px-2 py-0.5 text-[11px] font-medium';
+    switch (ticket?.source) {
+      case 'whatsapp': return `${base} bg-[#25d366]/15 text-[#25d366]`;
+      case 'messenger': return `${base} bg-[#0084ff]/15 text-[#0084ff]`;
+      case 'qr_code': return `${base} bg-[#3b82f6]/15 text-[#3b82f6]`;
+      case 'mobile_app': return `${base} bg-[#f59e0b]/15 text-[#f59e0b]`;
+      case 'kiosk': return `${base} bg-[#6366f1]/15 text-[#6366f1]`;
+      case 'in_house': return `${base} bg-[#8b5cf6]/15 text-[#8b5cf6]`;
+      default: return `${base} bg-muted text-muted-foreground`;
+    }
+  }, []);
 
   const formatAbsoluteTime = useCallback((value: string | null | undefined) => {
     if (!value) return '--';
@@ -1587,7 +1601,7 @@ export function DeskPanel({
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {isRestaurantMode ? t('Arrival') : t('Source')}
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{getTicketSource(currentTicket)}</p>
+                    <p className="mt-1 text-sm font-semibold"><span className={getSourceBadgeClasses(currentTicket)}>{getTicketSource(currentTicket)}</span></p>
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2100,7 +2114,7 @@ export function DeskPanel({
                                     </span>
                                     <PriorityBadge priorityCategory={getPriorityCategory(ticket)} className="shrink-0" />
                                     {!isMinimalView && (
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    <span className={getSourceBadgeClasses(ticket)}>
                                       {getTicketSource(ticket)}
                                     </span>
                                     )}
@@ -2278,7 +2292,7 @@ export function DeskPanel({
                           ? `${getTicketCustomerName(ticket) ?? t('Party')}${getRestaurantPartySize(ticket) ? ` · ${t('Party of {count}', { count: getRestaurantPartySize(ticket) })}` : ''}`
                           : getTicketServiceName(ticket)}
                       </span>
-                      <span>{getTicketSource(ticket)}</span>
+                      <span className={getSourceBadgeClasses(ticket)}>{getTicketSource(ticket)}</span>
                       <span>{formatRelativeTime(ticket.parked_at ?? ticket.called_at ?? ticket.serving_started_at)}</span>
                     </div>
                     <div className="mt-3 flex justify-end gap-2">
@@ -2355,7 +2369,7 @@ export function DeskPanel({
                             }`
                           : getTicketServiceName(ticket)}
                       </span>
-                      <span>{getTicketSource(ticket)}</span>
+                      <span className={getSourceBadgeClasses(ticket)}>{getTicketSource(ticket)}</span>
                       {isRestaurantMode && getRestaurantSeatingPreference(ticket) && (
                         <span>{getRestaurantSeatingPreference(ticket)}</span>
                       )}
