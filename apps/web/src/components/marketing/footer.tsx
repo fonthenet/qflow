@@ -72,10 +72,10 @@ export function Footer() {
           </p>
           <div className="flex items-center gap-6">
             <LanguageSwitcher />
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground">
               {t('Privacy Policy')}
             </Link>
-            <Link href="#" className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground">
               {t('Terms of Service')}
             </Link>
           </div>
