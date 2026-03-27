@@ -513,7 +513,7 @@ export function KioskView({
       }}
     >
       <div className="fixed left-4 top-6 z-50 sm:left-6 sm:top-6">
-        <LanguageSwitcher variant="embedded" />
+        <LanguageSwitcher variant="floating" />
       </div>
       {sandboxMode ? (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-900">
