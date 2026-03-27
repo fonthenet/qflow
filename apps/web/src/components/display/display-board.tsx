@@ -306,7 +306,6 @@ export function DisplayBoard({
                 {currentTime.toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
-                  second: isMobile ? undefined : '2-digit',
                 })}
               </div>
               <div style={{ fontSize: isMobile ? 11 : 15, color: '#64748b', fontWeight: 500, marginTop: 2 }}>
