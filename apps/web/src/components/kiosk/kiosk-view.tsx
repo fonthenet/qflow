@@ -627,15 +627,12 @@ export function KioskView({
                         setCustomerPhone(event.target.value);
                         if (customerInfoError) setCustomerInfoError(null);
                       }}
-                      placeholder={t('Enter your phone number')}
+                      placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
                       autoComplete="tel"
                       dir="ltr"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
                       style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
-                    {whatsappEnabled && (
-                      <p className="mt-1 text-[11px] text-slate-400">{t('For WhatsApp alerts')}</p>
-                    )}
                   </div>
                 </div>
                 {customerInfoError ? (
@@ -740,15 +737,12 @@ export function KioskView({
                           setCustomerPhone(event.target.value);
                           if (customerInfoError) setCustomerInfoError(null);
                         }}
-                        placeholder={t('Enter your phone number')}
+                        placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
                         autoComplete="tel"
                         dir="ltr"
                         className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
                         style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
-                      {whatsappEnabled && (
-                        <p className="mt-1 text-[11px] text-slate-400">{t('To receive WhatsApp queue updates')}</p>
-                      )}
                     </div>
                   </div>
                   {customerInfoError ? (
