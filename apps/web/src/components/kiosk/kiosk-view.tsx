@@ -626,10 +626,8 @@ export function KioskView({
                       }}
                       placeholder={t('Enter your phone number')}
                       autoComplete="tel"
-                      dir={customerPhone.trim() ? 'ltr' : dir}
-                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${
-                        dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
-                      }`}
+                      dir="ltr"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
                       style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                     {whatsappEnabled && (
@@ -741,10 +739,8 @@ export function KioskView({
                         }}
                         placeholder={t('Enter your phone number')}
                         autoComplete="tel"
-                        dir={customerPhone.trim() ? 'ltr' : dir}
-                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${
-                          dir === 'rtl' && !customerPhone.trim() ? 'text-right' : 'text-left'
-                        }`}
+                        dir="ltr"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
                         style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                       {whatsappEnabled && (
