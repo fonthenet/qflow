@@ -835,6 +835,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (t) addActivity(t.ticket_number, translate(locale, 'Requeued'));
   };
 
+  const takeOver = (id: string) => {
+    updateTicketStatus(id, {
+      desk_id: session.desk_id,
+      called_by_staff_id: session.staff_id,
+    });
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Taken over'));
+  };
+
   const park = (id: string) => {
     updateTicketStatus(id, {
       status: 'waiting',
@@ -1523,6 +1532,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 </div>
                 {ticket.id !== activeTicket?.id ? (
                   <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                    <button
+                      className="btn-sm"
+                      style={{ background: '#3b82f6', color: '#fff', border: 'none' }}
+                      onClick={() => takeOver(ticket.id)}
+                      aria-label={`${t('Take Over')} ${ticket.ticket_number}`}
+                    >
+                      {t('Take Over')}
+                    </button>
                     <button
                       className="btn-sm btn-outline"
                       onClick={() => park(ticket.id)}

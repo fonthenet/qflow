@@ -1154,8 +1154,8 @@ export class SyncEngine {
       const checkPending = this.db.prepare(
         "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND record_id = ? AND table_name = 'tickets'"
       );
-      const getLocalStatus = this.db.prepare(
-        "SELECT status FROM tickets WHERE id = ?"
+      const getLocalTicket = this.db.prepare(
+        "SELECT status, desk_id, called_by_staff_id, called_at, serving_started_at FROM tickets WHERE id = ?"
       );
 
       const upsertBatch = this.db.transaction((rows: any[]) => {
@@ -1169,7 +1169,7 @@ export class SyncEngine {
           // still has it as active, the cloud should win — the local cancellation was a mistake.
           // We detect this by checking: local is "cancelled", cloud is active, AND there is no
           // pending sync item for this ticket (meaning the cancellation was never pushed to cloud).
-          const local = getLocalStatus.get(t.id) as any;
+          const local = getLocalTicket.get(t.id) as any;
           if (local) {
             const localRank = statusRank[local.status] ?? 0;
             const cloudRank = statusRank[t.status] ?? 0;
@@ -1189,6 +1189,24 @@ export class SyncEngine {
               } else {
                 console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank})`);
                 continue;
+              }
+            }
+
+            // PROTECT desk assignment: if the local ticket is actively called/serving
+            // with a desk assigned, don't let cloud overwrite desk_id/staff_id.
+            // This prevents recover_stuck_tickets() cron or stale cloud data from
+            // orphaning a ticket that this station is actively working on.
+            const localIsActive = ['called', 'serving'].includes(local.status);
+            const cloudIsActive = ['called', 'serving'].includes(t.status);
+            if (localIsActive && cloudIsActive && local.desk_id) {
+              // Preserve local desk assignment — cloud may have stale or null desk_id
+              t.desk_id = local.desk_id;
+              t.called_by_staff_id = local.called_by_staff_id;
+              t.called_at = local.called_at ?? t.called_at;
+              t.serving_started_at = local.serving_started_at ?? t.serving_started_at;
+              // Keep the more advanced status
+              if (localRank > cloudRank) {
+                t.status = local.status;
               }
             }
           }
