@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { initDB, getDB, generateOfflineTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
+import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -454,12 +454,19 @@ function setupIPC() {
     return result;
   });
 
-  ipcMain.handle('db:create-ticket', (_e, ticket: any) => {
+  ipcMain.handle('db:create-ticket', async (_e, ticket: any) => {
     // Auto-generate ticket number if not provided (for in-house bookings)
     if (!ticket.ticket_number) {
       const dept = db.prepare('SELECT code FROM departments WHERE id = ?').get(ticket.department_id) as any;
       const deptCode = dept?.code || 'G';
-      ticket.ticket_number = generateOfflineTicketNumber(ticket.office_id, deptCode);
+      const isOnline = syncEngine?.isOnline ?? false;
+      const reserved = await reserveTicketNumber(
+        CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY,
+        ticket.office_id, ticket.department_id, deptCode, isOnline, db,
+      );
+      ticket.ticket_number = reserved.ticketNumber;
+      ticket.daily_sequence = reserved.dailySequence;
+      ticket.is_offline = reserved.isOffline;
     }
 
     // Generate qr_token if not provided (needed by Supabase NOT NULL constraint)
@@ -483,9 +490,9 @@ function setupIPC() {
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, 1, ?)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.source ?? 'walk_in');
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence);
 
       // Build clean sync payload with all Supabase NOT NULL fields
       const syncPayload = {

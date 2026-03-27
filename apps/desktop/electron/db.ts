@@ -335,3 +335,67 @@ export function generateOfflineTicketNumber(officeId: string, deptCode: string, 
   const num = String(row.counter).padStart(3, '0');
   return `L-${deptCode}-${num}`;
 }
+
+// ── Unified ticket number reservation ─────────────────────────────
+// Single source of truth for ALL ticket creation paths.
+// Online: calls Supabase RPC for atomic cloud sequence (no duplicates).
+// Offline: falls back to local L-prefix with atomic SQLite counter.
+export interface ReservedTicketNumber {
+  ticketNumber: string;   // "G-032" or "L-G-005"
+  dailySequence: number;  // 32 or 5
+  isOffline: boolean;
+}
+
+export async function reserveTicketNumber(
+  supabaseUrl: string,
+  supabaseKey: string,
+  officeId: string,
+  departmentId: string,
+  deptCode: string,
+  isCloudReachable: boolean,
+  dbInstance?: Database.Database,
+): Promise<ReservedTicketNumber> {
+  const d = dbInstance ?? db;
+
+  // ── Try cloud first (atomic, no race conditions) ──
+  if (isCloudReachable) {
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/generate_daily_ticket_number`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ p_department_id: departmentId }),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const rows = await res.json();
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        if (row?.ticket_num && row?.seq) {
+          return {
+            ticketNumber: row.ticket_num,
+            dailySequence: row.seq,
+            isOffline: false,
+          };
+        }
+      }
+      // Non-OK response — fall through to offline
+    } catch {
+      // Timeout or network error — fall through to offline
+    }
+  }
+
+  // ── Offline fallback: atomic local counter ──
+  const ticketNumber = generateOfflineTicketNumber(officeId, deptCode, d);
+  // Extract sequence from L-G-005 → 5
+  const match = ticketNumber.match(/-(\d+)$/);
+  const dailySequence = match ? parseInt(match[1], 10) : 1;
+
+  return {
+    ticketNumber,
+    dailySequence,
+    isOffline: true,
+  };
+}

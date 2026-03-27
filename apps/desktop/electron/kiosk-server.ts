@@ -2,7 +2,7 @@ import http from 'http';
 import { networkInterfaces } from 'os';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname } from 'path';
-import { getDB, generateOfflineTicketNumber, logTicketEvent } from './db';
+import { getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent } from './db';
 import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
@@ -664,63 +664,13 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const now = new Date().toISOString();
       const qrToken = randomUUID().replace(/-/g, '').slice(0, 12);
 
-      // ── Generate ticket number ──────────────────────────────────
-      // When online: query cloud for the next sequence to get a proper
-      // number (CS-012) that matches what the station will display.
-      // When offline: fall back to L-prefix (L-CS-010).
-      let ticketNumber: string;
-      let dailySequence: number;
-      let isOffline = true;
-
-      if (isCloudReachable) {
-        try {
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          const maxRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&department_id=eq.${departmentId}&created_at=gte.${todayStart.toISOString()}&ticket_number=not.like.L-%25&select=daily_sequence&order=daily_sequence.desc&limit=1`,
-            {
-              headers: { apikey: SUPABASE_KEY },
-              signal: AbortSignal.timeout(3000),
-            }
-          );
-          if (maxRes.ok) {
-            const rows = await maxRes.json();
-            const cloudMax = rows[0]?.daily_sequence ?? 0;
-            // Also check local non-L tickets to extract max sequence from ticket_number
-            const localTickets = db.prepare(
-              "SELECT ticket_number FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ? AND ticket_number NOT LIKE 'L-%'"
-            ).all(officeId, departmentId, todayStart.toISOString()) as any[];
-            let localMax = 0;
-            for (const t of localTickets) {
-              // ticket_number format: "CS-012" → extract 12
-              const match = t.ticket_number?.match(/-(\d+)$/);
-              if (match) localMax = Math.max(localMax, parseInt(match[1], 10));
-            }
-            dailySequence = Math.max(cloudMax, localMax) + 1;
-            ticketNumber = `${deptCode}-${String(dailySequence).padStart(3, '0')}`;
-            isOffline = false;
-          } else {
-            throw new Error('Cloud query failed');
-          }
-        } catch {
-          // Cloud query failed — fall back to offline numbering
-          ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          const seqRow = db.prepare(
-            "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
-          ).get(officeId, departmentId, todayStart.toISOString()) as any;
-          dailySequence = (seqRow?.c ?? 0) + 1;
-        }
-      } else {
-        ticketNumber = generateOfflineTicketNumber(officeId, deptCode);
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const seqRow = db.prepare(
-          "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
-        ).get(officeId, departmentId, todayStart.toISOString()) as any;
-        dailySequence = (seqRow?.c ?? 0) + 1;
-      }
+      // ── Generate ticket number (single source of truth) ──────────
+      // Online: Supabase RPC atomically reserves next sequence (no duplicates)
+      // Offline: local SQLite atomic counter with L-prefix
+      const reserved = await reserveTicketNumber(
+        SUPABASE_URL, SUPABASE_KEY, officeId, departmentId, deptCode, isCloudReachable, db,
+      );
+      const { ticketNumber, dailySequence, isOffline } = reserved;
 
       const customerData = JSON.stringify({
         name: safeName || null,
@@ -730,9 +680,9 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
       db.transaction(() => {
         db.prepare(`
-          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline)
-          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?)
-        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0);
+          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, daily_sequence)
+          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?, ?)
+        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0, dailySequence);
 
         db.prepare(`
           INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)

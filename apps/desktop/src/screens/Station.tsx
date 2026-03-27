@@ -224,25 +224,6 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
               </p>
             </div>
 
-            {messengerPageId && createdTicket?.qr_token && (
-              <a
-                href={`https://m.me/${messengerPageId}?ref=qflo_${createdTicket.qr_token}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  margin: '12px 0 0', padding: '10px 16px', border: '1px solid rgba(59,130,246,0.3)',
-                  borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: '#60a5fa',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.2 5.42 3.15 7.2V22l3.04-1.67c.85.24 1.75.37 2.81.37 5.64 0 10-4.13 10-9.7S17.64 2 12 2zm1.04 13.06l-2.55-2.73L5.6 15.2l5.36-5.69 2.62 2.73 4.83-2.73-5.37 5.55z"/>
-                </svg>
-                {t('Get Messenger notifications')}
-              </a>
-            )}
-
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 onClick={onClose}
