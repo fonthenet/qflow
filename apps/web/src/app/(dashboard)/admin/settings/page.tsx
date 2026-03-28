@@ -61,6 +61,7 @@ export default async function SettingsPage() {
   // Fetch connected Facebook Page info (for Messenger settings panel)
   let messengerPageInfo: { connected: boolean; page?: { id: string; name: string; pictureUrl: string | null }; reason?: string } = { connected: false };
   const pageToken = process.env.MESSENGER_PAGE_ACCESS_TOKEN?.trim();
+  console.log(`[settings] MESSENGER_PAGE_ACCESS_TOKEN present: ${!!pageToken}, length: ${pageToken?.length ?? 0}`);
   if (pageToken) {
     try {
       const res = await fetch(
@@ -68,6 +69,7 @@ export default async function SettingsPage() {
         { cache: 'no-store' }
       );
       const data = await res.json();
+      console.log(`[settings] Graph API response: status=${res.status} ok=${res.ok} error=${data.error?.message ?? 'none'}`);
       if (res.ok && !data.error) {
         messengerPageInfo = {
           connected: true,
