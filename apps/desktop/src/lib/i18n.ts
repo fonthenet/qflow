@@ -549,14 +549,7 @@ export function formatWaitLabel(dateStr: string, locale: DesktopLocale): string 
   if (mins < 1) {
     return locale === 'fr' ? '<1 min' : locale === 'ar' ? '<1 د' : '<1m';
   }
-  if (mins < 60) {
-    return locale === 'fr' ? `${mins} min` : locale === 'ar' ? `${mins} د` : `${mins}m`;
-  }
-  const hours = Math.floor(mins / 60);
-  const rest = mins % 60;
-  if (locale === 'fr') return `${hours} h ${rest} min`;
-  if (locale === 'ar') return `${hours} س ${rest} د`;
-  return `${hours}h ${rest}m`;
+  return locale === 'fr' ? `${mins} min` : locale === 'ar' ? `${mins} د` : `${mins}m`;
 }
 
 export function desktopLanguageLabel(locale: DesktopLocale, value: DesktopLocale): string {
