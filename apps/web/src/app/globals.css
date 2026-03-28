@@ -36,9 +36,23 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
   }
   body {
     @apply bg-background text-foreground;
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Prevent text selection on interactive elements */
+  button, [role="button"], .card, .btn {
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
   }
   /* Dark dropdown highlight for queue pages */
   select option:checked,
