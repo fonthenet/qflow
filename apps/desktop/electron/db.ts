@@ -333,7 +333,7 @@ export function generateOfflineTicketNumber(officeId: string, deptCode: string, 
     RETURNING counter
   `).get(officeId, deptCode, today) as any;
 
-  const num = String(row.counter).padStart(3, '0');
+  const num = String(row.counter).padStart(4, '0');
   return `L-${deptCode}-${num}`;
 }
 

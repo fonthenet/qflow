@@ -6,7 +6,7 @@ export const isElectron = () =>
 export const isServer = () => typeof window === 'undefined';
 
 export function formatTicketNumber(departmentCode: string, sequence: number): string {
-  return `${departmentCode}-${String(sequence).padStart(3, '0')}`;
+  return `${departmentCode}-${String(sequence).padStart(4, '0')}`;
 }
 
 export function estimateWaitMinutes(

@@ -6,14 +6,11 @@ import {
   Building2,
   Layers,
   Monitor,
-  ChevronRight,
-  ChevronDown,
   Plus,
   Pencil,
   Trash2,
   Grid3X3,
   Users,
-  MapPin,
   CheckCircle2,
   AlertCircle,
   Lightbulb,
@@ -24,7 +21,7 @@ import {
   Clock,
   User,
   Tv,
-  Shield,
+  ChevronRight,
 } from 'lucide-react';
 import { SlideOver } from '@/components/admin/slide-over';
 import {
@@ -42,9 +39,9 @@ import {
   deleteDesk,
 } from '@/lib/actions/admin-actions';
 
-/* ================================================================== */
-/*  Types                                                              */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Types                                                            */
+/* ══════════════════════════════════════════════════════════════════ */
 
 interface Desk {
   id: string;
@@ -124,9 +121,9 @@ type SlideOverState =
   | { type: 'desk'; mode: 'create'; officeId: string; departmentId: string }
   | { type: 'desk'; mode: 'edit'; data: Desk };
 
-/* ================================================================== */
-/*  Health / Readiness                                                 */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Health / Readiness                                               */
+/* ══════════════════════════════════════════════════════════════════ */
 
 type Health = 'ready' | 'warning' | 'error';
 
@@ -146,30 +143,9 @@ function officeHealth(office: Office): Health {
   return 'ready';
 }
 
-function healthLabel(h: Health): string {
-  if (h === 'ready') return 'Ready';
-  if (h === 'warning') return 'Needs setup';
-  return 'Not configured';
-}
-
-function HealthBadge({ health }: { health: Health }) {
-  const cfg = {
-    ready: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    warning: 'bg-amber-100 text-amber-700 border-amber-200',
-    error: 'bg-red-100 text-red-700 border-red-200',
-  }[health];
-  const Icon = health === 'ready' ? CheckCircle2 : AlertCircle;
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cfg}`}>
-      <Icon className="h-3 w-3" />
-      {healthLabel(health)}
-    </span>
-  );
-}
-
-/* ================================================================== */
-/*  Setup Checklist                                                    */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Setup Checklist                                                  */
+/* ══════════════════════════════════════════════════════════════════ */
 
 interface SetupStep {
   key: string;
@@ -243,9 +219,9 @@ function computeSetupSteps(
   ];
 }
 
-/* ================================================================== */
-/*  Main Component                                                     */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Main Component                                                   */
+/* ══════════════════════════════════════════════════════════════════ */
 
 export function BusinessMapClient({
   organizationName,
@@ -254,38 +230,25 @@ export function BusinessMapClient({
   vocabulary,
 }: BusinessMapProps) {
   const router = useRouter();
-  const [expandedOffices, setExpandedOffices] = useState<Set<string>>(
-    () => new Set(offices.map((o) => o.id)),
-  );
-  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(
-    () => new Set(offices.flatMap((o) => o.departments.map((d) => d.id))),
-  );
+  const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => new Set());
   const [slideOver, setSlideOver] = useState<SlideOverState>(null);
   const [showChecklist, setShowChecklist] = useState(true);
-
-  const toggleOffice = useCallback((id: string) => {
-    setExpandedOffices((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
 
   const toggleDept = useCallback((id: string) => {
     setExpandedDepts((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   }, []);
 
-  // Stats
+  /* Totals */
   const totalDepts = offices.reduce((s, o) => s + o.departments.length, 0);
   const totalServices = offices.reduce((s, o) => s + o.departments.reduce((s2, d) => s2 + d.services.length, 0), 0);
   const totalDesks = offices.reduce((s, o) => s + o.departments.reduce((s2, d) => s2 + d.desks.length, 0), 0);
   const assignedDesks = offices.reduce((s, o) => s + o.departments.reduce((s2, d) => s2 + d.desks.filter((dk) => dk.current_staff).length, 0), 0);
 
-  // Setup checklist
+  /* Setup steps */
   const setupSteps = useMemo(
     () =>
       computeSetupSteps(offices, allStaff, vocabulary, {
@@ -301,28 +264,51 @@ export function BusinessMapClient({
   const nextStep = setupSteps.find((s) => !s.done);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-
-      {/* ── Header ───────────────────────────────────────── */}
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Business Map</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Your complete business structure — build, configure, and monitor everything in one place.
-          </p>
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="mb-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Business Map</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {organizationName} — build, configure, and monitor your business structure
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {!allDone && !showChecklist && (
+              <button
+                onClick={() => setShowChecklist(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-primary/20 bg-card px-3 py-2 text-xs font-medium text-primary shadow-sm hover:bg-primary/5 transition-colors"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                {completedSteps}/{setupSteps.length} Setup
+              </button>
+            )}
+            <button
+              onClick={() => setSlideOver({ type: 'office', mode: 'create' })}
+              className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add {vocabulary.officeLabel}
+            </button>
+          </div>
         </div>
-        {!allDone && !showChecklist && (
-          <button
-            onClick={() => setShowChecklist(true)}
-            className="shrink-0 flex items-center gap-1.5 rounded-xl border border-primary/20 bg-card px-3 py-2 text-xs font-medium text-primary shadow-sm hover:bg-primary/5 transition-colors"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            {completedSteps}/{setupSteps.length} Setup
-          </button>
-        )}
+
+        {/* Stats chips */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+          <StatChip icon={Building2} label={`${offices.length} ${vocabulary.officeLabel.toLowerCase()}${offices.length !== 1 ? 's' : ''}`} />
+          <Dot />
+          <StatChip icon={Layers} label={`${totalDepts} ${vocabulary.departmentLabel.toLowerCase()}${totalDepts !== 1 ? 's' : ''}`} />
+          <Dot />
+          <StatChip icon={Grid3X3} label={`${totalServices} ${vocabulary.serviceLabel.toLowerCase()}${totalServices !== 1 ? 's' : ''}`} />
+          <Dot />
+          <StatChip icon={Monitor} label={`${assignedDesks}/${totalDesks} ${vocabulary.deskLabel.toLowerCase()}${totalDesks !== 1 ? 's' : ''} staffed`} />
+          <Dot />
+          <StatChip icon={Users} label={`${allStaff.length} team member${allStaff.length !== 1 ? 's' : ''}`} />
+        </div>
       </div>
 
-      {/* ── Setup Checklist ──────────────────────────────── */}
+      {/* ── Setup Checklist ────────────────────────────────── */}
       {!allDone && showChecklist && (
         <div className="mb-8 rounded-2xl border border-primary/20 bg-card shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-primary/10">
@@ -339,11 +325,16 @@ export function BusinessMapClient({
                 </p>
               </div>
             </div>
-            <button onClick={() => setShowChecklist(false)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Hide</button>
+            <button onClick={() => setShowChecklist(false)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              Hide
+            </button>
           </div>
           <div className="px-5 pt-3 pb-1">
             <div className="h-1.5 rounded-full bg-primary/10 overflow-hidden">
-              <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${(completedSteps / setupSteps.length) * 100}%` }} />
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${(completedSteps / setupSteps.length) * 100}%` }}
+              />
             </div>
           </div>
           <div className="px-5 py-3 space-y-0.5">
@@ -370,7 +361,10 @@ export function BusinessMapClient({
                   </div>
                   {(step.action || step.link) && (
                     <button
-                      onClick={() => { if (step.action) step.action(); else if (step.link) router.push(step.link); }}
+                      onClick={() => {
+                        if (step.action) step.action();
+                        else if (step.link) router.push(step.link);
+                      }}
                       className="shrink-0 flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
                     >
                       {step.key === 'staff' ? 'Invite' : 'Create'}
@@ -384,109 +378,86 @@ export function BusinessMapClient({
         </div>
       )}
 
-      {/* ── All-done banner ──────────────────────────────── */}
+      {/* ── All-done banner ────────────────────────────────── */}
       {allDone && (
         <div className="mb-8 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
           <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-emerald-900">Setup complete!</p>
-            <p className="text-xs text-emerald-800">Your business is fully configured. Staff can now log in and start serving {vocabulary.customerLabel.toLowerCase()}s.</p>
+            <p className="text-xs text-emerald-800">
+              Your business is fully configured. Staff can now log in and start serving {vocabulary.customerLabel.toLowerCase()}s.
+            </p>
           </div>
         </div>
       )}
 
-      {/* ── Stats Row ────────────────────────────────────── */}
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {[
-          { icon: Building2, label: `${vocabulary.officeLabel}s`, value: offices.length, alert: offices.length === 0 },
-          { icon: Layers, label: `${vocabulary.departmentLabel}s`, value: totalDepts, alert: totalDepts === 0 && offices.length > 0 },
-          { icon: Grid3X3, label: `${vocabulary.serviceLabel}s`, value: totalServices, alert: totalServices === 0 && totalDepts > 0 },
-          { icon: Monitor, label: `${vocabulary.deskLabel}s`, value: `${assignedDesks}/${totalDesks}`, subtitle: 'staffed', alert: totalDesks === 0 && totalDepts > 0 },
-          { icon: Users, label: 'Team', value: allStaff.length, alert: allStaff.length <= 1 },
-        ].map((s) => (
-          <div key={s.label} className={`rounded-xl border px-4 py-3 shadow-sm ${s.alert ? 'border-amber-200 bg-amber-50' : 'border-border/60 bg-card'}`}>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <s.icon className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wider">{s.label}</span>
-              {s.alert && <AlertCircle className="h-3 w-3 text-amber-500 ml-auto" />}
-            </div>
-            <p className="mt-1 text-lg font-semibold text-foreground">
-              {s.value}
-              {'subtitle' in s && s.subtitle && <span className="ml-1 text-xs font-normal text-muted-foreground">{s.subtitle}</span>}
-            </p>
+      {/* ── Empty State (no offices) ──────────────────────── */}
+      {offices.length === 0 ? (
+        <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-border/60 bg-card/50 px-8 py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 mb-5">
+            <Building2 className="h-8 w-8 text-muted-foreground/40" />
           </div>
-        ))}
-      </div>
-
-      {/* ── Visual Hierarchy ─────────────────────────────── */}
-      <div className="space-y-4">
-        {/* Organization root */}
-        <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-primary/[0.04] to-transparent border-b border-border/40">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <MapPin className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-base font-bold text-foreground">{organizationName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {offices.length} {vocabulary.officeLabel.toLowerCase()}{offices.length !== 1 ? 's' : ''}
-                  {' · '}{totalDepts} {vocabulary.departmentLabel.toLowerCase()}{totalDepts !== 1 ? 's' : ''}
-                  {' · '}{allStaff.length} team member{allStaff.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setSlideOver({ type: 'office', mode: 'create' })}
-              className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add {vocabulary.officeLabel}
-            </button>
-          </div>
-
-          {offices.length === 0 ? (
-            <EmptyNode
-              icon={Building2}
-              title={`No ${vocabulary.officeLabel.toLowerCase()}s yet`}
-              message={`Start by creating your first ${vocabulary.officeLabel.toLowerCase()} — this is where your ${vocabulary.customerLabel.toLowerCase()}s come.`}
-              action={() => setSlideOver({ type: 'office', mode: 'create' })}
-              actionLabel={`Create ${vocabulary.officeLabel}`}
-            />
-          ) : (
-            <div className="divide-y divide-border/40">
-              {offices.map((office) => (
-                <OfficeCard
-                  key={office.id}
-                  office={office}
-                  allStaff={allStaff}
-                  vocabulary={vocabulary}
-                  isExpanded={expandedOffices.has(office.id)}
-                  expandedDepts={expandedDepts}
-                  onToggle={() => toggleOffice(office.id)}
-                  onToggleDept={toggleDept}
-                  onEdit={(o) => setSlideOver({ type: 'office', mode: 'edit', data: o })}
-                  onAddDept={(oid) => setSlideOver({ type: 'department', mode: 'create', officeId: oid })}
-                  onEditDept={(d) => setSlideOver({ type: 'department', mode: 'edit', data: d })}
-                  onAddService={(did) => setSlideOver({ type: 'service', mode: 'create', departmentId: did })}
-                  onEditService={(s) => setSlideOver({ type: 'service', mode: 'edit', data: s })}
-                  onAddDesk={(oid, did) => setSlideOver({ type: 'desk', mode: 'create', officeId: oid, departmentId: did })}
-                  onEditDesk={(d) => setSlideOver({ type: 'desk', mode: 'edit', data: d })}
-                />
-              ))}
-            </div>
-          )}
+          <p className="text-lg font-semibold text-foreground">No {vocabulary.officeLabel.toLowerCase()}s yet</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground leading-relaxed">
+            Start by creating your first {vocabulary.officeLabel.toLowerCase()} — this is the physical location where your{' '}
+            {vocabulary.customerLabel.toLowerCase()}s come to be served.
+          </p>
+          <button
+            onClick={() => setSlideOver({ type: 'office', mode: 'create' })}
+            className="mt-6 flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Create Your First {vocabulary.officeLabel}
+          </button>
         </div>
-      </div>
+      ) : (
+        /* ── Office Grid ─────────────────────────────────── */
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 items-start">
+          {offices.map((office) => (
+            <OfficeCard
+              key={office.id}
+              office={office}
+              allStaff={allStaff}
+              vocabulary={vocabulary}
+              expandedDepts={expandedDepts}
+              onToggleDept={toggleDept}
+              onEdit={(o) => setSlideOver({ type: 'office', mode: 'edit', data: o })}
+              onAddDept={(oid) => setSlideOver({ type: 'department', mode: 'create', officeId: oid })}
+              onEditDept={(d) => setSlideOver({ type: 'department', mode: 'edit', data: d })}
+              onAddService={(did) => setSlideOver({ type: 'service', mode: 'create', departmentId: did })}
+              onEditService={(s) => setSlideOver({ type: 'service', mode: 'edit', data: s })}
+              onAddDesk={(oid, did) => setSlideOver({ type: 'desk', mode: 'create', officeId: oid, departmentId: did })}
+              onEditDesk={(d) => setSlideOver({ type: 'desk', mode: 'edit', data: d })}
+            />
+          ))}
 
-      {/* ── Quick Links ──────────────────────────────────── */}
+          {/* Ghost "Add Office" card */}
+          <button
+            onClick={() => setSlideOver({ type: 'office', mode: 'create' })}
+            className="group flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border/50 bg-card/30 hover:border-primary/40 hover:bg-primary/[0.02] transition-all cursor-pointer"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+              <Plus className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground group-hover:text-primary transition-colors">
+              Add {vocabulary.officeLabel}
+            </p>
+          </button>
+        </div>
+      )}
+
+      {/* ── Quick Links ────────────────────────────────────── */}
       <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { icon: UserPlus, label: 'Add team member', desc: 'Invite staff to their desk', href: '/admin/staff/setup' },
           { icon: Grid3X3, label: `Manage ${vocabulary.serviceLabel.toLowerCase()}s`, desc: 'Detailed service configuration', href: '/admin/services' },
           { icon: Tv, label: 'Display screens', desc: 'Configure waiting room TVs', href: '/admin/displays' },
         ].map((item) => (
-          <a key={item.href} href={item.href} className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm hover:border-primary/30 hover:shadow-md transition-all">
+          <a
+            key={item.href}
+            href={item.href}
+            className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm hover:border-primary/30 hover:shadow-md transition-all"
+          >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
               <item.icon className="h-4 w-4" />
             </div>
@@ -499,31 +470,47 @@ export function BusinessMapClient({
         ))}
       </div>
 
-      {/* ── SlideOver ────────────────────────────────────── */}
+      {/* ── SlideOver ──────────────────────────────────────── */}
       <SlideOver open={slideOver !== null} onClose={() => setSlideOver(null)} title={getSlideOverTitle(slideOver, vocabulary)}>
         {slideOver && (
-          <SlideOverForm state={slideOver} vocabulary={vocabulary} allStaff={allStaff} offices={offices} onDone={() => { setSlideOver(null); router.refresh(); }} />
+          <SlideOverForm
+            state={slideOver}
+            vocabulary={vocabulary}
+            allStaff={allStaff}
+            offices={offices}
+            onDone={() => {
+              setSlideOver(null);
+              router.refresh();
+            }}
+          />
         )}
       </SlideOver>
     </div>
   );
 }
 
-/* ================================================================== */
-/*  Office Card                                                        */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Office Card                                                      */
+/* ══════════════════════════════════════════════════════════════════ */
 
 function OfficeCard({
-  office, allStaff, vocabulary, isExpanded, expandedDepts,
-  onToggle, onToggleDept, onEdit, onAddDept, onEditDept,
-  onAddService, onEditService, onAddDesk, onEditDesk,
+  office,
+  allStaff,
+  vocabulary,
+  expandedDepts,
+  onToggleDept,
+  onEdit,
+  onAddDept,
+  onEditDept,
+  onAddService,
+  onEditService,
+  onAddDesk,
+  onEditDesk,
 }: {
   office: Office;
   allStaff: StaffMember[];
   vocabulary: Vocabulary;
-  isExpanded: boolean;
   expandedDepts: Set<string>;
-  onToggle: () => void;
   onToggleDept: (id: string) => void;
   onEdit: (o: Office) => void;
   onAddDept: (oid: string) => void;
@@ -538,109 +525,138 @@ function OfficeCard({
   const totalDesks = office.departments.reduce((s, d) => s + d.desks.length, 0);
   const totalServices = office.departments.reduce((s, d) => s + d.services.length, 0);
 
-  return (
-    <div>
-      {/* Office header */}
-      <div className="group px-5 py-4 hover:bg-muted/20 transition-colors cursor-pointer" onClick={onToggle}>
-        <div className="flex items-center gap-3">
-          {/* Expand toggle */}
-          <button className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted transition-colors">
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
+  const accentColor = {
+    ready: 'bg-emerald-400',
+    warning: 'bg-amber-400',
+    error: 'bg-red-400',
+  }[health];
 
-          {/* Icon */}
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+  return (
+    <div className="relative rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+      {/* Left accent bar */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${accentColor}`} />
+
+      {/* ── Office Header ── */}
+      <div className="px-5 py-4 pl-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600 shrink-0">
             <Building2 className="h-5 w-5" />
           </div>
-
-          {/* Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-bold text-foreground">{office.name}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-bold text-foreground">{office.name}</h3>
               <HealthBadge health={health} />
               {!office.is_active && (
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Inactive</span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Inactive
+                </span>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-              <span>{office.departments.length} {vocabulary.departmentLabel.toLowerCase()}{office.departments.length !== 1 ? 's' : ''}</span>
+            {office.address && <p className="mt-0.5 text-xs text-muted-foreground truncate">{office.address}</p>}
+            <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {office.departments.length} {vocabulary.departmentLabel.toLowerCase()}
+                {office.departments.length !== 1 ? 's' : ''}
+              </span>
               <span className="text-border">·</span>
-              <span>{totalServices} {vocabulary.serviceLabel.toLowerCase()}{totalServices !== 1 ? 's' : ''}</span>
+              <span>
+                {totalServices} {vocabulary.serviceLabel.toLowerCase()}
+                {totalServices !== 1 ? 's' : ''}
+              </span>
               <span className="text-border">·</span>
-              <span>{totalDesks} {vocabulary.deskLabel.toLowerCase()}{totalDesks !== 1 ? 's' : ''}</span>
+              <span>
+                {totalDesks} {vocabulary.deskLabel.toLowerCase()}
+                {totalDesks !== 1 ? 's' : ''}
+              </span>
               <span className="text-border">·</span>
               <span>{officeStaff.length} staff</span>
-              {office.address && (
-                <>
-                  <span className="text-border">·</span>
-                  <span className="truncate max-w-[200px]">{office.address}</span>
-                </>
-              )}
             </div>
           </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1 shrink-0">
             <SmallBtn icon={Plus} title={`Add ${vocabulary.departmentLabel}`} onClick={() => onAddDept(office.id)} />
             <SmallBtn icon={Pencil} title="Edit" onClick={() => onEdit(office)} />
           </div>
         </div>
       </div>
 
-      {/* Departments */}
-      {isExpanded && (
-        <div className="px-5 pb-4 pl-[72px]">
-          {office.departments.length === 0 ? (
-            <NeedsAction
-              icon={Layers}
-              message={`Add your first ${vocabulary.departmentLabel.toLowerCase()} to organize ${vocabulary.serviceLabel.toLowerCase()}s inside this ${vocabulary.officeLabel.toLowerCase()}.`}
-              action={() => onAddDept(office.id)}
-              actionLabel={`Add ${vocabulary.departmentLabel}`}
-            />
-          ) : (
-            <div className="space-y-3">
-              {office.departments.map((dept) => (
-                <DepartmentCard
-                  key={dept.id}
-                  dept={dept}
-                  officeId={office.id}
-                  vocabulary={vocabulary}
-                  isExpanded={expandedDepts.has(dept.id)}
-                  onToggle={() => onToggleDept(dept.id)}
-                  onEdit={() => onEditDept(dept)}
-                  onAddService={() => onAddService(dept.id)}
-                  onEditService={onEditService}
-                  onAddDesk={() => onAddDesk(office.id, dept.id)}
-                  onEditDesk={onEditDesk}
-                />
-              ))}
-              {/* Add department button */}
+      {/* ── Department Tree ── */}
+      <div className="border-t border-border/30 px-5 py-4 pl-6">
+        {office.departments.length === 0 ? (
+          <div className="flex flex-col items-center py-6 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-500 mb-3">
+              <Layers className="h-5 w-5" />
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              No {vocabulary.departmentLabel.toLowerCase()}s yet
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground max-w-[240px]">
+              Add {vocabulary.departmentLabel.toLowerCase()}s to organize {vocabulary.serviceLabel.toLowerCase()}s inside this{' '}
+              {vocabulary.officeLabel.toLowerCase()}.
+            </p>
+            <button
+              onClick={() => onAddDept(office.id)}
+              className="mt-3 flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              Add {vocabulary.departmentLabel}
+            </button>
+          </div>
+        ) : (
+          <div>
+            {office.departments.map((dept, i) => (
+              <DeptTreeNode
+                key={dept.id}
+                dept={dept}
+                officeId={office.id}
+                vocabulary={vocabulary}
+                isLast={i === office.departments.length - 1}
+                isExpanded={expandedDepts.has(dept.id)}
+                onToggle={() => onToggleDept(dept.id)}
+                onEdit={() => onEditDept(dept)}
+                onAddService={() => onAddService(dept.id)}
+                onEditService={onEditService}
+                onAddDesk={() => onAddDesk(office.id, dept.id)}
+                onEditDesk={onEditDesk}
+              />
+            ))}
+            {/* Add department at bottom of tree */}
+            <div style={{ paddingLeft: 28 }}>
               <button
                 onClick={() => onAddDept(office.id)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border/60 py-2.5 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/[0.02] transition-colors"
+                className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border/50 py-2 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/[0.02] transition-colors"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3 w-3" />
                 Add {vocabulary.departmentLabel}
               </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ================================================================== */
-/*  Department Card                                                    */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Department Tree Node                                             */
+/* ══════════════════════════════════════════════════════════════════ */
 
-function DepartmentCard({
-  dept, officeId, vocabulary, isExpanded, onToggle,
-  onEdit, onAddService, onEditService, onAddDesk, onEditDesk,
+function DeptTreeNode({
+  dept,
+  officeId,
+  vocabulary,
+  isLast,
+  isExpanded,
+  onToggle,
+  onEdit,
+  onAddService,
+  onEditService,
+  onAddDesk,
+  onEditDesk,
 }: {
   dept: Department;
   officeId: string;
   vocabulary: Vocabulary;
+  isLast: boolean;
   isExpanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -650,139 +666,240 @@ function DepartmentCard({
   onEditDesk: (d: Desk) => void;
 }) {
   const health = deptHealth(dept);
-  const accentColor = {
-    ready: 'border-l-emerald-400',
-    warning: 'border-l-amber-400',
-    error: 'border-l-red-400',
+
+  const dotColor = {
+    ready: 'bg-emerald-500',
+    warning: 'bg-amber-400',
+    error: 'border-2 border-red-300 bg-white',
   }[health];
 
   return (
-    <div className={`rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden border-l-[3px] ${accentColor}`}>
-      {/* Header */}
-      <div className="group flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors" onClick={onToggle}>
-        <button className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground">
-          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        </button>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-          <Layers className="h-4 w-4" />
+    <div className="relative" style={{ paddingLeft: 28, paddingBottom: isLast ? 0 : 6 }}>
+      {/* ── Tree connectors ── */}
+      {/* Vertical line */}
+      <div
+        className="absolute w-px bg-border/50"
+        style={{ left: 10, top: 0, height: isLast ? 16 : '100%' }}
+      />
+      {/* Horizontal branch */}
+      <div className="absolute h-px bg-border/50" style={{ left: 10, top: 16, width: 14 }} />
+      {/* Health dot at junction */}
+      <div className={`absolute rounded-full ${dotColor}`} style={{ left: 6, top: 12, width: 9, height: 9 }} />
+
+      {/* ── Department header (clickable) ── */}
+      <div
+        className="group flex items-center gap-2 rounded-lg px-2 py-1.5 -ml-1 cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={onToggle}
+      >
+        <ChevronRight
+          className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+        />
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-100 text-violet-600 shrink-0">
+          <Layers className="h-3 w-3" />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground">{dept.name}</p>
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{dept.code}</span>
-            <HealthBadge health={health} />
-          </div>
-        </div>
-        {/* Inline stats */}
-        <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground" onClick={(e) => e.stopPropagation()}>
-          <span className="flex items-center gap-1">
-            <Grid3X3 className="h-3 w-3" /> {dept.services.length}
+        <span className="text-sm font-semibold text-foreground truncate">{dept.name}</span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground shrink-0">
+          {dept.code}
+        </span>
+        <span className="flex-1" />
+        {/* Inline mini stats */}
+        <span className="hidden sm:flex items-center gap-2 text-[11px] text-muted-foreground shrink-0">
+          <span className="flex items-center gap-0.5">
+            <Grid3X3 className="h-2.5 w-2.5" />
+            {dept.services.length}
           </span>
-          <span className="flex items-center gap-1">
-            <Monitor className="h-3 w-3" /> {dept.desks.length}
+          <span className="flex items-center gap-0.5">
+            <Monitor className="h-2.5 w-2.5" />
+            {dept.desks.length}
           </span>
-        </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <SmallBtn icon={Grid3X3} title={`Add ${vocabulary.serviceLabel}`} onClick={onAddService} />
-          <SmallBtn icon={Monitor} title={`Add ${vocabulary.deskLabel}`} onClick={onAddDesk} />
+        </span>
+        <div
+          className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
           <SmallBtn icon={Pencil} title="Edit" onClick={onEdit} />
         </div>
       </div>
 
-      {/* Expanded content */}
+      {/* ── Expanded detail panel ── */}
       {isExpanded && (
-        <div className="border-t border-border/40 bg-muted/[0.15]">
-          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/30">
-            {/* Services column */}
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <Grid3X3 className="h-3 w-3" />
-                  {vocabulary.serviceLabel}s
-                </p>
-                <button onClick={onAddService} className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5">
-                  <Plus className="h-3 w-3" /> Add
-                </button>
-              </div>
-              {dept.services.length === 0 ? (
-                <EmptySlot
-                  message={`No ${vocabulary.serviceLabel.toLowerCase()}s defined`}
-                  hint={`Add what ${vocabulary.customerLabel.toLowerCase()}s come for`}
-                  onClick={onAddService}
-                />
-              ) : (
-                <div className="space-y-1">
-                  {dept.services.map((svc) => (
-                    <div key={svc.id} className="group/svc flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-card transition-colors">
-                      <StatusDot active={svc.is_active} />
-                      <span className="text-sm text-foreground flex-1 truncate">{svc.name}</span>
-                      {svc.estimated_service_time && (
-                        <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                          <Clock className="h-2.5 w-2.5" />{svc.estimated_service_time}m
-                        </span>
-                      )}
-                      <button onClick={() => onEditService(svc)} className="opacity-0 group-hover/svc:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted">
-                        <Pencil className="h-3 w-3 text-muted-foreground" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Desks column */}
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  <Monitor className="h-3 w-3" />
-                  {vocabulary.deskLabel}s
-                </p>
-                <button onClick={onAddDesk} className="text-[11px] font-medium text-primary hover:underline flex items-center gap-0.5">
-                  <Plus className="h-3 w-3" /> Add
-                </button>
-              </div>
-              {dept.desks.length === 0 ? (
-                <EmptySlot
-                  message={`No ${vocabulary.deskLabel.toLowerCase()}s set up`}
-                  hint="Where staff will serve"
-                  onClick={onAddDesk}
-                />
-              ) : (
-                <div className="space-y-1">
-                  {dept.desks.map((desk) => (
-                    <div key={desk.id} className="group/desk flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-card transition-colors">
-                      <DeskStatusDot status={desk.status} active={desk.is_active} />
-                      <span className="text-sm text-foreground truncate">{desk.display_name || desk.name}</span>
-                      <span className="flex-1" />
-                      {desk.current_staff ? (
-                        <span className="flex items-center gap-1 text-[11px] text-foreground font-medium">
-                          <User className="h-2.5 w-2.5 text-muted-foreground" />
-                          {desk.current_staff.full_name}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
-                          <AlertCircle className="h-2.5 w-2.5" />
-                          Unassigned
-                        </span>
-                      )}
-                      <button onClick={() => onEditDesk(desk)} className="opacity-0 group-hover/desk:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted">
-                        <Pencil className="h-3 w-3 text-muted-foreground" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <DeptDetail
+          dept={dept}
+          vocabulary={vocabulary}
+          onAddService={onAddService}
+          onEditService={onEditService}
+          onAddDesk={onAddDesk}
+          onEditDesk={onEditDesk}
+        />
       )}
     </div>
   );
 }
 
-/* ================================================================== */
-/*  Small UI pieces                                                    */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Department Detail (services + desks split)                       */
+/* ══════════════════════════════════════════════════════════════════ */
+
+function DeptDetail({
+  dept,
+  vocabulary,
+  onAddService,
+  onEditService,
+  onAddDesk,
+  onEditDesk,
+}: {
+  dept: Department;
+  vocabulary: Vocabulary;
+  onAddService: () => void;
+  onEditService: (s: Service) => void;
+  onAddDesk: () => void;
+  onEditDesk: (d: Desk) => void;
+}) {
+  return (
+    <div className="mt-2 mb-1 rounded-lg border border-border/40 bg-muted/[0.08] overflow-hidden">
+      <div className="grid grid-cols-2 divide-x divide-border/30">
+        {/* ── Services column ── */}
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Grid3X3 className="h-2.5 w-2.5" />
+              {vocabulary.serviceLabel}s
+            </p>
+            <button
+              onClick={onAddService}
+              className="text-[10px] font-medium text-primary hover:underline flex items-center gap-0.5"
+            >
+              <Plus className="h-2.5 w-2.5" />
+              Add
+            </button>
+          </div>
+          {dept.services.length === 0 ? (
+            <button
+              onClick={onAddService}
+              className="w-full flex flex-col items-center gap-1 rounded border-2 border-dashed border-border/40 py-3 text-center hover:border-primary/30 transition-colors group"
+            >
+              <AlertCircle className="h-3.5 w-3.5 text-amber-400 group-hover:text-primary transition-colors" />
+              <p className="text-[10px] text-muted-foreground">No {vocabulary.serviceLabel.toLowerCase()}s</p>
+            </button>
+          ) : (
+            <div className="space-y-0.5">
+              {dept.services.map((svc) => (
+                <div
+                  key={svc.id}
+                  className="group/svc flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-card transition-colors"
+                >
+                  <StatusDot active={svc.is_active} />
+                  <span className="text-xs text-foreground flex-1 truncate">{svc.name}</span>
+                  {svc.estimated_service_time && (
+                    <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground">
+                      <Clock className="h-2 w-2" />
+                      {svc.estimated_service_time}m
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onEditService(svc)}
+                    className="opacity-0 group-hover/svc:opacity-100 p-0.5 rounded hover:bg-muted transition-opacity"
+                  >
+                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Desks column ── */}
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Monitor className="h-2.5 w-2.5" />
+              {vocabulary.deskLabel}s
+            </p>
+            <button
+              onClick={onAddDesk}
+              className="text-[10px] font-medium text-primary hover:underline flex items-center gap-0.5"
+            >
+              <Plus className="h-2.5 w-2.5" />
+              Add
+            </button>
+          </div>
+          {dept.desks.length === 0 ? (
+            <button
+              onClick={onAddDesk}
+              className="w-full flex flex-col items-center gap-1 rounded border-2 border-dashed border-border/40 py-3 text-center hover:border-primary/30 transition-colors group"
+            >
+              <AlertCircle className="h-3.5 w-3.5 text-amber-400 group-hover:text-primary transition-colors" />
+              <p className="text-[10px] text-muted-foreground">No {vocabulary.deskLabel.toLowerCase()}s</p>
+            </button>
+          ) : (
+            <div className="space-y-0.5">
+              {dept.desks.map((desk) => (
+                <div
+                  key={desk.id}
+                  className="group/desk flex items-center gap-1.5 rounded px-1.5 py-1 hover:bg-card transition-colors"
+                >
+                  <DeskStatusDot status={desk.status} active={desk.is_active} />
+                  <span className="text-xs text-foreground truncate">{desk.display_name || desk.name}</span>
+                  <span className="flex-1" />
+                  {desk.current_staff ? (
+                    <span className="flex items-center gap-0.5 text-[9px] text-foreground font-medium">
+                      <User className="h-2 w-2 text-muted-foreground" />
+                      <span className="truncate max-w-[60px]">{desk.current_staff.full_name}</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-0.5 text-[9px] text-amber-600 font-medium">
+                      <AlertCircle className="h-2 w-2" />
+                      <span>—</span>
+                    </span>
+                  )}
+                  <button
+                    onClick={() => onEditDesk(desk)}
+                    className="opacity-0 group-hover/desk:opacity-100 p-0.5 rounded hover:bg-muted transition-opacity"
+                  >
+                    <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Small UI Pieces                                                  */
+/* ══════════════════════════════════════════════════════════════════ */
+
+function HealthBadge({ health }: { health: Health }) {
+  const cfg = {
+    ready: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    warning: 'bg-amber-100 text-amber-700 border-amber-200',
+    error: 'bg-red-100 text-red-700 border-red-200',
+  }[health];
+  const label = { ready: 'Ready', warning: 'Needs setup', error: 'Not configured' }[health];
+  const Icon = health === 'ready' ? CheckCircle2 : AlertCircle;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cfg}`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
+function StatChip({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function Dot() {
+  return <span className="text-border/80">·</span>;
+}
 
 function StatusDot({ active }: { active: boolean }) {
   return <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${active ? 'bg-emerald-400' : 'bg-gray-300'}`} />;
@@ -796,81 +913,52 @@ function DeskStatusDot({ status, active }: { status: string; active: boolean }) 
   return <span className={`h-2 w-2 rounded-full shrink-0 ${color}`} />;
 }
 
-function SmallBtn({ icon: Icon, title, onClick }: { icon: React.ComponentType<{ className?: string }>; title: string; onClick: () => void }) {
+function SmallBtn({
+  icon: Icon,
+  title,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  onClick: () => void;
+}) {
   return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }} title={title} className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={title}
+      className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+    >
       <Icon className="h-3.5 w-3.5" />
     </button>
   );
 }
 
-function EmptyNode({ icon: Icon, title, message, action, actionLabel }: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  message: string;
-  action: () => void;
-  actionLabel: string;
-}) {
-  return (
-    <div className="flex flex-col items-center px-5 py-12 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50 mb-4">
-        <Icon className="h-7 w-7 text-muted-foreground/40" />
-      </div>
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      <p className="mt-1.5 max-w-md text-xs text-muted-foreground leading-relaxed">{message}</p>
-      <button onClick={action} className="mt-4 flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors">
-        <Plus className="h-4 w-4" />
-        {actionLabel}
-      </button>
-    </div>
-  );
-}
-
-function NeedsAction({ icon: Icon, message, action, actionLabel }: {
-  icon: React.ComponentType<{ className?: string }>;
-  message: string;
-  action: () => void;
-  actionLabel: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 shrink-0">
-        <Icon className="h-4 w-4" />
-      </div>
-      <p className="text-xs text-amber-900 flex-1">{message}</p>
-      <button onClick={action} className="shrink-0 flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors">
-        <Plus className="h-3 w-3" />
-        {actionLabel}
-      </button>
-    </div>
-  );
-}
-
-function EmptySlot({ message, hint, onClick }: { message: string; hint: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex flex-col items-center gap-1 rounded-lg border-2 border-dashed border-border/60 py-4 px-3 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-colors group"
-    >
-      <AlertCircle className="h-4 w-4 text-amber-400 group-hover:text-primary transition-colors" />
-      <p className="text-xs font-medium text-muted-foreground group-hover:text-foreground">{message}</p>
-      <p className="text-[10px] text-muted-foreground/70">{hint}</p>
-    </button>
-  );
-}
-
-/* ================================================================== */
-/*  SlideOver Forms                                                    */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  SlideOver Forms                                                  */
+/* ══════════════════════════════════════════════════════════════════ */
 
 function getSlideOverTitle(state: SlideOverState, vocabulary: Vocabulary): string {
   if (!state) return '';
-  const labels: Record<string, string> = { office: vocabulary.officeLabel, department: vocabulary.departmentLabel, service: vocabulary.serviceLabel, desk: vocabulary.deskLabel };
+  const labels: Record<string, string> = {
+    office: vocabulary.officeLabel,
+    department: vocabulary.departmentLabel,
+    service: vocabulary.serviceLabel,
+    desk: vocabulary.deskLabel,
+  };
   const label = labels[state.type] ?? state.type;
   return state.mode === 'create' ? `New ${label}` : `Edit ${label}`;
 }
 
-function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
+function SlideOverForm({
+  state,
+  vocabulary,
+  allStaff,
+  offices,
+  onDone,
+}: {
   state: NonNullable<SlideOverState>;
   vocabulary: Vocabulary;
   allStaff: StaffMember[];
@@ -883,16 +971,28 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
   const submit = (fn: (fd: FormData) => Promise<void>) => (formData: FormData) => {
     startTransition(async () => {
       setError(null);
-      try { await fn(formData); onDone(); } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Something went wrong'); }
+      try {
+        await fn(formData);
+        onDone();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Something went wrong');
+      }
     });
   };
 
-  /* ── Office ──────────────────────────────────────── */
+  /* ── Office ── */
   if (state.type === 'office') {
     const editing = state.mode === 'edit' ? state.data : null;
     return (
-      <form action={submit(async (fd) => { editing ? await updateOffice(editing.id, fd) : await createOffice(fd); })}>
-        <FormHint>A {vocabulary.officeLabel.toLowerCase()} represents a physical location where you serve {vocabulary.customerLabel.toLowerCase()}s — a branch, clinic, or shop.</FormHint>
+      <form
+        action={submit(async (fd) => {
+          editing ? await updateOffice(editing.id, fd) : await createOffice(fd);
+        })}
+      >
+        <FormHint>
+          A {vocabulary.officeLabel.toLowerCase()} represents a physical location where you serve{' '}
+          {vocabulary.customerLabel.toLowerCase()}s — a branch, clinic, or shop.
+        </FormHint>
         <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder={`e.g. Main ${vocabulary.officeLabel}`} />
         <FormField label="Address" name="address" defaultValue={editing?.address ?? ''} placeholder="e.g. 123 Main St" />
         <FormField label="Timezone" name="timezone" defaultValue={editing?.timezone ?? ''} placeholder="e.g. Africa/Algiers" />
@@ -902,19 +1002,29 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
           <SubmitBtn pending={isPending}>{editing ? 'Save' : 'Create'}</SubmitBtn>
           {editing && <DeleteBtn onDelete={() => deleteOffice(editing.id).then(onDone)} label={vocabulary.officeLabel} />}
         </FormActions>
-        {!editing && <FormNextStep>After creating this {vocabulary.officeLabel.toLowerCase()}, you&apos;ll add {vocabulary.departmentLabel.toLowerCase()}s inside it.</FormNextStep>}
+        {!editing && (
+          <FormNextStep>
+            After creating this {vocabulary.officeLabel.toLowerCase()}, you&apos;ll add {vocabulary.departmentLabel.toLowerCase()}s inside it.
+          </FormNextStep>
+        )}
       </form>
     );
   }
 
-  /* ── Department ──────────────────────────────────── */
+  /* ── Department ── */
   if (state.type === 'department') {
     const editing = state.mode === 'edit' ? state.data : null;
     const officeId = state.mode === 'create' ? state.officeId : editing!.office_id;
     const officeName = offices.find((o) => o.id === officeId)?.name ?? '';
     return (
-      <form action={submit(async (fd) => { editing ? await updateDepartment(editing.id, fd) : await createDepartment(fd); })}>
-        <FormHint>A {vocabulary.departmentLabel.toLowerCase()} is an area inside <strong>{officeName}</strong> — e.g. Reception, Cashier, Lab.</FormHint>
+      <form
+        action={submit(async (fd) => {
+          editing ? await updateDepartment(editing.id, fd) : await createDepartment(fd);
+        })}
+      >
+        <FormHint>
+          A {vocabulary.departmentLabel.toLowerCase()} is an area inside <strong>{officeName}</strong> — e.g. Reception, Cashier, Lab.
+        </FormHint>
         <input type="hidden" name="office_id" value={officeId} />
         <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder="e.g. Reception" />
         <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder="e.g. RECEPTION" />
@@ -924,23 +1034,48 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
           <SubmitBtn pending={isPending}>{editing ? 'Save' : 'Create'}</SubmitBtn>
           {editing && <DeleteBtn onDelete={() => deleteDepartment(editing.id).then(onDone)} label={vocabulary.departmentLabel} />}
         </FormActions>
-        {!editing && <FormNextStep>Next: add {vocabulary.serviceLabel.toLowerCase()}s (what you offer) and {vocabulary.deskLabel.toLowerCase()}s (where staff serve).</FormNextStep>}
+        {!editing && (
+          <FormNextStep>
+            Next: add {vocabulary.serviceLabel.toLowerCase()}s (what you offer) and {vocabulary.deskLabel.toLowerCase()}s (where staff serve).
+          </FormNextStep>
+        )}
       </form>
     );
   }
 
-  /* ── Service ─────────────────────────────────────── */
+  /* ── Service ── */
   if (state.type === 'service') {
     const editing = state.mode === 'edit' ? state.data : null;
     const departmentId = state.mode === 'create' ? state.departmentId : editing!.department_id;
     const dept = offices.flatMap((o) => o.departments).find((d) => d.id === departmentId);
     return (
-      <form action={submit(async (fd) => { editing ? await updateService(editing.id, fd) : await createService(fd); })}>
-        <FormHint>A {vocabulary.serviceLabel.toLowerCase()} is what {vocabulary.customerLabel.toLowerCase()}s come for{dept ? <> in <strong>{dept.name}</strong></> : ''} — e.g. General Visit, Blood Test.</FormHint>
+      <form
+        action={submit(async (fd) => {
+          editing ? await updateService(editing.id, fd) : await createService(fd);
+        })}
+      >
+        <FormHint>
+          A {vocabulary.serviceLabel.toLowerCase()} is what {vocabulary.customerLabel.toLowerCase()}s come for
+          {dept ? (
+            <>
+              {' '}
+              in <strong>{dept.name}</strong>
+            </>
+          ) : (
+            ''
+          )}{' '}
+          — e.g. General Visit, Blood Test.
+        </FormHint>
         <input type="hidden" name="department_id" value={departmentId} />
         <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder="e.g. General Visit" />
         <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder="e.g. GEN-VISIT" />
-        <FormField label="Estimated duration (minutes)" name="estimated_service_time" defaultValue={editing?.estimated_service_time?.toString() ?? '15'} type="number" placeholder="e.g. 15" />
+        <FormField
+          label="Estimated duration (minutes)"
+          name="estimated_service_time"
+          defaultValue={editing?.estimated_service_time?.toString() ?? '15'}
+          type="number"
+          placeholder="e.g. 15"
+        />
         <Checkbox name="is_active" defaultChecked={editing?.is_active ?? true} label="Active" />
         {error && <ErrorMsg>{error}</ErrorMsg>}
         <FormActions>
@@ -951,7 +1086,7 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
     );
   }
 
-  /* ── Desk ────────────────────────────────────────── */
+  /* ── Desk ── */
   if (state.type === 'desk') {
     const editing = state.mode === 'edit' ? state.data : null;
     const officeId = state.mode === 'create' ? state.officeId : editing!.office_id;
@@ -959,25 +1094,58 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
     const eligibleStaff = allStaff.filter((s) => s.office_id === officeId);
     const dept = offices.flatMap((o) => o.departments).find((d) => d.id === departmentId);
     return (
-      <form action={submit(async (fd) => { editing ? await updateDesk(editing.id, fd) : await createDesk(fd); })}>
-        <FormHint>A {vocabulary.deskLabel.toLowerCase()} is where staff serve {vocabulary.customerLabel.toLowerCase()}s{dept ? <> in <strong>{dept.name}</strong></> : ''} — a counter, window, or room.</FormHint>
+      <form
+        action={submit(async (fd) => {
+          editing ? await updateDesk(editing.id, fd) : await createDesk(fd);
+        })}
+      >
+        <FormHint>
+          A {vocabulary.deskLabel.toLowerCase()} is where staff serve {vocabulary.customerLabel.toLowerCase()}s
+          {dept ? (
+            <>
+              {' '}
+              in <strong>{dept.name}</strong>
+            </>
+          ) : (
+            ''
+          )}{' '}
+          — a counter, window, or room.
+        </FormHint>
         <input type="hidden" name="office_id" value={officeId} />
         <input type="hidden" name="department_id" value={departmentId} />
         <FormField label="Name (slug)" name="name" defaultValue={editing?.name} required placeholder="e.g. counter-1" />
         <FormField label="Display Name" name="display_name" defaultValue={editing?.display_name ?? ''} placeholder="e.g. Counter 1" />
         <div className="mt-4">
           <label className="block text-sm font-medium text-foreground mb-1.5">Assign Staff</label>
-          <select name="current_staff_id" defaultValue={editing?.current_staff?.id ?? ''} className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+          <select
+            name="current_staff_id"
+            defaultValue={editing?.current_staff?.id ?? ''}
+            className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
             <option value="">Unassigned</option>
-            {eligibleStaff.map((s) => <option key={s.id} value={s.id}>{s.full_name} ({s.role.replace('_', ' ')})</option>)}
+            {eligibleStaff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.full_name} ({s.role.replace('_', ' ')})
+              </option>
+            ))}
           </select>
           {eligibleStaff.length === 0 && (
-            <p className="mt-1.5 text-xs text-amber-600">No team members in this {vocabulary.officeLabel.toLowerCase()} yet. <a href="/admin/staff/setup" className="text-primary hover:underline">Add a team member</a> first.</p>
+            <p className="mt-1.5 text-xs text-amber-600">
+              No team members in this {vocabulary.officeLabel.toLowerCase()} yet.{' '}
+              <a href="/admin/staff/setup" className="text-primary hover:underline">
+                Add a team member
+              </a>{' '}
+              first.
+            </p>
           )}
         </div>
         <div className="mt-4">
           <label className="block text-sm font-medium text-foreground mb-1.5">Status</label>
-          <select name="status" defaultValue={editing?.status ?? 'closed'} className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+          <select
+            name="status"
+            defaultValue={editing?.status ?? 'closed'}
+            className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
             <option value="open">Open</option>
             <option value="closed">Closed</option>
             <option value="on_break">On Break</option>
@@ -996,9 +1164,9 @@ function SlideOverForm({ state, vocabulary, allStaff, offices, onDone }: {
   return null;
 }
 
-/* ================================================================== */
-/*  Form Primitives                                                    */
-/* ================================================================== */
+/* ══════════════════════════════════════════════════════════════════ */
+/*  Form Primitives                                                  */
+/* ══════════════════════════════════════════════════════════════════ */
 
 function FormHint({ children }: { children: React.ReactNode }) {
   return (
@@ -1018,13 +1186,32 @@ function FormNextStep({ children }: { children: React.ReactNode }) {
   );
 }
 
-function FormField({ label, name, defaultValue, required, placeholder, type = 'text' }: {
-  label: string; name: string; defaultValue?: string | null; required?: boolean; placeholder?: string; type?: string;
+function FormField({
+  label,
+  name,
+  defaultValue,
+  required,
+  placeholder,
+  type = 'text',
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | null;
+  required?: boolean;
+  placeholder?: string;
+  type?: string;
 }) {
   return (
     <div className="mt-4 first:mt-0">
       <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
-      <input type={type} name={name} defaultValue={defaultValue ?? ''} required={required} placeholder={placeholder} className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      <input
+        type={type}
+        name={name}
+        defaultValue={defaultValue ?? ''}
+        required={required}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+      />
     </div>
   );
 }
@@ -1048,7 +1235,11 @@ function ErrorMsg({ children }: { children: React.ReactNode }) {
 
 function SubmitBtn({ pending, children }: { pending: boolean; children: React.ReactNode }) {
   return (
-    <button type="submit" disabled={pending} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors">
+    <button
+      type="submit"
+      disabled={pending}
+      className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 transition-colors"
+    >
       {pending ? 'Saving...' : children}
     </button>
   );
@@ -1059,17 +1250,32 @@ function DeleteBtn({ onDelete, label }: { onDelete: () => Promise<void>; label: 
   const [isPending, startTransition] = useTransition();
   if (!confirming) {
     return (
-      <button type="button" onClick={() => setConfirming(true)} className="flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors">
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+      >
         <Trash2 className="h-3.5 w-3.5" /> Delete
       </button>
     );
   }
   return (
     <div className="flex items-center gap-2">
-      <button type="button" disabled={isPending} onClick={() => startTransition(async () => { await onDelete(); })} className="rounded-xl bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50">
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            await onDelete();
+          })
+        }
+        className="rounded-xl bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+      >
         {isPending ? 'Deleting...' : `Delete ${label}`}
       </button>
-      <button type="button" onClick={() => setConfirming(false)} className="rounded-xl px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
+      <button type="button" onClick={() => setConfirming(false)} className="rounded-xl px-3 py-2 text-sm text-muted-foreground hover:bg-muted">
+        Cancel
+      </button>
     </div>
   );
 }
