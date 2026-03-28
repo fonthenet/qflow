@@ -723,9 +723,10 @@ export function KioskView({
                 <div className="mb-4 rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
                   <div className="border-b border-slate-100 pb-5 text-center">
                     <div className="text-xs font-bold uppercase tracking-wide" style={{ color: themeColor }}>
-                      {t(selectedDept.name)}
+                      {t(selectedDept.name)}{selectedDept.services.length === 1 ? ` — ${t(selectedDept.services[0].name)}` : ''}
                     </div>
                     <div className="mt-1 text-[28px] font-bold text-slate-950">{t('Your Details')}</div>
+                    <div className="mt-1 text-sm text-slate-400">{t('Fill in your details to get started')}</div>
                   </div>
                   <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
                     <div className="text-center">
