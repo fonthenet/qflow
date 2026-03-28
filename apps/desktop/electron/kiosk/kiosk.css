@@ -207,6 +207,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   .result-card { padding: 40px 32px; }
 }
 
+/* Reason field spans full width */
+.form-group.full-width { grid-column: 1 / -1; }
+
 /* ── RTL ── */
 html[dir="rtl"] body, html[dir="rtl"] .kiosk, html[dir="rtl"] .kiosk-content { direction: rtl; }
 html[dir="rtl"] .qr-section { text-align: right; }
@@ -214,3 +217,7 @@ html[dir="rtl"] .whatsapp-badge { text-align: right; }
 html[dir="rtl"] .btn-back { flex-direction: row-reverse; }
 html[dir="rtl"] .card { flex-direction: row-reverse; }
 html[dir="rtl"] .card-chevron { transform: rotate(180deg); }
+html[dir="rtl"] .form-group { text-align: right; }
+html[dir="rtl"] .form-group input { text-align: right; }
+html[dir="rtl"] .form-group input::placeholder { text-align: right; }
+html[dir="rtl"] .form-header { text-align: center; }

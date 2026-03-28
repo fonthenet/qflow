@@ -709,7 +709,7 @@
         '<div class="form-fields">' +
         '<div class="form-group"><label>' + tr('Name (optional)') + '</label><input id="cname" placeholder="' + tr('Enter your name') + '" autocomplete="off"></div>' +
         '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
-        '<div class="form-group"><label>' + tr('Reason for visit (optional)') + '</label><input id="creason" placeholder="' + tr('Brief description') + '" autocomplete="off"></div>' +
+        '<div class="form-group full-width"><label>' + tr('Reason for visit (optional)') + '</label><input id="creason" placeholder="' + tr('Brief description') + '" autocomplete="off"></div>' +
         '</div>' +
         '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
         '</div>' +
