@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
   CalendarClock,
@@ -219,6 +219,29 @@ export function KioskView({
       events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
     };
   }, [defaultDept, defaultStep, ks.idleTimeout]);
+
+  // ── Success sound + animation trigger ──
+  const playSuccessSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      [523.25, 659.25].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.5);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.5);
+      });
+    } catch { /* audio not available */ }
+  }, []);
+
+  useEffect(() => {
+    if (step === 'ticket' && ticket) playSuccessSound();
+  }, [step, ticket, playSuccessSound]);
 
   function startWalkInFlow() {
     setSearchError(null);
@@ -992,8 +1015,10 @@ export function KioskView({
               className="rounded-[1.5rem] border border-slate-200 bg-white p-6 text-center shadow-sm print:border print:border-black print:shadow-none sm:p-8"
             >
               {/* Animated check */}
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColor}15` }}>
-                <Check className="h-7 w-7" strokeWidth={2.5} style={{ color: themeColor }} />
+              <div className="kiosk-success-circle mx-auto flex h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: `${themeColor}15` }}>
+                <svg className="kiosk-success-check" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
               </div>
               <div className="mt-3 text-[28px] font-extrabold text-slate-950">{t('Your ticket is ready!')}</div>
               <div className="mt-1 flex justify-center">

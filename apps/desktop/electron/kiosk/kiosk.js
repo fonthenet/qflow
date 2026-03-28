@@ -399,6 +399,7 @@
       S.ticket = data.ticket;
       S.step = 'done';
       render();
+      playSuccessSound();
 
       // Poll for ticket number rewrite (L-G-004 → G-032) if offline ticket
       if (S.ticket && S.ticket.ticket_number && S.ticket.ticket_number.startsWith('L-')) {
@@ -464,6 +465,26 @@
     render();
     resetIdle();
     fetchQueueCounts();
+  }
+
+  // ── Success Sound ──────────────────────────────────────────────
+  function playSuccessSound() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Two-tone chime: C5 → E5
+      [523.25, 659.25].forEach(function (freq, i) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.5);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.5);
+      });
+    } catch (e) { /* audio not available */ }
   }
 
   // ── Render Helpers ─────────────────────────────────────────────

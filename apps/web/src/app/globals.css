@@ -66,6 +66,30 @@
   }
 }
 
+/* ── Kiosk success checkmark animation ── */
+@keyframes kiosk-circle-grow {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes kiosk-check-draw {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes kiosk-check-bounce {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+.kiosk-success-circle {
+  animation: kiosk-circle-grow 0.5s ease both;
+}
+.kiosk-success-check {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: kiosk-check-draw 0.4s 0.35s ease both, kiosk-check-bounce 0.3s 0.7s ease both;
+}
+
 /* RTL: neutralize letter-spacing and uppercase that break Arabic ligatures */
 html[dir="rtl"] .uppercase,
 html[dir="rtl"] [style*="textTransform"] {
