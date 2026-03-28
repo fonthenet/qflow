@@ -603,7 +603,8 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
         return;
       }
-      const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason } = parsed;
+      const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason, source: rawSource } = parsed;
+      const ticketSource = typeof rawSource === 'string' && rawSource.length <= 30 ? rawSource : 'kiosk';
 
       if (!officeId || !departmentId || !serviceId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -682,9 +683,9 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
       db.transaction(() => {
         db.prepare(`
-          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, daily_sequence)
-          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?, ?)
-        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0, dailySequence);
+          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, daily_sequence, source)
+          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?, ?, ?)
+        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
 
         db.prepare(`
           INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -704,6 +705,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             created_at: now,
             qr_token: qrToken,
             daily_sequence: dailySequence,
+            source: ticketSource,
           }),
           now
         );
@@ -713,7 +715,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       logTicketEvent(ticketId, 'created', {
         ticketNumber,
         toStatus: 'waiting',
-        source: 'kiosk',
+        source: ticketSource,
         details: {
           officeId, departmentId, serviceId, deptCode,
           isOffline, dailySequence,
@@ -1920,6 +1922,8 @@ function serveStationIndex(res: http.ServerResponse) {
           serviceId: ticket.service_id,
           customerName: ticket.customer_data?.name || '',
           customerPhone: ticket.customer_data?.phone || '',
+          customerReason: ticket.customer_data?.reason || '',
+          source: ticket.source || 'in_house',
         });
       },
       updateTicket: function(ticketId, updates) {

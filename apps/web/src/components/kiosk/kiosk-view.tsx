@@ -352,6 +352,8 @@ export function KioskView({
       customerData,
       priority: priority?.weight ?? 0,
       priorityCategoryId: priority?.id ?? null,
+      source: 'kiosk',
+      isRemote: true,
     });
 
     if (result.error || !result.data) {
