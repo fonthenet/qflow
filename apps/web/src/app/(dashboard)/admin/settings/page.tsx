@@ -58,29 +58,31 @@ export default async function SettingsPage() {
     }));
   }
 
-  // Fetch connected Facebook Page info (for Messenger settings panel)
+  // Check Messenger connection status
+  // The /me endpoint requires pages_read_engagement which we may not have,
+  // so we verify the token by checking the messenger_profile endpoint instead.
   let messengerPageInfo: { connected: boolean; page?: { id: string; name: string; pictureUrl: string | null }; reason?: string } = { connected: false };
   const pageToken = process.env.MESSENGER_PAGE_ACCESS_TOKEN?.trim();
-  console.log(`[settings] MESSENGER_PAGE_ACCESS_TOKEN present: ${!!pageToken}, length: ${pageToken?.length ?? 0}`);
   if (pageToken) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/v22.0/me?fields=id,name,picture{url}&access_token=${pageToken}`,
+        `https://graph.facebook.com/v22.0/me/messenger_profile?fields=get_started&access_token=${pageToken}`,
         { cache: 'no-store' }
       );
       const data = await res.json();
-      console.log(`[settings] Graph API response: status=${res.status} ok=${res.ok} error=${data.error?.message ?? 'none'}`);
       if (res.ok && !data.error) {
+        // Token is valid — messenger is connected
+        const orgSettings = (organization.settings ?? {}) as Record<string, any>;
         messengerPageInfo = {
           connected: true,
           page: {
-            id: data.id,
-            name: data.name,
-            pictureUrl: data.picture?.data?.url ?? null,
+            id: orgSettings.messenger_page_id ?? '',
+            name: 'Facebook Page',
+            pictureUrl: null,
           },
         };
       } else {
-        messengerPageInfo = { connected: false, reason: data.error?.message ?? 'Failed to fetch page info' };
+        messengerPageInfo = { connected: false, reason: data.error?.message ?? 'Invalid token' };
       }
     } catch {
       messengerPageInfo = { connected: false, reason: 'Network error' };
