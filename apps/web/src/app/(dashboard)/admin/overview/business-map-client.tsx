@@ -269,16 +269,27 @@ export function BusinessMapClient({
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Business Map
-        </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-          Your complete business structure — {vocabulary.officeLabel.toLowerCase()}s,{' '}
-          {vocabulary.departmentLabel.toLowerCase()}s,{' '}
-          {vocabulary.serviceLabel.toLowerCase()}s,{' '}
-          {vocabulary.deskLabel.toLowerCase()}s, and team in one place.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Business Map
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+            Your complete business structure — {vocabulary.officeLabel.toLowerCase()}s,{' '}
+            {vocabulary.departmentLabel.toLowerCase()}s,{' '}
+            {vocabulary.serviceLabel.toLowerCase()}s,{' '}
+            {vocabulary.deskLabel.toLowerCase()}s, and team in one place.
+          </p>
+        </div>
+        {!allDone && !showChecklist && (
+          <button
+            onClick={() => setShowChecklist(true)}
+            className="shrink-0 flex items-center gap-1.5 rounded-xl border border-primary/20 bg-card px-3 py-2 text-xs font-medium text-primary shadow-sm hover:bg-primary/5 transition-colors"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {completedSteps}/{setupSteps.length} Setup
+          </button>
+        )}
       </div>
 
       {/* ── Setup Checklist ────────────────────────────────────── */}
