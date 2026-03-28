@@ -329,6 +329,8 @@ export function KioskSettings({
     });
   }
 
+  const [activeTab, setActiveTab] = useState<'remote' | 'local'>('remote');
+
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
       {/* ── Header ── */}
@@ -366,6 +368,44 @@ export function KioskSettings({
             {isPending ? t('Saving...') : t('Save changes')}
           </button>
         </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 rounded-lg bg-muted p-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('remote')}
+          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'remote'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <span className="flex items-center justify-center gap-2">
+            <ExternalLink className="h-4 w-4" />
+            {t('Remote Kiosk')}
+          </span>
+          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+            {t('Web-hosted kiosk & booking pages')}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('local')}
+          className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'local'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <span className="flex items-center justify-center gap-2">
+            <Tablet className="h-4 w-4" />
+            {t('Local Kiosk')}
+          </span>
+          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+            {t('Served by Qflo Station on your network')}
+          </span>
+        </button>
       </div>
 
       {/* ── 1. Text & Copy ── */}
@@ -642,62 +682,114 @@ export function KioskSettings({
         </div>
       </section>
 
-      {/* ── 5. Public Links ── */}
-      <section className="rounded-xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-6 py-4">
-          <h2 className="text-sm font-semibold text-foreground">{t('Public Links')}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('Open or share the live kiosk and booking pages.')}</p>
-        </div>
+      {/* ── 5. Public Links (Remote tab) ── */}
+      {activeTab === 'remote' ? (
+        <section className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-4">
+            <h2 className="text-sm font-semibold text-foreground">{t('Public Links')}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('Open or share the live kiosk and booking pages.')}</p>
+          </div>
 
-        <div className="divide-y divide-border">
-          {activeOffices.map((office) => (
-            <div key={office.id} className="px-6 py-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-foreground">{office.name}</p>
-                <a
-                  href={buildKioskPath(office)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                >
-                  {t('Open kiosk')}
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+          <div className="divide-y divide-border">
+            {activeOffices.map((office) => (
+              <div key={office.id} className="px-6 py-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-foreground">{office.name}</p>
+                  <a
+                    href={buildKioskPath(office)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    {t('Open kiosk')}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Kiosk page')}</p>
+                    <PublicLinkActions
+                      path={buildKioskPath(office)}
+                      qrTitle={t('{office} kiosk', { office: office.name })}
+                      qrDescription={t('Scan to open the self-service kiosk.')}
+                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Booking page')}</p>
+                    <PublicLinkActions
+                      path={buildBookingPath(office)}
+                      qrTitle={t('{office} booking', { office: office.name })}
+                      qrDescription={t('Scan to open the booking page.')}
+                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Arrival check-in')}</p>
+                    <PublicLinkActions
+                      path={buildBookingCheckInPath(office)}
+                      qrTitle={t('{office} arrival check-in', { office: office.name })}
+                      qrDescription={t('Scan to look up and check in an appointment.')}
+                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── 5. Local Kiosk Info (Local tab) ── */}
+      {activeTab === 'local' ? (
+        <section className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-4">
+            <h2 className="text-sm font-semibold text-foreground">{t('Local Kiosk Access')}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('Connect tablets and displays on your local network.')}</p>
+          </div>
+
+          <div className="space-y-4 px-6 py-5">
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <p className="text-sm font-medium text-blue-900">{t('How it works')}</p>
+              <p className="mt-1 text-sm text-blue-800">
+                {t('The local kiosk is served directly by Qflo Station on your network. Open it from the Station app by clicking the kiosk or display links. Any device on the same WiFi can access it.')}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3">
+                <Tablet className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t('Kiosk (tablet)')}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {t('Customers take tickets from a touchscreen. Open from Station → Kiosk link.')}
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/kiosk</p>
+                </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3">
+                <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                 <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Kiosk page')}</p>
-                  <PublicLinkActions
-                    path={buildKioskPath(office)}
-                    qrTitle={t('{office} kiosk', { office: office.name })}
-                    qrDescription={t('Scan to open the self-service kiosk.')}
-                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
-                  />
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Booking page')}</p>
-                  <PublicLinkActions
-                    path={buildBookingPath(office)}
-                    qrTitle={t('{office} booking', { office: office.name })}
-                    qrDescription={t('Scan to open the booking page.')}
-                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
-                  />
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Arrival check-in')}</p>
-                  <PublicLinkActions
-                    path={buildBookingCheckInPath(office)}
-                    qrTitle={t('{office} arrival check-in', { office: office.name })}
-                    qrDescription={t('Scan to look up and check in an appointment.')}
-                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
-                  />
+                  <p className="text-sm font-medium text-foreground">{t('Display (waiting room TV)')}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {t('Shows now-serving tickets and queue. Open from Station → Display link.')}
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">http://&lt;station-ip&gt;:3847/display</p>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      </section>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm text-amber-900">
+                <span className="font-medium">{t('Note:')}</span>{' '}
+                {t('The local kiosk uses the same settings configured above (text, appearance, behavior, visibility). Changes are applied when you save.')}
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
