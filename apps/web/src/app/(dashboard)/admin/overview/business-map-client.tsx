@@ -370,13 +370,13 @@ export function BusinessMapClient({
 
       {/* ── All done banner ──────────────────────────────────── */}
       {allDone && (
-        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
           <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+            <p className="text-sm font-semibold text-emerald-900">
               Setup complete!
             </p>
-            <p className="text-xs text-emerald-600/80 dark:text-emerald-400/60">
+            <p className="text-xs text-emerald-800">
               Your business is fully configured. Staff can now log in and start serving {vocabulary.customerLabel.toLowerCase()}s.
             </p>
           </div>
@@ -568,7 +568,7 @@ function StatCard({
   alert?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 shadow-sm ${alert ? 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-border/60 bg-card'}`}>
+    <div className={`rounded-xl border px-4 py-3 shadow-sm ${alert ? 'border-amber-200 bg-amber-50' : 'border-border/60 bg-card'}`}>
       <div className="flex items-center gap-2 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium uppercase tracking-wider">
@@ -665,9 +665,9 @@ function InlineHint({
   actionLabel: string;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 mx-2 my-1.5 dark:bg-amber-950/20">
-      <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-      <span className="text-xs text-amber-700 dark:text-amber-400 flex-1">{message}</span>
+    <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 mx-2 my-1.5">
+      <Lightbulb className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+      <span className="text-xs text-amber-900 flex-1">{message}</span>
       <button
         onClick={action}
         className="shrink-0 text-xs font-medium text-primary hover:underline"
@@ -1321,7 +1321,7 @@ function SlideOverForm({
 
 function FormHint({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+    <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-900">
       <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{children}</span>
     </div>

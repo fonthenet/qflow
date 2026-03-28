@@ -35,6 +35,10 @@
 }
 
 @layer base {
+  /* Force light mode — no dark mode support yet */
+  html {
+    color-scheme: light;
+  }
   * {
     @apply border-border;
     -webkit-tap-highlight-color: transparent;
