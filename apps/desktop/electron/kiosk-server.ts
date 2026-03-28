@@ -577,6 +577,24 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     Pragma: 'no-cache',
     Expires: '0',
   });
+  // Merge organization-level kiosk settings so the local kiosk respects
+  // the same config as the remote web kiosk (theme, text, behavior, visibility)
+  const kioskConfig = {
+    theme_color: organizationSettings.kiosk_theme_color || null,
+    welcome_message: organizationSettings.kiosk_welcome_message || null,
+    header_text: organizationSettings.kiosk_header_text || null,
+    button_label: organizationSettings.kiosk_button_label || null,
+    mode: organizationSettings.kiosk_mode || 'normal',
+    show_logo: organizationSettings.kiosk_show_logo ?? true,
+    logo_url: organizationSettings.kiosk_logo_url || null,
+    show_estimated_time: organizationSettings.kiosk_show_estimated_time ?? true,
+    show_priorities: organizationSettings.kiosk_show_priorities ?? false,
+    hidden_departments: organizationSettings.kiosk_hidden_departments || [],
+    hidden_services: organizationSettings.kiosk_hidden_services || [],
+    locked_department_id: organizationSettings.kiosk_locked_department_id || null,
+    idle_timeout: organizationSettings.kiosk_idle_timeout || 60,
+  };
+
   res.end(JSON.stringify({
     office,
     departments,
@@ -587,6 +605,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     is_open: businessStatus.isOpen,
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
+    kiosk_config: kioskConfig,
   }));
 }
 

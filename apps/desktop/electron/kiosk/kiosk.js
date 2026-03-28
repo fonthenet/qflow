@@ -22,7 +22,8 @@
     selectedService: null,
     ticket: null,
     queueCounts: {},
-    businessHours: null, // server-provided business hours info
+    businessHours: null,
+    kioskConfig: null, // org-level kiosk settings from dashboard
   };
   var resetTimer = null;
   var idleTimer = null;
@@ -280,15 +281,43 @@
       S.departments = data.departments;
       S.services = data.services;
       S.businessHours = data.business_hours || null;
+      S.kioskConfig = data.kiosk_config || null;
 
-      // Apply brand color if org has one
-      if (S.office.settings) {
-        try {
-          var settings = typeof S.office.settings === 'string' ? JSON.parse(S.office.settings) : S.office.settings;
-          if (settings.brand_color) {
-            document.documentElement.style.setProperty('--brand', settings.brand_color);
-          }
-        } catch (e) {}
+      // Apply kiosk settings from dashboard (org-level kiosk_config takes priority)
+      var kc = S.kioskConfig;
+      if (kc) {
+        // Theme color: dashboard kiosk_theme_color > office brand_color > default
+        if (kc.theme_color) {
+          document.documentElement.style.setProperty('--brand', kc.theme_color);
+        } else if (S.office.settings) {
+          try {
+            var os = typeof S.office.settings === 'string' ? JSON.parse(S.office.settings) : S.office.settings;
+            if (os.brand_color) document.documentElement.style.setProperty('--brand', os.brand_color);
+          } catch (e) {}
+        }
+
+        // Logo: use kiosk config logo if set
+        if (kc.show_logo && kc.logo_url) S.logoUrl = kc.logo_url;
+        if (!kc.show_logo) S.logoUrl = null;
+
+        // Idle timeout from dashboard
+        if (kc.idle_timeout) IDLE_TIMEOUT = kc.idle_timeout * 1000;
+
+        // Filter hidden departments and services
+        if (kc.hidden_departments && kc.hidden_departments.length > 0) {
+          S.departments = S.departments.filter(function (d) { return kc.hidden_departments.indexOf(d.id) === -1; });
+        }
+        if (kc.hidden_services && kc.hidden_services.length > 0) {
+          S.services = S.services.filter(function (s) { return kc.hidden_services.indexOf(s.id) === -1; });
+        }
+      } else {
+        // Fallback: apply office brand_color only
+        if (S.office.settings) {
+          try {
+            var settings = typeof S.office.settings === 'string' ? JSON.parse(S.office.settings) : S.office.settings;
+            if (settings.brand_color) document.documentElement.style.setProperty('--brand', settings.brand_color);
+          } catch (e) {}
+        }
       }
 
       fetchQueueCounts();
@@ -304,8 +333,21 @@
         return;
       }
 
-      // Smart step skipping
-      if (S.departments.length === 1) {
+      // Smart step skipping — respect locked department from dashboard
+      var lockedDeptId = kc && kc.locked_department_id;
+      var lockedDept = lockedDeptId ? S.departments.find(function (d) { return d.id === lockedDeptId; }) : null;
+
+      if (lockedDept) {
+        // Dashboard locked to a specific department — skip dept selection
+        S.selectedDept = lockedDept;
+        var svcs = S.services.filter(function (s) { return s.department_id === lockedDept.id; });
+        if (svcs.length === 1) {
+          S.selectedService = svcs[0];
+          S.step = 'confirm';
+        } else {
+          S.step = 'service';
+        }
+      } else if (S.departments.length === 1) {
         S.selectedDept = S.departments[0];
         var svcs = S.services.filter(function (s) { return s.department_id === S.departments[0].id; });
         if (svcs.length === 1) {
@@ -526,7 +568,7 @@
       (hoursBtn ? '<div style="position:absolute;top:16px;right:16px">' + hoursBtn + '</div>' : '') +
       '<div class="header-logo">' + logoHtml + '</div>' +
       '<h1>' + esc(displayName) + '</h1>' +
-      (S.orgName && S.orgName !== name ? '<div class="subtitle">' + esc(name) + '</div>' : '<div class="subtitle">' + tr('Welcome - Take a ticket below') + '</div>') +
+      (S.orgName && S.orgName !== name ? '<div class="subtitle">' + esc(name) + '</div>' : '<div class="subtitle">' + (S.kioskConfig && S.kioskConfig.welcome_message ? esc(S.kioskConfig.welcome_message) : tr('Welcome - Take a ticket below')) + '</div>') +
       '<div class="conn-dot" id="kconn">' + tr('Connected') + '</div>' +
       '</div>';
   }
@@ -732,7 +774,7 @@
         '<div class="form-group"><label>' + tr('Phone (optional)') + '</label><input id="cphone" placeholder="' + tr('For WhatsApp alerts') + '" type="tel" autocomplete="off"></div>' +
         '<div class="form-group full-width"><label>' + tr('Reason for visit (optional)') + '</label><input id="creason" placeholder="' + tr('Brief description') + '" autocomplete="off"></div>' +
         '</div>' +
-        '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + tr('Get Ticket') + '</button>' +
+        '<button id="submit-btn" class="btn btn-primary btn-large" onclick="takeTicket()">' + (S.kioskConfig && S.kioskConfig.button_label ? esc(S.kioskConfig.button_label) : tr('Get Ticket')) + '</button>' +
         '</div>' +
         '</div></div>';
 
