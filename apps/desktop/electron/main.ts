@@ -208,7 +208,6 @@ function createWindow() {
     },
     show: false,
     backgroundColor: '#0f172a',
-    autoHideMenuBar: true,
   });
 
   // Content Security Policy
