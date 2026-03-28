@@ -265,19 +265,15 @@ function createWindow() {
       const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname.startsWith('192.168.');
       const isKioskOrDisplay = /\/(kiosk|display)(\/|$|\?)/.test(parsed.pathname);
       if (isLocal && isKioskOrDisplay) {
-        // Open maximized so the full page is visible immediately
-        const { screen } = require('electron');
-        const { width, height } = screen.getPrimaryDisplay().workAreaSize;
         const kioskWin = new BrowserWindow({
-          width,
-          height,
+          width: 1024,
+          height: 900,
           backgroundColor: '#ffffff',
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
           },
         });
-        kioskWin.maximize();
         kioskWin.loadURL(url);
         return { action: 'deny' }; // we handle it ourselves
       }
