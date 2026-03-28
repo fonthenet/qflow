@@ -259,6 +259,44 @@ function createWindow() {
   mainWindow.on('resize', () => saveWindowBounds());
   mainWindow.on('move', () => saveWindowBounds());
 
+  // Intercept window.open() — open kiosk/display links in a fullscreen frameless window
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(url);
+      const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname.startsWith('192.168.');
+      const isKioskOrDisplay = /\/(kiosk|display)(\/|$|\?)/.test(parsed.pathname);
+      if (isLocal && isKioskOrDisplay) {
+        // Open in a fullscreen, frameless Electron window (kiosk feel)
+        const kioskWin = new BrowserWindow({
+          fullscreen: true,
+          frame: false,
+          autoHideMenuBar: true,
+          backgroundColor: '#ffffff',
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+          },
+        });
+        kioskWin.setMenu(null);
+        kioskWin.loadURL(url);
+        // Allow Escape to exit fullscreen / close
+        kioskWin.webContents.on('before-input-event', (_e, input) => {
+          if (input.key === 'Escape' && input.type === 'keyDown') {
+            if (kioskWin.isFullScreen()) {
+              kioskWin.setFullScreen(false);
+            } else {
+              kioskWin.close();
+            }
+          }
+        });
+        return { action: 'deny' }; // we handle it ourselves
+      }
+    } catch { /* not a valid URL, fall through */ }
+    // For non-kiosk URLs, open in default browser
+    require('electron').shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
