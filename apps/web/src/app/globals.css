@@ -51,3 +51,17 @@
     color: rgb(226 232 240); /* slate-200 */
   }
 }
+
+/* RTL: neutralize letter-spacing and uppercase that break Arabic ligatures */
+html[dir="rtl"] .uppercase,
+html[dir="rtl"] [style*="textTransform"] {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+html[dir="rtl"] .tracking-wide,
+html[dir="rtl"] .tracking-wider,
+html[dir="rtl"] .tracking-widest,
+html[dir="rtl"] .tracking-tight,
+html[dir="rtl"] [class*="tracking-["] {
+  letter-spacing: normal !important;
+}

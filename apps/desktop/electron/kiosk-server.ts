@@ -1052,6 +1052,7 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
     .next-alert { margin-top: 16px; padding: 16px; background: #d1fae5; border-radius: 10px; font-weight: 800; color: #065f46; font-size: 18px; animation: pulse 1s infinite; }
     .refresh { font-size: 12px; color: #94a3b8; margin-top: 20px; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+    html[dir="rtl"] .number, html[dir="rtl"] .status-badge { letter-spacing: normal; text-transform: none; }
   </style>
 </head>
 <body>
@@ -1337,6 +1338,17 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       .queue-row .q-badge { font-size: 11px; padding: 3px 8px; }
       .queue-empty { padding: 22px 18px; font-size: 16px; }
     }
+    /* RTL: neutralize letter-spacing and uppercase that break Arabic ligatures */
+    html[dir="rtl"] .stat-label,
+    html[dir="rtl"] .panel-title,
+    html[dir="rtl"] .serving-row .status-pill,
+    html[dir="rtl"] .status-badge,
+    html[dir="rtl"] .call-overlay .call-label { letter-spacing: normal; text-transform: none; }
+    html[dir="rtl"] .clock,
+    html[dir="rtl"] .number,
+    html[dir="rtl"] .serving-row .ticket-num,
+    html[dir="rtl"] .queue-row .q-ticket,
+    html[dir="rtl"] .call-overlay .call-number { letter-spacing: normal; }
   </style>
 </head>
 <body>

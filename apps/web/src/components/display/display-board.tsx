@@ -74,7 +74,11 @@ export function DisplayBoard({
   const [currentTime, setCurrentTime] = useState(new Date());
   const [viewportWidth, setViewportWidth] = useState<number>(1280);
   const knownCalledAnchorsRef = useRef<Map<string, string>>(new Map());
-  const { t } = useI18n();
+  const { t, dir } = useI18n();
+  const isRtl = dir === 'rtl';
+  // Arabic ligatures break with letter-spacing/uppercase — neutralize in RTL
+  const ls = (v: string | number) => isRtl ? undefined : v;
+  const uc = isRtl ? undefined : ('uppercase' as const);
 
   const settings: ScreenSettings = displayScreen.settings ?? {};
   const announcementSound = settings.announcement_sound ?? true;
@@ -193,7 +197,7 @@ export function DisplayBoard({
               className="font-bold uppercase"
               style={{
                 color: '#3b82f6',
-                letterSpacing: isMobile ? '0.18em' : '0.3em',
+                letterSpacing: ls(isMobile ? '0.18em' : '0.3em'),
                 fontSize: isMobile ? '1.25rem' : '1.875rem',
               }}
             >
@@ -203,7 +207,7 @@ export function DisplayBoard({
               className="mt-6 font-black leading-none"
               style={{
                 fontSize: isMobile ? '4.5rem' : '9rem',
-                letterSpacing: '-0.08em',
+                letterSpacing: ls('-0.08em'),
               }}
             >
               {lastCalledTicket.ticket_number}
@@ -351,8 +355,8 @@ export function DisplayBoard({
                 style={{
                   fontSize: isMobile ? 10 : 14,
                   fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: isMobile ? 1.1 : 2,
+                  textTransform: uc,
+                  letterSpacing: ls(isMobile ? 1.1 : 2),
                   color: '#94a3b8',
                   marginTop: isMobile ? 3 : 4,
                 }}
@@ -388,8 +392,8 @@ export function DisplayBoard({
                 padding: isMobile ? '14px 16px 12px' : '18px 24px 14px',
                 fontSize: isMobile ? 15 : 18,
                 fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: isMobile ? 2 : 3,
+                textTransform: uc,
+                letterSpacing: ls(isMobile ? 2 : 3),
                 color: '#64748b',
                 borderBottom: '1px solid #f1f5f9',
               }}
@@ -449,7 +453,7 @@ export function DisplayBoard({
                         style={{
                           fontSize: isMobile ? 42 : 72,
                           fontWeight: 900,
-                          letterSpacing: isMobile ? -2 : -3,
+                          letterSpacing: ls(isMobile ? -2 : -3),
                           minWidth: isMobile ? 'auto' : 220,
                           color: ticket.status === 'called' ? '#1e40af' : '#166534',
                           lineHeight: 1,
@@ -486,8 +490,8 @@ export function DisplayBoard({
                               borderRadius: 24,
                               fontSize: isMobile ? 12 : 16,
                               fontWeight: 800,
-                              textTransform: 'uppercase',
-                              letterSpacing: 1,
+                              textTransform: uc,
+                              letterSpacing: ls(1),
                               background: '#3b82f6',
                               color: '#fff',
                             }}
@@ -502,8 +506,8 @@ export function DisplayBoard({
                             borderRadius: 24,
                             fontSize: isMobile ? 12 : 16,
                             fontWeight: 800,
-                            textTransform: 'uppercase',
-                            letterSpacing: 1,
+                            textTransform: uc,
+                            letterSpacing: ls(1),
                             background: '#22c55e',
                             color: '#fff',
                           }}
@@ -532,8 +536,8 @@ export function DisplayBoard({
                 padding: isMobile ? '14px 16px 12px' : '18px 24px 14px',
                 fontSize: isMobile ? 15 : 18,
                 fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: isMobile ? 2 : 3,
+                textTransform: uc,
+                letterSpacing: ls(isMobile ? 2 : 3),
                 color: '#64748b',
                 borderBottom: '1px solid #f1f5f9',
                 background: '#f8fafc',
@@ -589,7 +593,7 @@ export function DisplayBoard({
                           fontWeight: 900,
                           color: '#1e293b',
                           minWidth: isMobile ? 88 : 140,
-                          letterSpacing: -1,
+                          letterSpacing: ls(-1),
                         }}
                       >
                         {ticket.ticket_number}

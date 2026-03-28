@@ -332,6 +332,11 @@ html[dir="rtl"] .idle-panel,
 html[dir="rtl"] .active-ticket-panel { text-align: right; }
 html[dir="rtl"] .station-main { direction: rtl; }
 html[dir="rtl"] .queue-search { text-align: right; }
+html[dir="rtl"] .active-status,
+html[dir="rtl"] .active-number,
+html[dir="rtl"] .queue-list h4,
+html[dir="rtl"] .operator-role,
+html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
 
 /* ── Skip link (accessibility) ───────────────────────────────────── */
 .skip-link {

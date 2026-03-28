@@ -1004,7 +1004,7 @@ export function KioskView({
                 <div className={`text-[10px] font-bold uppercase tracking-[2px] text-slate-400`}>
                   {t('YOUR TICKET NUMBER')}
                 </div>
-                <div className="mt-1 text-[64px] font-black leading-none tracking-tight sm:text-[80px]" style={{ color: themeColor, letterSpacing: '-3px' }}>
+                <div className="mt-1 text-[64px] font-black leading-none tracking-tight sm:text-[80px]" style={{ color: themeColor, letterSpacing: dir === 'rtl' ? undefined : '-3px' }}>
                   {ticket.ticket_number}
                 </div>
                 <div className="mt-2 flex items-center justify-center gap-1.5 text-[15px] text-slate-500">
