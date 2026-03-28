@@ -271,19 +271,19 @@ export function BusinessMapClient({
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Business Setup
+          Business Map
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-          Configure your {vocabulary.officeLabel.toLowerCase()}s,{' '}
+          Your complete business structure — {vocabulary.officeLabel.toLowerCase()}s,{' '}
           {vocabulary.departmentLabel.toLowerCase()}s,{' '}
           {vocabulary.serviceLabel.toLowerCase()}s,{' '}
-          {vocabulary.deskLabel.toLowerCase()}s, and team — all from one place.
+          {vocabulary.deskLabel.toLowerCase()}s, and team in one place.
         </p>
       </div>
 
       {/* ── Setup Checklist ────────────────────────────────────── */}
       {!allDone && showChecklist && (
-        <div className="mb-6 rounded-2xl border border-primary/20 bg-primary/[0.03] overflow-hidden">
+        <div className="mb-6 rounded-2xl border border-primary/20 bg-card shadow-sm overflow-hidden">
           {/* Checklist header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-primary/10">
             <div className="flex items-center gap-3">
@@ -309,7 +309,7 @@ export function BusinessMapClient({
 
           {/* Progress bar */}
           <div className="px-5 pt-3 pb-1">
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-1.5 rounded-full bg-primary/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-500"
                 style={{ width: `${(completedSteps / setupSteps.length) * 100}%` }}
@@ -318,49 +318,52 @@ export function BusinessMapClient({
           </div>
 
           {/* Steps */}
-          <div className="px-5 py-3 space-y-1">
-            {setupSteps.map((step) => (
-              <div
-                key={step.key}
-                className={`flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors ${
-                  step.done
-                    ? 'opacity-60'
-                    : step === nextStep
-                      ? 'bg-primary/[0.06]'
-                      : ''
-                }`}
-              >
-                {step.done ? (
-                  <CheckCircle2 className="mt-0.5 h-4.5 w-4.5 shrink-0 text-primary" />
-                ) : step === nextStep ? (
-                  <CircleDot className="mt-0.5 h-4.5 w-4.5 shrink-0 text-primary animate-pulse" />
-                ) : (
-                  <div className="mt-0.5 h-4.5 w-4.5 shrink-0 rounded-full border-2 border-border" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium ${step.done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                    {step.label}
-                  </p>
-                  {!step.done && (
+          <div className="px-5 py-3 space-y-0.5">
+            {setupSteps.map((step) => {
+              const isNext = step === nextStep;
+              if (step.done) {
+                // Compact single-line for completed steps
+                return (
+                  <div key={step.key} className="flex items-center gap-2.5 px-3 py-1.5">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-primary/50" />
+                    <p className="text-sm text-muted-foreground line-through">{step.label}</p>
+                  </div>
+                );
+              }
+              // Expanded card for next/pending steps
+              return (
+                <div
+                  key={step.key}
+                  className={`flex items-start gap-3 rounded-xl px-3 py-3 transition-colors ${
+                    isNext ? 'bg-primary/[0.05] border border-primary/10' : ''
+                  }`}
+                >
+                  {isNext ? (
+                    <CircleDot className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+                  ) : (
+                    <div className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded-full border-2 border-border" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{step.label}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
                       {step.description}
                     </p>
+                  </div>
+                  {(step.action || step.link) && (
+                    <button
+                      onClick={() => {
+                        if (step.action) step.action();
+                        else if (step.link) router.push(step.link);
+                      }}
+                      className="shrink-0 flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+                    >
+                      {step.key === 'staff' ? 'Invite' : 'Create'}
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
                   )}
                 </div>
-                {!step.done && (step.action || step.link) && (
-                  <button
-                    onClick={() => {
-                      if (step.action) step.action();
-                      else if (step.link) router.push(step.link);
-                    }}
-                    className="shrink-0 flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
-                  >
-                    {step.key === 'staff' ? 'Invite' : 'Create'}
-                    <ArrowRight className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -565,7 +568,7 @@ function StatCard({
   alert?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${alert ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-border/60 bg-card'}`}>
+    <div className={`rounded-xl border px-4 py-3 shadow-sm ${alert ? 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-border/60 bg-card'}`}>
       <div className="flex items-center gap-2 text-muted-foreground">
         {icon}
         <span className="text-xs font-medium uppercase tracking-wider">
@@ -599,7 +602,7 @@ function QuickLink({
   return (
     <a
       href={href}
-      className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 hover:border-primary/30 hover:bg-primary/[0.02] transition-colors"
+      className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm hover:border-primary/30 hover:shadow-md transition-all"
     >
       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
         {icon}

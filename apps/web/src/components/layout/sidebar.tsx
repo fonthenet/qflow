@@ -62,7 +62,7 @@ interface SidebarProps {
 }
 
 const adminNav = [
-  { href: '/admin/overview', label: 'Business Overview', icon: LayoutDashboard, section: 'Work' },
+  { href: '/admin/overview', label: 'Business Map', icon: LayoutDashboard, section: 'Work' },
   { href: '/admin/onboarding', label: 'Business Setup', icon: Sparkles, section: 'Setup' },
   { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
   { href: '/admin/offices', label: 'Locations', icon: Building2, section: 'Setup' },
@@ -146,7 +146,7 @@ export function Sidebar({
     .filter((group) => group.items.length > 0);
 
   return (
-    <aside className="flex w-64 flex-col border-r border-border bg-card">
+    <aside className="flex w-64 flex-col border-r border-border bg-[var(--color-sidebar)]">
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-6">
         <Link href="/admin/overview" className="text-xl font-bold">
