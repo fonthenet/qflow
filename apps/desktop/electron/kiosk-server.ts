@@ -278,6 +278,16 @@ function handleSSE(_req: http.IncomingMessage, res: http.ServerResponse) {
   _req.on('close', () => sseClients.delete(res));
 }
 
+// SSE heartbeat — send a data event every 15s so clients detect silent drops
+// Must be a 'data:' line (not a ':' comment) so EventSource.onmessage fires
+setInterval(() => {
+  const dead: http.ServerResponse[] = [];
+  for (const client of sseClients) {
+    try { client.write('data: heartbeat\n\n'); } catch { dead.push(client); }
+  }
+  for (const c of dead) sseClients.delete(c);
+}, 15_000);
+
 // ── Device tracking ───────────────────────────────────────────────
 interface DeviceInfo { id: string; type: string; name: string; lastPing: number; }
 const devices: Map<string, DeviceInfo> = new Map();
@@ -1015,8 +1025,8 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function handleDeviceStatus(res: http.ServerResponse) {
   const now = Date.now();
-  const TIMEOUT = 20_000; // 20s = considered disconnected (tolerates 3 missed 5s pings)
-  const STALE = 60_000;   // 1min = remove from list entirely
+  const TIMEOUT = 90_000; // 90s = considered disconnected (tolerates 2 missed 30s pings)
+  const STALE = 180_000;  // 3min = remove from list entirely
 
   // Prune devices that haven't pinged in 2+ minutes (closed tabs, disconnected devices)
   for (const [id, d] of devices) {
@@ -1109,7 +1119,7 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
           '<div>' + d.office_name + '</div>' +
           '<div>' + d.service_name + ' &middot; ' + d.department_name + '</div>' +
           '</div>' +
-          '<div class="refresh">Auto-refreshes every 5 seconds</div>';
+          '<div class="refresh">Live updates via server</div>';
       } catch (err) {
         document.getElementById('app').innerHTML =
           '<div class="brand">Qflo</div>' +
@@ -1118,12 +1128,23 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
       }
     }
 
+    var loadDebounce = null;
+    function debouncedLoad() { if (loadDebounce) clearTimeout(loadDebounce); loadDebounce = setTimeout(function(){ loadDebounce = null; load(); }, 150); }
+
     load();
-    // Live updates via SSE
-    var es = new EventSource(API + '/api/events');
-    es.onmessage = function(e) { if (e.data === 'update') load(); };
-    es.onerror = function() { es.close(); setTimeout(function(){ es = new EventSource(API + '/api/events'); es.onmessage = function(e){ if(e.data==='update') load(); }; }, 3000); };
-    setInterval(load, 5000);
+    var sseOk = false; var lastHB = 0;
+    function connectFollowSSE() {
+      var es = new EventSource(API + '/api/events');
+      es.onopen = function() { sseOk = true; lastHB = Date.now(); };
+      es.onmessage = function(e) { lastHB = Date.now(); sseOk = true; if (e.data !== 'connected' && e.data !== 'heartbeat') debouncedLoad(); };
+      es.onerror = function() { sseOk = false; es.close(); setTimeout(connectFollowSSE, 3000); };
+    }
+    connectFollowSSE();
+    // Heartbeat watchdog + fallback poll
+    setInterval(function() {
+      if (sseOk && (Date.now() - lastHB) > 25000) { sseOk = false; connectFollowSSE(); }
+      if (!sseOk) load();
+    }, 10000);
   </script>
 </body>
 </html>`;
@@ -1533,7 +1554,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       overlayTimer = setTimeout(function() { overlay.classList.remove('visible'); overlayTimer = null; }, 8000);
     }
 
-    function renderServing(active) {
+    function renderServing(active, forceRebuild) {
       // Check for newly called tickets (for chime + overlay)
       var currentCalledIds = active.filter(function(t){return t.status==='called'}).map(function(t){return t.id});
       var hasNew = currentCalledIds.some(function(id) { return prevCalledIds.indexOf(id) === -1; });
@@ -1546,13 +1567,13 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
           var dpn = departments[newTicket.department_id] || '';
           showCallOverlay(newTicket, dn, dpn);
         }
+        forceRebuild = true;
       }
       prevCalledIds = currentCalledIds;
 
       var el = document.getElementById('serving-list');
       if (active.length === 0) {
-        el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>';
-        lastServingHash = '';
+        if (lastServingHash !== '') { el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>'; lastServingHash = ''; }
         return;
       }
 
@@ -1563,37 +1584,52 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       });
 
       if (visible.length === 0) {
-        el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>';
-        lastServingHash = '';
+        if (lastServingHash !== '') { el.innerHTML = '<div class="no-active">' + dt('waitingFor') + '</div>'; lastServingHash = ''; }
         return;
       }
 
-      // Always re-render called tickets (countdown changes every second)
-      el.innerHTML = visible.map(function(t) {
-        var deskName = desks[t.desk_id] || t.desk_name || 'Desk';
-        var deptName = departments[t.department_id] || '';
+      // Build a structural hash (ids + statuses) to detect real changes
+      var structHash = visible.map(function(t){ return t.id + ':' + t.status; }).join(',');
+      var needsRebuild = forceRebuild || structHash !== lastServingHash;
+      lastServingHash = structHash;
 
-        if (t.status === 'called') {
-          var secs = getCountdown(t.called_at);
-          var urgency = secs <= 10 ? 'urgent' : secs <= 20 ? 'warning' : 'normal';
-          return '<div class="serving-row called">' +
+      if (needsRebuild) {
+        // Full DOM rebuild only when tickets change
+        el.innerHTML = visible.map(function(t) {
+          var deskName = desks[t.desk_id] || t.desk_name || 'Desk';
+          var deptName = departments[t.department_id] || '';
+
+          if (t.status === 'called') {
+            var secs = getCountdown(t.called_at);
+            var urgency = secs <= 10 ? 'urgent' : secs <= 20 ? 'warning' : 'normal';
+            return '<div class="serving-row called" data-id="' + t.id + '">' +
+              '<div class="ticket-num">' + t.ticket_number + '</div>' +
+              '<div class="arrow">&rarr;</div>' +
+              '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
+              (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
+              '<div class="countdown ' + urgency + '">' + secs + 's</div>' +
+              '<div class="status-pill">' + dt('proceed') + '</div>' +
+              '</div>';
+          }
+
+          return '<div class="serving-row serving" data-id="' + t.id + '">' +
             '<div class="ticket-num">' + t.ticket_number + '</div>' +
             '<div class="arrow">&rarr;</div>' +
             '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
             (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
-            '<div class="countdown ' + urgency + '">' + secs + 's</div>' +
-            '<div class="status-pill">' + dt('proceed') + '</div>' +
+            '<div class="status-pill">' + dt('serving') + '</div>' +
             '</div>';
-        }
-
-        return '<div class="serving-row serving">' +
-          '<div class="ticket-num">' + t.ticket_number + '</div>' +
-          '<div class="arrow">&rarr;</div>' +
-          '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
-          (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
-          '<div class="status-pill">' + dt('serving') + '</div>' +
-          '</div>';
-      }).join('');
+        }).join('');
+      } else {
+        // Lightweight update: only patch countdown text + urgency class in-place
+        visible.forEach(function(t) {
+          if (t.status !== 'called') return;
+          var secs = getCountdown(t.called_at);
+          var urgency = secs <= 10 ? 'urgent' : secs <= 20 ? 'warning' : 'normal';
+          var rows = el.querySelectorAll('.serving-row[data-id="' + t.id + '"] .countdown');
+          rows.forEach(function(cd) { cd.textContent = secs + 's'; cd.className = 'countdown ' + urgency; });
+        });
+      }
     }
 
     function renderDeptTabs(waiting) {
@@ -1652,53 +1688,53 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       }).join('');
     }
 
-    async function fetchData() {
-      // ALWAYS read from local SQLite via the kiosk-server API.
-      // The station's sync engine keeps SQLite in sync with the cloud.
-      // Reading Supabase directly from the display caused stale-data bugs:
-      // the station updates SQLite instantly on call/serve, but those
-      // changes only reach Supabase after sync — so the display would
-      // show the old cloud state instead of the real local state.
+    // ── Office info — fetched once, refreshed every 5 min ──
+    var officeLoaded = false;
+    async function fetchOfficeInfo() {
       try {
-        // Fetch office info (includes logo + org name)
         var officeRes = await fetch(API + '/api/kiosk-info' + OFFICE_QUERY, { cache: 'no-store' });
         var officeData = await officeRes.json();
-        if (officeData.error) throw new Error(officeData.error);
+        if (officeData.error) return;
         if (officeData.office) {
           var orgName = officeData.org_name || officeData.office.name;
           var branchName = officeData.org_name ? officeData.office.name : '';
           updateText('office-name', orgName);
           updateText('branch-name', branchName);
           (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
-
           if (officeData.logo_url) {
             var logoEl = document.getElementById('logo');
-            if (logoEl) {
+            if (logoEl && !officeLoaded) {
               logoEl.className = 'logo';
               logoEl.style.background = 'none';
               logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo" onerror="this.parentElement.className=\\'logo fallback\\';this.parentElement.innerHTML=\\'Q\\'">';
             }
           }
+          officeLoaded = true;
         }
+      } catch(e) {}
+    }
+    fetchOfficeInfo();
+    setInterval(fetchOfficeInfo, 300000); // refresh every 5 min
 
-        // Fetch live queue data from local SQLite (always instant, always fresh)
+    // ── Ticket data — the fast path ──
+    var fetchInFlight = false;
+    async function fetchData() {
+      if (fetchInFlight) return; // prevent concurrent fetches
+      fetchInFlight = true;
+      try {
         var res = await fetch(API + '/api/display-data' + OFFICE_QUERY, { cache: 'no-store' });
         var d = await res.json();
         if (d.error) throw new Error(d.error);
 
         setConnStatus(d.cloud_connected);
-
         updateText('s-waiting', d.waiting_count);
         updateText('s-called', d.called_count);
         updateText('s-serving', d.serving_count);
         updateText('s-served', d.served_count);
 
-        // Parse customer_data
         (d.waiting || []).forEach(function(t) {
           if (typeof t.customer_data === 'string') { try { t.customer_data = JSON.parse(t.customer_data); } catch(ex) { t.customer_data = {}; } }
         });
-
-        // Cache desk + department names from the response
         (d.now_serving || []).forEach(function(t) {
           if (t.desk_id && t.desk_name) desks[t.desk_id] = t.desk_name;
           if (t.department_id && t.department_name) departments[t.department_id] = t.department_name;
@@ -1709,12 +1745,14 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
         allTickets = [...(d.now_serving || []), ...(d.waiting || [])];
         lastActive = d.now_serving || [];
-        renderServing(lastActive);
+        renderServing(lastActive, true);
         renderQueue(d.waiting || []);
       } catch(e) {
         console.error('Display fetch error:', e);
-        updateText('office-name', 'Qflo Station');
-        updateText('branch-name', 'No active office connected');
+        if (!officeLoaded) {
+          updateText('office-name', 'Qflo Station');
+          updateText('branch-name', 'No active office connected');
+        }
         updateText('s-waiting', '0');
         updateText('s-called', '0');
         updateText('s-serving', '0');
@@ -1724,19 +1762,24 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         lastQueueHash = '';
         lastActive = [];
         var servingEl = document.getElementById('serving-list');
-        if (servingEl) {
-          servingEl.innerHTML = '<div class="no-active">Connect Qflo Station to load this display</div>';
-        }
+        if (servingEl) servingEl.innerHTML = '<div class="no-active">Connect Qflo Station to load this display</div>';
         var queueEl = document.getElementById('queue-list');
-        if (queueEl) {
-          queueEl.innerHTML = '<div class="queue-empty">No active office connected</div>';
-        }
+        if (queueEl) queueEl.innerHTML = '<div class="queue-empty">No active office connected</div>';
         var tabsEl = document.getElementById('dept-tabs');
         if (tabsEl) tabsEl.innerHTML = '';
+      } finally {
+        fetchInFlight = false;
       }
     }
 
-    // Device ping — register this display
+    // ── Debounced fetch — coalesces rapid SSE events (e.g. 3 calls in 1s) ──
+    var debounceTimer = null;
+    function debouncedFetch(delay) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function() { debounceTimer = null; fetchData(); }, delay || 150);
+    }
+
+    // ── Device ping — register this display ──
     var displayId = localStorage.getItem('qf_device_id') || ('display-' + Math.random().toString(36).substr(2, 6));
     localStorage.setItem('qf_device_id', displayId);
     function pingDevice() {
@@ -1746,9 +1789,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       }).catch(function(){});
     }
     pingDevice();
-    setInterval(pingDevice, 5000);
+    setInterval(pingDevice, 30000);
 
-    // Check device statuses and show disconnected warnings (with grace period)
+    // ── Device status warnings ──
     var disconnectCount = 0;
     async function checkDevices() {
       try {
@@ -1758,8 +1801,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         var el = document.getElementById('device-warn');
         if (disconnected.length > 0) {
           disconnectCount++;
-          // Only show banner after 3 consecutive disconnected checks (~30s)
-          if (disconnectCount >= 5) {
+          if (disconnectCount >= 3) {
             var names = disconnected.map(function(dev) { return dev.name; }).join(', ');
             if (el) { el.style.display = 'block'; el.textContent = 'Disconnected: ' + names; }
           }
@@ -1771,54 +1813,92 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     }
     setInterval(checkDevices, 10000);
 
-    // Clock + countdown updates every second
+    // ── Clock + countdown — lightweight 1s tick (no DOM rebuild) ──
     var lastActive = [];
     function tick() {
       updateClock();
-      if (lastActive.length > 0) renderServing(lastActive);
+      if (lastActive.length > 0) renderServing(lastActive, false);
     }
     setInterval(tick, 1000);
     tick();
 
-    // ── Live updates via SSE — instant push from station ──
+    // ── SSE — primary real-time channel with heartbeat detection ──
     var evtSource = null;
+    var sseAlive = false;
+    var lastHeartbeat = 0;
+    var pendingCallFlash = null;
+
     function connectSSE() {
       if (evtSource) { try { evtSource.close(); } catch(e){} }
       evtSource = new EventSource(API + '/api/events');
+      sseAlive = false;
+
+      evtSource.onopen = function() {
+        sseAlive = true;
+        lastHeartbeat = Date.now();
+      };
+
       evtSource.onmessage = function(e) {
-        if (e.data === 'update' || e.data === 'connected') {
-          fetchData();
-          return;
-        }
+        lastHeartbeat = Date.now();
+        sseAlive = true;
+
+        // SSE heartbeat comments come as empty data or ':' lines — EventSource
+        // only fires onmessage for 'data:' lines, so heartbeat comments are
+        // invisible here. 'connected' is our initial handshake.
+        if (e.data === 'heartbeat') return; // keep-alive, no action needed
+        if (e.data === 'connected') { debouncedFetch(50); return; }
+        if (e.data === 'update') { debouncedFetch(150); return; }
+
         try {
           var evt = JSON.parse(e.data);
           if (evt.type === 'ticket_called' && evt.ticket_number) {
             playChime();
-            // Flash the called ticket in NOW SERVING after data refresh
+            pendingCallFlash = evt.ticket_number;
+            // Fetch immediately for ticket_called (user expects instant feedback)
+            if (debounceTimer) clearTimeout(debounceTimer);
             fetchData().then(function() {
+              if (!pendingCallFlash) return;
               var rows = document.querySelectorAll('.serving-row');
               rows.forEach(function(row) {
-                if (row.querySelector('.ticket-num') && row.querySelector('.ticket-num').textContent.trim() === evt.ticket_number) {
+                var numEl = row.querySelector('.ticket-num');
+                if (numEl && numEl.textContent.trim() === pendingCallFlash) {
                   row.style.animation = 'none'; row.offsetHeight; row.style.animation = 'flashNew 1.5s ease-out';
                 }
               });
+              pendingCallFlash = null;
             });
           } else {
-            fetchData();
+            debouncedFetch(150);
           }
-        } catch(ex) { fetchData(); }
+        } catch(ex) { debouncedFetch(150); }
       };
+
       evtSource.onerror = function() {
-        // Reconnect after 3s on disconnect
+        sseAlive = false;
         try { evtSource.close(); } catch(e){}
-        setTimeout(connectSSE, 3000);
+        // Exponential backoff: 2s, 4s, 8s, max 15s
+        var delay = Math.min(2000 * Math.pow(2, Math.floor(Math.random() * 3)), 15000);
+        setTimeout(connectSSE, delay);
       };
     }
     connectSSE();
 
-    // Fallback poll every 5s in case SSE drops silently
+    // ── Heartbeat watchdog — detect silent SSE drops ──
+    setInterval(function() {
+      if (sseAlive && (Date.now() - lastHeartbeat) > 25000) {
+        // No heartbeat for 25s (server sends every 15s) — SSE silently died
+        console.warn('SSE heartbeat lost, reconnecting...');
+        sseAlive = false;
+        try { evtSource.close(); } catch(e){}
+        connectSSE();
+      }
+    }, 10000);
+
+    // ── Fallback poll — only when SSE is down ──
     fetchData();
-    setInterval(fetchData, 5000);
+    setInterval(function() {
+      if (!sseAlive) fetchData();
+    }, 10000);
   <\/script>
 </body>
 </html>`;

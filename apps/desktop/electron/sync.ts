@@ -36,6 +36,10 @@ export class SyncEngine {
   private static FLAKY_THRESHOLD = 3;      // 3 consecutive slow checks = flaky
   public connectionQuality: 'good' | 'slow' | 'flaky' | 'offline' = 'offline';
 
+  // ── Change detection for pull ─────────────────────────────────────
+  // Only notify displays when ticket data actually changed
+  private lastPullHash = '';
+
   // ── Token management ──────────────────────────────────────────────
   // Single source of truth for the current valid access token
   private cachedAccessToken: string | null = null;
@@ -1364,8 +1368,21 @@ export class SyncEngine {
         }
       }
 
-      // Notify displays ONCE after all offices are pulled (not per-office)
-      this.onDataPulled();
+      // Only notify displays if ticket data actually changed
+      // Build a lightweight hash of active ticket states
+      try {
+        const rows = this.db.prepare(
+          "SELECT id, status, desk_id, called_at FROM tickets WHERE status IN ('waiting','called','serving') ORDER BY id"
+        ).all() as any[];
+        const hash = rows.map((r: any) => `${r.id}:${r.status}:${r.desk_id ?? ''}:${r.called_at ?? ''}`).join('|');
+        if (hash !== this.lastPullHash) {
+          this.lastPullHash = hash;
+          this.onDataPulled();
+        }
+      } catch {
+        // Fallback: always notify if hash check fails
+        this.onDataPulled();
+      }
     } catch (err: any) {
       console.error('[sync:pullLatest] Error:', err?.message ?? err);
     }

@@ -799,22 +799,48 @@
     }).catch(function () {});
   }
   pingKiosk();
-  setInterval(pingKiosk, 5000);
+  setInterval(pingKiosk, 30000);
 
-  // ── SSE: live updates from Station ─────────────────────────────
+  // ── SSE: live updates from Station (with heartbeat detection) ──
+
+  var sseAlive = false;
+  var lastSSEHeartbeat = 0;
+  var queueDebounce = null;
+
+  function debouncedQueueFetch() {
+    if (queueDebounce) clearTimeout(queueDebounce);
+    queueDebounce = setTimeout(function() { queueDebounce = null; fetchQueueCounts(); }, 200);
+  }
 
   function connectSSE() {
     try {
       var es = new EventSource(API + '/api/events');
-      es.onmessage = function () { fetchQueueCounts(); };
+      es.onopen = function() { sseAlive = true; lastSSEHeartbeat = Date.now(); };
+      es.onmessage = function (e) {
+        lastSSEHeartbeat = Date.now();
+        sseAlive = true;
+        if (e.data === 'connected' || e.data === 'heartbeat') return; // keep-alive, no action
+        debouncedQueueFetch();
+      };
       es.onerror = function () {
+        sseAlive = false;
         es.close();
-        // Reconnect after 5s
-        setTimeout(connectSSE, 5000);
+        var delay = Math.min(3000 * Math.pow(2, Math.floor(Math.random() * 3)), 15000);
+        setTimeout(connectSSE, delay);
       };
     } catch (e) {}
   }
   connectSSE();
+
+  // Heartbeat watchdog — detect silent SSE drops
+  setInterval(function() {
+    if (sseAlive && (Date.now() - lastSSEHeartbeat) > 25000) {
+      sseAlive = false;
+      connectSSE();
+    }
+    // Fallback poll only when SSE is down
+    if (!sseAlive) fetchQueueCounts();
+  }, 15000);
 
   // ── Start ──────────────────────────────────────────────────────
   init();
