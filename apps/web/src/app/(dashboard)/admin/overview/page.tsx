@@ -41,7 +41,7 @@ export default async function OverviewPage() {
       .order('name'),
     context.supabase
       .from('services')
-      .select('id, name, code, department_id, is_active, sort_order')
+      .select('id, name, code, department_id, is_active, sort_order, estimated_service_time')
       .order('sort_order'),
     context.supabase
       .from('staff')
