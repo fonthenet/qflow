@@ -262,10 +262,13 @@ async function findOrgByCode(code: string, channel: Channel): Promise<OrgContext
 
 /**
  * Find an active session for a given identifier (phone for WhatsApp, PSID for Messenger).
+ * For WhatsApp, also checks whatsapp_bsuid if the primary phone lookup fails
+ * (handles username adopters whose phone may not be available).
  */
 async function findOrgByActiveSession(
   identifier: string,
   channel: Channel,
+  bsuid?: string,
 ): Promise<{ org: OrgContext; session: any } | null> {
   const supabase = createAdminClient() as any;
 
@@ -280,6 +283,42 @@ async function findOrgByActiveSession(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // If no session found by phone but we have a BSUID, try BSUID lookup
+  if (!session && channel === 'whatsapp' && bsuid) {
+    const { data: bsuidSession } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id, organization_id, locale, channel')
+      .eq('whatsapp_bsuid', bsuid)
+      .eq('state', 'active')
+      .eq('channel', 'whatsapp')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (bsuidSession) {
+      // Backfill phone if now available (user may have been resolved)
+      if (identifier && identifier !== bsuid) {
+        await supabase
+          .from('whatsapp_sessions')
+          .update({ whatsapp_phone: identifier })
+          .eq('id', bsuidSession.id);
+      }
+
+      const adminClient = createAdminClient();
+      const { data: orgRow } = await adminClient
+        .from('organizations')
+        .select('id, name, settings')
+        .eq('id', bsuidSession.organization_id)
+        .single();
+
+      if (!orgRow) return null;
+      return {
+        org: { id: orgRow.id, name: orgRow.name, settings: (orgRow.settings ?? {}) as Record<string, any> },
+        session: bsuidSession,
+      };
+    }
+  }
 
   if (!session) return null;
 
@@ -324,6 +363,7 @@ export async function handleInboundMessage(
   messageBody: string,
   sendMessage: SendFn,
   profileName?: string,
+  bsuid?: string,
 ): Promise<void> {
   const command = messageBody.trim().toUpperCase();
   const detectedLocale = detectLocale(messageBody);
@@ -332,14 +372,14 @@ export async function handleInboundMessage(
   if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
     const qrToken = messageBody.trim().substring('TRACK qflo_'.length).trim();
     if (qrToken) {
-      await handleTrackLink(identifier, qrToken, detectedLocale, channel, sendMessage, profileName);
+      await handleTrackLink(identifier, qrToken, detectedLocale, channel, sendMessage, profileName, bsuid);
       return;
     }
   }
 
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || messageBody.trim() === 'حالة') {
-    const found = await findOrgByActiveSession(identifier, channel);
+    const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
       await handleStatus(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
@@ -351,7 +391,7 @@ export async function handleInboundMessage(
 
   // ── CANCEL / ANNULER / إلغاء ──
   if (command === 'CANCEL' || command === 'ANNULER' || messageBody.trim() === 'إلغاء' || messageBody.trim() === 'الغاء') {
-    const found = await findOrgByActiveSession(identifier, channel);
+    const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
       await handleCancel(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
@@ -366,7 +406,7 @@ export async function handleInboundMessage(
   if (parsed) {
     const org = await findOrgByCode(parsed.code, channel);
     if (org) {
-      await handleJoin(identifier, org, parsed.locale, channel, sendMessage, profileName);
+      await handleJoin(identifier, org, parsed.locale, channel, sendMessage, profileName, bsuid);
     } else {
       await sendMessage({ to: identifier, body: t('code_not_found', parsed.locale, { code: parsed.code }) });
     }
@@ -375,7 +415,7 @@ export async function handleInboundMessage(
 
   // ── Plain "JOIN" / "REJOINDRE" / "انضم" without code ──
   if (command === 'JOIN' || command === 'REJOINDRE' || messageBody.trim() === 'انضم' || messageBody.trim() === 'إنضم') {
-    const found = await findOrgByActiveSession(identifier, channel);
+    const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
       const pos = await getQueuePosition(found.session.ticket_id);
@@ -397,13 +437,13 @@ export async function handleInboundMessage(
   if (maybeCode.length >= 2 && maybeCode.length <= 30 && /^[A-Z0-9_-]+$/.test(maybeCode)) {
     const org = await findOrgByCode(maybeCode, channel);
     if (org) {
-      await handleJoin(identifier, org, detectedLocale, channel, sendMessage, profileName);
+      await handleJoin(identifier, org, detectedLocale, channel, sendMessage, profileName, bsuid);
       return;
     }
   }
 
   // ── Unknown message ──
-  const found = await findOrgByActiveSession(identifier, channel);
+  const found = await findOrgByActiveSession(identifier, channel, bsuid);
   if (found) {
     const sessionLocale = (found.session.locale as Locale) || detectedLocale;
     await sendMessage({
@@ -426,6 +466,7 @@ async function handleTrackLink(
   channel: Channel,
   sendMessage: SendFn,
   profileName?: string,
+  bsuid?: string,
 ): Promise<void> {
   const supabase = createAdminClient() as any;
 
@@ -478,6 +519,7 @@ async function handleTrackLink(
         channel,
         [identifierColumn]: identifier,
         ...(channel === 'messenger' ? { whatsapp_phone: null } : { messenger_psid: null }),
+        ...(channel === 'whatsapp' && bsuid ? { whatsapp_bsuid: bsuid } : {}),
       })
       .eq('id', existingSession[0].id);
   } else {
@@ -489,6 +531,7 @@ async function handleTrackLink(
       department_id: ticket.department_id,
       service_id: ticket.service_id,
       [identifierColumn]: identifier,
+      ...(channel === 'whatsapp' && bsuid ? { whatsapp_bsuid: bsuid } : {}),
       channel,
       state: 'active',
       locale,
@@ -518,19 +561,35 @@ async function handleJoin(
   channel: Channel,
   sendMessage: SendFn,
   profileName?: string,
+  bsuid?: string,
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
 
-  // Check for existing active session
-  const { data: existing } = await supabase
-    .from('whatsapp_sessions')
-    .select('id, ticket_id')
-    .eq(identifierColumn, identifier)
-    .eq('organization_id', org.id)
-    .eq('state', 'active')
-    .eq('channel', channel)
-    .maybeSingle();
+  // Check for existing active session (by phone/PSID, then by BSUID)
+  let existing: { id: string; ticket_id: string } | null = null;
+  {
+    const { data } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id')
+      .eq(identifierColumn, identifier)
+      .eq('organization_id', org.id)
+      .eq('state', 'active')
+      .eq('channel', channel)
+      .maybeSingle();
+    existing = data;
+  }
+  if (!existing && channel === 'whatsapp' && bsuid) {
+    const { data } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id')
+      .eq('whatsapp_bsuid', bsuid)
+      .eq('organization_id', org.id)
+      .eq('state', 'active')
+      .eq('channel', 'whatsapp')
+      .maybeSingle();
+    existing = data;
+  }
 
   if (existing?.ticket_id) {
     const pos = await getQueuePosition(existing.ticket_id);
@@ -635,6 +694,7 @@ async function handleJoin(
     sessionData.messenger_psid = identifier;
   } else {
     sessionData.whatsapp_phone = identifier;
+    if (bsuid) sessionData.whatsapp_bsuid = bsuid;
   }
 
   const { error: sessionError } = await supabase.from('whatsapp_sessions').insert(sessionData);

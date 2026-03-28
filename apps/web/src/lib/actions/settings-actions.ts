@@ -85,3 +85,25 @@ export async function updateOrganizationSettings(data: {
   revalidatePath('/admin/settings');
   return { success: true };
 }
+
+/**
+ * Check if a WhatsApp business code is available (not used by another org).
+ */
+export async function checkWhatsAppCodeAvailability(code: string): Promise<{ available: boolean }> {
+  const context = await getStaffContext();
+  const normalized = code.toUpperCase().trim();
+  if (!normalized || normalized.length < 2) return { available: false };
+
+  const { data: orgs } = await context.supabase
+    .from('organizations')
+    .select('id, settings');
+
+  const taken = (orgs ?? []).some((org: any) => {
+    if (org.id === context.staff.organization_id) return false; // skip own org
+    const settings = (org.settings ?? {}) as Record<string, any>;
+    const orgCode = (settings.whatsapp_code ?? '').toString().toUpperCase().trim();
+    return orgCode === normalized;
+  });
+
+  return { available: !taken };
+}

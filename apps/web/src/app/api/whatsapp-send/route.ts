@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Use .limit(1) instead of .maybeSingle() to handle duplicate sessions gracefully
     const { data: sessions } = await (supabase as any)
       .from('whatsapp_sessions')
-      .select('id, whatsapp_phone, messenger_psid, organization_id, locale, channel, otn_token')
+      .select('id, whatsapp_phone, whatsapp_bsuid, messenger_psid, organization_id, locale, channel, otn_token')
       .eq('ticket_id', ticketId)
       .eq('state', 'active')
       .order('created_at', { ascending: false })
@@ -173,8 +173,11 @@ export async function POST(request: NextRequest) {
       messageId = result.messageId;
     } else {
       // ── WhatsApp dispatch ──
+      // Phone is primary; BSUID is stored but not yet usable for sending
+      // (Meta enables BSUID-based sending via `recipient` field in May 2026)
       if (!session.whatsapp_phone) {
-        return NextResponse.json({ sent: false, reason: 'no whatsapp phone in session' });
+        console.warn(`[whatsapp-send] No phone for session ${session.id}, bsuid=${session.whatsapp_bsuid ?? 'none'} — cannot send yet (BSUID sending available May 2026)`);
+        return NextResponse.json({ sent: false, reason: 'no whatsapp phone in session (username adopter without phone — BSUID sending not yet available)' });
       }
 
       const result = await sendWhatsAppMessage({

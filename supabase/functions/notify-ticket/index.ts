@@ -24,6 +24,7 @@ type Event = "called" | "recall" | "buzz" | "no_show" | "served" | "cancelled" |
 interface Session {
   id: string;
   whatsapp_phone: string | null;
+  whatsapp_bsuid: string | null;
   messenger_psid: string | null;
   channel: "whatsapp" | "messenger";
   locale: Locale;
@@ -176,7 +177,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "5";
+const VERSION = "6";
 
 Deno.serve(async (req) => {
   try {
@@ -213,7 +214,7 @@ Deno.serve(async (req) => {
     // Look up active session (WhatsApp or Messenger)
     const { data: session } = await supabase
       .from("whatsapp_sessions")
-      .select("id, whatsapp_phone, messenger_psid, channel, locale, otn_token")
+      .select("id, whatsapp_phone, whatsapp_bsuid, messenger_psid, channel, locale, otn_token")
       .eq("ticket_id", ticketId)
       .eq("state", "active")
       .maybeSingle() as { data: Session | null };
@@ -224,7 +225,7 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "no active session", version: VERSION });
     }
 
-    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} psid=${session.messenger_psid} phone=${session.whatsapp_phone}`);
+    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} psid=${session.messenger_psid} phone=${session.whatsapp_phone} bsuid=${session.whatsapp_bsuid}`);
 
     const locale = (session.locale as Locale) || "fr";
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
@@ -242,6 +243,9 @@ Deno.serve(async (req) => {
       sent = await sendMessenger(session.messenger_psid, message);
     } else if (session.whatsapp_phone) {
       sent = await sendWhatsApp(session.whatsapp_phone, message);
+    } else if (session.whatsapp_bsuid) {
+      // Username adopter without phone — BSUID sending available May 2026
+      console.warn(`[notify-ticket v${VERSION}] No phone for session, bsuid=${session.whatsapp_bsuid} — cannot send yet`);
     }
 
     if (sent) {

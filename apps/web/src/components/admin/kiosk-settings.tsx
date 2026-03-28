@@ -474,7 +474,9 @@ export function KioskSettings({
               <div>
                 <p className="text-sm font-medium text-foreground">{t('Show business logo')}</p>
                 <p className="text-xs text-muted-foreground">
-                  {resolvedLogoUrl ? t('Display logo in the kiosk header.') : t('Upload a logo URL first.')}
+                  {resolvedLogoUrl
+                    ? t('Display logo in the kiosk header.')
+                    : t('Add a logo in Settings → Business to enable this.')}
                 </p>
               </div>
               <Switch checked={showLogo} onChange={setShowLogo} disabled={!resolvedLogoUrl} label={t('Show business logo')} />

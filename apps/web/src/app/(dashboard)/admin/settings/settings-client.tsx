@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Save, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
-import { updateOrganizationSettings } from '@/lib/actions/settings-actions';
+import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 
 interface Organization {
@@ -14,9 +14,23 @@ interface Organization {
   settings?: Record<string, any> | null;
 }
 
+interface MessengerPageInfo {
+  connected: boolean;
+  page?: { id: string; name: string; pictureUrl: string | null };
+  reason?: string;
+}
+
+interface VirtualQueueCode {
+  id: string;
+  label: string;
+}
+
 interface SettingsClientProps {
   organization: Organization;
   smsProviderReady: boolean;
+  whatsappProviderReady: boolean;
+  messengerPageInfo?: MessengerPageInfo;
+  virtualQueueCodes?: VirtualQueueCode[];
   templateSummary: {
     id: string;
     title: string;
@@ -81,9 +95,43 @@ function formatModuleLabel(value: string, t: (key: string) => string) {
   return formatEnumLabel(value, t);
 }
 
+function ConnectedPageCard({ pageInfo, t }: { pageInfo?: MessengerPageInfo; t: (key: string) => string }) {
+  if (!pageInfo || !pageInfo.connected) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+      <p className="text-xs font-medium uppercase tracking-wider text-emerald-700 mb-2">
+        {t('Connected Facebook Page')}
+      </p>
+      <div className="flex items-center gap-3">
+        {pageInfo.page?.pictureUrl ? (
+          <img
+            src={pageInfo.page.pictureUrl}
+            alt=""
+            className="h-10 w-10 rounded-full border border-emerald-200"
+          />
+        ) : (
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">
+            {pageInfo.page?.name?.charAt(0) ?? '?'}
+          </div>
+        )}
+        <div>
+          <p className="text-sm font-semibold text-emerald-900">{pageInfo.page?.name}</p>
+          <p className="text-xs text-emerald-700 font-mono">{t('Page ID')}: {pageInfo.page?.id}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsClient({
   organization,
   smsProviderReady,
+  whatsappProviderReady,
+  messengerPageInfo,
+  virtualQueueCodes = [],
   templateSummary,
   templateConfigured,
 }: SettingsClientProps) {
@@ -168,6 +216,25 @@ export function SettingsClient({
   const [whatsappCode, setWhatsappCode] = useState<string>(
     settings.whatsapp_code ?? ''
   );
+  const savedWhatsappCode = settings.whatsapp_code ?? '';
+  const [codeAvailability, setCodeAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const codeCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const normalized = whatsappCode.toUpperCase().trim();
+    if (!normalized || normalized.length < 2 || normalized === savedWhatsappCode.toUpperCase().trim()) {
+      setCodeAvailability('idle');
+      return;
+    }
+    setCodeAvailability('checking');
+    if (codeCheckTimer.current) clearTimeout(codeCheckTimer.current);
+    codeCheckTimer.current = setTimeout(async () => {
+      const result = await checkWhatsAppCodeAvailability(normalized);
+      setCodeAvailability(result.available ? 'available' : 'taken');
+    }, 500);
+    return () => { if (codeCheckTimer.current) clearTimeout(codeCheckTimer.current); };
+  }, [whatsappCode, savedWhatsappCode]);
+
   const [whatsappBusinessPhone, setWhatsappBusinessPhone] = useState<string>(
     settings.whatsapp_business_phone ?? ''
   );
@@ -568,33 +635,38 @@ export function SettingsClient({
         </div>
       </section>
 
-      {/* ── WhatsApp Queue Integration ─────────────────────────────────── */}
+      {/* ── WhatsApp Queue Integration (read-only) ─────────────────────── */}
       <section className="rounded-xl border border-border bg-card p-6 space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-foreground">
             {t('WhatsApp Queue')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('Let customers join the queue by sending a message via WhatsApp. One shared Qflo number serves all businesses.')}
+            {t('Customers join your queue by sending a message via WhatsApp. Managed by Qflo.')}
           </p>
         </div>
 
-        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4">
-          <input
-            type="checkbox"
-            checked={whatsappEnabled}
-            onChange={(e) => setWhatsappEnabled(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-          />
-          <div>
+        <div className="flex items-center justify-between gap-4">
+          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
+            <input
+              type="checkbox"
+              checked={whatsappEnabled}
+              onChange={(e) => setWhatsappEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
             <span className="text-sm font-medium text-foreground">
-              {t('Enable WhatsApp Queue Join')}
+              {whatsappEnabled ? t('WhatsApp Queue Join is enabled') : t('WhatsApp Queue Join is disabled')}
             </span>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('Show a "Join via WhatsApp" button on the QR code join page.')}
-            </p>
+          </label>
+          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+            whatsappProviderReady
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            <div className={`h-2 w-2 rounded-full ${whatsappProviderReady ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            {whatsappProviderReady ? t('Connected') : t('Not connected')}
           </div>
-        </label>
+        </div>
 
         {whatsappEnabled && (
           <div className="space-y-4">
@@ -602,33 +674,38 @@ export function SettingsClient({
               <label className="block text-sm font-medium text-muted-foreground mb-1">
                 {t('Business Code')}
               </label>
-              <input
-                type="text"
-                value={whatsappCode}
-                onChange={(e) => setWhatsappCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="HADABI"
-                maxLength={30}
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={whatsappCode}
+                  onChange={(e) => setWhatsappCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  placeholder={t('e.g. CLINIC1')}
+                  maxLength={20}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground uppercase tracking-wider font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                {codeAvailability === 'checking' && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{t('Checking…')}</span>
+                )}
+                {codeAvailability === 'available' && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-600 font-medium">✓ {t('Available')}</span>
+                )}
+                {codeAvailability === 'taken' && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-red-600 font-medium">✗ {t('Already taken')}</span>
+                )}
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                {t('Short unique code for your business. Customers will text "JOIN HADABI" to join your queue. Letters, numbers, hyphens and underscores only.')}
+                {t('Unique code customers use to join your queue via WhatsApp.')}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('Default Virtual Queue Code ID')}
+                {t('Default Queue')}
               </label>
-              <input
-                type="text"
-                value={whatsappDefaultVirtualCodeId}
-                onChange={(e) => setWhatsappDefaultVirtualCodeId(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder={t('UUID of the virtual queue code')}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('The virtual queue code that determines which office/department/service WhatsApp customers join. Find this in your virtual queue codes settings.')}
-              </p>
+              <div className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground">
+                {virtualQueueCodes.find((c) => c.id === whatsappDefaultVirtualCodeId)?.label
+                  || <span className="text-muted-foreground italic">{t('Not set')}</span>}
+              </div>
             </div>
 
             {whatsappCode && (
@@ -643,57 +720,48 @@ export function SettingsClient({
         )}
       </section>
 
-      {/* ── Messenger Notifications ────────────────────────────────────── */}
+      {/* ── Messenger Notifications (read-only) ────────────────────────── */}
       <section className="rounded-xl border border-border bg-card p-6 space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-foreground">
             {t('Messenger Notifications')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('Let customers receive queue notifications via Facebook Messenger. Customers tap a link to opt in after booking.')}
+            {t('Customers receive queue notifications via Facebook Messenger. Managed by Qflo.')}
           </p>
         </div>
 
-        <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4">
-          <input
-            type="checkbox"
-            checked={messengerEnabled}
-            onChange={(e) => setMessengerEnabled(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-          />
-          <div>
+        <div className="flex items-center justify-between gap-4">
+          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
+            <input
+              type="checkbox"
+              checked={messengerEnabled}
+              onChange={(e) => setMessengerEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+            />
             <span className="text-sm font-medium text-foreground">
-              {t('Enable Messenger Notifications')}
+              {messengerEnabled ? t('Messenger Notifications are enabled') : t('Messenger Notifications are disabled')}
             </span>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('Show a "Get Messenger notifications" button on the tracking page, kiosk, and Station.')}
-            </p>
+          </label>
+          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+            messengerPageInfo?.connected
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            <div className={`h-2 w-2 rounded-full ${messengerPageInfo?.connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            {messengerPageInfo?.connected ? t('Connected') : t('Not connected')}
           </div>
-        </label>
+        </div>
 
         {messengerEnabled && (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('Facebook Page ID')}
-              </label>
-              <input
-                type="text"
-                value={messengerPageId}
-                onChange={(e) => setMessengerPageId(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="123456789012345"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('The numeric Page ID of your Facebook Page connected to the Qflo Messenger app. Find this in your Facebook Page settings under "About".')}
-              </p>
-            </div>
+            <ConnectedPageCard pageInfo={messengerPageInfo} t={t} />
 
             {messengerPageId && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
                 <p className="font-medium">{t('How it works')}</p>
                 <p className="mt-1 text-sm">
-                  {t('After booking, customers see a "Get Messenger notifications" button. Tapping it opens Messenger and automatically links their ticket for live updates.')}
+                  {t('Customers can join your queue directly through Messenger or tap "Get Messenger notifications" after booking to receive live updates about their ticket.')}
                 </p>
               </div>
             )}
@@ -918,7 +986,7 @@ export function SettingsClient({
       <div className="flex items-center gap-4">
         <button
           onClick={handleSave}
-          disabled={isPending}
+          disabled={isPending || codeAvailability === 'taken'}
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           <Save className="h-4 w-4" />

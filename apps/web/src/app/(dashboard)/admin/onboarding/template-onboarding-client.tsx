@@ -62,6 +62,12 @@ interface TemplateOnboardingClientProps {
   currentTemplate: TemplateSummary;
   trialTemplate?: TemplateSummary;
   trialSettings?: Record<string, unknown>;
+  liveCounts?: {
+    departments: number;
+    services: number;
+    desks: number;
+    displays: number;
+  };
 }
 
 function formatEnum(value: string) {
@@ -264,6 +270,7 @@ export function TemplateOnboardingClient({
   currentTemplate,
   trialTemplate = currentTemplate,
   trialSettings = {},
+  liveCounts,
 }: TemplateOnboardingClientProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -1199,14 +1206,16 @@ export function TemplateOnboardingClient({
           <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
             <h2 className="text-lg font-semibold text-foreground">{t('Live summary')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t('This is the setup that will be created when you confirm.')}
+              {setupLocked
+                ? t('Current state of your business setup.')
+                : t('This is the setup that will be created when you confirm.')}
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <MiniStat label={vocabulary.officeLabel} value={compactWords(officeName)} />
-              <MiniStat label={vocabulary.departmentLabel} value={t('{count} active', { count: enabledDepartmentCount })} />
-              <MiniStat label={vocabulary.serviceLabel} value={t('{count} active', { count: enabledServiceCount })} />
-              <MiniStat label={vocabulary.deskLabel} value={t('{count} active', { count: enabledDeskCount })} />
-              <MiniStat label={t('Displays')} value={createStarterDisplay ? t('{count} active', { count: enabledDisplayCount }) : t('Off')} />
+              <MiniStat label={vocabulary.departmentLabel} value={t('{count} active', { count: setupLocked && liveCounts ? liveCounts.departments : enabledDepartmentCount })} />
+              <MiniStat label={vocabulary.serviceLabel} value={t('{count} active', { count: setupLocked && liveCounts ? liveCounts.services : enabledServiceCount })} />
+              <MiniStat label={vocabulary.deskLabel} value={t('{count} active', { count: setupLocked && liveCounts ? liveCounts.desks : enabledDeskCount })} />
+              <MiniStat label={t('Displays')} value={setupLocked && liveCounts ? t('{count} active', { count: liveCounts.displays }) : createStarterDisplay ? t('{count} active', { count: enabledDisplayCount }) : t('Off')} />
               <MiniStat label={t('Customer flow')} value={t(queueFlowLabel(operatingModel, selectedTemplate.vertical))} />
             </div>
           </div>

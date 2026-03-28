@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
     let toPhone: string;
     let messageBody: string;
     let profileName: string | undefined;
+    let bsuid: string | undefined; // Business-Scoped User ID (Meta BSUID)
 
     if (contentType.includes('application/x-www-form-urlencoded')) {
       // Twilio sends form-encoded data
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
       messageBody = message.text?.body ?? '';
       // Extract WhatsApp profile name (Meta provides it in contacts array)
       profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
+      // Extract BSUID (Business-Scoped User ID) — present after March 31 2026
+      bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
     } else {
       return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
@@ -106,14 +109,15 @@ export async function POST(request: NextRequest) {
     fromPhone = fromPhone.replace(/^whatsapp:/, '');
     toPhone = toPhone.replace(/^whatsapp:/, '');
 
-    if (!fromPhone || !messageBody) {
+    if ((!fromPhone && !bsuid) || !messageBody) {
       return NextResponse.json({ ok: true });
     }
 
-    console.log(`[whatsapp-webhook] Message from ${fromPhone}: "${messageBody}"`);
+    console.log(`[whatsapp-webhook] Message from ${fromPhone || bsuid}: "${messageBody}"${bsuid ? ` (bsuid: ${bsuid})` : ''}`);
 
     // Handle the message with shared-number routing
-    await handleWhatsAppMessage(fromPhone, messageBody, profileName);
+    // Phone is primary identifier; BSUID is passed alongside for storage/fallback
+    await handleWhatsAppMessage(fromPhone, messageBody, profileName, bsuid);
 
     console.log(`[whatsapp-webhook] Handled successfully`);
     return NextResponse.json({ ok: true });
