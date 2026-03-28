@@ -1042,12 +1042,10 @@ export function KioskView({
                   {ticket.position_in_queue != null
                     ? t('#{position} in queue', { position: ticket.position_in_queue })
                     : `${ticket.department_name} · ${ticket.service_name}`}
+                  {(ticket.estimated_wait ?? ticket.estimated_service_time) ? (
+                    <> · ⏱ ~{ticket.estimated_wait ?? ticket.estimated_service_time} {t('min')}</>
+                  ) : null}
                 </div>
-                {(ticket.estimated_wait ?? ticket.estimated_service_time) ? (
-                  <div className="mt-1 text-[13px] text-slate-400">
-                    ⏱ ~{ticket.estimated_wait ?? ticket.estimated_service_time} {t('min')}
-                  </div>
-                ) : null}
               </div>
 
               {/* WhatsApp / Messenger notifications */}

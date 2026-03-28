@@ -772,8 +772,7 @@
         '<div class="ticket-box">' +
         '<div class="label">' + tr('YOUR TICKET NUMBER') + '</div>' +
         '<div class="number">' + esc(t.ticket_number) + '</div>' +
-        '<div class="card-meta" style="justify-content:center;font-size:15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ' + tr('#{position} in queue', { position: t.position }) + '</div>' +
-        estWait +
+        '<div class="card-meta" style="justify-content:center;font-size:15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ' + tr('#{position} in queue', { position: t.position }) + (waitMin ? ' · ⏱ ~' + tr('{minutes} min', { minutes: waitMin }) : '') + '</div>' +
         '</div>' +
         whatsappBadge +
         '<div class="result-divider"></div>' +
