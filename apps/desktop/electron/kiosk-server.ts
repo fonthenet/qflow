@@ -1713,7 +1713,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         renderQueue(d.waiting || []);
       } catch(e) {
         console.error('Display fetch error:', e);
-        updateText('office-name', 'QFlo Station');
+        updateText('office-name', 'Qflo Station');
         updateText('branch-name', 'No active office connected');
         updateText('s-waiting', '0');
         updateText('s-called', '0');

@@ -45,7 +45,7 @@ export function QueueSessionEnded({
           </button>
         ) : null}
 
-        <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
+        <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by Qflo</p>
       </div>
     </div>
   );

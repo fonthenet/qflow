@@ -219,7 +219,7 @@ export function FeedbackForm({
             {isFinishing ? t('Closing...') : t('Done')}
           </button>
 
-          <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
+          <p className={`mt-5 text-xs text-slate-500 ${compactFooterClass}`}>Powered by Qflo</p>
         </div>
       </div>
     );
@@ -321,7 +321,7 @@ export function FeedbackForm({
         </div>
 
         <div className="mt-auto pt-6 text-center">
-          <p className={`text-xs text-slate-500 ${compactFooterClass}`}>Powered by QFlo</p>
+          <p className={`text-xs text-slate-500 ${compactFooterClass}`}>Powered by Qflo</p>
         </div>
       </div>
     </div>

@@ -219,21 +219,33 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className={`grid gap-5 ${screens.length === 1 ? 'grid-cols-1 max-w-2xl' : screens.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
           {screens.map((screen) => (
             <div
               key={screen.id}
-              className={`rounded-xl border bg-card p-5 shadow-sm transition-all ${
+              className={`rounded-xl border bg-card shadow-sm transition-all ${
                 screen.is_active ? 'border-border' : 'border-border/50 opacity-60'
               }`}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Monitor className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold text-foreground">{screen.name}</h3>
+              {/* Header band */}
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${
+                screen.is_active ? 'border-border' : 'border-border/50'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                    screen.is_active ? 'bg-primary/10' : 'bg-muted'
+                  }`}>
+                    <Monitor className={`h-5 w-5 ${screen.is_active ? 'text-primary' : 'text-muted-foreground'}`} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">{screen.name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t('Office')}: {getOfficeName(screen.office_id)}
+                    </p>
+                  </div>
                 </div>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
                     screen.is_active
                       ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-500'
@@ -243,47 +255,51 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
                 </span>
               </div>
 
-              <p className="text-sm text-muted-foreground mb-4">
-                {t('Office')}: {getOfficeName(screen.office_id)}
-              </p>
+              {/* URL preview */}
+              <div className="px-6 py-3 bg-muted/30">
+                <p className="text-xs text-muted-foreground font-mono truncate">
+                  {typeof window !== 'undefined' ? window.location.origin : ''}/d/{screen.screen_token}
+                </p>
+              </div>
 
-              <div className="flex flex-wrap gap-2">
+              {/* Actions */}
+              <div className="px-6 py-4 flex flex-wrap gap-2">
                 <a
                   href={`/d/${screen.screen_token}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <ExternalLink className="h-4 w-4" />
                   {t('Preview')}
                 </a>
                 <button
                   onClick={() => copyUrl(screen.screen_token, screen.id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
                 >
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-4 w-4" />
                   {copiedId === screen.id ? t('Copied!') : t('Copy URL')}
                 </button>
                 <button
                   onClick={() => setEditingScreen(screen)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
                 >
-                  <Settings className="h-3.5 w-3.5" />
+                  <Settings className="h-4 w-4" />
                   {t('Settings')}
                 </button>
                 <button
                   onClick={() => handleToggleActive(screen)}
                   disabled={isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
                 >
                   {screen.is_active ? t('Deactivate') : t('Activate')}
                 </button>
                 <button
                   onClick={() => handleDelete(screen.id)}
                   disabled={isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                   {t('Delete')}
                 </button>
               </div>

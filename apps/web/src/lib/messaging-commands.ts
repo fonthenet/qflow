@@ -23,7 +23,7 @@ type Locale = 'fr' | 'ar' | 'en';
 const messages: Record<string, Record<Locale, string>> = {
   welcome: {
     fr: [
-      '👋 Bienvenue sur *QFlow* !',
+      '👋 Bienvenue sur *Qflo* !',
       '',
       'Pour rejoindre une file, envoyez :',
       '*REJOINDRE <code>*',
@@ -33,7 +33,7 @@ const messages: Record<string, Record<Locale, string>> = {
       'Le code se trouve sur l\'affiche QR ou la page d\'inscription.',
     ].join('\n'),
     ar: [
-      '👋 مرحبًا بك في *QFlow*!',
+      '👋 مرحبًا بك في *Qflo*!',
       '',
       'للانضمام إلى الطابور، أرسل:',
       '*انضم <الرمز>*',
@@ -43,7 +43,7 @@ const messages: Record<string, Record<Locale, string>> = {
       'ستجد الرمز على ملصق QR أو صفحة الانضمام.',
     ].join('\n'),
     en: [
-      '👋 Welcome to *QFlow*!',
+      '👋 Welcome to *Qflo*!',
       '',
       'To join a queue, send:',
       '*JOIN <business code>*',

@@ -575,7 +575,7 @@ export function SettingsClient({
             {t('WhatsApp Queue')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('Let customers join the queue by sending a message via WhatsApp. One shared QFlow number serves all businesses.')}
+            {t('Let customers join the queue by sending a message via WhatsApp. One shared Qflo number serves all businesses.')}
           </p>
         </div>
 
@@ -635,7 +635,7 @@ export function SettingsClient({
               <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
                 <p className="font-medium">{t('How customers join')}</p>
                 <p className="mt-1 text-sm">
-                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the QFlow WhatsApp number, or scan the QR code on your join page.')}
+                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo WhatsApp number, or scan the QR code on your join page.')}
                 </p>
               </div>
             )}
@@ -685,7 +685,7 @@ export function SettingsClient({
                 placeholder="123456789012345"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                {t('The numeric Page ID of your Facebook Page connected to the QFlow Messenger app. Find this in your Facebook Page settings under "About".')}
+                {t('The numeric Page ID of your Facebook Page connected to the Qflo Messenger app. Find this in your Facebook Page settings under "About".')}
               </p>
             </div>
 

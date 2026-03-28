@@ -663,7 +663,7 @@ export function YourTurn({
         </div>
 
         <div className="pt-6 text-center">
-          <p className={`text-xs text-white/42 ${compactFooterClass}`}>Powered by QFlo</p>
+          <p className={`text-xs text-white/42 ${compactFooterClass}`}>Powered by Qflo</p>
         </div>
       </div>
     </div>

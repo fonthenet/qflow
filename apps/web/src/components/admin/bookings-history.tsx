@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { CalendarClock, Clock3, Ticket, Users } from 'lucide-react';
 import { buildBookingCheckInPath, buildBookingPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -88,287 +89,210 @@ export function BookingsHistory({
   const checkedInAppointments = appointments.filter((entry) => entry.status === 'checked_in').length;
   const cancelledAppointments = appointments.filter((entry) => entry.status === 'cancelled').length;
 
+  // Flatten all appointments for the history table
+  const allAppointmentRows = useMemo(() => {
+    const deptMap = new Map(departments.map((d) => [d.id, d]));
+    const officeMap = new Map(offices.map((o) => [o.id, o]));
+    return appointments
+      .map((a) => {
+        const dept = deptMap.get(a.department_id);
+        const service = dept?.services?.find((s) => s.id === a.service_id);
+        return { ...a, departmentName: dept?.name, departmentCode: dept?.code, serviceName: service?.name, serviceCode: service?.code, officeName: officeMap.get(a.office_id)?.name };
+      })
+      .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+  }, [appointments, departments, offices]);
+
   return (
-    <div className="space-y-6 p-6">
-      <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">{t('Bookings')}</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              {t('Review recent appointment history by category and share the right booking link or QR code for each service.')}
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('Recent bookings')}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{totalAppointments}</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('Pending')}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{pendingAppointments}</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('Checked in')}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{checkedInAppointments}</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {t('Cancelled')}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{cancelledAppointments}</p>
-            </div>
-          </div>
+    <div className="mx-auto max-w-4xl space-y-8 p-6">
+      {/* ── Header ── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{t('Appointments')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('Booking history, links, and QR codes.')}
+          </p>
         </div>
-      </section>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-muted-foreground">{t('Total')} <span className="font-semibold text-foreground">{totalAppointments}</span></span>
+          <span className="text-muted-foreground">{t('Pending')} <span className="font-semibold text-amber-600">{pendingAppointments}</span></span>
+          <span className="text-muted-foreground">{t('Checked in')} <span className="font-semibold text-emerald-600">{checkedInAppointments}</span></span>
+        </div>
+      </div>
 
-      {activeOffices.map((office) => {
-        const officeDepartments = departments
-          .filter((department) => department.office_id === office.id && department.is_active)
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-        const officeAppointments = appointments.filter((entry) => entry.office_id === office.id);
+      {/* ── 1. Booking Links ── */}
+      {activeOffices.length > 0 ? (
+        <section className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="border-b border-border px-6 py-4">
+            <h2 className="text-sm font-semibold text-foreground">{t('Booking Links')}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('Share links or QR codes so customers can book online.')}</p>
+          </div>
 
-        return (
-          <section key={office.id} className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-foreground">{office.name}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t('{count} recent appointment(s) across all booking categories.', {
-                    count: officeAppointments.length,
-                  })}
-                </p>
-              </div>
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_300px] items-center gap-4 border-b border-border bg-muted/30 px-6 py-2.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('Link')}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground text-right">{t('Actions')}</span>
+          </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="font-medium text-foreground">{t('Office booking page')}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t('Share when the customer should choose a department and service themselves.')}
-                  </p>
-                  <div className="mt-4">
-                    <PublicLinkActions
-                      path={buildBookingPath(office)}
-                      qrTitle={t('{name} booking page', { name: office.name })}
-                      qrDescription={t('Scan to book an appointment for this office.')}
-                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-booking.png`}
-                    />
+          <div className="divide-y divide-border">
+            {activeOffices.map((office) => {
+              const officeDepartments = departments
+                .filter((d) => d.office_id === office.id && d.is_active)
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+              const compactBtn = 'rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted whitespace-nowrap';
+
+              return (
+                <div key={office.id} className="divide-y divide-border/50">
+                  {/* Office booking link */}
+                  <div className="grid grid-cols-[1fr_300px] items-center gap-4 px-6 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{office.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{t('Booking page')}</p>
+                    </div>
+                    <div className="flex justify-end">
+                      <PublicLinkActions
+                        path={buildBookingPath(office)}
+                        qrTitle={t('{name} booking page', { name: office.name })}
+                        qrDescription={t('Scan to book an appointment for this office.')}
+                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-booking.png`}
+                        buttonClassName={compactBtn}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-border bg-background p-4">
-                  <p className="font-medium text-foreground">{t('Office arrival check-in')}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t('Share when customers need to find an existing appointment and check in.')}
-                  </p>
-                  <div className="mt-4">
-                    <PublicLinkActions
-                      path={buildBookingCheckInPath(office)}
-                      qrTitle={t('{name} appointment check-in', { name: office.name })}
-                      qrDescription={t('Scan to look up and check in an appointment.')}
-                      downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-checkin.png`}
-                    />
+                  {/* Office check-in link */}
+                  <div className="grid grid-cols-[1fr_300px] items-center gap-4 px-6 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{office.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{t('Arrival check-in')}</p>
+                    </div>
+                    <div className="flex justify-end">
+                      <PublicLinkActions
+                        path={buildBookingCheckInPath(office)}
+                        qrTitle={t('{name} appointment check-in', { name: office.name })}
+                        qrDescription={t('Scan to look up and check in an appointment.')}
+                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-office-checkin.png`}
+                        buttonClassName={compactBtn}
+                      />
+                    </div>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            <div className="mt-6 space-y-5">
-              {officeDepartments.map((department) => {
-                const departmentAppointments = officeAppointments.filter(
-                  (entry) => entry.department_id === department.id
-                );
+                  {/* Department links */}
+                  {officeDepartments.map((department) => {
+                    const activeServices = (department.services ?? [])
+                      .filter((s) => s.is_active)
+                      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
-                return (
-                  <div key={department.id} className="rounded-2xl border border-border bg-background p-5">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-xl font-semibold text-foreground">{department.name}</h3>
-                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                            {department.code}
-                          </span>
+                    return [
+                      <div key={`dept-${department.id}`} className="grid grid-cols-[1fr_300px] items-center gap-4 bg-muted/20 px-6 py-3">
+                        <div className="flex items-center gap-2 pl-3">
+                          <p className="text-sm font-medium text-foreground">{department.name}</p>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{department.code}</span>
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {t('{count} recent booking(s) in this department.', {
-                            count: departmentAppointments.length,
-                          })}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-border p-4">
-                        <p className="font-medium text-foreground">{t('Department booking page')}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {t('Start inside this department, then let the customer choose the service.')}
-                        </p>
-                        <div className="mt-4">
+                        <div className="flex justify-end">
                           <PublicLinkActions
                             path={buildBookingPath(office, { departmentId: department.id })}
-                            qrTitle={t('{office} {department} booking', {
-                              office: office.name,
-                              department: department.name,
-                            })}
+                            qrTitle={t('{office} {department} booking', { office: office.name, department: department.name })}
                             qrDescription={t('Scan to open booking directly in this department.')}
                             downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-${department.code.toLowerCase()}-booking.png`}
+                            buttonClassName={compactBtn}
                           />
                         </div>
-                      </div>
+                      </div>,
+                      ...activeServices.map((service) => (
+                        <div key={`svc-${service.id}`} className="grid grid-cols-[1fr_300px] items-center gap-4 bg-muted/10 px-6 py-2.5">
+                          <div className="flex items-center gap-2 pl-7">
+                            <p className="text-sm text-foreground">{service.name}</p>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{service.code}</span>
+                          </div>
+                          <div className="flex justify-end">
+                            <PublicLinkActions
+                              path={buildBookingPath(office, { departmentId: department.id, serviceId: service.id })}
+                              qrTitle={t('{office} {service} booking', { office: office.name, service: service.name })}
+                              qrDescription={t('Scan to book directly into this service category.')}
+                              downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-${service.code.toLowerCase()}-booking.png`}
+                              buttonClassName={compactBtn}
+                            />
+                          </div>
+                        </div>
+                      )),
+                    ];
+                  })}
+
+                  {officeDepartments.length === 0 ? (
+                    <div className="px-6 py-3 pl-9 text-xs text-muted-foreground">
+                      {t('Add departments and services to create direct booking links.')}
                     </div>
-
-                    <div className="mt-5 grid gap-4 xl:grid-cols-2">
-                      {department.services
-                        ?.filter((service) => service.is_active)
-                        ?.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-                        .map((service) => {
-                          const serviceAppointments = departmentAppointments.filter(
-                            (entry) => entry.service_id === service.id
-                          );
-                          const servicePendingCount = serviceAppointments.filter((entry) =>
-                            ['pending', 'confirmed'].includes(entry.status ?? 'pending')
-                          ).length;
-                          const serviceCheckedInCount = serviceAppointments.filter(
-                            (entry) => entry.status === 'checked_in'
-                          ).length;
-
-                          return (
-                            <div key={service.id} className="rounded-2xl border border-border p-4">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <h4 className="font-semibold text-foreground">{service.name}</h4>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                                      {service.code}
-                                    </span>
-                                  </div>
-                                  <p className="mt-1 text-sm text-muted-foreground">
-                                    {t('Direct booking category for this service.')}
-                                  </p>
-                                </div>
-                                <div className="flex gap-2 text-xs">
-                                  <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-700">
-                                    {t('{count} pending', { count: servicePendingCount })}
-                                  </span>
-                                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
-                                    {t('{count} checked in', { count: serviceCheckedInCount })}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 rounded-2xl border border-border bg-card p-4">
-                                <p className="font-medium text-foreground">{t('Share booking link')}</p>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  {t('Customers land directly on this service when they open the link.')}
-                                </p>
-                                <div className="mt-4">
-                                  <PublicLinkActions
-                                    path={buildBookingPath(office, {
-                                      departmentId: department.id,
-                                      serviceId: service.id,
-                                    })}
-                                    qrTitle={t('{office} {service} booking', {
-                                      office: office.name,
-                                      service: service.name,
-                                    })}
-                                    qrDescription={t('Scan to book directly into this service category.')}
-                                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-${service.code.toLowerCase()}-booking.png`}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="mt-4">
-                                <div className="flex items-center gap-2">
-                                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                                  <p className="text-sm font-medium text-foreground">{t('Recent history')}</p>
-                                </div>
-
-                                {serviceAppointments.length === 0 ? (
-                                  <div className="mt-3 rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                                    {t('No recent bookings for this category.')}
-                                  </div>
-                                ) : (
-                                  <div className="mt-3 space-y-2">
-                                    {serviceAppointments.slice(0, 5).map((appointment) => (
-                                      <div
-                                        key={appointment.id}
-                                        className="rounded-2xl border border-border bg-background px-4 py-3"
-                                      >
-                                        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                                          <div>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <p className="font-medium text-foreground">
-                                                {appointment.customer_name}
-                                              </p>
-                                              <span
-                                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClasses(
-                                                  appointment.status
-                                                )}`}
-                                              >
-                                                {t((appointment.status ?? 'pending').replace(/_/g, ' '))}
-                                              </span>
-                                            </div>
-                                            <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                                              <span className="inline-flex items-center gap-1.5">
-                                                <Clock3 className="h-4 w-4" />
-                                  {formatDateTime(appointment.scheduled_at, {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                    hour: 'numeric',
-                                    minute: '2-digit',
-                                  })}
-                                              </span>
-                                              {appointment.customer_phone ? (
-                                                <span className="inline-flex items-center gap-1.5">
-                                                  <Users className="h-4 w-4" />
-                                                  {appointment.customer_phone}
-                                                </span>
-                                              ) : null}
-                                            </div>
-                                          </div>
-
-                                          {appointment.ticket ? (
-                                            <div className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
-                                              <span className="inline-flex items-center gap-1.5">
-                                                <Ticket className="h-4 w-4" />
-                                                {t('Ticket {number}', { number: appointment.ticket.ticket_number })}
-                                              </span>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {officeDepartments.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
-                  {t('Add departments and services to create shareable booking categories for this office.')}
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          </section>
-        );
-      })}
-
-      {activeOffices.length === 0 ? (
-        <section className="rounded-3xl border border-dashed border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
-          {t('There are no active offices yet, so booking categories and public QR links are not available.')}
+              );
+            })}
+          </div>
         </section>
-      ) : null}
+      ) : (
+        <section className="rounded-xl border border-dashed border-border bg-card px-6 py-8 text-center text-sm text-muted-foreground shadow-sm">
+          {t('No active offices. Add an office to enable booking links.')}
+        </section>
+      )}
+
+      {/* ── 2. Recent Appointments ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Recent Appointments')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('Last 50 bookings across all offices.')}</p>
+        </div>
+
+        {allAppointmentRows.length === 0 ? (
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+            <CalendarClock className="mx-auto h-8 w-8 text-muted-foreground/40" />
+            <p className="mt-3">{t('No appointments yet.')}</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {allAppointmentRows.slice(0, 50).map((appointment) => (
+              <div key={appointment.id} className="flex items-center gap-4 px-6 py-3.5">
+                {/* Customer info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground truncate">{appointment.customer_name}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${getStatusClasses(appointment.status)}`}>
+                      {t((appointment.status ?? 'pending').replace(/_/g, ' '))}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock3 className="h-3 w-3" />
+                      {formatDateTime(appointment.scheduled_at, { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                    {appointment.customer_phone ? (
+                      <span>{appointment.customer_phone}</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Service tag */}
+                <div className="hidden sm:flex shrink-0 flex-col items-end gap-1 text-right">
+                  {appointment.serviceName ? (
+                    <span className="text-xs text-muted-foreground">{appointment.serviceName}</span>
+                  ) : null}
+                  {appointment.departmentCode ? (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{appointment.departmentCode}</span>
+                  ) : null}
+                </div>
+
+                {/* Ticket badge */}
+                {appointment.ticket ? (
+                  <div className="shrink-0 rounded-lg bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Ticket className="h-3 w-3" />
+                      {appointment.ticket.ticket_number}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

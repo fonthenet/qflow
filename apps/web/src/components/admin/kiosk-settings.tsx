@@ -330,495 +330,374 @@ export function KioskSettings({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex flex-col gap-5 border-b border-border px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              <Tablet className="h-3.5 w-3.5" />
-              {t('Kiosk')}
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">{t('Kiosk Settings')}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t('Clean up the customer-facing screen and control which services appear.')}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {successMessage ? (
-              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                {successMessage}
-              </span>
-            ) : null}
-            {errorMessage ? <span className="text-sm text-destructive">{errorMessage}</span> : null}
-            <button
-              type="button"
-              onClick={resetToDefaults}
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t('Reset')}
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              {isPending ? t('Saving...') : t('Save changes')}
-            </button>
-          </div>
+    <div className="mx-auto max-w-3xl space-y-8 p-6">
+      {/* ── Header ── */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{t('Kiosk Settings')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('Configure the customer-facing kiosk screen.')}
+          </p>
         </div>
+        <div className="flex items-center gap-3">
+          {successMessage ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" />
+              {successMessage}
+            </span>
+          ) : null}
+          {errorMessage ? <span className="text-sm text-destructive">{errorMessage}</span> : null}
+          <button
+            type="button"
+            onClick={resetToDefaults}
+            disabled={isPending}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3.5 py-2 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" />
+            {t('Reset')}
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {isPending ? t('Saving...') : t('Save changes')}
+          </button>
+        </div>
+      </div>
 
-        <div className="grid gap-4 px-6 py-5 md:grid-cols-3">
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Tablet className="h-3.5 w-3.5" />
-              {t('Active offices')}
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{activeOffices.length}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Layers3 className="h-3.5 w-3.5" />
-              {t('Visible departments')}
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{visibleDepartmentCount}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Ticket className="h-3.5 w-3.5" />
-              {t('Visible services')}
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{visibleServiceCount}</p>
+      {/* ── 1. Text & Copy ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Text & Copy')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('What customers see on the kiosk screen.')}</p>
+        </div>
+        <div className="space-y-5 px-6 py-5">
+          <FieldBlock label={t('Welcome message')} hint={t('This appears above the first customer choice.')}>
+            <input
+              type="text"
+              value={welcomeMessage}
+              onChange={(event) => setWelcomeMessage(event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+            />
+          </FieldBlock>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <FieldBlock label={t('Header text')}>
+              <input
+                type="text"
+                value={headerText}
+                onChange={(event) => setHeaderText(event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+              />
+            </FieldBlock>
+            <FieldBlock label={t('Primary button label')}>
+              <input
+                type="text"
+                value={buttonLabel}
+                onChange={(event) => setButtonLabel(event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+              />
+            </FieldBlock>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)]">
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Palette}
-              title={t('Customer Screen')}
-              description={t('Core copy, color, and kiosk options.')}
+      {/* ── 2. Appearance ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Appearance')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('Theme color and branding.')}</p>
+        </div>
+        <div className="space-y-5 px-6 py-5">
+          <div className="flex items-center gap-4">
+            <input
+              type="color"
+              value={normalizeThemeColor(themeColor, templateDefaults.themeColor)}
+              onChange={(event) => setThemeColor(event.target.value)}
+              className="h-10 w-14 cursor-pointer rounded-lg border border-border bg-background"
             />
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-foreground">{t('Theme color')}</label>
+              <input
+                type="text"
+                value={themeColor}
+                onChange={(event) => setThemeColor(event.target.value)}
+                className="mt-1 w-full max-w-[180px] rounded-lg border border-border bg-background px-3 py-1.5 font-mono text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="space-y-5">
-                <FieldBlock
-                  label={t('Welcome message')}
-                  hint={t('This appears above the first customer choice.')}
-                >
-                  <input
-                    type="text"
-                    value={welcomeMessage}
-                    onChange={(event) => setWelcomeMessage(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-
-                <FieldBlock label={t('Header text')}>
-                  <input
-                    type="text"
-                    value={headerText}
-                    onChange={(event) => setHeaderText(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-
-                <FieldBlock label={t('Primary button label')}>
-                  <input
-                    type="text"
-                    value={buttonLabel}
-                    onChange={(event) => setButtonLabel(event.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </FieldBlock>
-
-                <FieldBlock
-                  label={t('Kiosk mode')}
-                  hint={t('Quick book puts booking first on the opening screen.')}
-                >
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => setKioskMode('normal')}
-                      className={`rounded-xl border px-4 py-4 text-left transition-colors ${
-                        kioskMode === 'normal'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border bg-background hover:bg-muted/60'
-                      }`}
-                    >
-                      <p className="text-sm font-semibold text-foreground">{t('Normal')}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{t('Queue button first.')}</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setKioskMode('quick_book')}
-                      className={`rounded-xl border px-4 py-4 text-left transition-colors ${
-                        kioskMode === 'quick_book'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border bg-background hover:bg-muted/60'
-                      }`}
-                    >
-                      <p className="text-sm font-semibold text-foreground">{t('Quick book')}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{t('Booking button first.')}</p>
-                    </button>
-                  </div>
-                </FieldBlock>
-
+          <div className="space-y-0 divide-y divide-border rounded-lg border border-border">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('Show business logo')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {resolvedLogoUrl ? t('Display logo in the kiosk header.') : t('Upload a logo URL first.')}
+                </p>
               </div>
+              <Switch checked={showLogo} onChange={setShowLogo} disabled={!resolvedLogoUrl} label={t('Show business logo')} />
+            </div>
+          </div>
 
-              <div className="space-y-4 rounded-xl border border-border bg-background p-4">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="h-12 w-12 rounded-xl border"
-                      style={{
-                        backgroundColor: themeColor,
-                        borderColor: `${themeColor}55`,
-                      }}
-                    />
-                    <div>
-                      <p className="font-medium text-foreground">{t('Theme color')}</p>
-                      <p className="text-sm text-muted-foreground">{t('Used for kiosk emphasis.')}</p>
-                    </div>
+          {showLogo ? (
+            <FieldBlock
+              label={t('Logo image URL')}
+              hint={
+                organizationLogoUrl
+                  ? t('Falls back to organization logo if empty.')
+                  : t('Paste a direct image URL, or add a logo in Business Settings.')
+              }
+            >
+              <div className="relative">
+                <ImageIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="url"
+                  value={logoUrl}
+                  onChange={(event) => setLogoUrl(event.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="w-full rounded-lg border border-border bg-background px-10 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </FieldBlock>
+          ) : null}
+        </div>
+      </section>
+
+      {/* ── 3. Behavior ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Behavior')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('How the kiosk flows and resets.')}</p>
+        </div>
+        <div className="space-y-5 px-6 py-5">
+          <FieldBlock label={t('Kiosk mode')} hint={t('Quick book puts booking first on the opening screen.')}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setKioskMode('normal')}
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  kioskMode === 'normal'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-background hover:bg-muted/60'
+                }`}
+              >
+                <p className="text-sm font-semibold text-foreground">{t('Normal')}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('Queue button first.')}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setKioskMode('quick_book')}
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  kioskMode === 'quick_book'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-background hover:bg-muted/60'
+                }`}
+              >
+                <p className="text-sm font-semibold text-foreground">{t('Quick book')}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('Booking button first.')}</p>
+              </button>
+            </div>
+          </FieldBlock>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <FieldBlock label={t('Starting department')} hint={t('Skip the department picker.')}>
+              <select
+                value={lockedDepartmentId}
+                onChange={(event) => setLockedDepartmentId(event.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">{t('Let customers choose')}</option>
+                {activeDepartments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name} ({department.code})
+                  </option>
+                ))}
+              </select>
+            </FieldBlock>
+            <FieldBlock label={t('Idle reset time')} hint={t('Seconds before the kiosk resets.')}>
+              <div className="relative">
+                <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={idleTimeout}
+                  onChange={(event) => setIdleTimeout(Number(event.target.value))}
+                  className="w-full rounded-lg border border-border bg-background px-10 py-2.5 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </FieldBlock>
+          </div>
+
+          <div className="space-y-0 divide-y divide-border rounded-lg border border-border">
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('Show estimated wait times')}</p>
+                <p className="text-xs text-muted-foreground">{t('Display service timing on buttons.')}</p>
+              </div>
+              <Switch checked={showEstimatedTime} onChange={setShowEstimatedTime} label={t('Show estimated wait times')} />
+            </div>
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('Show priority selection')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {availablePriorityFlow ? t('Let customers choose a priority.') : t('Priority rules not configured.')}
+                </p>
+              </div>
+              <Switch
+                checked={availablePriorityFlow && showPriorities}
+                onChange={setShowPriorities}
+                disabled={!availablePriorityFlow}
+                label={t('Show priority selection')}
+              />
+            </div>
+          </div>
+
+          {/* Current setup summary */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{t('Current setup:')}</span>
+            <span>{kioskMode === 'quick_book'
+              ? t('Starts with booking')
+              : startsOnServices
+                ? t('Starts with services{department}', {
+                    department: lockedDepartment ? ` ${t('in')} ${lockedDepartment.name}` : '',
+                  })
+                : t('Starts with department selection')}</span>
+            <span className="text-border">|</span>
+            <span>{showEstimatedTime ? t('wait times shown') : t('wait times hidden')}</span>
+            <span className="text-border">|</span>
+            <span>{availablePriorityFlow && showPriorities ? t('priority on') : t('priority off')}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 4. Visibility ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{t('Visibility')}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('Which departments and services appear on the kiosk.')}</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span><span className="font-semibold text-foreground">{visibleDepartmentCount}</span> {t('depts')}</span>
+            <span><span className="font-semibold text-foreground">{visibleServiceCount}</span> {t('services')}</span>
+          </div>
+        </div>
+
+        <div className="divide-y divide-border">
+          {activeDepartments.map((department) => {
+            const departmentVisible = !hiddenDepartments.includes(department.id);
+            const activeServices = (department.services ?? [])
+              .filter((service) => service.is_active)
+              .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+            return (
+              <div key={department.id}>
+                <div className="flex items-center justify-between gap-4 px-6 py-3.5">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{department.name}</p>
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {department.code}
+                    </span>
+                    {lockedDepartmentId === department.id ? (
+                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+                        {t('Start here')}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="flex gap-3">
-                    <input
-                      type="color"
-                      value={normalizeThemeColor(themeColor, templateDefaults.themeColor)}
-                      onChange={(event) => setThemeColor(event.target.value)}
-                      className="h-11 w-16 cursor-pointer rounded-xl border border-border bg-background"
-                    />
-                    <input
-                      type="text"
-                      value={themeColor}
-                      onChange={(event) => setThemeColor(event.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-4 py-3 font-mono text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
+                  <Switch
+                    checked={departmentVisible}
+                    onChange={(checked) => setDepartmentVisibility(department.id, checked)}
+                    label={t('{name} visibility', { name: department.name })}
+                  />
                 </div>
 
-                <InlineSwitchRow
-                  title={t('Show business logo')}
-                  description={
-                    resolvedLogoUrl
-                      ? t('Display the uploaded business logo in the kiosk header.')
-                      : t('Upload or paste a logo URL first to show a logo in the kiosk header.')
-                  }
-                  checked={showLogo}
-                  onChange={setShowLogo}
-                  disabled={!resolvedLogoUrl}
-                />
-
-                <FieldBlock
-                  label={t('Logo image URL')}
-                  hint={
-                    organizationLogoUrl
-                      ? t('Organization logo available: {url}', { url: organizationLogoUrl })
-                      : t('Paste a direct uploaded image URL, or add an organization logo in Settings.')
-                  }
-                >
-                  <div className="relative">
-                    <ImageIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      type="url"
-                      value={logoUrl}
-                      onChange={(event) => setLogoUrl(event.target.value)}
-                      placeholder="https://example.com/logo.png"
-                      className="w-full rounded-xl border border-border bg-background px-10 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                </FieldBlock>
-
-                <InlineSwitchRow
-                  title={t('Show estimated wait times')}
-                  description={t('Expose service timing on kiosk buttons.')}
-                  checked={showEstimatedTime}
-                  onChange={setShowEstimatedTime}
-                />
-
-                <InlineSwitchRow
-                  title={t('Show priority selection')}
-                  description={
-                    availablePriorityFlow
-                      ? t('Let customers choose a priority category.')
-                      : t('Disabled because the active queue policy does not support priorities.')
-                  }
-                  checked={availablePriorityFlow && showPriorities}
-                  onChange={setShowPriorities}
-                  disabled={!availablePriorityFlow}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Lock}
-              title={t('Flow Behavior')}
-              description={t('Where the kiosk starts and when it resets.')}
-            />
-
-            <div className="mt-6 grid gap-5 lg:grid-cols-2">
-              <FieldBlock
-                label={t('Starting department')}
-                hint={t('Choose a department to skip the department selection screen.')}
-              >
-                <select
-                  value={lockedDepartmentId}
-                  onChange={(event) => setLockedDepartmentId(event.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">{t('Let customers choose a department')}</option>
-                  {activeDepartments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name} ({department.code})
-                    </option>
-                  ))}
-                </select>
-              </FieldBlock>
-
-              <FieldBlock
-                label={t('Idle reset time')}
-                hint={t('Number of seconds before the kiosk resets back to the start.')}
-              >
-                <div className="relative">
-                  <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="number"
-                    min={10}
-                    max={300}
-                    value={idleTimeout}
-                    onChange={(event) => setIdleTimeout(Number(event.target.value))}
-                    className="w-full rounded-xl border border-border bg-background px-10 py-3 text-sm text-foreground outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-              </FieldBlock>
-            </div>
-
-            <div className="mt-5 rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{t('Current setup:')}</span>{' '}
-              {kioskMode === 'quick_book'
-                ? t('Starts with booking')
-                : startsOnServices
-                  ? t('Starts with services{department}', {
-                      department: lockedDepartment ? ` ${t('in')} ${lockedDepartment.name}` : '',
-                    })
-                  : t('Starts with department selection')}
-              {' · '}
-              {kioskMode === 'quick_book' ? t('booking first') : t('queue first')}
-              {' · '}
-              {availablePriorityFlow && showPriorities ? t('priority step on') : t('priority step off')}
-              {' · '}
-              {showEstimatedTime ? t('wait times shown') : t('wait times hidden')}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Eye}
-              title={t('Visibility')}
-              description={t('Control exactly which departments and services appear on the kiosk.')}
-            />
-
-            <div className="mt-6 overflow-hidden rounded-xl border border-border">
-              <div className="grid grid-cols-[minmax(0,1fr)_120px] bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <span>{t('Department / Service')}</span>
-                <span className="text-right">{t('Visible')}</span>
-              </div>
-
-              <div className="divide-y divide-border">
-                {activeDepartments.map((department) => {
-                  const departmentVisible = !hiddenDepartments.includes(department.id);
-                  const activeServices = (department.services ?? [])
-                    .filter((service) => service.is_active)
-                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-                  return (
-                    <div key={department.id} className="bg-card">
-                      <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 px-4 py-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium text-foreground">{department.name}</p>
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                              {department.code}
+                {departmentVisible && activeServices.length > 0 ? (
+                  <div className="border-t border-border/50 bg-muted/20">
+                    {activeServices.map((service) => {
+                      const serviceVisible = !hiddenServices.includes(service.id);
+                      return (
+                        <div key={service.id} className="flex items-center justify-between gap-4 px-6 py-2.5 pl-10">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-foreground">{service.name}</p>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {service.code}
                             </span>
-                            {lockedDepartmentId === department.id ? (
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                {t('Start here')}
-                              </span>
-                            ) : null}
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {departmentVisible
-                              ? t('Department visible on kiosk')
-                              : t('Department hidden from kiosk')}
-                          </p>
-                        </div>
-                        <div className="flex justify-end">
                           <Switch
-                            checked={departmentVisible}
-                            onChange={(checked) => setDepartmentVisibility(department.id, checked)}
-                            label={t('{name} visibility', { name: department.name })}
+                            checked={serviceVisible}
+                            onChange={(checked) => setServiceVisibility(service.id, checked)}
+                            label={t('{name} visibility', { name: service.name })}
                           />
                         </div>
-                      </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-                      {activeServices.length > 0 ? (
-                        <div className="border-t border-border bg-background/70">
-                          {activeServices.map((service) => {
-                            const serviceVisible =
-                              departmentVisible && !hiddenServices.includes(service.id);
+      {/* ── 5. Public Links ── */}
+      <section className="rounded-xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('Public Links')}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('Open or share the live kiosk and booking pages.')}</p>
+        </div>
 
-                            return (
-                              <div
-                                key={service.id}
-                                className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-4 px-4 py-3"
-                              >
-                                <div className="pl-4">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="text-sm font-medium text-foreground">{service.name}</p>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                                      {service.code}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex justify-end">
-                                  <Switch
-                                    checked={serviceVisible}
-                                    onChange={(checked) => setServiceVisibility(service.id, checked)}
-                                    disabled={!departmentVisible}
-                                    label={t('{name} visibility', { name: service.name })}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
+        <div className="divide-y divide-border">
+          {activeOffices.map((office) => (
+            <div key={office.id} className="px-6 py-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">{office.name}</p>
+                <a
+                  href={buildKioskPath(office)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  {t('Open kiosk')}
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Kiosk page')}</p>
+                  <PublicLinkActions
+                    path={buildKioskPath(office)}
+                    qrTitle={t('{office} kiosk', { office: office.name })}
+                    qrDescription={t('Scan to open the self-service kiosk.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Booking page')}</p>
+                  <PublicLinkActions
+                    path={buildBookingPath(office)}
+                    qrTitle={t('{office} booking', { office: office.name })}
+                    qrDescription={t('Scan to open the booking page.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
+                  />
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('Arrival check-in')}</p>
+                  <PublicLinkActions
+                    path={buildBookingCheckInPath(office)}
+                    qrTitle={t('{office} arrival check-in', { office: office.name })}
+                    qrDescription={t('Scan to look up and check in an appointment.')}
+                    downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
+                  />
+                </div>
               </div>
             </div>
-          </section>
+          ))}
         </div>
-
-        <div className="space-y-6">
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Link2}
-              title={t('Public Links')}
-              description={t('Open or share the live kiosk and booking pages.')}
-            />
-
-            <div className="mt-6 space-y-4">
-              {activeOffices.map((office) => (
-                <div key={office.id} className="rounded-xl border border-border bg-background p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-foreground">{office.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{t('Active office')}</p>
-                    </div>
-                    <a
-                      href={buildKioskPath(office)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                    >
-                      {t('Open')}
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">{t('Kiosk page')}</p>
-                      <PublicLinkActions
-                        path={buildKioskPath(office)}
-                        qrTitle={t('{office} kiosk', { office: office.name })}
-                        qrDescription={t('Scan to open the self-service kiosk.')}
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-kiosk.png`}
-                      />
-                    </div>
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">{t('Booking page')}</p>
-                      <PublicLinkActions
-                        path={buildBookingPath(office)}
-                        qrTitle={t('{office} booking', { office: office.name })}
-                        qrDescription={t('Scan to open the booking page.')}
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-booking.png`}
-                      />
-                    </div>
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-foreground">{t('Arrival check-in')}</p>
-                      <PublicLinkActions
-                        path={buildBookingCheckInPath(office)}
-                        qrTitle={t('{office} arrival check-in', { office: office.name })}
-                        qrDescription={t('Scan to look up and check in an appointment.')}
-                        downloadName={`${office.name.toLowerCase().replace(/\s+/g, '-')}-checkin.png`}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-            <SectionHeader
-              icon={Tablet}
-              title={t('Snapshot')}
-              description={t('Quick read of the kiosk behavior right now.')}
-            />
-
-            <div className="mt-6 space-y-3 rounded-xl border border-border bg-background p-4 text-sm text-muted-foreground">
-              <p>
-                <span className="font-medium text-foreground">{t('Start screen:')}</span>{' '}
-                {kioskMode === 'quick_book'
-                  ? t('Booking first')
-                  : startsOnServices
-                    ? lockedDepartment
-                      ? t('{department} services', { department: lockedDepartment.name })
-                      : t('Service list')
-                    : t('Department selection')}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Mode:')}</span>{' '}
-                {kioskMode === 'quick_book' ? t('Quick book') : t('Normal')}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Priority step:')}</span>{' '}
-                {availablePriorityFlow && showPriorities ? t('Shown') : t('Hidden')}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Logo:')}</span>{' '}
-                {showLogo && resolvedLogoUrl
-                  ? t('Shown')
-                  : resolvedLogoUrl
-                    ? t('Available but hidden')
-                    : t('No logo uploaded')}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Wait times:')}</span>{' '}
-                {showEstimatedTime ? t('Shown') : t('Hidden')}
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Idle reset:')}</span> {idleTimeout}s
-              </p>
-              <p>
-                <span className="font-medium text-foreground">{t('Theme:')}</span> {themeColor}
-              </p>
-            </div>
-          </section>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

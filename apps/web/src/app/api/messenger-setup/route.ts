@@ -57,9 +57,9 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         get_started: { payload: 'GET_STARTED' },
         greeting: [
-          { locale: 'default', text: 'Welcome to QFlow! Tap Get Started to connect your ticket.' },
-          { locale: 'fr_FR', text: 'Bienvenue sur QFlow ! Appuyez sur Démarrer pour connecter votre ticket.' },
-          { locale: 'ar_AR', text: 'مرحبًا بك في QFlow! اضغط على ابدأ لربط تذكرتك.' },
+          { locale: 'default', text: 'Welcome to Qflo! Tap Get Started to connect your ticket.' },
+          { locale: 'fr_FR', text: 'Bienvenue sur Qflo ! Appuyez sur Démarrer pour connecter votre ticket.' },
+          { locale: 'ar_AR', text: 'مرحبًا بك في Qflo! اضغط على ابدأ لربط تذكرتك.' },
         ],
         access_token: pageToken,
       }),
