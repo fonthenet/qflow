@@ -322,6 +322,8 @@ export function KioskView({
         service_name: service.name,
         department_name: selectedDept.name,
         estimated_service_time: service.estimated_service_time ?? null,
+        position_in_queue: 3,
+        estimated_wait: service.estimated_service_time ? service.estimated_service_time * 2 : null,
         priority_name: priority?.name ?? null,
         priority_icon: priority?.icon ?? null,
         priority_color: priority?.color ?? null,
@@ -369,6 +371,8 @@ export function KioskView({
       service_name: service.name,
       department_name: selectedDept.name,
       estimated_service_time: service.estimated_service_time ?? null,
+      position_in_queue: newTicket.position_in_queue ?? null,
+      estimated_wait: newTicket.estimated_wait ?? null,
       priority_name: priority?.name ?? null,
       priority_icon: priority?.icon ?? null,
       priority_color: priority?.color ?? null,
@@ -1039,9 +1043,9 @@ export function KioskView({
                     ? t('#{position} in queue', { position: ticket.position_in_queue })
                     : `${ticket.department_name} · ${ticket.service_name}`}
                 </div>
-                {ticket.estimated_service_time ? (
+                {(ticket.estimated_wait ?? ticket.estimated_service_time) ? (
                   <div className="mt-1 text-[13px] text-slate-400">
-                    ~{ticket.estimated_service_time} {t('min')}
+                    ⏱ ~{ticket.estimated_wait ?? ticket.estimated_service_time} {t('min')}
                   </div>
                 ) : null}
               </div>

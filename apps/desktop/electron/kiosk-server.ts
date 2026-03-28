@@ -745,13 +745,22 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         console.error('[kiosk] QR generation error:', qrErr);
       }
 
+      // Estimate wait: position * avg service time for this service
+      const svcRow = db.prepare(
+        'SELECT estimated_service_time FROM services WHERE id = ? LIMIT 1'
+      ).get(serviceId) as any;
+      const avgMin = svcRow?.estimated_service_time ?? 10;
+      const pos = position?.pos ?? 1;
+      const estimatedWait = Math.round((pos > 1 ? pos - 1 : 0) * avgMin);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ticket: {
           id: ticketId,
           ticket_number: ticketNumber,
           status: 'waiting',
-          position: position?.pos ?? 1,
+          position: pos,
+          estimated_wait: estimatedWait,
           created_at: now,
           qr_data_url: qrDataUrl,
           qr_token: qrToken,

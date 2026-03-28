@@ -317,8 +317,23 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     // in the whatsapp-send route when two active sessions exist for the same ticket.
   }
 
+  // Calculate queue position for confirmation screen
+  let position_in_queue: number | null = null;
+  let estimated_wait: number | null = ticket?.estimated_wait_minutes ?? null;
+  if (ticket) {
+    const { count } = await supabase
+      .from('tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('office_id', input.officeId)
+      .eq('service_id', input.serviceId)
+      .eq('status', 'waiting')
+      .is('parked_at', null)
+      .lte('created_at', ticket.created_at);
+    position_in_queue = count ?? null;
+  }
+
   revalidatePath('/desk');
-  return { data: ticket };
+  return { data: ticket ? { ...ticket, position_in_queue, estimated_wait } : ticket };
 }
 
 export async function completePublicCheckIn(

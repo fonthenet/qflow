@@ -745,8 +745,9 @@
 
       // Estimated wait
       var estWait = '';
-      if (t.estimated_service_time) {
-        estWait = '<div class="est-wait">~' + tr('{minutes} min', { minutes: t.estimated_service_time }) + '</div>';
+      var waitMin = t.estimated_wait || t.estimated_service_time;
+      if (waitMin) {
+        estWait = '<div class="est-wait">⏱ ~' + tr('{minutes} min', { minutes: waitMin }) + '</div>';
       }
 
       // WhatsApp notification badge (shown when phone was entered)
