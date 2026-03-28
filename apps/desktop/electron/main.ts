@@ -265,29 +265,17 @@ function createWindow() {
       const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname.startsWith('192.168.');
       const isKioskOrDisplay = /\/(kiosk|display)(\/|$|\?)/.test(parsed.pathname);
       if (isLocal && isKioskOrDisplay) {
-        // Open in a fullscreen, frameless Electron window (kiosk feel)
+        // Open in a normal window — operator can maximize/fullscreen manually
         const kioskWin = new BrowserWindow({
-          fullscreen: true,
-          frame: false,
-          autoHideMenuBar: true,
+          width: 1024,
+          height: 768,
           backgroundColor: '#ffffff',
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
           },
         });
-        kioskWin.setMenu(null);
         kioskWin.loadURL(url);
-        // Allow Escape to exit fullscreen / close
-        kioskWin.webContents.on('before-input-event', (_e, input) => {
-          if (input.key === 'Escape' && input.type === 'keyDown') {
-            if (kioskWin.isFullScreen()) {
-              kioskWin.setFullScreen(false);
-            } else {
-              kioskWin.close();
-            }
-          }
-        });
         return { action: 'deny' }; // we handle it ourselves
       }
     } catch { /* not a valid URL, fall through */ }
