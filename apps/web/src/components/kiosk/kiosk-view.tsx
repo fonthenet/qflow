@@ -633,8 +633,7 @@ export function KioskView({
                       }}
                       placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
                       autoComplete="tel"
-                      dir="ltr"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                       style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                   </div>
@@ -642,7 +641,7 @@ export function KioskView({
                 <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
                   <div className="text-center">
                     <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                      {t('Reason for visit')} <span className="font-normal text-slate-400">({t('optional')})</span>
+                      {t('Reason for visit')} <span className="font-normal text-slate-400">{t('(optional)')}</span>
                     </label>
                     <input
                       type="text"
@@ -650,7 +649,7 @@ export function KioskView({
                       onChange={(event) => setCustomerReason(event.target.value)}
                       placeholder={t('Brief description')}
                       autoComplete="off"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : ''}`}
                       style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
                     />
                   </div>
@@ -759,8 +758,7 @@ export function KioskView({
                         }}
                         placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
                         autoComplete="tel"
-                        dir="ltr"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-left text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
+                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
                         style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                     </div>
@@ -768,7 +766,7 @@ export function KioskView({
                   <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
                     <div className="text-center">
                       <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                        {t('Reason for visit')} <span className="font-normal text-slate-400">({t('optional')})</span>
+                        {t('Reason for visit')} <span className="font-normal text-slate-400">{t('(optional)')}</span>
                       </label>
                       <input
                         type="text"
@@ -776,7 +774,7 @@ export function KioskView({
                         onChange={(event) => setCustomerReason(event.target.value)}
                         placeholder={t('Brief description')}
                         autoComplete="off"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
+                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${dir === 'rtl' ? 'text-right' : ''}`}
                         style={{ '--tw-ring-color': `${themeColor}40` } as any}
                       />
                     </div>
