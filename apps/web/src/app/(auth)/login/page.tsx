@@ -1,22 +1,37 @@
 'use client';
 
 import { useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 import { login } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  const { t } = useI18n();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
+    >
+      {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+      {pending ? t('Signing in...') : t('Sign In')}
+    </button>
+  );
+}
+
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const { t } = useI18n();
 
   async function handleSubmit(formData: FormData) {
-    setLoading(true);
     setError(null);
     const result = await login(formData);
     if (result?.error) {
       setError(result.error);
-      setLoading(false);
     }
   }
 
@@ -66,13 +81,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50"
-            >
-              {loading ? t('Signing in...') : t('Sign In')}
-            </button>
+            <SubmitButton />
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
