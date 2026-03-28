@@ -6,7 +6,7 @@ import {
   sendMessengerMessageWithTag,
   sendOneTimeNotification,
 } from '@/lib/messenger';
-import { tNotification } from '@/lib/messaging-commands';
+import { tNotification, formatPosition } from '@/lib/messaging-commands';
 import { getQueuePosition } from '@/lib/queue-position';
 
 /**
@@ -94,12 +94,7 @@ export async function POST(request: NextRequest) {
         vars.name = org?.name ?? '';
 
         const pos = await getQueuePosition(ticketId);
-        if (pos.position != null) {
-          const wait = pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : '';
-          vars.position = `📍 Position: *${pos.position}*${wait}`;
-        } else {
-          vars.position = '';
-        }
+        vars.position = formatPosition(pos, locale);
 
         message = tNotification('joined', locale, vars);
         break;

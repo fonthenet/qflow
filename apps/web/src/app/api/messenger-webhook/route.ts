@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { handleInboundMessage, tNotification } from '@/lib/messaging-commands';
+import { handleInboundMessage, tNotification, formatPosition } from '@/lib/messaging-commands';
 import {
   sendMessengerMessage,
   sendMessengerMessageWithTag,
@@ -195,13 +195,13 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
 
   if (!ticket) {
     console.warn(`[messenger-referral] No ticket found for qr_token: ${qrToken}`);
-    await sendMessengerMessage({ recipientId: psid, text: '❌ Ticket not found. The link may have expired.' });
+    await sendMessengerMessage({ recipientId: psid, text: '❌ Ticket introuvable. Le lien a peut-être expiré.' });
     return;
   }
 
   // Check ticket is still active
   if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
-    await sendMessengerMessage({ recipientId: psid, text: '❌ This ticket has already been completed.' });
+    await sendMessengerMessage({ recipientId: psid, text: '❌ Ce ticket est déjà terminé.' });
     return;
   }
 
@@ -223,12 +223,13 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
   // Check if there's already an active session for this ticket
   const { data: existingSession } = await supabase
     .from('whatsapp_sessions')
-    .select('id, channel')
+    .select('id, channel, locale')
     .eq('ticket_id', ticket.id)
     .eq('state', 'active')
     .maybeSingle();
 
   const switchedFromWhatsApp = existingSession?.channel === 'whatsapp';
+  const locale = (existingSession?.locale as 'fr' | 'ar' | 'en') || 'fr';
 
   if (existingSession) {
     // Update existing session to Messenger (switches from WhatsApp if that was active)
@@ -267,20 +268,21 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
 
   let message: string;
 
+  const switchedMsg: Record<string, string> = {
+    fr: `✅ Notifications basculées sur Messenger !\n\n🎫 Ticket : *${ticket.ticket_number}*\n📍 Suivi : ${trackUrl}`,
+    ar: `✅ تم تحويل الإشعارات إلى ماسنجر!\n\n🎫 التذكرة: *${ticket.ticket_number}*\n📍 تتبع: ${trackUrl}`,
+    en: `✅ Notifications switched to Messenger!\n\n🎫 Ticket: *${ticket.ticket_number}*\n📍 Track: ${trackUrl}`,
+  };
+
   if (switchedFromWhatsApp) {
-    // Already got "joined" via WhatsApp — just confirm the switch
-    message = `✅ Notifications switched to Messenger!\n\n🎫 Ticket: *${ticket.ticket_number}*\n📍 Track: ${trackUrl}`;
+    message = switchedMsg[locale] ?? switchedMsg.fr;
   } else {
     // New Messenger session — send full "joined" message
     const pos = await getQueuePosition(ticket.id);
-    const positionText = pos.position != null
-      ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
-      : '';
-
-    message = tNotification('joined', 'fr', {
+    message = tNotification('joined', locale, {
       name: org?.name ?? '',
       ticket: ticket.ticket_number,
-      position: positionText,
+      position: formatPosition(pos, locale),
       url: trackUrl,
     });
   }

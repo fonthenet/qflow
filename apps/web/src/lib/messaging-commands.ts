@@ -302,9 +302,18 @@ async function findOrgByActiveSession(
   };
 }
 
-function formatPosition(pos: any, locale: Locale): string {
+export const positionLabel: Record<Locale, string> = { fr: 'Position', ar: 'الترتيب', en: 'Position' };
+export const nowServingLabel: Record<Locale, string> = { fr: 'En service', ar: 'يُخدم الآن', en: 'Now serving' };
+export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', en: 'min' };
+
+export function formatPosition(pos: any, locale: Locale): string {
   if (pos.position == null) return '';
-  return `📍 Position: *${pos.position}* | ⏱ ~*${pos.estimated_wait_minutes ?? '?'} min*`;
+  return `📍 ${positionLabel[locale]}: *${pos.position}* | ⏱ ~*${pos.estimated_wait_minutes ?? '?'} ${minLabel[locale]}*`;
+}
+
+export function formatNowServing(pos: any, locale: Locale): string {
+  if (!pos.now_serving) return '';
+  return `📢 ${nowServingLabel[locale]}: *${pos.now_serving}*\n`;
 }
 
 // ── Main entry point (channel-agnostic) ──────────────────────────────
@@ -490,9 +499,7 @@ async function handleTrackLink(
   const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
   const pos = await getQueuePosition(ticket.id);
-  const positionText = pos.position != null
-    ? `📍 Position: *${pos.position}*${pos.estimated_wait_minutes != null ? ` | ⏱ ~*${pos.estimated_wait_minutes} min*` : ''}`
-    : '';
+  const positionText = formatPosition(pos, locale);
 
   const message = tNotification('joined', locale, {
     name: org?.name ?? '',
@@ -649,10 +656,8 @@ async function handleJoin(
     body: t('joined', locale, {
       name: org.name,
       ticket: ticket.ticket_number,
-      position: pos.position != null
-        ? `📍 Position: *${pos.position}* | ⏱ ~*${pos.estimated_wait_minutes ?? '?'} min*`
-        : '',
-      now_serving: pos.now_serving ? `📢 Now serving: *${pos.now_serving}*\n` : '',
+      position: formatPosition(pos, locale),
+      now_serving: formatNowServing(pos, locale),
       url: trackUrl,
     }),
   });
@@ -719,7 +724,7 @@ async function handleStatus(
       name: org.name,
       position: pos.position,
       wait: pos.estimated_wait_minutes ?? '?',
-      now_serving: pos.now_serving ? `📢 Now serving: *${pos.now_serving}*\n` : '',
+      now_serving: formatNowServing(pos, locale),
       total: pos.total_waiting,
     }),
   });
