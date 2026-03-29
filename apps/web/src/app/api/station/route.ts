@@ -253,16 +253,29 @@ export async function POST(req: NextRequest) {
 
         if (!staff) return json({ ok: false, error: 'No staff profile' }, 400);
 
-        // Generate ticket number
-        const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const prefix = body.departmentCode || 'TKT';
-        const { count } = await supabase
-          .from('tickets')
-          .select('id', { count: 'exact', head: true })
-          .eq('office_id', body.officeId)
-          .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00');
-
-        const ticketNumber = `${prefix}-${String((count ?? 0) + 1).padStart(4, '0')}`;
+        // Generate ticket number via atomic RPC (same as desktop Station)
+        const { data: seqResult } = await supabase.rpc('generate_daily_ticket_number', {
+          p_department_id: body.departmentId,
+        });
+        const seq = Array.isArray(seqResult) ? seqResult[0] : seqResult;
+        let ticketNumber: string;
+        if (seq?.ticket_num) {
+          ticketNumber = seq.ticket_num;
+        } else {
+          // Fallback: fetch department code and count
+          const { data: dept } = await supabase
+            .from('departments')
+            .select('code')
+            .eq('id', body.departmentId)
+            .single();
+          const prefix = dept?.code || 'TKT';
+          const { count } = await supabase
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('office_id', body.officeId)
+            .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00');
+          ticketNumber = `${prefix}-${String((count ?? 0) + 1).padStart(4, '0')}`;
+        }
 
         const { data, error } = await supabase
           .from('tickets')
@@ -285,7 +298,8 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (error) return json({ ok: false, error: error.message }, 400);
-        return json({ ok: true, ticket: data });
+        // Return ticket directly (Station.tsx expects result.ticket_number)
+        return json(data);
       }
 
       case 'logout': {
