@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Info, Contact, Clock } from 'lucide-react';
+import { Info, Contact, Clock, RefreshCw } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToPush } from '@/lib/push';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
@@ -68,7 +68,7 @@ function QueueActionPill({
       disabled={disabled}
       className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
     >
-      {loading ? t('Working...') : label}
+      {loading ? <><RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />{label}</> : label}
     </button>
   );
 }

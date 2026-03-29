@@ -159,7 +159,7 @@ function QueueActionPill({
       disabled={disabled}
       className={`inline-flex items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
     >
-      {loading ? t('Working...') : <>{icon}{label}</>}
+      {loading ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />{label}</> : <>{icon}{label}</>}
     </button>
   );
 }
