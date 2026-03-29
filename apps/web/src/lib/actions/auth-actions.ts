@@ -96,7 +96,7 @@ export async function register(formData: FormData) {
     }
   }
 
-  redirect('/admin/offices');
+  redirect('/admin/onboarding');
 }
 
 export async function logout() {

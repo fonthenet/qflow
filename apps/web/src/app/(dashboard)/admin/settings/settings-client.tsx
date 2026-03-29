@@ -307,6 +307,7 @@ export function SettingsClient({
           whatsapp_code: whatsappCode.toUpperCase().trim(),
           whatsapp_business_phone: whatsappBusinessPhone,
           whatsapp_default_virtual_code_id: whatsappDefaultVirtualCodeId,
+          messenger_default_virtual_code_id: whatsappDefaultVirtualCodeId,
           messenger_enabled: messengerEnabled,
           messenger_page_id: messengerPageId.trim(),
           business_category: businessCategory,
@@ -752,10 +753,31 @@ export function SettingsClient({
               <label className="block text-sm font-medium text-muted-foreground mb-1">
                 {t('Default Queue')}
               </label>
-              <div className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground">
-                {virtualQueueCodes.find((c) => c.id === whatsappDefaultVirtualCodeId)?.label
-                  || <span className="text-muted-foreground italic">{t('Not set')}</span>}
-              </div>
+              {virtualQueueCodes.length > 0 ? (
+                <select
+                  value={whatsappDefaultVirtualCodeId}
+                  onChange={(e) => setWhatsappDefaultVirtualCodeId(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="">{t('Select a queue...')}</option>
+                  {virtualQueueCodes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-sm text-amber-800">
+                    {t('No virtual queue codes found.')}{' '}
+                    <Link href="/admin/virtual-codes" className="font-medium text-primary hover:underline">
+                      {t('Create one')}
+                    </Link>{' '}
+                    {t('to enable WhatsApp/Messenger queue joining.')}
+                  </p>
+                </div>
+              )}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('The queue customers join when they send your business code via WhatsApp or Messenger.')}
+              </p>
             </div>
 
             {whatsappCode && (

@@ -200,8 +200,27 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
           <tbody>
             {offices.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                  {t('No locations found. Add your first location to get started.')}
+                <td colSpan={6} className="px-4 py-12 text-center">
+                  <div className="space-y-3">
+                    <p className="text-muted-foreground">
+                      {t('No locations found. Set up your first location to start managing queues.')}
+                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                      <Link
+                        href="/admin/onboarding"
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                      >
+                        {t('Setup Wizard')}
+                      </Link>
+                      <span className="text-xs text-muted-foreground">{t('or')}</span>
+                      <button
+                        onClick={openCreate}
+                        className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                      >
+                        {t('Add Manually')}
+                      </button>
+                    </div>
+                  </div>
                 </td>
               </tr>
             )}
