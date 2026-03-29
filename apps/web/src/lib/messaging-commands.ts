@@ -142,7 +142,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   directory_header: {
     fr: '📋 *Catégories disponibles :*\n',
-    ar: '*الفئات المتاحة* 📋\n',
+    ar: 'الفئات المتاحة 📋\n\n',
     en: '📋 *Available categories:*\n',
   },
   directory_footer: {
@@ -152,7 +152,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   category_header: {
     fr: '{emoji} *{category}* :\n',
-    ar: '*{category}* {emoji}\n',
+    ar: '{category} {emoji}\n\n',
     en: '{emoji} *{category}*:\n',
   },
   category_footer: {
@@ -233,9 +233,11 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** No-op — RTL is handled by restructuring Arabic line order in each handler */
+/** Prefix every non-empty line with Arabic Letter Mark (U+061C) — an invisible
+ *  strong RTL character in the Arabic block. Unlike U+200F, apps rarely strip it
+ *  since it's classified as Arabic, forcing the bidi algorithm to treat lines as RTL. */
 function ensureRTL(text: string): string {
-  return text;
+  return text.split('\n').map(line => line.length > 0 ? `\u061C${line}` : line).join('\n');
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
@@ -627,8 +629,8 @@ async function handleDirectory(
     const count = grouped.get(catKey)!.length;
 
     if (locale === 'ar') {
-      // Arabic text MUST be first character → bidi renders line RTL
-      body += `${catLabel} ${emoji} (${count}) — *${i + 1}*\n`;
+      // Arabic letter MUST be the absolute first character → bidi renders line RTL
+      body += `${catLabel} ${emoji} — ${i + 1}\n`;
     } else {
       body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
     }
@@ -680,7 +682,7 @@ async function handleCategoryOrJoin(
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       if (locale === 'ar') {
-        body += `${biz.name} — *${catNum}-${i + 1}*\n`;
+        body += `${biz.name} — ${catNum}-${i + 1}\n`;
       } else {
         body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
       }
