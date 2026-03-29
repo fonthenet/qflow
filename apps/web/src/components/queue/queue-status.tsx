@@ -1003,7 +1003,7 @@ export function QueueStatus({
 
           {!sandboxMode && messengerPageId && (
             <a
-              href={`https://m.me/${messengerPageId}?text=${encodeURIComponent(`TRACK ${ticket.qr_token}`)}`}
+              href={`https://m.me/${messengerPageId}?ref=qflo_${ticket.qr_token}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-4 flex w-full items-center gap-3 rounded-full border border-blue-400/20 bg-blue-500/10 px-5 py-3 text-left transition hover:bg-blue-500/15"
