@@ -390,6 +390,7 @@ html[dir="rtl"] .station-action-pills {
   left: 16px;
 }
 
+
 /* ── Responsive: Tablet (≤1024px) ─────────────────────────────── */
 @media (max-width: 1024px) {
   .status-bar { padding: 0 12px; height: 44px; }
@@ -446,15 +447,14 @@ html[dir="rtl"] .station-action-pills {
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 12px; }
 
   .station-action-pills {
-    position: relative;
-    top: auto;
     right: auto;
-    justify-content: center;
-    flex-wrap: wrap;
-    padding: 10px 16px 0;
-    z-index: 10;
+    left: 12px;
+    top: 8px;
   }
-  html[dir="rtl"] .station-action-pills { left: auto; }
+  html[dir="rtl"] .station-action-pills {
+    left: auto;
+    right: 12px;
+  }
 
   .sidebar-toggle-badge {
     position: absolute;
@@ -497,7 +497,7 @@ html[dir="rtl"] .station-action-pills {
   .app-logo { width: 24px; height: 24px; font-size: 14px; }
 
   .station { flex-direction: column; }
-  .station-main { padding: 16px; padding-top: 12px; }
+  .station-main { padding: 16px; padding-top: 60px; }
 
   .station-sidebar {
     top: calc(40px + env(safe-area-inset-top, 0px));
@@ -510,12 +510,17 @@ html[dir="rtl"] .station-action-pills {
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 10px; }
 
   .station-action-pills {
-    padding: 8px 12px 0;
+    left: 10px;
+    top: 6px;
     gap: 6px;
   }
   .station-action-pills button {
     font-size: 11px !important;
     padding: 4px 10px !important;
+  }
+  html[dir="rtl"] .station-action-pills {
+    left: auto;
+    right: 10px;
   }
 
   .idle-panel h2 { font-size: 22px; }
