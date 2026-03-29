@@ -213,9 +213,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📋 *You have {count} active queues:*\n{list}\nReply *CANCEL {n}* to leave a queue\nor *CANCEL ALL* to cancel all.',
   },
   cancelled_all: {
-    fr: '🚫 Tous vos tickets ({count}) ont été annulés.',
-    ar: 'تم إلغاء جميع تذاكرك ({count}) 🚫',
-    en: '🚫 All your tickets ({count}) have been cancelled.',
+    fr: '🚫 Tous vos tickets ont été annulés :\n\n{list}',
+    ar: 'تم إلغاء جميع تذاكرك 🚫\n\n{list}',
+    en: '🚫 All your tickets have been cancelled:\n\n{list}',
   },
 };
 
@@ -1357,8 +1357,18 @@ async function handleCancelAll(
   sendMessage: SendFn,
 ): Promise<void> {
   const supabase = createAdminClient() as any;
+  const cancelledItems: string[] = [];
 
-  for (const { session } of allSessions) {
+  for (const { session, org } of allSessions) {
+    // Fetch ticket number
+    const { data: ticketRow } = await supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('id', session.ticket_id)
+      .single();
+
+    const ticketNum = ticketRow?.ticket_number ?? '?';
+
     // Mark session completed first to prevent duplicate DB trigger notifications
     await supabase
       .from('whatsapp_sessions')
@@ -1377,10 +1387,16 @@ async function handleCancelAll(
       to_status: 'cancelled',
       metadata: { source: `${channel}_cancel_all` },
     });
+
+    if (locale === 'ar') {
+      cancelledItems.push(`*${ticketNum}* — *${org.name}* 🚫`);
+    } else {
+      cancelledItems.push(`🚫 *${ticketNum}* — *${org.name}*`);
+    }
   }
 
   await sendMessage({
     to: identifier,
-    body: t('cancelled_all', locale, { count: String(allSessions.length) }),
+    body: t('cancelled_all', locale, { list: cancelledItems.join('\n') }),
   });
 }
