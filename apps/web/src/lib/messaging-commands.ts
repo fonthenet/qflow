@@ -5,6 +5,33 @@ import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 
+// ── Directory locale cache (in-memory, 10-min TTL) ──────────────────
+// When a user sends LIST/القائمة, we store their detected locale so the
+// follow-up bare number reply (e.g. "3") uses the same language.
+const directoryLocaleCache = new Map<string, { locale: Locale; ts: number }>();
+const DIRECTORY_LOCALE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function setDirectoryLocale(identifier: string, locale: Locale): void {
+  directoryLocaleCache.set(identifier, { locale, ts: Date.now() });
+  // Prune old entries periodically (every 100 writes)
+  if (directoryLocaleCache.size > 200) {
+    const now = Date.now();
+    for (const [key, val] of directoryLocaleCache) {
+      if (now - val.ts > DIRECTORY_LOCALE_TTL) directoryLocaleCache.delete(key);
+    }
+  }
+}
+
+function getDirectoryLocale(identifier: string): Locale | null {
+  const entry = directoryLocaleCache.get(identifier);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > DIRECTORY_LOCALE_TTL) {
+    directoryLocaleCache.delete(identifier);
+    return null;
+  }
+  return entry.locale;
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export type Channel = 'whatsapp' | 'messenger';
@@ -457,13 +484,6 @@ export async function handleInboundMessage(
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
 
-  // Debug: log raw vs cleaned for Arabic troubleshooting
-  if (/[\u0600-\u06FF]/.test(messageBody)) {
-    const rawCodes = [...messageBody].map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
-    const cleanCodes = [...cleaned].map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
-    console.log(`[messaging] Arabic input raw=[${rawCodes}] cleaned=[${cleanCodes}] text="${cleaned}"`);
-  }
-
   // ── TRACK qflo_QRTOKEN (link WhatsApp/Messenger to existing ticket) ──
   if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
     const qrToken = messageBody.trim().substring('TRACK qflo_'.length).trim();
@@ -477,6 +497,8 @@ export async function handleInboundMessage(
   const isListCommand = command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY'
     || /^(قائمة|القائمة|دليل|الفهرس)$/.test(cleaned);
   if (isListCommand) {
+    // Remember this user's locale so follow-up bare number replies use it
+    setDirectoryLocale(identifier, detectedLocale);
     await handleDirectory(identifier, detectedLocale, channel, sendMessage);
     return;
   }
@@ -488,11 +510,17 @@ export async function handleInboundMessage(
     const bizNum = catJoinMatch[2] ? parseInt(catJoinMatch[2], 10) : null;
     // Only handle if the number could be a category index (1-based)
     if (catNum >= 1 && catNum <= BUSINESS_CATEGORIES.length) {
-      // Bare numbers have no language signal — try to use the user's last session locale
+      // Bare numbers have no language signal — check directory locale cache first,
+      // then fall back to last session locale
       let numLocale = detectedLocale;
       if (numLocale === 'fr') {
-        const lastLocale = await getLastSessionLocale(identifier, channel, bsuid);
-        if (lastLocale) numLocale = lastLocale;
+        const dirLocale = getDirectoryLocale(identifier);
+        if (dirLocale) {
+          numLocale = dirLocale;
+        } else {
+          const lastLocale = await getLastSessionLocale(identifier, channel, bsuid);
+          if (lastLocale) numLocale = lastLocale;
+        }
       }
       const handled = await handleCategoryOrJoin(identifier, numLocale, channel, sendMessage, catNum, bizNum, profileName, bsuid);
       if (handled) return;
