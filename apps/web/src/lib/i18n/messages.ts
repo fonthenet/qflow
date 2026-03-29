@@ -723,7 +723,7 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Save Changes': 'حفظ التغييرات',
     'Select...': 'اختر...',
     'My Information': 'معلوماتي',
-    'Filled': 'تم الإدخال',
+    'Filled': 'تم التعبئة',
     'No additional information needed for this service.':
       'لا توجد معلومات إضافية مطلوبة لهذه الخدمة.',
     'Please enter a valid email': 'يرجى إدخال بريد إلكتروني صالح',
