@@ -807,8 +807,8 @@ async function handleDirectory(
     const count = grouped.get(catKey)!.length;
 
     if (locale === 'ar') {
-      // Arabic letter MUST be the absolute first character → bidi renders line RTL
-      body += `${catLabel} ${emoji} — ${i + 1}\n`;
+      // LRM (\u200E) before the number forces it to display on the left in RTL
+      body += `\u200E${i + 1} — ${emoji} ${catLabel}\n`;
     } else {
       body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
     }
@@ -860,7 +860,7 @@ async function handleCategoryOrJoin(
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       if (locale === 'ar') {
-        body += `${biz.name} — ${catNum}-${i + 1}\n`;
+        body += `\u200E${catNum}-${i + 1} — ${biz.name}\n`;
       } else {
         body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
       }
@@ -1327,7 +1327,7 @@ async function handleMultiStatus(
       : '—';
 
     if (locale === 'ar') {
-      body += `*${org.name}* — 🎫 *${ticketNum}* — ${posText} — ${i + 1}\n`;
+      body += `\u200E${i + 1} — *${org.name}* — 🎫 *${ticketNum}* — ${posText}\n`;
     } else {
       body += `*${i + 1}.* ${org.name} — 🎫 *${ticketNum}* — ${posText}\n`;
     }
@@ -1351,7 +1351,7 @@ async function handleCancelPick(
   for (let i = 0; i < allSessions.length; i++) {
     const { org } = allSessions[i];
     if (locale === 'ar') {
-      list += `*${org.name}* — ${i + 1}\n`;
+      list += `\u200E${i + 1} — *${org.name}*\n`;
     } else {
       list += `*${i + 1}.* ${org.name}\n`;
     }
