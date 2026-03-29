@@ -566,9 +566,14 @@ export async function handleInboundMessage(
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
 
-  // ── TRACK qflo_QRTOKEN (link WhatsApp/Messenger to existing ticket) ──
-  if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
-    const qrToken = messageBody.trim().substring('TRACK qflo_'.length).trim();
+  // ── TRACK <token> (link WhatsApp/Messenger to existing ticket) ──
+  // Accepts: TRACK qflo_TOKEN or TRACK TOKEN (from m.me deep link)
+  if (command.startsWith('TRACK ')) {
+    let qrToken = messageBody.trim().substring('TRACK '.length).trim();
+    // Strip qflo_ prefix if present
+    if (qrToken.toLowerCase().startsWith('qflo_')) {
+      qrToken = qrToken.substring('qflo_'.length);
+    }
     if (qrToken) {
       await handleTrackLink(identifier, qrToken, detectedLocale, channel, sendMessage, profileName, bsuid);
       return;
