@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
         // ── Postback (button tap) ──
         if (event.postback?.payload) {
           const payload = event.postback.payload;
-          console.log(`[messenger-webhook] Postback from ${senderId}: "${payload}"`);
+          console.log(`[messenger-webhook] Postback from ${senderId}: "${payload}" referral=${JSON.stringify(event.postback?.referral ?? null)}`);
 
           const sendFn = async ({ to, body }: { to: string; body: string }) => {
             const result = await sendMessengerMessage({ recipientId: to, text: body });
@@ -141,10 +141,14 @@ export async function POST(request: NextRequest) {
           } else if (payload === 'CANCEL') {
             await handleInboundMessage('messenger', senderId, 'CANCEL', sendFn);
           } else if (payload === 'GET_STARTED') {
-            // New user tapped "Get Started" — send a brief welcome.
-            // The referral event follows shortly and will send the full ticket details.
+            // New user tapped "Get Started".
+            // Facebook sometimes sends the referral in a separate event that arrives later,
+            // so we can't rely on it. Send welcome + prompt to click the link again.
             console.log(`[messenger-webhook] GET_STARTED from ${senderId}`);
-            await sendMessengerMessage({ recipientId: senderId, text: '👋 Welcome to Qflo!' });
+            await sendMessengerMessage({
+              recipientId: senderId,
+              text: '👋 Welcome to Qflo!\n\nTap the Messenger link on your tracking page again to connect your ticket.\n\nBienvenue sur Qflo ! Appuyez à nouveau sur le lien Messenger de votre page de suivi.\n\nمرحبًا بك في Qflo! اضغط على رابط ماسنجر في صفحة التتبع مرة أخرى.'
+            });
           } else {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);
