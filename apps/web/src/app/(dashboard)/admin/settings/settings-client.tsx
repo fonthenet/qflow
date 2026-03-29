@@ -5,6 +5,7 @@ import { Save, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 
 interface Organization {
   id: string;
@@ -146,6 +147,14 @@ export function SettingsClient({
   const [orgName, setOrgName] = useState(organization.name);
   const [orgSlug, setOrgSlug] = useState(organization.slug);
   const [logoUrl, setLogoUrl] = useState(organization.logo_url ?? '');
+
+  // Business Directory
+  const [businessCategory, setBusinessCategory] = useState<string>(
+    settings.business_category ?? 'other'
+  );
+  const [listedInDirectory, setListedInDirectory] = useState<boolean>(
+    settings.listed_in_directory ?? false
+  );
 
   // Ticket Settings
   const [checkInMode, setCheckInMode] = useState<string>(
@@ -300,6 +309,8 @@ export function SettingsClient({
           whatsapp_default_virtual_code_id: whatsappDefaultVirtualCodeId,
           messenger_enabled: messengerEnabled,
           messenger_page_id: messengerPageId.trim(),
+          business_category: businessCategory,
+          listed_in_directory: listedInDirectory,
         },
       });
 
@@ -428,6 +439,45 @@ export function SettingsClient({
               placeholder={t('https://example.com/logo.png')}
               className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              {t('Business Category')}
+            </label>
+            <select
+              value={businessCategory}
+              onChange={(e) => setBusinessCategory(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              {BUSINESS_CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.emoji} {t(cat.label.en)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t('Helps customers find your business in the WhatsApp/Messenger directory.')}
+            </p>
+          </div>
+
+          <div className="flex items-start">
+            <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-border p-4 w-full">
+              <input
+                type="checkbox"
+                checked={listedInDirectory}
+                onChange={(e) => setListedInDirectory(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+              />
+              <div>
+                <span className="text-sm font-medium text-foreground">
+                  {t('List in public directory')}
+                </span>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('Allow customers to discover your business by sending LIST on WhatsApp or Messenger. Only businesses with an active queue code will appear.')}
+                </p>
+              </div>
+            </label>
           </div>
         </div>
       </section>

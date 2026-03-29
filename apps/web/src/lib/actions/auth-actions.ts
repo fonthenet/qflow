@@ -35,6 +35,7 @@ export async function register(formData: FormData) {
   const password = formData.get('password') as string;
   const fullName = formData.get('fullName') as string;
   const organizationName = formData.get('organizationName') as string;
+  const businessCategory = (formData.get('businessCategory') as string) || 'other';
 
   // Create the auth user
   const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -72,6 +73,27 @@ export async function register(formData: FormData) {
 
   if (orgError) {
     return { error: orgError.message };
+  }
+
+  // Save business category and enable directory listing by default
+  if (businessCategory) {
+    const { data: staffRow } = await supabase
+      .from('staff')
+      .select('organization_id')
+      .eq('auth_user_id', authData.user.id)
+      .single();
+
+    if (staffRow?.organization_id) {
+      await supabase
+        .from('organizations')
+        .update({
+          settings: {
+            business_category: businessCategory,
+            listed_in_directory: true,
+          },
+        })
+        .eq('id', staffRow.organization_id);
+    }
   }
 
   redirect('/admin/offices');

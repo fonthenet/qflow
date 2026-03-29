@@ -3,6 +3,7 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
+import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ const messages: Record<string, Record<Locale, string>> = {
       'Exemple : *REJOINDRE HADABI*',
       '',
       'Le code se trouve sur l\'affiche QR ou la page d\'inscription.',
+      '',
+      'Envoyez *LISTE* pour voir les entreprises disponibles.',
     ].join('\n'),
     ar: [
       '👋 مرحبًا بك في *Qflo*!',
@@ -41,6 +44,8 @@ const messages: Record<string, Record<Locale, string>> = {
       'مثال: *انضم HADABI*',
       '',
       'ستجد الرمز على ملصق QR أو صفحة الانضمام.',
+      '',
+      'أرسل *قائمة* لعرض الأعمال المتاحة.',
     ].join('\n'),
     en: [
       '👋 Welcome to *Qflo*!',
@@ -51,6 +56,8 @@ const messages: Record<string, Record<Locale, string>> = {
       'Example: *JOIN HADABI*',
       '',
       'You\'ll find the code on the business\'s QR poster or join page.',
+      '',
+      'Send *LIST* to browse available businesses.',
     ].join('\n'),
   },
   not_in_queue: {
@@ -119,9 +126,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '✅ Your ticket has been cancelled. Send *JOIN <code>* to rejoin anytime.',
   },
   help_with_session: {
-    fr: '📋 *{name}* — File\n\nCommandes :\n• *STATUT* — Vérifier votre position\n• *ANNULER* — Quitter la file',
-    ar: '📋 *{name}* — الطابور\n\nالأوامر:\n• *حالة* — التحقق من موقعك\n• *إلغاء* — مغادرة الطابور',
-    en: '📋 *{name}* — Queue\n\nCommands:\n• *STATUS* — Check your position\n• *CANCEL* — Leave the queue',
+    fr: '📋 *{name}* — File\n\nCommandes :\n• *STATUT* — Vérifier votre position\n• *ANNULER* — Quitter la file\n• *LISTE* — Voir les entreprises',
+    ar: '📋 *{name}* — الطابور\n\nالأوامر:\n• *حالة* — التحقق من موقعك\n• *إلغاء* — مغادرة الطابور\n• *قائمة* — عرض الأعمال',
+    en: '📋 *{name}* — Queue\n\nCommands:\n• *STATUS* — Check your position\n• *CANCEL* — Leave the queue\n• *LIST* — Browse businesses',
   },
   not_in_queue_rejoin: {
     fr: 'Vous n\'êtes dans aucune file. Envoyez *REJOINDRE <code>* pour rejoindre.',
@@ -132,6 +139,21 @@ const messages: Record<string, Record<Locale, string>> = {
     fr: '🚫 Vous avez été bloqué et ne pouvez pas rejoindre cette file.',
     ar: '🚫 تم حظرك ولا يمكنك الانضمام إلى هذا الطابور.',
     en: '🚫 You have been blocked and cannot join this queue.',
+  },
+  directory_header: {
+    fr: '📋 *Entreprises disponibles :*\n',
+    ar: '📋 *الأعمال المتاحة:*\n',
+    en: '📋 *Available businesses:*\n',
+  },
+  directory_footer: {
+    fr: '\nEnvoyez *REJOINDRE <code>* pour rejoindre une file.',
+    ar: '\nأرسل *انضم <الرمز>* للانضمام إلى طابور.',
+    en: '\nSend *JOIN <code>* to join a queue.',
+  },
+  no_businesses: {
+    fr: '📋 Aucune entreprise n\'est actuellement disponible dans le répertoire.\n\nSi vous connaissez le code, envoyez *REJOINDRE <code>*.',
+    ar: '📋 لا توجد أعمال متاحة حاليًا في الدليل.\n\nإذا كنت تعرف الرمز، أرسل *انضم <الرمز>*.',
+    en: '📋 No businesses are currently available in the directory.\n\nIf you know the code, send *JOIN <code>*.',
   },
 };
 
@@ -189,9 +211,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
-  if (/^(REJOINDRE|STATUT|ANNULER)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|إلغاء|الغاء)\b/.test(trimmed)) return 'ar';
-  if (/^(JOIN|STATUS|CANCEL)\b/i.test(trimmed)) return 'en';
+  if (/^(REJOINDRE|STATUT|ANNULER|LISTE)\b/i.test(trimmed)) return 'fr';
+  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|دليل)\b/.test(trimmed)) return 'ar';
+  if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
 }
@@ -377,6 +399,12 @@ export async function handleInboundMessage(
     }
   }
 
+  // ── LIST / LISTE / قائمة / DIRECTORY / دليل ──
+  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || messageBody.trim() === 'قائمة' || messageBody.trim() === 'دليل') {
+    await handleDirectory(identifier, detectedLocale, channel, sendMessage);
+    return;
+  }
+
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || messageBody.trim() === 'حالة') {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
@@ -453,6 +481,80 @@ export async function handleInboundMessage(
   } else {
     await sendMessage({ to: identifier, body: t('welcome', detectedLocale) });
   }
+}
+
+// ── DIRECTORY ────────────────────────────────────────────────────────
+
+async function handleDirectory(
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const enabledKey = channel === 'messenger' ? 'messenger_enabled' : 'whatsapp_enabled';
+  const codeKey = channel === 'messenger' ? 'messenger_code' : 'whatsapp_code';
+
+  const { data: orgs } = await supabase
+    .from('organizations')
+    .select('id, name, settings');
+
+  // Filter: listed_in_directory + channel enabled + has a code
+  const listed = (orgs ?? [])
+    .filter((o: any) => {
+      const s = (o.settings ?? {}) as Record<string, any>;
+      if (!s.listed_in_directory) return false;
+      if (!s[enabledKey] && !s.whatsapp_enabled) return false;
+      const code = (s[codeKey] ?? s.whatsapp_code ?? '').toString().trim();
+      return code.length >= 2;
+    })
+    .map((o: any) => {
+      const s = (o.settings ?? {}) as Record<string, any>;
+      const code = (s[codeKey] ?? s.whatsapp_code ?? '').toString().toUpperCase().trim();
+      const category = (s.business_category ?? 'other') as string;
+      return { name: o.name, code, category };
+    });
+
+  if (listed.length === 0) {
+    await sendMessage({ to: identifier, body: t('no_businesses', locale) });
+    return;
+  }
+
+  // Group by category
+  const grouped = new Map<string, typeof listed>();
+  for (const biz of listed) {
+    const arr = grouped.get(biz.category) || [];
+    arr.push(biz);
+    grouped.set(biz.category, arr);
+  }
+
+  // Build message grouped by category
+  const localeKey = locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en';
+  const joinCmd = locale === 'ar' ? 'انضم' : locale === 'fr' ? 'REJOINDRE' : 'JOIN';
+
+  let body = t('directory_header', locale);
+
+  // Sort categories by the BUSINESS_CATEGORIES order
+  const catOrder = BUSINESS_CATEGORIES.map((c) => c.value as string);
+  const sortedCategories = [...grouped.keys()].sort(
+    (a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)
+  );
+
+  for (const catKey of sortedCategories) {
+    const catDef = BUSINESS_CATEGORIES.find((c) => c.value === catKey);
+    const emoji = catDef?.emoji ?? '📌';
+    const catLabel = catDef?.label[localeKey] ?? catDef?.label.en ?? catKey;
+    const businesses = grouped.get(catKey)!;
+
+    body += `\n${emoji} *${catLabel}*\n`;
+    for (const biz of businesses) {
+      body += `  • ${biz.name} → \`${joinCmd} ${biz.code}\`\n`;
+    }
+  }
+
+  body += t('directory_footer', locale);
+
+  await sendMessage({ to: identifier, body });
 }
 
 // ── JOIN ──────────────────────────────────────────────────────────────
