@@ -637,7 +637,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason, source: rawSource } = parsed;
       const ticketSource = typeof rawSource === 'string' && rawSource.length <= 30 ? rawSource : 'kiosk';
 
-      if (!officeId || !departmentId || !serviceId) {
+      if (!officeId || !departmentId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Missing required fields' }));
         return;
@@ -645,7 +645,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
 
       // Validate IDs are valid UUIDs (prevent injection)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(officeId) || !uuidRegex.test(departmentId) || !uuidRegex.test(serviceId)) {
+      if (!uuidRegex.test(officeId) || !uuidRegex.test(departmentId) || (serviceId && !uuidRegex.test(serviceId))) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid ID format' }));
         return;
@@ -665,11 +665,13 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ error: 'Invalid department' }));
         return;
       }
-      const svc = db.prepare('SELECT id FROM services WHERE id = ? AND department_id = ?').get(serviceId, departmentId) as any;
-      if (!svc) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid service' }));
-        return;
+      if (serviceId) {
+        const svc = db.prepare('SELECT id FROM services WHERE id = ? AND department_id = ?').get(serviceId, departmentId) as any;
+        if (!svc) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid service' }));
+          return;
+        }
       }
 
       // ── Business hours enforcement — reject if office is closed ──
