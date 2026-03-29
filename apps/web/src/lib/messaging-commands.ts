@@ -238,14 +238,14 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '📢 *Buzz:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}',
   },
   no_show: {
-    fr: '❌ Le ticket *{ticket}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.',
-    ar: 'التذكرة *{ticket}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.',
-    en: '❌ Ticket *{ticket}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.',
+    fr: '❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.',
+    ar: 'التذكرة *{ticket}* في *{name}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.',
+    en: '❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.',
   },
   served: {
-    fr: '✅ Le ticket *{ticket}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.',
-    ar: 'التذكرة *{ticket}* مكتملة. شكرًا لزيارتكم! ✅\n\nنتمنى رؤيتكم مجددًا.',
-    en: '✅ Ticket *{ticket}* is complete. Thank you for visiting!\n\nWe hope to see you again.',
+    fr: '✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.',
+    ar: 'التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم! ✅\n\nنتمنى رؤيتكم مجددًا.',
+    en: '✅ Ticket *{ticket}* at *{name}* is complete. Thank you for visiting!\n\nWe hope to see you again.',
   },
   next_in_line: {
     fr: '⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',

@@ -108,18 +108,30 @@ export async function POST(request: NextRequest) {
       case 'buzz':
         message = tNotification('buzz', locale, vars);
         break;
-      case 'no_show':
+      case 'no_show': {
+        const { data: noShowOrg } = await supabase
+          .from('organizations').select('name').eq('id', session.organization_id).single();
+        vars.name = noShowOrg?.name ?? '';
         message = tNotification('no_show', locale, vars);
         completeSession = true;
         break;
-      case 'served':
+      }
+      case 'served': {
+        const { data: servedOrg } = await supabase
+          .from('organizations').select('name').eq('id', session.organization_id).single();
+        vars.name = servedOrg?.name ?? '';
         message = tNotification('served', locale, vars);
         completeSession = true;
         break;
-      case 'cancelled':
+      }
+      case 'cancelled': {
+        const { data: cancelOrg } = await supabase
+          .from('organizations').select('name').eq('id', session.organization_id).single();
+        vars.name = cancelOrg?.name ?? '';
         message = tNotification('cancelled_notify', locale, vars);
         completeSession = true;
         break;
+      }
       case 'next_in_line':
         message = tNotification('next_in_line', locale, vars);
         break;
