@@ -145,10 +145,44 @@ export async function POST(request: NextRequest) {
             // Facebook sometimes sends the referral in a separate event that arrives later,
             // so we can't rely on it. Send welcome + prompt to click the link again.
             console.log(`[messenger-webhook] GET_STARTED from ${senderId}`);
-            await sendMessengerMessage({
-              recipientId: senderId,
-              text: '👋 Welcome to Qflo!\n\nTap the Messenger link on your tracking page again to connect your ticket.\n\nBienvenue sur Qflo ! Appuyez à nouveau sur le lien Messenger de votre page de suivi.\n\nمرحبًا بك في Qflo! اضغط على رابط ماسنجر في صفحة التتبع مرة أخرى.'
-            });
+            const welcomeText = [
+              '👋 Welcome to *Qflo*!',
+              '',
+              'I can help you manage your queue tickets.',
+              '',
+              '📌 *Available commands:*',
+              '• *JOIN <code>* — Join a queue (e.g. JOIN HADABI)',
+              '• *LIST* — Browse available businesses',
+              '• *STATUS* — Check your queue position',
+              '• *CANCEL* — Leave the queue',
+              '',
+              '🔗 If you came from a tracking page, tap the Messenger link again to connect your ticket.',
+              '',
+              '—',
+              '',
+              '👋 Bienvenue sur *Qflo* !',
+              '',
+              '📌 *Commandes disponibles :*',
+              '• *REJOINDRE <code>* — Rejoindre une file',
+              '• *LISTE* — Voir les entreprises disponibles',
+              '• *STATUT* — Vérifier votre position',
+              '• *ANNULER* — Quitter la file',
+              '',
+              '🔗 Si vous venez d\'une page de suivi, appuyez à nouveau sur le lien Messenger.',
+              '',
+              '—',
+              '',
+              '👋 !مرحبًا بك في *Qflo*',
+              '',
+              '📌 *الأوامر المتاحة:*',
+              '• *انضم <الرمز>* — الانضمام إلى الطابور',
+              '• *القائمة* — تصفح الأعمال المتاحة',
+              '• *حالة* — التحقق من موقعك',
+              '• *إلغاء* — مغادرة الطابور',
+              '',
+              '🔗 إذا أتيت من صفحة التتبع، اضغط على رابط ماسنجر مرة أخرى.',
+            ].join('\n');
+            await sendMessengerMessage({ recipientId: senderId, text: welcomeText });
           } else {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);
