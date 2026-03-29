@@ -83,6 +83,21 @@ export async function POST(request: NextRequest) {
         const senderId = event.sender?.id;
         if (!senderId) continue;
 
+        // ── Referral from m.me link (in-house/kiosk Messenger opt-in) ──
+        // MUST be checked BEFORE text message — returning users may get both
+        // a referral AND a message event. Also check event.message.referral
+        // which Messenger uses for returning users clicking m.me links.
+        const referralRef =
+          event.referral?.ref ||              // returning user clicks m.me link
+          event.postback?.referral?.ref ||     // new user taps "Get Started" via m.me link
+          event.message?.referral?.ref;        // returning user — ref embedded in message event
+        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
+          const qrToken = referralRef.replace('qflo_', '');
+          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
+          await handleMessengerReferral(senderId, qrToken);
+          continue;
+        }
+
         // ── Text message ──
         if (event.message?.text) {
           const text = event.message.text;
@@ -104,19 +119,6 @@ export async function POST(request: NextRequest) {
           };
 
           await handleInboundMessage('messenger', senderId, text, sendFn, profileName);
-          continue;
-        }
-
-        // ── Referral from m.me link (in-house/kiosk Messenger opt-in) ──
-        // MUST be checked BEFORE postback — new users get postback with
-        // payload "GET_STARTED" AND postback.referral.ref at the same time.
-        const referralRef =
-          event.referral?.ref ||              // returning user clicks m.me link
-          event.postback?.referral?.ref;       // new user taps "Get Started" via m.me link
-        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
-          const qrToken = referralRef.replace('qflo_', '');
-          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
-          await handleMessengerReferral(senderId, qrToken);
           continue;
         }
 
