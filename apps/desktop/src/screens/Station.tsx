@@ -577,6 +577,7 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
   const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
+  const SHOW_DEVICES_KEY = 'qflo_station_show_devices';
   const SHOW_LOCAL_NETWORK_KEY = 'qflo_station_show_local_network';
   const MIN_SIDEBAR_WIDTH = 320;
   const MAX_SIDEBAR_WIDTH = 720;
@@ -1095,6 +1096,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const VISIBLE_CHUNK = 50;
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
+  const [showDevices, setShowDevices] = useState(true);
   const [showLocalNetwork, setShowLocalNetwork] = useState(true);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
@@ -1106,6 +1108,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const storedShowActivity = window.localStorage.getItem(SHOW_ACTIVITY_KEY);
       if (storedShowActivity === 'true' || storedShowActivity === 'false') {
         setShowActivity(storedShowActivity === 'true');
+      }
+      const storedShowDevices = window.localStorage.getItem(SHOW_DEVICES_KEY);
+      if (storedShowDevices === 'true' || storedShowDevices === 'false') {
+        setShowDevices(storedShowDevices === 'true');
       }
       const storedShowLocalNetwork = window.localStorage.getItem(SHOW_LOCAL_NETWORK_KEY);
       if (storedShowLocalNetwork === 'true' || storedShowLocalNetwork === 'false') {
@@ -1123,6 +1129,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // ignore persistence failures
     }
   }, [showActivity]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHOW_DEVICES_KEY, String(showDevices));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [showDevices]);
 
   useEffect(() => {
     try {
@@ -1639,10 +1653,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* Device Status */}
         {deviceStatuses.length > 0 && (
           <div className="sidebar-section">
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              {t('Devices')}
-            </div>
-            {deviceStatuses.map((d: any) => (
+            <button
+              onClick={() => setShowDevices((v) => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+              }}
+            >
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                {t('Devices')}
+              </h4>
+              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showDevices ? '▲' : '▼'}</span>
+            </button>
+            {showDevices && deviceStatuses.map((d: any) => (
               <div key={d.id} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
                 fontSize: 13, color: d.connected ? 'var(--text2)' : 'var(--danger)',
