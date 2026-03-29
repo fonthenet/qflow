@@ -35,14 +35,14 @@ interface Session {
 
 const messages: Record<string, Record<Locale, string>> = {
   called: {
-    fr: "🔔 *C'est votre tour !* Ticket *{ticket}* — veuillez vous rendre au *{desk}*.\n\nSuivi : {url}",
-    ar: "🔔 *حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}*.\n\nتتبع: {url}",
-    en: "🔔 *It's your turn!* Ticket *{ticket}* — please go to *{desk}*.\n\nTrack: {url}",
+    fr: "🔔 *C'est votre tour !* Ticket *{ticket}* — veuillez vous rendre au *{desk}* dans les *{wait} minutes*.\n\nSuivi : {url}",
+    ar: "🔔 *حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* خلال *{wait} دقائق*.\n\nتتبع: {url}",
+    en: "🔔 *It's your turn!* Ticket *{ticket}* — please go to *{desk}* within *{wait} minutes*.\n\nTrack: {url}",
   },
   recall: {
-    fr: "⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*.\n\nSuivi : {url}",
-    ar: "⏰ *تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}*.\n\nتتبع: {url}",
-    en: "⏰ *Reminder:* Ticket *{ticket}* is still waiting for you at *{desk}*.\n\nTrack: {url}",
+    fr: "⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*. Vous avez *{wait} minutes* pour vous présenter.\n\nSuivi : {url}",
+    ar: "⏰ *تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}*. لديك *{wait} دقائق* للحضور.\n\nتتبع: {url}",
+    en: "⏰ *Reminder:* Ticket *{ticket}* is still waiting for you at *{desk}*. You have *{wait} minutes* to arrive.\n\nTrack: {url}",
   },
   buzz: {
     fr: "📢 *Appel :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}",
@@ -177,15 +177,16 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "6";
+const VERSION = "7";
 
 Deno.serve(async (req) => {
   try {
     const body = await req.json();
-    const { ticketId, event, deskName, pushPayload } = body as {
+    const { ticketId, event, deskName, waitMinutes, pushPayload } = body as {
       ticketId: string;
       event: Event;
       deskName: string;
+      waitMinutes?: number;
       pushPayload?: Record<string, unknown>;
     };
 
@@ -234,6 +235,7 @@ Deno.serve(async (req) => {
       ticket: ticket.ticket_number,
       desk: deskName || "your desk",
       url: trackUrl,
+      wait: String(waitMinutes ?? 10),
     });
 
     const isTerminal = ["no_show", "served", "cancelled"].includes(event);
