@@ -230,6 +230,16 @@ let isCloudReachable = false;
 let onTicketCreated: ((syncQueueId: string) => void) | null = null;
 export function setOnTicketCreated(cb: (syncQueueId: string) => void) { onTicketCreated = cb; }
 
+// Sync status getter — set from main.ts so kiosk-server can report real sync state
+let getSyncStatus: (() => { isOnline: boolean; pendingCount: number; lastSyncAt: string | null }) | null = null;
+export function setSyncStatusGetter(getter: () => { isOnline: boolean; pendingCount: number; lastSyncAt: string | null }) {
+  getSyncStatus = getter;
+}
+
+// Force sync callback — set from main.ts to trigger immediate sync push
+let onForceSync: (() => Promise<void>) | null = null;
+export function setOnForceSync(cb: () => Promise<void>) { onForceSync = cb; }
+
 // ── HTML entity escaping (prevent XSS) ──────────────────────────
 function escapeHtml(str: string): string {
   return str
@@ -421,6 +431,10 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleStationQuery(url, res);
       } else if (path === '/api/station/sync-status' && req.method === 'GET') {
         handleStationSyncStatus(res);
+      } else if (path === '/api/station/sync-force' && req.method === 'POST') {
+        handleStationSyncForce(res);
+      } else if (path === '/api/station/sync-pending' && req.method === 'GET') {
+        handleStationSyncPending(res);
       } else if (path === '/api/station/session' && req.method === 'GET') {
         handleStationSessionLoad(res);
       } else if (path === '/api/station/session/clear' && req.method === 'POST') {
@@ -2247,8 +2261,56 @@ function handleStationQuery(url: URL, res: http.ServerResponse) {
 }
 
 function handleStationSyncStatus(res: http.ServerResponse) {
+  // Return real sync engine state instead of hardcoded values
+  const status = getSyncStatus
+    ? getSyncStatus()
+    : { isOnline: isCloudReachable, pendingCount: 0, lastSyncAt: null };
+
+  // Also query actual pending count from sync_queue as ground truth
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL").get() as any;
+    status.pendingCount = row?.count ?? status.pendingCount;
+  } catch { /* use engine value */ }
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ isOnline: isCloudReachable, pendingCount: 0, lastSyncAt: null }));
+  res.end(JSON.stringify(status));
+}
+
+function handleStationSyncPending(res: http.ServerResponse) {
+  try {
+    const db = getDB();
+    const items = db.prepare(
+      "SELECT id, operation, table_name, record_id, attempts, last_error, created_at FROM sync_queue WHERE synced_at IS NULL ORDER BY created_at ASC LIMIT 50"
+    ).all();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(items));
+  } catch {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('[]');
+  }
+}
+
+async function handleStationSyncForce(res: http.ServerResponse) {
+  try {
+    if (onForceSync) {
+      await onForceSync();
+    }
+    // Return updated status after sync
+    const status = getSyncStatus
+      ? getSyncStatus()
+      : { isOnline: isCloudReachable, pendingCount: 0, lastSyncAt: null };
+    try {
+      const db = getDB();
+      const row = db.prepare("SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL").get() as any;
+      status.pendingCount = row?.count ?? status.pendingCount;
+    } catch { /* ignore */ }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, ...status }));
+  } catch (err: any) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: err?.message ?? 'Sync failed' }));
+  }
 }
 
 function handleStationSessionLoad(res: http.ServerResponse) {

@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
@@ -1256,6 +1256,16 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('tickets:changed');
       notifyStationClients({ type: 'tickets_changed' });
       syncEngine?.pushImmediate(syncQueueId);
+    });
+    // Expose real sync status to kiosk-server HTTP endpoints
+    setSyncStatusGetter(() => ({
+      isOnline: syncEngine?.isOnline ?? false,
+      pendingCount: syncEngine?.pendingCount ?? 0,
+      lastSyncAt: syncEngine?.lastSyncAt ?? null,
+    }));
+    setOnForceSync(async () => {
+      await syncEngine?.syncNow();
+      await syncEngine?.pullLatest();
     });
   } catch (err) {
     console.error('Failed to start kiosk server:', err);
