@@ -148,9 +148,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📊 *Queue Status — {name}*\n\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\nReply *CANCEL* to leave the queue.',
   },
   cancelled: {
-    fr: '🚫 Le ticket *{ticket}* a été annulé.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à tout moment.',
-    ar: 'تم إلغاء التذكرة *{ticket}* 🚫\n\nأرسل *انضم <الرمز>* للانضمام في أي وقت.',
-    en: '🚫 Ticket *{ticket}* has been cancelled.\n\nSend *JOIN <code>* to rejoin anytime.',
+    fr: '🚫 Votre ticket *{ticket}* chez *{name}* a été annulé.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à tout moment.',
+    ar: 'تم إلغاء تذكرتك *{ticket}* في *{name}* 🚫\n\nأرسل *انضم <الرمز>* للانضمام في أي وقت.',
+    en: '🚫 Your ticket *{ticket}* at *{name}* has been cancelled.\n\nSend *JOIN <code>* to rejoin anytime.',
   },
   help_with_session: {
     fr: '📋 *{name}* — File\n\nCommandes :\n• *STATUT* — Vérifier votre position\n• *ANNULER* — Quitter la file\n• *LISTE* — Voir les entreprises',
@@ -1283,7 +1283,7 @@ async function handleCancel(
     metadata: { source: `${channel}_cancel` },
   });
 
-  await sendMessage({ to: identifier, body: t('cancelled', locale, { ticket: ticketRow?.ticket_number ?? '?' }) });
+  await sendMessage({ to: identifier, body: t('cancelled', locale, { ticket: ticketRow?.ticket_number ?? '?', name: org.name }) });
 }
 
 /**
