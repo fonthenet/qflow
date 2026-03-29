@@ -19,7 +19,7 @@ const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "https://qflo.net").replac
 // ── Types ────────────────────────────────────────────────────────────
 
 type Locale = "fr" | "ar" | "en";
-type Event = "called" | "recall" | "buzz" | "no_show" | "served" | "cancelled" | "next_in_line" | "approaching";
+type Event = "called" | "recall" | "buzz" | "serving" | "no_show" | "served" | "cancelled" | "next_in_line" | "approaching";
 
 interface Session {
   id: string;
@@ -49,6 +49,11 @@ const messages: Record<string, Record<Locale, string>> = {
     fr: "📢 *Appel — {name} :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}",
     ar: "*تنبيه — {name}:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}* 📢\n\nتتبع: {url}",
     en: "📢 *Buzz — {name}:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
+  },
+  serving: {
+    fr: "▶️ *Votre service a commencé chez {name} !* Ticket *{ticket}* — vous êtes maintenant pris en charge au *{desk}*.",
+    ar: "*بدأت خدمتك في {name}!* التذكرة *{ticket}* — أنت الآن قيد الخدمة في *{desk}* ▶️",
+    en: "▶️ *Your service has started at {name}!* Ticket *{ticket}* — you're now being served at *{desk}*.",
   },
   no_show: {
     fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
@@ -183,7 +188,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "10";
+const VERSION = "11";
 
 Deno.serve(async (req) => {
   try {
