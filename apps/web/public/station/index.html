@@ -24,7 +24,10 @@
   var mode = 'remote'; // default
 
   function get(path) {
-    return fetch(API + path, { credentials: 'include' }).then(function(r) { return r.json(); });
+    return fetch(API + path, { credentials: 'include' }).then(function(r) {
+      if (r.status === 401) { window.location.href = '/login?redirect=/station'; return null; }
+      return r.json();
+    });
   }
   function post(path, body) {
     return fetch(API + path, {
@@ -32,7 +35,10 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       credentials: 'include',
-    }).then(function(r) { return r.json(); });
+    }).then(function(r) {
+      if (r.status === 401) { window.location.href = '/login?redirect=/station'; return null; }
+      return r.json();
+    });
   }
 
   // Remote API helpers (use /api/station?action=...)
@@ -178,8 +184,8 @@
   };
 })();
 </script>
-  <script type="module" crossorigin src="./assets/index-Bs5iXr3v.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B-hWrrsO.css">
+  <script type="module" crossorigin src="/station/assets/index-Bs5iXr3v.js"></script>
+  <link rel="stylesheet" crossorigin href="/station/assets/index-B-hWrrsO.css">
 </head>
 <body>
   <div id="root"></div>
