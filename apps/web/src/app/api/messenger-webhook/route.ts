@@ -140,6 +140,12 @@ export async function POST(request: NextRequest) {
             await handleInboundMessage('messenger', senderId, 'STATUS', sendFn);
           } else if (payload === 'CANCEL') {
             await handleInboundMessage('messenger', senderId, 'CANCEL', sendFn);
+          } else if (payload === 'GET_STARTED') {
+            // New user tapped "Get Started" — if they arrived via m.me link,
+            // the referral is handled above (or arrives as a separate event).
+            // Don't send a generic welcome — just acknowledge silently so the
+            // referral handler can send the proper ticket-linked message.
+            console.log(`[messenger-webhook] GET_STARTED from ${senderId} (no referral — waiting for referral event)`);
           } else {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);
