@@ -50,14 +50,14 @@ const messages: Record<string, Record<Locale, string>> = {
     en: "📢 *Buzz:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
   },
   no_show: {
-    fr: "❌ Le ticket *{ticket}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
-    ar: "❌ التذكرة *{ticket}* تم تسجيلها كـ *غائب*. لقد فاتك دورك.\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.",
-    en: "❌ Ticket *{ticket}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.",
+    fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
+    ar: "التذكرة *{ticket}* في *{name}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.",
+    en: "❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.",
   },
   served: {
-    fr: "✅ Le ticket *{ticket}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.",
-    ar: "✅ التذكرة *{ticket}* مكتملة. شكرًا لزيارتكم!\n\nنتمنى رؤيتكم مجددًا.",
-    en: "✅ Ticket *{ticket}* is complete. Thank you for visiting!\n\nWe hope to see you again.",
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم! ✅\n\nنتمنى رؤيتكم مجددًا.",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete. Thank you for visiting!\n\nWe hope to see you again.",
   },
   next_in_line: {
     fr: "⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
@@ -70,9 +70,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: "📍 *Almost your turn!* You're *#{position}* in line (ticket *{ticket}*). Start heading over.\n\nTrack: {url}",
   },
   cancelled_notify: {
-    fr: "🚫 Le ticket *{ticket}* a été annulé.",
-    ar: "🚫 تم إلغاء التذكرة *{ticket}*.",
-    en: "🚫 Ticket *{ticket}* has been cancelled.",
+    fr: "🚫 Le ticket *{ticket}* chez *{name}* a été annulé.",
+    ar: "تم إلغاء التذكرة *{ticket}* في *{name}* 🚫",
+    en: "🚫 Ticket *{ticket}* at *{name}* has been cancelled.",
   },
 };
 
@@ -182,7 +182,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "8";
+const VERSION = "9";
 
 Deno.serve(async (req) => {
   try {
@@ -236,6 +236,25 @@ Deno.serve(async (req) => {
 
     const locale = (session.locale as Locale) || "fr";
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
+
+    // Fetch business name for terminal events
+    let orgName = "";
+    if (["no_show", "served", "cancelled"].includes(event)) {
+      const { data: sessionFull } = await supabase
+        .from("whatsapp_sessions")
+        .select("organization_id")
+        .eq("id", session.id)
+        .single();
+      if (sessionFull?.organization_id) {
+        const { data: org } = await supabase
+          .from("organizations")
+          .select("name")
+          .eq("id", sessionFull.organization_id)
+          .single();
+        orgName = org?.name ?? "";
+      }
+    }
+
     const msgKey = event === "cancelled" ? "cancelled_notify" : event;
     const message = t(msgKey, locale, {
       ticket: ticket.ticket_number,
@@ -243,6 +262,7 @@ Deno.serve(async (req) => {
       url: trackUrl,
       wait: String(waitMinutes ?? 10),
       position: String(position ?? 3),
+      name: orgName,
     });
 
     const isTerminal = ["no_show", "served", "cancelled"].includes(event);
