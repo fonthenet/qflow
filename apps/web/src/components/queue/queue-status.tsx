@@ -840,7 +840,7 @@ export function QueueStatus({
             ) : null}
 
             <div className="mt-auto pt-6 text-center">
-              <p className={`text-xs text-slate-500 ${compactMetaClass}`}>Powered by Qflo</p>
+              <p className={`text-xs text-slate-500 ${compactMetaClass}`}>POWERED BY QFLO</p>
             </div>
           </div>
         </div>
@@ -1050,7 +1050,7 @@ export function QueueStatus({
           ) : null}
 
           <div className="mt-auto pt-4 text-center">
-            <p className={`text-xs text-slate-500 ${compactMetaClass}`}>Powered by Qflo</p>
+            <p className={`text-xs text-slate-500 ${compactMetaClass}`}>POWERED BY QFLO</p>
           </div>
         </div>
       </div>

@@ -1083,7 +1083,7 @@ export function BookingForm({
 
       {/* Footer */}
       <div className="px-4 pb-6 text-center">
-        <p className="text-xs text-muted-foreground">Powered by Qflo</p>
+        <p className="text-xs text-muted-foreground">POWERED BY QFLO</p>
       </div>
     </div>
   );
