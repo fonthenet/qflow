@@ -280,11 +280,12 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** Prefix every non-empty line with Arabic Letter Mark (U+061C) — an invisible
- *  strong RTL character in the Arabic block. Unlike U+200F, apps rarely strip it
- *  since it's classified as Arabic, forcing the bidi algorithm to treat lines as RTL. */
+/** Force RTL rendering for Arabic text across messaging platforms.
+ *  Uses Right-to-Left Embedding (U+202B) + Pop Directional Formatting (U+202C)
+ *  wrapping each line — this is stronger than U+061C alone and works on both
+ *  WhatsApp (which has native RTL) and Messenger (which defaults to LTR). */
 function ensureRTL(text: string): string {
-  return text.split('\n').map(line => line.length > 0 ? `\u061C${line}` : line).join('\n');
+  return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
