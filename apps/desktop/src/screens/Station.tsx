@@ -1347,7 +1347,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         ) : (
           <>
           {/* Status + Pause pills — top-right of main area */}
-          <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="station-action-pills">
             {/* Pause toggle — only show when available */}
             {staffStatus === 'available' && (
               <button

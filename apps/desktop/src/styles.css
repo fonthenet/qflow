@@ -375,6 +375,21 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   #qf-bottom-bar { bottom: 6px; }
 }
 
+/* ── Station Action Pills (Pause, In-House Booking, Status) ──── */
+.station-action-pills {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 10;
+}
+html[dir="rtl"] .station-action-pills {
+  right: auto;
+  left: 16px;
+}
+
 /* ── Responsive: Tablet (≤1024px) ─────────────────────────────── */
 @media (max-width: 1024px) {
   .status-bar { padding: 0 12px; height: 44px; }
@@ -430,6 +445,17 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   .sidebar-toggle:hover { background: var(--primary-hover); }
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 12px; }
 
+  .station-action-pills {
+    position: relative;
+    top: auto;
+    right: auto;
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 10px 16px 0;
+    z-index: 10;
+  }
+  html[dir="rtl"] .station-action-pills { left: auto; }
+
   .sidebar-toggle-badge {
     position: absolute;
     top: -4px;
@@ -471,7 +497,7 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   .app-logo { width: 24px; height: 24px; font-size: 14px; }
 
   .station { flex-direction: column; }
-  .station-main { padding: 16px; padding-top: 60px; }
+  .station-main { padding: 16px; padding-top: 12px; }
 
   .station-sidebar {
     top: calc(40px + env(safe-area-inset-top, 0px));
@@ -482,6 +508,15 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
 
   .sidebar-toggle { top: 48px; right: 10px; width: 52px; height: 52px; font-size: 22px; }
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 10px; }
+
+  .station-action-pills {
+    padding: 8px 12px 0;
+    gap: 6px;
+  }
+  .station-action-pills button {
+    font-size: 11px !important;
+    padding: 4px 10px !important;
+  }
 
   .idle-panel h2 { font-size: 22px; }
   .idle-panel p { font-size: 14px; margin-bottom: 20px; }
