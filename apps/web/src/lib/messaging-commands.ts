@@ -459,6 +459,27 @@ export async function handleInboundMessage(
   // ── JOIN with code ──
   const parsed = parseBusinessCode(messageBody);
   if (parsed) {
+    // Check if the code is a category-business number (e.g. "5-1", "3-2")
+    const dirMatch = parsed.code.match(/^(\d{1,2})-(\d{1,2})$/);
+    if (dirMatch) {
+      const catN = parseInt(dirMatch[1], 10);
+      const bizN = parseInt(dirMatch[2], 10);
+      if (catN >= 1 && catN <= BUSINESS_CATEGORIES.length) {
+        const handled = await handleCategoryOrJoin(identifier, parsed.locale, channel, sendMessage, catN, bizN, profileName, bsuid);
+        if (handled) return;
+      }
+    }
+
+    // Check if the code is just a category number (e.g. "JOIN 5")
+    const catOnlyMatch = parsed.code.match(/^(\d{1,2})$/);
+    if (catOnlyMatch) {
+      const catN = parseInt(catOnlyMatch[1], 10);
+      if (catN >= 1 && catN <= BUSINESS_CATEGORIES.length) {
+        const handled = await handleCategoryOrJoin(identifier, parsed.locale, channel, sendMessage, catN, null, profileName, bsuid);
+        if (handled) return;
+      }
+    }
+
     const org = await findOrgByCode(parsed.code, channel);
     if (org) {
       await handleJoin(identifier, org, parsed.locale, channel, sendMessage, profileName, bsuid);
