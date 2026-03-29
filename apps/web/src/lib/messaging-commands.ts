@@ -816,7 +816,7 @@ async function handleDirectory(
 
   body += t('directory_footer', locale);
 
-  await sendMessage({ to: identifier, body });
+  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
 }
 
 /**
@@ -868,7 +868,7 @@ async function handleCategoryOrJoin(
 
     body += t('category_footer', locale, { example: `${catNum}-1` });
 
-    await sendMessage({ to: identifier, body });
+    await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
     return true;
   }
 
@@ -1334,7 +1334,7 @@ async function handleMultiStatus(
   }
 
   body += t('multi_status_footer', locale, { n: '1' });
-  await sendMessage({ to: identifier, body });
+  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
 }
 
 /**
@@ -1357,14 +1357,12 @@ async function handleCancelPick(
     }
   }
 
-  await sendMessage({
-    to: identifier,
-    body: t('cancel_pick', locale, {
-      count: String(allSessions.length),
-      list,
-      n: '1',
-    }),
+  const msg = t('cancel_pick', locale, {
+    count: String(allSessions.length),
+    list,
+    n: '1',
   });
+  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(msg) : msg });
 }
 
 /**
@@ -1416,8 +1414,6 @@ async function handleCancelAll(
     }
   }
 
-  await sendMessage({
-    to: identifier,
-    body: t('cancelled_all', locale, { list: cancelledItems.join('\n') }),
-  });
+  const msg = t('cancelled_all', locale, { list: cancelledItems.join('\n') });
+  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(msg) : msg });
 }
