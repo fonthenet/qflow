@@ -353,3 +353,140 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   transition: top 0.2s;
 }
 .skip-link:focus { top: 0; }
+
+/* ── Responsive: Tablet (≤1024px) ─────────────────────────────── */
+@media (max-width: 1024px) {
+  .status-bar { padding: 0 12px; height: 44px; }
+  .status-bar-center { display: none; }
+  .operator-role { display: none; }
+
+  .station-sidebar {
+    position: fixed;
+    top: 44px;
+    right: 0;
+    bottom: 0;
+    width: 340px !important;
+    max-width: 85vw;
+    z-index: 100;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+  }
+  html[dir="rtl"] .station-sidebar {
+    right: auto;
+    left: 0;
+    border-left: none;
+    border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+  }
+  .station-sidebar.sidebar-visible { transform: translateX(0); }
+  html[dir="rtl"] .station-sidebar.sidebar-visible { transform: translateX(0); }
+
+  .station-sidebar-resizer { display: none; }
+
+  .sidebar-toggle {
+    position: fixed;
+    top: 52px;
+    right: 12px;
+    z-index: 101;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    font-size: 20px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sidebar-toggle:hover { background: var(--primary-hover); }
+  html[dir="rtl"] .sidebar-toggle { right: auto; left: 12px; }
+
+  .sidebar-toggle-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 99;
+  }
+  .sidebar-backdrop.visible { display: block; }
+
+  .queue-item { padding: 10px 12px; min-height: 44px; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; min-height: 36px; }
+  .shortcut-hint { display: none; }
+}
+
+/* ── Responsive: Mobile (≤767px) ──────────────────────────────── */
+@media (max-width: 767px) {
+  .status-bar { height: 40px; padding: 0 10px; }
+  .status-bar-right { gap: 6px; }
+  .operator-name { font-size: 11px; }
+  .desk-badge { display: none; }
+  .btn-logout { display: none; }
+  .app-name { font-size: 12px; }
+  .app-logo { width: 24px; height: 24px; font-size: 14px; }
+
+  .station { flex-direction: column; }
+  .station-main { padding: 16px; padding-top: 60px; }
+
+  .station-sidebar {
+    top: 40px;
+    width: 100vw !important;
+    max-width: 100vw;
+    box-shadow: none;
+  }
+
+  .sidebar-toggle { top: 48px; right: 10px; width: 52px; height: 52px; font-size: 22px; }
+  html[dir="rtl"] .sidebar-toggle { right: auto; left: 10px; }
+
+  .idle-panel h2 { font-size: 22px; }
+  .idle-panel p { font-size: 14px; margin-bottom: 20px; }
+  .btn-xl { padding: 16px 32px; font-size: 18px; width: 100%; }
+  .btn-lg { padding: 14px 24px; font-size: 16px; width: 100%; }
+
+  .active-ticket-panel { max-width: 100%; }
+  .active-number { font-size: 48px; }
+
+  .secondary-actions { flex-wrap: wrap; justify-content: center; }
+  .secondary-actions .btn-outline {
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 44px;
+    flex: 1 1 calc(50% - 5px);
+    min-width: 0;
+    text-align: center;
+  }
+
+  .queue-item { padding: 12px; min-height: 48px; gap: 8px; }
+  .btn-sm { padding: 8px 14px; font-size: 12px; min-height: 40px; }
+
+  .toast { left: 16px; right: 16px; transform: none; text-align: center; }
+
+  .login-card { width: 100%; max-width: 100%; padding: 32px 20px; border-radius: 0; }
+
+  [role="dialog"] { min-width: auto !important; max-width: calc(100vw - 32px) !important; margin: 16px; }
+}

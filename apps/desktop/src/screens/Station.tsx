@@ -769,6 +769,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         return;
       }
       fetchTickets();
+      if (isSmallScreen) setSidebarVisible(false);
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
@@ -782,6 +783,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         showToast(t('Ticket already called by another desk'), 'error');
       }
       fetchTickets();
+      if (isSmallScreen && updates.status === 'called') setSidebarVisible(false);
     } catch (err: any) {
       showToast(t('Failed to update ticket'), 'error');
       console.error('[station] updateTicket error:', err);
@@ -957,6 +959,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   });
   const [deviceStatuses, setDeviceStatuses] = useState<any[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => { setIsSmallScreen(e.matches); if (!e.matches) setSidebarVisible(false); };
+    setIsSmallScreen(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   useEffect(() => {
     try {
@@ -1159,6 +1171,25 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   return (
     <div className="station" role="main">
+      {/* Sidebar toggle for mobile/tablet */}
+      {isSmallScreen && (
+        <>
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarVisible(v => !v)}
+            aria-label={sidebarVisible ? t('Close queue') : t('Open queue')}
+            aria-expanded={sidebarVisible}
+          >
+            {sidebarVisible ? '\u2715' : '\u2630'}
+            {!sidebarVisible && waiting.length > 0 && (
+              <span className="sidebar-toggle-badge">{waiting.length}</span>
+            )}
+          </button>
+          {sidebarVisible && (
+            <div className="sidebar-backdrop visible" onClick={() => setSidebarVisible(false)} />
+          )}
+        </>
+      )}
       {/* Left panel — active ticket */}
       <div className="station-main" aria-label={t('Active tickets')}>
         {!session.desk_id ? (
@@ -1444,10 +1475,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
       {/* Right panel — queue overview */}
       <div
-        className="station-sidebar"
+        className={`station-sidebar${isSmallScreen && sidebarVisible ? ' sidebar-visible' : ''}`}
         role="complementary"
         aria-label={t('Queue Overview')}
-        style={{ width: sidebarWidth }}
+        style={isSmallScreen ? undefined : { width: sidebarWidth }}
       >
         <button
           type="button"
