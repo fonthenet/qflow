@@ -233,6 +233,11 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
+/** Prepend RTL mark to each line for proper Arabic rendering in WhatsApp */
+function ensureRTL(text: string): string {
+  return text.split('\n').map(line => line.length > 0 ? `\u200F${line}` : line).join('\n');
+}
+
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
   let msg = messages[key]?.[locale] ?? messages[key]?.['fr'] ?? key;
   if (vars) {
@@ -240,7 +245,7 @@ function t(key: string, locale: Locale, vars?: Record<string, string | number | 
       msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? '?'));
     }
   }
-  return msg;
+  return locale === 'ar' ? ensureRTL(msg) : msg;
 }
 
 export function tNotification(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
@@ -250,7 +255,7 @@ export function tNotification(key: string, locale: Locale, vars?: Record<string,
       msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? '?'));
     }
   }
-  return msg;
+  return locale === 'ar' ? ensureRTL(msg) : msg;
 }
 
 // ── Shared-number routing ────────────────────────────────────────────
@@ -402,10 +407,17 @@ export async function handleInboundMessage(
   profileName?: string,
   bsuid?: string,
 ): Promise<void> {
-  // Strip invisible Unicode characters (ZWJ, ZWNJ, LTR/RTL marks, BOM, etc.)
-  const cleaned = messageBody.trim().replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u00AD]/g, '').trim();
+  // Strip invisible Unicode characters (ZWJ, ZWNJ, LTR/RTL marks, BOM, Arabic marks, diacritics, etc.)
+  const cleaned = messageBody.trim().replace(/[\u00AD\u061C\u064B-\u0652\u0670\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFE00-\uFE0F\uFEFF]/g, '').trim();
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
+
+  // Debug: log raw vs cleaned for Arabic troubleshooting
+  if (/[\u0600-\u06FF]/.test(messageBody)) {
+    const rawCodes = [...messageBody].map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
+    const cleanCodes = [...cleaned].map(c => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
+    console.log(`[messaging] Arabic input raw=[${rawCodes}] cleaned=[${cleanCodes}] text="${cleaned}"`);
+  }
 
   // ── TRACK qflo_QRTOKEN (link WhatsApp/Messenger to existing ticket) ──
   if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
@@ -417,7 +429,9 @@ export async function handleInboundMessage(
   }
 
   // ── LIST / LISTE / قائمة / DIRECTORY / دليل ──
-  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || cleaned === 'قائمة' || cleaned === 'القائمة' || cleaned === 'دليل' || cleaned === 'الفهرس') {
+  const isListCommand = command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY'
+    || /^(قائمة|القائمة|دليل|الفهرس)$/.test(cleaned);
+  if (isListCommand) {
     await handleDirectory(identifier, detectedLocale, channel, sendMessage);
     return;
   }
@@ -435,7 +449,7 @@ export async function handleInboundMessage(
   }
 
   // ── STATUS / STATUT / حالة ──
-  if (command === 'STATUS' || command === 'STATUT' || cleaned === 'حالة') {
+  if (command === 'STATUS' || command === 'STATUT' || /^حالة$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -447,7 +461,7 @@ export async function handleInboundMessage(
   }
 
   // ── CANCEL / ANNULER / إلغاء ──
-  if (command === 'CANCEL' || command === 'ANNULER' || cleaned === 'إلغاء' || cleaned === 'الغاء') {
+  if (command === 'CANCEL' || command === 'ANNULER' || /^(إلغاء|الغاء|إلغاء)$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -492,7 +506,7 @@ export async function handleInboundMessage(
   }
 
   // ── Plain "JOIN" / "REJOINDRE" / "انضم" without code ──
-  if (command === 'JOIN' || command === 'REJOINDRE' || cleaned === 'انضم' || cleaned === 'إنضم') {
+  if (command === 'JOIN' || command === 'REJOINDRE' || /^(انضم|إنضم)$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -607,7 +621,7 @@ async function handleDirectory(
 
   body += t('directory_footer', locale);
 
-  await sendMessage({ to: identifier, body });
+  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
 }
 
 /**
@@ -655,7 +669,7 @@ async function handleCategoryOrJoin(
 
     body += t('category_footer', locale, { example: `${catNum}-1` });
 
-    await sendMessage({ to: identifier, body });
+    await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
     return true;
   }
 
