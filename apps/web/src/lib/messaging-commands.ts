@@ -233,14 +233,9 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** Convert Western digits to Arabic-Eastern numerals for native RTL rendering */
-function toArabicNumerals(text: string): string {
-  return text.replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[parseInt(d)]);
-}
-
-/** Make text RTL-native: convert digits to Arabic-Eastern numerals */
+/** No-op — RTL is handled by restructuring Arabic line order in each handler */
 function ensureRTL(text: string): string {
-  return toArabicNumerals(text);
+  return text;
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
@@ -625,12 +620,17 @@ async function handleDirectory(
     const catLabel = catDef?.label[localeKey] ?? catDef?.label.en ?? catKey;
     const count = grouped.get(catKey)!.length;
 
-    body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
+    if (locale === 'ar') {
+      // Arabic text first → bidi renders line RTL
+      body += `${emoji} ${catLabel} (${count}) — *${i + 1}*\n`;
+    } else {
+      body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
+    }
   }
 
   body += t('directory_footer', locale);
 
-  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
+  await sendMessage({ to: identifier, body });
 }
 
 /**
@@ -673,12 +673,16 @@ async function handleCategoryOrJoin(
 
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
-      body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
+      if (locale === 'ar') {
+        body += `${biz.name} — *${catNum}-${i + 1}*\n`;
+      } else {
+        body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
+      }
     }
 
     body += t('category_footer', locale, { example: `${catNum}-1` });
 
-    await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
+    await sendMessage({ to: identifier, body });
     return true;
   }
 
