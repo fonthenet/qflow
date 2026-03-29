@@ -141,11 +141,10 @@ export async function POST(request: NextRequest) {
           } else if (payload === 'CANCEL') {
             await handleInboundMessage('messenger', senderId, 'CANCEL', sendFn);
           } else if (payload === 'GET_STARTED') {
-            // New user tapped "Get Started" — if they arrived via m.me link,
-            // the referral is handled above (or arrives as a separate event).
-            // Don't send a generic welcome — just acknowledge silently so the
-            // referral handler can send the proper ticket-linked message.
-            console.log(`[messenger-webhook] GET_STARTED from ${senderId} (no referral — waiting for referral event)`);
+            // New user tapped "Get Started" — send a brief welcome.
+            // The referral event follows shortly and will send the full ticket details.
+            console.log(`[messenger-webhook] GET_STARTED from ${senderId}`);
+            await sendMessengerMessage({ recipientId: senderId, text: '👋 Welcome to Qflo!' });
           } else {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);
@@ -273,24 +272,26 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
 
   const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+  const orgName = org?.name ?? '';
+  const pos = await getQueuePosition(ticket.id);
+  const positionText = formatPosition(pos, locale);
 
   let message: string;
 
-  const switchedMsg: Record<string, string> = {
-    fr: `✅ Notifications basculées sur Messenger !\n\n🎫 Ticket : *${ticket.ticket_number}*\n📍 Suivi : ${trackUrl}`,
-    ar: `✅ تم تحويل الإشعارات إلى ماسنجر!\n\n🎫 التذكرة: *${ticket.ticket_number}*\n📍 تتبع: ${trackUrl}`,
-    en: `✅ Notifications switched to Messenger!\n\n🎫 Ticket: *${ticket.ticket_number}*\n📍 Track: ${trackUrl}`,
-  };
-
   if (switchedFromWhatsApp) {
+    // Switched from WhatsApp — show full details with business name, position, tracking
+    const switchedMsg: Record<string, string> = {
+      fr: `✅ Notifications basculées sur Messenger chez *${orgName}* !\n\n🎫 Ticket : *${ticket.ticket_number}*\n${positionText}\n\n📍 Suivi : ${trackUrl}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.`,
+      ar: `✅ تم تحويل الإشعارات إلى ماسنجر في *${orgName}*!\n\n🎫 التذكرة: *${ticket.ticket_number}*\n${positionText}\n\n📍 تتبع: ${trackUrl}\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.`,
+      en: `✅ Notifications switched to Messenger at *${orgName}*!\n\n🎫 Ticket: *${ticket.ticket_number}*\n${positionText}\n\n📍 Track: ${trackUrl}\n\nReply *STATUS* for updates or *CANCEL* to leave.`,
+    };
     message = switchedMsg[locale] ?? switchedMsg.fr;
   } else {
     // New Messenger session — send full "joined" message
-    const pos = await getQueuePosition(ticket.id);
     message = tNotification('joined', locale, {
-      name: org?.name ?? '',
+      name: orgName,
       ticket: ticket.ticket_number,
-      position: formatPosition(pos, locale),
+      position: positionText,
       url: trackUrl,
     });
   }
