@@ -156,9 +156,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '{emoji} *{category}*:\n',
   },
   category_footer: {
-    fr: '\nEnvoyez *REJOINDRE <code>* pour rejoindre une file.\nEnvoyez *LISTE* pour revenir aux catégories.',
-    ar: '\nأرسل *انضم <الرمز>* للانضمام إلى طابور.\nأرسل *قائمة* للعودة إلى الفئات.',
-    en: '\nSend *JOIN <code>* to join a queue.\nSend *LIST* to go back to categories.',
+    fr: '\nEnvoyez le *numéro* pour rejoindre (ex: *REJOINDRE {example}*).\nEnvoyez *LISTE* pour revenir aux catégories.',
+    ar: '\nأرسل *الرقم* للانضمام (مثال: *انضم {example}*).\nأرسل *قائمة* للعودة إلى الفئات.',
+    en: '\nSend the *number* to join (e.g. *JOIN {example}*).\nSend *LIST* to go back to categories.',
   },
   no_businesses: {
     fr: '📋 Aucune entreprise n\'est actuellement disponible dans le répertoire.\n\nSi vous connaissez le code, envoyez *REJOINDRE <code>*.',
@@ -651,7 +651,7 @@ async function handleCategoryOrJoin(
       body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
     }
 
-    body += t('category_footer', locale);
+    body += t('category_footer', locale, { example: `${catNum}-1` });
 
     await sendMessage({ to: identifier, body });
     return true;
