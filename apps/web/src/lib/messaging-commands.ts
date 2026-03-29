@@ -36,7 +36,7 @@ const messages: Record<string, Record<Locale, string>> = {
       'Envoyez *LISTE* pour voir les entreprises disponibles.',
     ].join('\n'),
     ar: [
-      '👋 مرحبًا بك في *Qflo*!',
+      'مرحبًا بك في *Qflo*! 👋',
       '',
       'للانضمام إلى الطابور، أرسل:',
       '*انضم <الرمز>*',
@@ -67,7 +67,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   code_not_found: {
     fr: '❌ Code "*{code}*" introuvable.\n\nVérifiez le code et réessayez.',
-    ar: '❌ الرمز "*{code}*" غير موجود.\n\nتحقق من الرمز وحاول مرة أخرى.',
+    ar: 'الرمز "*{code}*" غير موجود ❌\n\nتحقق من الرمز وحاول مرة أخرى.',
     en: '❌ Business code "*{code}*" not found.\n\nPlease check the code and try again.',
   },
   already_in_queue: {
@@ -92,22 +92,22 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   join_error: {
     fr: '⚠️ Impossible de rejoindre la file : {error}',
-    ar: '⚠️ تعذر الانضمام إلى الطابور: {error}',
+    ar: 'تعذر الانضمام إلى الطابور: {error} ⚠️',
     en: '⚠️ Could not join the queue: {error}',
   },
   join_failed: {
     fr: '⚠️ Une erreur est survenue. Veuillez réessayer.',
-    ar: '⚠️ حدث خطأ. يرجى المحاولة مرة أخرى.',
+    ar: 'حدث خطأ. يرجى المحاولة مرة أخرى ⚠️',
     en: '⚠️ Something went wrong. Please try again.',
   },
   joined: {
     fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}{now_serving}\n\n📍 Suivez votre position : {url}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.',
-    ar: '✅ أنت في الطابور في *{name}*!\n\n🎫 التذكرة: *{ticket}*\n{position}{now_serving}\n\n📍 تتبع موقعك: {url}\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
+    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}{now_serving}\n\nتتبع موقعك: {url} 📍\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
     en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
   },
   your_turn: {
     fr: '🔔 *C\'est votre tour !* Veuillez vous diriger vers le point de service.',
-    ar: '🔔 *حان دورك!* يرجى التوجه إلى نقطة الخدمة.',
+    ar: '*حان دورك!* يرجى التوجه إلى نقطة الخدمة 🔔',
     en: '🔔 *It\'s your turn!* Please proceed to your service point.',
   },
   ticket_inactive: {
@@ -117,17 +117,17 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   status: {
     fr: '📊 *État de la file — {name}*\n\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\nRépondez *ANNULER* pour quitter la file.',
-    ar: '📊 *حالة الطابور — {name}*\n\n📍 موقعك: *{position}*\n⏱ الانتظار المقدر: *{wait} دقيقة*\n{now_serving}👥 في الانتظار: *{total}*\n\nأرسل *إلغاء* للمغادرة.',
+    ar: '*حالة الطابور — {name}* 📊\n\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nأرسل *إلغاء* للمغادرة.',
     en: '📊 *Queue Status — {name}*\n\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\nReply *CANCEL* to leave the queue.',
   },
   cancelled: {
     fr: '🚫 Le ticket *{ticket}* a été annulé.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à tout moment.',
-    ar: '🚫 تم إلغاء التذكرة *{ticket}*.\n\nأرسل *انضم <الرمز>* للانضمام في أي وقت.',
+    ar: 'تم إلغاء التذكرة *{ticket}* 🚫\n\nأرسل *انضم <الرمز>* للانضمام في أي وقت.',
     en: '🚫 Ticket *{ticket}* has been cancelled.\n\nSend *JOIN <code>* to rejoin anytime.',
   },
   help_with_session: {
     fr: '📋 *{name}* — File\n\nCommandes :\n• *STATUT* — Vérifier votre position\n• *ANNULER* — Quitter la file\n• *LISTE* — Voir les entreprises',
-    ar: '📋 *{name}* — الطابور\n\nالأوامر:\n• *حالة* — التحقق من موقعك\n• *إلغاء* — مغادرة الطابور\n• *القائمة* — عرض الأعمال',
+    ar: '*{name}* — الطابور 📋\n\nالأوامر:\n*حالة* — التحقق من موقعك •\n*إلغاء* — مغادرة الطابور •\n*القائمة* — عرض الأعمال •',
     en: '📋 *{name}* — Queue\n\nCommands:\n• *STATUS* — Check your position\n• *CANCEL* — Leave the queue\n• *LIST* — Browse businesses',
   },
   not_in_queue_rejoin: {
@@ -137,22 +137,22 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   banned: {
     fr: '🚫 Vous avez été bloqué et ne pouvez pas rejoindre cette file.',
-    ar: '🚫 تم حظرك ولا يمكنك الانضمام إلى هذا الطابور.',
+    ar: 'تم حظرك ولا يمكنك الانضمام إلى هذا الطابور 🚫',
     en: '🚫 You have been blocked and cannot join this queue.',
   },
   directory_header: {
     fr: '📋 *Catégories disponibles :*\n',
-    ar: '📋 *الفئات المتاحة:*\n',
+    ar: '*الفئات المتاحة* 📋\n',
     en: '📋 *Available categories:*\n',
   },
   directory_footer: {
     fr: '\nRépondez avec le *numéro* pour voir les entreprises.\n💡 Raccourci : envoyez *1-2* pour rejoindre directement (catégorie 1, entreprise 2).',
-    ar: '\nأرسل *الرقم* لعرض الأعمال.\n💡 اختصار: أرسل *1-2* للانضمام مباشرة (فئة 1، عمل 2).',
+    ar: '\nأرسل *الرقم* لعرض الأعمال.\nاختصار: أرسل *1-2* للانضمام مباشرة 💡',
     en: '\nReply with the *number* to see businesses.\n💡 Shortcut: send *1-2* to join directly (category 1, business 2).',
   },
   category_header: {
     fr: '{emoji} *{category}* :\n',
-    ar: '{emoji} *{category}*:\n',
+    ar: '*{category}* {emoji}\n',
     en: '{emoji} *{category}*:\n',
   },
   category_footer: {
@@ -162,12 +162,12 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   no_businesses: {
     fr: '📋 Aucune entreprise n\'est actuellement disponible dans le répertoire.\n\nSi vous connaissez le code, envoyez *REJOINDRE <code>*.',
-    ar: '📋 لا توجد أعمال متاحة حاليًا في الدليل.\n\nإذا كنت تعرف الرمز، أرسل *انضم <الرمز>*.',
+    ar: 'لا توجد أعمال متاحة حاليًا في الدليل 📋\n\nإذا كنت تعرف الرمز، أرسل *انضم <الرمز>*.',
     en: '📋 No businesses are currently available in the directory.\n\nIf you know the code, send *JOIN <code>*.',
   },
   category_empty: {
     fr: '📋 Aucune entreprise dans cette catégorie.\n\nEnvoyez *LISTE* pour voir les catégories.',
-    ar: '📋 لا توجد أعمال في هذه الفئة.\n\nأرسل *القائمة* لعرض الفئات.',
+    ar: 'لا توجد أعمال في هذه الفئة 📋\n\nأرسل *القائمة* لعرض الفئات.',
     en: '📋 No businesses in this category.\n\nSend *LIST* to see categories.',
   },
 };
@@ -177,47 +177,47 @@ const messages: Record<string, Record<Locale, string>> = {
 export const notificationMessages: Record<string, Record<Locale, string>> = {
   called: {
     fr: '🔔 *C\'est votre tour !* Ticket *{ticket}* — veuillez vous rendre au *{desk}*.\n\nSuivi : {url}',
-    ar: '🔔 *حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}*.\n\nتتبع: {url}',
+    ar: '*حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* 🔔\n\nتتبع: {url}',
     en: '🔔 *It\'s your turn!* Ticket *{ticket}* — please go to *{desk}*.\n\nTrack: {url}',
   },
   recall: {
     fr: '⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*.\n\nSuivi : {url}',
-    ar: '⏰ *تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}*.\n\nتتبع: {url}',
+    ar: '*تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}* ⏰\n\nتتبع: {url}',
     en: '⏰ *Reminder:* Ticket *{ticket}* is still waiting for you at *{desk}*.\n\nTrack: {url}',
   },
   buzz: {
     fr: '📢 *Appel :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}',
-    ar: '📢 *تنبيه:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}*.\n\nتتبع: {url}',
+    ar: '*تنبيه:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}* 📢\n\nتتبع: {url}',
     en: '📢 *Buzz:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}',
   },
   no_show: {
     fr: '❌ Le ticket *{ticket}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.',
-    ar: '❌ التذكرة *{ticket}* تم تسجيلها كـ *غائب*. لقد فاتك دورك.\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.',
+    ar: 'التذكرة *{ticket}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.',
     en: '❌ Ticket *{ticket}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.',
   },
   served: {
     fr: '✅ Le ticket *{ticket}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.',
-    ar: '✅ التذكرة *{ticket}* مكتملة. شكرًا لزيارتكم!\n\nنتمنى رؤيتكم مجددًا.',
+    ar: 'التذكرة *{ticket}* مكتملة. شكرًا لزيارتكم! ✅\n\nنتمنى رؤيتكم مجددًا.',
     en: '✅ Ticket *{ticket}* is complete. Thank you for visiting!\n\nWe hope to see you again.',
   },
   next_in_line: {
     fr: '⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
-    ar: '⏳ *أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا.\n\nتتبع: {url}',
+    ar: '*أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}',
     en: '⏳ *You\'re next!* Ticket *{ticket}* — get ready, it\'s almost your turn.\n\nTrack: {url}',
   },
   cancelled_notify: {
     fr: '🚫 Le ticket *{ticket}* a été annulé.',
-    ar: '🚫 تم إلغاء التذكرة *{ticket}*.',
+    ar: 'تم إلغاء التذكرة *{ticket}* 🚫',
     en: '🚫 Ticket *{ticket}* has been cancelled.',
   },
   joined: {
     fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
-    ar: '✅ أنت في الطابور في *{name}*!\n\n🎫 التذكرة: *{ticket}*\n{position}\n\n📍 تتبع موقعك: {url}',
+    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\nتتبع موقعك: {url} 📍',
     en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
   },
   default: {
     fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
-    ar: '📋 تحديث التذكرة *{ticket}*: {url}',
+    ar: 'تحديث التذكرة *{ticket}*: {url} 📋',
     en: '📋 Update for ticket *{ticket}*: {url}',
   },
 };
@@ -389,11 +389,17 @@ export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', e
 
 export function formatPosition(pos: any, locale: Locale): string {
   if (pos.position == null) return '';
+  if (locale === 'ar') {
+    return `${positionLabel[locale]}: *${pos.position}* | ~*${pos.estimated_wait_minutes ?? '?'} ${minLabel[locale]}* ⏱ 📍`;
+  }
   return `📍 ${positionLabel[locale]}: *${pos.position}* | ⏱ ~*${pos.estimated_wait_minutes ?? '?'} ${minLabel[locale]}*`;
 }
 
 export function formatNowServing(pos: any, locale: Locale): string {
   if (!pos.now_serving) return '';
+  if (locale === 'ar') {
+    return `${nowServingLabel[locale]}: *${pos.now_serving}* 📢\n`;
+  }
   return `📢 ${nowServingLabel[locale]}: *${pos.now_serving}*\n`;
 }
 
@@ -621,8 +627,8 @@ async function handleDirectory(
     const count = grouped.get(catKey)!.length;
 
     if (locale === 'ar') {
-      // Arabic text first → bidi renders line RTL
-      body += `${emoji} ${catLabel} (${count}) — *${i + 1}*\n`;
+      // Arabic text MUST be first character → bidi renders line RTL
+      body += `${catLabel} ${emoji} (${count}) — *${i + 1}*\n`;
     } else {
       body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
     }
