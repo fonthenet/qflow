@@ -143,9 +143,10 @@ export function App() {
 
   const handleLogin = useCallback(async (s: StaffSession) => {
     await window.qf.session.save(s);
+    // Pull cloud data into SQLite BEFORE showing the Station screen
+    // so tickets are visible immediately (avoids blank queue on first load)
+    try { await window.qf.sync.forceSync(); } catch { /* non-critical */ }
     setSession(s);
-    // Immediately pull cloud data into SQLite after login
-    window.qf.sync.forceSync();
   }, []);
 
   const handleLogout = useCallback(async () => {
