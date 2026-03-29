@@ -141,19 +141,34 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '🚫 You have been blocked and cannot join this queue.',
   },
   directory_header: {
-    fr: '📋 *Entreprises disponibles :*\n',
-    ar: '📋 *الأعمال المتاحة:*\n',
-    en: '📋 *Available businesses:*\n',
+    fr: '📋 *Catégories disponibles :*\n',
+    ar: '📋 *الفئات المتاحة:*\n',
+    en: '📋 *Available categories:*\n',
   },
   directory_footer: {
-    fr: '\nEnvoyez *REJOINDRE <code>* pour rejoindre une file.',
-    ar: '\nأرسل *انضم <الرمز>* للانضمام إلى طابور.',
-    en: '\nSend *JOIN <code>* to join a queue.',
+    fr: '\nRépondez avec le *numéro* pour voir les entreprises.\n💡 Raccourci : envoyez *1-2* pour rejoindre directement (catégorie 1, entreprise 2).',
+    ar: '\nأرسل *الرقم* لعرض الأعمال.\n💡 اختصار: أرسل *1-2* للانضمام مباشرة (فئة 1، عمل 2).',
+    en: '\nReply with the *number* to see businesses.\n💡 Shortcut: send *1-2* to join directly (category 1, business 2).',
+  },
+  category_header: {
+    fr: '{emoji} *{category}* :\n',
+    ar: '{emoji} *{category}*:\n',
+    en: '{emoji} *{category}*:\n',
+  },
+  category_footer: {
+    fr: '\nEnvoyez *REJOINDRE <code>* pour rejoindre une file.\nEnvoyez *LISTE* pour revenir aux catégories.',
+    ar: '\nأرسل *انضم <الرمز>* للانضمام إلى طابور.\nأرسل *قائمة* للعودة إلى الفئات.',
+    en: '\nSend *JOIN <code>* to join a queue.\nSend *LIST* to go back to categories.',
   },
   no_businesses: {
     fr: '📋 Aucune entreprise n\'est actuellement disponible dans le répertoire.\n\nSi vous connaissez le code, envoyez *REJOINDRE <code>*.',
     ar: '📋 لا توجد أعمال متاحة حاليًا في الدليل.\n\nإذا كنت تعرف الرمز، أرسل *انضم <الرمز>*.',
     en: '📋 No businesses are currently available in the directory.\n\nIf you know the code, send *JOIN <code>*.',
+  },
+  category_empty: {
+    fr: '📋 Aucune entreprise dans cette catégorie.\n\nEnvoyez *LISTE* pour voir les catégories.',
+    ar: '📋 لا توجد أعمال في هذه الفئة.\n\nأرسل *قائمة* لعرض الفئات.',
+    en: '📋 No businesses in this category.\n\nSend *LIST* to see categories.',
   },
 };
 
@@ -405,6 +420,18 @@ export async function handleInboundMessage(
     return;
   }
 
+  // ── Category selection (e.g. "3") or direct join (e.g. "3-2") ──
+  const catJoinMatch = command.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
+  if (catJoinMatch) {
+    const catNum = parseInt(catJoinMatch[1], 10);
+    const bizNum = catJoinMatch[2] ? parseInt(catJoinMatch[2], 10) : null;
+    // Only handle if the number could be a category index (1-based)
+    if (catNum >= 1 && catNum <= BUSINESS_CATEGORIES.length) {
+      const handled = await handleCategoryOrJoin(identifier, detectedLocale, channel, sendMessage, catNum, bizNum, profileName, bsuid);
+      if (handled) return;
+    }
+  }
+
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || messageBody.trim() === 'حالة') {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
@@ -485,12 +512,8 @@ export async function handleInboundMessage(
 
 // ── DIRECTORY ────────────────────────────────────────────────────────
 
-async function handleDirectory(
-  identifier: string,
-  locale: Locale,
-  channel: Channel,
-  sendMessage: SendFn,
-): Promise<void> {
+/** Fetch all listed businesses grouped by category. Returns category index → businesses. */
+async function getDirectoryData(channel: Channel) {
   const supabase = createAdminClient();
   const enabledKey = channel === 'messenger' ? 'messenger_enabled' : 'whatsapp_enabled';
   const codeKey = channel === 'messenger' ? 'messenger_code' : 'whatsapp_code';
@@ -499,7 +522,6 @@ async function handleDirectory(
     .from('organizations')
     .select('id, name, settings');
 
-  // Filter: listed_in_directory + channel enabled + has a code
   const listed = (orgs ?? [])
     .filter((o: any) => {
       const s = (o.settings ?? {}) as Record<string, any>;
@@ -515,11 +537,6 @@ async function handleDirectory(
       return { name: o.name, code, category };
     });
 
-  if (listed.length === 0) {
-    await sendMessage({ to: identifier, body: t('no_businesses', locale) });
-    return;
-  }
-
   // Group by category
   const grouped = new Map<string, typeof listed>();
   for (const biz of listed) {
@@ -528,33 +545,111 @@ async function handleDirectory(
     grouped.set(biz.category, arr);
   }
 
-  // Build message grouped by category
-  const localeKey = locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en';
-  const joinCmd = locale === 'ar' ? 'انضم' : locale === 'fr' ? 'REJOINDRE' : 'JOIN';
-
-  let body = t('directory_header', locale);
-
-  // Sort categories by the BUSINESS_CATEGORIES order
+  // Sort categories by BUSINESS_CATEGORIES order, only include populated ones
   const catOrder = BUSINESS_CATEGORIES.map((c) => c.value as string);
-  const sortedCategories = [...grouped.keys()].sort(
+  const sortedCatKeys = [...grouped.keys()].sort(
     (a, b) => catOrder.indexOf(a) - catOrder.indexOf(b)
   );
 
-  for (const catKey of sortedCategories) {
+  return { listed, grouped, sortedCatKeys };
+}
+
+/** Step 1: LIST → show numbered categories */
+async function handleDirectory(
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<void> {
+  const { listed, grouped, sortedCatKeys } = await getDirectoryData(channel);
+
+  if (listed.length === 0) {
+    await sendMessage({ to: identifier, body: t('no_businesses', locale) });
+    return;
+  }
+
+  const localeKey = locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en';
+
+  let body = t('directory_header', locale);
+
+  for (let i = 0; i < sortedCatKeys.length; i++) {
+    const catKey = sortedCatKeys[i];
     const catDef = BUSINESS_CATEGORIES.find((c) => c.value === catKey);
     const emoji = catDef?.emoji ?? '📌';
     const catLabel = catDef?.label[localeKey] ?? catDef?.label.en ?? catKey;
-    const businesses = grouped.get(catKey)!;
+    const count = grouped.get(catKey)!.length;
 
-    body += `\n${emoji} *${catLabel}*\n`;
-    for (const biz of businesses) {
-      body += `  • ${biz.name} → \`${joinCmd} ${biz.code}\`\n`;
-    }
+    body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
   }
 
   body += t('directory_footer', locale);
 
   await sendMessage({ to: identifier, body });
+}
+
+/**
+ * Step 2 & 3: Handle category number or category-business number (e.g. "3" or "3-2").
+ * Returns true if handled, false if the number didn't match a valid directory action.
+ */
+async function handleCategoryOrJoin(
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  catNum: number,
+  bizNum: number | null,
+  profileName?: string,
+  bsuid?: string,
+): Promise<boolean> {
+  const { listed, grouped, sortedCatKeys } = await getDirectoryData(channel);
+
+  if (listed.length === 0) return false;
+
+  // catNum is 1-based index into sortedCatKeys
+  if (catNum < 1 || catNum > sortedCatKeys.length) return false;
+
+  const catKey = sortedCatKeys[catNum - 1];
+  const businesses = grouped.get(catKey) ?? [];
+
+  if (businesses.length === 0) {
+    await sendMessage({ to: identifier, body: t('category_empty', locale) });
+    return true;
+  }
+
+  // If no business number → show businesses in category
+  if (bizNum === null) {
+    const localeKey = locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en';
+    const catDef = BUSINESS_CATEGORIES.find((c) => c.value === catKey);
+    const emoji = catDef?.emoji ?? '📌';
+    const catLabel = catDef?.label[localeKey] ?? catDef?.label.en ?? catKey;
+
+    let body = t('category_header', locale, { emoji, category: catLabel });
+
+    for (let i = 0; i < businesses.length; i++) {
+      const biz = businesses[i];
+      body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
+    }
+
+    body += t('category_footer', locale);
+
+    await sendMessage({ to: identifier, body });
+    return true;
+  }
+
+  // bizNum provided → join that business
+  if (bizNum < 1 || bizNum > businesses.length) {
+    await sendMessage({ to: identifier, body: t('category_empty', locale) });
+    return true;
+  }
+
+  const selectedBiz = businesses[bizNum - 1];
+  const org = await findOrgByCode(selectedBiz.code, channel);
+  if (org) {
+    await handleJoin(identifier, org, locale, channel, sendMessage, profileName, bsuid);
+  } else {
+    await sendMessage({ to: identifier, body: t('code_not_found', locale, { code: selectedBiz.code }) });
+  }
+  return true;
 }
 
 // ── JOIN ──────────────────────────────────────────────────────────────
