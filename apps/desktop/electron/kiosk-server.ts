@@ -2026,7 +2026,7 @@ function serveStationIndex(res: http.ServerResponse) {
           customerPhone: ticket.customer_data?.phone || '',
           customerReason: ticket.customer_data?.reason || '',
           source: ticket.source || 'in_house',
-        });
+        }).then(function(r) { return r && r.ticket ? r.ticket : r; });
       },
       updateTicket: function(ticketId, updates) {
         return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates });

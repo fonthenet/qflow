@@ -115,7 +115,7 @@
           customerPhone: ticket.customer_data?.phone || '',
           customerReason: ticket.customer_data?.reason || '',
           source: ticket.source || 'in_house',
-        });
+        }).then(function(r) { return r && r.ticket ? r.ticket : r; });
       },
       updateTicket: function(ticketId, updates) {
         return rPost('update-ticket', { ticketId: ticketId, updates: updates });
