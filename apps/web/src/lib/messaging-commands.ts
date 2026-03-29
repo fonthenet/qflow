@@ -233,9 +233,14 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** Wrap each line with Right-to-Left Embedding for proper Arabic rendering in WhatsApp */
+/** Convert Western digits to Arabic-Eastern numerals for native RTL rendering */
+function toArabicNumerals(text: string): string {
+  return text.replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[parseInt(d)]);
+}
+
+/** Make text RTL-native: convert digits to Arabic-Eastern numerals */
 function ensureRTL(text: string): string {
-  return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
+  return toArabicNumerals(text);
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
