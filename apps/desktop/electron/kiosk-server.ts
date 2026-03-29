@@ -423,6 +423,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleStationSyncStatus(res);
       } else if (path === '/api/station/session' && req.method === 'GET') {
         handleStationSessionLoad(res);
+      } else if (path === '/api/station/session/clear' && req.method === 'POST') {
+        handleStationSessionClear(res);
       } else if (path === '/api/station/settings' && req.method === 'GET') {
         handleStationSettings(res);
       } else if (path === '/api/station/settings/locale' && req.method === 'POST') {
@@ -2058,7 +2060,7 @@ function serveStationIndex(res: http.ServerResponse) {
     session: {
       save: function(session) { return Promise.resolve(); },
       load: function() { return get('/api/station/session'); },
-      clear: function() { return Promise.resolve(); },
+      clear: function() { return post('/api/station/session/clear', {}); },
     },
 
     settings: {
@@ -2254,6 +2256,18 @@ function handleStationSessionLoad(res: http.ServerResponse) {
     });
     res.end('null');
   }
+}
+
+function handleStationSessionClear(res: http.ServerResponse) {
+  const db = getDB();
+  try {
+    db.prepare("DELETE FROM session WHERE key = 'current'").run();
+    db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
+  } catch {
+    // ignore
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
 }
 
 function handleStationSettings(res: http.ServerResponse) {

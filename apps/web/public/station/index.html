@@ -150,7 +150,7 @@
     session: {
       save: function() { return Promise.resolve(); },
       load: function() { return rGet('session'); },
-      clear: function() { return Promise.resolve(); },
+      clear: function() { return rPost('logout', {}).then(function() { window.location.href = '/login'; }); },
     },
 
     settings: {

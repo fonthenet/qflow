@@ -288,6 +288,11 @@ export async function POST(req: NextRequest) {
         return json({ ok: true, ticket: data });
       }
 
+      case 'logout': {
+        await supabase.auth.signOut();
+        return json({ ok: true });
+      }
+
       default:
         return json({ error: 'Unknown action' }, 400);
     }
