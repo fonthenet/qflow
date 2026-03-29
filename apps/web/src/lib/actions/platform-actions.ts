@@ -448,6 +448,71 @@ async function seedConfirmedTemplate(
     if (tablesError) return { error: tablesError.message };
   }
 
+  // ── Auto-create virtual queue code + WhatsApp/Messenger defaults ────
+  // Pick the first department and first service to create a default join code
+  const firstDeptCode = seededStarterOffice.departments[0]?.code;
+  const firstDeptId = firstDeptCode ? departmentIdsByCode.get(firstDeptCode) : null;
+  const firstSvcCode = seededStarterOffice.departments[0]?.services[0]?.code;
+  const firstSvcId = firstSvcCode ? serviceIdsByCode.get(firstSvcCode) : null;
+
+  if (firstDeptId && firstSvcId) {
+    const vqcToken = 'vqc_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+    const { data: createdVqc } = await context.supabase
+      .from('virtual_queue_codes')
+      .insert({
+        organization_id: context.staff.organization_id,
+        office_id: createdOffice.id,
+        department_id: firstDeptId,
+        service_id: firstSvcId,
+        qr_token: vqcToken,
+        is_active: true,
+      })
+      .select('id')
+      .single();
+
+    if (createdVqc) {
+      // Auto-generate WhatsApp code from org name (uppercase, alphanumeric, max 20 chars)
+      const { data: orgRow } = await context.supabase
+        .from('organizations')
+        .select('name, settings')
+        .eq('id', context.staff.organization_id)
+        .single();
+
+      const orgName = orgRow?.name ?? '';
+      const autoCode = orgName
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 20) || 'QUEUE';
+
+      // Check if code is taken by another org
+      const { data: allOrgs } = await context.supabase
+        .from('organizations')
+        .select('id, settings');
+      const codeTaken = (allOrgs ?? []).some((o: any) => {
+        if (o.id === context.staff.organization_id) return false;
+        const s = (o.settings ?? {}) as Record<string, string>;
+        return (s.whatsapp_code ?? '').toUpperCase() === autoCode;
+      });
+
+      const finalCode = codeTaken ? autoCode + Math.floor(Math.random() * 99).toString().padStart(2, '0') : autoCode;
+
+      // Set WhatsApp/Messenger defaults in org settings
+      const currentOrgSettings = (orgRow?.settings ?? {}) as Record<string, unknown>;
+      await context.supabase
+        .from('organizations')
+        .update({
+          settings: {
+            ...currentOrgSettings,
+            ...nextSettings,
+            whatsapp_default_virtual_code_id: createdVqc.id,
+            messenger_default_virtual_code_id: createdVqc.id,
+            whatsapp_code: currentOrgSettings.whatsapp_code || finalCode,
+          },
+        })
+        .eq('id', context.staff.organization_id);
+    }
+  }
+
   const starterSeedSummary = summarizeStarterSeed({ starterOffice: seededStarterOffice });
 
   await logAuditEvent(context, {

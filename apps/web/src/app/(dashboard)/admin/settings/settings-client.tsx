@@ -829,11 +829,18 @@ export function SettingsClient({
           <div className="space-y-4">
             <ConnectedPageCard pageInfo={messengerPageInfo} t={t} />
 
-            {messengerPageId && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <p className="font-medium">{t('How it works')}</p>
+              <p className="mt-1 text-sm">
+                {t('Customers can join your queue directly through Messenger or tap "Get Messenger notifications" after booking to receive live updates about their ticket.')}
+              </p>
+            </div>
+
+            {whatsappCode && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <p className="font-medium">{t('How it works')}</p>
+                <p className="font-medium">{t('How customers join via Messenger')}</p>
                 <p className="mt-1 text-sm">
-                  {t('Customers can join your queue directly through Messenger or tap "Get Messenger notifications" after booking to receive live updates about their ticket.')}
+                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo Messenger bot to join the queue.')}
                 </p>
               </div>
             )}
