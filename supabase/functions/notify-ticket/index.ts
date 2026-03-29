@@ -19,7 +19,7 @@ const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "https://qflo.net").replac
 // ── Types ────────────────────────────────────────────────────────────
 
 type Locale = "fr" | "ar" | "en";
-type Event = "called" | "recall" | "buzz" | "no_show" | "served" | "cancelled" | "next_in_line";
+type Event = "called" | "recall" | "buzz" | "no_show" | "served" | "cancelled" | "next_in_line" | "approaching";
 
 interface Session {
   id: string;
@@ -63,6 +63,11 @@ const messages: Record<string, Record<Locale, string>> = {
     fr: "⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
     ar: "⏳ *أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا.\n\nتتبع: {url}",
     en: "⏳ *You're next!* Ticket *{ticket}* — get ready, it's almost your turn.\n\nTrack: {url}",
+  },
+  approaching: {
+    fr: "📍 *Bientôt votre tour !* Vous êtes *#{position}* dans la file (ticket *{ticket}*). Commencez à vous rapprocher.\n\nSuivi : {url}",
+    ar: "📍 *اقترب دورك!* أنت *#{position}* في الطابور (التذكرة *{ticket}*). ابدأ بالتوجه.\n\nتتبع: {url}",
+    en: "📍 *Almost your turn!* You're *#{position}* in line (ticket *{ticket}*). Start heading over.\n\nTrack: {url}",
   },
   cancelled_notify: {
     fr: "🚫 Le ticket *{ticket}* a été annulé.",
@@ -177,16 +182,17 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "7";
+const VERSION = "8";
 
 Deno.serve(async (req) => {
   try {
     const body = await req.json();
-    const { ticketId, event, deskName, waitMinutes, pushPayload } = body as {
+    const { ticketId, event, deskName, waitMinutes, position, pushPayload } = body as {
       ticketId: string;
       event: Event;
       deskName: string;
       waitMinutes?: number;
+      position?: number;
       pushPayload?: Record<string, unknown>;
     };
 
@@ -236,6 +242,7 @@ Deno.serve(async (req) => {
       desk: deskName || "your desk",
       url: trackUrl,
       wait: String(waitMinutes ?? 10),
+      position: String(position ?? 3),
     });
 
     const isTerminal = ["no_show", "served", "cancelled"].includes(event);

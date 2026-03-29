@@ -1,0 +1,5 @@
+-- Add waitMinutes to the notify_ticket_called trigger.
+-- Looks up auto_no_show_timeout from org settings (stored in seconds),
+-- converts to minutes, and passes it to the edge function for
+-- called/recall messages so customers know how long they have to arrive.
+-- (Superseded by 20260328130000_add_approaching_position3_to_trigger.sql)
