@@ -227,7 +227,7 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
   if (/^(REJOINDRE|STATUT|ANNULER|LISTE)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|القائمة|دليل|الفهرس)\b/.test(trimmed)) return 'ar';
+  if (/^(انضم|حالة|الغاء|قائمة|القائمة|دليل|الفهرس)\b/.test(trimmed)) return 'ar';
   if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
@@ -269,7 +269,7 @@ function parseBusinessCode(message: string): { code: string; locale: Locale } | 
   const trimmed = message.trim();
   const frMatch = trimmed.match(/^REJOINDRE[\s\-]+(.+)$/i);
   if (frMatch) return { code: frMatch[1].trim().toUpperCase(), locale: 'fr' };
-  const arMatch = trimmed.match(/^(?:انضم|إنضم)[\s\-]+(.+)$/);
+  const arMatch = trimmed.match(/^انضم[\s\-]+(.+)$/);
   if (arMatch) return { code: arMatch[1].trim().toUpperCase(), locale: 'ar' };
   const enMatch = trimmed.match(/^JOIN[\s\-]+(.+)$/i);
   if (enMatch) return { code: enMatch[1].trim().toUpperCase(), locale: 'en' };
@@ -413,7 +413,11 @@ export async function handleInboundMessage(
   bsuid?: string,
 ): Promise<void> {
   // Strip invisible Unicode characters (ZWJ, ZWNJ, LTR/RTL marks, BOM, Arabic marks, diacritics, etc.)
-  const cleaned = messageBody.trim().replace(/[\u00AD\u061C\u064B-\u0652\u0670\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFE00-\uFE0F\uFEFF]/g, '').trim();
+  // Then normalize Arabic Alef variants (أ إ آ ٱ → ا) and Taa Marbuta/Haa (ه ← ة kept distinct)
+  const cleaned = messageBody.trim()
+    .replace(/[\u00AD\u061C\u064B-\u0652\u0670\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFE00-\uFE0F\uFEFF]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .trim();
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
 
@@ -466,7 +470,7 @@ export async function handleInboundMessage(
   }
 
   // ── CANCEL / ANNULER / إلغاء ──
-  if (command === 'CANCEL' || command === 'ANNULER' || /^(إلغاء|الغاء|إلغاء)$/.test(cleaned)) {
+  if (command === 'CANCEL' || command === 'ANNULER' || /^الغاء$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -511,7 +515,7 @@ export async function handleInboundMessage(
   }
 
   // ── Plain "JOIN" / "REJOINDRE" / "انضم" without code ──
-  if (command === 'JOIN' || command === 'REJOINDRE' || /^(انضم|إنضم)$/.test(cleaned)) {
+  if (command === 'JOIN' || command === 'REJOINDRE' || /^انضم$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
