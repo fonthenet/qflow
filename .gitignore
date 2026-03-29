@@ -8,6 +8,13 @@ dist
 
 # Desktop build output
 apps/desktop/out/
+apps/desktop/release/
+apps/desktop/release2/
+apps/desktop/release3/
+apps/desktop/build-output/
+apps/desktop/build-v127/
+apps/desktop/build-v128/
+apps/desktop/dist-electron/
 
 # Certificates
 apps/web/certificates/

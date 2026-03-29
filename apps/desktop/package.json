@@ -12,6 +12,8 @@
     "build:dir": "tsc && vite build && electron-builder --win --dir",
     "build:installer": "tsc && vite build && electron-builder --win nsis",
     "build:vite": "tsc && vite build",
+    "sync-web": "bash sync-web-station.sh",
+    "build:all": "tsc && vite build && bash sync-web-station.sh && electron-builder --win",
     "start": "electron dist-electron/main.js",
     "preview": "vite preview",
     "test": "vitest run",

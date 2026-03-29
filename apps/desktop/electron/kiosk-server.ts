@@ -2062,8 +2062,23 @@ function serveStationIndex(res: http.ServerResponse) {
     },
 
     settings: {
-      getLocale: function() { return get('/api/station/settings').then(function(s) { return s.locale; }); },
-      setLocale: function(locale) { return post('/api/station/settings/locale', { locale: locale }).then(function(s) { return s.locale; }); },
+      _localeCallbacks: [],
+      getLocale: function() {
+        var stored = localStorage.getItem('qflo_station_locale');
+        if (stored) return Promise.resolve(stored);
+        return get('/api/station/settings').then(function(s) { return s.locale; });
+      },
+      setLocale: function(locale) {
+        localStorage.setItem('qflo_station_locale', locale);
+        currentLang = locale;
+        var btn = document.getElementById('qf-lang-toggle');
+        if (btn) btn.textContent = langLabels[locale] || locale.toUpperCase();
+        return post('/api/station/settings/locale', { locale: locale }).then(function(s) { return s.locale; });
+      },
+      onLocaleChange: function(cb) {
+        window.qf.settings._localeCallbacks.push(cb);
+        return function() { window.qf.settings._localeCallbacks = window.qf.settings._localeCallbacks.filter(function(c) { return c !== cb; }); };
+      },
     },
 
     isOnline: function() { return get('/api/station/sync-status').then(function(s) { return s.isOnline; }); },
@@ -2100,6 +2115,41 @@ function serveStationIndex(res: http.ServerResponse) {
       getBranding: function() { return get('/api/station/branding'); },
     },
   };
+
+  // ── Shared bottom bar: language toggle + mode badge ──
+  var langs = ['en', 'fr', 'ar'];
+  var langLabels = { en: 'EN', fr: 'FR', ar: 'عر' };
+  var currentLang = localStorage.getItem('qflo_station_locale') || 'ar';
+
+  window.addEventListener('load', function() {
+    var bar = document.createElement('div');
+    bar.id = 'qf-bottom-bar';
+
+    var langBtn = document.createElement('button');
+    langBtn.id = 'qf-lang-toggle';
+    langBtn.textContent = langLabels[currentLang] || 'EN';
+    langBtn.onclick = function() {
+      var idx = langs.indexOf(currentLang);
+      currentLang = langs[(idx + 1) % langs.length];
+      localStorage.setItem('qflo_station_locale', currentLang);
+      langBtn.textContent = langLabels[currentLang];
+      if (window.qf && window.qf.settings && window.qf.settings._localeCallbacks) {
+        window.qf.settings._localeCallbacks.forEach(function(cb) { cb(currentLang); });
+      }
+      document.documentElement.lang = currentLang;
+      document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+      document.body.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+    };
+
+    var badge = document.createElement('div');
+    badge.id = 'qf-mode-badge';
+    badge.className = 'local';
+    badge.textContent = '📡 Local';
+
+    bar.appendChild(langBtn);
+    bar.appendChild(badge);
+    document.body.appendChild(bar);
+  });
 })();
 </script>`;
 
