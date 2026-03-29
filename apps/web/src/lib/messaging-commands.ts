@@ -402,8 +402,10 @@ export async function handleInboundMessage(
   profileName?: string,
   bsuid?: string,
 ): Promise<void> {
-  const command = messageBody.trim().toUpperCase();
-  const detectedLocale = detectLocale(messageBody);
+  // Strip invisible Unicode characters (ZWJ, ZWNJ, LTR/RTL marks, BOM, etc.)
+  const cleaned = messageBody.trim().replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u00AD]/g, '').trim();
+  const command = cleaned.toUpperCase();
+  const detectedLocale = detectLocale(cleaned);
 
   // ── TRACK qflo_QRTOKEN (link WhatsApp/Messenger to existing ticket) ──
   if (command.startsWith('TRACK QFLO_') || command.startsWith('TRACK QFLO_')) {
@@ -415,7 +417,7 @@ export async function handleInboundMessage(
   }
 
   // ── LIST / LISTE / قائمة / DIRECTORY / دليل ──
-  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || messageBody.trim() === 'قائمة' || messageBody.trim() === 'القائمة' || messageBody.trim() === 'دليل') {
+  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || cleaned === 'قائمة' || cleaned === 'القائمة' || cleaned === 'دليل') {
     await handleDirectory(identifier, detectedLocale, channel, sendMessage);
     return;
   }
@@ -433,7 +435,7 @@ export async function handleInboundMessage(
   }
 
   // ── STATUS / STATUT / حالة ──
-  if (command === 'STATUS' || command === 'STATUT' || messageBody.trim() === 'حالة') {
+  if (command === 'STATUS' || command === 'STATUT' || cleaned === 'حالة') {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -445,7 +447,7 @@ export async function handleInboundMessage(
   }
 
   // ── CANCEL / ANNULER / إلغاء ──
-  if (command === 'CANCEL' || command === 'ANNULER' || messageBody.trim() === 'إلغاء' || messageBody.trim() === 'الغاء') {
+  if (command === 'CANCEL' || command === 'ANNULER' || cleaned === 'إلغاء' || cleaned === 'الغاء') {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -457,7 +459,7 @@ export async function handleInboundMessage(
   }
 
   // ── JOIN with code ──
-  const parsed = parseBusinessCode(messageBody);
+  const parsed = parseBusinessCode(cleaned);
   if (parsed) {
     // Check if the code is a category-business number (e.g. "5-1", "3-2")
     const dirMatch = parsed.code.match(/^(\d{1,2})-(\d{1,2})$/);
@@ -490,7 +492,7 @@ export async function handleInboundMessage(
   }
 
   // ── Plain "JOIN" / "REJOINDRE" / "انضم" without code ──
-  if (command === 'JOIN' || command === 'REJOINDRE' || messageBody.trim() === 'انضم' || messageBody.trim() === 'إنضم') {
+  if (command === 'JOIN' || command === 'REJOINDRE' || cleaned === 'انضم' || cleaned === 'إنضم') {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
@@ -509,7 +511,7 @@ export async function handleInboundMessage(
   }
 
   // ── Maybe the message IS the code ──
-  const maybeCode = messageBody.trim().toUpperCase();
+  const maybeCode = cleaned.toUpperCase();
   if (maybeCode.length >= 2 && maybeCode.length <= 30 && /^[A-Z0-9_-]+$/.test(maybeCode)) {
     const org = await findOrgByCode(maybeCode, channel);
     if (org) {
