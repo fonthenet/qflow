@@ -8,13 +8,22 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #0f172a; overflow: hidden; }
     #root { height: 100vh; }
-    #qf-mode-badge {
+    #qf-bottom-bar {
       position: fixed; bottom: 12px; right: 12px; z-index: 99999;
+      display: flex; gap: 6px; align-items: center;
+    }
+    #qf-mode-badge {
       padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
-      pointer-events: none; opacity: 0.85;
+      opacity: 0.85; pointer-events: none;
     }
     #qf-mode-badge.local { background: #dcfce7; color: #166534; }
     #qf-mode-badge.remote { background: #dbeafe; color: #1e40af; }
+    #qf-lang-toggle {
+      padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+      background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+      cursor: pointer; opacity: 0.9; transition: background 0.15s;
+    }
+    #qf-lang-toggle:hover { background: #e2e8f0; }
   </style>
 <script>
 // ── Hybrid Bridge — auto-detects local station vs remote Supabase ──
@@ -66,13 +75,42 @@
   }
   startPolling();
 
-  // Show mode badge after load
+  // Language cycle: en → fr → ar → en
+  var langs = ['en', 'fr', 'ar'];
+  var langLabels = { en: 'EN', fr: 'FR', ar: 'عر' };
+  var currentLang = localStorage.getItem('qflo_station_locale') || 'ar';
+
+  // Show mode badge + language toggle after load
   window.addEventListener('load', function() {
+    var bar = document.createElement('div');
+    bar.id = 'qf-bottom-bar';
+
+    var langBtn = document.createElement('button');
+    langBtn.id = 'qf-lang-toggle';
+    langBtn.textContent = langLabels[currentLang] || 'EN';
+    langBtn.onclick = function() {
+      var idx = langs.indexOf(currentLang);
+      currentLang = langs[(idx + 1) % langs.length];
+      localStorage.setItem('qflo_station_locale', currentLang);
+      langBtn.textContent = langLabels[currentLang];
+      // Trigger Station's locale change
+      if (window.qf && window.qf.settings && window.qf.settings._localeCallbacks) {
+        window.qf.settings._localeCallbacks.forEach(function(cb) { cb(currentLang); });
+      }
+      // Also update HTML dir
+      document.documentElement.lang = currentLang;
+      document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+      document.body.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+    };
+
     var badge = document.createElement('div');
     badge.id = 'qf-mode-badge';
     badge.className = mode;
     badge.textContent = mode === 'local' ? '📡 Local' : '🌐 Remote';
-    document.body.appendChild(badge);
+
+    bar.appendChild(langBtn);
+    bar.appendChild(badge);
+    document.body.appendChild(bar);
   });
 
   window.qf = {
@@ -131,8 +169,19 @@
     },
 
     settings: {
-      getLocale: function() { return rGet('settings').then(function(s) { return s.locale; }); },
-      setLocale: function(locale) { return Promise.resolve(locale); },
+      _localeCallbacks: [],
+      getLocale: function() { return Promise.resolve(localStorage.getItem('qflo_station_locale') || 'ar'); },
+      setLocale: function(locale) {
+        localStorage.setItem('qflo_station_locale', locale);
+        currentLang = locale;
+        var btn = document.getElementById('qf-lang-toggle');
+        if (btn) btn.textContent = langLabels[locale] || locale.toUpperCase();
+        return Promise.resolve(locale);
+      },
+      onLocaleChange: function(cb) {
+        window.qf.settings._localeCallbacks.push(cb);
+        return function() { window.qf.settings._localeCallbacks = window.qf.settings._localeCallbacks.filter(function(c) { return c !== cb; }); };
+      },
     },
 
     isOnline: function() { return Promise.resolve(true); },
