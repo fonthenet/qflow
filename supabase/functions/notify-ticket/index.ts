@@ -23,6 +23,7 @@ type Event = "called" | "recall" | "buzz" | "no_show" | "served" | "cancelled" |
 
 interface Session {
   id: string;
+  organization_id: string;
   whatsapp_phone: string | null;
   whatsapp_bsuid: string | null;
   messenger_psid: string | null;
@@ -35,19 +36,19 @@ interface Session {
 
 const messages: Record<string, Record<Locale, string>> = {
   called: {
-    fr: "🔔 *C'est votre tour !* Ticket *{ticket}* — veuillez vous rendre au *{desk}* dans les *{wait} minutes*.\n\nSuivi : {url}",
-    ar: "🔔 *حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* خلال *{wait} دقائق*.\n\nتتبع: {url}",
-    en: "🔔 *It's your turn!* Ticket *{ticket}* — please go to *{desk}* within *{wait} minutes*.\n\nTrack: {url}",
+    fr: "🔔 *C'est votre tour chez {name} !* Ticket *{ticket}* — veuillez vous rendre au *{desk}* dans les *{wait} minutes*.\n\nSuivi : {url}",
+    ar: "*حان دورك في {name}!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* خلال *{wait} دقائق* 🔔\n\nتتبع: {url}",
+    en: "🔔 *It's your turn at {name}!* Ticket *{ticket}* — please go to *{desk}* within *{wait} minutes*.\n\nTrack: {url}",
   },
   recall: {
-    fr: "⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*. Vous avez *{wait} minutes* pour vous présenter.\n\nSuivi : {url}",
-    ar: "⏰ *تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}*. لديك *{wait} دقائق* للحضور.\n\nتتبع: {url}",
-    en: "⏰ *Reminder:* Ticket *{ticket}* is still waiting for you at *{desk}*. You have *{wait} minutes* to arrive.\n\nTrack: {url}",
+    fr: "⏰ *Rappel — {name} :* Le ticket *{ticket}* vous attend toujours au *{desk}*. Vous avez *{wait} minutes* pour vous présenter.\n\nSuivi : {url}",
+    ar: "*تذكير — {name}:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}*. لديك *{wait} دقائق* للحضور ⏰\n\nتتبع: {url}",
+    en: "⏰ *Reminder — {name}:* Ticket *{ticket}* is still waiting for you at *{desk}*. You have *{wait} minutes* to arrive.\n\nTrack: {url}",
   },
   buzz: {
-    fr: "📢 *Appel :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}",
-    ar: "📢 *تنبيه:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}*.\n\nتتبع: {url}",
-    en: "📢 *Buzz:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
+    fr: "📢 *Appel — {name} :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}",
+    ar: "*تنبيه — {name}:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}* 📢\n\nتتبع: {url}",
+    en: "📢 *Buzz — {name}:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
   },
   no_show: {
     fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
@@ -60,14 +61,14 @@ const messages: Record<string, Record<Locale, string>> = {
     en: "✅ Ticket *{ticket}* at *{name}* is complete. Thank you for visiting!\n\nWe hope to see you again.",
   },
   next_in_line: {
-    fr: "⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
-    ar: "⏳ *أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا.\n\nتتبع: {url}",
-    en: "⏳ *You're next!* Ticket *{ticket}* — get ready, it's almost your turn.\n\nTrack: {url}",
+    fr: "⏳ *Vous êtes le prochain chez {name} !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
+    ar: "*أنت التالي في {name}!* التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}",
+    en: "⏳ *You're next at {name}!* Ticket *{ticket}* — get ready, it's almost your turn.\n\nTrack: {url}",
   },
   approaching: {
-    fr: "📍 *Bientôt votre tour !* Vous êtes *#{position}* dans la file (ticket *{ticket}*). Commencez à vous rapprocher.\n\nSuivi : {url}",
-    ar: "📍 *اقترب دورك!* أنت *#{position}* في الطابور (التذكرة *{ticket}*). ابدأ بالتوجه.\n\nتتبع: {url}",
-    en: "📍 *Almost your turn!* You're *#{position}* in line (ticket *{ticket}*). Start heading over.\n\nTrack: {url}",
+    fr: "📍 *Bientôt votre tour chez {name} !* Vous êtes *#{position}* dans la file (ticket *{ticket}*). Commencez à vous rapprocher.\n\nSuivi : {url}",
+    ar: "*اقترب دورك في {name}!* أنت *#{position}* في الطابور (التذكرة *{ticket}*). ابدأ بالتوجه 📍\n\nتتبع: {url}",
+    en: "📍 *Almost your turn at {name}!* You're *#{position}* in line (ticket *{ticket}*). Start heading over.\n\nTrack: {url}",
   },
   cancelled_notify: {
     fr: "🚫 Le ticket *{ticket}* chez *{name}* a été annulé.",
@@ -182,7 +183,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "9";
+const VERSION = "10";
 
 Deno.serve(async (req) => {
   try {
@@ -218,10 +219,10 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "ticket not found" });
     }
 
-    // Look up active session (WhatsApp or Messenger)
+    // Look up active session (WhatsApp or Messenger) — include organization_id
     const { data: session } = await supabase
       .from("whatsapp_sessions")
-      .select("id, whatsapp_phone, whatsapp_bsuid, messenger_psid, channel, locale, otn_token")
+      .select("id, organization_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, channel, locale, otn_token")
       .eq("ticket_id", ticketId)
       .eq("state", "active")
       .maybeSingle() as { data: Session | null };
@@ -232,28 +233,19 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "no active session", version: VERSION });
     }
 
-    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} psid=${session.messenger_psid} phone=${session.whatsapp_phone} bsuid=${session.whatsapp_bsuid}`);
+    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} orgId=${session.organization_id} psid=${session.messenger_psid} phone=${session.whatsapp_phone}`);
 
     const locale = (session.locale as Locale) || "fr";
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
 
-    // Fetch business name for terminal events
+    // Fetch business name from organization
     let orgName = "";
-    if (["no_show", "served", "cancelled"].includes(event)) {
-      const { data: sessionFull } = await supabase
-        .from("whatsapp_sessions")
-        .select("organization_id")
-        .eq("id", session.id)
-        .single();
-      if (sessionFull?.organization_id) {
-        const { data: org } = await supabase
-          .from("organizations")
-          .select("name")
-          .eq("id", sessionFull.organization_id)
-          .single();
-        orgName = org?.name ?? "";
-      }
-    }
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("name")
+      .eq("id", session.organization_id)
+      .single();
+    orgName = org?.name ?? "";
 
     const msgKey = event === "cancelled" ? "cancelled_notify" : event;
     const message = t(msgKey, locale, {
