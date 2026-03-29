@@ -233,9 +233,9 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** Prepend RTL mark to each line for proper Arabic rendering in WhatsApp */
+/** Wrap each line with Right-to-Left Embedding for proper Arabic rendering in WhatsApp */
 function ensureRTL(text: string): string {
-  return text.split('\n').map(line => line.length > 0 ? `\u200F${line}` : line).join('\n');
+  return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
