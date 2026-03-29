@@ -20,6 +20,7 @@
   function get(path) {
     return fetch(API + path, { credentials: 'include' }).then(function(r) {
       if (r.status === 401) { window.location.href = '/login?redirect=/station'; return null; }
+      if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); }
       return r.json();
     });
   }
@@ -31,6 +32,7 @@
       credentials: 'include',
     }).then(function(r) {
       if (r.status === 401) { window.location.href = '/login?redirect=/station'; return null; }
+      if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); }
       return r.json();
     });
   }
@@ -107,6 +109,7 @@
         return rGet('tickets', { officeIds: ids, statuses: statuses.join(',') });
       },
       createTicket: function(ticket) {
+        console.log('[qf-bridge] createTicket input:', JSON.stringify(ticket));
         return rPost('create-ticket', {
           officeId: ticket.office_id,
           departmentId: ticket.department_id,
@@ -114,8 +117,14 @@
           customerName: ticket.customer_data?.name || '',
           customerPhone: ticket.customer_data?.phone || '',
           customerReason: ticket.customer_data?.reason || '',
+          priority: ticket.priority || 0,
           source: ticket.source || 'in_house',
-        }).then(function(r) { return r && r.ticket ? r.ticket : r; });
+        }).then(function(r) {
+          console.log('[qf-bridge] createTicket raw response:', JSON.stringify(r));
+          var result = r && r.ticket ? r.ticket : r;
+          console.log('[qf-bridge] createTicket unwrapped:', JSON.stringify(result));
+          return result;
+        });
       },
       updateTicket: function(ticketId, updates) {
         return rPost('update-ticket', { ticketId: ticketId, updates: updates });
@@ -239,7 +248,7 @@
   };
 })();
 </script>
-  <script type="module" crossorigin src="/station/assets/index-DkYBPETJ.js"></script>
+  <script type="module" crossorigin src="/station/assets/index--P26Av_s.js"></script>
   <link rel="stylesheet" crossorigin href="/station/assets/index-C25sHaDN.css">
 </head>
 <body>

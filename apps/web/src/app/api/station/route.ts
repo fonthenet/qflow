@@ -247,7 +247,7 @@ export async function POST(req: NextRequest) {
       case 'create-ticket': {
         const { data: staff } = await supabase
           .from('staff')
-          .select('office_id, organization_id')
+          .select('office_id')
           .eq('auth_user_id', user.id)
           .single();
 
@@ -292,7 +292,6 @@ export async function POST(req: NextRequest) {
             status: 'waiting',
             priority: body.priority || 1,
             source: body.source || 'in_house',
-            organization_id: staff.organization_id,
           })
           .select()
           .single();

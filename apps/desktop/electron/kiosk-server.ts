@@ -1974,14 +1974,20 @@ function serveStationIndex(res: http.ServerResponse) {
   var API = window.location.origin;
 
   function get(path) {
-    return fetch(API + path).then(function(r) { return r.json(); });
+    return fetch(API + path).then(function(r) {
+      if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); }
+      return r.json();
+    });
   }
   function post(path, body) {
     return fetch(API + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).then(function(r) { return r.json(); });
+    }).then(function(r) {
+      if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); }
+      return r.json();
+    });
   }
 
   // Ticket change listeners (SSE-powered)
@@ -2020,6 +2026,7 @@ function serveStationIndex(res: http.ServerResponse) {
         return get('/api/station/tickets?officeIds=' + ids + '&statuses=' + statuses.join(','));
       },
       createTicket: function(ticket) {
+        console.log('[qf-bridge] createTicket input:', JSON.stringify(ticket));
         return post('/api/take-ticket', {
           officeId: ticket.office_id,
           departmentId: ticket.department_id,
@@ -2027,8 +2034,14 @@ function serveStationIndex(res: http.ServerResponse) {
           customerName: ticket.customer_data?.name || '',
           customerPhone: ticket.customer_data?.phone || '',
           customerReason: ticket.customer_data?.reason || '',
+          priority: ticket.priority || 0,
           source: ticket.source || 'in_house',
-        }).then(function(r) { return r && r.ticket ? r.ticket : r; });
+        }).then(function(r) {
+          console.log('[qf-bridge] createTicket raw response:', JSON.stringify(r));
+          var result = r && r.ticket ? r.ticket : r;
+          console.log('[qf-bridge] createTicket unwrapped:', JSON.stringify(result));
+          return result;
+        });
       },
       updateTicket: function(ticketId, updates) {
         return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates });
