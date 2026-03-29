@@ -544,7 +544,8 @@ export function TemplateOnboardingClient({
           result && 'data' in result ? result.data?.servicesCreated ?? 0 : 0
         } services, and ${result && 'data' in result ? result.data?.desksCreated ?? 0 : 0} counters.`
       );
-      router.refresh();
+      // Redirect to the Business Setup Wizard
+      router.push('/admin/setup-wizard');
     });
   }
 

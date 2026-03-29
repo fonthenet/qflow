@@ -65,6 +65,23 @@ export default async function DashboardLayout({
               )}
             </p>
           </div>
+        ) : templateConfigured &&
+          !organizationSettings.business_setup_wizard_completed_at &&
+          (staff.role === 'admin' || staff.role === 'manager') ? (
+          <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-900 flex items-center justify-between">
+            <div>
+              <p className="font-semibold text-foreground">{t('Complete your business setup')}</p>
+              <p className="mt-1">
+                {t('Your template is confirmed. Complete the setup wizard to configure offices, desks, staff, and start serving customers.')}
+              </p>
+            </div>
+            <a
+              href="/admin/setup-wizard"
+              className="ml-4 whitespace-nowrap rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+            >
+              {t('Open Wizard')}
+            </a>
+          </div>
         ) : null}
         {children}
       </main>

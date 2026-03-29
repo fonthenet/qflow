@@ -449,6 +449,14 @@ function getTicketCustomerName(customerData: unknown) {
   return null;
 }
 
+function formatLocalPhone(phone: string): string {
+  // Algeria: strip leading +213 or 213 and prepend 0
+  const stripped = phone.replace(/[\s\-()]/g, '');
+  if (stripped.startsWith('+213')) return '0' + stripped.slice(4);
+  if (stripped.startsWith('213') && stripped.length >= 12) return '0' + stripped.slice(3);
+  return phone;
+}
+
 function getTicketCustomerPhone(customerData: unknown) {
   if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) {
     return null;
@@ -460,7 +468,7 @@ function getTicketCustomerPhone(customerData: unknown) {
   for (const key of phoneKeys) {
     const value = data[key];
     if (typeof value === 'string' && value.trim()) {
-      return value.trim();
+      return formatLocalPhone(value.trim());
     }
   }
 
@@ -1478,10 +1486,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
-                  <span className="queue-item-meta">
-                    {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')} &middot; {formatWait(ticket.created_at)}
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
+                    {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')}
                   </span>
                 </div>
+                <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
                   {ticket.appointment_id && <span className="badge booked">{translate(locale, 'Booked')}</span>}
