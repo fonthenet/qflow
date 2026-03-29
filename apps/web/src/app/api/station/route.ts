@@ -128,6 +128,25 @@ export async function GET(req: NextRequest) {
         return json(data ?? []);
       }
 
+      case 'kiosk-info': {
+        const { data: staff2 } = await supabase
+          .from('staff')
+          .select('office_id')
+          .eq('auth_user_id', user.id)
+          .single();
+        if (!staff2?.office_id) return json({ kioskUrl: null, displayUrl: null });
+
+        const origin = req.headers.get('origin') || req.headers.get('host') || 'https://qflo.net';
+        const base = origin.startsWith('http') ? origin : `https://${origin}`;
+        const officeToken = staff2.office_id.replace(/-/g, '').slice(0, 16);
+
+        return json({
+          kioskUrl: `${base}/k/${officeToken}`,
+          displayUrl: `${base}/d/${officeToken}`,
+          localIP: null,
+        });
+      }
+
       case 'branding': {
         const { data: staff } = await supabase
           .from('staff')
