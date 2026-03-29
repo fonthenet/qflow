@@ -2114,6 +2114,18 @@ function serveStationIndex(res: http.ServerResponse) {
     org: {
       getBranding: function() { return get('/api/station/branding'); },
     },
+
+    updater: {
+      onStatusChange: function() { return function() {}; },
+      getStatus: function() { return Promise.resolve({ status: 'idle', version: null, progress: null, message: null }); },
+      checkForUpdates: function() { return Promise.resolve(); },
+      installUpdate: function() { return Promise.resolve(); },
+    },
+
+    license: {
+      activate: function() { return Promise.resolve({ ok: false }); },
+      getStatus: function() { return Promise.resolve({ licensed: true, machineId: 'local-network' }); },
+    },
   };
 
   // ── Shared bottom bar: language toggle + mode badge ──

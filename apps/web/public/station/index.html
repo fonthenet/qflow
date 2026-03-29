@@ -234,6 +234,7 @@
 
     license: {
       activate: function() { return Promise.resolve({ ok: false, error: 'Not available in remote mode' }); },
+      getStatus: function() { return Promise.resolve({ licensed: true, machineId: 'web-remote' }); },
     },
   };
 })();
