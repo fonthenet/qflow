@@ -227,7 +227,7 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
   if (/^(REJOINDRE|STATUT|ANNULER|LISTE)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|القائمة|دليل)\b/.test(trimmed)) return 'ar';
+  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|القائمة|دليل|الفهرس)\b/.test(trimmed)) return 'ar';
   if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
@@ -417,7 +417,7 @@ export async function handleInboundMessage(
   }
 
   // ── LIST / LISTE / قائمة / DIRECTORY / دليل ──
-  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || cleaned === 'قائمة' || cleaned === 'القائمة' || cleaned === 'دليل') {
+  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || cleaned === 'قائمة' || cleaned === 'القائمة' || cleaned === 'دليل' || cleaned === 'الفهرس') {
     await handleDirectory(identifier, detectedLocale, channel, sendMessage);
     return;
   }
