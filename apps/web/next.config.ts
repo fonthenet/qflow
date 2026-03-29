@@ -21,6 +21,16 @@ const nextConfig: NextConfig = {
     'http://localhost:3100',
   ],
 
+  // Rewrite /station to static Station UI
+  async rewrites() {
+    return [
+      {
+        source: '/station',
+        destination: '/station/index.html',
+      },
+    ];
+  },
+
   // Ensure AASA file is served with correct content type for iOS App Clips
   async headers() {
     return [

@@ -1027,7 +1027,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       try {
         if (!port) port = await (window as any).qf.getKioskPort();
         if (!port) return;
-        const res = await fetch(`http://localhost:${port}/api/device-status`, {
+        const base = (window as any).__QF_HTTP_MODE__ ? window.location.origin : `http://localhost:${port}`;
+        const res = await fetch(`${base}/api/device-status`, {
           signal: AbortSignal.timeout(3000),
         });
         if (res.ok) {
@@ -1710,6 +1711,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             {showLocalNetwork && (
               <>
                 {[
+                  {
+                    label: t('Station (remote control)'),
+                    localUrl: kioskUrl.replace('/kiosk', '/station'),
+                    publicUrl: 'https://qflo.net',
+                    publicLabel: 'qflo.net',
+                    icon: '🖥️',
+                  },
                   {
                     label: t('Kiosk (take tickets)'),
                     localUrl: kioskUrl,

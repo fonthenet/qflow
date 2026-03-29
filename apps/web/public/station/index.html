@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qflo Station</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #0f172a; overflow: hidden; }
+    #root { height: 100vh; }
+    #qf-mode-badge {
+      position: fixed; bottom: 12px; right: 12px; z-index: 99999;
+      padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+      pointer-events: none; opacity: 0.85;
+    }
+    #qf-mode-badge.local { background: #dcfce7; color: #166534; }
+    #qf-mode-badge.remote { background: #dbeafe; color: #1e40af; }
+  </style>
+<script>
+// ── Hybrid Bridge — auto-detects local station vs remote Supabase ──
+(function() {
+  window.__QF_HTTP_MODE__ = true;
+  var API = window.location.origin;
+  var mode = 'remote'; // default
+
+  function get(path) {
+    return fetch(API + path, { credentials: 'include' }).then(function(r) { return r.json(); });
+  }
+  function post(path, body) {
+    return fetch(API + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'include',
+    }).then(function(r) { return r.json(); });
+  }
+
+  // Remote API helpers (use /api/station?action=...)
+  function rGet(action, params) {
+    var qs = 'action=' + action;
+    if (params) Object.keys(params).forEach(function(k) { qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    return get('/api/station?' + qs);
+  }
+  function rPost(action, body) {
+    body.action = action;
+    return post('/api/station', body);
+  }
+
+  // Ticket change listeners (polling-powered for remote)
+  var ticketListeners = [];
+  var syncListeners = [];
+  var errorListeners = [];
+  var pollInterval = null;
+
+  function startPolling() {
+    if (pollInterval) return;
+    pollInterval = setInterval(function() {
+      ticketListeners.forEach(function(cb) { try { cb(); } catch(e) {} });
+    }, 3000);
+  }
+  startPolling();
+
+  // Show mode badge after load
+  window.addEventListener('load', function() {
+    var badge = document.createElement('div');
+    badge.id = 'qf-mode-badge';
+    badge.className = mode;
+    badge.textContent = mode === 'local' ? '📡 Local' : '🌐 Remote';
+    document.body.appendChild(badge);
+  });
+
+  window.qf = {
+    getConfig: function() { return Promise.resolve({ APP_VERSION: 'web', mode: mode }); },
+
+    db: {
+      getTickets: function(officeId, statuses) {
+        var ids = Array.isArray(officeId) ? officeId.join(',') : officeId;
+        return rGet('tickets', { officeIds: ids, statuses: statuses.join(',') });
+      },
+      createTicket: function(ticket) {
+        return rPost('create-ticket', {
+          officeId: ticket.office_id,
+          departmentId: ticket.department_id,
+          serviceId: ticket.service_id,
+          customerName: ticket.customer_data?.name || '',
+          customerPhone: ticket.customer_data?.phone || '',
+          customerReason: ticket.customer_data?.reason || '',
+          source: ticket.source || 'in_house',
+        });
+      },
+      updateTicket: function(ticketId, updates) {
+        return rPost('update-ticket', { ticketId: ticketId, updates: updates });
+      },
+      callNext: function(officeId, deskId, staffId) {
+        return rPost('call-next', { officeId: officeId, deskId: deskId, staffId: staffId });
+      },
+      query: function(table, officeIds) {
+        return rGet('query', { table: table, officeIds: officeIds.join(',') });
+      },
+    },
+
+    sync: {
+      getStatus: function() { return Promise.resolve({ isOnline: true, pendingCount: 0, lastSyncAt: new Date().toISOString() }); },
+      forceSync: function() { return Promise.resolve(); },
+      getPendingDetails: function() { return Promise.resolve([]); },
+      discardItem: function() { return Promise.resolve(); },
+      discardAll: function() { return Promise.resolve(); },
+      retryItem: function() { return Promise.resolve(); },
+      onStatusChange: function(cb) {
+        syncListeners.push(cb);
+        setTimeout(function() { cb('online'); }, 100);
+        return function() { syncListeners = syncListeners.filter(function(c) { return c !== cb; }); };
+      },
+      onProgress: function(cb) { return function() {}; },
+      onError: function(cb) {
+        errorListeners.push(cb);
+        return function() { errorListeners = errorListeners.filter(function(c) { return c !== cb; }); };
+      },
+    },
+
+    session: {
+      save: function() { return Promise.resolve(); },
+      load: function() { return rGet('session'); },
+      clear: function() { return Promise.resolve(); },
+    },
+
+    settings: {
+      getLocale: function() { return rGet('settings').then(function(s) { return s.locale; }); },
+      setLocale: function(locale) { return Promise.resolve(locale); },
+    },
+
+    isOnline: function() { return Promise.resolve(true); },
+
+    auth: {
+      onSessionExpired: function(cb) { return function() {}; },
+    },
+
+    tickets: {
+      onChange: function(cb) {
+        ticketListeners.push(cb);
+        return function() { ticketListeners = ticketListeners.filter(function(c) { return c !== cb; }); };
+      },
+    },
+
+    activity: {
+      getRecent: function(officeId, limit) {
+        return rGet('activity', { officeId: officeId, limit: limit || 20 });
+      },
+    },
+
+    debug: {
+      dbStats: function() { return Promise.resolve({}); },
+    },
+
+    getKioskPort: function() { return Promise.resolve(null); },
+
+    kiosk: {
+      getUrl: function() { return Promise.resolve(null); },
+      getLocalIP: function() { return Promise.resolve(null); },
+    },
+
+    links: {
+      getPublic: function() { return Promise.resolve({ kioskUrl: null, displayUrl: null }); },
+    },
+
+    org: {
+      getBranding: function() { return rGet('branding'); },
+    },
+
+    updater: {
+      onStatusChange: function() { return function() {}; },
+      getStatus: function() { return Promise.resolve({ status: 'idle', version: null, progress: null, message: null }); },
+    },
+
+    license: {
+      activate: function() { return Promise.resolve({ ok: false, error: 'Not available in remote mode' }); },
+    },
+  };
+})();
+</script>
+  <script type="module" crossorigin src="./assets/index-Bs5iXr3v.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B-hWrrsO.css">
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

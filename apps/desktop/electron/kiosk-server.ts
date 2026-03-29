@@ -1966,6 +1966,7 @@ function serveStationIndex(res: http.ServerResponse) {
     const shimScript = `<script>
 // ── HTTP Bridge — replaces Electron IPC with fetch calls ──
 (function() {
+  window.__QF_HTTP_MODE__ = true;
   var API = window.location.origin;
 
   function get(path) {
@@ -2087,6 +2088,8 @@ function serveStationIndex(res: http.ServerResponse) {
     debug: {
       dbStats: function() { return get('/api/station/debug-stats'); },
     },
+
+    getKioskPort: function() { return Promise.resolve(location.port || (location.protocol === 'https:' ? 443 : 80)); },
 
     kiosk: {
       getUrl: function() { return get('/api/station/kiosk-info').then(function(d) { return d.kioskUrl; }); },
