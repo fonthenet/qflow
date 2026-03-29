@@ -197,6 +197,26 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'لا توجد أعمال في هذه الفئة 📋\n\nأرسل *القائمة* لعرض الفئات.',
     en: '📋 No businesses in this category.\n\nSend *LIST* to see categories.',
   },
+  multi_status_header: {
+    fr: '📋 *Vos files actives :*\n',
+    ar: 'طوابيرك النشطة 📋\n\n',
+    en: '📋 *Your active queues:*\n',
+  },
+  multi_status_footer: {
+    fr: '\nRépondez *ANNULER {n}* pour quitter une file spécifique\nou *ANNULER TOUT* pour tout annuler.',
+    ar: '\nأرسل *إلغاء {n}* لمغادرة طابور محدد\nأو *إلغاء الكل* لإلغاء الجميع.',
+    en: '\nReply *CANCEL {n}* to leave a specific queue\nor *CANCEL ALL* to cancel all.',
+  },
+  cancel_pick: {
+    fr: '📋 *Vous avez {count} files actives :*\n{list}\nRépondez *ANNULER {n}* pour quitter une file\nou *ANNULER TOUT* pour tout annuler.',
+    ar: 'لديك {count} طوابير نشطة 📋\n{list}\nأرسل *إلغاء {n}* لمغادرة طابور\nأو *إلغاء الكل* لإلغاء الجميع.',
+    en: '📋 *You have {count} active queues:*\n{list}\nReply *CANCEL {n}* to leave a queue\nor *CANCEL ALL* to cancel all.',
+  },
+  cancelled_all: {
+    fr: '🚫 Tous vos tickets ({count}) ont été annulés.',
+    ar: 'تم إلغاء جميع تذاكرك ({count}) 🚫',
+    en: '🚫 All your tickets ({count}) have been cancelled.',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
@@ -412,6 +432,68 @@ async function findOrgByActiveSession(
   };
 }
 
+/**
+ * Find ALL active sessions for a given user identifier.
+ * Returns array sorted by created_at descending (newest first).
+ */
+async function findAllActiveSessionsByUser(
+  identifier: string,
+  channel: Channel,
+  bsuid?: string,
+): Promise<Array<{ session: any; org: OrgContext }>> {
+  const supabase = createAdminClient() as any;
+  const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+
+  const { data: sessions } = await supabase
+    .from('whatsapp_sessions')
+    .select('id, ticket_id, organization_id, locale, channel')
+    .eq(idCol, identifier)
+    .eq('state', 'active')
+    .eq('channel', channel)
+    .order('created_at', { ascending: false });
+
+  // Also check BSUID for WhatsApp
+  let bsuidSessions: any[] = [];
+  if (channel === 'whatsapp' && bsuid) {
+    const { data } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, ticket_id, organization_id, locale, channel')
+      .eq('whatsapp_bsuid', bsuid)
+      .eq('state', 'active')
+      .eq('channel', 'whatsapp')
+      .order('created_at', { ascending: false });
+    bsuidSessions = data ?? [];
+  }
+
+  // Merge and deduplicate by session id
+  const allSessions = [...(sessions ?? [])];
+  const existingIds = new Set(allSessions.map((s: any) => s.id));
+  for (const s of bsuidSessions) {
+    if (!existingIds.has(s.id)) allSessions.push(s);
+  }
+
+  if (allSessions.length === 0) return [];
+
+  // Fetch all org names in one query
+  const orgIds = [...new Set(allSessions.map((s: any) => s.organization_id))];
+  const { data: orgs } = await supabase
+    .from('organizations')
+    .select('id, name, settings')
+    .in('id', orgIds);
+
+  const orgMap = new Map<string, any>((orgs ?? []).map((o: any) => [o.id, o]));
+
+  return allSessions
+    .filter((s: any) => orgMap.has(s.organization_id))
+    .map((s: any) => {
+      const o = orgMap.get(s.organization_id)!;
+      return {
+        session: s,
+        org: { id: o.id, name: o.name, settings: (o.settings ?? {}) as Record<string, any> },
+      };
+    });
+}
+
 export const positionLabel: Record<Locale, string> = { fr: 'Position', ar: 'الترتيب', en: 'Position' };
 export const nowServingLabel: Record<Locale, string> = { fr: 'En service', ar: 'يُخدم الآن', en: 'Now serving' };
 export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', en: 'min' };
@@ -529,24 +611,48 @@ export async function handleInboundMessage(
 
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || /^حالة$/.test(cleaned)) {
-    const found = await findOrgByActiveSession(identifier, channel, bsuid);
-    if (found) {
-      const sessionLocale = (found.session.locale as Locale) || detectedLocale;
-      await handleStatus(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
-    } else {
+    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    if (allSessions.length === 0) {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+    } else if (allSessions.length === 1) {
+      const { session, org } = allSessions[0];
+      const sessionLocale = (session.locale as Locale) || detectedLocale;
+      await handleStatus(identifier, org, sessionLocale, channel, sendMessage, session);
+    } else {
+      await handleMultiStatus(identifier, allSessions, detectedLocale, channel, sendMessage);
     }
     return;
   }
 
-  // ── CANCEL / ANNULER / إلغاء ──
-  if (command === 'CANCEL' || command === 'ANNULER' || /^الغاء$/.test(cleaned)) {
-    const found = await findOrgByActiveSession(identifier, channel, bsuid);
-    if (found) {
-      const sessionLocale = (found.session.locale as Locale) || detectedLocale;
-      await handleCancel(identifier, found.org, sessionLocale, channel, sendMessage, found.session);
-    } else {
+  // ── CANCEL / ANNULER / إلغاء (with optional number or ALL) ──
+  const cancelMatch = command.match(/^(CANCEL|ANNULER)\s*(ALL|TOUT)?(?:\s+(\d+))?$/);
+  const cancelAr = cleaned.match(/^الغاء\s*(الكل)?(?:\s*(\d+))?$/);
+  if (cancelMatch || cancelAr) {
+    const isAll = cancelMatch ? !!cancelMatch[2] : (cancelAr ? !!cancelAr[1] : false);
+    const cancelIdx = cancelMatch?.[3] ? parseInt(cancelMatch[3], 10) : (cancelAr?.[2] ? parseInt(cancelAr[2], 10) : null);
+
+    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    if (allSessions.length === 0) {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+    } else if (isAll) {
+      // Cancel all active sessions
+      await handleCancelAll(identifier, allSessions, detectedLocale, channel, sendMessage);
+    } else if (cancelIdx !== null) {
+      // Cancel specific session by index
+      if (cancelIdx >= 1 && cancelIdx <= allSessions.length) {
+        const { session, org } = allSessions[cancelIdx - 1];
+        const sessionLocale = (session.locale as Locale) || detectedLocale;
+        await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
+      } else {
+        await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+      }
+    } else if (allSessions.length === 1) {
+      const { session, org } = allSessions[0];
+      const sessionLocale = (session.locale as Locale) || detectedLocale;
+      await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
+    } else {
+      // Multiple sessions — ask which one to cancel
+      await handleCancelPick(identifier, allSessions, detectedLocale, channel, sendMessage);
     }
     return;
   }
@@ -1178,4 +1284,103 @@ async function handleCancel(
   });
 
   await sendMessage({ to: identifier, body: t('cancelled', locale, { ticket: ticketRow?.ticket_number ?? '?' }) });
+}
+
+/**
+ * Show status for multiple active sessions at once.
+ */
+async function handleMultiStatus(
+  identifier: string,
+  allSessions: Array<{ session: any; org: OrgContext }>,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<void> {
+  let body = t('multi_status_header', locale);
+
+  for (let i = 0; i < allSessions.length; i++) {
+    const { session, org } = allSessions[i];
+    const pos = await getQueuePosition(session.ticket_id);
+    const posText = pos.position != null
+      ? `#${pos.position} (~${pos.estimated_wait_minutes ?? '?'} min)`
+      : '—';
+
+    if (locale === 'ar') {
+      body += `*${org.name}* — ${posText} — ${i + 1}\n`;
+    } else {
+      body += `*${i + 1}.* ${org.name} — ${posText}\n`;
+    }
+  }
+
+  body += t('multi_status_footer', locale, { n: '1' });
+  await sendMessage({ to: identifier, body });
+}
+
+/**
+ * Show a numbered list for CANCEL when there are multiple sessions.
+ */
+async function handleCancelPick(
+  identifier: string,
+  allSessions: Array<{ session: any; org: OrgContext }>,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<void> {
+  let list = '';
+  for (let i = 0; i < allSessions.length; i++) {
+    const { org } = allSessions[i];
+    if (locale === 'ar') {
+      list += `*${org.name}* — ${i + 1}\n`;
+    } else {
+      list += `*${i + 1}.* ${org.name}\n`;
+    }
+  }
+
+  await sendMessage({
+    to: identifier,
+    body: t('cancel_pick', locale, {
+      count: String(allSessions.length),
+      list,
+      n: '1',
+    }),
+  });
+}
+
+/**
+ * Cancel ALL active sessions for a user.
+ */
+async function handleCancelAll(
+  identifier: string,
+  allSessions: Array<{ session: any; org: OrgContext }>,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+
+  for (const { session } of allSessions) {
+    // Mark session completed first to prevent duplicate DB trigger notifications
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ state: 'completed' })
+      .eq('id', session.id);
+
+    await supabase
+      .from('tickets')
+      .update({ status: 'cancelled' })
+      .eq('id', session.ticket_id)
+      .in('status', ['waiting', 'issued', 'called']);
+
+    await supabase.from('ticket_events').insert({
+      ticket_id: session.ticket_id,
+      event_type: 'cancelled',
+      to_status: 'cancelled',
+      metadata: { source: `${channel}_cancel_all` },
+    });
+  }
+
+  await sendMessage({
+    to: identifier,
+    body: t('cancelled_all', locale, { count: String(allSessions.length) }),
+  });
 }
