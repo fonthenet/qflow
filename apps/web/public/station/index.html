@@ -210,16 +210,30 @@
     getKioskPort: function() { return Promise.resolve(location.port || (location.protocol === 'https:' ? 443 : 80)); },
 
     kiosk: {
+      _cache: null,
+      _fetch: function() {
+        if (window.qf.kiosk._cache) return window.qf.kiosk._cache;
+        window.qf.kiosk._cache = rGet('kiosk-info');
+        return window.qf.kiosk._cache;
+      },
       getUrl: function() {
-        return rGet('kiosk-info').then(function(d) { return d && d.kioskUrl ? d.kioskUrl : null; });
+        // Return /kiosk path so Station's .replace('/kiosk','/station') and .replace('/kiosk','/display') work
+        return window.qf.kiosk._fetch().then(function(d) {
+          if (!d || !d.kioskUrl) return null;
+          // Extract base origin and return with /kiosk path
+          try { var u = new URL(d.kioskUrl); return u.origin + '/kiosk'; } catch(e) { return null; }
+        });
       },
       getLocalIP: function() { return Promise.resolve(null); },
     },
 
     links: {
       getPublic: function() {
-        return rGet('kiosk-info').then(function(d) {
-          return { kioskUrl: d && d.kioskUrl ? d.kioskUrl : null, displayUrl: d && d.displayUrl ? d.displayUrl : null };
+        return window.qf.kiosk._fetch().then(function(d) {
+          return {
+            kioskUrl: d && d.kioskUrl ? d.kioskUrl : null,
+            displayUrl: d && d.displayUrl ? d.displayUrl : null,
+          };
         });
       },
     },

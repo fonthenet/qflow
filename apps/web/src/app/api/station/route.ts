@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
           .select('office_id')
           .eq('auth_user_id', user.id)
           .single();
-        if (!staff2?.office_id) return json({ kioskUrl: null, displayUrl: null });
+        if (!staff2?.office_id) return json({ kioskUrl: null, displayUrl: null, stationUrl: null });
 
         const origin = req.headers.get('origin') || req.headers.get('host') || 'https://qflo.net';
         const base = origin.startsWith('http') ? origin : `https://${origin}`;
@@ -143,6 +143,7 @@ export async function GET(req: NextRequest) {
         return json({
           kioskUrl: `${base}/k/${officeToken}`,
           displayUrl: `${base}/d/${officeToken}`,
+          stationUrl: `${base}/station`,
           localIP: null,
         });
       }
