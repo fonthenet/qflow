@@ -45,7 +45,7 @@ const messages: Record<string, Record<Locale, string>> = {
       '',
       'ستجد الرمز على ملصق QR أو صفحة الانضمام.',
       '',
-      'أرسل *قائمة* لعرض الأعمال المتاحة.',
+      'أرسل *القائمة* لعرض الأعمال المتاحة.',
     ].join('\n'),
     en: [
       '👋 Welcome to *Qflo*!',
@@ -127,7 +127,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   help_with_session: {
     fr: '📋 *{name}* — File\n\nCommandes :\n• *STATUT* — Vérifier votre position\n• *ANNULER* — Quitter la file\n• *LISTE* — Voir les entreprises',
-    ar: '📋 *{name}* — الطابور\n\nالأوامر:\n• *حالة* — التحقق من موقعك\n• *إلغاء* — مغادرة الطابور\n• *قائمة* — عرض الأعمال',
+    ar: '📋 *{name}* — الطابور\n\nالأوامر:\n• *حالة* — التحقق من موقعك\n• *إلغاء* — مغادرة الطابور\n• *القائمة* — عرض الأعمال',
     en: '📋 *{name}* — Queue\n\nCommands:\n• *STATUS* — Check your position\n• *CANCEL* — Leave the queue\n• *LIST* — Browse businesses',
   },
   not_in_queue_rejoin: {
@@ -157,7 +157,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   category_footer: {
     fr: '\nEnvoyez le *numéro* pour rejoindre (ex: *REJOINDRE {example}*).\nEnvoyez *LISTE* pour revenir aux catégories.',
-    ar: '\nأرسل *الرقم* للانضمام (مثال: *انضم {example}*).\nأرسل *قائمة* للعودة إلى الفئات.',
+    ar: '\nأرسل *الرقم* للانضمام (مثال: *انضم {example}*).\nأرسل *القائمة* للعودة إلى الفئات.',
     en: '\nSend the *number* to join (e.g. *JOIN {example}*).\nSend *LIST* to go back to categories.',
   },
   no_businesses: {
@@ -167,7 +167,7 @@ const messages: Record<string, Record<Locale, string>> = {
   },
   category_empty: {
     fr: '📋 Aucune entreprise dans cette catégorie.\n\nEnvoyez *LISTE* pour voir les catégories.',
-    ar: '📋 لا توجد أعمال في هذه الفئة.\n\nأرسل *قائمة* لعرض الفئات.',
+    ar: '📋 لا توجد أعمال في هذه الفئة.\n\nأرسل *القائمة* لعرض الفئات.',
     en: '📋 No businesses in this category.\n\nSend *LIST* to see categories.',
   },
 };
@@ -227,7 +227,7 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
   if (/^(REJOINDRE|STATUT|ANNULER|LISTE)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|دليل)\b/.test(trimmed)) return 'ar';
+  if (/^(انضم|حالة|إلغاء|الغاء|قائمة|القائمة|دليل)\b/.test(trimmed)) return 'ar';
   if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
@@ -415,7 +415,7 @@ export async function handleInboundMessage(
   }
 
   // ── LIST / LISTE / قائمة / DIRECTORY / دليل ──
-  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || messageBody.trim() === 'قائمة' || messageBody.trim() === 'دليل') {
+  if (command === 'LIST' || command === 'LISTE' || command === 'DIRECTORY' || messageBody.trim() === 'قائمة' || messageBody.trim() === 'القائمة' || messageBody.trim() === 'دليل') {
     await handleDirectory(identifier, detectedLocale, channel, sendMessage);
     return;
   }
