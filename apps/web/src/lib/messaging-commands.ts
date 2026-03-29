@@ -405,6 +405,39 @@ export function formatNowServing(pos: any, locale: Locale): string {
   return `📢 ${nowServingLabel[locale]}: *${pos.now_serving}*\n`;
 }
 
+/** Look up the user's most recent session locale (active or completed) */
+async function getLastSessionLocale(
+  identifier: string, channel: Channel, bsuid?: string,
+): Promise<Locale | null> {
+  const supabase = createAdminClient() as any;
+  const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+  const { data } = await supabase
+    .from('whatsapp_sessions')
+    .select('locale')
+    .eq(idCol, identifier)
+    .eq('channel', channel)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (data?.locale) return data.locale as Locale;
+
+  // Try BSUID fallback for WhatsApp
+  if (!data && channel === 'whatsapp' && bsuid) {
+    const { data: bsuidData } = await supabase
+      .from('whatsapp_sessions')
+      .select('locale')
+      .eq('whatsapp_bsuid', bsuid)
+      .eq('channel', 'whatsapp')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (bsuidData?.locale) return bsuidData.locale as Locale;
+  }
+
+  return null;
+}
+
 // ── Main entry point (channel-agnostic) ──────────────────────────────
 
 export async function handleInboundMessage(
@@ -455,7 +488,13 @@ export async function handleInboundMessage(
     const bizNum = catJoinMatch[2] ? parseInt(catJoinMatch[2], 10) : null;
     // Only handle if the number could be a category index (1-based)
     if (catNum >= 1 && catNum <= BUSINESS_CATEGORIES.length) {
-      const handled = await handleCategoryOrJoin(identifier, detectedLocale, channel, sendMessage, catNum, bizNum, profileName, bsuid);
+      // Bare numbers have no language signal — try to use the user's last session locale
+      let numLocale = detectedLocale;
+      if (numLocale === 'fr') {
+        const lastLocale = await getLastSessionLocale(identifier, channel, bsuid);
+        if (lastLocale) numLocale = lastLocale;
+      }
+      const handled = await handleCategoryOrJoin(identifier, numLocale, channel, sendMessage, catNum, bizNum, profileName, bsuid);
       if (handled) return;
     }
   }
