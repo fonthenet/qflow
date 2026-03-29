@@ -253,54 +253,74 @@ export async function POST(req: NextRequest) {
 
         if (!staff) return json({ ok: false, error: 'No staff profile' }, 400);
 
-        // Generate ticket number via atomic RPC (same as desktop Station)
-        const { data: seqResult } = await supabase.rpc('generate_daily_ticket_number', {
-          p_department_id: body.departmentId,
-        });
-        const seq = Array.isArray(seqResult) ? seqResult[0] : seqResult;
-        let ticketNumber: string;
-        if (seq?.ticket_num) {
-          ticketNumber = seq.ticket_num;
-        } else {
-          // Fallback: fetch department code and count
-          const { data: dept } = await supabase
-            .from('departments')
-            .select('code')
-            .eq('id', body.departmentId)
-            .single();
-          const prefix = dept?.code || 'TKT';
-          const { count } = await supabase
-            .from('tickets')
-            .select('id', { count: 'exact', head: true })
-            .eq('office_id', body.officeId)
-            .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00');
-          ticketNumber = `${prefix}-${String((count ?? 0) + 1).padStart(4, '0')}`;
-        }
+        // Get department code for ticket prefix
+        const { data: dept } = await supabase
+          .from('departments')
+          .select('code')
+          .eq('id', body.departmentId)
+          .single();
+        const prefix = dept?.code || 'TKT';
 
         // Generate qr_token (12-char hex, same as desktop)
         const qrToken = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 
-        const { data, error } = await supabase
-          .from('tickets')
-          .insert({
-            ticket_number: ticketNumber,
-            office_id: body.officeId,
-            department_id: body.departmentId,
-            service_id: body.serviceId || null,
-            customer_data: {
-              name: body.customerName || undefined,
-              phone: body.customerPhone || undefined,
-              reason: body.customerReason || undefined,
-            },
-            status: 'waiting',
-            priority: body.priority || 1,
-            source: body.source || 'in_house',
-            qr_token: qrToken,
-          })
-          .select()
-          .single();
+        // Try RPC first, then fallback with retry on duplicate
+        let ticketNumber: string | null = null;
+        const { data: seqResult } = await supabase.rpc('generate_daily_ticket_number', {
+          p_department_id: body.departmentId,
+        });
+        const seq = Array.isArray(seqResult) ? seqResult[0] : seqResult;
+        if (seq?.ticket_num) {
+          ticketNumber = seq.ticket_num;
+        }
 
-        if (error) return json({ ok: false, error: error.message }, 400);
+        // Insert with retry (up to 5 attempts on duplicate key)
+        let data = null;
+        let lastError = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (!ticketNumber || attempt > 0) {
+            // Fallback or retry: count existing + attempt offset
+            const { count } = await supabase
+              .from('tickets')
+              .select('id', { count: 'exact', head: true })
+              .eq('office_id', body.officeId)
+              .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00');
+            ticketNumber = `${prefix}-${String((count ?? 0) + 1 + attempt).padStart(4, '0')}`;
+          }
+
+          const result = await supabase
+            .from('tickets')
+            .insert({
+              ticket_number: ticketNumber,
+              office_id: body.officeId,
+              department_id: body.departmentId,
+              service_id: body.serviceId || null,
+              customer_data: {
+                name: body.customerName || undefined,
+                phone: body.customerPhone || undefined,
+                reason: body.customerReason || undefined,
+              },
+              status: 'waiting',
+              priority: body.priority || 1,
+              source: body.source || 'in_house',
+              qr_token: qrToken,
+            })
+            .select()
+            .single();
+
+          if (!result.error) {
+            data = result.data;
+            break;
+          }
+          lastError = result.error;
+          // Only retry on duplicate key constraint
+          if (!result.error.message.includes('unique constraint')) {
+            return json({ ok: false, error: result.error.message }, 400);
+          }
+          ticketNumber = null; // Force fallback on next attempt
+        }
+
+        if (!data) return json({ ok: false, error: lastError?.message || 'Failed after retries' }, 400);
         // Return ticket directly (Station.tsx expects result.ticket_number)
         return json(data);
       }
