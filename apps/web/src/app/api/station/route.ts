@@ -277,6 +277,9 @@ export async function POST(req: NextRequest) {
           ticketNumber = `${prefix}-${String((count ?? 0) + 1).padStart(4, '0')}`;
         }
 
+        // Generate qr_token (12-char hex, same as desktop)
+        const qrToken = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+
         const { data, error } = await supabase
           .from('tickets')
           .insert({
@@ -292,6 +295,7 @@ export async function POST(req: NextRequest) {
             status: 'waiting',
             priority: body.priority || 1,
             source: body.source || 'in_house',
+            qr_token: qrToken,
           })
           .select()
           .single();
