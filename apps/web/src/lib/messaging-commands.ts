@@ -1042,6 +1042,13 @@ async function handleCancel(
     return;
   }
 
+  // Mark session completed BEFORE cancelling the ticket so the DB trigger
+  // sees has_session = false and doesn't send a duplicate notification.
+  await supabase
+    .from('whatsapp_sessions')
+    .update({ state: 'completed' })
+    .eq('id', session.id);
+
   const { error: cancelError } = await supabase
     .from('tickets')
     .update({ status: 'cancelled' })
@@ -1058,11 +1065,6 @@ async function handleCancel(
     to_status: 'cancelled',
     metadata: { source: `${channel}_cancel` },
   });
-
-  await supabase
-    .from('whatsapp_sessions')
-    .update({ state: 'completed' })
-    .eq('id', session.id);
 
   await sendMessage({ to: identifier, body: t('cancelled', locale) });
 }
