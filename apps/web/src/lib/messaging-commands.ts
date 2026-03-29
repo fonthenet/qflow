@@ -143,9 +143,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: 'Your ticket is no longer active. Send *JOIN <code>* to join again.',
   },
   status: {
-    fr: '📊 *État de la file — {name}*\n\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\nRépondez *ANNULER* pour quitter la file.',
-    ar: '*حالة الطابور — {name}* 📊\n\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nأرسل *إلغاء* للمغادرة.',
-    en: '📊 *Queue Status — {name}*\n\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\nReply *CANCEL* to leave the queue.',
+    fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\nRépondez *ANNULER* pour quitter la file.',
+    ar: '*حالة الطابور — {name}* 📊\n\nالتذكرة: *{ticket}* 🎫\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nأرسل *إلغاء* للمغادرة.',
+    en: '📊 *Queue Status — {name}*\n\n🎫 Ticket: *{ticket}*\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\nReply *CANCEL* to leave the queue.',
   },
   cancelled: {
     fr: '🚫 Votre ticket *{ticket}* chez *{name}* a été annulé.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à tout moment.',
@@ -1185,6 +1185,14 @@ async function handleStatus(
     return;
   }
 
+  // Fetch ticket number
+  const { data: ticketRow } = await supabase
+    .from('tickets')
+    .select('ticket_number')
+    .eq('id', session.ticket_id)
+    .single();
+  const ticketNum = ticketRow?.ticket_number ?? '?';
+
   const pos = await getQueuePosition(session.ticket_id);
 
   if (pos.position === 0) {
@@ -1210,6 +1218,7 @@ async function handleStatus(
     to: identifier,
     body: t('status', locale, {
       name: org.name,
+      ticket: ticketNum,
       position: pos.position,
       wait: pos.estimated_wait_minutes ?? '?',
       now_serving: formatNowServing(pos, locale),
@@ -1298,17 +1307,24 @@ async function handleMultiStatus(
 ): Promise<void> {
   let body = t('multi_status_header', locale);
 
+  const supabase = createAdminClient() as any;
   for (let i = 0; i < allSessions.length; i++) {
     const { session, org } = allSessions[i];
+    const { data: ticketRow } = await supabase
+      .from('tickets')
+      .select('ticket_number')
+      .eq('id', session.ticket_id)
+      .single();
+    const ticketNum = ticketRow?.ticket_number ?? '?';
     const pos = await getQueuePosition(session.ticket_id);
     const posText = pos.position != null
       ? `#${pos.position} (~${pos.estimated_wait_minutes ?? '?'} min)`
       : '—';
 
     if (locale === 'ar') {
-      body += `*${org.name}* — ${posText} — ${i + 1}\n`;
+      body += `*${org.name}* — 🎫 *${ticketNum}* — ${posText} — ${i + 1}\n`;
     } else {
-      body += `*${i + 1}.* ${org.name} — ${posText}\n`;
+      body += `*${i + 1}.* ${org.name} — 🎫 *${ticketNum}* — ${posText}\n`;
     }
   }
 
