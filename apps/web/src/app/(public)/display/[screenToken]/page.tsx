@@ -111,7 +111,7 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
   const officeDayStartIso = getOfficeDayStartIso(office.timezone);
   const { count: servedTodayCount } = await supabase
     .from('tickets')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('office_id', screen.office_id)
     .eq('status', 'served')
     .gte('created_at', officeDayStartIso);

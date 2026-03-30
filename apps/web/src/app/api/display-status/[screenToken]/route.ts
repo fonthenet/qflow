@@ -96,12 +96,13 @@ export async function GET(
   ]);
 
   const officeDayStartIso = getOfficeDayStartIso(office.timezone);
-  const { count: servedTodayCount } = await supabase
+  const { count: servedTodayCount, error: countErr } = await supabase
     .from('tickets')
-    .select('id', { count: 'exact', head: true })
+    .select('*', { count: 'exact', head: true })
     .eq('office_id', screen.office_id)
     .eq('status', 'served')
     .gte('created_at', officeDayStartIso);
+  if (countErr) console.error('[display-status] served count error:', countErr);
 
   const mergedScreen = mergeDisplayScreenRuntime(
     {
