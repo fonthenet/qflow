@@ -5,20 +5,10 @@ import { resolvePlatformConfig } from '@/lib/platform/config';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import { mergeDisplayScreenRuntime } from '@/lib/display-runtime';
 import { matchesOfficePublicToken } from '@/lib/office-links';
+import { getOfficeDayStartIso } from '@/lib/office-day';
 
 interface DisplayPageProps {
   params: Promise<{ screenToken: string }>;
-}
-
-function getOfficeDayStartIso(timezone?: string | null) {
-  const now = new Date();
-  const localDate = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone || 'UTC',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-  return `${localDate}T00:00:00`;
 }
 
 export default async function DisplayPage({ params }: DisplayPageProps) {
