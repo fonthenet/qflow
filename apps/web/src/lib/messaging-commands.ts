@@ -296,13 +296,11 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** RTL handling for Arabic text across messaging platforms.
- *  WhatsApp detects Arabic characters and applies RTL natively.
- *  Messenger ignores all Unicode bidi control characters.
- *  We rely on physical text ordering (Arabic text first, numbers last)
- *  which renders correctly on both platforms without any bidi markers. */
+/** Force RTL rendering for Arabic text on WhatsApp.
+ *  Uses Right-to-Left Embedding (U+202B) + Pop Directional Formatting (U+202C)
+ *  wrapping each line. Messenger ignores these markers (platform limitation). */
 function ensureRTL(text: string): string {
-  return text;
+  return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
@@ -867,7 +865,7 @@ async function handleDirectory(
     const count = grouped.get(catKey)!.length;
 
     if (locale === 'ar') {
-      body += `${catLabel} ${emoji} — *${i + 1}*\n`;
+      body += `*${i + 1}* — ${emoji} ${catLabel}\n`;
     } else {
       body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
     }
@@ -919,7 +917,7 @@ async function handleCategoryOrJoin(
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       if (locale === 'ar') {
-        body += `${biz.name} — *${catNum}-${i + 1}*\n`;
+        body += `*${catNum}-${i + 1}* — ${biz.name}\n`;
       } else {
         body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
       }
@@ -1426,7 +1424,7 @@ async function handleMultiStatus(
       : '—';
 
     if (locale === 'ar') {
-      body += `*${org.name}* — 🎫 *${ticketNum}* — ${posText} — *${i + 1}*\n`;
+      body += `*${i + 1}* — *${org.name}* — 🎫 *${ticketNum}* — ${posText}\n`;
     } else {
       body += `*${i + 1}.* ${org.name} — 🎫 *${ticketNum}* — ${posText}\n`;
     }
@@ -1450,7 +1448,7 @@ async function handleCancelPick(
   for (let i = 0; i < allSessions.length; i++) {
     const { org } = allSessions[i];
     if (locale === 'ar') {
-      list += `*${org.name}* — *${i + 1}*\n`;
+      list += `*${i + 1}* — *${org.name}*\n`;
     } else {
       list += `*${i + 1}.* ${org.name}\n`;
     }
