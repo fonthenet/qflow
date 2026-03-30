@@ -4,6 +4,7 @@ import { DisplayBoard } from '@/components/display/display-board';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import { mergeDisplayScreenRuntime } from '@/lib/display-runtime';
+import { matchesOfficePublicToken } from '@/lib/office-links';
 
 interface DisplayPageProps {
   params: Promise<{ screenToken: string }>;
@@ -24,22 +25,58 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
   const { screenToken } = await params;
   const supabase = createAdminClient();
 
-  // Find display screen by token
-  const { data: screen } = await supabase
+  // 1) Try finding a display screen by its screen_token
+  let screen: any = null;
+  let office: any = null;
+
+  const { data: screenByToken } = await supabase
     .from('display_screens')
     .select('*')
     .eq('screen_token', screenToken)
     .eq('is_active', true)
-    .single();
-
-  if (!screen) notFound();
-  const { data: office } = await supabase
-    .from('offices')
-    .select('*, organization:organizations(*)')
-    .eq('id', screen.office_id)
     .maybeSingle();
 
-  if (!office) notFound();
+  if (screenByToken) {
+    screen = screenByToken;
+    const { data: screenOffice } = await supabase
+      .from('offices')
+      .select('*, organization:organizations(*)')
+      .eq('id', screen.office_id)
+      .maybeSingle();
+    office = screenOffice;
+  } else {
+    // 2) Fallback: treat token as office public token (same as kiosk uses)
+    const { data: offices } = await supabase
+      .from('offices')
+      .select('*, organization:organizations(*)')
+      .eq('is_active', true);
+
+    office = offices?.find((entry: any) => matchesOfficePublicToken(entry, screenToken));
+
+    if (office) {
+      // Try to find default display screen for this office
+      const { data: defaultScreen } = await supabase
+        .from('display_screens')
+        .select('*')
+        .eq('office_id', office.id)
+        .eq('is_active', true)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle();
+
+      // Use the screen if found, otherwise create a virtual default
+      screen = defaultScreen ?? {
+        id: `virtual-${office.id}`,
+        office_id: office.id,
+        name: 'Default',
+        screen_token: screenToken,
+        settings: {},
+        is_active: true,
+      };
+    }
+  }
+
+  if (!screen || !office) notFound();
   const platformConfig = resolvePlatformConfig({
     organizationSettings: (office.organization as any)?.settings ?? {},
     officeSettings: office.settings ?? {},
