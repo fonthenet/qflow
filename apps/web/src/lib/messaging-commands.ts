@@ -1075,7 +1075,13 @@ async function askJoinConfirmation(
     if (bsuid) sessionData.whatsapp_bsuid = bsuid;
   }
 
-  await supabase.from('whatsapp_sessions').insert(sessionData);
+  const { error: insertErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
+  if (insertErr) {
+    console.error('[askJoinConfirmation] Insert failed:', insertErr.message);
+    // Fall back to direct join (skip confirmation) so the user isn't stuck
+    await handleJoin(identifier, org, locale, channel, sendMessage, profileName, bsuid);
+    return;
+  }
   await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
 }
 
