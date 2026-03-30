@@ -297,15 +297,14 @@ function detectLocale(message: string): Locale {
 }
 
 /** Force RTL rendering for Arabic text across messaging platforms.
- *  Uses Right-to-Left Mark (U+200F) at the start of each line to hint RTL
- *  paragraph direction, plus Right-to-Left Embedding (U+202B) wrapping for
- *  stronger bidi control. The RLM is what triggers right-alignment on
- *  Messenger; the RLE/PDF pair handles reordering on WhatsApp. */
+ *  WhatsApp handles RTL natively via Arabic character detection.
+ *  Messenger ignores Unicode bidi control characters (U+200F, U+202B, etc.)
+ *  so right-alignment cannot be forced there — we rely on physical text
+ *  ordering instead (Arabic text first, numbers last). */
 function ensureRTL(text: string): string {
   return text.split('\n').map(line => {
-    if (line.length === 0) return line;
-    if (line.startsWith('\u200F') || line.startsWith('\u202B')) return line; // already wrapped
-    return `\u200F\u202B${line}\u202C`;
+    if (line.length === 0 || line.startsWith('\u200F')) return line;
+    return `\u200F${line}`;
   }).join('\n');
 }
 
