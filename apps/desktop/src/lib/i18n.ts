@@ -253,7 +253,7 @@ const FR: Messages = {
   'Local Kiosk': 'Borne locale',
   'In-House Booking': 'Inscription sur place',
   'In-House': 'Sur place',
-  'Department': 'Service',
+  'Department': 'Département',
   'General': 'Général',
   'Customer Name': 'Nom du client',
   'Enter customer name': 'Entrez le nom du client',
