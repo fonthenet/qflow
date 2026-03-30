@@ -29,7 +29,7 @@ const FILTERS: { key: Filter; label: string; icon: string }[] = [
 ];
 
 const TICKET_COLUMNS =
-  'id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, recall_count, is_remote, appointment_id, parked_at, notes';
+  'id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, recall_count, is_remote, source, appointment_id, parked_at, notes';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -49,6 +49,30 @@ function getStatusColor(status: string): string {
       return colors.error;
     default:
       return colors.textMuted;
+  }
+}
+
+function getSourceIcon(source: string | null): { name: string; color: string } {
+  switch (source) {
+    case 'whatsapp': return { name: 'logo-whatsapp', color: '#25D366' };
+    case 'messenger': return { name: 'chatbubble-ellipses', color: '#0084FF' };
+    case 'kiosk': return { name: 'tablet-portrait-outline', color: '#8B5CF6' };
+    case 'qr_code': return { name: 'qr-code-outline', color: '#F59E0B' };
+    case 'walk_in': return { name: 'walk-outline', color: '#64748B' };
+    case 'in_house': return { name: 'business-outline', color: '#6366F1' };
+    default: return { name: 'globe-outline', color: colors.textMuted };
+  }
+}
+
+function getSourceLabel(source: string | null): string {
+  switch (source) {
+    case 'whatsapp': return 'WhatsApp';
+    case 'messenger': return 'Messenger';
+    case 'kiosk': return 'Kiosk';
+    case 'qr_code': return 'QR Code';
+    case 'walk_in': return 'Walk-in';
+    case 'in_house': return 'In-house';
+    default: return 'Web';
   }
 }
 
@@ -299,13 +323,18 @@ export default function AdminQueueScreen() {
             )}
           </View>
           <View style={styles.ticketRight}>
-            {ticket.is_remote && (
-              <View style={styles.sourceBadge}>
-                <Ionicons name="globe-outline" size={10} color={colors.info} />
-                <Text style={styles.sourceBadgeText}>Remote</Text>
-              </View>
-            )}
-            {ticket.appointment_id && !ticket.is_remote && (
+            {(() => {
+              const src = getSourceIcon(ticket.source);
+              return (
+                <View style={[styles.sourceBadge, { backgroundColor: src.color + '15' }]}>
+                  <Ionicons name={src.name as any} size={11} color={src.color} />
+                  <Text style={[styles.sourceBadgeText, { color: src.color }]}>
+                    {getSourceLabel(ticket.source)}
+                  </Text>
+                </View>
+              );
+            })()}
+            {ticket.appointment_id && (
               <View style={[styles.sourceBadge, styles.sourceBadgeBooked]}>
                 <Ionicons name="calendar-outline" size={10} color={colors.primary} />
                 <Text style={[styles.sourceBadgeText, { color: colors.primary }]}>

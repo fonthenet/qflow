@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -8,9 +9,11 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRealtimeQueue, useNameLookup, QueueTicket } from '@/lib/use-realtime-queue';
 import { useOrg } from '@/lib/use-org';
 import { useOperatorStore } from '@/lib/operator-store';
+import * as Actions from '@/lib/ticket-actions';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 type FilterTab = 'waiting' | 'called' | 'serving' | 'parked' | 'all';
@@ -111,6 +114,85 @@ export default function QueueScreen() {
     setRefreshing(false);
   };
 
+  // ── Actions ──────────────────────────────────────────────────────
+
+  const confirmAction = (
+    title: string,
+    message: string,
+    onConfirm: () => Promise<void>,
+  ) => {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Confirm',
+        onPress: async () => {
+          try {
+            await onConfirm();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            refresh();
+          } catch (err: any) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            Alert.alert('Error', err.message ?? 'Action failed');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleCallToDesk = (t: QueueTicket) => {
+    if (!session?.deskId || !session?.staffId) {
+      Alert.alert('No Desk', 'You must be logged into a desk to call tickets.');
+      return;
+    }
+    confirmAction('Call to Desk', `Call ${t.ticket_number} to your desk?`, () =>
+      Actions.callSpecificTicket(t.id, session.deskId!, session.staffId),
+    );
+  };
+
+  const handleServe = (t: QueueTicket) => {
+    confirmAction('Start Serving', `Start serving ${t.ticket_number}?`, () =>
+      Actions.startServing(t.id),
+    );
+  };
+
+  const handleComplete = (t: QueueTicket) => {
+    confirmAction('Complete', `Mark ${t.ticket_number} as served?`, () =>
+      Actions.markServed(t.id),
+    );
+  };
+
+  const handleNoShow = (t: QueueTicket) => {
+    confirmAction('No Show', `Mark ${t.ticket_number} as no-show?`, () =>
+      Actions.markNoShow(t.id),
+    );
+  };
+
+  const handleCancel = (t: QueueTicket) => {
+    confirmAction('Cancel', `Cancel ticket ${t.ticket_number}?`, () =>
+      Actions.cancelTicket(t.id),
+    );
+  };
+
+  const handlePark = (t: QueueTicket) => {
+    confirmAction('Park', `Put ${t.ticket_number} on hold?`, () =>
+      Actions.parkTicket(t.id),
+    );
+  };
+
+  const handleResume = (t: QueueTicket) => {
+    confirmAction('Resume', `Resume ticket ${t.ticket_number}?`, () =>
+      Actions.unparkTicket(t.id),
+    );
+  };
+
+  const handleRequeue = (t: QueueTicket) => {
+    confirmAction('Back to Queue', `Send ${t.ticket_number} back to waiting?`, () =>
+      Actions.resetToQueue(t.id),
+    );
+  };
+
+  // ── Render ───────────────────────────────────────────────────────
+
   const renderTicket = ({ item, index }: { item: QueueTicket; index: number }) => {
     const customerName = item.customer_data?.name || 'Walk-in';
     const serviceName = item.service_id ? names.services[item.service_id] : null;
@@ -120,6 +202,8 @@ export default function QueueScreen() {
     const source = getSourceIcon(item.source);
     const statusColor = getStatusColor(item.status);
     const statusBg = getStatusBg(item.status);
+    const isParked = item.parked_at != null;
+    const isTerminal = ['served', 'no_show', 'cancelled'].includes(item.status);
 
     return (
       <View style={styles.ticketCard}>
@@ -161,7 +245,7 @@ export default function QueueScreen() {
           </View>
           {(serviceName || deptName) && (
             <Text style={styles.ticketMeta} numberOfLines={1}>
-              {[serviceName, deptName].filter(Boolean).join(' · ')}
+              {[serviceName, deptName].filter(Boolean).join(' \u00B7 ')}
             </Text>
           )}
         </View>
@@ -184,6 +268,40 @@ export default function QueueScreen() {
             <Text style={styles.waitTime}>{getWaitTime(item.created_at)}</Text>
           </View>
         </View>
+
+        {/* Action buttons */}
+        {!isTerminal && (
+          <View style={styles.actionsRow}>
+            {isParked ? (
+              <ActionBtn label="Resume" icon="play-circle-outline" color={colors.primary} onPress={() => handleResume(item)} />
+            ) : (
+              <>
+                {item.status === 'waiting' && (
+                  <>
+                    <ActionBtn label="Call to Desk" icon="megaphone-outline" color={colors.called} onPress={() => handleCallToDesk(item)} />
+                    <ActionBtn label="Park" icon="pause-outline" color={colors.textSecondary} onPress={() => handlePark(item)} />
+                    <ActionBtn label="Cancel" icon="close-circle-outline" color={colors.error} onPress={() => handleCancel(item)} />
+                  </>
+                )}
+                {item.status === 'called' && (
+                  <>
+                    <ActionBtn label="Serve" icon="play-outline" color={colors.serving} onPress={() => handleServe(item)} />
+                    <ActionBtn label="No Show" icon="alert-circle-outline" color={colors.warning} onPress={() => handleNoShow(item)} />
+                    <ActionBtn label="Park" icon="pause-outline" color={colors.textSecondary} onPress={() => handlePark(item)} />
+                    <ActionBtn label="Requeue" icon="arrow-undo-outline" color={colors.info} onPress={() => handleRequeue(item)} />
+                  </>
+                )}
+                {item.status === 'serving' && (
+                  <>
+                    <ActionBtn label="Complete" icon="checkmark-circle-outline" color={colors.success} onPress={() => handleComplete(item)} />
+                    <ActionBtn label="No Show" icon="alert-circle-outline" color={colors.warning} onPress={() => handleNoShow(item)} />
+                    <ActionBtn label="Park" icon="pause-outline" color={colors.textSecondary} onPress={() => handlePark(item)} />
+                  </>
+                )}
+              </>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -213,7 +331,7 @@ export default function QueueScreen() {
         </View>
       </View>
 
-      {/* Filter Tabs — pill style */}
+      {/* Filter Tabs -- pill style */}
       <View style={styles.tabsContainer}>
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
@@ -272,6 +390,31 @@ export default function QueueScreen() {
         renderItem={renderTicket}
       />
     </View>
+  );
+}
+
+// ── ActionBtn ────────────────────────────────────────────────────────
+
+function ActionBtn({
+  label,
+  icon,
+  color,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.actionBtn, { borderColor: color }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Ionicons name={icon as any} size={13} color={color} />
+      <Text style={[styles.actionBtnText, { color }]}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -531,4 +674,27 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   parkedBadgeText: { fontSize: 9, fontWeight: '700', color: colors.warning },
+
+  // Action buttons
+  actionsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    flexWrap: 'wrap',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  actionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });

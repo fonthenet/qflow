@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useOperatorStore } from '@/lib/operator-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 interface DashboardStats {
@@ -44,6 +45,7 @@ interface DeptQueue {
 export default function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
+  const { session: operatorSession } = useOperatorStore();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [deptQueues, setDeptQueues] = useState<DeptQueue[]>([]);
   const [loading, setLoading] = useState(true);
@@ -318,7 +320,7 @@ export default function AdminDashboard() {
         <Text style={s.sectionTitle}>Quick Actions</Text>
         <View style={s.actionsGrid}>
           <ActionBtn icon="list" label="Live Queue" onPress={goToQueue} />
-          <ActionBtn icon="desktop-outline" label="Start Serving" onPress={() => router.navigate('/(operator)/desk')} />
+          <ActionBtn icon="desktop-outline" label="Start Serving" onPress={() => router.navigate(operatorSession?.deskId ? '/(operator)/desk' : '/(auth)/role-select')} />
           <ActionBtn icon="calendar-outline" label="Bookings" onPress={() => router.push('/admin/bookings')} />
           <ActionBtn icon="people-outline" label="Staff" onPress={goToManage} />
           <ActionBtn icon="link-outline" label="QR & Links" onPress={() => router.push('/admin/virtual-codes')} />
