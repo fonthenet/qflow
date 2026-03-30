@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -29,7 +28,6 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -41,17 +39,6 @@ export default function LoginScreen() {
       }
     }
   }, [authLoading, user, isStaff, staffRole]);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
 
   const handleLogin = async () => {
     if (!email.trim()) {
@@ -125,14 +112,18 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient colors={['#1e40af', '#3b82f6', '#6366f1']} style={styles.gradient}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[
           styles.content,
           {
             paddingTop: insets.top + spacing.xxl,
-            paddingBottom: keyboardHeight > 0 ? keyboardHeight + spacing.lg : insets.bottom + spacing.xxl,
+            paddingBottom: insets.bottom + spacing.xxl,
           },
         ]}
         keyboardShouldPersistTaps="handled"
