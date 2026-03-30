@@ -3,6 +3,7 @@
 import { getStaffContext, requireAnalyticsAccess, type StaffContext } from '@/lib/authz';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { buildTemplateGovernanceReport } from '@/lib/platform/governance';
+import { getOfficeDayStartIso, getOfficeDayEndIso } from '@/lib/office-day';
 
 async function getAnalyticsContext() {
   const context = await getStaffContext();
@@ -168,24 +169,38 @@ export interface TemplatePerformanceAnalyticsData {
   officeRows: TemplateOfficeComparisonRow[];
 }
 
+// ─── Timezone helper ──────────────────────────────────────────────────────
+
+async function resolveTimezone(context: StaffContext, officeId?: string): Promise<string | undefined> {
+  const targetOfficeId = officeId || context.accessibleOfficeIds[0];
+  if (!targetOfficeId) return undefined;
+  const { data } = await context.supabase
+    .from('offices')
+    .select('timezone')
+    .eq('id', targetOfficeId)
+    .single();
+  return data?.timezone ?? undefined;
+}
+
 // ─── Date range helpers ────────────────────────────────────────────────────
 
-function getDateRange(dateRange?: string): { start: string; end: string } {
-  const now = new Date();
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
+function getDateRange(dateRange?: string, timezone?: string): { start: string; end: string } {
+  const todayStart = getOfficeDayStartIso(timezone);
+  const todayEnd = getOfficeDayEndIso(timezone);
 
-  let start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-
-  if (dateRange === 'last7') {
-    start.setDate(start.getDate() - 6);
-  } else if (dateRange === 'last30') {
-    start.setDate(start.getDate() - 29);
+  if (!dateRange || dateRange === 'today') {
+    return { start: todayStart, end: todayEnd };
   }
-  // default: today
 
-  return { start: start.toISOString(), end: end.toISOString() };
+  // For multi-day ranges, shift the start backwards from today's start
+  const startDate = new Date(todayStart);
+  if (dateRange === 'last7') {
+    startDate.setDate(startDate.getDate() - 6);
+  } else if (dateRange === 'last30') {
+    startDate.setDate(startDate.getDate() - 29);
+  }
+
+  return { start: startDate.toISOString(), end: todayEnd };
 }
 
 function isWithinRange(value: string | null, start: string, end: string) {
@@ -374,7 +389,8 @@ export async function getAnalyticsSummary(
 ): Promise<AnalyticsSummary> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
   const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) {
@@ -455,12 +471,10 @@ export async function getTicketsByHour(
 ): Promise<HourlyTicket[]> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
 
-  const targetDate = date ? new Date(date) : new Date();
-  const start = new Date(targetDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(targetDate);
-  end.setHours(23, 59, 59, 999);
+  // Use timezone-aware day boundaries (today or a specific date)
+  const { start, end } = getDateRange(undefined, tz);
 
   const officeIds = getScopedOfficeIds(context, officeId);
 
@@ -472,8 +486,8 @@ export async function getTicketsByHour(
     .from('tickets')
     .select('created_at')
     .in('office_id', officeIds)
-    .gte('created_at', start.toISOString())
-    .lte('created_at', end.toISOString());
+    .gte('created_at', start)
+    .lte('created_at', end);
 
   const hourCounts = Array.from({ length: 24 }, (_, i) => ({
     hour: i,
@@ -496,7 +510,8 @@ export async function getTicketsByDepartment(
 ): Promise<DepartmentTicket[]> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
   const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) return [];
@@ -541,12 +556,13 @@ export async function getWaitTimeTrend(
 ): Promise<WaitTimeTrend[]> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
 
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date();
-  start.setDate(start.getDate() - (days - 1));
-  start.setHours(0, 0, 0, 0);
+  const endIso = getOfficeDayEndIso(tz);
+  const startDate = new Date(getOfficeDayStartIso(tz));
+  startDate.setDate(startDate.getDate() - (days - 1));
+  const start = startDate.toISOString();
+  const end = endIso;
 
   const officeIds = getScopedOfficeIds(context, officeId);
 
@@ -557,15 +573,15 @@ export async function getWaitTimeTrend(
     .select('created_at, serving_started_at')
     .in('office_id', officeIds)
     .not('serving_started_at', 'is', null)
-    .gte('created_at', start.toISOString())
-    .lte('created_at', end.toISOString());
+    .gte('created_at', start)
+    .lte('created_at', end);
 
   const dayMap = new Map<string, number[]>();
 
   // Initialize all days
   for (let i = 0; i < days; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
     const key = d.toISOString().split('T')[0];
     dayMap.set(key, []);
   }
@@ -601,7 +617,8 @@ export async function getStaffPerformance(
 ): Promise<StaffPerformanceRow[]> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
   const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) return [];
@@ -713,7 +730,8 @@ export async function getFeedbackSummary(
 ): Promise<FeedbackSummaryData> {
   const context = await getAnalyticsContext();
   const { supabase } = context;
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
   const officeIds = getScopedOfficeIds(context, officeId);
 
   if (officeIds.length === 0) {
@@ -810,7 +828,8 @@ export async function getTemplateHealthAnalytics(
   const context = await getAnalyticsContext();
   const { supabase } = context;
   const officeIds = getScopedOfficeIds(context, officeId);
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
   const snapshotScope = officeId ? 'office' : 'organization';
 
   if (officeIds.length === 0) {
@@ -1014,7 +1033,8 @@ export async function getTemplatePerformanceAnalytics(
   const context = await getAnalyticsContext();
   const { supabase } = context;
   const officeIds = getScopedOfficeIds(context, officeId);
-  const { start, end } = getDateRange(dateRange);
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
 
   if (officeIds.length === 0) {
     return {

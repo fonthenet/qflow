@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { matchesOfficePublicSlug } from '@/lib/office-links';
+import { getDateStartIso, getDateEndIso } from '@/lib/office-day';
 
 function getSupabase() {
   return createClient(
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
   // Resolve office by slug (include organization for settings)
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, settings, operating_hours, organization_id')
+    .select('id, name, settings, operating_hours, organization_id, timezone')
     .eq('is_active', true);
 
   const office = (offices ?? []).find((o: any) => matchesOfficePublicSlug(o, slug));
@@ -99,8 +100,8 @@ export async function GET(request: NextRequest) {
     .eq('office_id', office.id)
     .eq('service_id', serviceId)
     .neq('status', 'cancelled')
-    .gte('scheduled_at', `${date}T00:00:00`)
-    .lte('scheduled_at', `${date}T23:59:59`);
+    .gte('scheduled_at', getDateStartIso(date, (office as any).timezone))
+    .lte('scheduled_at', getDateEndIso(date, (office as any).timezone));
 
   // Fetch blocked slots (graceful — table may not exist yet)
   let blockedData: { start_time: string; end_time: string }[] = [];

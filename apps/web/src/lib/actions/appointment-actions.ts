@@ -9,6 +9,7 @@ import {
 } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
+import { getDateStartIso, getDateEndIso, getOfficeDayStartIso, getOfficeDayEndIso } from '@/lib/office-day';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -263,9 +264,17 @@ export async function cancelAppointment(appointmentId: string) {
 export async function getAppointmentsByDate(officeId: string, date: string) {
   const supabase = await createClient();
 
+  // Fetch office timezone for correct date boundaries
+  const { data: officeRow } = await supabase
+    .from('offices')
+    .select('timezone')
+    .eq('id', officeId)
+    .single();
+  const tz = officeRow?.timezone ?? undefined;
+
   // date is in YYYY-MM-DD format
-  const startOfDay = `${date}T00:00:00`;
-  const endOfDay = `${date}T23:59:59`;
+  const startOfDay = getDateStartIso(date, tz);
+  const endOfDay = getDateEndIso(date, tz);
 
   const { data: appointments, error } = await supabase
     .from('appointments')
@@ -312,9 +321,17 @@ export async function getAvailableSlots(
 
   const allSlots = generateSlots(dayHours.open, dayHours.close, date);
 
+  // Fetch office timezone for correct date boundaries
+  const { data: officeRow } = await supabase
+    .from('offices')
+    .select('timezone')
+    .eq('id', officeId)
+    .single();
+  const tz = officeRow?.timezone ?? undefined;
+
   // Fetch existing appointments for that date to exclude booked slots
-  const startOfDay = `${date}T00:00:00`;
-  const endOfDay = `${date}T23:59:59`;
+  const startOfDay = getDateStartIso(date, tz);
+  const endOfDay = getDateEndIso(date, tz);
 
   const { data: existingAppointments } = await supabase
     .from('appointments')
@@ -375,9 +392,16 @@ function generateSlots(openTime: string, closeTime: string, date: string): strin
 export async function findAppointment(officeId: string, searchTerm: string): Promise<{ data: any[]; error?: string }> {
   const supabase = createAdminClient();
 
-  const today = new Date().toISOString().split('T')[0];
-  const startOfDay = `${today}T00:00:00`;
-  const endOfDay = `${today}T23:59:59`;
+  // Fetch office timezone for correct date boundaries
+  const { data: officeRow } = await supabase
+    .from('offices')
+    .select('timezone')
+    .eq('id', officeId)
+    .single();
+  const tz = officeRow?.timezone ?? undefined;
+
+  const startOfDay = getOfficeDayStartIso(tz);
+  const endOfDay = getOfficeDayEndIso(tz);
 
   // Search by name or phone
   let query = supabase

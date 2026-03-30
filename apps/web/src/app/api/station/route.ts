@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getOfficeDayStartIso } from '@/lib/office-day';
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -274,6 +275,14 @@ export async function POST(req: NextRequest) {
           ticketNumber = seq.ticket_num;
         }
 
+        // Fetch office timezone for correct day boundary
+        const { data: officeRow } = await supabase
+          .from('offices')
+          .select('timezone')
+          .eq('id', body.officeId)
+          .single();
+        const todayStartIso = getOfficeDayStartIso(officeRow?.timezone);
+
         // Insert with retry (up to 5 attempts on duplicate key)
         let data = null;
         let lastError = null;
@@ -284,7 +293,7 @@ export async function POST(req: NextRequest) {
               .from('tickets')
               .select('id', { count: 'exact', head: true })
               .eq('office_id', body.officeId)
-              .gte('created_at', new Date().toISOString().slice(0, 10) + 'T00:00:00');
+              .gte('created_at', todayStartIso);
             ticketNumber = `${prefix}-${String((count ?? 0) + 1 + attempt).padStart(4, '0')}`;
           }
 
