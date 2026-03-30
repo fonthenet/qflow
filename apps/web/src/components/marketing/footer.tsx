@@ -9,6 +9,7 @@ const footerLinks = {
     { href: '/solutions', label: 'Solutions' },
     { href: '/pricing', label: 'Pricing' },
     { href: '/how-it-works', label: 'How It Works' },
+    { href: '/resources', label: 'Resources' },
   ],
   Solutions: [
     { href: '/solutions/restaurants', label: 'Restaurants' },
@@ -38,7 +39,7 @@ export function Footer() {
                 Q
               </div>
               <span className="text-lg font-bold">
-                Queue<span className="text-primary">Flow</span>
+                Q<span className="text-primary">flo</span>
               </span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -68,7 +69,7 @@ export function Footer() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border pt-8 md:flex-row">
           <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} QueueFlow. {t('All rights reserved.')}
+            &copy; {new Date().getFullYear()} Qflo. {t('All rights reserved.')}
           </p>
           <div className="flex items-center gap-6">
             <LanguageSwitcher />

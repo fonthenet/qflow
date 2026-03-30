@@ -555,7 +555,7 @@
 
     var localeToggle =
       '<div class="locale-switcher" aria-label="Language switcher">' +
-      '<button class="locale-btn" onclick="toggleLocaleMenu()">' + S.locale.toUpperCase() + ' <span class="locale-chevron" id="locale-chev">&#9660;</span></button>' +
+      '<button class="locale-btn" onclick="toggleLocaleMenu()">' + S.locale.toUpperCase() + ' <span class="locale-chevron" id="locale-chev"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></button>' +
       '<div class="locale-menu" id="locale-menu">' +
       ['en', 'fr', 'ar'].filter(function (l) { return l !== S.locale; }).map(function (locale) {
         return '<button class="locale-option" onclick="setKioskLocale(\'' + locale + '\')">' + locale.toUpperCase() + '</button>';

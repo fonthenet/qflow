@@ -156,7 +156,7 @@ export function Sidebar({
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-6">
         <Link href="/admin/overview" className="text-xl font-bold">
-          Queue<span className="text-primary">Flow</span>
+          Q<span className="text-primary">flo</span>
         </Link>
       </div>
 

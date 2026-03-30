@@ -149,7 +149,7 @@ export function KioskView({
   })();
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());
-  const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'QueueFlow';
+  const kioskTitle = ks.headerText?.trim() || organization?.name || office.name || 'Qflo';
   const businessName = organization?.name?.trim() || office.name;
   const officeLine = office.name && office.name !== businessName ? office.name : null;
   const orgSettings = (organization?.settings as Record<string, any> | null) ?? {};

@@ -836,7 +836,7 @@ export async function getTemplateHealthAnalytics(
     return {
       summary: {
         templateId: 'public-service-standard',
-        templateTitle: 'QueueFlow Template',
+        templateTitle: 'Qflo Template',
         appliedVersion: '1.0.0',
         latestVersion: '1.0.0',
         snapshotScope,
@@ -1040,7 +1040,7 @@ export async function getTemplatePerformanceAnalytics(
     return {
       summary: {
         primaryTemplateId: 'public-service-standard',
-        primaryTemplateTitle: 'QueueFlow Template',
+        primaryTemplateTitle: 'Qflo Template',
         primaryVertical: 'public_service',
         templateCount: 0,
         officeCount: 0,
@@ -1197,7 +1197,7 @@ export async function getTemplatePerformanceAnalytics(
   return {
     summary: {
       primaryTemplateId: primaryRow?.templateId ?? fallbackOffice?.templateId ?? 'public-service-standard',
-      primaryTemplateTitle: primaryRow?.templateTitle ?? fallbackOffice?.templateTitle ?? 'QueueFlow Template',
+      primaryTemplateTitle: primaryRow?.templateTitle ?? fallbackOffice?.templateTitle ?? 'Qflo Template',
       primaryVertical: primaryRow?.vertical ?? fallbackOffice?.vertical ?? 'public_service',
       templateCount: templateRows.length,
       officeCount: officeMap.size,

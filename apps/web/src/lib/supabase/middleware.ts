@@ -40,7 +40,7 @@ export async function updateSession(request: NextRequest, requestHeaders?: Heade
     '/q/', '/ticket/', '/display/', '/d/', '/k/', '/kiosk/', '/join/', '/book/',
     '/login', '/register', '/history', '/api/',
     // Marketing & legal pages
-    '/solutions', '/pricing', '/how-it-works', '/contact', '/docs',
+    '/solutions', '/pricing', '/how-it-works', '/contact', '/resources', '/docs',
     '/privacy', '/terms',
   ];
 

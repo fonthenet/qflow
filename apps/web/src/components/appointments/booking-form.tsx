@@ -470,7 +470,7 @@ export function BookingForm({
             />
           ) : null}
           <h1 className="text-2xl font-bold text-foreground">
-            {organization?.name || 'QueueFlow'}
+            {organization?.name || 'Qflo'}
           </h1>
         </div>
         <div className="mt-1 flex items-center justify-center gap-1.5 text-muted-foreground">

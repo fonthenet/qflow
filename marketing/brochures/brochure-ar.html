@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Qflo — كتيب تعريفي</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page { size: A4 landscape; margin: 0; }
+
+  body {
+    font-family: 'Noto Sans Arabic', 'Inter', sans-serif;
+    color: #0f172a;
+    direction: rtl;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 297mm;
+    height: 210mm;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+
+  .panel {
+    width: 99mm;
+    height: 210mm;
+    padding: 12mm;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .panel:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10mm;
+    bottom: 10mm;
+    width: 0;
+    border-left: 1px dashed #cbd5e1;
+  }
+
+  /* ===== OUTER SIDE ===== */
+  /* RTL: Panel order is reversed visually */
+  /* Panel 1 (rightmost) = Front cover */
+  .outer .p-cover {
+    background: linear-gradient(200deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%);
+    color: #fff;
+    justify-content: space-between;
+  }
+
+  .cover-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cover-logo-icon {
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 900;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .cover-logo-text {
+    font-size: 26px;
+    font-weight: 800;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .cover-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .cover-hero h1 {
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1.4;
+    margin-bottom: 6mm;
+  }
+
+  .cover-hero h1 span { color: #86efac; }
+
+  .cover-hero p {
+    font-size: 11px;
+    line-height: 1.7;
+    opacity: 0.8;
+  }
+
+  .cover-url {
+    font-size: 16px;
+    font-weight: 800;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    direction: ltr;
+  }
+
+  .cover-footer {
+    font-size: 10px;
+    opacity: 0.5;
+    text-align: center;
+    margin-top: 4px;
+  }
+
+  /* Panel 2 (middle) = Back flap */
+  .outer .p-flap {
+    background: #fff;
+    border-right: 1px solid #e2e8f0;
+    border-left: 1px solid #e2e8f0;
+    justify-content: center;
+  }
+
+  .flap-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .flap-stat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5mm;
+    padding: 10px;
+    background: #f8fafc;
+    border-radius: 10px;
+  }
+
+  .flap-stat-icon { font-size: 24px; }
+
+  .flap-stat-num {
+    font-size: 22px;
+    font-weight: 900;
+    color: #1e40af;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .flap-stat-label {
+    font-size: 9px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .flap-quote {
+    margin-top: 8mm;
+    padding: 12px;
+    background: #eff6ff;
+    border-radius: 10px;
+    border-right: 3px solid #2563eb;
+  }
+
+  .flap-quote p {
+    font-size: 10px;
+    font-style: italic;
+    color: #475569;
+    line-height: 1.6;
+    margin-bottom: 4px;
+  }
+
+  .flap-quote cite {
+    font-size: 9px;
+    color: #94a3b8;
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  /* Panel 3 (leftmost) = Back panel */
+  .outer .p-back {
+    background: #f8fafc;
+    justify-content: space-between;
+  }
+
+  .back-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .contact-block { margin-bottom: 5mm; }
+
+  .contact-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #94a3b8;
+    margin-bottom: 2px;
+  }
+
+  .contact-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    font-family: 'Inter', sans-serif;
+    direction: ltr;
+    text-align: right;
+  }
+
+  .back-sectors { margin-top: auto; }
+
+  .back-sectors-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1e40af;
+    margin-bottom: 4mm;
+  }
+
+  .sector-pill {
+    display: inline-block;
+    background: #eff6ff;
+    color: #1e40af;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 600;
+    margin: 0 0 5px 3px;
+  }
+
+  .back-bottom-logo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8mm;
+  }
+
+  .back-bottom-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    border-radius: 8px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 900;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .back-bottom-logo-text {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1e40af;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ===== INNER SIDE ===== */
+  .inner-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .inner-subtitle {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1e40af;
+    margin-bottom: 4mm;
+    margin-top: 5mm;
+  }
+
+  .step {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 5mm;
+  }
+
+  .step-num {
+    width: 26px;
+    height: 26px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    flex-shrink: 0;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .step-content h4 {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .step-content p {
+    font-size: 9.5px;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  .feat {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4mm;
+    align-items: flex-start;
+  }
+
+  .feat-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .feat h4 { font-size: 11px; font-weight: 700; margin-bottom: 1px; }
+  .feat p { font-size: 9px; color: #64748b; line-height: 1.5; }
+
+  .channel-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 4mm;
+    text-align: center;
+  }
+
+  .channel-icon { font-size: 28px; margin-bottom: 4px; }
+  .channel-name { font-size: 10px; font-weight: 700; color: #0f172a; }
+  .channel-desc { font-size: 8px; color: #94a3b8; }
+
+  .inner-cta {
+    margin-top: auto;
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    border-radius: 12px;
+    padding: 14px;
+    color: #fff;
+    text-align: center;
+  }
+
+  .inner-cta h3 { font-size: 14px; font-weight: 800; margin-bottom: 4px; }
+  .inner-cta p { font-size: 9px; opacity: 0.8; }
+
+  .inner-cta-url {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    font-family: 'Inter', sans-serif;
+    direction: ltr;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== OUTER SIDE ==================== -->
+<div class="page outer">
+  <!-- Panel 1 — Front cover (rightmost in RTL) -->
+  <div class="panel p-cover">
+    <div class="cover-logo">
+      <div class="cover-logo-icon">Q</div>
+      <div class="cover-logo-text">Qflo</div>
+    </div>
+
+    <div class="cover-hero">
+      <h1>ودّع فوضى<br>الطوابير<br>نهائياً.</h1>
+      <p>الحل الذكي لإدارة الطوابير في العيادات، البنوك والإدارات العمومية في الجزائر.</p>
+    </div>
+
+    <div class="cover-url">qflo.net</div>
+    <div class="cover-footer">نظام إدارة الطوابير من الجيل الجديد</div>
+  </div>
+
+  <!-- Panel 2 — Back flap -->
+  <div class="panel p-flap">
+    <div class="flap-title">لماذا Qflo؟</div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">⏱️</div>
+      <div>
+        <div class="flap-stat-num">-60%</div>
+        <div class="flap-stat-label">وقت الانتظار المحسوس</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">📱</div>
+      <div>
+        <div class="flap-stat-num">10s</div>
+        <div class="flap-stat-label">للانضمام للطابور</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">🚀</div>
+      <div>
+        <div class="flap-stat-num">15min</div>
+        <div class="flap-stat-label">تثبيت كامل</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">💰</div>
+      <div>
+        <div class="flap-stat-num">0 DA</div>
+        <div class="flap-stat-label">تكلفة على العميل</div>
+      </div>
+    </div>
+
+    <div class="flap-quote">
+      <p>"منذ أن استخدمنا Qflo، لم يعد مرضانا يشتكون من الانتظار. كل شيء واضح وشفاف."</p>
+      <cite>— مدير عيادة، الجزائر العاصمة</cite>
+    </div>
+  </div>
+
+  <!-- Panel 3 — Back panel -->
+  <div class="panel p-back">
+    <div class="back-title">اتصل بنا</div>
+
+    <div class="contact-block">
+      <div class="contact-label">الموقع</div>
+      <div class="contact-value">qflo.net</div>
+    </div>
+    <div class="contact-block">
+      <div class="contact-label">البريد الإلكتروني</div>
+      <div class="contact-value">contact@qflo.net</div>
+    </div>
+    <div class="contact-block">
+      <div class="contact-label">واتساب</div>
+      <div class="contact-value">0551 17 65 98</div>
+    </div>
+
+    <div class="back-sectors">
+      <div class="back-sectors-title">القطاعات المستهدفة</div>
+      <span class="sector-pill">🏥 العيادات</span>
+      <span class="sector-pill">🏦 البنوك</span>
+      <span class="sector-pill">🏛️ الإدارات</span>
+      <span class="sector-pill">📮 البريد</span>
+      <span class="sector-pill">🏪 المحلات</span>
+      <span class="sector-pill">🎓 الجامعات</span>
+    </div>
+
+    <div class="back-bottom-logo">
+      <div class="back-bottom-logo-icon">Q</div>
+      <div class="back-bottom-logo-text">Qflo</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== INNER SIDE ==================== -->
+<div class="page inner">
+  <!-- Panel 1 — How it works -->
+  <div class="panel" style="background:#fff">
+    <div class="inner-title">كيف يعمل؟</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>العميل ينضم للطابور</h4>
+        <p>عبر واتساب، ماسنجر أو كشك الخدمة الذاتية. يكفي إرسال رسالة بسيطة.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h4>تذكرة تلقائية</h4>
+        <p>يتم منح رقم فوري. العميل يرى موقعه في الطابور مباشرة.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h4>الموظف يستدعي</h4>
+        <p>من تطبيق سطح المكتب أو الهاتف، نقرة واحدة لاستدعاء التالي.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h4>إشعار فوري</h4>
+        <p>العميل يتلقى إشعار واتساب/ماسنجر + عرض على شاشة التلفزيون.</p>
+      </div>
+    </div>
+
+    <div class="inner-subtitle">قنوات الوصول</div>
+    <div style="display:flex;gap:6px">
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">💬</div>
+        <div class="channel-name">واتساب</div>
+        <div class="channel-desc">الأكثر استخداماً</div>
+      </div>
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">📱</div>
+        <div class="channel-name">ماسنجر</div>
+        <div class="channel-desc">عبر فيسبوك</div>
+      </div>
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">🖥️</div>
+        <div class="channel-name">كشك</div>
+        <div class="channel-desc">في المكان</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 2 — Features -->
+  <div class="panel" style="background:#fff">
+    <div class="inner-title">المميزات</div>
+
+    <div class="feat">
+      <div class="feat-icon">📺</div>
+      <div>
+        <h4>شاشة عرض مباشر</h4>
+        <p>عرض الاستدعاءات على أي شاشة تلفزيون أو تابلت</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🏢</div>
+      <div>
+        <h4>متعدد الأقسام</h4>
+        <p>إدارة عدة أقسام بطوابير منفصلة في نفس المؤسسة</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📊</div>
+      <div>
+        <h4>لوحة تحكم</h4>
+        <p>إحصائيات الأداء، متوسط وقت الانتظار، الحجم بالساعة</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🌐</div>
+      <div>
+        <h4>متعدد اللغات</h4>
+        <p>عربية، فرنسية وإنجليزية — كشف تلقائي للغة العميل</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📱</div>
+      <div>
+        <h4>تطبيق الموظف</h4>
+        <p>تطبيق سطح مكتب وهاتف لموظفي الشبابيك</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📍</div>
+      <div>
+        <h4>تتبع مباشر</h4>
+        <p>العميل يتابع موقعه في الطابور مباشرة عبر واتساب، ماسنجر أو رابط التذكرة</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🔔</div>
+      <div>
+        <h4>إشعارات</h4>
+        <p>يتم إشعار العميل تلقائياً عندما يحين دوره</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">☁️</div>
+      <div>
+        <h4>سحابي + بدون إنترنت</h4>
+        <p>يعمل حتى بدون إنترنت بفضل الوضع المحلي المدمج</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🔒</div>
+      <div>
+        <h4>آمن</h4>
+        <p>بيانات مشفرة، استضافة آمنة</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 3 — CTA -->
+  <div class="panel" style="background:#fff">
+    <div class="inner-title">ابدأ اليوم</div>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#16a34a;margin-bottom:4px">✓ تجربة مجانية</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6">جرّب Qflo مجاناً لمدة 14 يوم. بدون التزام، بدون بطاقة بنكية.</div>
+    </div>
+
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">🚀 تثبيت سريع</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6">تثبيت في 15 دقيقة. فريقنا يرافقك من الألف إلى الياء.</div>
+    </div>
+
+    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#a16207;margin-bottom:4px">📱 لا تطبيق لعملائك</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6">عملاؤك يستخدمون واتساب أو ماسنجر — مثبتين مسبقاً على هواتفهم.</div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="inner-cta">
+      <h3>اطلب عرضاً توضيحياً</h3>
+      <p>مجاني وبدون التزام</p>
+      <div class="inner-cta-url">contact@qflo.net</div>
+    </div>
+
+    <div style="text-align:center;margin-top:5mm;font-size:8px;color:#94a3b8">
+      &copy; 2026 Qflo — جميع الحقوق محفوظة
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

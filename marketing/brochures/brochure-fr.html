@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Qflo — Brochure FR (Tri-fold)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* A4 landscape = 297mm x 210mm, each panel ~99mm wide */
+  @page { size: A4 landscape; margin: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    color: #0f172a;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 297mm;
+    height: 210mm;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+
+  .panel {
+    width: 99mm;
+    height: 210mm;
+    padding: 12mm;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* Fold guides (visible on screen, invisible on print if desired) */
+  .panel:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 10mm;
+    bottom: 10mm;
+    width: 0;
+    border-right: 1px dashed #cbd5e1;
+  }
+
+  /* ===== OUTER SIDE (PAGE 1) ===== */
+  /* When folded: Panel 1 = back, Panel 2 = back-flap, Panel 3 = front cover */
+
+  /* Panel 3 — FRONT COVER (rightmost on outer) */
+  .outer .p-cover {
+    background: linear-gradient(160deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%);
+    color: #fff;
+    justify-content: space-between;
+    border-radius: 0;
+  }
+
+  .cover-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cover-logo-icon {
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  .cover-logo-text {
+    font-size: 26px;
+    font-weight: 800;
+  }
+
+  .cover-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .cover-hero h1 {
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1.2;
+    margin-bottom: 6mm;
+  }
+
+  .cover-hero h1 span { color: #86efac; }
+
+  .cover-hero p {
+    font-size: 11px;
+    line-height: 1.6;
+    opacity: 0.8;
+  }
+
+  .cover-footer {
+    font-size: 10px;
+    opacity: 0.5;
+    text-align: center;
+  }
+
+  .cover-url {
+    font-size: 16px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  /* Panel 1 — BACK (leftmost on outer) */
+  .outer .p-back {
+    background: #f8fafc;
+    justify-content: space-between;
+  }
+
+  .back-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .contact-block {
+    margin-bottom: 5mm;
+  }
+
+  .contact-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+  }
+
+  .contact-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .back-sectors {
+    margin-top: auto;
+  }
+
+  .back-sectors-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4mm;
+  }
+
+  .sector-pill {
+    display: inline-block;
+    background: #eff6ff;
+    color: #1e40af;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 600;
+    margin: 0 3px 5px 0;
+  }
+
+  .back-bottom-logo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8mm;
+  }
+
+  .back-bottom-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    border-radius: 8px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .back-bottom-logo-text {
+    font-size: 18px;
+    font-weight: 800;
+    color: #1e40af;
+  }
+
+  /* Panel 2 — BACK FLAP (middle on outer) */
+  .outer .p-flap {
+    background: #fff;
+    border-left: 1px solid #e2e8f0;
+    border-right: 1px solid #e2e8f0;
+    justify-content: center;
+  }
+
+  .flap-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .flap-stat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5mm;
+    padding: 10px;
+    background: #f8fafc;
+    border-radius: 10px;
+  }
+
+  .flap-stat-icon {
+    font-size: 24px;
+  }
+
+  .flap-stat-num {
+    font-size: 22px;
+    font-weight: 900;
+    color: #1e40af;
+  }
+
+  .flap-stat-label {
+    font-size: 9px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .flap-quote {
+    margin-top: 8mm;
+    padding: 12px;
+    background: #eff6ff;
+    border-radius: 10px;
+    border-left: 3px solid #2563eb;
+  }
+
+  .flap-quote p {
+    font-size: 10px;
+    font-style: italic;
+    color: #475569;
+    line-height: 1.5;
+    margin-bottom: 4px;
+  }
+
+  .flap-quote cite {
+    font-size: 9px;
+    color: #94a3b8;
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  /* ===== INNER SIDE (PAGE 2) ===== */
+  .inner .p-left {
+    background: #fff;
+  }
+
+  .inner .p-center {
+    background: #fff;
+  }
+
+  .inner .p-right {
+    background: #fff;
+  }
+
+  .inner-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 6mm;
+  }
+
+  .inner-subtitle {
+    font-size: 10px;
+    font-weight: 700;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4mm;
+    margin-top: 5mm;
+  }
+
+  /* Steps */
+  .step {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 5mm;
+  }
+
+  .step-num {
+    width: 26px;
+    height: 26px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .step-content h4 {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .step-content p {
+    font-size: 9.5px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  /* Feature list */
+  .feat {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4mm;
+    align-items: flex-start;
+  }
+
+  .feat-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .feat h4 {
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 1px;
+  }
+
+  .feat p {
+    font-size: 9px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  /* Channels visual */
+  .channel-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 4mm;
+    text-align: center;
+  }
+
+  .channel-icon { font-size: 28px; margin-bottom: 4px; }
+  .channel-name { font-size: 10px; font-weight: 700; color: #0f172a; }
+  .channel-desc { font-size: 8px; color: #94a3b8; }
+
+  /* CTA panel */
+  .inner-cta {
+    margin-top: auto;
+    background: linear-gradient(135deg, #1e40af, #2563eb);
+    border-radius: 12px;
+    padding: 14px;
+    color: #fff;
+    text-align: center;
+  }
+
+  .inner-cta h3 {
+    font-size: 14px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .inner-cta p {
+    font-size: 9px;
+    opacity: 0.8;
+  }
+
+  .inner-cta-url {
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== OUTER SIDE ==================== -->
+<div class="page outer">
+  <!-- Panel 1 — Back panel -->
+  <div class="panel p-back">
+    <div class="back-title">Contactez-nous</div>
+
+    <div class="contact-block">
+      <div class="contact-label">Site web</div>
+      <div class="contact-value">qflo.net</div>
+    </div>
+    <div class="contact-block">
+      <div class="contact-label">Email</div>
+      <div class="contact-value">contact@qflo.net</div>
+    </div>
+    <div class="contact-block">
+      <div class="contact-label">WhatsApp</div>
+      <div class="contact-value">0551 17 65 98</div>
+    </div>
+
+    <div class="back-sectors">
+      <div class="back-sectors-title">Nos secteurs</div>
+      <span class="sector-pill">🏥 Cliniques</span>
+      <span class="sector-pill">🏦 Banques</span>
+      <span class="sector-pill">🏛️ Administrations</span>
+      <span class="sector-pill">📮 Postes</span>
+      <span class="sector-pill">🏪 Commerces</span>
+      <span class="sector-pill">🎓 Universités</span>
+    </div>
+
+    <div class="back-bottom-logo">
+      <div class="back-bottom-logo-icon">Q</div>
+      <div class="back-bottom-logo-text">Qflo</div>
+    </div>
+  </div>
+
+  <!-- Panel 2 — Back flap -->
+  <div class="panel p-flap">
+    <div class="flap-title">Pourquoi Qflo ?</div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">⏱️</div>
+      <div>
+        <div class="flap-stat-num">-60%</div>
+        <div class="flap-stat-label">Temps d'attente perçu</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">📱</div>
+      <div>
+        <div class="flap-stat-num">10s</div>
+        <div class="flap-stat-label">Pour rejoindre la file</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">🚀</div>
+      <div>
+        <div class="flap-stat-num">15min</div>
+        <div class="flap-stat-label">Installation complète</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">💰</div>
+      <div>
+        <div class="flap-stat-num">0 DZD</div>
+        <div class="flap-stat-label">Coût pour le client</div>
+      </div>
+    </div>
+
+    <div class="flap-quote">
+      <p>"Depuis Qflo, nos patients ne se plaignent plus de l'attente. Tout est transparent."</p>
+      <cite>— Directeur de clinique, Alger</cite>
+    </div>
+  </div>
+
+  <!-- Panel 3 — Front cover -->
+  <div class="panel p-cover">
+    <div class="cover-logo">
+      <div class="cover-logo-icon">Q</div>
+      <div class="cover-logo-text">Qflo</div>
+    </div>
+
+    <div class="cover-hero">
+      <h1>Fini le chaos<br>des files<br>d'attente.</h1>
+      <p>La solution intelligente de gestion des files d'attente pour les cliniques, banques et administrations en Algérie.</p>
+    </div>
+
+    <div class="cover-url">qflo.net</div>
+    <div class="cover-footer">Gestion de files d'attente nouvelle génération</div>
+  </div>
+</div>
+
+<!-- ==================== INNER SIDE ==================== -->
+<div class="page inner">
+  <!-- Panel 1 — How it works -->
+  <div class="panel p-left">
+    <div class="inner-title">Comment ça marche ?</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>Le client rejoint la file</h4>
+        <p>Via WhatsApp, Messenger ou la borne kiosque. Il envoie un simple message.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h4>Ticket automatique</h4>
+        <p>Un numéro est attribué instantanément. Le client voit sa position en temps réel.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h4>L'opérateur appelle</h4>
+        <p>Depuis l'application desktop ou mobile, un clic suffit pour appeler le prochain.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h4>Notification instantanée</h4>
+        <p>Le client reçoit une notification WhatsApp/Messenger + affichage sur écran TV.</p>
+      </div>
+    </div>
+
+    <div class="inner-subtitle">Canaux d'accès</div>
+    <div style="display:flex;gap:6px">
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">💬</div>
+        <div class="channel-name">WhatsApp</div>
+        <div class="channel-desc">Le plus populaire</div>
+      </div>
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">📱</div>
+        <div class="channel-name">Messenger</div>
+        <div class="channel-desc">Via Facebook</div>
+      </div>
+      <div class="channel-box" style="flex:1">
+        <div class="channel-icon">🖥️</div>
+        <div class="channel-name">Kiosque</div>
+        <div class="channel-desc">Sur place</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 2 — Features -->
+  <div class="panel p-center">
+    <div class="inner-title">Fonctionnalités</div>
+
+    <div class="feat">
+      <div class="feat-icon">📺</div>
+      <div>
+        <h4>Écran d'affichage</h4>
+        <p>Affichez les appels en direct sur n'importe quel écran TV ou tablette</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🏢</div>
+      <div>
+        <h4>Multi-départements</h4>
+        <p>Gérez plusieurs services avec des files séparées dans le même établissement</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📊</div>
+      <div>
+        <h4>Tableau de bord</h4>
+        <p>Statistiques de performance, temps d'attente moyen, volume par heure</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🌐</div>
+      <div>
+        <h4>Multilingue</h4>
+        <p>Français, arabe et anglais — détection automatique de la langue du client</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📱</div>
+      <div>
+        <h4>App opérateur</h4>
+        <p>Application desktop et mobile pour les agents de guichet</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">📍</div>
+      <div>
+        <h4>Suivi en direct</h4>
+        <p>Le client suit sa position via WhatsApp, Messenger ou un lien web en temps réel</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🔔</div>
+      <div>
+        <h4>Notifications</h4>
+        <p>Le client est averti automatiquement quand c'est son tour</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">☁️</div>
+      <div>
+        <h4>Cloud + Hors-ligne</h4>
+        <p>Fonctionne même sans internet grâce au mode hors-ligne intégré</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">🔒</div>
+      <div>
+        <h4>Sécurisé</h4>
+        <p>Données chiffrées, hébergement sécurisé, conformité RGPD</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 3 — CTA / Pricing -->
+  <div class="panel p-right">
+    <div class="inner-title">Commencez aujourd'hui</div>
+
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#16a34a;margin-bottom:4px">✓ Essai gratuit</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">Testez Qflo gratuitement pendant 14 jours. Aucun engagement, aucune carte bancaire.</div>
+    </div>
+
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">🚀 Installation rapide</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">Installation en 15 minutes. Notre équipe vous accompagne de A à Z.</div>
+    </div>
+
+    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#a16207;margin-bottom:4px">📱 Zéro app pour vos clients</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">Vos clients utilisent WhatsApp ou Messenger — déjà installés sur leur téléphone.</div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="inner-cta">
+      <h3>Demandez une démo</h3>
+      <p>Gratuit et sans engagement</p>
+      <div class="inner-cta-url">contact@qflo.net</div>
+    </div>
+
+    <div style="text-align:center;margin-top:5mm;font-size:8px;color:#94a3b8">
+      &copy; 2026 Qflo — Tous droits réservés
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Qflo — Carte rapide FR</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page { size: A5 landscape; margin: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .card {
+    width: 210mm;
+    height: 148mm;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Left panel — blue */
+  .left {
+    width: 45%;
+    background: linear-gradient(160deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    color: #fff;
+    padding: 14mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+  }
+
+  .left::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -30px;
+    width: 60px;
+    height: 100%;
+    background: linear-gradient(160deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    transform: skewX(-4deg);
+  }
+
+  .card-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 1;
+  }
+
+  .card-logo-icon {
+    width: 36px;
+    height: 36px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 900;
+  }
+
+  .card-logo-text {
+    font-size: 24px;
+    font-weight: 800;
+  }
+
+  .card-hero {
+    z-index: 1;
+  }
+
+  .card-hero h1 {
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.25;
+    margin-bottom: 6px;
+  }
+
+  .card-hero h1 span { color: #86efac; }
+
+  .card-hero p {
+    font-size: 11px;
+    opacity: 0.8;
+    line-height: 1.5;
+  }
+
+  .card-url {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.7;
+    z-index: 1;
+  }
+
+  /* Right panel — white */
+  .right {
+    width: 55%;
+    background: #fff;
+    padding: 14mm 14mm 14mm 20mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .how-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e40af;
+    margin-bottom: 8mm;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .how-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6mm;
+  }
+
+  .how-num {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .how-content h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 2px;
+  }
+
+  .how-content p {
+    font-size: 10.5px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  .how-content .cmd {
+    display: inline-block;
+    background: #eff6ff;
+    color: #1e40af;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .card-footer {
+    margin-top: auto;
+    padding-top: 6mm;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .card-footer-text {
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  .channels {
+    display: flex;
+    gap: 6px;
+  }
+
+  .channel {
+    background: #f1f5f9;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="left">
+    <div class="card-logo">
+      <div class="card-logo-icon">Q</div>
+      <div class="card-logo-text">Qflo</div>
+    </div>
+
+    <div class="card-hero">
+      <h1>Rejoignez la file<br>via <span>WhatsApp</span></h1>
+      <p>Plus besoin de faire la queue.<br>Recevez votre ticket sur votre téléphone.</p>
+    </div>
+
+    <div class="card-url">qflo.net</div>
+  </div>
+
+  <div class="right">
+    <div class="how-title">Comment faire ?</div>
+
+    <div class="how-step">
+      <div class="how-num">1</div>
+      <div class="how-content">
+        <h3>Ouvrez WhatsApp</h3>
+        <p>Envoyez un message au numéro affiché</p>
+      </div>
+    </div>
+
+    <div class="how-step">
+      <div class="how-num">2</div>
+      <div class="how-content">
+        <h3>Tapez la commande</h3>
+        <p>Envoyez le mot-clé affiché sur place :</p>
+        <div class="cmd">REJOINDRE ELAZHAR</div>
+      </div>
+    </div>
+
+    <div class="how-step">
+      <div class="how-num">3</div>
+      <div class="how-content">
+        <h3>Recevez votre ticket</h3>
+        <p>Suivez votre position en direct et soyez notifié quand c'est votre tour !</p>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <div class="card-footer-text">Disponible aussi sur :</div>
+      <div class="channels">
+        <div class="channel">💬 WhatsApp</div>
+        <div class="channel">📱 Messenger</div>
+        <div class="channel">🖥️ Kiosque</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

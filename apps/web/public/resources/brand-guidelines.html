@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Qflo — Brand Guidelines</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@400;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page { size: A4; margin: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    color: #0f172a;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    padding: 16mm;
+  }
+
+  /* ===== PAGE 1 — Overview ===== */
+  .p1-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12mm;
+    padding-bottom: 8mm;
+    border-bottom: 3px solid #1e40af;
+  }
+
+  .p1-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .p1-logo-box {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 32px;
+    font-weight: 900;
+  }
+
+  .p1-logo-text {
+    font-size: 36px;
+    font-weight: 900;
+    color: #1e40af;
+    letter-spacing: -1px;
+  }
+
+  .p1-logo-sub {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .p1-title {
+    text-align: right;
+  }
+
+  .p1-title h1 {
+    font-size: 28px;
+    font-weight: 900;
+    color: #0f172a;
+    letter-spacing: -0.5px;
+  }
+
+  .p1-title p {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  /* Section styling */
+  .section {
+    margin-bottom: 10mm;
+  }
+
+  .section-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 5mm;
+    padding-bottom: 2mm;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  /* Logo usage */
+  .logo-variants {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 6mm;
+  }
+
+  .logo-variant {
+    flex: 1;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+  }
+
+  .logo-variant.dark {
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    color: #fff;
+  }
+
+  .logo-variant.light {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #1e40af;
+  }
+
+  .logo-variant.black {
+    background: #0f172a;
+    color: #fff;
+  }
+
+  .lv-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 900;
+  }
+
+  .lv-icon.on-blue { background: rgba(255,255,255,0.2); }
+  .lv-icon.on-light { background: linear-gradient(135deg, #2563eb, #1e40af); color: #fff; }
+  .lv-icon.on-dark { background: rgba(255,255,255,0.15); }
+
+  .lv-name { font-size: 20px; font-weight: 800; }
+  .lv-label { font-size: 9px; font-weight: 600; opacity: 0.6; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* Color palette */
+  .colors {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 4mm;
+  }
+
+  .color-card {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+  }
+
+  .color-swatch {
+    height: 48px;
+  }
+
+  .color-info {
+    padding: 8px 10px;
+    background: #fff;
+  }
+
+  .color-name {
+    font-size: 10px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .color-hex {
+    font-size: 10px;
+    color: #64748b;
+    font-family: 'SF Mono', monospace;
+  }
+
+  /* Typography */
+  .type-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 4mm;
+  }
+
+  .type-card {
+    flex: 1;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .type-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+
+  .type-sample-latin {
+    font-family: 'Inter', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .type-sample-arabic {
+    font-family: 'Noto Sans Arabic', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    direction: rtl;
+    text-align: right;
+    margin-bottom: 4px;
+  }
+
+  .type-meta {
+    font-size: 9px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  /* Spacing rules */
+  .spacing-demo {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .spacing-logo {
+    position: relative;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 32px;
+    font-weight: 900;
+  }
+
+  .spacing-zone {
+    border: 2px dashed #ef4444;
+    position: absolute;
+    top: -10px; left: -10px; right: -10px; bottom: -10px;
+    border-radius: 20px;
+  }
+
+  .spacing-text {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.6;
+  }
+
+  .spacing-text strong { color: #0f172a; }
+
+  /* ===== PAGE 2 — Usage & Tone ===== */
+  .p2-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10mm;
+    padding-bottom: 6mm;
+    border-bottom: 2px solid #e2e8f0;
+  }
+
+  .p2-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .p2-logo-box {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    border-radius: 8px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  .p2-logo-name {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1e40af;
+  }
+
+  /* Do/Don't */
+  .dos-donts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 8mm;
+  }
+
+  .do-card, .dont-card {
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid;
+  }
+
+  .do-card {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
+  .dont-card {
+    background: #fef2f2;
+    border-color: #fecaca;
+  }
+
+  .do-card h4, .dont-card h4 {
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .do-card h4 { color: #16a34a; }
+  .dont-card h4 { color: #dc2626; }
+
+  .do-card li, .dont-card li {
+    font-size: 10.5px;
+    margin-bottom: 4px;
+    line-height: 1.5;
+    color: #374151;
+    margin-left: 16px;
+  }
+
+  /* Tone of voice */
+  .tone-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 8mm;
+  }
+
+  .tone-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+  }
+
+  .tone-emoji { font-size: 28px; margin-bottom: 6px; }
+  .tone-word { font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px; }
+  .tone-desc { font-size: 9.5px; color: #64748b; line-height: 1.4; }
+
+  /* Messaging examples */
+  .msg-examples {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .msg-example {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .msg-lang {
+    font-size: 9px;
+    font-weight: 700;
+    color: #1e40af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+
+  .msg-tagline {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+
+  .msg-sub {
+    font-size: 10px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  .msg-example.ar {
+    direction: rtl;
+    text-align: right;
+    font-family: 'Noto Sans Arabic', sans-serif;
+  }
+
+  /* Icon usage */
+  .icon-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .icon-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    text-align: center;
+    min-width: 80px;
+  }
+
+  .icon-item .emoji { font-size: 22px; margin-bottom: 4px; }
+  .icon-item .label { font-size: 8px; color: #64748b; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PAGE 1 — Identity ==================== -->
+<div class="page">
+  <div class="p1-header">
+    <div class="p1-logo">
+      <div class="p1-logo-box">Q</div>
+      <div>
+        <div class="p1-logo-text">Qflo</div>
+        <div class="p1-logo-sub">Brand Guidelines v1.0</div>
+      </div>
+    </div>
+    <div class="p1-title">
+      <h1>Visual Identity</h1>
+      <p>Last updated: March 2026</p>
+    </div>
+  </div>
+
+  <!-- Logo -->
+  <div class="section">
+    <div class="section-title">Logo</div>
+    <div class="logo-variants">
+      <div class="logo-variant dark">
+        <div class="lv-icon on-blue">Q</div>
+        <div class="lv-name">Qflo</div>
+        <div class="lv-label">Primary — On Blue</div>
+      </div>
+      <div class="logo-variant light">
+        <div class="lv-icon on-light">Q</div>
+        <div class="lv-name" style="color:#1e40af">Qflo</div>
+        <div class="lv-label">Secondary — On Light</div>
+      </div>
+      <div class="logo-variant black">
+        <div class="lv-icon on-dark">Q</div>
+        <div class="lv-name">Qflo</div>
+        <div class="lv-label">Dark Mode</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Colors -->
+  <div class="section">
+    <div class="section-title">Color Palette</div>
+    <div class="colors">
+      <div class="color-card">
+        <div class="color-swatch" style="background:#2563eb"></div>
+        <div class="color-info"><div class="color-name">Primary Blue</div><div class="color-hex">#2563EB</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#1e40af"></div>
+        <div class="color-info"><div class="color-name">Primary Dark</div><div class="color-hex">#1E40AF</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#3b82f6"></div>
+        <div class="color-info"><div class="color-name">Primary Light</div><div class="color-hex">#3B82F6</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#eff6ff"></div>
+        <div class="color-info"><div class="color-name">Blue Tint</div><div class="color-hex">#EFF6FF</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#22c55e"></div>
+        <div class="color-info"><div class="color-name">Success Green</div><div class="color-hex">#22C55E</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#f59e0b"></div>
+        <div class="color-info"><div class="color-name">Warning Amber</div><div class="color-hex">#F59E0B</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#ef4444"></div>
+        <div class="color-info"><div class="color-name">Error Red</div><div class="color-hex">#EF4444</div></div>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background:#0f172a"></div>
+        <div class="color-info"><div class="color-name">Dark Navy</div><div class="color-hex">#0F172A</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Typography -->
+  <div class="section">
+    <div class="section-title">Typography</div>
+    <div class="type-row">
+      <div class="type-card">
+        <div class="type-label">Latin — Inter</div>
+        <div class="type-sample-latin">Qflo Queue Management</div>
+        <div class="type-meta">
+          Headings: Inter 700-900 (Bold to Black)<br>
+          Body: Inter 400-500 (Regular to Medium)<br>
+          Sizes: 11px body, 14-22px headings, 32-44px hero
+        </div>
+      </div>
+      <div class="type-card">
+        <div class="type-label">Arabic — Noto Sans Arabic</div>
+        <div class="type-sample-arabic">إدارة الطوابير الذكية</div>
+        <div class="type-meta">
+          Headings: Noto Sans Arabic 700-800<br>
+          Body: Noto Sans Arabic 400-500<br>
+          Line height: 1.5-1.7 for readability
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spacing -->
+  <div class="section">
+    <div class="section-title">Clear Space</div>
+    <div class="spacing-demo">
+      <div class="spacing-logo">
+        Q
+        <div class="spacing-zone"></div>
+      </div>
+      <div class="spacing-text">
+        <strong>Minimum clear space:</strong> equal to the width of the "Q" letter on all sides.<br>
+        <strong>Minimum logo size:</strong> 24px icon, 32px with wordmark.<br>
+        <strong>Logo must not</strong> be stretched, rotated, recolored, or placed on busy backgrounds.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PAGE 2 — Tone & Usage ==================== -->
+<div class="page">
+  <div class="p2-header">
+    <div class="p2-logo">
+      <div class="p2-logo-box">Q</div>
+      <div class="p2-logo-name">Qflo</div>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;font-weight:500">Brand Guidelines — Page 2</div>
+  </div>
+
+  <!-- Tone -->
+  <div class="section">
+    <div class="section-title">Tone of Voice</div>
+    <div class="tone-cards">
+      <div class="tone-card">
+        <div class="tone-emoji">💡</div>
+        <div class="tone-word">Simple</div>
+        <div class="tone-desc">Clear language. No jargon. Both a clinic owner and a patient should understand us.</div>
+      </div>
+      <div class="tone-card">
+        <div class="tone-emoji">⚡</div>
+        <div class="tone-word">Efficient</div>
+        <div class="tone-desc">We eliminate waste — in queues and in words. Short, direct, action-oriented.</div>
+      </div>
+      <div class="tone-card">
+        <div class="tone-emoji">🤝</div>
+        <div class="tone-word">Trustworthy</div>
+        <div class="tone-desc">Professional but approachable. We serve public institutions — reliability matters.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key Messages -->
+  <div class="section">
+    <div class="section-title">Key Messages</div>
+    <div class="msg-examples">
+      <div class="msg-example">
+        <div class="msg-lang">French — Tagline</div>
+        <div class="msg-tagline">Fini le chaos des files d'attente.</div>
+        <div class="msg-sub">Qflo digitalise la gestion des files d'attente. Vos clients rejoignent la file via WhatsApp en 10 secondes.</div>
+      </div>
+      <div class="msg-example ar">
+        <div class="msg-lang" style="text-align:right">Arabic — Tagline</div>
+        <div class="msg-tagline">ودّع فوضى الطوابير.</div>
+        <div class="msg-sub">Qflo يرقمن إدارة الطوابير. عملاؤك ينضمّون للطابور عبر واتساب في 10 ثوانٍ فقط.</div>
+      </div>
+      <div class="msg-example">
+        <div class="msg-lang">French — CTA</div>
+        <div class="msg-tagline">Prêt à éliminer les files d'attente ?</div>
+        <div class="msg-sub">Essai gratuit. Installation en 15 minutes. Aucune application requise pour vos clients.</div>
+      </div>
+      <div class="msg-example ar">
+        <div class="msg-lang" style="text-align:right">Arabic — CTA</div>
+        <div class="msg-tagline">مستعد للتخلص من الطوابير؟</div>
+        <div class="msg-sub">تجربة مجانية. تثبيت في 15 دقيقة. لا يحتاج عملاؤك لتحميل أي تطبيق.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Do / Don't -->
+  <div class="section">
+    <div class="section-title">Do's & Don'ts</div>
+    <div class="dos-donts">
+      <div class="do-card">
+        <h4>&#10004; Do</h4>
+        <ul>
+          <li>Use the blue gradient for primary backgrounds</li>
+          <li>Keep text concise and action-oriented</li>
+          <li>Use Noto Sans Arabic for all Arabic text</li>
+          <li>Show the WhatsApp flow as the hero use case</li>
+          <li>Use sector-specific language (clinic, bank, etc.)</li>
+          <li>Include RTL layout for Arabic materials</li>
+        </ul>
+      </div>
+      <div class="dont-card">
+        <h4>&#10008; Don't</h4>
+        <ul>
+          <li>Use the logo smaller than 24px</li>
+          <li>Place the logo on busy photo backgrounds</li>
+          <li>Mix French and Arabic on the same page</li>
+          <li>Use technical terms (API, webhook, etc.) in customer-facing materials</li>
+          <li>Change brand colors or use gradients not in the palette</li>
+          <li>Use stock photos of Western office settings</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Icons -->
+  <div class="section">
+    <div class="section-title">Approved Icons</div>
+    <div class="icon-grid">
+      <div class="icon-item"><div class="emoji">💬</div><div class="label">WhatsApp</div></div>
+      <div class="icon-item"><div class="emoji">📱</div><div class="label">Messenger</div></div>
+      <div class="icon-item"><div class="emoji">🎫</div><div class="label">Ticket</div></div>
+      <div class="icon-item"><div class="emoji">📺</div><div class="label">Display</div></div>
+      <div class="icon-item"><div class="emoji">🖥️</div><div class="label">Kiosk</div></div>
+      <div class="icon-item"><div class="emoji">📢</div><div class="label">Call</div></div>
+      <div class="icon-item"><div class="emoji">📊</div><div class="label">Dashboard</div></div>
+      <div class="icon-item"><div class="emoji">🏥</div><div class="label">Health</div></div>
+      <div class="icon-item"><div class="emoji">🏦</div><div class="label">Bank</div></div>
+      <div class="icon-item"><div class="emoji">🏛️</div><div class="label">Government</div></div>
+      <div class="icon-item"><div class="emoji">🌐</div><div class="label">Multilingual</div></div>
+      <div class="icon-item"><div class="emoji">⚡</div><div class="label">Fast</div></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

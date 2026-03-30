@@ -303,7 +303,7 @@ export function RemoteJoinForm({
     setVerifyingEmailOtp(false);
   }
 
-  const orgName = organization?.name || 'QueueFlow';
+  const orgName = organization?.name || 'Qflo';
   const resolvedVocabulary: TemplateVocabulary = vocabulary ?? {
     officeLabel: 'Location',
     departmentLabel: 'Department',

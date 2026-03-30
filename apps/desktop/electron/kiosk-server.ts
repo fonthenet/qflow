@@ -836,9 +836,25 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
     return;
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayISO = today.toISOString();
+  // Timezone-aware "start of today" using office timezone
+  const officeRow = db.prepare('SELECT timezone FROM offices WHERE id = ?').get(officeId) as any;
+  const tz = normalizeOfficeTimezone(officeRow?.timezone);
+  const nowForTz = new Date();
+  const localDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(nowForTz);
+  const midnightUtcRef = new Date(`${localDate}T00:00:00Z`);
+  const tzParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(midnightUtcRef);
+  const getTzPart = (type: string) => tzParts.find((p) => p.type === type)?.value ?? '00';
+  const tzDay = `${getTzPart('year')}-${getTzPart('month')}-${getTzPart('day')}`;
+  const tzHour = parseInt(getTzPart('hour'));
+  const tzMin = parseInt(getTzPart('minute'));
+  let offsetMs = (tzHour * 60 + tzMin) * 60 * 1000;
+  if (tzDay < localDate) offsetMs -= 24 * 60 * 60 * 1000;
+  const todayISO = new Date(midnightUtcRef.getTime() - offsetMs).toISOString();
 
   const waiting = db.prepare(
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting' AND created_at >= ?"
@@ -1000,8 +1016,25 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     ORDER BY t.priority DESC, t.created_at ASC
   `).all(office.id) as any[];
 
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayISO = today.toISOString();
+  // Timezone-aware "start of today" using office timezone
+  const tz = normalizeOfficeTimezone(office.timezone);
+  const nowForTz = new Date();
+  const localDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(nowForTz);
+  // Compute UTC offset for this date in the office timezone
+  const midnightUtcRef = new Date(`${localDate}T00:00:00Z`);
+  const tzParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(midnightUtcRef);
+  const getTzPart = (type: string) => tzParts.find((p) => p.type === type)?.value ?? '00';
+  const tzDay = `${getTzPart('year')}-${getTzPart('month')}-${getTzPart('day')}`;
+  const tzHour = parseInt(getTzPart('hour'));
+  const tzMin = parseInt(getTzPart('minute'));
+  let offsetMs = (tzHour * 60 + tzMin) * 60 * 1000;
+  if (tzDay < localDate) offsetMs -= 24 * 60 * 60 * 1000;
+  const todayISO = new Date(midnightUtcRef.getTime() - offsetMs).toISOString();
 
   const servedCount = db.prepare(
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'served' AND created_at >= ?"
@@ -1451,11 +1484,17 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       </div>
       <div class="header-right" style="display:flex;align-items:center;gap:16px">
         <div class="conn-badge connected" id="conn-badge"><span class="dot"></span><span id="conn-text">Connected</span></div>
-        <select id="lang-select" style="padding:6px 12px;border-radius:8px;border:2px solid #e2e8f0;font-size:14px;font-weight:700;background:white;cursor:pointer" onchange="setLang(this.value)">
-          <option value="en">EN</option>
-          <option value="fr">FR</option>
-          <option value="ar">AR</option>
-        </select>
+        <div id="lang-switcher" style="position:relative;display:inline-flex">
+          <button id="lang-btn" onclick="toggleLangMenu()" style="display:inline-flex;align-items:center;gap:4px;border:1px solid #e2e8f0;background:rgba(255,255,255,0.8);color:#64748b;font-size:14px;font-weight:600;padding:6px 14px;border-radius:999px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.05);backdrop-filter:blur(8px);transition:all 0.2s">
+            <span id="lang-label">EN</span>
+            <svg id="lang-chev" style="width:14px;height:14px;color:#94a3b8;transition:transform 0.2s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div id="lang-menu" style="position:absolute;right:0;top:100%;z-index:50;margin-top:8px;min-width:72px;background:rgba(255,255,255,0.95);border:1px solid #e2e8f0;border-radius:16px;padding:4px;box-shadow:0 4px 24px rgba(0,0,0,0.1);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transform:translateY(-4px);transition:all 0.2s">
+            <button onclick="setLang('en')" class="lang-opt" style="display:block;width:100%;text-align:center;padding:6px 12px;border:none;background:none;border-radius:12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;transition:all 0.15s" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='none'">EN</button>
+            <button onclick="setLang('fr')" class="lang-opt" style="display:block;width:100%;text-align:center;padding:6px 12px;border:none;background:none;border-radius:12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;transition:all 0.15s" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='none'">FR</button>
+            <button onclick="setLang('ar')" class="lang-opt" style="display:block;width:100%;text-align:center;padding:6px 12px;border:none;background:none;border-radius:12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;transition:all 0.15s" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='none'">AR</button>
+          </div>
+        </div>
         <div style="text-align:right">
           <div class="clock" id="clock"></div>
           <div class="date" id="date"></div>
@@ -1557,10 +1596,29 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       ar: { waiting: '\u0641\u064a \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631', called: '\u062a\u0645 \u0627\u0644\u0627\u0633\u062a\u062f\u0639\u0627\u0621', serving: '\u0642\u064a\u062f \u0627\u0644\u062e\u062f\u0645\u0629', served: '\u062a\u0645\u062a \u062e\u062f\u0645\u062a\u0647\u0645 \u0627\u0644\u064a\u0648\u0645', nowServing: '\u0642\u064a\u062f \u0627\u0644\u062e\u062f\u0645\u0629 \u0627\u0644\u0622\u0646', queue: '\u0637\u0627\u0628\u0648\u0631', waitingFor: '\u0641\u064a \u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0639\u0645\u0644\u0627\u0621...', noQueue: '\u0644\u0627 \u064a\u0648\u062c\u062f \u0639\u0645\u0644\u0627\u0621 \u0641\u064a \u0627\u0644\u0637\u0627\u0628\u0648\u0631', proceed: '\u064a\u0631\u062c\u0649 \u0627\u0644\u062a\u0642\u062f\u0645', nowCalling: '\u062c\u0627\u0631\u064d \u0627\u0644\u0627\u0633\u062a\u062f\u0639\u0627\u0621', goTo: '\u062a\u0648\u062c\u0647 \u0625\u0644\u0649', connected: '\u0645\u062a\u0635\u0644' }
     };
     function dt(key) { return (displayI18n[displayLang] || displayI18n.en)[key] || key; }
+    var langMenuOpen = false;
+    function toggleLangMenu() {
+      langMenuOpen = !langMenuOpen;
+      var menu = document.getElementById('lang-menu');
+      var chev = document.getElementById('lang-chev');
+      if (langMenuOpen) {
+        menu.style.opacity = '1'; menu.style.pointerEvents = 'auto'; menu.style.transform = 'translateY(0)';
+        if (chev) chev.style.transform = 'rotate(180deg)';
+      } else {
+        menu.style.opacity = '0'; menu.style.pointerEvents = 'none'; menu.style.transform = 'translateY(-4px)';
+        if (chev) chev.style.transform = 'rotate(0)';
+      }
+    }
+    document.addEventListener('click', function(e) {
+      if (langMenuOpen && !document.getElementById('lang-switcher').contains(e.target)) toggleLangMenu();
+    });
     function setLang(lang) {
       displayLang = lang;
       localStorage.setItem('qf_display_lang', lang);
       document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      var label = document.getElementById('lang-label');
+      if (label) label.textContent = lang.toUpperCase();
+      if (langMenuOpen) toggleLangMenu();
       applyLabels();
       if (allTickets.length) { renderServing(allTickets.filter(function(t){return t.status==='called'||t.status==='serving'})); renderQueue(allTickets.filter(function(t){return t.status==='waiting'})); }
     }
@@ -1571,15 +1629,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       document.querySelectorAll('.panel-title').forEach(function(el, i) {
         el.textContent = i === 0 ? dt('nowServing') : dt('queue');
       });
-      var langSel = document.getElementById('lang-select');
-      if (langSel) langSel.value = displayLang;
+      var langLabel = document.getElementById('lang-label');
+      if (langLabel) langLabel.textContent = displayLang.toUpperCase();
       var connText = document.getElementById('conn-text');
       if (connText) connText.textContent = dt('connected');
     }
     // Apply saved lang on load
     (function() {
-      var langSel = document.getElementById('lang-select');
-      if (langSel) langSel.value = displayLang;
+      var langLabel = document.getElementById('lang-label');
+      if (langLabel) langLabel.textContent = displayLang.toUpperCase();
       if (displayLang === 'ar') document.documentElement.dir = 'rtl';
       applyLabels();
     })();

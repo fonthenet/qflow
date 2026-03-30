@@ -10,6 +10,7 @@ const navLinks = [
   { href: '/solutions', label: 'Solutions' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/how-it-works', label: 'How It Works' },
+  { href: '/resources', label: 'Resources' },
   { href: '/contact', label: 'Contact' },
 ];
 
@@ -34,7 +35,7 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
             Q
           </div>
           <span className="text-xl font-bold tracking-tight">
-            Queue<span className="text-primary">Flow</span>
+            Q<span className="text-primary">flo</span>
           </span>
         </Link>
 
