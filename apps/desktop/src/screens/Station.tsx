@@ -1742,89 +1742,100 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
         )}
 
-        {/* Local Network URLs */}
-        {kioskUrl && (
-          <div className="sidebar-section">
-            <button
-              onClick={() => setShowLocalNetwork((value) => !value)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-              }}
-            >
-              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
-                {t('Local Network')}
-              </h4>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showLocalNetwork ? '▲' : '▼'}</span>
-            </button>
-            {showLocalNetwork && (
-              <>
-                {[
-                  {
-                    label: t('Station (remote control)'),
-                    localUrl: kioskUrl.replace('/kiosk', '/station'),
-                    publicUrl: 'https://qflo.net/station',
-                    publicLabel: 'qflo.net/station',
-                    icon: '🖥️',
-                  },
-                  {
-                    label: t('Kiosk (take tickets)'),
-                    localUrl: kioskUrl,
-                    publicUrl: publicLinks.kioskUrl,
-                    publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
-                    icon: '🎫',
-                  },
-                  {
-                    label: t('Display (waiting room TV)'),
-                    localUrl: kioskUrl.replace('/kiosk', '/display'),
-                    publicUrl: publicLinks.displayUrl,
-                    publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
-                    icon: '📺',
-                  },
-                ].map((item) => (
-                  <div key={item.label} style={{ marginTop: 8, marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
-                    <div
-                      style={{
-                        background: 'var(--surface2)', padding: '6px 10px', borderRadius: 6,
-                        fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
-                        wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
-                      }}
-                      title={t('Click to open')}
-                      onClick={() => { window.open(item.localUrl, '_blank'); }}
-                    >
-                      {getDisplayUrlLabel(item.localUrl)}
+        {/* Local Network / Remote Access URLs */}
+        {kioskUrl && (() => {
+          const isRemote = !!(window as any).__QF_HTTP_MODE__;
+          const items = [
+            {
+              label: t('Station (remote control)'),
+              localUrl: kioskUrl.replace('/kiosk', '/station'),
+              publicUrl: 'https://qflo.net/station',
+              publicLabel: 'qflo.net/station',
+              icon: '🖥️',
+            },
+            {
+              label: t('Kiosk (take tickets)'),
+              localUrl: kioskUrl,
+              publicUrl: publicLinks.kioskUrl,
+              publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
+              icon: '🎫',
+            },
+            {
+              label: t('Display (waiting room TV)'),
+              localUrl: kioskUrl.replace('/kiosk', '/display'),
+              publicUrl: publicLinks.displayUrl,
+              publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
+              icon: '📺',
+            },
+          ];
+          // In remote mode, only show items that have a distinct public URL
+          const visibleItems = isRemote ? items.filter((item) => item.publicUrl) : items;
+          if (visibleItems.length === 0) return null;
+          return (
+            <div className="sidebar-section">
+              <button
+                onClick={() => setShowLocalNetwork((value) => !value)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                  padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+                }}
+              >
+                <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                  {isRemote ? t('Remote Access') : t('Local Network')}
+                </h4>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showLocalNetwork ? '▲' : '▼'}</span>
+              </button>
+              {showLocalNetwork && (
+                <>
+                  {visibleItems.map((item) => (
+                    <div key={item.label} style={{ marginTop: 8, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
+                      {!isRemote && (
+                        <div
+                          style={{
+                            background: 'var(--surface2)', padding: '6px 10px', borderRadius: 6,
+                            fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
+                            wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
+                          }}
+                          title={t('Click to open')}
+                          onClick={() => { window.open(item.localUrl, '_blank'); }}
+                        >
+                          {getDisplayUrlLabel(item.localUrl)}
+                        </div>
+                      )}
+                      {item.publicUrl ? (
+                        <div
+                          style={{
+                            marginTop: isRemote ? 0 : 6,
+                            background: 'var(--surface2)',
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: 'var(--primary)',
+                            wordBreak: 'break-all',
+                            userSelect: 'all',
+                            cursor: 'pointer',
+                          }}
+                          title={t('Click to open')}
+                          onClick={() => { window.open(item.publicUrl!, '_blank'); }}
+                        >
+                          {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
+                        </div>
+                      ) : null}
                     </div>
-                    {item.publicUrl ? (
-                      <div
-                        style={{
-                          marginTop: 6,
-                          background: 'var(--surface2)',
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: 'var(--primary)',
-                          wordBreak: 'break-all',
-                          userSelect: 'all',
-                          cursor: 'pointer',
-                        }}
-                        title={t('Click to open')}
-                        onClick={() => { window.open(item.publicUrl!, '_blank'); }}
-                      >
-                        {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-                  {t('Open on any device on this WiFi network. Works offline.')}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                  ))}
+                  {!isRemote && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                      {t('Open on any device on this WiFi network. Works offline.')}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Transfer modal */}
