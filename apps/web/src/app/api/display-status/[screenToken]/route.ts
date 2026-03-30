@@ -96,13 +96,23 @@ export async function GET(
   ]);
 
   const officeDayStartIso = getOfficeDayStartIso(office.timezone);
-  const { count: servedTodayCount } = await supabase
+  const countResult = await supabase
     .from('tickets')
     .select('id', { count: 'exact' })
     .eq('office_id', screen.office_id)
     .eq('status', 'served')
     .gte('created_at', officeDayStartIso)
     .limit(0);
+  console.log('[display-status] served count debug:', JSON.stringify({
+    officeId: screen.office_id,
+    timezone: office.timezone,
+    dayStart: officeDayStartIso,
+    count: countResult.count,
+    error: countResult.error,
+    status: countResult.status,
+    statusText: countResult.statusText,
+  }));
+  const servedTodayCount = countResult.count;
 
   const mergedScreen = mergeDisplayScreenRuntime(
     {
