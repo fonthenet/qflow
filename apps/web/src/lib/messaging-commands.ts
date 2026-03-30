@@ -11,6 +11,20 @@ import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 const directoryLocaleCache = new Map<string, { locale: Locale; ts: number }>();
 const DIRECTORY_LOCALE_TTL = 10 * 60 * 1000; // 10 minutes
 
+// ── Pending join confirmation cache (in-memory, 3-min TTL) ──────────
+// When a user sends JOIN <code>, we store the pending join context and
+// wait for YES/OUI/نعم before creating the ticket.
+interface PendingJoin {
+  org: OrgContext;
+  locale: Locale;
+  channel: Channel;
+  profileName?: string;
+  bsuid?: string;
+  ts: number;
+}
+const pendingJoinCache = new Map<string, PendingJoin>();
+const PENDING_JOIN_TTL = 3 * 60 * 1000; // 3 minutes
+
 function setDirectoryLocale(identifier: string, locale: Locale): void {
   directoryLocaleCache.set(identifier, { locale, ts: Date.now() });
   // Prune old entries periodically (every 100 writes)
@@ -216,6 +230,16 @@ const messages: Record<string, Record<Locale, string>> = {
     fr: '🚫 Tous vos tickets ont été annulés :\n\n{list}',
     ar: 'تم إلغاء جميع تذاكرك 🚫\n\n{list}',
     en: '🚫 All your tickets have been cancelled:\n\n{list}',
+  },
+  confirm_join: {
+    fr: '🏢 Vous êtes sur le point de rejoindre la file d\'attente chez *{name}*.\n\nVoulez-vous confirmer ?\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
+    ar: 'أنت على وشك الانضمام إلى طابور الانتظار في *{name}*.\n\nهل تريد التأكيد؟\n\nأرسل *نعم* للتأكيد ✅\nأرسل *لا* للإلغاء ❌',
+    en: '🏢 You\'re about to join the queue at *{name}*.\n\nWould you like to confirm?\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
+  },
+  confirm_join_cancelled: {
+    fr: '❌ Annulé. Vous n\'avez pas rejoint la file.\n\nEnvoyez *REJOINDRE <code>* pour réessayer.',
+    ar: 'تم الإلغاء. لم تنضم إلى الطابور ❌\n\nأرسل *انضم <الرمز>* للمحاولة مجددًا.',
+    en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
 };
 
@@ -567,6 +591,29 @@ export async function handleInboundMessage(
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
 
+  // ── Pending join confirmation (YES/OUI/نعم or NO/NON/لا) ──
+  const pending = pendingJoinCache.get(identifier);
+  if (pending && Date.now() - pending.ts < PENDING_JOIN_TTL) {
+    const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
+    const isNo = /^(NON|NO|لا|N|0|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+    if (isYes) {
+      pendingJoinCache.delete(identifier);
+      await handleJoin(identifier, pending.org, pending.locale, pending.channel, sendMessage, pending.profileName, pending.bsuid);
+      return;
+    }
+    if (isNo) {
+      pendingJoinCache.delete(identifier);
+      await sendMessage({ to: identifier, body: t('confirm_join_cancelled', pending.locale) });
+      return;
+    }
+    // If they send something else (e.g. a different command), clear the pending
+    // and fall through to normal command processing
+    pendingJoinCache.delete(identifier);
+  } else if (pending) {
+    // Expired
+    pendingJoinCache.delete(identifier);
+  }
+
   // ── TRACK <token> (link WhatsApp/Messenger to existing ticket) ──
   // Accepts: TRACK qflo_TOKEN or TRACK TOKEN (from m.me deep link)
   if (command.startsWith('TRACK ')) {
@@ -689,7 +736,7 @@ export async function handleInboundMessage(
 
     const org = await findOrgByCode(parsed.code, channel);
     if (org) {
-      await handleJoin(identifier, org, parsed.locale, channel, sendMessage, profileName, bsuid);
+      await askJoinConfirmation(identifier, org, parsed.locale, channel, sendMessage, profileName, bsuid);
     } else {
       await sendMessage({ to: identifier, body: t('code_not_found', parsed.locale, { code: parsed.code }) });
     }
@@ -720,7 +767,7 @@ export async function handleInboundMessage(
   if (maybeCode.length >= 2 && maybeCode.length <= 30 && /^[A-Z0-9_-]+$/.test(maybeCode)) {
     const org = await findOrgByCode(maybeCode, channel);
     if (org) {
-      await handleJoin(identifier, org, detectedLocale, channel, sendMessage, profileName, bsuid);
+      await askJoinConfirmation(identifier, org, detectedLocale, channel, sendMessage, profileName, bsuid);
       return;
     }
   }
@@ -881,7 +928,7 @@ async function handleCategoryOrJoin(
   const selectedBiz = businesses[bizNum - 1];
   const org = await findOrgByCode(selectedBiz.code, channel);
   if (org) {
-    await handleJoin(identifier, org, locale, channel, sendMessage, profileName, bsuid);
+    await askJoinConfirmation(identifier, org, locale, channel, sendMessage, profileName, bsuid);
   } else {
     await sendMessage({ to: identifier, body: t('code_not_found', locale, { code: selectedBiz.code }) });
   }
@@ -985,6 +1032,26 @@ async function handleTrackLink(
   });
 
   await sendMessage({ to: identifier, body: message });
+}
+
+async function askJoinConfirmation(
+  identifier: string,
+  org: OrgContext,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  profileName?: string,
+  bsuid?: string,
+): Promise<void> {
+  pendingJoinCache.set(identifier, { org, locale, channel, profileName, bsuid, ts: Date.now() });
+  // Prune expired entries periodically
+  if (pendingJoinCache.size > 200) {
+    const now = Date.now();
+    for (const [key, val] of pendingJoinCache) {
+      if (now - val.ts > PENDING_JOIN_TTL) pendingJoinCache.delete(key);
+    }
+  }
+  await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
 }
 
 async function handleJoin(
