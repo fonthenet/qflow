@@ -296,16 +296,13 @@ function detectLocale(message: string): Locale {
   return 'fr';
 }
 
-/** Force RTL rendering for Arabic text across messaging platforms.
- *  WhatsApp handles RTL natively via Arabic character detection.
- *  Messenger ignores Unicode bidi control characters (U+200F, U+202B, etc.)
- *  so right-alignment cannot be forced there — we rely on physical text
- *  ordering instead (Arabic text first, numbers last). */
+/** RTL handling for Arabic text across messaging platforms.
+ *  WhatsApp detects Arabic characters and applies RTL natively.
+ *  Messenger ignores all Unicode bidi control characters.
+ *  We rely on physical text ordering (Arabic text first, numbers last)
+ *  which renders correctly on both platforms without any bidi markers. */
 function ensureRTL(text: string): string {
-  return text.split('\n').map(line => {
-    if (line.length === 0 || line.startsWith('\u200F')) return line;
-    return `\u200F${line}`;
-  }).join('\n');
+  return text;
 }
 
 function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
