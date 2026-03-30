@@ -621,14 +621,35 @@ export default function DeskScreen() {
         <Text style={styles.metaName}>
           {activeTicket.customer_data?.name || 'Walk-in Customer'}
         </Text>
-        {activeTicket.customer_data?.phone ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="call-outline" size={13} color={colors.textSecondary} />
-            <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary }}>
-              {activeTicket.customer_data.phone}
-            </Text>
-          </View>
-        ) : null}
+        {/* Source badge */}
+        <View style={styles.sourceBadgeRow}>
+          {(() => {
+            const src = activeTicket.source;
+            const iconMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string; label: string }> = {
+              whatsapp: { name: 'logo-whatsapp', color: '#25D366', label: 'WhatsApp' },
+              messenger: { name: 'chatbubble-ellipses', color: '#0084FF', label: 'Messenger' },
+              kiosk: { name: 'tablet-portrait-outline', color: '#8B5CF6', label: 'Kiosk' },
+              qr_code: { name: 'qr-code-outline', color: '#F59E0B', label: 'QR Code' },
+              walk_in: { name: 'walk-outline', color: '#64748B', label: 'Walk-in' },
+              in_house: { name: 'business-outline', color: '#6366F1', label: 'In-house' },
+            };
+            const info = iconMap[src ?? ''] ?? { name: 'globe-outline' as keyof typeof Ionicons.glyphMap, color: colors.textMuted, label: 'Web' };
+            return (
+              <View style={[styles.sourceBadge, { backgroundColor: info.color + '15' }]}>
+                <Ionicons name={info.name} size={13} color={info.color} />
+                <Text style={[styles.sourceBadgeText, { color: info.color }]}>{info.label}</Text>
+              </View>
+            );
+          })()}
+          {activeTicket.customer_data?.phone ? (
+            <View style={styles.phoneBadge}>
+              <Ionicons name="call-outline" size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: fontSize.xs, color: colors.textSecondary }}>
+                {activeTicket.customer_data.phone}
+              </Text>
+            </View>
+          ) : null}
+        </View>
         {[
           activeTicket.service_id ? names.services[activeTicket.service_id] : null,
           activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
@@ -842,30 +863,42 @@ export default function DeskScreen() {
       {queue.waiting.length === 0 ? (
         <Text style={styles.emptyText}>No customers waiting</Text>
       ) : (
-        queue.waiting.map((ticket, idx) => (
-          <View key={ticket.id} style={styles.queueItem}>
-            <Text style={styles.queuePos}>{idx + 1}</Text>
-            <Text style={styles.queueTicketNum}>{ticket.ticket_number}</Text>
-            <Text style={styles.queueName} numberOfLines={1}>
-              {ticket.customer_data?.name ?? 'Walk-in'}
-            </Text>
-            {ticket.priority_category_id && names.priorities[ticket.priority_category_id] ? (
-              <Ionicons name="flag" size={10} color={names.priorities[ticket.priority_category_id].color ?? colors.warning} />
-            ) : null}
-            <Text style={styles.queueWait}>{formatElapsed(ticket.created_at)}</Text>
-            <TouchableOpacity
-              style={styles.callSpecificBtn}
-              onPress={() => handleCallSpecific(ticket)}
-              disabled={actionLoading || hasActive}
-            >
-              <Ionicons
-                name="megaphone-outline"
-                size={14}
-                color={hasActive ? colors.textMuted : colors.primary}
-              />
-            </TouchableOpacity>
-          </View>
-        ))
+        queue.waiting.map((ticket, idx) => {
+          const srcMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
+            whatsapp: { name: 'logo-whatsapp', color: '#25D366' },
+            messenger: { name: 'chatbubble-ellipses', color: '#0084FF' },
+            kiosk: { name: 'tablet-portrait-outline', color: '#8B5CF6' },
+            qr_code: { name: 'qr-code-outline', color: '#F59E0B' },
+            walk_in: { name: 'walk-outline', color: '#64748B' },
+            in_house: { name: 'business-outline', color: '#6366F1' },
+          };
+          const srcInfo = srcMap[ticket.source ?? ''] ?? { name: 'globe-outline' as keyof typeof Ionicons.glyphMap, color: colors.textMuted };
+          return (
+            <View key={ticket.id} style={styles.queueItem}>
+              <Text style={styles.queuePos}>{idx + 1}</Text>
+              <Text style={styles.queueTicketNum}>{ticket.ticket_number}</Text>
+              <Ionicons name={srcInfo.name} size={13} color={srcInfo.color} />
+              <Text style={styles.queueName} numberOfLines={1}>
+                {ticket.customer_data?.name ?? 'Walk-in'}
+              </Text>
+              {ticket.priority_category_id && names.priorities[ticket.priority_category_id] ? (
+                <Ionicons name="flag" size={10} color={names.priorities[ticket.priority_category_id].color ?? colors.warning} />
+              ) : null}
+              <Text style={styles.queueWait}>{formatElapsed(ticket.created_at)}</Text>
+              <TouchableOpacity
+                style={styles.callSpecificBtn}
+                onPress={() => handleCallSpecific(ticket)}
+                disabled={actionLoading || hasActive}
+              >
+                <Ionicons
+                  name="megaphone-outline"
+                  size={14}
+                  color={hasActive ? colors.textMuted : colors.primary}
+                />
+              </TouchableOpacity>
+            </View>
+          );
+        })
       )}
     </View>
   );
@@ -913,24 +946,11 @@ export default function DeskScreen() {
   const QuickLinks = (
     <View style={styles.quickLinks}>
       <TouchableOpacity
-        style={styles.linkButton}
+        style={[styles.linkButton, { borderBottomWidth: 0 }]}
         onPress={() => router.push('/(operator)/queue')}
       >
         <Ionicons name="list-outline" size={22} color={colors.primary} />
         <Text style={styles.linkText}>Queue Overview</Text>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => router.push('/(operator)/settings')}
-      >
-        <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
-        <Text style={styles.linkText}>Settings</Text>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.linkButton, { borderBottomWidth: 0 }]} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={22} color={colors.error} />
-        <Text style={[styles.linkText, { color: colors.error }]}>Sign Out</Text>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </TouchableOpacity>
     </View>
@@ -1177,6 +1197,29 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  sourceBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  sourceBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  phoneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   notesBubble: {
     flexDirection: 'row',

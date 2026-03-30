@@ -20,6 +20,7 @@ export interface QueueTicket {
   recall_count: number;
   estimated_wait_minutes: number | null;
   is_remote: boolean | null;
+  source: string | null;
   appointment_id: string | null;
   notes: string | null;
   parked_at: string | null;
@@ -62,7 +63,7 @@ export function useRealtimeQueue({ officeId, departmentId, enabled = true }: Use
 
     let activeQuery = supabase
       .from('tickets')
-      .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
+      .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, source, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
       .eq('office_id', officeId)
       .in('status', activeStatuses)
       .order('priority', { ascending: false, nullsFirst: true })
@@ -70,7 +71,7 @@ export function useRealtimeQueue({ officeId, departmentId, enabled = true }: Use
 
     let doneQuery = supabase
       .from('tickets')
-      .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
+      .select('id, ticket_number, status, customer_data, priority_category_id, priority, created_at, called_at, serving_started_at, completed_at, desk_id, office_id, service_id, department_id, called_by_staff_id, recall_count, estimated_wait_minutes, is_remote, source, appointment_id, notes, parked_at, transferred_from_ticket_id, qr_token')
       .eq('office_id', officeId)
       .in('status', doneStatuses)
       .gte('created_at', yesterday)
