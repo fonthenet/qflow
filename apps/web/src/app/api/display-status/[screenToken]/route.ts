@@ -135,6 +135,7 @@ export async function GET(
       activeTickets: sanitizedActiveTickets,
       waitingTickets: waitingTickets ?? [],
       servedTodayCount: servedTodayCount ?? 0,
+      _debug: { dayStart: officeDayStartIso, tz: office.timezone, rawCount: countResult.count, err: countResult.error?.message ?? null, st: countResult.status },
     },
     {
       headers: {
