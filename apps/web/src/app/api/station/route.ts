@@ -140,9 +140,19 @@ export async function GET(req: NextRequest) {
         const base = origin.startsWith('http') ? origin : `https://${origin}`;
         const officeToken = staff2.office_id.replace(/-/g, '').slice(0, 16);
 
+        // Fetch display screen token for this office (display uses screen_token, not office token)
+        const { data: displayScreen } = await supabase
+          .from('display_screens')
+          .select('screen_token')
+          .eq('office_id', staff2.office_id)
+          .eq('is_active', true)
+          .order('created_at')
+          .limit(1)
+          .maybeSingle();
+
         return json({
           kioskUrl: `${base}/k/${officeToken}`,
-          displayUrl: `${base}/d/${officeToken}`,
+          displayUrl: displayScreen?.screen_token ? `${base}/d/${displayScreen.screen_token}` : null,
           stationUrl: `${base}/station`,
           localIP: null,
         });
