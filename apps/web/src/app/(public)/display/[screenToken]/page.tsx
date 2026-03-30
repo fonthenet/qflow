@@ -111,10 +111,11 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
   const officeDayStartIso = getOfficeDayStartIso(office.timezone);
   const { count: servedTodayCount } = await supabase
     .from('tickets')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact' })
     .eq('office_id', screen.office_id)
     .eq('status', 'served')
-    .gte('created_at', officeDayStartIso);
+    .gte('created_at', officeDayStartIso)
+    .limit(0);
 
   const mergedScreen = mergeDisplayScreenRuntime(
     {
