@@ -865,7 +865,9 @@ async function handleDirectory(
     const count = grouped.get(catKey)!.length;
 
     if (locale === 'ar') {
-      body += `*${i + 1}* — ${emoji} ${catLabel}\n`;
+      body += channel === 'messenger'
+        ? `${catLabel} ${emoji} — *${i + 1}*\n`
+        : `*${i + 1}* — ${emoji} ${catLabel}\n`;
     } else {
       body += `*${i + 1}.* ${emoji} ${catLabel} (${count})\n`;
     }
@@ -873,7 +875,7 @@ async function handleDirectory(
 
   body += t('directory_footer', locale);
 
-  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
+  await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(body) : body });
 }
 
 /**
@@ -917,7 +919,9 @@ async function handleCategoryOrJoin(
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       if (locale === 'ar') {
-        body += `*${catNum}-${i + 1}* — ${biz.name}\n`;
+        body += channel === 'messenger'
+          ? `${biz.name} — *${catNum}-${i + 1}*\n`
+          : `*${catNum}-${i + 1}* — ${biz.name}\n`;
       } else {
         body += `*${catNum}-${i + 1}.* ${biz.name}\n`;
       }
@@ -925,7 +929,7 @@ async function handleCategoryOrJoin(
 
     body += t('category_footer', locale, { example: `${catNum}-1` });
 
-    await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
+    await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(body) : body });
     return true;
   }
 
@@ -1424,14 +1428,16 @@ async function handleMultiStatus(
       : '—';
 
     if (locale === 'ar') {
-      body += `*${i + 1}* — *${org.name}* — 🎫 *${ticketNum}* — ${posText}\n`;
+      body += channel === 'messenger'
+        ? `*${org.name}* — 🎫 *${ticketNum}* — ${posText} — *${i + 1}*\n`
+        : `*${i + 1}* — *${org.name}* — 🎫 *${ticketNum}* — ${posText}\n`;
     } else {
       body += `*${i + 1}.* ${org.name} — 🎫 *${ticketNum}* — ${posText}\n`;
     }
   }
 
   body += t('multi_status_footer', locale, { n: '1' });
-  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(body) : body });
+  await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(body) : body });
 }
 
 /**
@@ -1448,7 +1454,9 @@ async function handleCancelPick(
   for (let i = 0; i < allSessions.length; i++) {
     const { org } = allSessions[i];
     if (locale === 'ar') {
-      list += `*${i + 1}* — *${org.name}*\n`;
+      list += channel === 'messenger'
+        ? `*${org.name}* — *${i + 1}*\n`
+        : `*${i + 1}* — *${org.name}*\n`;
     } else {
       list += `*${i + 1}.* ${org.name}\n`;
     }
@@ -1459,7 +1467,7 @@ async function handleCancelPick(
     list,
     n: '1',
   });
-  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(msg) : msg });
+  await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(msg) : msg });
 }
 
 /**
@@ -1512,5 +1520,5 @@ async function handleCancelAll(
   }
 
   const msg = t('cancelled_all', locale, { list: cancelledItems.join('\n') });
-  await sendMessage({ to: identifier, body: locale === 'ar' ? ensureRTL(msg) : msg });
+  await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(msg) : msg });
 }
