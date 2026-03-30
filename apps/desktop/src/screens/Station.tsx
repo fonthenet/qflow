@@ -1750,7 +1750,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               label: t('Station (remote control)'),
               localUrl: kioskUrl.replace('/kiosk', '/station'),
               publicUrl: 'https://qflo.net/station',
-              publicLabel: 'qflo.net/station',
+              publicLabel: 'https://qflo.net/station',
               icon: '🖥️',
             },
             {
