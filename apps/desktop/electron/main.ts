@@ -414,36 +414,9 @@ async function getSessionScopedPublicLinks() {
 
     if (!office?.name) return { kioskUrl: null, displayUrl: null };
 
-    const kioskUrl = `${CONFIG.CLOUD_URL}/k/${getOfficePublicToken(office)}`;
-    let displayUrl: string | null = null;
-
-    try {
-      const authToken =
-        typeof session?.access_token === 'string' && session.access_token.length > 0
-          ? session.access_token
-          : SUPABASE_ANON_KEY;
-      const headers: Record<string, string> = {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${authToken}`,
-      };
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/display_screens?office_id=eq.${officeId}&is_active=is.true&select=screen_token&order=created_at.desc&limit=1`,
-        {
-          headers,
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-
-      if (response.ok) {
-        const screens = await response.json();
-        const token = screens?.[0]?.screen_token;
-        if (typeof token === 'string' && token.length > 0) {
-          displayUrl = `${CONFIG.CLOUD_URL}/d/${token}`;
-        }
-      }
-    } catch {
-      // Public display link is optional when cloud metadata is unavailable.
-    }
+    const officeToken = getOfficePublicToken(office);
+    const kioskUrl = `${CONFIG.CLOUD_URL}/k/${officeToken}`;
+    const displayUrl = `${CONFIG.CLOUD_URL}/d/${officeToken}`;
 
     return { kioskUrl, displayUrl };
   } catch {
