@@ -11,19 +11,11 @@ import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 const directoryLocaleCache = new Map<string, { locale: Locale; ts: number }>();
 const DIRECTORY_LOCALE_TTL = 10 * 60 * 1000; // 10 minutes
 
-// ── Pending join confirmation cache (in-memory, 3-min TTL) ──────────
-// When a user sends JOIN <code>, we store the pending join context and
-// wait for YES/OUI/نعم before creating the ticket.
-interface PendingJoin {
-  org: OrgContext;
-  locale: Locale;
-  channel: Channel;
-  profileName?: string;
-  bsuid?: string;
-  ts: number;
-}
-const pendingJoinCache = new Map<string, PendingJoin>();
-const PENDING_JOIN_TTL = 3 * 60 * 1000; // 3 minutes
+// ── Pending join confirmation (DB-backed via whatsapp_sessions) ──────
+// When a user sends JOIN <code>, we insert a whatsapp_sessions row with
+// state='pending_confirmation' and ticket_id=null. On YES, we look it
+// up, create the ticket, and promote it to 'active'.
+const PENDING_JOIN_TTL_MINUTES = 3;
 
 function setDirectoryLocale(identifier: string, locale: Locale): void {
   directoryLocaleCache.set(identifier, { locale, ts: Date.now() });
@@ -592,26 +584,45 @@ export async function handleInboundMessage(
   const detectedLocale = detectLocale(cleaned);
 
   // ── Pending join confirmation (YES/OUI/نعم or NO/NON/لا) ──
-  const pending = pendingJoinCache.get(identifier);
-  if (pending && Date.now() - pending.ts < PENDING_JOIN_TTL) {
-    const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
-    const isNo = /^(NON|NO|لا|N|0|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
-    if (isYes) {
-      pendingJoinCache.delete(identifier);
-      await handleJoin(identifier, pending.org, pending.locale, pending.channel, sendMessage, pending.profileName, pending.bsuid);
-      return;
+  // Check DB for a pending_confirmation session for this user
+  {
+    const supabaseCheck = createAdminClient() as any;
+    const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: pendingSession } = await supabaseCheck
+      .from('whatsapp_sessions')
+      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, created_at')
+      .eq(identCol, identifier)
+      .eq('state', 'pending_confirmation')
+      .eq('channel', channel)
+      .gte('created_at', new Date(Date.now() - PENDING_JOIN_TTL_MINUTES * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingSession) {
+      const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
+      const isNo = /^(NON|NO|لا|N|0|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+      const pendingLocale = (pendingSession.locale as Locale) || 'fr';
+
+      if (isYes) {
+        // Look up org name for the joined message
+        const { data: orgRow } = await supabaseCheck
+          .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
+        if (orgRow) {
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid);
+          // Clean up the pending session (handleJoin creates a new active one)
+          await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+        }
+        return;
+      }
+      if (isNo) {
+        await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join_cancelled', pendingLocale) });
+        return;
+      }
+      // Something else — clear pending and fall through to normal processing
+      await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
     }
-    if (isNo) {
-      pendingJoinCache.delete(identifier);
-      await sendMessage({ to: identifier, body: t('confirm_join_cancelled', pending.locale) });
-      return;
-    }
-    // If they send something else (e.g. a different command), clear the pending
-    // and fall through to normal command processing
-    pendingJoinCache.delete(identifier);
-  } else if (pending) {
-    // Expired
-    pendingJoinCache.delete(identifier);
   }
 
   // ── TRACK <token> (link WhatsApp/Messenger to existing ticket) ──
@@ -1043,14 +1054,28 @@ async function askJoinConfirmation(
   profileName?: string,
   bsuid?: string,
 ): Promise<void> {
-  pendingJoinCache.set(identifier, { org, locale, channel, profileName, bsuid, ts: Date.now() });
-  // Prune expired entries periodically
-  if (pendingJoinCache.size > 200) {
-    const now = Date.now();
-    for (const [key, val] of pendingJoinCache) {
-      if (now - val.ts > PENDING_JOIN_TTL) pendingJoinCache.delete(key);
-    }
+  const supabase = createAdminClient() as any;
+  const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+
+  // Clean up any stale pending confirmations for this user
+  await supabase.from('whatsapp_sessions').delete()
+    .eq(identCol, identifier).eq('state', 'pending_confirmation').eq('channel', channel);
+
+  // Insert pending confirmation row
+  const sessionData: Record<string, any> = {
+    organization_id: org.id,
+    state: 'pending_confirmation',
+    locale,
+    channel,
+  };
+  if (channel === 'messenger') {
+    sessionData.messenger_psid = identifier;
+  } else {
+    sessionData.whatsapp_phone = identifier;
+    if (bsuid) sessionData.whatsapp_bsuid = bsuid;
   }
+
+  await supabase.from('whatsapp_sessions').insert(sessionData);
   await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
 }
 
