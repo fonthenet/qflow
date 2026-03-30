@@ -1013,6 +1013,31 @@ export class SyncEngine {
         });
         if (res.ok || res.status === 409) return { status: 0 };
         if (res.status === 401 || res.status === 403) return { status: 401 };
+
+        // 400 on ticket INSERT likely means qr_token collision — regenerate and retry once
+        if (res.status === 400 && item.table_name === 'tickets' && payload.qr_token) {
+          const errBody = await res.text().catch(() => '');
+          console.warn(`[sync:replay] INSERT 400 for ticket ${item.record_id}: ${errBody.substring(0, 200)}`);
+          if (errBody.includes('qr_token') || errBody.includes('duplicate') || errBody.includes('unique')) {
+            const { randomUUID } = require('crypto');
+            payload.qr_token = randomUUID().replace(/-/g, '').slice(0, 12);
+            // Update payload in sync_queue so the new qr_token persists across retries
+            this.db.prepare("UPDATE sync_queue SET payload = ? WHERE id = ?")
+              .run(JSON.stringify(payload), item.id);
+            // Also update local SQLite ticket
+            this.db.prepare("UPDATE tickets SET qr_token = ? WHERE id = ?")
+              .run(payload.qr_token, item.record_id);
+            console.log(`[sync:replay] Regenerated qr_token for ${item.record_id}, retrying...`);
+            const retryRes = await fetch(baseUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(10000),
+            });
+            if (retryRes.ok || retryRes.status === 409) return { status: 0 };
+          }
+        }
+
         throw new Error(`INSERT failed: ${res.status}`);
       }
 
