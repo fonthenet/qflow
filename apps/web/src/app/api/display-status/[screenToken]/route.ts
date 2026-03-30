@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { mergeDisplayScreenRuntime } from '@/lib/display-runtime';
+import { matchesOfficePublicToken } from '@/lib/office-links';
 
 function getOfficeDayStartIso(timezone?: string | null) {
   const now = new Date();
@@ -21,25 +22,56 @@ export async function GET(
   const { screenToken } = await params;
   const supabase = createAdminClient();
 
-  const { data: screen } = await supabase
+  // 1) Try finding display screen by screen_token
+  let screen: any = null;
+  let office: any = null;
+
+  const { data: screenByToken } = await supabase
     .from('display_screens')
     .select('*')
     .eq('screen_token', screenToken)
     .eq('is_active', true)
     .maybeSingle();
 
-  if (!screen) {
-    return NextResponse.json({ error: 'Display screen not found' }, { status: 404 });
+  if (screenByToken) {
+    screen = screenByToken;
+    const { data: screenOffice } = await supabase
+      .from('offices')
+      .select('*, organization:organizations(*)')
+      .eq('id', screen.office_id)
+      .maybeSingle();
+    office = screenOffice;
+  } else {
+    // 2) Fallback: treat token as office public token
+    const { data: offices } = await supabase
+      .from('offices')
+      .select('*, organization:organizations(*)')
+      .eq('is_active', true);
+
+    office = offices?.find((entry: any) => matchesOfficePublicToken(entry, screenToken));
+    if (office) {
+      const { data: defaultScreen } = await supabase
+        .from('display_screens')
+        .select('*')
+        .eq('office_id', office.id)
+        .eq('is_active', true)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle();
+
+      screen = defaultScreen ?? {
+        id: `virtual-${office.id}`,
+        office_id: office.id,
+        name: 'Default',
+        screen_token: screenToken,
+        settings: {},
+        is_active: true,
+      };
+    }
   }
 
-  const { data: office } = await supabase
-    .from('offices')
-    .select('*, organization:organizations(*)')
-    .eq('id', screen.office_id)
-    .maybeSingle();
-
-  if (!office) {
-    return NextResponse.json({ error: 'Office not found' }, { status: 404 });
+  if (!screen || !office) {
+    return NextResponse.json({ error: 'Display screen not found' }, { status: 404 });
   }
 
   const platformConfig = resolvePlatformConfig({
