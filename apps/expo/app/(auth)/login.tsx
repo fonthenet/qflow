@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -114,8 +113,7 @@ export default function LoginScreen() {
     <LinearGradient colors={['#1e40af', '#3b82f6', '#6366f1']} style={styles.gradient}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        behavior="padding"
       >
       <ScrollView
         ref={scrollRef}
@@ -127,7 +125,6 @@ export default function LoginScreen() {
           },
         ]}
         keyboardShouldPersistTaps="handled"
-        bounces={false}
         showsVerticalScrollIndicator={false}
       >
         {/* Logo & Header */}
