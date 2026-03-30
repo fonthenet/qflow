@@ -267,9 +267,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.',
   },
   served: {
-    fr: '✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci et bonne continuation !',
-    ar: 'التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لكم ونتمنى لكم التوفيق! ✅',
-    en: '✅ Ticket *{ticket}* at *{name}* is complete. Thank you and take care!',
+    fr: '✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite.',
+    ar: 'التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم. ✅',
+    en: '✅ Ticket *{ticket}* at *{name}* is complete. Thank you for your visit.',
   },
   next_in_line: {
     fr: '⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
