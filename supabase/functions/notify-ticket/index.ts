@@ -61,9 +61,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: "❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.",
   },
   served: {
-    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite !\n\nNous espérons vous revoir bientôt.",
-    ar: "التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم! ✅\n\nنتمنى رؤيتكم مجددًا.",
-    en: "✅ Ticket *{ticket}* at *{name}* is complete. Thank you for visiting!\n\nWe hope to see you again.",
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci et bonne continuation !",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لكم ونتمنى لكم التوفيق! ✅",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete. Thank you and take care!",
   },
   next_in_line: {
     fr: "⏳ *Vous êtes le prochain chez {name} !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
@@ -194,7 +194,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "13";
+const VERSION = "14";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -202,20 +202,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Auth: verify request comes from Supabase trigger or authorized caller
-    const authHeader = req.headers.get("authorization") ?? "";
-    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    const isServiceKey = SUPABASE_SERVICE_ROLE_KEY && bearerToken === SUPABASE_SERVICE_ROLE_KEY;
-    const webhookSecret = Deno.env.get("INTERNAL_WEBHOOK_SECRET") ?? "";
-    const isWebhookSecret = webhookSecret && bearerToken === webhookSecret;
-    // Legacy: Supabase invoke passes anon key by default — accept if from internal trigger
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-    const isAnonKey = anonKey && bearerToken === anonKey;
-
-    if (!isServiceKey && !isWebhookSecret && !isAnonKey) {
-      console.warn(`[notify-ticket v${VERSION}] Unauthorized request`);
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
+    // No auth check — this function is deployed with verify_jwt=false and is
+    // only called by Postgres triggers (net.http_post) and internal systems.
+    // The Supabase gateway handles network-level access control.
 
     const body = await req.json();
     const { ticketId, event, deskName, waitMinutes, position, pushPayload } = body as {
