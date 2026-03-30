@@ -35,7 +35,7 @@ export function buildStarterDisplayRecords(input: {
   officeId: string;
   officeName: string;
   createStarterDisplay: boolean;
-  generateScreenToken: () => string;
+  generateScreenToken: (officeId?: string) => string;
 }) {
   if (!input.createStarterDisplay || !input.template.capabilityFlags.displayBoard) {
     return [];
@@ -53,10 +53,11 @@ export function buildStarterDisplayRecords(input: {
           },
         ];
 
-  return displays.map((display) => ({
+  return displays.map((display, index) => ({
     office_id: input.officeId,
     name: display.name,
-    screen_token: input.generateScreenToken(),
+    // First display uses office token (unified with kiosk URL)
+    screen_token: index === 0 ? input.generateScreenToken(input.officeId) : input.generateScreenToken(),
     layout: display.layout ?? input.template.experienceProfile.display.defaultLayout,
     is_active: display.isActive ?? true,
     settings: {

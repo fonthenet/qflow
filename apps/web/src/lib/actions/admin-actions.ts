@@ -1067,7 +1067,15 @@ export async function createDisplayScreen(officeId: string, name: string) {
     officeSettings: (office?.settings as Record<string, unknown> | null) ?? {},
   });
 
-  const screenToken = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  // Use office token for the first display screen (unified with kiosk URL),
+  // fall back to random token if that office token is already taken (additional screens)
+  const officeToken = officeId.replace(/-/g, '').slice(0, 16);
+  const { data: existingScreen } = await context.supabase
+    .from('display_screens')
+    .select('id')
+    .eq('screen_token', officeToken)
+    .maybeSingle();
+  const screenToken = existingScreen ? crypto.randomUUID().replace(/-/g, '').slice(0, 16) : officeToken;
 
   const { data, error } = await context.supabase
     .from('display_screens')

@@ -31,7 +31,9 @@ import {
 } from '@/lib/platform/trial-structure';
 import { getIndustryTemplateById } from '@/lib/platform/templates';
 
-function generateScreenToken() {
+function generateScreenToken(officeId?: string) {
+  // First screen uses office token (unified with kiosk URL), subsequent ones get random tokens
+  if (officeId) return officeId.replace(/-/g, '').slice(0, 16);
   return crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 }
 
