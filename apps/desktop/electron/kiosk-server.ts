@@ -451,6 +451,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleStationKioskInfo(res);
       } else if (path === '/api/station/branding' && req.method === 'GET') {
         handleStationBranding(res);
+      } else if (path === '/api/station/public-links' && req.method === 'GET') {
+        handleStationPublicLinks(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -2168,6 +2170,10 @@ function serveStationIndex(res: http.ServerResponse) {
       getLocalIP: function() { return get('/api/station/kiosk-info').then(function(d) { return d.localIP; }); },
     },
 
+    links: {
+      getPublic: function() { return get('/api/station/public-links'); },
+    },
+
     org: {
       getBranding: function() { return get('/api/station/branding'); },
     },
@@ -2418,6 +2424,39 @@ function handleStationKioskInfo(res: http.ServerResponse) {
     displayUrl: `http://${ip}:${localPort}/display${officeIdQuery}`,
     localIP: ip,
   }));
+}
+
+function handleStationPublicLinks(res: http.ServerResponse) {
+  try {
+    const db = getDB();
+    const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+    const officeId =
+      typeof session?.office_id === 'string' && session.office_id.length > 0
+        ? session.office_id
+        : Array.isArray(session?.office_ids) && typeof session.office_ids[0] === 'string'
+          ? session.office_ids[0]
+          : null;
+
+    if (!officeId) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ kioskUrl: null, displayUrl: null }));
+      return;
+    }
+
+    const officeToken = officeId.replace(/-/g, '').slice(0, 16);
+    const kioskUrl = `${CLOUD_URL}/k/${officeToken}`;
+    const displayUrl = `${CLOUD_URL}/d/${officeToken}`;
+
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
+    res.end(JSON.stringify({ kioskUrl, displayUrl }));
+  } catch {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ kioskUrl: null, displayUrl: null }));
+  }
 }
 
 function handleStationBranding(res: http.ServerResponse) {

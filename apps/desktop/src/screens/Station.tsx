@@ -1744,7 +1744,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
         {/* Local Network / Remote Access URLs */}
         {kioskUrl && (() => {
-          const isRemote = !!(window as any).__QF_HTTP_MODE__;
+          // Remote = HTTP mode on a public domain (not a local/private IP)
+          const h = window.location.hostname;
+          const isLocalNetwork = /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost$)/.test(h);
+          const isRemote = !!(window as any).__QF_HTTP_MODE__ && !isLocalNetwork;
           const items = [
             {
               label: t('Station (remote control)'),
