@@ -26,21 +26,15 @@ export async function GET(request: NextRequest) {
     rawUrl: request.url.substring(0, 200),
   });
 
-  // Primary check: verify token matches
+  // Verify token must match — no fallback
   if (mode === 'subscribe' && token && verifyToken && token === verifyToken && challenge) {
     return new NextResponse(challenge, { status: 200 });
   }
 
-  // Fallback: if env var not set, accept verification to allow initial setup
-  if (mode === 'subscribe' && challenge && !verifyToken) {
-    console.warn('[whatsapp-webhook] No WHATSAPP_WEBHOOK_VERIFY_TOKEN set, accepting');
-    return new NextResponse(challenge, { status: 200 });
-  }
-
-  // Last resort: accept if mode is subscribe with challenge (for setup only)
-  if (mode === 'subscribe' && challenge) {
-    console.warn('[whatsapp-webhook] Token mismatch but accepting for setup');
-    return new NextResponse(challenge, { status: 200 });
+  if (mode === 'subscribe' && !verifyToken) {
+    console.error('[whatsapp-webhook] WHATSAPP_WEBHOOK_VERIFY_TOKEN not set — rejecting verification');
+  } else if (mode === 'subscribe') {
+    console.warn('[whatsapp-webhook] Token mismatch — rejecting');
   }
 
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -63,7 +57,51 @@ export async function POST(request: NextRequest) {
     let profileName: string | undefined;
     let bsuid: string | undefined; // Business-Scoped User ID (Meta BSUID)
 
-    if (contentType.includes('application/x-www-form-urlencoded')) {
+    // For Meta Cloud API (JSON), verify x-hub-signature-256 if app secret is set
+    if (contentType.includes('application/json')) {
+      const appSecret = process.env.WHATSAPP_APP_SECRET?.trim() || process.env.MESSENGER_APP_SECRET?.trim();
+      const signature = request.headers.get('x-hub-signature-256') ?? '';
+      if (appSecret) {
+        if (!signature) {
+          console.warn('[whatsapp-webhook] Missing x-hub-signature-256 header');
+          return NextResponse.json({ error: 'Missing signature' }, { status: 403 });
+        }
+        const rawBody = await request.text();
+        const expectedSig = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+        if (signature !== expectedSig) {
+          console.warn('[whatsapp-webhook] Invalid Meta signature');
+          return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
+        }
+        // Parse from verified body
+        const json = JSON.parse(rawBody);
+        const entry = json?.entry?.[0];
+        const change = entry?.changes?.[0];
+        const message = change?.value?.messages?.[0];
+        if (!message) {
+          return NextResponse.json({ ok: true });
+        }
+        fromPhone = message.from ?? '';
+        toPhone = change?.value?.metadata?.display_phone_number ?? '';
+        messageBody = message.text?.body ?? '';
+        profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
+        bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
+      } else {
+        // No app secret configured — parse without verification (log warning)
+        console.warn('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — signature verification disabled');
+        const json = await request.json();
+        const entry = json?.entry?.[0];
+        const change = entry?.changes?.[0];
+        const message = change?.value?.messages?.[0];
+        if (!message) {
+          return NextResponse.json({ ok: true });
+        }
+        fromPhone = message.from ?? '';
+        toPhone = change?.value?.metadata?.display_phone_number ?? '';
+        messageBody = message.text?.body ?? '';
+        profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
+        bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
+      }
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
       // Twilio sends form-encoded data
       const formData = await request.formData();
       fromPhone = (formData.get('From') as string) ?? '';
@@ -85,22 +123,6 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
         }
       }
-    } else if (contentType.includes('application/json')) {
-      // Meta Cloud API sends JSON
-      const json = await request.json();
-      const entry = json?.entry?.[0];
-      const change = entry?.changes?.[0];
-      const message = change?.value?.messages?.[0];
-      if (!message) {
-        return NextResponse.json({ ok: true });
-      }
-      fromPhone = message.from ?? '';
-      toPhone = change?.value?.metadata?.display_phone_number ?? '';
-      messageBody = message.text?.body ?? '';
-      // Extract WhatsApp profile name (Meta provides it in contacts array)
-      profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
-      // Extract BSUID (Business-Scoped User ID) — present after March 31 2026
-      bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
     } else {
       return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
@@ -113,7 +135,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    console.log(`[whatsapp-webhook] Message from ${fromPhone || bsuid}: "${messageBody}"${bsuid ? ` (bsuid: ${bsuid})` : ''}`);
+    // Log with PII redaction (show last 4 digits of phone, truncate message)
+    const redactedPhone = fromPhone ? `***${fromPhone.slice(-4)}` : bsuid ? `bsuid:***${bsuid.slice(-4)}` : 'unknown';
+    console.log(`[whatsapp-webhook] Message from ${redactedPhone}: "${messageBody.substring(0, 30)}${messageBody.length > 30 ? '...' : ''}"`);
 
     // Handle the message with shared-number routing
     // Phone is primary identifier; BSUID is passed alongside for storage/fallback

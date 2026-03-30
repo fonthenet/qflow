@@ -203,7 +203,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
         aria-label={t('In-House Booking')}
         style={{
           background: 'var(--surface)', borderRadius: 12, padding: 24,
-          minWidth: 360, maxWidth: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          minWidth: 420, maxWidth: 540, width: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           outline: 'none',
         }}
       >

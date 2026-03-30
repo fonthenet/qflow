@@ -281,6 +281,19 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
               {t('{count} pending sync', { count: syncStatus.pendingCount })}
             </span>
           )}
+          {syncStatus.lastError && (
+            <span
+              style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                cursor: 'pointer',
+              }}
+              onClick={openPanel}
+              title={syncStatus.lastError.message}
+            >
+              ⚠ {t('Sync error')}{syncStatus.lastError.ticketNumber ? `: ${syncStatus.lastError.ticketNumber}` : ''}
+            </span>
+          )}
         </div>
 
         <div className="status-bar-right">

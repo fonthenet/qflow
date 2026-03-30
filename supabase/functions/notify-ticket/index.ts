@@ -113,6 +113,7 @@ async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
           type: "text",
           text: { body },
         }),
+        signal: AbortSignal.timeout(15000),
       }
     );
     const data = await res.json();
@@ -120,7 +121,7 @@ async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
       console.error("[notify-ticket:whatsapp] Failed:", data?.error?.message ?? res.status);
       return false;
     }
-    console.log("[notify-ticket:whatsapp] Sent to", digits, "msgId:", data?.messages?.[0]?.id);
+    console.log("[notify-ticket:whatsapp] Sent to ***" + digits.slice(-4));
     return true;
   } catch (err) {
     console.error("[notify-ticket:whatsapp] Error:", err);
@@ -147,11 +148,15 @@ async function sendMessenger(recipientId: string, text: string, tag?: string): P
     }
 
     const res = await fetch(
-      `https://graph.facebook.com/v22.0/me/messages?access_token=${MESSENGER_PAGE_ACCESS_TOKEN}`,
+      `https://graph.facebook.com/v22.0/me/messages`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${MESSENGER_PAGE_ACCESS_TOKEN}`,
+        },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
       }
     );
     const data = await res.json();
@@ -164,7 +169,7 @@ async function sendMessenger(recipientId: string, text: string, tag?: string): P
       console.error("[notify-ticket:messenger] Failed:", data?.error?.message ?? res.status);
       return false;
     }
-    console.log("[notify-ticket:messenger] Sent to", recipientId);
+    console.log("[notify-ticket:messenger] Sent to ***" + recipientId.slice(-4));
     return true;
   } catch (err) {
     console.error("[notify-ticket:messenger] Error:", err);
@@ -180,6 +185,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
     });
   } catch (err) {
     console.error("[notify-ticket:push] Error:", err);
@@ -188,10 +194,29 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "11";
+const VERSION = "13";
 
 Deno.serve(async (req) => {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
+  }
+
   try {
+    // Auth: verify request comes from Supabase trigger or authorized caller
+    const authHeader = req.headers.get("authorization") ?? "";
+    const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const isServiceKey = SUPABASE_SERVICE_ROLE_KEY && bearerToken === SUPABASE_SERVICE_ROLE_KEY;
+    const webhookSecret = Deno.env.get("INTERNAL_WEBHOOK_SECRET") ?? "";
+    const isWebhookSecret = webhookSecret && bearerToken === webhookSecret;
+    // Legacy: Supabase invoke passes anon key by default — accept if from internal trigger
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const isAnonKey = anonKey && bearerToken === anonKey;
+
+    if (!isServiceKey && !isWebhookSecret && !isAnonKey) {
+      console.warn(`[notify-ticket v${VERSION}] Unauthorized request`);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    }
+
     const body = await req.json();
     const { ticketId, event, deskName, waitMinutes, position, pushPayload } = body as {
       ticketId: string;
@@ -202,7 +227,13 @@ Deno.serve(async (req) => {
       pushPayload?: Record<string, unknown>;
     };
 
-    console.log(`[notify-ticket v${VERSION}] event=${event} ticketId=${ticketId} hasMessengerToken=${!!MESSENGER_PAGE_ACCESS_TOKEN} hasWAToken=${!!WA_ACCESS_TOKEN}`);
+    // Validate event type at runtime
+    const validEvents: Event[] = ["called", "recall", "buzz", "serving", "no_show", "served", "cancelled", "next_in_line", "approaching"];
+    if (!validEvents.includes(event)) {
+      return new Response(JSON.stringify({ error: `Invalid event: ${event}` }), { status: 400 });
+    }
+
+    console.log(`[notify-ticket v${VERSION}] event=${event} ticketId=${ticketId}`);
 
     if (!ticketId || !event) {
       return new Response(JSON.stringify({ error: "Missing ticketId or event" }), { status: 400 });
@@ -238,7 +269,12 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "no active session", version: VERSION });
     }
 
-    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} orgId=${session.organization_id} psid=${session.messenger_psid} phone=${session.whatsapp_phone}`);
+    const redactedId = session.channel === "messenger" && session.messenger_psid
+      ? "psid:***" + session.messenger_psid.slice(-4)
+      : session.whatsapp_phone
+        ? "phone:***" + session.whatsapp_phone.slice(-4)
+        : "bsuid:***" + (session.whatsapp_bsuid ?? "").slice(-4);
+    console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} orgId=${session.organization_id} ${redactedId}`);
 
     const locale = (session.locale as Locale) || "fr";
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
@@ -262,6 +298,23 @@ Deno.serve(async (req) => {
       name: orgName,
     });
 
+    // ── Duplicate notification prevention ──────────────────────────────
+    const notifType = `${session.channel}_${event}`;
+    const { data: recentNotif } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("ticket_id", ticketId)
+      .eq("type", notifType)
+      .gte("sent_at", new Date(Date.now() - 60_000).toISOString()) // within last 60s
+      .limit(1)
+      .maybeSingle();
+
+    if (recentNotif) {
+      await pushPromise;
+      console.log(`[notify-ticket v${VERSION}] Duplicate suppressed: ${notifType} for ticket ${ticketId}`);
+      return Response.json({ sent: false, reason: "duplicate suppressed", version: VERSION });
+    }
+
     const isTerminal = ["no_show", "served", "cancelled"].includes(event);
     let sent = false;
 
@@ -271,14 +324,14 @@ Deno.serve(async (req) => {
       sent = await sendWhatsApp(session.whatsapp_phone, message);
     } else if (session.whatsapp_bsuid) {
       // Username adopter without phone — BSUID sending available May 2026
-      console.warn(`[notify-ticket v${VERSION}] No phone for session, bsuid=${session.whatsapp_bsuid} — cannot send yet`);
+      console.warn(`[notify-ticket v${VERSION}] No phone for session, bsuid=***${(session.whatsapp_bsuid ?? "").slice(-4)} — cannot send yet`);
     }
 
     if (sent) {
       // Log notification
       await supabase.from("notifications").insert({
         ticket_id: ticketId,
-        type: `${session.channel}_${event}`,
+        type: notifType,
         channel: session.channel,
         payload: { locale, channel: session.channel },
         sent_at: new Date().toISOString(),

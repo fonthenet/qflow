@@ -1123,7 +1123,12 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
   </div>
   <script>
     const API = '${apiBase}';
-    const ticketNumber = '${ticketNumber.replace(/'/g, "\\'")}';
+    const ticketNumber = '${escapeHtml(ticketNumber).replace(/'/g, "\\'")}';
+
+    function esc(str) {
+      if (!str && str !== 0) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
 
     async function load() {
       try {
@@ -1141,20 +1146,20 @@ function serveTrackingPage(ticketNumber: string, res: http.ServerResponse) {
           if (d.position === 1) {
             posHtml = '<div class="next-alert">You\\'re Next!</div>';
           } else {
-            posHtml = '<div class="position">#' + d.position + '</div><div class="position-label">in line</div>';
+            posHtml = '<div class="position">#' + esc(d.position) + '</div><div class="position-label">in line</div>';
           }
         } else if (d.status === 'called') {
-          posHtml = '<div class="desk-alert">Go to ' + (d.desk_name || 'the desk') + '</div>';
+          posHtml = '<div class="desk-alert">Go to ' + esc(d.desk_name || 'the desk') + '</div>';
         }
 
         document.getElementById('app').innerHTML =
           '<div class="brand">Qflo</div>' +
-          '<div class="number">' + d.ticket_number + '</div>' +
-          '<div class="status-badge ' + statusClass + '">' + statusText + '</div>' +
+          '<div class="number">' + esc(d.ticket_number) + '</div>' +
+          '<div class="status-badge ' + esc(statusClass) + '">' + esc(statusText) + '</div>' +
           posHtml +
           '<div class="meta">' +
-          '<div>' + d.office_name + '</div>' +
-          '<div>' + d.service_name + ' &middot; ' + d.department_name + '</div>' +
+          '<div>' + esc(d.office_name) + '</div>' +
+          '<div>' + esc(d.service_name) + ' &middot; ' + esc(d.department_name) + '</div>' +
           '</div>' +
           '<div class="refresh">Live updates via server</div>';
       } catch (err) {
@@ -1495,6 +1500,19 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     var desks = {};
     var isCloud = false;
 
+    // XSS-safe HTML escaping for all user-controlled data
+    function esc(str) {
+      if (!str && str !== 0) return '';
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
+    // Validate URL is safe (https or data:image only)
+    function safeUrl(url) {
+      if (!url) return '';
+      var s = String(url).trim();
+      if (s.startsWith('https://') || s.startsWith('http://') || s.startsWith('/')) return s;
+      return '';
+    }
+
     function setConnStatus(online) {
       isCloud = online;
       var badge = document.getElementById('conn-badge');
@@ -1633,28 +1651,28 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (needsRebuild) {
         // Full DOM rebuild only when tickets change
         el.innerHTML = visible.map(function(t) {
-          var deskName = desks[t.desk_id] || t.desk_name || 'Desk';
-          var deptName = departments[t.department_id] || '';
+          var deskName = esc(desks[t.desk_id] || t.desk_name || 'Desk');
+          var deptName = esc(departments[t.department_id] || '');
 
           if (t.status === 'called') {
             var secs = getCountdown(t.called_at);
             var urgency = secs <= 10 ? 'urgent' : secs <= 20 ? 'warning' : 'normal';
-            return '<div class="serving-row called" data-id="' + t.id + '">' +
-              '<div class="ticket-num">' + t.ticket_number + '</div>' +
+            return '<div class="serving-row called" data-id="' + esc(t.id) + '">' +
+              '<div class="ticket-num">' + esc(t.ticket_number) + '</div>' +
               '<div class="arrow">&rarr;</div>' +
               '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
               (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
               '<div class="countdown ' + urgency + '">' + secs + 's</div>' +
-              '<div class="status-pill">' + dt('proceed') + '</div>' +
+              '<div class="status-pill">' + esc(dt('proceed')) + '</div>' +
               '</div>';
           }
 
-          return '<div class="serving-row serving" data-id="' + t.id + '">' +
-            '<div class="ticket-num">' + t.ticket_number + '</div>' +
+          return '<div class="serving-row serving" data-id="' + esc(t.id) + '">' +
+            '<div class="ticket-num">' + esc(t.ticket_number) + '</div>' +
             '<div class="arrow">&rarr;</div>' +
             '<div class="desk-info"><div class="desk-name">' + deskName + '</div>' +
             (deptName ? '<div class="dept-name">' + deptName + '</div>' : '') + '</div>' +
-            '<div class="status-pill">' + dt('serving') + '</div>' +
+            '<div class="status-pill">' + esc(dt('serving')) + '</div>' +
             '</div>';
         }).join('');
       } else {
@@ -1685,8 +1703,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
       var tabs = '<div class="dept-tab ' + (activeDept === 'all' ? 'active' : '') + '" onclick="setDept(\\'all\\')">All<span class="count">' + counts.all + '</span></div>';
       deptIds.forEach(function(did) {
-        var name = departments[did] || did.substring(0,8);
-        tabs += '<div class="dept-tab ' + (activeDept === did ? 'active' : '') + '" onclick="setDept(\\'' + did + '\\')">' + name + '<span class="count">' + (counts[did]||0) + '</span></div>';
+        var name = esc(departments[did] || did.substring(0,8));
+        tabs += '<div class="dept-tab ' + (activeDept === did ? 'active' : '') + '" onclick="setDept(\\'' + esc(did) + '\\')">' + name + '<span class="count">' + (counts[did]||0) + '</span></div>';
       });
       document.getElementById('dept-tabs').innerHTML = tabs;
     }
@@ -1712,15 +1730,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       el.innerHTML = filtered.map(function(t, i) {
         var isNext = i === 0;
         var badges = '';
-        if (t.priority > 1) badges += '<span class="q-badge priority">P' + t.priority + '</span> ';
+        if (t.priority > 1) badges += '<span class="q-badge priority">P' + esc(t.priority) + '</span> ';
         if (t.appointment_id) badges += '<span class="q-badge booked">Booked</span>';
-        var deptLabel = departments[t.department_id] || '';
+        var deptLabel = esc(departments[t.department_id] || '');
         return '<div class="queue-row' + (isNext ? ' next' : '') + '">' +
           '<div class="pos">#' + (i+1) + '</div>' +
-          '<div class="q-ticket">' + t.ticket_number + '</div>' +
-          '<div class="q-name">' + (deptLabel || '') + '</div>' +
+          '<div class="q-ticket">' + esc(t.ticket_number) + '</div>' +
+          '<div class="q-name">' + deptLabel + '</div>' +
           badges +
-          '<div class="q-wait">' + formatWait(t.created_at) + '</div>' +
+          '<div class="q-wait">' + esc(formatWait(t.created_at)) + '</div>' +
           '</div>';
       }).join('');
     }
@@ -1743,7 +1761,15 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
             if (logoEl && !officeLoaded) {
               logoEl.className = 'logo';
               logoEl.style.background = 'none';
-              logoEl.innerHTML = '<img src="' + officeData.logo_url + '" alt="Logo" onerror="this.parentElement.className=\\'logo fallback\\';this.parentElement.innerHTML=\\'Q\\'">';
+              var validUrl = safeUrl(officeData.logo_url);
+              if (validUrl) {
+                var img = document.createElement('img');
+                img.src = validUrl;
+                img.alt = 'Logo';
+                img.onerror = function() { logoEl.className = 'logo fallback'; logoEl.textContent = 'Q'; };
+                logoEl.textContent = '';
+                logoEl.appendChild(img);
+              }
             }
           }
           officeLoaded = true;

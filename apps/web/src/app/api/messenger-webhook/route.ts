@@ -27,19 +27,15 @@ export async function GET(request: NextRequest) {
     hasChallenge: !!challenge,
   });
 
+  // Verify token must match — no fallback
   if (mode === 'subscribe' && token && verifyToken && token === verifyToken && challenge) {
     return new NextResponse(challenge, { status: 200 });
   }
 
-  // Fallback for initial setup if env not set
-  if (mode === 'subscribe' && challenge && !verifyToken) {
-    console.warn('[messenger-webhook] No MESSENGER_VERIFY_TOKEN set, accepting for setup');
-    return new NextResponse(challenge, { status: 200 });
-  }
-
-  if (mode === 'subscribe' && challenge) {
-    console.warn('[messenger-webhook] Token mismatch but accepting for setup');
-    return new NextResponse(challenge, { status: 200 });
+  if (mode === 'subscribe' && !verifyToken) {
+    console.error('[messenger-webhook] MESSENGER_VERIFY_TOKEN not set — rejecting verification');
+  } else if (mode === 'subscribe') {
+    console.warn('[messenger-webhook] Token mismatch — rejecting');
   }
 
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -55,10 +51,14 @@ export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
 
-    // Verify signature if app secret is configured
+    // Verify signature — fail closed (reject if verification fails or errors)
     const appSecret = process.env.MESSENGER_APP_SECRET?.trim();
     const signature = request.headers.get('x-hub-signature-256') ?? '';
-    if (appSecret && signature) {
+    if (appSecret) {
+      if (!signature) {
+        console.warn('[messenger-webhook] Missing signature header');
+        return NextResponse.json({ error: 'Missing signature' }, { status: 403 });
+      }
       try {
         const isValid = verifyMessengerSignature(rawBody, signature, appSecret);
         if (!isValid) {
@@ -66,9 +66,11 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
         }
       } catch (err) {
-        console.warn('[messenger-webhook] Signature verification error:', err);
-        // Continue anyway — don't block messages if crypto fails
+        console.error('[messenger-webhook] Signature verification error:', err);
+        return NextResponse.json({ error: 'Signature verification failed' }, { status: 403 });
       }
+    } else {
+      console.warn('[messenger-webhook] MESSENGER_APP_SECRET not set — signature verification disabled');
     }
 
     const json = JSON.parse(rawBody);
@@ -91,9 +93,11 @@ export async function POST(request: NextRequest) {
           event.referral?.ref ||              // returning user clicks m.me link
           event.postback?.referral?.ref ||     // new user taps "Get Started" via m.me link
           event.message?.referral?.ref;        // returning user — ref embedded in message event
+        const redactedSender = "***" + senderId.slice(-4);
+
         if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
           const qrToken = referralRef.replace('qflo_', '');
-          console.log(`[messenger-webhook] Referral from ${senderId}, qr_token: ${qrToken}`);
+          console.log(`[messenger-webhook] Referral from ${redactedSender}, qr_token: ${qrToken}`);
           await handleMessengerReferral(senderId, qrToken);
           continue;
         }
@@ -101,7 +105,7 @@ export async function POST(request: NextRequest) {
         // ── Text message ──
         if (event.message?.text) {
           const text = event.message.text;
-          console.log(`[messenger-webhook] Message from ${senderId}: "${text}"`);
+          console.log(`[messenger-webhook] Message from ${redactedSender}: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`);
 
           // Fetch profile name (Messenger doesn't include it in webhook)
           let profileName: string | undefined;
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest) {
         // ── Postback (button tap) ──
         if (event.postback?.payload) {
           const payload = event.postback.payload;
-          console.log(`[messenger-webhook] Postback from ${senderId}: "${payload}" referral=${JSON.stringify(event.postback?.referral ?? null)}`);
+          console.log(`[messenger-webhook] Postback from ${redactedSender}: "${payload}" referral=${JSON.stringify(event.postback?.referral ?? null)}`);
 
           const sendFn = async ({ to, body }: { to: string; body: string }) => {
             const result = await sendMessengerMessage({ recipientId: to, text: body });
@@ -144,7 +148,7 @@ export async function POST(request: NextRequest) {
             // New user tapped "Get Started".
             // Facebook sometimes sends the referral in a separate event that arrives later,
             // so we can't rely on it. Send welcome + prompt to click the link again.
-            console.log(`[messenger-webhook] GET_STARTED from ${senderId}`);
+            console.log(`[messenger-webhook] GET_STARTED from ${redactedSender}`);
             const welcomeText = [
               '👋 Welcome to *Qflo*!',
               '',
@@ -194,7 +198,7 @@ export async function POST(request: NextRequest) {
         if (event.optin?.one_time_notif_token) {
           const otnToken = event.optin.one_time_notif_token;
           const otnPayload = event.optin.payload ?? '';
-          console.log(`[messenger-webhook] OTN opt-in from ${senderId}, payload: ${otnPayload}`);
+          console.log(`[messenger-webhook] OTN opt-in from ${redactedSender}, payload: ${otnPayload}`);
 
           // Store the OTN token in the session
           const supabase = createAdminClient() as any;
@@ -208,7 +212,7 @@ export async function POST(request: NextRequest) {
           if (error) {
             console.error('[messenger-webhook] OTN token store error:', error);
           } else {
-            console.log(`[messenger-webhook] Stored OTN token for ${senderId}`);
+            console.log(`[messenger-webhook] Stored OTN token for ${redactedSender}`);
           }
           continue;
         }
@@ -336,7 +340,7 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
 
   const result = await sendMessengerMessage({ recipientId: psid, text: message });
   if (result.ok) {
-    console.log(`[messenger-referral] Sent ${switchedFromWhatsApp ? 'switch confirmation' : 'joined message'} to ${psid} for ${ticket.ticket_number}`);
+    console.log(`[messenger-referral] Sent ${switchedFromWhatsApp ? 'switch confirmation' : 'joined message'} to ***${psid.slice(-4)} for ${ticket.ticket_number}`);
   } else {
     console.error(`[messenger-referral] Failed to send: ${result.error}`);
   }

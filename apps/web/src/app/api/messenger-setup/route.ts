@@ -1,4 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
+
+/** Constant-time string comparison to prevent timing attacks */
+function safeCompare(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  try {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * POST /api/messenger-setup
@@ -9,19 +23,21 @@ import { NextRequest, NextResponse } from 'next/server';
  * - Configures greeting text
  *
  * Requires: MESSENGER_PAGE_ACCESS_TOKEN env var
- * Auth: service role key or internal trigger
+ * Auth: service role key or webhook secret
  */
 
 const PAGE_ID = '1097672690089929';
 const GRAPH_API = 'https://graph.facebook.com/v22.0';
 
 export async function POST(request: NextRequest) {
-  // Auth check
+  // Auth check — full token comparison with timing-safe equal
   const authHeader = request.headers.get('authorization') ?? '';
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-  const isServiceKey = serviceKey && authHeader.includes(serviceKey.substring(0, 20));
-  const isInternalTrigger = authHeader === 'Bearer internal-trigger';
-  if (!isServiceKey && !isInternalTrigger) {
+  const webhookSecret = process.env.INTERNAL_WEBHOOK_SECRET ?? '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const isServiceKey = serviceKey && safeCompare(bearerToken, serviceKey);
+  const isWebhookSecret = webhookSecret && safeCompare(bearerToken, webhookSecret);
+  if (!isServiceKey && !isWebhookSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

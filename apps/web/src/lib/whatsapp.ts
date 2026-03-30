@@ -151,6 +151,7 @@ async function sendViaMeta(
         text: { body },
       }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
     }
   );
 
@@ -200,6 +201,7 @@ async function sendViaTwilio(
       },
       body: payload.toString(),
       cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
     }
   );
 

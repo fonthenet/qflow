@@ -45,16 +45,20 @@ export async function sendMessengerMessage({
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v22.0/me/messages?access_token=${config.pageAccessToken}`,
+      `https://graph.facebook.com/v22.0/me/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.pageAccessToken}`,
+        },
         body: JSON.stringify({
           recipient: { id: recipientId },
           message: { text },
           messaging_type: 'RESPONSE',
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -92,10 +96,13 @@ export async function sendMessengerMessageWithTag({
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v22.0/me/messages?access_token=${config.pageAccessToken}`,
+      `https://graph.facebook.com/v22.0/me/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.pageAccessToken}`,
+        },
         body: JSON.stringify({
           recipient: { id: recipientId },
           message: { text },
@@ -103,6 +110,7 @@ export async function sendMessengerMessageWithTag({
           tag,
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -141,10 +149,13 @@ export async function requestOneTimeNotification({
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v22.0/me/messages?access_token=${config.pageAccessToken}`,
+      `https://graph.facebook.com/v22.0/me/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.pageAccessToken}`,
+        },
         body: JSON.stringify({
           recipient: { id: recipientId },
           message: {
@@ -160,6 +171,7 @@ export async function requestOneTimeNotification({
           messaging_type: 'RESPONSE',
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -196,10 +208,13 @@ export async function sendOneTimeNotification({
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v22.0/me/messages?access_token=${config.pageAccessToken}`,
+      `https://graph.facebook.com/v22.0/me/messages`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.pageAccessToken}`,
+        },
         body: JSON.stringify({
           recipient: { one_time_notif_token: otnToken },
           message: { text },
@@ -207,6 +222,7 @@ export async function sendOneTimeNotification({
           tag: 'CONFIRMED_EVENT_UPDATE',
         }),
         cache: 'no-store',
+        signal: AbortSignal.timeout(15000),
       }
     );
 
@@ -233,8 +249,12 @@ export async function getMessengerProfile(psid: string): Promise<{ firstName?: s
 
   try {
     const response = await fetch(
-      `https://graph.facebook.com/v22.0/${psid}?fields=first_name,last_name&access_token=${config.pageAccessToken}`,
-      { cache: 'no-store' }
+      `https://graph.facebook.com/v22.0/${psid}?fields=first_name,last_name`,
+      {
+        headers: { 'Authorization': `Bearer ${config.pageAccessToken}` },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
+      }
     );
     if (!response.ok) return null;
     const data = await response.json();

@@ -27,6 +27,7 @@ export interface SyncStatus {
   pendingCount: number;
   lastSyncAt: string | null;
   connectionQuality?: 'good' | 'slow' | 'flaky' | 'offline';
+  lastError?: { message: string; ticketNumber?: string; type: string; at: number } | null;
 }
 
 export interface UpdateStatus {

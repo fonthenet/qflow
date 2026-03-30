@@ -126,11 +126,23 @@ export function App() {
     const unsub2 = window.qf.sync.onProgress((count: number) => {
       setSyncStatus((prev) => ({ ...prev, pendingCount: count }));
     });
+    const unsub3 = window.qf.sync.onError((error: { message: string; ticketNumber?: string; type: string }) => {
+      setSyncStatus((prev) => ({ ...prev, lastError: { ...error, at: Date.now() } }));
+      // Auto-clear error after 15s
+      setTimeout(() => {
+        setSyncStatus((prev) => {
+          if (prev.lastError && Date.now() - prev.lastError.at >= 14000) {
+            return { ...prev, lastError: null };
+          }
+          return prev;
+        });
+      }, 15000);
+    });
 
     // Initial status
     window.qf.sync.getStatus().then(setSyncStatus);
 
-    return () => { unsub1(); unsub2(); };
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
 
   useEffect(() => {
