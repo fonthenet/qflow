@@ -6,6 +6,7 @@ import { hasVerifiedBookingEmail } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { resolvePlatformConfig } from '@/lib/platform/config';
+import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 
 
 const DAYS_OF_WEEK = [
@@ -311,10 +312,31 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       },
     });
 
-    // NOTE: Notification session creation + "joined" notification is handled by
-    // the Postgres trigger `auto_create_notification_session` on ticket INSERT.
-    // Do NOT duplicate session creation here — it causes `.maybeSingle()` failures
-    // in the whatsapp-send route when two active sessions exist for the same ticket.
+    // Session creation is handled by the Postgres trigger on ticket INSERT.
+    // We send the "joined" message directly here to capture the result for operator feedback.
+    // The trigger's async send will be duplicate-suppressed by the 60s dedup window.
+  }
+
+  // Send WhatsApp "joined" notification and capture result for feedback
+  let whatsappStatus: { sent: boolean; error?: string } = { sent: false };
+  const rawPhone = typeof input.customerData?.phone === 'string' ? (input.customerData.phone as string).trim() : null;
+  if (ticket && rawPhone) {
+    const officeCC = (office.settings as Record<string, unknown> | null)?.country_code as string | undefined;
+    const normalizedPhone = normalizePhone(rawPhone, office.timezone, officeCC);
+    if (normalizedPhone) {
+      try {
+        const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+        const waResult = await sendWhatsAppMessage({
+          to: normalizedPhone,
+          body: `✅ You're in the queue! Ticket: ${ticket.ticket_number}\n\n📍 Track: ${baseUrl}/q/${ticket.qr_token}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.`,
+        });
+        whatsappStatus = { sent: waResult.ok, error: waResult.ok ? undefined : (waResult.error ?? 'Unknown error') };
+      } catch (err: any) {
+        whatsappStatus = { sent: false, error: err?.message ?? 'Send failed' };
+      }
+    } else {
+      whatsappStatus = { sent: false, error: 'Invalid phone number' };
+    }
   }
 
   // Calculate queue position for confirmation screen
@@ -333,7 +355,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
   }
 
   revalidatePath('/desk');
-  return { data: ticket ? { ...ticket, position_in_queue, estimated_wait } : ticket };
+  return { data: ticket ? { ...ticket, position_in_queue, estimated_wait } : ticket, whatsappStatus };
 }
 
 export async function completePublicCheckIn(

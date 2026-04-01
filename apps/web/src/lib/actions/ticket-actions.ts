@@ -306,6 +306,8 @@ export async function createTicket(
     return { error: error.message };
   }
 
+  let whatsappStatus: { sent: boolean; error?: string } | undefined;
+
   if (ticket) {
     await supabase.from('ticket_events').insert({
       ticket_id: ticket.id,
@@ -317,6 +319,8 @@ export async function createTicket(
     });
 
     // Auto-create notification session if customer has a phone number
+    // The Postgres trigger also creates a session, but we do it here too
+    // so we can send the "joined" message directly and return feedback.
     const rawPhone = typeof customerData?.phone === 'string' ? (customerData.phone as string).trim() : null;
     if (rawPhone) {
       const { data: officeRow } = await supabase
@@ -338,12 +342,22 @@ export async function createTicket(
           state: 'active',
           locale: 'fr',
         }).then(() => {}).catch(() => {});
+
+        // Send "joined" notification directly and capture result for operator feedback
+        try {
+          const waResult = await sendWhatsAppMessage({ to: normalizedPhone, body: `✅ You're in the queue! Ticket: ${ticket.ticket_number}\n\n📍 Track: ${(process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '')}/q/${ticket.qr_token}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.` });
+          whatsappStatus = { sent: waResult.ok, error: waResult.ok ? undefined : (waResult.error ?? 'Unknown error') };
+        } catch (err: any) {
+          whatsappStatus = { sent: false, error: err?.message ?? 'Send failed' };
+        }
+      } else {
+        whatsappStatus = { sent: false, error: normalizedPhone ? undefined : 'Invalid phone number' };
       }
     }
   }
 
   revalidatePath('/desk');
-  return { data: ticket };
+  return { data: ticket, whatsappStatus };
 }
 
 interface CreatePublicTicketInput {
@@ -1598,7 +1612,7 @@ export async function resetTicketToQueue(ticketId: string) {
       parked_at: null,
     })
     .eq('id', ticketId)
-    .in('status', ['called', 'serving']);
+    .in('status', ['called', 'serving', 'waiting']);
 
   if (error) {
     return { error: 'Failed to reset ticket' };
@@ -1666,21 +1680,53 @@ export async function parkTicket(ticketId: string) {
   return { data: true };
 }
 
-export async function resumeParkedTicket(ticketId: string) {
+export async function resumeParkedTicket(ticketId: string, deskId?: string) {
   const { context, ticket } = await getTicketOperationContext(ticketId);
   const supabase = context.supabase;
 
-  const { error } = await supabase
-    .from('tickets')
-    .update({
-      status: 'waiting',
-      parked_at: null,
-    })
-    .eq('id', ticketId)
-    .eq('status', 'waiting');
+  // If desk provided, call ticket to that desk (customer gets notified to come back)
+  if (deskId) {
+    // Check no other active ticket on this desk
+    const { data: active } = await supabase
+      .from('tickets')
+      .select('id')
+      .eq('desk_id', deskId)
+      .in('status', ['called', 'serving'])
+      .limit(1);
 
-  if (error) {
-    return { error: 'Failed to resume ticket' };
+    if (active && active.length > 0) {
+      return { error: 'Desk already has an active ticket. Complete or park it first.' };
+    }
+
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'called',
+        desk_id: deskId,
+        called_by_staff_id: context.staff.id,
+        called_at: new Date().toISOString(),
+        parked_at: null,
+      })
+      .eq('id', ticketId)
+      .eq('status', 'waiting');
+
+    if (error) {
+      return { error: 'Failed to resume ticket' };
+    }
+  } else {
+    // No desk — just send back to waiting queue
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'waiting',
+        parked_at: null,
+      })
+      .eq('id', ticketId)
+      .eq('status', 'waiting');
+
+    if (error) {
+      return { error: 'Failed to resume ticket' };
+    }
   }
 
   await syncLiveActivity(ticketId, 'ResumeParkedTicket');
@@ -1690,9 +1736,10 @@ export async function resumeParkedTicket(ticketId: string) {
     entityType: 'ticket',
     entityId: ticket.id,
     officeId: ticket.office_id,
-    summary: `Resumed ticket ${ticket.ticket_number}`,
+    summary: `Resumed ticket ${ticket.ticket_number}${deskId ? ' — called to desk' : ' to queue'}`,
     metadata: {
       previousParkedAt: ticket.parked_at,
+      resumedToDesk: deskId ?? null,
     },
   });
 
@@ -1966,6 +2013,54 @@ export async function unassignDesk(deskId: string) {
     metadata: {
       previousStaffId: desk.current_staff_id,
     },
+  });
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+// ── Desk Status (open / on_break / closed) ──────────────────────────
+
+export async function setDeskOnBreak(deskId: string) {
+  const { context, desk } = await getDeskOperationContext(deskId);
+
+  const { error } = await context.supabase
+    .from('desks')
+    .update({ status: 'on_break' })
+    .eq('id', deskId);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'desk_on_break',
+    entityType: 'desk',
+    entityId: deskId,
+    officeId: desk.office_id,
+    summary: `Desk ${desk.display_name ?? desk.name} set to on break`,
+    metadata: { staffId: context.staff.id },
+  });
+
+  revalidatePath('/desk');
+  return { data: true };
+}
+
+export async function setDeskOpen(deskId: string) {
+  const { context, desk } = await getDeskOperationContext(deskId);
+
+  const { error } = await context.supabase
+    .from('desks')
+    .update({ status: 'open' })
+    .eq('id', deskId);
+
+  if (error) return { error: error.message };
+
+  await logAuditEvent(context, {
+    actionType: 'desk_reopened',
+    entityType: 'desk',
+    entityId: deskId,
+    officeId: desk.office_id,
+    summary: `Desk ${desk.display_name ?? desk.name} reopened`,
+    metadata: { staffId: context.staff.id },
   });
 
   revalidatePath('/desk');
