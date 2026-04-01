@@ -680,6 +680,7 @@ export class SyncEngine {
         // ── Gap 2: Rewrite L- prefix after successful INSERT push ──
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
           this.rewriteOfflineTicket(item.record_id, item.payload);
+          this.createWhatsAppSessionForTicket(item.record_id, item.payload);
         }
         return;
       }
@@ -698,6 +699,7 @@ export class SyncEngine {
             console.log(`[sync:pushImmediate] ✓ Pushed after token refresh`);
             if (item.operation === 'INSERT' && item.table_name === 'tickets') {
               this.rewriteOfflineTicket(item.record_id, item.payload);
+              this.createWhatsAppSessionForTicket(item.record_id, item.payload);
             }
             return;
           }
@@ -810,6 +812,94 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * After a ticket INSERT syncs to cloud, create a whatsapp_session if the ticket
+   * has a customer phone — so the customer receives WhatsApp notifications.
+   */
+  private async createWhatsAppSessionForTicket(recordId: string, rawPayload?: string) {
+    try {
+      let payload: any = null;
+      if (rawPayload) {
+        try { payload = JSON.parse(rawPayload); } catch { return; }
+      }
+      const cd = payload?.customer_data;
+      const rawPhone = typeof cd?.phone === 'string' ? cd.phone.trim() : null;
+      if (!rawPhone) return;
+
+      const officeId = payload?.office_id;
+      if (!officeId) return;
+
+      // Get office timezone + country code for phone normalization
+      const token = await this.ensureFreshToken();
+      const officeRes = await fetch(
+        `${this.supabaseUrl}/rest/v1/offices?id=eq.${officeId}&select=organization_id,timezone,settings`,
+        { headers: { apikey: this.supabaseKey, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) }
+      );
+      if (!officeRes.ok) return;
+      const offices = await officeRes.json();
+      const office = offices[0];
+      if (!office?.organization_id) return;
+
+      const tz = office.timezone;
+      const cc = office.settings?.country_code;
+      const normalized = this.normalizePhoneForWA(rawPhone, tz, cc);
+      if (!normalized) return;
+
+      await fetch(`${this.supabaseUrl}/rest/v1/whatsapp_sessions`, {
+        method: 'POST',
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          organization_id: office.organization_id,
+          ticket_id: recordId,
+          office_id: officeId,
+          department_id: payload.department_id,
+          service_id: payload.service_id || null,
+          whatsapp_phone: normalized,
+          channel: 'whatsapp',
+          state: 'active',
+          locale: 'fr',
+        }),
+        signal: AbortSignal.timeout(5000),
+      });
+      console.log(`[sync:wa-session] ✓ Created session for ticket ${recordId} → ***${normalized.slice(-4)}`);
+    } catch (err: any) {
+      console.warn(`[sync:wa-session] Failed for ${recordId}: ${err?.message}`);
+    }
+  }
+
+  private normalizePhoneForWA(phone: string, tz?: string, cc?: string): string | null {
+    const trimmed = phone.trim();
+    const hasPlus = trimmed.startsWith('+');
+    const digits = trimmed.replace(/[^\d]/g, '');
+    if (digits.length < 7) return null;
+    if (hasPlus) return digits;
+    const TZ_DIAL: Record<string, string> = {
+      'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
+      'Africa/Cairo': '20', 'Europe/Paris': '33', 'Europe/London': '44',
+      'America/New_York': '1', 'America/Chicago': '1', 'America/Denver': '1',
+      'America/Los_Angeles': '1', 'America/Toronto': '1',
+    };
+    const CC_DIAL: Record<string, string> = {
+      DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44',
+      US: '1', CA: '1', SA: '966', AE: '971',
+    };
+    const ALL = [...new Set(Object.values(CC_DIAL))].sort((a, b) => b.length - a.length);
+    const dialCode = (cc && CC_DIAL[cc.toUpperCase()]) || (tz && TZ_DIAL[tz]) || null;
+    if (digits.startsWith('0') && dialCode) return dialCode + digits.slice(1);
+    if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) return digits;
+    for (const code of ALL) { if (digits.startsWith(code) && digits.length >= code.length + 7) return digits; }
+    if (digits.length === 10 && !digits.startsWith('0')) return '1' + digits;
+    if (digits.length === 9 && dialCode === '213') return '213' + digits;
+    if (digits.length === 9 && dialCode === '33') return '33' + digits;
+    if (dialCode && digits.length <= 9) return dialCode + digits;
+    return digits;
+  }
+
   async syncNow() {
     if (!this.isOnline) return;
     if (!this.checkCircuitBreaker()) return; // circuit breaker open — skip
@@ -856,6 +946,7 @@ export class SyncEngine {
                 successCount++;
                 if (item.operation === 'INSERT' && item.table_name === 'tickets') {
                   this.rewriteOfflineTicket(item.record_id, item.payload);
+                  this.createWhatsAppSessionForTicket(item.record_id, item.payload);
                 }
                 continue;
               }
@@ -907,6 +998,7 @@ export class SyncEngine {
         // Rewrite L- prefix after successful INSERT push
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
           this.rewriteOfflineTicket(item.record_id, item.payload);
+          this.createWhatsAppSessionForTicket(item.record_id, item.payload);
         }
       } catch (err: any) {
         // Non-auth error: exponential backoff
@@ -1101,7 +1193,7 @@ export class SyncEngine {
         fetch(`${this.supabaseUrl}/rest/v1/offices?or=(${officeFilter})&select=id,name,address,organization_id,settings,operating_hours,timezone`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/departments?or=(${officeInFilter})&select=id,name,code,office_id`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/services?select=id,name,department_id,estimated_service_time`, { headers, signal: AbortSignal.timeout(10000) }),
-        fetch(`${this.supabaseUrl}/rest/v1/desks?or=(${officeInFilter})&select=id,name,department_id,office_id,is_active,current_staff_id`, { headers, signal: AbortSignal.timeout(10000) }),
+        fetch(`${this.supabaseUrl}/rest/v1/desks?or=(${officeInFilter})&select=id,name,display_name,department_id,office_id,is_active,current_staff_id,status`, { headers, signal: AbortSignal.timeout(10000) }),
         fetch(`${this.supabaseUrl}/rest/v1/office_holidays?or=(${officeInFilter})&select=id,office_id,holiday_date,name,is_full_day,open_time,close_time`, { headers, signal: AbortSignal.timeout(10000) }).catch(() => null),
       ]);
 
@@ -1133,9 +1225,9 @@ export class SyncEngine {
 
       if (desksRes.ok) {
         const desks = await desksRes.json();
-        const stmt = this.db.prepare(`INSERT OR REPLACE INTO desks (id, name, department_id, office_id, is_active, current_staff_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        const stmt = this.db.prepare(`INSERT OR REPLACE INTO desks (id, name, display_name, department_id, office_id, is_active, current_staff_id, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         for (const d of desks) {
-          stmt.run(d.id, d.name, d.department_id, d.office_id, d.is_active ? 1 : 0, d.current_staff_id, now);
+          stmt.run(d.id, d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, d.current_staff_id, d.status ?? 'open', now);
         }
       }
 
@@ -1203,20 +1295,25 @@ export class SyncEngine {
             const localRank = statusRank[local.status] ?? 0;
             const cloudRank = statusRank[t.status] ?? 0;
             if (cloudRank < localRank) {
+              const hasPendingSync = (checkPending.get(t.id) as any)?.c > 0;
               // Allow cloud to override local "cancelled" when the cancellation was never pushed
               const isLocalAutoCancel = local.status === 'cancelled' && ['waiting', 'called', 'serving'].includes(t.status);
-              const hasPendingSync = (checkPending.get(t.id) as any)?.c > 0;
-              if (isLocalAutoCancel && !hasPendingSync) {
-                console.log(`[sync:pull] Cloud overrides local auto-cancel for ${t.ticket_number}: local=cancelled → cloud=${t.status}`);
-                logTicketEvent(t.id, 'restored_from_cloud', {
-                  ticketNumber: t.ticket_number,
-                  fromStatus: 'cancelled',
-                  toStatus: t.status,
-                  source: 'sync_pull',
-                  details: { reason: 'cloud_still_active_local_auto_cancelled' },
-                });
+              // Allow cloud to override when another platform made a legitimate change
+              // (e.g., app sent ticket back to queue, or unparked). If the station has no
+              // pending sync for this ticket, the cloud is the source of truth.
+              if (!hasPendingSync) {
+                console.log(`[sync:pull] Cloud overrides local for ${t.ticket_number}: local=${local.status} → cloud=${t.status} (no pending sync)`);
+                if (isLocalAutoCancel) {
+                  logTicketEvent(t.id, 'restored_from_cloud', {
+                    ticketNumber: t.ticket_number,
+                    fromStatus: 'cancelled',
+                    toStatus: t.status,
+                    source: 'sync_pull',
+                    details: { reason: 'cloud_still_active_local_auto_cancelled' },
+                  });
+                }
               } else {
-                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank})`);
+                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank}), pending sync exists`);
                 continue;
               }
             }

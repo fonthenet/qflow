@@ -1,5 +1,40 @@
 import { supabase } from './supabase';
 
+// ── Phone normalization for WhatsApp ────────────────────────────
+const TIMEZONE_DIAL: Record<string, string> = {
+  'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
+  'Africa/Cairo': '20', 'Africa/Lagos': '234', 'Europe/Paris': '33',
+  'Europe/London': '44', 'Europe/Berlin': '49', 'Asia/Riyadh': '966',
+  'Asia/Dubai': '971', 'America/New_York': '1', 'America/Chicago': '1',
+  'America/Denver': '1', 'America/Los_Angeles': '1', 'America/Toronto': '1',
+};
+const ISO_DIAL: Record<string, string> = {
+  DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44', DE: '49',
+  US: '1', CA: '1', SA: '966', AE: '971', QA: '974',
+};
+const ALL_CODES = [...new Set(Object.values(ISO_DIAL))].sort((a, b) => b.length - a.length);
+
+function normalizePhoneForWhatsApp(phone: string, tz?: string | null, cc?: string | null): string | null {
+  const trimmed = phone.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/[^\d]/g, '');
+  if (digits.length < 7) return null;
+  if (hasPlus) return digits;
+
+  const dialCode = (cc && ISO_DIAL[cc.toUpperCase()]) || (tz && TIMEZONE_DIAL[tz]) || null;
+
+  if (digits.startsWith('0') && dialCode) return dialCode + digits.slice(1);
+  if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) return digits;
+  for (const code of ALL_CODES) {
+    if (digits.startsWith(code) && digits.length >= code.length + 7) return digits;
+  }
+  if (digits.length === 10 && !digits.startsWith('0')) return '1' + digits;
+  if (digits.length === 9 && dialCode === '213') return '213' + digits;
+  if (digits.length === 9 && dialCode === '33') return '33' + digits;
+  if (dialCode && digits.length <= 9) return dialCode + digits;
+  return digits;
+}
+
 // ── Call Next Ticket (with overflow + round-robin) ──────────────
 export async function callNextTicket(deskId: string, staffId: string) {
   // Try round-robin first (alternates between desk's services)
@@ -166,6 +201,33 @@ export async function createInHouseTicket(params: {
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Auto-create WhatsApp notification session if customer has a phone
+  if (data && customerData.phone) {
+    try {
+      const { data: officeRow } = await supabase
+        .from('offices')
+        .select('organization_id, timezone, settings')
+        .eq('id', params.officeId)
+        .single();
+      const officeCC = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
+      const normalizedPhone = normalizePhoneForWhatsApp(customerData.phone, officeRow?.timezone, officeCC);
+      if (normalizedPhone && officeRow?.organization_id) {
+        await supabase.from('whatsapp_sessions').insert({
+          organization_id: officeRow.organization_id,
+          ticket_id: data.id,
+          office_id: params.officeId,
+          department_id: params.departmentId,
+          service_id: params.serviceId || null,
+          whatsapp_phone: normalizedPhone,
+          channel: 'whatsapp',
+          state: 'active',
+          locale: 'fr',
+        });
+      }
+    } catch {}
+  }
+
   return data;
 }
 
