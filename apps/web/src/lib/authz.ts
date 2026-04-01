@@ -239,7 +239,7 @@ export async function getServiceById(context: StaffContext, serviceId: string) {
 export async function getDeskById(context: StaffContext, deskId: string) {
   const { data: desk } = await context.supabase
     .from('desks')
-    .select('id, office_id, department_id, current_staff_id')
+    .select('id, office_id, department_id, current_staff_id, name, display_name')
     .eq('id', deskId)
     .single();
 

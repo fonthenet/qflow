@@ -93,7 +93,7 @@ function t(key: string, locale: Locale, vars: Record<string, string>): string {
 // ── WhatsApp send (Meta Cloud API — direct, no Vercel hop) ──────────
 
 // Template name for outbound notifications (must be approved in Meta Business Manager)
-const WA_TEMPLATE_NAME = Deno.env.get("WHATSAPP_TEMPLATE_NAME") ?? "queue_notification";
+const WA_TEMPLATE_NAME = Deno.env.get("WHATSAPP_TEMPLATE_NAME") ?? "qflo_queue_update";
 const WA_TEMPLATE_LANG = Deno.env.get("WHATSAPP_TEMPLATE_LANG") ?? "en";
 
 async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>): Promise<{ ok: boolean; errorCode?: number }> {

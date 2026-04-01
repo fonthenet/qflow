@@ -210,7 +210,7 @@ async function sendViaMeta(
     // Outside 24h window or not in allowed list → retry with template
     if (errorCode === 131047 || errorCode === 131030) {
       console.log('[whatsapp:meta] Retrying with template message...');
-      const templateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'queue_notification';
+      const templateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'qflo_queue_update';
       const templateLang = process.env.WHATSAPP_TEMPLATE_LANG ?? 'en';
       const templateRes = await fetch(
         `https://graph.facebook.com/v22.0/${config.phoneNumberId}/messages`,
