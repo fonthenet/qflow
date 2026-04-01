@@ -95,11 +95,30 @@ export async function POST(request: NextRequest) {
           event.message?.referral?.ref;        // returning user — ref embedded in message event
         const redactedSender = "***" + senderId.slice(-4);
 
-        if (referralRef && typeof referralRef === 'string' && referralRef.startsWith('qflo_')) {
-          const qrToken = referralRef.replace('qflo_', '');
-          console.log(`[messenger-webhook] Referral from ${redactedSender}, qr_token: ${qrToken}`);
-          await handleMessengerReferral(senderId, qrToken);
-          continue;
+        if (referralRef && typeof referralRef === 'string') {
+          if (referralRef.startsWith('qflo_')) {
+            const qrToken = referralRef.replace('qflo_', '');
+            console.log(`[messenger-webhook] Referral from ${redactedSender}, qr_token: ${qrToken}`);
+            await handleMessengerReferral(senderId, qrToken);
+            continue;
+          }
+          if (referralRef.startsWith('JOIN_')) {
+            const code = referralRef.replace('JOIN_', '');
+            console.log(`[messenger-webhook] JOIN referral from ${redactedSender}, code: ${code}`);
+            let profileName: string | undefined;
+            try {
+              const profile = await getMessengerProfile(senderId);
+              if (profile?.firstName) {
+                profileName = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
+              }
+            } catch { /* non-critical */ }
+            const sendFn = async ({ to, body }: { to: string; body: string }) => {
+              const result = await sendMessengerMessage({ recipientId: to, text: body });
+              return { ok: result.ok };
+            };
+            await handleInboundMessage('messenger', senderId, `JOIN ${code}`, sendFn, profileName);
+            continue;
+          }
         }
 
         // ── Text message ──
