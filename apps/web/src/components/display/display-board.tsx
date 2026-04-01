@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LanguageSwitcher } from '@/components/shared/language-switcher';
 import { useI18n } from '@/components/providers/locale-provider';
+import { createClient } from '@/lib/supabase/client';
 
 interface ScreenSettings {
   announcement_sound?: boolean;
@@ -113,56 +114,83 @@ export function DisplayBoard({
     return () => window.removeEventListener('resize', updateViewport);
   }, []);
 
+  const refreshData = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/display-status/${displayScreen.screen_token}`, {
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const nextActive = Array.isArray(data.activeTickets) ? data.activeTickets : [];
+      const nextWaiting = Array.isArray(data.waitingTickets) ? data.waitingTickets : [];
+      const nextScreen = data.screen ?? displayScreen;
+      const nextCalledAnchors = updateCalledAnchors(nextActive);
+
+      for (const ticket of nextActive) {
+        if (ticket.status !== 'called' || !ticket.called_at) continue;
+        const previousCalledAt = knownCalledAnchorsRef.current.get(ticket.id);
+        if (!previousCalledAt || previousCalledAt !== ticket.called_at) {
+          setLastCalledTicket(ticket);
+          setShowAnnouncement(true);
+          if ((nextScreen.settings?.announcement_sound ?? announcementSound) === true) {
+            try {
+              const audio = new Audio('/sounds/chime.mp3');
+              audio.play().catch(() => {});
+            } catch {}
+          }
+          window.setTimeout(
+            () => setShowAnnouncement(false),
+            ((nextScreen.settings?.announcement_duration ?? (announcementDuration / 1000)) as number) * 1000
+          );
+          break;
+        }
+      }
+
+      knownCalledAnchorsRef.current = nextCalledAnchors;
+      setDisplayScreen(nextScreen);
+      setActiveTickets(nextActive);
+      setWaitingTickets(nextWaiting);
+      setServedTodayCount(typeof data.servedTodayCount === 'number' ? data.servedTodayCount : 0);
+    } catch (error) {
+      console.warn('[Display] Failed to refresh display status', error);
+    }
+  }, [announcementDuration, announcementSound, displayScreen.screen_token, updateCalledAnchors]);
+
+  // Supabase Realtime + fallback polling
   useEffect(() => {
     if (sandboxMode) return;
 
-    const refreshData = async () => {
-      try {
-        const response = await fetch(`/api/display-status/${displayScreen.screen_token}`, {
-          cache: 'no-store',
-        });
-        if (!response.ok) return;
-
-        const data = await response.json();
-        const nextActive = Array.isArray(data.activeTickets) ? data.activeTickets : [];
-        const nextWaiting = Array.isArray(data.waitingTickets) ? data.waitingTickets : [];
-        const nextScreen = data.screen ?? displayScreen;
-        const nextCalledAnchors = updateCalledAnchors(nextActive);
-
-        for (const ticket of nextActive) {
-          if (ticket.status !== 'called' || !ticket.called_at) continue;
-          const previousCalledAt = knownCalledAnchorsRef.current.get(ticket.id);
-          if (!previousCalledAt || previousCalledAt !== ticket.called_at) {
-            setLastCalledTicket(ticket);
-            setShowAnnouncement(true);
-            if ((nextScreen.settings?.announcement_sound ?? announcementSound) === true) {
-              try {
-                const audio = new Audio('/sounds/chime.mp3');
-                audio.play().catch(() => {});
-              } catch {}
-            }
-            window.setTimeout(
-              () => setShowAnnouncement(false),
-              ((nextScreen.settings?.announcement_duration ?? (announcementDuration / 1000)) as number) * 1000
-            );
-            break;
-          }
-        }
-
-        knownCalledAnchorsRef.current = nextCalledAnchors;
-        setDisplayScreen(nextScreen);
-        setActiveTickets(nextActive);
-        setWaitingTickets(nextWaiting);
-        setServedTodayCount(typeof data.servedTodayCount === 'number' ? data.servedTodayCount : 0);
-      } catch (error) {
-        console.warn('[Display] Failed to refresh display status', error);
-      }
-    };
-
     refreshData();
-    const pollInterval = setInterval(refreshData, 4000);
-    return () => clearInterval(pollInterval);
-  }, [announcementDuration, announcementSound, displayScreen.screen_token, sandboxMode, updateCalledAnchors]);
+
+    // Subscribe to realtime ticket changes for instant updates
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`display-${screen.office_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tickets',
+          filter: `office_id=eq.${screen.office_id}`,
+        },
+        () => { refreshData(); }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Display] Realtime subscription failed:', status, '— relying on polling fallback');
+        }
+      });
+
+    // Fallback polling at longer interval (realtime handles the fast path)
+    const pollInterval = setInterval(refreshData, 15000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
+    };
+  }, [sandboxMode, screen.office_id, refreshData]);
 
   const visibleActiveTickets = activeTickets.filter((ticket) => {
     if (ticket.status === 'serving') return true;
