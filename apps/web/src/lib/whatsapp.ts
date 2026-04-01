@@ -201,10 +201,47 @@ async function sendViaMeta(
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const errorCode = data?.error?.code ?? 0;
     const errorMsg =
       data?.error?.message ??
       `Meta WhatsApp API failed with status ${response.status}`;
-    console.error('[whatsapp:meta] Send failed:', errorMsg, data);
+    console.error('[whatsapp:meta] Send failed:', errorMsg, `(code=${errorCode})`, data);
+
+    // Outside 24h window or not in allowed list → retry with template
+    if (errorCode === 131047 || errorCode === 131030) {
+      console.log('[whatsapp:meta] Retrying with template message...');
+      const templateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'queue_notification';
+      const templateLang = process.env.WHATSAPP_TEMPLATE_LANG ?? 'en';
+      const templateRes = await fetch(
+        `https://graph.facebook.com/v22.0/${config.phoneNumberId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${config.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'template',
+            template: {
+              name: templateName,
+              language: { code: templateLang },
+              components: [{ type: 'body', parameters: [{ type: 'text', text: body }] }],
+            },
+          }),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      const templateData = await templateRes.json().catch(() => ({}));
+      if (templateRes.ok) {
+        const tmplMsgId = templateData?.messages?.[0]?.id;
+        return { ok: true, provider: 'meta', to: normalizedTo, sid: tmplMsgId };
+      }
+      console.error('[whatsapp:meta] Template send also failed:', templateData?.error?.message);
+    }
+
     return { ok: false, provider: 'meta', to: normalizedTo, error: errorMsg };
   }
 

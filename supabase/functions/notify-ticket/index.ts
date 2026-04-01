@@ -36,9 +36,9 @@ interface Session {
 
 const messages: Record<string, Record<Locale, string>> = {
   called: {
-    fr: "🔔 *C'est votre tour chez {name} !* Ticket *{ticket}* — veuillez vous rendre au *{desk}* dans les *{wait} minutes*.\n\nSuivi : {url}",
-    ar: "*حان دورك في {name}!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* خلال *{wait} دقائق* 🔔\n\nتتبع: {url}",
-    en: "🔔 *It's your turn at {name}!* Ticket *{ticket}* — please go to *{desk}* within *{wait} minutes*.\n\nTrack: {url}",
+    fr: "🔔 C'est votre tour chez *{name}* ! Ticket *{ticket}* — veuillez vous rendre au *{desk}* dans les *{wait} minutes*.\n\nSuivi : {url}",
+    ar: "حان دورك في *{name}*! التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* خلال *{wait} دقائق* 🔔\n\nتتبع: {url}",
+    en: "🔔 It's your turn at *{name}*! Ticket *{ticket}* — please go to *{desk}* within *{wait} minutes*.\n\nTrack: {url}",
   },
   recall: {
     fr: "⏰ *Rappel — {name} :* Le ticket *{ticket}* vous attend toujours au *{desk}*. Vous avez *{wait} minutes* pour vous présenter.\n\nSuivi : {url}",
@@ -51,9 +51,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: "📢 *Buzz — {name}:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}",
   },
   serving: {
-    fr: "▶️ *Votre service a commencé chez {name} !* Ticket *{ticket}* — vous êtes maintenant pris en charge au *{desk}*.",
-    ar: "*بدأت خدمتك في {name}!* التذكرة *{ticket}* — أنت الآن قيد الخدمة في *{desk}* ▶️",
-    en: "▶️ *Your service has started at {name}!* Ticket *{ticket}* — you're now being served at *{desk}*.",
+    fr: "▶️ Votre service a commencé chez *{name}* ! Ticket *{ticket}* — vous êtes maintenant pris en charge au *{desk}*.",
+    ar: "بدأت خدمتك في *{name}*! التذكرة *{ticket}* — أنت الآن قيد الخدمة في *{desk}* ▶️",
+    en: "▶️ Your service has started at *{name}*! Ticket *{ticket}* — you're now being served at *{desk}*.",
   },
   no_show: {
     fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
@@ -92,11 +92,12 @@ function t(key: string, locale: Locale, vars: Record<string, string>): string {
 
 // ── WhatsApp send (Meta Cloud API — direct, no Vercel hop) ──────────
 
-async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
-  if (!WA_ACCESS_TOKEN || !WA_PHONE_NUMBER_ID) return false;
+// Template name for outbound notifications (must be approved in Meta Business Manager)
+const WA_TEMPLATE_NAME = Deno.env.get("WHATSAPP_TEMPLATE_NAME") ?? "queue_notification";
+const WA_TEMPLATE_LANG = Deno.env.get("WHATSAPP_TEMPLATE_LANG") ?? "en";
 
-  const digits = phone.replace(/[^\d]/g, "");
-  if (digits.length < 7) return false;
+async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>): Promise<{ ok: boolean; errorCode?: number }> {
+  if (!WA_ACCESS_TOKEN || !WA_PHONE_NUMBER_ID) return { ok: false };
 
   try {
     const res = await fetch(
@@ -107,26 +108,53 @@ async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
           Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: digits,
-          type: "text",
-          text: { body },
-        }),
+        body: JSON.stringify({ messaging_product: "whatsapp", to: phone, ...payload }),
         signal: AbortSignal.timeout(15000),
       }
     );
     const data = await res.json();
     if (!res.ok) {
-      console.error("[notify-ticket:whatsapp] Failed:", data?.error?.message ?? res.status);
-      return false;
+      const code = data?.error?.code ?? 0;
+      console.error("[notify-ticket:whatsapp] Failed:", data?.error?.message ?? res.status, `(code=${code})`);
+      return { ok: false, errorCode: code };
     }
-    console.log("[notify-ticket:whatsapp] Sent to ***" + digits.slice(-4));
-    return true;
+    console.log("[notify-ticket:whatsapp] Sent to ***" + phone.slice(-4));
+    return { ok: true };
   } catch (err) {
     console.error("[notify-ticket:whatsapp] Error:", err);
-    return false;
+    return { ok: false };
   }
+}
+
+async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
+  const digits = phone.replace(/[^\d]/g, "");
+  if (digits.length < 7) return false;
+
+  // Try free-form text first (works if customer messaged us within 24h)
+  const textResult = await sendWhatsAppRaw(digits, { type: "text", text: { body } });
+  if (textResult.ok) return true;
+
+  // If outside 24h window (error 131047) or recipient not in allowed list (131030),
+  // retry with an approved template message
+  if (textResult.errorCode === 131047 || textResult.errorCode === 131030) {
+    console.log("[notify-ticket:whatsapp] Outside 24h window, retrying with template...");
+    const templateResult = await sendWhatsAppRaw(digits, {
+      type: "template",
+      template: {
+        name: WA_TEMPLATE_NAME,
+        language: { code: WA_TEMPLATE_LANG },
+        components: [
+          {
+            type: "body",
+            parameters: [{ type: "text", text: body }],
+          },
+        ],
+      },
+    });
+    return templateResult.ok;
+  }
+
+  return false;
 }
 
 // ── Messenger send (direct — no Vercel hop) ─────────────────────────
