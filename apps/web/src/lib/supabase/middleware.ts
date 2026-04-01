@@ -38,7 +38,7 @@ export async function updateSession(request: NextRequest, requestHeaders?: Heade
   // Public routes that don't need auth
   const publicPrefixes = [
     '/q/', '/ticket/', '/display/', '/d/', '/k/', '/kiosk/', '/join/', '/book/',
-    '/login', '/register', '/history', '/api/',
+    '/login', '/register', '/history', '/scan/', '/api/',
     // Marketing & legal pages
     '/solutions', '/pricing', '/how-it-works', '/contact', '/resources', '/docs',
     '/privacy', '/terms',
