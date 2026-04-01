@@ -102,6 +102,14 @@ const ISO_COUNTRY_DIAL: Record<string, string> = {
  * If the phone starts with 0 (local format), the leading 0 is replaced
  * with the country calling code derived from countryCode or timezone.
  */
+/**
+ * Known country dial codes sorted longest-first so we match 3-digit codes before 1-digit.
+ * Used to detect if a number already starts with a valid international prefix.
+ */
+const ALL_DIAL_CODES = Object.values(ISO_COUNTRY_DIAL)
+  .filter((v, i, a) => a.indexOf(v) === i) // unique
+  .sort((a, b) => b.length - a.length);     // longest first
+
 export function normalizePhone(phone: string, timezone?: string | null, countryCode?: string | null): string | null {
   // Strip everything except digits and leading +
   const trimmed = phone.trim();
@@ -122,8 +130,23 @@ export function normalizePhone(phone: string, timezone?: string | null, countryC
     return dialCode + digits.slice(1);
   }
 
-  // US/Canada: 10-digit local number without country code → prepend 1
-  if (digits.length === 10 && !digits.startsWith('0') && !digits.startsWith('1') && dialCode === '1') {
+  // Already starts with the office's own dial code → use as-is
+  if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) {
+    return digits;
+  }
+
+  // Detect if the number already starts with ANY known country code.
+  // e.g. 16612346622 starts with "1" (US), 213551234567 starts with "213" (Algeria)
+  // This handles cross-country numbers entered without "+"
+  for (const code of ALL_DIAL_CODES) {
+    if (digits.startsWith(code) && digits.length >= code.length + 7) {
+      return digits; // already has a valid international prefix
+    }
+  }
+
+  // US/Canada: 10-digit number → prepend 1
+  // Works regardless of office country (US numbers are always 10 digits)
+  if (digits.length === 10 && !digits.startsWith('0')) {
     return '1' + digits;
   }
 
@@ -137,8 +160,7 @@ export function normalizePhone(phone: string, timezone?: string | null, countryC
     return '33' + digits;
   }
 
-  // Generic: if we have a dial code and the number doesn't already start with it,
-  // and the length matches a local number (7-9 digits), prepend the dial code
+  // Generic: short local number → prepend office dial code
   if (dialCode && digits.length <= 9 && !digits.startsWith(dialCode)) {
     return dialCode + digits;
   }
