@@ -139,9 +139,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
   },
   your_turn: {
-    fr: '🔔 *C\'est votre tour !* Veuillez vous diriger vers le point de service.',
-    ar: '*حان دورك!* يرجى التوجه إلى نقطة الخدمة 🔔',
-    en: '🔔 *It\'s your turn!* Please proceed to your service point.',
+    fr: '🔔 C\'est votre tour ! Veuillez vous diriger vers le point de service.',
+    ar: 'حان دورك! يرجى التوجه إلى نقطة الخدمة 🔔',
+    en: '🔔 It\'s your turn! Please proceed to your service point.',
   },
   ticket_inactive: {
     fr: 'Votre ticket n\'est plus actif. Envoyez *REJOINDRE <code>* pour rejoindre à nouveau.',
@@ -233,15 +233,25 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم الإلغاء. لم تنضم إلى الطابور ❌\n\nأرسل *انضم <الرمز>* للمحاولة مجددًا.',
     en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
+  opt_in_confirmed: {
+    fr: '✅ Parfait ! Vous recevrez les notifications en direct pour votre ticket *{ticket}*.',
+    ar: 'ممتاز! ستتلقى إشعارات مباشرة لتذكرتك *{ticket}* ✅',
+    en: '✅ Great! You\'ll receive live notifications for your ticket *{ticket}*.',
+  },
+  opt_out_confirmed: {
+    fr: '🔕 Vous ne recevrez plus de notifications pour le ticket *{ticket}*.',
+    ar: 'لن تتلقى المزيد من الإشعارات لتذكرة *{ticket}* 🔕',
+    en: '🔕 You won\'t receive further notifications for ticket *{ticket}*.',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
 
 export const notificationMessages: Record<string, Record<Locale, string>> = {
   called: {
-    fr: '🔔 *C\'est votre tour !* Ticket *{ticket}* — veuillez vous rendre au *{desk}*.\n\nSuivi : {url}',
-    ar: '*حان دورك!* التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* 🔔\n\nتتبع: {url}',
-    en: '🔔 *It\'s your turn!* Ticket *{ticket}* — please go to *{desk}*.\n\nTrack: {url}',
+    fr: '🔔 C\'est votre tour ! Ticket *{ticket}* — veuillez vous rendre au *{desk}*.\n\nSuivi : {url}',
+    ar: 'حان دورك! التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* 🔔\n\nتتبع: {url}',
+    en: '🔔 It\'s your turn! Ticket *{ticket}* — please go to *{desk}*.\n\nTrack: {url}',
   },
   recall: {
     fr: '⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*.\n\nSuivi : {url}',
@@ -274,9 +284,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '🚫 Ticket *{ticket}* has been cancelled.',
   },
   joined: {
-    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
-    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\nتتبع موقعك: {url} 📍',
-    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
+    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}\n\n💬 Répondez *OUI* pour recevoir les alertes en direct ou *NON* pour ne plus recevoir.',
+    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\nتتبع موقعك: {url} 📍\n\n💬 أرسل *نعم* لتلقي التنبيهات المباشرة أو *لا* للإلغاء.',
+    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.',
   },
   default: {
     fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
@@ -621,6 +631,50 @@ export async function handleInboundMessage(
       }
       // Something else — clear pending and fall through to normal processing
       await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+    }
+  }
+
+  // ── YES/NO opt-in for in-house tickets (active sessions) ──
+  // When an in-house ticket is created, the customer gets a "joined" message
+  // with "Reply YES for live alerts". Their reply opens the 24h conversation
+  // window (making subsequent notifications free). NO opts them out.
+  {
+    const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
+    const isNo = /^(NON|NO|لا|N|0)$/i.test(cleaned);
+
+    if (isYes || isNo) {
+      const supabaseOptIn = createAdminClient() as any;
+      const identColOpt = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+      const { data: activeSession } = await supabaseOptIn
+        .from('whatsapp_sessions')
+        .select('id, ticket_id, locale, channel')
+        .eq(identColOpt, identifier)
+        .eq('state', 'active')
+        .eq('channel', channel)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeSession && activeSession.ticket_id) {
+        const activeLocale = (activeSession.locale as Locale) || 'fr';
+        // Look up ticket number for the message
+        const { data: ticketRow } = await supabaseOptIn
+          .from('tickets').select('ticket_number').eq('id', activeSession.ticket_id).single();
+        const ticketNum = ticketRow?.ticket_number ?? '';
+
+        if (isYes) {
+          await sendMessage({ to: identifier, body: t('opt_in_confirmed', activeLocale, { ticket: ticketNum }) });
+          return;
+        }
+        if (isNo) {
+          // Opt out: mark session completed so no more notifications are sent
+          await supabaseOptIn.from('whatsapp_sessions')
+            .update({ state: 'completed' })
+            .eq('id', activeSession.id);
+          await sendMessage({ to: identifier, body: t('opt_out_confirmed', activeLocale, { ticket: ticketNum }) });
+          return;
+        }
+      }
     }
   }
 

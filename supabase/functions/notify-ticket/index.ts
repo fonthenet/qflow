@@ -134,10 +134,12 @@ async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
   const textResult = await sendWhatsAppRaw(digits, { type: "text", text: { body } });
   if (textResult.ok) return true;
 
-  // If outside 24h window (error 131047) or recipient not in allowed list (131030),
+  // If outside 24h window (error 131047) or recipient not in allowed list (131030/130429),
   // retry with an approved template message
-  if (textResult.errorCode === 131047 || textResult.errorCode === 131030) {
+  if (textResult.errorCode === 131047 || textResult.errorCode === 131030 || textResult.errorCode === 130429) {
     console.log("[notify-ticket:whatsapp] Outside 24h window, retrying with template...");
+
+    // 1) Try custom template (queue_notification) with the message body as parameter
     const templateResult = await sendWhatsAppRaw(digits, {
       type: "template",
       template: {
@@ -222,7 +224,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "14";
+const VERSION = "16";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
