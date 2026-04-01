@@ -103,8 +103,14 @@ const ISO_COUNTRY_DIAL: Record<string, string> = {
  * with the country calling code derived from countryCode or timezone.
  */
 export function normalizePhone(phone: string, timezone?: string | null, countryCode?: string | null): string | null {
-  const digits = phone.replace(/[^\d]/g, '');
+  // Strip everything except digits and leading +
+  const trimmed = phone.trim();
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/[^\d]/g, '');
   if (digits.length < 7) return null;
+
+  // Already international with + prefix → use as-is (strip the +, Meta API wants digits only)
+  if (hasPlus) return digits;
 
   const dialCode = (countryCode && ISO_COUNTRY_DIAL[countryCode.toUpperCase()])
     || (timezone && TIMEZONE_COUNTRY_CODE[timezone])
@@ -117,9 +123,24 @@ export function normalizePhone(phone: string, timezone?: string | null, countryC
   }
 
   // US/Canada: 10-digit local number without country code → prepend 1
-  // e.g. 6612346622 or (661) 234-6622 → 16612346622
   if (digits.length === 10 && !digits.startsWith('0') && !digits.startsWith('1') && dialCode === '1') {
     return '1' + digits;
+  }
+
+  // Algeria: 9-digit subscriber number without leading 0 (e.g. 551234567)
+  if (digits.length === 9 && dialCode === '213') {
+    return '213' + digits;
+  }
+
+  // France: 9-digit subscriber number without leading 0 (e.g. 612345678)
+  if (digits.length === 9 && dialCode === '33') {
+    return '33' + digits;
+  }
+
+  // Generic: if we have a dial code and the number doesn't already start with it,
+  // and the length matches a local number (7-9 digits), prepend the dial code
+  if (dialCode && digits.length <= 9 && !digits.startsWith(dialCode)) {
+    return dialCode + digits;
   }
 
   return digits;

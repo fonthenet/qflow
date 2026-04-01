@@ -38,9 +38,14 @@ export async function requeueDeskTickets(deskId: string) {
 
 // ── Safety: Adjust booking priorities based on scheduled time ───
 export async function adjustBookingPriorities() {
-  const { data, error } = await supabase.rpc('adjust_booking_priorities');
-  if (error) console.warn('adjust_booking_priorities error:', error.message);
-  return data ?? 0;
+  try {
+    const { data, error } = await supabase.rpc('adjust_booking_priorities');
+    if (error) console.warn('adjust_booking_priorities error:', error.message);
+    return data ?? 0;
+  } catch {
+    // Network unavailable — silently skip
+    return 0;
+  }
 }
 
 // ── Safety: Clean up stale tickets from previous days ───────────
@@ -74,6 +79,156 @@ export async function pingDeskHeartbeat(deskId: string) {
     .from('desks')
     .update({ last_active_at: new Date().toISOString() })
     .eq('id', deskId);
+}
+
+// ── Desk Status ──────────────────────────────────────────────────
+export async function openDesk(deskId: string, staffId: string) {
+  const { error } = await supabase
+    .from('desks')
+    .update({ status: 'open', current_staff_id: staffId })
+    .eq('id', deskId);
+  if (error) throw new Error(error.message);
+}
+
+export async function closeDeskStatus(deskId: string) {
+  const { error } = await supabase
+    .from('desks')
+    .update({ status: 'closed', current_staff_id: null })
+    .eq('id', deskId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setDeskOnBreak(deskId: string) {
+  const { error } = await supabase
+    .from('desks')
+    .update({ status: 'on_break' })
+    .eq('id', deskId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setDeskOpen(deskId: string) {
+  const { error } = await supabase
+    .from('desks')
+    .update({ status: 'open' })
+    .eq('id', deskId);
+  if (error) throw new Error(error.message);
+}
+
+// ── In-House Booking (create ticket with proper ticket_number) ───
+export async function createInHouseTicket(params: {
+  officeId: string;
+  departmentId: string;
+  serviceId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  visitReason?: string;
+  priority?: number;
+}) {
+  // 1) Generate ticket number via the DB RPC (atomic, handles daily reset)
+  const { data: seqResult, error: seqError } = await supabase.rpc(
+    'generate_daily_ticket_number',
+    { p_department_id: params.departmentId },
+  );
+  if (seqError) throw new Error(`Ticket number generation failed: ${seqError.message}`);
+
+  const seq = Array.isArray(seqResult) ? seqResult[0] : seqResult;
+  if (!seq?.ticket_num) throw new Error('Failed to generate ticket number');
+
+  const ticketNumber: string = seq.ticket_num;
+  const dailySequence: number = seq.seq ?? 0;
+
+  // 2) Generate a qr_token for tracking link
+  const qrToken = generateHexToken(12);
+
+  // 3) Build customer data
+  const customerData: Record<string, string> = {};
+  if (params.customerName?.trim()) customerData.name = params.customerName.trim();
+  if (params.customerPhone?.trim()) customerData.phone = params.customerPhone.trim();
+  if (params.visitReason?.trim()) customerData.reason = params.visitReason.trim();
+
+  // 4) Insert the ticket with the generated number
+  const { data, error } = await supabase
+    .from('tickets')
+    .insert({
+      ticket_number: ticketNumber,
+      daily_sequence: dailySequence,
+      qr_token: qrToken,
+      office_id: params.officeId,
+      department_id: params.departmentId,
+      service_id: params.serviceId || null,
+      status: 'waiting',
+      priority: params.priority ?? 0,
+      customer_data: customerData,
+      source: 'in_house',
+      created_at: new Date().toISOString(),
+    })
+    .select('id, ticket_number, qr_token')
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Generate a random hex token of given length */
+function generateHexToken(length: number): string {
+  const chars = '0123456789abcdef';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+
+// ── Fetch departments + services for an office ──────────────────
+export async function fetchOfficeDepartments(officeId: string) {
+  const { data, error } = await supabase
+    .from('departments')
+    .select('id, name, code')
+    .eq('office_id', officeId)
+    .order('name');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function fetchDepartmentServices(officeId: string) {
+  const { data, error } = await supabase
+    .from('services')
+    .select('id, name, code, department_id, departments!inner(office_id)')
+    .eq('departments.office_id', officeId)
+    .order('name');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+// ── Fetch available desks for desk switching ────────────────────
+export async function fetchAvailableDesks(officeId: string) {
+  const { data, error } = await supabase
+    .from('desks')
+    .select('id, name, display_name, department_id, departments:department_id(id, name), current_staff_id, status')
+    .eq('office_id', officeId)
+    .eq('is_active', true)
+    .order('name');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function switchDesk(newDeskId: string, staffId: string, oldDeskId: string | null) {
+  // Release old desk
+  if (oldDeskId) {
+    await supabase
+      .from('desks')
+      .update({ status: 'closed', current_staff_id: null })
+      .eq('id', oldDeskId);
+  }
+  // Claim new desk
+  const { data, error } = await supabase
+    .from('desks')
+    .update({ status: 'open', current_staff_id: staffId })
+    .eq('id', newDeskId)
+    .select('id, name, display_name, office_id, department_id, offices:office_id(id, name), departments:department_id(id, name)')
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 // ── Call Specific Ticket ──────────────────────────────────────────
@@ -173,19 +328,61 @@ export async function resetToQueue(ticketId: string) {
 }
 
 // ── Park Ticket (put on hold) ─────────────────────────────────────
+// Matches web: reverts to waiting, clears desk assignment, keeps parked_at
 export async function parkTicket(ticketId: string) {
   const { error } = await supabase
     .from('tickets')
-    .update({ parked_at: new Date().toISOString() })
+    .update({
+      status: 'waiting',
+      desk_id: null,
+      called_at: null,
+      called_by_staff_id: null,
+      serving_started_at: null,
+      parked_at: new Date().toISOString(),
+    })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
 }
 
-// ── Unpark Ticket (resume from hold) ──────────────────────────────
-export async function unparkTicket(ticketId: string) {
+// ── Resume Parked Ticket (call to desk) ──────────────────────────
+export async function resumeParkedTicket(
+  ticketId: string,
+  deskId: string,
+  staffId: string,
+) {
+  // Check no other active ticket on this desk first
+  const { data: active } = await supabase
+    .from('tickets')
+    .select('id')
+    .eq('desk_id', deskId)
+    .in('status', ['called', 'serving'])
+    .limit(1);
+
+  if (active && active.length > 0) {
+    throw new Error('Desk already has an active ticket. Complete or park it first.');
+  }
+
   const { error } = await supabase
     .from('tickets')
-    .update({ parked_at: null })
+    .update({
+      status: 'called',
+      desk_id: deskId,
+      called_by_staff_id: staffId,
+      called_at: new Date().toISOString(),
+      parked_at: null,
+    })
+    .eq('id', ticketId);
+  if (error) throw new Error(error.message);
+}
+
+// ── Unpark Ticket (send back to queue) ───────────────────────────
+export async function unparkToQueue(ticketId: string) {
+  const { error } = await supabase
+    .from('tickets')
+    .update({
+      status: 'waiting',
+      parked_at: null,
+    })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
 }
