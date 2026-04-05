@@ -506,11 +506,13 @@ async function findAllActiveSessionsByUser(
     const linkedTicketIds = new Set(allSessions.map((s: any) => s.ticket_id).filter(Boolean));
 
     // Find active tickets where customer_data phone matches
+    // Use ->> for JSONB text extraction so ilike works correctly
+    const last9 = digits.slice(-9);
     const { data: phoneTickets } = await supabase
       .from('tickets')
       .select('id, office_id, customer_data, created_at')
       .in('status', ['waiting', 'called', 'serving'])
-      .or(`customer_data->phone.ilike.%${digits.slice(-9)}%`)
+      .filter('customer_data->>phone', 'ilike', `%${last9}%`)
       .order('created_at', { ascending: false })
       .limit(10);
 
