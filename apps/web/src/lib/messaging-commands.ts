@@ -148,6 +148,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تذكرتك لم تعد نشطة. أرسل *انضم <الرمز>* للانضمام مجددًا.',
     en: 'Your ticket is no longer active. Send *JOIN <code>* to join again.',
   },
+  ticket_ended: {
+    fr: 'Ce ticket n\'est plus actif.',
+    ar: 'هذه التذكرة لم تعد نشطة.',
+    en: 'This ticket is no longer active.',
+  },
+  cannot_cancel_serving: {
+    fr: 'Votre ticket est en cours de service et ne peut pas être annulé.',
+    ar: 'تذكرتك قيد الخدمة حاليًا ولا يمكن إلغاؤها.',
+    en: 'Your ticket is currently being served and cannot be cancelled.',
+  },
   status: {
     fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\nRépondez *ANNULER* pour quitter la file.',
     ar: '*حالة الطابور — {name}* 📊\n\nالتذكرة: *{ticket}* 🎫\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nأرسل *إلغاء* للمغادرة.',
@@ -1327,45 +1337,18 @@ async function tryLinkKioskTicket(
     });
   }
 
-  // Get position
-  const { count } = await (supabase as any)
-    .from('tickets')
-    .select('id', { count: 'exact', head: true })
-    .eq('office_id', ticket.office_id)
-    .eq('department_id', ticket.department_id)
-    .eq('status', 'waiting')
-    .lte('created_at', ticket.created_at)
-    .is('parked_at', null);
-
-  const position = count ?? 1;
+  // Get position using canonical calculation
+  const pos = await getQueuePosition(ticket.id);
   const orgName = org?.name || office.name || '';
 
-  // Build a pos object matching what formatPosition/formatNowServing expect
-  const pos = {
-    position,
-    estimated_wait_minutes: position * 5,
-    now_serving: null as string | null,
-  };
-
-  // Try to get the currently-serving ticket number
-  const { data: servingTicket } = await (supabase as any)
-    .from('tickets')
-    .select('ticket_number')
-    .eq('office_id', ticket.office_id)
-    .eq('department_id', ticket.department_id)
-    .eq('status', 'called')
-    .order('called_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (servingTicket) pos.now_serving = servingTicket.ticket_number;
-
   // Send confirmation
+  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
   const confirmMsg = t('joined', locale, {
     name: orgName,
     ticket: ticket.ticket_number,
     position: formatPosition(pos, locale),
     now_serving: formatNowServing(pos, locale),
-    url: `https://qflo.net/q/${ticket.qr_token}`,
+    url: `${baseUrl}/q/${ticket.qr_token}`,
   });
   await sendMessage({ to: identifier, body: confirmMsg });
 
@@ -1971,28 +1954,59 @@ async function handleCancel(
     return;
   }
 
-  // Fetch ticket number for the cancel message
+  // Fetch ticket info including status
   const { data: ticketRow } = await supabase
     .from('tickets')
-    .select('ticket_number')
+    .select('ticket_number, status')
     .eq('id', session.ticket_id)
     .single();
 
+  // If the ticket is being served (or already completed), refuse to cancel
+  if (ticketRow && !['waiting', 'issued', 'called'].includes(ticketRow.status)) {
+    if (ticketRow.status === 'serving') {
+      await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    } else {
+      // Already served/cancelled/no_show — just tell them it's inactive
+      await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    }
+    return;
+  }
+
   // Mark session completed BEFORE cancelling the ticket so the DB trigger
   // sees has_session = false and doesn't send a duplicate notification.
+  // We do this optimistically but will check the cancel result.
   await supabase
     .from('whatsapp_sessions')
     .update({ state: 'completed' })
     .eq('id', session.id);
 
-  const { error: cancelError } = await supabase
+  const { error: cancelError, count: cancelledCount } = await supabase
     .from('tickets')
     .update({ status: 'cancelled' })
     .eq('id', session.ticket_id)
-    .in('status', ['waiting', 'issued', 'called']);
+    .in('status', ['waiting', 'issued', 'called'])
+    .select('id', { count: 'exact', head: true });
 
   if (cancelError) {
     console.error(`[${channel}:cancel] Failed to cancel ticket:`, cancelError);
+    // Rollback session state since the cancel failed
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ state: 'active' })
+      .eq('id', session.id);
+    await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    return;
+  }
+
+  if ((cancelledCount ?? 0) === 0) {
+    // No rows matched — ticket status changed between our check and the update
+    // Rollback session state
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ state: 'active' })
+      .eq('id', session.id);
+    await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    return;
   }
 
   await supabase.from('ticket_events').insert({

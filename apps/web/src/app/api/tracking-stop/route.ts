@@ -49,8 +49,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    const activeStatuses = new Set(['issued', 'waiting', 'called', 'serving']);
-    const shouldLeaveQueue = activeStatuses.has(existingTicket.status);
+    const cancellableStatuses = new Set(['issued', 'waiting', 'called']);
+    const shouldLeaveQueue = cancellableStatuses.has(existingTicket.status);
 
     if (shouldLeaveQueue) {
       const { error: updateError } = await supabase
@@ -78,6 +78,17 @@ export async function POST(request: NextRequest) {
 
       if (eventError) {
         console.error('[TrackingStop] Failed to log cancellation event:', eventError.message);
+      }
+
+      // Mark WhatsApp session as completed for this ticket
+      const { error: sessionError } = await supabase
+        .from('whatsapp_sessions')
+        .update({ state: 'completed' })
+        .eq('ticket_id', ticketId)
+        .eq('state', 'active');
+
+      if (sessionError) {
+        console.error('[TrackingStop] Failed to complete WhatsApp session:', sessionError.message);
       }
     }
 

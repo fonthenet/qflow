@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
+import { getQueuePosition } from '@/lib/queue-position';
 
 
 const DAYS_OF_WEEK = [
@@ -341,19 +342,13 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     }
   }
 
-  // Calculate queue position for confirmation screen
+  // Calculate queue position for confirmation screen (priority-aware)
   let position_in_queue: number | null = null;
   let estimated_wait: number | null = ticket?.estimated_wait_minutes ?? null;
   if (ticket) {
-    const { count } = await supabase
-      .from('tickets')
-      .select('id', { count: 'exact', head: true })
-      .eq('office_id', input.officeId)
-      .eq('service_id', input.serviceId)
-      .eq('status', 'waiting')
-      .is('parked_at', null)
-      .lte('created_at', ticket.created_at);
-    position_in_queue = count ?? null;
+    const pos = await getQueuePosition(ticket.id);
+    position_in_queue = pos.position;
+    estimated_wait = pos.estimated_wait_minutes ?? estimated_wait;
   }
 
   revalidatePath('/desk');

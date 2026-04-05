@@ -258,6 +258,18 @@ export async function cancelAppointment(appointmentId: string) {
     return { error: error.message };
   }
 
+  // If the appointment has a linked ticket, cancel it too
+  if (appointment?.ticket_id) {
+    await supabase
+      .from('tickets')
+      .update({
+        status: 'cancelled',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', appointment.ticket_id)
+      .in('status', ['waiting', 'called', 'issued']);
+  }
+
   return { data: appointment };
 }
 

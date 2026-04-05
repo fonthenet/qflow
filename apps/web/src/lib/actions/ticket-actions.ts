@@ -30,6 +30,7 @@ import {
 } from '@/lib/priority-alerts';
 import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
+import { getQueuePosition } from '@/lib/queue-position';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
@@ -106,7 +107,7 @@ function buildAbsoluteTicketUrl(qrToken: string): string {
   const baseUrl = (
     process.env.APP_CLIP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflow-sigma.vercel.app'
+    'https://qflo.net'
   ).replace(/\/+$/, '');
 
   return `${baseUrl}/q/${qrToken}`;
@@ -197,7 +198,10 @@ async function maybeSendPriorityAlertSms(
   return { sent: true };
 }
 
-// WhatsApp/Messenger notifications handled by Postgres trigger → Edge Function.
+// STUB: WhatsApp/Messenger turn notifications are NOT sent from the Next.js app.
+// They are handled entirely by Postgres triggers (e.g. `notify_ticket_called`) which
+// invoke a Supabase Edge Function. These stubs exist only to satisfy call-site
+// signatures; the `sent: false` return is expected and does not indicate a failure.
 async function maybeSendWhatsAppTurnNotification(
   _supabase: Awaited<ReturnType<typeof createClient>>,
   _params: {
@@ -216,6 +220,8 @@ async function maybeSendWhatsAppTurnNotification(
   return { sent: false, reason: 'handled by trigger' };
 }
 
+// STUB: "Next in line" WhatsApp notifications are handled by Postgres triggers,
+// not by the Next.js app. See `notify_ticket_called` trigger for details.
 async function notifyNextInLineViaWhatsApp(
   _supabase: Awaited<ReturnType<typeof createClient>>,
   _departmentId: string,
@@ -223,7 +229,7 @@ async function notifyNextInLineViaWhatsApp(
   _excludeTicketId: string,
   _deskName: string,
 ): Promise<void> {
-  // No-op — trigger handles this
+  // No-op — Postgres trigger → Edge Function handles this
 }
 
 async function getDeskOperationContext(deskId: string) {
@@ -340,7 +346,7 @@ export async function createTicket(
           whatsapp_phone: normalizedPhone,
           channel: 'whatsapp',
           state: 'active',
-          locale: 'fr',
+          locale: (officeRow?.settings as any)?.default_locale || 'fr',
         }).then(() => {}).catch(() => {});
 
         // Send "joined" notification directly and capture result for operator feedback
@@ -360,143 +366,9 @@ export async function createTicket(
   return { data: ticket, whatsappStatus };
 }
 
-interface CreatePublicTicketInput {
-  officeId: string;
-  departmentId: string;
-  serviceId: string;
-  customerData?: Record<string, unknown> | null;
-  status?: 'issued' | 'waiting';
-  checkedInAt?: string;
-  estimatedWaitMinutes?: number | null;
-  isRemote?: boolean;
-  source?: string;
-  priority?: number | null;
-  priorityCategoryId?: string | null;
-  groupId?: string | null;
-}
-
-export async function getPublicIntakeFields(serviceId: string) {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('intake_form_fields')
-    .select('*')
-    .eq('service_id', serviceId)
-    .order('sort_order', { ascending: true });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  return { data: data ?? [] };
-}
-
-export async function estimatePublicWaitTime(departmentId: string, serviceId: string) {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.rpc('estimate_wait_time', {
-    p_department_id: departmentId,
-    p_service_id: serviceId,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  return { data: data ?? null };
-}
-
-export async function createPublicTicket(input: CreatePublicTicketInput) {
-  const supabase = createAdminClient();
-  const status = input.status ?? 'waiting';
-
-  const { data: seqData, error: seqError } = await supabase.rpc(
-    'generate_daily_ticket_number',
-    { p_department_id: input.departmentId }
-  );
-
-  if (seqError || !seqData || seqData.length === 0) {
-    return { error: seqError?.message ?? 'Failed to generate ticket number' };
-  }
-
-  const { seq, ticket_num } = seqData[0];
-  const qrToken = nanoid(16);
-  const waitResult =
-    input.estimatedWaitMinutes !== undefined
-      ? { data: input.estimatedWaitMinutes }
-      : await estimatePublicWaitTime(input.departmentId, input.serviceId);
-
-  if ('error' in waitResult) {
-    return { error: waitResult.error };
-  }
-
-  const { data: ticket, error } = await supabase
-    .from('tickets')
-    .insert({
-      office_id: input.officeId,
-      department_id: input.departmentId,
-      service_id: input.serviceId,
-      ticket_number: ticket_num,
-      daily_sequence: seq,
-      qr_token: qrToken,
-      status,
-      checked_in_at: input.checkedInAt ?? new Date().toISOString(),
-      customer_data: (input.customerData ?? null) as any,
-      estimated_wait_minutes: waitResult.data ?? null,
-      is_remote: input.isRemote ?? false,
-      source: input.source ?? (input.isRemote ? 'qr_code' : 'walk_in'),
-      priority: input.priority ?? 0,
-      priority_category_id: input.priorityCategoryId ?? null,
-      group_id: input.groupId ?? null,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  if (ticket) {
-    await supabase.from('ticket_events').insert({
-      ticket_id: ticket.id,
-      event_type: TICKET_EVENT_TYPES.JOINED,
-      to_status: ticket.status,
-      metadata: {
-        source: input.isRemote ? 'remote_join' : 'public_join',
-      },
-    });
-
-    // Auto-create notification session if customer has a phone number
-    const ticketSource = input.source ?? (input.isRemote ? 'qr_code' : 'walk_in');
-    if (ticketSource !== 'whatsapp' && ticketSource !== 'messenger') {
-      const cd = input.customerData as Record<string, unknown> | null;
-      const rawPhone2 = typeof cd?.phone === 'string' ? cd.phone.trim() : null;
-      if (rawPhone2) {
-        const { data: officeRow } = await supabase
-          .from('offices')
-          .select('organization_id, timezone, settings')
-          .eq('id', input.officeId)
-          .single();
-        const officeCC2 = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
-        const normalizedPhone2 = normalizePhone(rawPhone2, officeRow?.timezone, officeCC2);
-        if (normalizedPhone2 && officeRow?.organization_id) {
-          await (supabase as any).from('whatsapp_sessions').insert({
-            organization_id: officeRow.organization_id,
-            ticket_id: ticket.id,
-            office_id: input.officeId,
-            department_id: input.departmentId,
-            service_id: input.serviceId,
-            whatsapp_phone: normalizedPhone2,
-            channel: 'whatsapp',
-            state: 'active',
-            locale: 'fr',
-          }).then(() => {}).catch(() => {});
-        }
-      }
-    }
-  }
-
-  revalidatePath('/desk');
-  return { data: ticket };
-}
+// NOTE: createPublicTicket, getPublicIntakeFields, and estimatePublicWaitTime
+// are defined in public-ticket-actions.ts (the canonical source).
+// The duplicate that was here has been removed.
 
 export async function completePublicCheckIn(
   ticketId: string,
@@ -1190,6 +1062,27 @@ export async function transferTicket(
 
   await syncLiveActivity(ticketId, 'TransferTicket');
 
+  // Send WhatsApp notification to customer about the transfer
+  const customerPhone = extractTicketPhone(originalTicket.customer_data);
+  if (customerPhone) {
+    const normalized = normalizePhone(customerPhone);
+    if (normalized) {
+      const trackUrl = buildAbsoluteTicketUrl(newTicket.qr_token);
+      const { data: deptRow } = await supabase
+        .from('departments')
+        .select('display_name, name')
+        .eq('id', targetDepartmentId)
+        .single();
+      const deptName = deptRow?.display_name ?? deptRow?.name ?? 'another department';
+      sendWhatsAppMessage({
+        to: normalized,
+        body: `Your ticket has been transferred to ${deptName}. New ticket: ${newTicket.ticket_number}. Track: ${trackUrl}`,
+      }).catch((err) => {
+        console.warn('[TransferTicket] WhatsApp transfer notification failed:', err);
+      });
+    }
+  }
+
   revalidatePath('/desk');
   return { data: newTicket };
 }
@@ -1485,13 +1378,18 @@ export async function buzzTicket(ticketId: string) {
 
   const deskName = await getDeskName(supabase, ticket.desk_id);
 
+  // Build buzz message — skip desk reference for waiting tickets (no desk assigned)
+  const buzzBody = ticket.status === 'called' && ticket.desk_id
+    ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
+    : ticket.status === 'waiting'
+      ? `Ticket ${ticket.ticket_number} — Staff is trying to reach you`
+      : `Ticket ${ticket.ticket_number} — Attention needed`;
+
   // Web Push — aggressive buzz notification
   sendPushToTicket(ticketId, {
     type: 'buzz',
     title: '📳 BUZZ!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
+    body: buzzBody,
     tag: `qf-buzz-${ticketId}-${Date.now()}`, // unique tag forces new notification
     url: `/q/${ticket.qr_token}`,
     ticketId,
@@ -1502,18 +1400,14 @@ export async function buzzTicket(ticketId: string) {
   // APNs for iOS
   sendAPNsToTicket(ticketId, {
     title: 'Buzz!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
+    body: buzzBody,
     url: `/q/${ticket.qr_token}`,
   }).catch((err) => console.error('[Buzz] APNs error:', err));
 
   sendAndroidToTicket(ticketId, {
     type: 'buzz',
     title: 'Buzz!',
-    body: ticket.status === 'called'
-      ? `Ticket ${ticket.ticket_number} — Please go to ${deskName} NOW!`
-      : `Ticket ${ticket.ticket_number} — Attention needed`,
+    body: buzzBody,
     url: `/q/${ticket.qr_token}`,
     ticketId,
     ticketNumber: ticket.ticket_number,
@@ -1620,6 +1514,18 @@ export async function resetTicketToQueue(ticketId: string) {
 
   await releaseRestaurantTablesForTicket(supabase, ticketId);
 
+  // Log ticket event
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: TICKET_EVENT_TYPES.RETURNED_TO_QUEUE,
+    from_status: ticket.status,
+    to_status: 'waiting',
+    staff_id: context.staff.id,
+    metadata: {
+      previous_desk_id: ticket.desk_id,
+    },
+  });
+
   await syncLiveActivity(ticketId, 'ResetTicketToQueue');
 
   await logAuditEvent(context, {
@@ -1661,6 +1567,20 @@ export async function parkTicket(ticketId: string) {
   }
 
   await releaseRestaurantTablesForTicket(supabase, ticketId);
+
+  // Log ticket event
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: TICKET_EVENT_TYPES.PARKED,
+    from_status: ticket.status,
+    to_status: 'waiting',
+    staff_id: context.staff.id,
+    metadata: {
+      previous_desk_id: ticket.desk_id,
+      parked_at: parkedAt,
+    },
+  });
+
   await syncLiveActivity(ticketId, 'ParkTicket');
 
   await logAuditEvent(context, {
@@ -1675,6 +1595,22 @@ export async function parkTicket(ticketId: string) {
       parkedAt,
     },
   });
+
+  // Send WhatsApp "parked" notification directly (parking doesn't change status, so trigger won't fire)
+  try {
+    const { data: session } = await (supabase as any)
+      .from('whatsapp_sessions')
+      .select('whatsapp_phone')
+      .eq('ticket_id', ticketId)
+      .eq('state', 'active')
+      .maybeSingle();
+    if (session?.whatsapp_phone) {
+      sendWhatsAppMessage({
+        to: session.whatsapp_phone,
+        body: `\u23F8 Your ticket ${ticket.ticket_number} has been put on hold. You'll be notified when it's resumed.`,
+      }).catch((err) => console.error('[ParkTicket] WhatsApp error:', err));
+    }
+  } catch {}
 
   revalidatePath('/desk');
   return { data: true };
@@ -1729,6 +1665,23 @@ export async function resumeParkedTicket(ticketId: string, deskId?: string) {
     }
   }
 
+  // Log ticket event
+  await supabase.from('ticket_events').insert({
+    ticket_id: ticketId,
+    event_type: TICKET_EVENT_TYPES.RESUMED,
+    from_status: 'waiting',
+    to_status: deskId ? 'called' : 'waiting',
+    staff_id: context.staff.id,
+    desk_id: deskId ?? null,
+    metadata: {
+      resumed_to_desk: deskId ?? null,
+      previous_parked_at: ticket.parked_at,
+    },
+  });
+
+  // NOTE (NOTIF-3): When deskId is provided, the ticket status is set to 'called'.
+  // The Postgres trigger `notify_ticket_called` fires on UPDATE when new status is
+  // 'called', so the customer notification is handled automatically by the DB trigger.
   await syncLiveActivity(ticketId, 'ResumeParkedTicket');
 
   await logAuditEvent(context, {
@@ -1742,6 +1695,26 @@ export async function resumeParkedTicket(ticketId: string, deskId?: string) {
       resumedToDesk: deskId ?? null,
     },
   });
+
+  // Send WhatsApp "resumed" notification for back-to-queue only
+  // (When deskId is provided, ticket goes to 'called' and the DB trigger handles the notification)
+  if (!deskId) {
+    try {
+      const { data: session } = await (supabase as any)
+        .from('whatsapp_sessions')
+        .select('whatsapp_phone')
+        .eq('ticket_id', ticketId)
+        .eq('state', 'active')
+        .maybeSingle();
+      if (session?.whatsapp_phone) {
+        const pos = await getQueuePosition(ticketId);
+        sendWhatsAppMessage({
+          to: session.whatsapp_phone,
+          body: `\u25B6\uFE0F Your ticket ${ticket.ticket_number} is back in the queue! Position: #${pos.position ?? '?'}`,
+        }).catch((err) => console.error('[ResumeParkedTicket] WhatsApp error:', err));
+      }
+    } catch {}
+  }
 
   revalidatePath('/desk');
   return { data: true };

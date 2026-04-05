@@ -224,7 +224,7 @@ export async function createInHouseTicket(params: {
           whatsapp_phone: normalizedPhone,
           channel: 'whatsapp',
           state: 'active',
-          locale: 'fr',
+          locale: (officeRow?.settings as any)?.default_locale || 'fr',
         });
 
         // Send "joined" notification via edge function and capture result
@@ -385,7 +385,8 @@ export async function cancelTicket(ticketId: string) {
       status: 'cancelled',
       completed_at: new Date().toISOString(),
     })
-    .eq('id', ticketId);
+    .eq('id', ticketId)
+    .in('status', ['waiting', 'issued', 'called']);
   if (error) throw new Error(error.message);
 }
 
@@ -813,7 +814,7 @@ export async function checkInAppointment(appointmentId: string, officeId: string
       whatsapp_phone: phone,
       channel: 'whatsapp',
       state: 'active',
-      locale: 'fr',
+      locale: 'fr', // appointment check-in uses default; no office settings context available here
     } as any).then(() => {}).catch(() => {});
   }
 
