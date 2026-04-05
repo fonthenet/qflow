@@ -91,6 +91,7 @@
       'Open WhatsApp and tap Send': 'Ouvrez WhatsApp et appuyez sur Envoyer',
       'Open Messenger and tap Get Started': 'Ouvrez Messenger et appuyez sur D\u00e9marrer',
       'Skip': 'Passer',
+      'Back': 'Retour',
       'Sunday': 'Dimanche',
       'Monday': 'Lundi',
       'Tuesday': 'Mardi',
@@ -157,6 +158,7 @@
       'Open WhatsApp and tap Send': 'افتح واتساب واضغط إرسال',
       'Open Messenger and tap Get Started': 'افتح ماسنجر واضغط ابدأ',
       'Skip': 'تخطي',
+      'Back': 'رجوع',
       'Sunday': 'الأحد',
       'Monday': 'الاثنين',
       'Tuesday': 'الثلاثاء',
@@ -218,9 +220,9 @@
 
   function resetIdle() {
     if (idleTimer) clearTimeout(idleTimer);
-    if (S.step !== 'done' && S.step !== 'closed') {
+    if (S.step !== 'done' && S.step !== 'closed' && S.step !== 'notify') {
       idleTimer = setTimeout(function () {
-        if (S.step !== 'loading' && S.step !== 'done' && S.step !== 'closed') reset();
+        if (S.step !== 'loading' && S.step !== 'done' && S.step !== 'closed' && S.step !== 'notify') reset();
       }, IDLE_TIMEOUT);
     }
   }
@@ -574,6 +576,9 @@
       '<div class="notify-qr-box" id="notify-qr-img"></div>' +
       '<div style="font-size:15px;font-weight:600;color:var(--text);margin-top:16px">' + tr('Scan with your phone') + '</div>' +
       '<div style="font-size:13px;color:var(--text2);margin-top:4px">' + instruction + '</div>' +
+      '<button class="btn btn-back" onclick="backToChannels()" style="margin-top:18px">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> ' +
+      tr('Back') + '</button>' +
       '</div>';
 
     // Server-side QR generation
@@ -586,6 +591,13 @@
     img.alt = 'QR Code';
     var imgEl = document.getElementById('notify-qr-img');
     if (imgEl) imgEl.appendChild(img);
+  };
+
+  window.backToChannels = function () {
+    var channelBtns = document.getElementById('notify-channel-buttons');
+    var qrContainer = document.getElementById('notify-qr-container');
+    if (channelBtns) channelBtns.style.display = '';
+    if (qrContainer) qrContainer.innerHTML = '';
   };
 
   // ── Success Sound ──────────────────────────────────────────────

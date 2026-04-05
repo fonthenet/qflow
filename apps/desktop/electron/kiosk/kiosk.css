@@ -276,6 +276,15 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 }
 .btn-skip:hover { background: var(--bg); color: var(--text2); }
 
+.btn-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 24px; border-radius: 10px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text2); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s ease;
+}
+.btn-back:hover { background: var(--bg); color: var(--text); }
+
 /* ── RTL ── */
 html[dir="rtl"] body, html[dir="rtl"] .kiosk, html[dir="rtl"] .kiosk-content { direction: rtl; }
 html[dir="rtl"] .qr-section { text-align: right; }

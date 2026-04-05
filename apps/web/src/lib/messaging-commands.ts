@@ -1200,12 +1200,31 @@ async function tryLinkKioskTicket(
   const position = count ?? 1;
   const orgName = org?.name || office.name || '';
 
+  // Build a pos object matching what formatPosition/formatNowServing expect
+  const pos = {
+    position,
+    estimated_wait_minutes: position * 5,
+    now_serving: null as string | null,
+  };
+
+  // Try to get the currently-serving ticket number
+  const { data: servingTicket } = await (supabase as any)
+    .from('tickets')
+    .select('ticket_number')
+    .eq('office_id', ticket.office_id)
+    .eq('department_id', ticket.department_id)
+    .eq('status', 'called')
+    .order('called_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (servingTicket) pos.now_serving = servingTicket.ticket_number;
+
   // Send confirmation
   const confirmMsg = t('joined', locale, {
     name: orgName,
     ticket: ticket.ticket_number,
-    position: String(position),
-    wait: String(position * 5),
+    position: formatPosition(pos, locale),
+    now_serving: formatNowServing(pos, locale),
     url: `https://qflo.net/q/${ticket.qr_token}`,
   });
   await sendMessage({ to: identifier, body: confirmMsg });
