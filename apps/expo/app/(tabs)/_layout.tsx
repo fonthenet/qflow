@@ -1,11 +1,16 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
+import { useAuth } from '@/lib/auth-context';
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   const { activeToken } = useAppStore();
   const { colors, isDark } = useTheme();
+  const { isStaff } = useAuth();
+  const router = useRouter();
   // When tracking, force dark regardless of theme
   const isTrackingDark = !!activeToken;
 
@@ -26,7 +31,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Queue',
+          title: t('tabs.queue'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="ticket-outline" size={size} color={color} />
           ),
@@ -43,16 +48,32 @@ export default function TabLayout() {
       <Tabs.Screen
         name="places"
         options={{
-          title: 'Places',
+          title: t('tabs.places'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="storefront-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
+        name="station"
+        options={{
+          title: t('tabs.station'),
+          href: isStaff ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="desktop-outline" size={size} color={color} />
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+            router.push('/(operator)/desk');
+          },
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
-          title: 'History',
+          title: t('tabs.history'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time-outline" size={size} color={color} />
           ),
@@ -61,7 +82,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('tabs.profile'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

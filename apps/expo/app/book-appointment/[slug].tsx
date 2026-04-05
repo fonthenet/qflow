@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import {
   fetchKioskInfo,
   fetchBookingSlots,
@@ -36,12 +37,12 @@ function nextNDays(n: number): string[] {
   return days;
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, t?: (key: string) => string): string {
   const d = new Date(dateStr + 'T12:00:00');
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  if (dateStr === today) return 'Today';
-  if (dateStr === tomorrow) return 'Tomorrow';
+  if (dateStr === today) return t ? t('bookAppointment.today') : 'Today';
+  if (dateStr === tomorrow) return t ? t('bookAppointment.tomorrow') : 'Tomorrow';
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
@@ -53,6 +54,7 @@ function formatTime(slot: string): string {
 }
 
 export default function BookAppointmentScreen() {
+  const { t } = useTranslation();
   const { slug, deptId: initialDeptId, serviceId: initialServiceId } =
     useLocalSearchParams<{ slug: string; deptId?: string; serviceId?: string }>();
   const router = useRouter();
@@ -93,12 +95,12 @@ export default function BookAppointmentScreen() {
     setStep('loading');
     const data = await fetchKioskInfo(slug);
     if (!data) {
-      setErrorMsg('This business could not be found.');
+      setErrorMsg(t('bookAppointment.businessNotFound'));
       setStep('error');
       return;
     }
     if (data.settings?.booking_mode === 'disabled') {
-      setErrorMsg('Online booking is not available for this business.');
+      setErrorMsg(t('bookAppointment.bookingDisabled'));
       setStep('error');
       return;
     }
@@ -222,10 +224,10 @@ export default function BookAppointmentScreen() {
         <View style={[s.iconCircle, { backgroundColor: colors.error + '18' }]}>
           <Ionicons name="alert-circle-outline" size={44} color={colors.error} />
         </View>
-        <Text style={[s.errorTitle, { color: colors.text }]}>Booking Unavailable</Text>
+        <Text style={[s.errorTitle, { color: colors.text }]}>{t('bookAppointment.bookingUnavailable')}</Text>
         <Text style={[s.errorSub, { color: colors.textSecondary }]}>{errorMsg}</Text>
         <TouchableOpacity style={[s.outlineBtn, { borderColor: colors.border }]} onPress={() => router.back()}>
-          <Text style={[s.outlineBtnText, { color: colors.textSecondary }]}>Go Back</Text>
+          <Text style={[s.outlineBtnText, { color: colors.textSecondary }]}>{t('bookAppointment.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -240,17 +242,17 @@ export default function BookAppointmentScreen() {
           <View style={[s.iconCircle, { backgroundColor: colors.success + '18' }]}>
             <Ionicons name="checkmark-circle" size={56} color={colors.success} />
           </View>
-          <Text style={[s.successTitle, { color: colors.text }]}>Appointment Booked!</Text>
+          <Text style={[s.successTitle, { color: colors.text }]}>{t('bookAppointment.appointmentBooked')}</Text>
           <Text style={[s.successSub, { color: colors.textSecondary }]}>
-            Your appointment has been confirmed.
+            {t('bookAppointment.appointmentConfirmed')}
           </Text>
 
           <View style={[s.summaryBlock, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderLight }]}>
-            <Row label="Business" value={info?.office.name ?? ''} colors={colors} />
-            <Row label="Service" value={service?.name ?? ''} colors={colors} />
-            <Row label="Date" value={formatDate(selectedDate)} colors={colors} />
-            <Row label="Time" value={formatTime(selectedSlot)} colors={colors} />
-            <Row label="Name" value={name} colors={colors} />
+            <Row label={t('bookAppointment.business')} value={info?.office.name ?? ''} colors={colors} />
+            <Row label={t('bookAppointment.service')} value={service?.name ?? ''} colors={colors} />
+            <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t)} colors={colors} />
+            <Row label={t('bookAppointment.time')} value={formatTime(selectedSlot)} colors={colors} />
+            <Row label={t('bookAppointment.name')} value={name} colors={colors} />
           </View>
         </View>
 
@@ -259,7 +261,7 @@ export default function BookAppointmentScreen() {
           onPress={() => router.replace('/' as any)}
           activeOpacity={0.8}
         >
-          <Text style={s.primaryBtnText}>Done</Text>
+          <Text style={s.primaryBtnText}>{t('common.done')}</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -274,7 +276,7 @@ export default function BookAppointmentScreen() {
         {/* Back row */}
         <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={20} color={colors.primary} />
-          <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
+          <Text style={[s.backText, { color: colors.primary }]}>{t('common.back')}</Text>
         </TouchableOpacity>
 
         {/* Header */}
@@ -282,7 +284,7 @@ export default function BookAppointmentScreen() {
           <View style={[s.headerIcon, { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.infoLight }]}>
             <Ionicons name="calendar-outline" size={26} color={colors.primary} />
           </View>
-          <Text style={[s.pageTitle, { color: colors.text }]}>Book Appointment</Text>
+          <Text style={[s.pageTitle, { color: colors.text }]}>{t('bookAppointment.bookAppointment')}</Text>
           {info && <Text style={[s.pageSub, { color: colors.textSecondary }]}>{info.office.name}</Text>}
         </View>
 
@@ -292,7 +294,7 @@ export default function BookAppointmentScreen() {
         {/* ---- DEPARTMENT ---- */}
         {step === 'department' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Department</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.selectDepartment')}</Text>
             {info?.departments.map((dept) => (
               <TouchableOpacity
                 key={dept.id}
@@ -313,7 +315,7 @@ export default function BookAppointmentScreen() {
         {/* ---- SERVICE ---- */}
         {step === 'service' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Service</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.selectService')}</Text>
             <Text style={[s.sectionSub, { color: colors.textSecondary }]}>{dept?.name}</Text>
             {deptServices.map((svc) => (
               <TouchableOpacity
@@ -337,7 +339,7 @@ export default function BookAppointmentScreen() {
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={s.backLink} onPress={() => setStep('department')}>
-              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change department</Text>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.changeDepartment')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -346,7 +348,7 @@ export default function BookAppointmentScreen() {
         {/* ---- DATE & TIME (combined) ---- */}
         {step === 'date' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Select Date & Time</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.selectDateTime')}</Text>
             <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
               {service?.name} · {dept?.name}
             </Text>
@@ -363,7 +365,7 @@ export default function BookAppointmentScreen() {
               <View style={{ marginTop: spacing.md }} onLayout={(e) => { timeSlotsY.current = e.nativeEvent.layout.y; }}>
                 <Text style={[s.timeSectionLabel, { color: colors.text }]}>
                   <Ionicons name="time-outline" size={16} color={colors.primary} />
-                  {'  '}Available times for {formatDate(selectedDate)}
+                  {'  '}{t('bookAppointment.availableTimesFor', { date: formatDate(selectedDate, t) })}
                 </Text>
                 {slotsLoading ? (
                   <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg, marginBottom: spacing.md }} />
@@ -371,7 +373,7 @@ export default function BookAppointmentScreen() {
                   <View style={[s.emptySlots, { borderColor: colors.borderLight }]}>
                     <Ionicons name="calendar-clear-outline" size={32} color={colors.textMuted} />
                     <Text style={[s.emptySlotsText, { color: colors.textSecondary }]}>
-                      No available slots on this day.{'\n'}Try another date above.
+                      {t('bookAppointment.noSlotsOnDay')}
                     </Text>
                   </View>
                 ) : (
@@ -399,13 +401,13 @@ export default function BookAppointmentScreen() {
               <View style={[s.pickDateHint, { borderColor: colors.borderLight }]}>
                 <Ionicons name="hand-left-outline" size={22} color={colors.textMuted} />
                 <Text style={[s.pickDateHintText, { color: colors.textSecondary }]}>
-                  Tap a date above to see available times
+                  {t('bookAppointment.tapDateToSeeTimes')}
                 </Text>
               </View>
             )}
 
             <TouchableOpacity style={s.backLink} onPress={() => setStep('service')}>
-              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Change service</Text>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.changeService')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -413,12 +415,12 @@ export default function BookAppointmentScreen() {
         {/* ---- CUSTOMER INFO ---- */}
         {step === 'info' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Your Details</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.yourDetails')}</Text>
             <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
-              {formatDate(selectedDate)} at {formatTime(selectedSlot)}
+              {formatDate(selectedDate, t)} · {formatTime(selectedSlot)}
             </Text>
 
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Full Name *</Text>
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.fullName')}</Text>
             <TextInput
               style={[
                 s.textInput,
@@ -426,13 +428,13 @@ export default function BookAppointmentScreen() {
               ]}
               value={name}
               onChangeText={setName}
-              placeholder="Your full name"
+              placeholder={t('bookAppointment.fullNamePlaceholder')}
               placeholderTextColor={colors.textMuted}
               autoFocus
               returnKeyType="next"
             />
 
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Phone (optional)</Text>
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.phoneOptional')}</Text>
             <TextInput
               style={[
                 s.textInput,
@@ -440,13 +442,13 @@ export default function BookAppointmentScreen() {
               ]}
               value={phone}
               onChangeText={setPhone}
-              placeholder="+1 555 000 0000"
+              placeholder={t('bookAppointment.phonePlaceholder')}
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
               returnKeyType="next"
             />
 
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>Notes (optional)</Text>
+            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.notesOptional')}</Text>
             <TextInput
               style={[
                 s.textInput,
@@ -454,7 +456,7 @@ export default function BookAppointmentScreen() {
               ]}
               value={notes}
               onChangeText={setNotes}
-              placeholder="Reason for visit, symptoms, special requests..."
+              placeholder={t('bookAppointment.notesPlaceholder')}
               placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={3}
@@ -472,7 +474,7 @@ export default function BookAppointmentScreen() {
               activeOpacity={0.8}
             >
               <Text style={[s.primaryBtnText, { color: name.trim() ? '#fff' : colors.textMuted }]}>
-                Review Booking
+                {t('bookAppointment.reviewBooking')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -481,17 +483,17 @@ export default function BookAppointmentScreen() {
         {/* ---- CONFIRM ---- */}
         {step === 'confirm' && (
           <View>
-            <Text style={[s.sectionTitle, { color: colors.text }]}>Confirm Booking</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.confirmBooking')}</Text>
 
             <View style={[s.summaryBlock, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-              <Row label="Business" value={info?.office.name ?? ''} colors={colors} />
-              <Row label="Department" value={dept?.name ?? ''} colors={colors} />
-              <Row label="Service" value={service?.name ?? ''} colors={colors} />
-              <Row label="Date" value={formatDate(selectedDate)} colors={colors} />
-              <Row label="Time" value={formatTime(selectedSlot)} colors={colors} />
-              <Row label="Name" value={name} colors={colors} />
-              {phone ? <Row label="Phone" value={phone} colors={colors} /> : null}
-              {notes.trim() ? <Row label="Notes" value={notes.trim()} colors={colors} /> : null}
+              <Row label={t('bookAppointment.business')} value={info?.office.name ?? ''} colors={colors} />
+              <Row label={t('bookAppointment.department')} value={dept?.name ?? ''} colors={colors} />
+              <Row label={t('bookAppointment.service')} value={service?.name ?? ''} colors={colors} />
+              <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t)} colors={colors} />
+              <Row label={t('bookAppointment.time')} value={formatTime(selectedSlot)} colors={colors} />
+              <Row label={t('bookAppointment.name')} value={name} colors={colors} />
+              {phone ? <Row label={t('bookAppointment.phone')} value={phone} colors={colors} /> : null}
+              {notes.trim() ? <Row label={t('bookAppointment.notes')} value={notes.trim()} colors={colors} /> : null}
             </View>
 
             <TouchableOpacity
@@ -500,11 +502,11 @@ export default function BookAppointmentScreen() {
               activeOpacity={0.8}
             >
               <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-              <Text style={[s.primaryBtnText, { marginLeft: 6 }]}>Confirm Appointment</Text>
+              <Text style={[s.primaryBtnText, { marginLeft: 6 }]}>{t('bookAppointment.confirmAppointment')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={s.backLink} onPress={() => setStep('info')}>
-              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>Edit details</Text>
+              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.editDetails')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -527,6 +529,7 @@ function MiniCalendar({
   colors: ReturnType<typeof useTheme>['colors'];
   isDark: boolean;
 }) {
+  const { t } = useTranslation();
   const availableSet = new Set(availableDates);
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -666,11 +669,11 @@ function MiniCalendar({
       <View style={cs.legend}>
         <View style={cs.legendItem}>
           <View style={[cs.legendDot, { backgroundColor: colors.success }]} />
-          <Text style={[cs.legendText, { color: colors.textMuted }]}>Available</Text>
+          <Text style={[cs.legendText, { color: colors.textMuted }]}>{t('bookAppointment.available')}</Text>
         </View>
         <View style={cs.legendItem}>
           <View style={[cs.legendDot, { backgroundColor: colors.primary }]} />
-          <Text style={[cs.legendText, { color: colors.textMuted }]}>Selected</Text>
+          <Text style={[cs.legendText, { color: colors.textMuted }]}>{t('bookAppointment.selected')}</Text>
         </View>
       </View>
     </View>

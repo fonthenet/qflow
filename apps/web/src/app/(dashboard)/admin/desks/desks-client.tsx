@@ -101,8 +101,7 @@ export function DesksClient({
   const statusColors: Record<string, string> = {
     open: 'bg-success/10 text-success',
     closed: 'bg-muted text-muted-foreground',
-    serving: 'bg-primary/10 text-primary',
-    paused: 'bg-warning/10 text-warning',
+    on_break: 'bg-warning/10 text-warning',
   };
 
   return (
@@ -196,7 +195,7 @@ export function DesksClient({
                       statusColors[desk.status ?? 'closed'] ?? statusColors.closed
                     }`}
                   >
-                    {desk.status ?? 'closed'}
+                    {(desk.status ?? 'closed').replace(/_/g, ' ')}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
@@ -312,8 +311,7 @@ export function DesksClient({
                 >
                   <option value="closed">{t('Closed')}</option>
                   <option value="open">{t('Open')}</option>
-                  <option value="serving">{t('Serving')}</option>
-                  <option value="paused">{t('Paused')}</option>
+                  <option value="on_break">{t('On Break')}</option>
                 </select>
               </div>
               <div>

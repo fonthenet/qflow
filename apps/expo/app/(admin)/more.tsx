@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,6 +15,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { setLanguage } from '@/lib/i18n';
+import type { LangCode } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
@@ -44,19 +49,58 @@ interface OrgSettings {
   slots_per_interval: number;
 }
 
-const CHECK_IN_MODES = ['self_service', 'manual', 'hybrid'];
-const SCREEN_LAYOUTS = ['list', 'grid', 'department_split'];
-const LANGUAGES = ['en', 'fr', 'ar', 'es'];
-const LANGUAGE_LABELS: Record<string, string> = { en: 'English', fr: 'French', ar: 'Arabic', es: 'Spanish' };
+const CHECK_IN_MODES = ['self_service', 'manual', 'hybrid'] as const;
+const CHECK_IN_MODE_KEYS: Record<string, string> = {
+  self_service: 'selfService',
+  manual: 'manual',
+  hybrid: 'hybrid',
+};
+const SCREEN_LAYOUTS = ['list', 'grid', 'department_split'] as const;
+const SCREEN_LAYOUT_KEYS: Record<string, string> = {
+  list: 'list',
+  grid: 'grid',
+  department_split: 'departmentSplit',
+};
+const LANGUAGES = ['en', 'fr', 'ar'];
+const LANGUAGE_LABELS: Record<string, string> = { en: 'English', fr: 'Français', ar: 'العربية' };
+
+const TIMEZONE_OPTIONS = [
+  'Africa/Algiers', 'Africa/Cairo', 'Africa/Casablanca', 'Africa/Johannesburg',
+  'Africa/Lagos', 'Africa/Nairobi', 'Africa/Tunis',
+  'America/Anchorage', 'America/Argentina/Buenos_Aires', 'America/Bogota',
+  'America/Chicago', 'America/Denver', 'America/Halifax', 'America/Lima',
+  'America/Los_Angeles', 'America/Mexico_City', 'America/New_York',
+  'America/Phoenix', 'America/Santiago', 'America/Sao_Paulo', 'America/Toronto',
+  'Asia/Baghdad', 'Asia/Bangkok', 'Asia/Beirut', 'Asia/Colombo',
+  'Asia/Dhaka', 'Asia/Dubai', 'Asia/Ho_Chi_Minh', 'Asia/Hong_Kong',
+  'Asia/Istanbul', 'Asia/Jakarta', 'Asia/Karachi', 'Asia/Kolkata',
+  'Asia/Kuala_Lumpur', 'Asia/Manila', 'Asia/Riyadh', 'Asia/Seoul',
+  'Asia/Shanghai', 'Asia/Singapore', 'Asia/Taipei', 'Asia/Tokyo',
+  'Australia/Melbourne', 'Australia/Perth', 'Australia/Sydney',
+  'Europe/Amsterdam', 'Europe/Berlin', 'Europe/London', 'Europe/Madrid',
+  'Europe/Moscow', 'Europe/Paris', 'Europe/Rome', 'Europe/Zurich',
+  'Pacific/Auckland', 'Pacific/Honolulu',
+];
+
+interface OfficeTimezone {
+  id: string;
+  name: string;
+  timezone: string | null;
+}
 
 export default function MoreScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const { user, signOut, staffRole } = useAuth();
   const { clearSession } = useOperatorStore();
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [settings, setSettings] = useState<OrgSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [offices, setOffices] = useState<OfficeTimezone[]>([]);
+  const [tzPickerVisible, setTzPickerVisible] = useState(false);
+  const [tzPickerOfficeId, setTzPickerOfficeId] = useState<string | null>(null);
+  const [tzSearch, setTzSearch] = useState('');
 
   useEffect(() => {
     loadOrg();
@@ -117,6 +161,14 @@ export default function MoreScreen() {
         slots_per_interval: jsonSettings.slots_per_interval ?? 1,
       });
     }
+
+    // Load office timezones
+    const { data: officeData } = await supabase
+      .from('offices')
+      .select('id, name, timezone')
+      .eq('organization_id', orgId)
+      .order('name');
+    setOffices((officeData ?? []) as OfficeTimezone[]);
   };
 
   const updateSetting = async (field: string, value: unknown) => {
@@ -139,11 +191,29 @@ export default function MoreScreen() {
     setSaving(false);
   };
 
+  const openTzPicker = (officeId: string) => {
+    setTzPickerOfficeId(officeId);
+    setTzSearch('');
+    setTzPickerVisible(true);
+  };
+
+  const selectTimezone = async (tz: string) => {
+    if (!tzPickerOfficeId) return;
+    setTzPickerVisible(false);
+    setSaving(true);
+    const normalized = tz === 'Europe/Algiers' ? 'Africa/Algiers' : tz;
+    await supabase.from('offices').update({ timezone: normalized }).eq('id', tzPickerOfficeId);
+    setOffices((prev) =>
+      prev.map((o) => (o.id === tzPickerOfficeId ? { ...o, timezone: normalized } : o)),
+    );
+    setSaving(false);
+  };
+
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('auth.signOut'), t('adminMore.signOutConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Sign Out',
+        text: t('auth.signOut'),
         style: 'destructive',
         onPress: async () => {
           clearSession();
@@ -174,8 +244,8 @@ export default function MoreScreen() {
               <Ionicons name="desktop-outline" size={24} color="#fff" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.quickActionTitle}>Start Serving</Text>
-              <Text style={styles.quickActionSub}>Select desk & serve customers</Text>
+              <Text style={styles.quickActionTitle}>{t('adminMore.startServing')}</Text>
+              <Text style={styles.quickActionSub}>{t('adminMore.selectDeskServe')}</Text>
             </View>
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </TouchableOpacity>
@@ -184,10 +254,18 @@ export default function MoreScreen() {
         <View style={styles.quickActionRow}>
           <TouchableOpacity
             style={styles.quickActionCard}
+            onPress={() => router.push('/(admin)/manage')}
+          >
+            <Ionicons name="settings-outline" size={22} color={colors.primary} />
+            <Text style={styles.quickActionCardLabel}>{t('adminMore.manage')}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickActionCard}
             onPress={() => router.push('/(tabs)')}
           >
             <Ionicons name="people-outline" size={22} color={colors.primary} />
-            <Text style={styles.quickActionCardLabel}>Customer View</Text>
+            <Text style={styles.quickActionCardLabel}>{t('adminMore.customerView')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -195,7 +273,7 @@ export default function MoreScreen() {
             onPress={() => router.push('/admin/bookings')}
           >
             <Ionicons name="calendar-outline" size={22} color={colors.waiting} />
-            <Text style={styles.quickActionCardLabel}>Bookings</Text>
+            <Text style={styles.quickActionCardLabel}>{t('adminMore.bookings')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -203,7 +281,7 @@ export default function MoreScreen() {
             onPress={() => router.push('/admin/virtual-codes')}
           >
             <Ionicons name="qr-code-outline" size={22} color={colors.success} />
-            <Text style={styles.quickActionCardLabel}>QR Codes</Text>
+            <Text style={styles.quickActionCardLabel}>{t('adminMore.qrCodes')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -229,9 +307,9 @@ export default function MoreScreen() {
 
         {org && (
           <View style={styles.statsRow}>
-            <StatItem icon="location" label="Offices" value={org.officeCount} />
-            <StatItem icon="people" label="Staff" value={org.staffCount} />
-            <StatItem icon="desktop" label="Desks" value={org.deskCount} />
+            <StatItem icon="location" label={t('adminMore.offices')} value={org.officeCount} />
+            <StatItem icon="people" label={t('adminMore.staffCount')} value={org.staffCount} />
+            <StatItem icon="desktop" label={t('adminMore.desksCount')} value={org.deskCount} />
           </View>
         )}
       </View>
@@ -241,12 +319,12 @@ export default function MoreScreen() {
         <>
           {/* Queue Settings */}
           <CollapsibleSection
-            title="Queue Settings"
+            title={t('adminMore.queueSettings')}
             icon="options-outline"
             expanded={expandedSection === 'queue'}
             onToggle={() => toggleSection('queue')}
           >
-            <SettingRow label="Check-in Mode" icon="log-in-outline">
+            <SettingRow label={t('adminMore.checkInMode')} icon="log-in-outline">
               <View style={styles.chipRow}>
                 {CHECK_IN_MODES.map((mode) => (
                   <TouchableOpacity
@@ -255,44 +333,44 @@ export default function MoreScreen() {
                     onPress={() => updateSetting('check_in_mode', mode)}
                   >
                     <Text style={[styles.chipText, settings.check_in_mode === mode && styles.chipTextActive]}>
-                      {mode.replace(/_/g, ' ')}
+                      {t(`adminMore.${CHECK_IN_MODE_KEYS[mode]}`)}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </SettingRow>
 
-            <SettingRow label="Ticket Prefix" icon="pricetag-outline">
+            <SettingRow label={t('adminMore.ticketPrefix')} icon="pricetag-outline">
               <TextInput
                 style={styles.input}
                 value={settings.ticket_prefix}
                 onChangeText={(v) => setSettings({ ...settings, ticket_prefix: v })}
                 onBlur={() => updateSetting('ticket_prefix', settings.ticket_prefix)}
-                placeholder="e.g. Q"
+                placeholder={t('adminMore.ticketPrefixPlaceholder')}
                 placeholderTextColor={colors.textMuted}
               />
             </SettingRow>
 
-            <SettingRow label="Auto No-Show (min)" icon="timer-outline">
+            <SettingRow label={t('adminMore.autoNoShow')} icon="timer-outline">
               <TextInput
                 style={styles.input}
                 value={settings.auto_no_show_minutes?.toString() ?? ''}
                 onChangeText={(v) => setSettings({ ...settings, auto_no_show_minutes: v ? parseInt(v) : null })}
                 onBlur={() => updateSetting('auto_no_show_minutes', settings.auto_no_show_minutes)}
                 keyboardType="number-pad"
-                placeholder="Off"
+                placeholder={t('adminMore.autoNoShowOff')}
                 placeholderTextColor={colors.textMuted}
               />
             </SettingRow>
 
-            <SettingRow label="Max Queue Size" icon="resize-outline">
+            <SettingRow label={t('adminMore.maxQueueSize')} icon="resize-outline">
               <TextInput
                 style={styles.input}
                 value={settings.max_queue_size?.toString() ?? ''}
                 onChangeText={(v) => setSettings({ ...settings, max_queue_size: v ? parseInt(v) : null })}
                 onBlur={() => updateSetting('max_queue_size', settings.max_queue_size)}
                 keyboardType="number-pad"
-                placeholder="Unlimited"
+                placeholder={t('adminMore.unlimited')}
                 placeholderTextColor={colors.textMuted}
               />
             </SettingRow>
@@ -300,12 +378,12 @@ export default function MoreScreen() {
 
           {/* Display & Language */}
           <CollapsibleSection
-            title="Display & Language"
+            title={t('adminMore.displayLanguage')}
             icon="color-palette-outline"
             expanded={expandedSection === 'display'}
             onToggle={() => toggleSection('display')}
           >
-            <SettingRow label="Screen Layout" icon="tv-outline">
+            <SettingRow label={t('adminMore.screenLayout')} icon="tv-outline">
               <View style={styles.chipRow}>
                 {SCREEN_LAYOUTS.map((layout) => (
                   <TouchableOpacity
@@ -314,14 +392,14 @@ export default function MoreScreen() {
                     onPress={() => updateSetting('default_screen_layout', layout)}
                   >
                     <Text style={[styles.chipText, settings.default_screen_layout === layout && styles.chipTextActive]}>
-                      {layout.replace(/_/g, ' ')}
+                      {t(`adminMore.${SCREEN_LAYOUT_KEYS[layout]}`)}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </SettingRow>
 
-            <SettingRow label="Announcement Sound" icon="volume-high-outline">
+            <SettingRow label={t('adminMore.announcementSound')} icon="volume-high-outline">
               <Switch
                 value={settings.announcement_sound}
                 onValueChange={(v) => updateSetting('announcement_sound', v)}
@@ -330,15 +408,18 @@ export default function MoreScreen() {
               />
             </SettingRow>
 
-            <SettingRow label="Default Language" icon="globe-outline">
+            <SettingRow label={t('adminMore.language')} icon="globe-outline">
               <View style={styles.chipRow}>
                 {LANGUAGES.map((lang) => (
                   <TouchableOpacity
                     key={lang}
-                    style={[styles.chip, settings.default_language === lang && styles.chipActive]}
-                    onPress={() => updateSetting('default_language', lang)}
+                    style={[styles.chip, i18n.language === lang && styles.chipActive]}
+                    onPress={() => {
+                      updateSetting('default_language', lang);
+                      setLanguage(lang as LangCode);
+                    }}
                   >
-                    <Text style={[styles.chipText, settings.default_language === lang && styles.chipTextActive]}>
+                    <Text style={[styles.chipText, i18n.language === lang && styles.chipTextActive]}>
                       {LANGUAGE_LABELS[lang]}
                     </Text>
                   </TouchableOpacity>
@@ -349,12 +430,12 @@ export default function MoreScreen() {
 
           {/* Booking & Scheduling */}
           <CollapsibleSection
-            title="Booking & Scheduling"
+            title={t('adminMore.bookingScheduling')}
             icon="calendar-outline"
             expanded={expandedSection === 'booking'}
             onToggle={() => toggleSection('booking')}
           >
-            <SettingRow label="Booking Mode" icon="calendar-outline">
+            <SettingRow label={t('adminMore.bookingMode')} icon="calendar-outline">
               <View style={styles.chipRow}>
                 {(['disabled', 'simple', 'advanced'] as const).map((mode) => (
                   <TouchableOpacity
@@ -363,7 +444,7 @@ export default function MoreScreen() {
                     onPress={() => updateSettingsJson('booking_mode', mode)}
                   >
                     <Text style={[styles.chipText, settings.booking_mode === mode && styles.chipTextActive]}>
-                      {mode}
+                      {t(`adminMore.${mode}`)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -372,7 +453,7 @@ export default function MoreScreen() {
 
             {settings.booking_mode === 'advanced' && (
               <>
-                <SettingRow label="Booking Horizon (days)" icon="calendar-outline">
+                <SettingRow label={t('adminMore.bookingHorizon')} icon="calendar-outline">
                   <TextInput
                     style={styles.input}
                     value={String(settings.booking_horizon_days)}
@@ -387,7 +468,7 @@ export default function MoreScreen() {
                   />
                 </SettingRow>
 
-                <SettingRow label="Slot Duration (min)" icon="time-outline">
+                <SettingRow label={t('adminMore.slotDuration')} icon="time-outline">
                   <View style={styles.chipRow}>
                     {[15, 20, 30, 45, 60].map((d) => (
                       <TouchableOpacity
@@ -401,7 +482,7 @@ export default function MoreScreen() {
                   </View>
                 </SettingRow>
 
-                <SettingRow label="Bookings per Slot" icon="people-outline">
+                <SettingRow label={t('adminMore.bookingsPerSlot')} icon="people-outline">
                   <TextInput
                     style={styles.input}
                     value={String(settings.slots_per_interval)}
@@ -418,13 +499,88 @@ export default function MoreScreen() {
               </>
             )}
           </CollapsibleSection>
+
+          {/* Timezone */}
+          <CollapsibleSection
+            title={t('adminMore.officeTimezones')}
+            icon="time-outline"
+            expanded={expandedSection === 'timezone'}
+            onToggle={() => toggleSection('timezone')}
+          >
+            {offices.length === 0 ? (
+              <Text style={{ color: colors.textMuted, fontSize: fontSize.sm, padding: spacing.sm }}>
+                {t('adminMore.noOfficesFound')}
+              </Text>
+            ) : (
+              offices.map((office) => (
+                <View key={office.id} style={styles.tzRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tzOfficeName}>{office.name}</Text>
+                    <Text style={styles.tzValue}>
+                      {office.timezone ?? t('adminMore.notSet')}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.tzChangeBtn}
+                    onPress={() => openTzPicker(office.id)}
+                  >
+                    <Ionicons name="create-outline" size={16} color={colors.primary} />
+                    <Text style={styles.tzChangeBtnText}>{t('adminMore.change')}</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </CollapsibleSection>
         </>
       )}
+
+      {/* ── Timezone Picker Modal ── */}
+      <Modal visible={tzPickerVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.tzModal}>
+          <View style={styles.tzModalHeader}>
+            <Text style={styles.tzModalTitle}>{t('adminMore.selectTimezone')}</Text>
+            <TouchableOpacity onPress={() => setTzPickerVisible(false)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.tzSearchWrap}>
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              style={styles.tzSearchInput}
+              placeholder={t('adminMore.searchTimezones')}
+              placeholderTextColor={colors.textMuted}
+              value={tzSearch}
+              onChangeText={setTzSearch}
+            />
+          </View>
+          <FlatList
+            data={TIMEZONE_OPTIONS.filter((tz) =>
+              tz.toLowerCase().includes(tzSearch.toLowerCase()),
+            )}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => {
+              const isSelected = offices.find((o) => o.id === tzPickerOfficeId)?.timezone === item;
+              return (
+                <TouchableOpacity
+                  style={[styles.tzOption, isSelected && styles.tzOptionSelected]}
+                  onPress={() => selectTimezone(item)}
+                >
+                  <Text style={[styles.tzOptionText, isSelected && styles.tzOptionTextSelected]}>
+                    {item.replace(/_/g, ' ')}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                </TouchableOpacity>
+              );
+            }}
+            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: colors.borderLight }} />}
+          />
+        </View>
+      </Modal>
 
       {/* ── Sign Out ── */}
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Ionicons name="log-out-outline" size={20} color={colors.error} />
-        <Text style={styles.signOutText}>Sign Out</Text>
+        <Text style={styles.signOutText}>{t('auth.signOut')}</Text>
       </TouchableOpacity>
 
       <Text style={styles.version}>Qflo v1.0.0</Text>
@@ -617,4 +773,58 @@ const styles = StyleSheet.create({
   },
   signOutText: { fontSize: fontSize.md, fontWeight: '600', color: colors.error },
   version: { textAlign: 'center', fontSize: fontSize.sm, color: colors.textMuted, marginTop: spacing.xs },
+
+  // Timezone
+  tzRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  tzOfficeName: { fontSize: fontSize.md, fontWeight: '600', color: colors.text },
+  tzValue: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
+  tzChangeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary + '12',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.md,
+  },
+  tzChangeBtnText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.primary },
+  tzModal: { flex: 1, backgroundColor: colors.background },
+  tzModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tzModalTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
+  tzSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    margin: spacing.md,
+    paddingHorizontal: 12,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tzSearchInput: { flex: 1, paddingVertical: 10, fontSize: fontSize.md, color: colors.text },
+  tzOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+  },
+  tzOptionSelected: { backgroundColor: colors.primary + '10' },
+  tzOptionText: { fontSize: fontSize.md, color: colors.text },
+  tzOptionTextSelected: { fontWeight: '700', color: colors.primary },
 });

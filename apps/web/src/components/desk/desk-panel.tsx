@@ -18,8 +18,12 @@ import {
   AlertCircle,
   TimerReset,
   MapPinned,
+  Coffee,
+  LogOut,
+  Power,
 } from 'lucide-react';
 import { useRealtimeQueue } from '@/lib/hooks/use-realtime-queue';
+import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { CALL_WAIT_SECONDS } from '@/lib/queue/call-timing';
 import {
   callNextTicket,
@@ -36,6 +40,9 @@ import {
   resumeParkedTicket,
   assignRestaurantTable,
   clearRestaurantTable,
+  unassignDesk,
+  setDeskOnBreak,
+  setDeskOpen,
 } from '@/lib/actions/ticket-actions';
 import { CustomerDataCard } from '@/components/desk/customer-data-card';
 import { PriorityBadge } from '@/components/tickets/priority-badge';
@@ -250,6 +257,7 @@ export function DeskPanel({
   const [isPending, startTransition] = useTransition();
   const toastIdRef = useRef(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [deskStatus, setDeskStatus] = useState<'open' | 'closed' | 'on_break'>('open');
 
   const { queue: liveQueue, isLoading } = useRealtimeQueue({
     officeId: desk.office_id,
@@ -275,6 +283,29 @@ export function DeskPanel({
     }
     setDisplayMode(initialDisplayMode);
   }, [desk.id, initialDisplayMode]);
+
+  // ── Realtime desk status sync (pick up changes from Station/mobile) ──
+  useEffect(() => {
+    if (sandboxMode) return;
+    const sb = createSupabaseClient();
+    // Fetch current status on mount
+    sb.from('desks').select('status').eq('id', desk.id).single().then(({ data }) => {
+      if (data?.status === 'open' || data?.status === 'closed' || data?.status === 'on_break') {
+        setDeskStatus(data.status);
+      }
+    });
+    // Subscribe to realtime changes
+    const channel = sb.channel(`desk-status-${desk.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'desks', filter: `id=eq.${desk.id}` },
+        (payload: any) => {
+          const newStatus = payload.new?.status;
+          if (newStatus === 'open' || newStatus === 'closed' || newStatus === 'on_break') {
+            setDeskStatus(newStatus);
+          }
+        })
+      .subscribe();
+    return () => { sb.removeChannel(channel); };
+  }, [desk.id, sandboxMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -643,11 +674,13 @@ export function DeskPanel({
         called_at: null,
         serving_started_at: null,
         desk_id: null,
+        parked_at: null,
       };
       setSandboxQueue((current) => ({
         ...current,
         called: current.called.filter((entry) => entry.id !== ticket.id),
         serving: current.serving.filter((entry) => entry.id !== ticket.id),
+        parked: current.parked.filter((entry) => entry.id !== ticket.id),
         waiting: [...current.waiting, resetTicket],
       }));
       setTableState((current) =>
@@ -721,29 +754,76 @@ export function DeskPanel({
   };
 
   const handleResumeParkedTicket = (ticket: Ticket) => {
+    if (hasActiveDeskTicket) {
+      addToast(isRestaurantMode ? 'Complete or park the current party first' : 'Complete or park the current ticket first', 'error');
+      return;
+    }
     if (sandboxMode) {
       const resumedTicket = {
         ...ticket,
-        status: 'waiting' as const,
+        status: 'called' as const,
+        desk_id: desk.id,
+        called_at: new Date().toISOString(),
         parked_at: null,
       };
       setSandboxQueue((current) => ({
         ...current,
         parked: current.parked.filter((entry) => entry.id !== ticket.id),
-        waiting: [...current.waiting, resumedTicket],
+        waiting: current.waiting.filter((entry) => entry.id !== ticket.id),
+        called: [...current.called, resumedTicket],
       }));
+      setCurrentTicket(resumedTicket);
       setLastAction({ ticketNumber: ticket.ticket_number, action: 'resumed', time: new Date() });
-      addToast(isRestaurantMode ? 'Party returned to waitlist' : 'Ticket returned to queue', 'info');
+      addToast(isRestaurantMode ? 'Party called back' : 'Ticket called back to desk', 'success');
       return;
     }
     startTransition(async () => {
-      const result = await resumeParkedTicket(ticket.id);
+      const result = await resumeParkedTicket(ticket.id, desk.id);
       if (result.error) {
         addToast(getDeskErrorMessage(result.error), 'error');
         return;
       }
       setLastAction({ ticketNumber: ticket.ticket_number, action: 'resumed', time: new Date() });
-      addToast(isRestaurantMode ? 'Party returned to waitlist' : 'Ticket returned to queue', 'info');
+      addToast(isRestaurantMode ? 'Party called back' : 'Ticket called back to desk', 'success');
+    });
+  };
+
+  const handleDeskOnBreak = () => {
+    startTransition(async () => {
+      const result = await setDeskOnBreak(desk.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      setDeskStatus('on_break');
+      addToast(t('Desk set to on break'), 'info');
+    });
+  };
+
+  const handleDeskResume = () => {
+    startTransition(async () => {
+      const result = await setDeskOpen(desk.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      setDeskStatus('open');
+      addToast(t('Desk is now open'), 'success');
+    });
+  };
+
+  const handleLeaveDesk = () => {
+    if (hasActiveDeskTicket) {
+      addToast(t('Complete or park your current ticket before leaving the desk'), 'error');
+      return;
+    }
+    startTransition(async () => {
+      const result = await unassignDesk(desk.id);
+      if (result.error) {
+        addToast(result.error, 'error');
+        return;
+      }
+      window.location.href = '/desk';
     });
   };
 
@@ -1379,16 +1459,74 @@ export function DeskPanel({
           </div>
           <div
             className={`h-3 w-3 rounded-full ${
-              isServing
-                ? 'bg-success animate-pulse'
-                : isCalled
-                  ? 'bg-warning animate-pulse'
-                  : 'bg-muted-foreground'
+              deskStatus === 'on_break'
+                ? 'bg-warning animate-pulse'
+                : isServing
+                  ? 'bg-success animate-pulse'
+                  : isCalled
+                    ? 'bg-warning animate-pulse'
+                    : queue.waiting.length > 0
+                      ? 'bg-primary'
+                      : 'bg-success'
             }`}
-            title={isServing ? t('Serving') : isCalled ? t('Called') : t('Idle')}
+            title={deskStatus === 'on_break' ? t('On Break') : isServing ? t('Serving') : isCalled ? t('Called') : queue.waiting.length > 0 ? t('Ready') : t('Available')}
           />
+          {/* Desk status controls */}
+          {deskStatus === 'on_break' ? (
+            <button
+              type="button"
+              onClick={handleDeskResume}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1.5 text-xs font-semibold text-success hover:bg-success/20 transition-colors disabled:opacity-50"
+            >
+              <Power className="h-3.5 w-3.5" />
+              {t('Resume')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDeskOnBreak}
+              disabled={isPending || hasActiveDeskTicket}
+              className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-3 py-1.5 text-xs font-semibold text-warning hover:bg-warning/20 transition-colors disabled:opacity-50"
+              title={hasActiveDeskTicket ? t('Complete your current ticket first') : t('Take a break')}
+            >
+              <Coffee className="h-3.5 w-3.5" />
+              {t('Break')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleLeaveDesk}
+            disabled={isPending || hasActiveDeskTicket}
+            className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
+            title={hasActiveDeskTicket ? t('Complete your current ticket first') : t('Leave this desk')}
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            {t('Leave')}
+          </button>
         </div>
       </div>
+
+      {/* On Break Banner */}
+      {deskStatus === 'on_break' && (
+        <div className="flex items-center justify-between rounded-xl border border-warning/30 bg-warning/5 px-5 py-3">
+          <div className="flex items-center gap-3">
+            <Coffee className="h-5 w-5 text-warning" />
+            <span className="text-sm font-semibold text-warning">{t('Desk is on break')}</span>
+            <span className="text-sm text-muted-foreground">
+              {t('{count} waiting', { count: queue.waiting.length })}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDeskResume}
+            disabled={isPending}
+            className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white hover:bg-success/90 transition-colors disabled:opacity-50"
+          >
+            {t('Resume Serving')}
+          </button>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className={`grid grid-cols-1 gap-6 flex-1 min-h-0 ${isMinimalView ? 'lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]' : 'lg:grid-cols-3'}`}>
@@ -2303,7 +2441,7 @@ export function DeskPanel({
                         className="inline-flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/20 disabled:opacity-50"
                       >
                         <Play className="h-3.5 w-3.5" />
-                        {t('Resume')}
+                        {t('Call to Desk')}
                       </button>
                       <button
                         type="button"

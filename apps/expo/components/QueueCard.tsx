@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { CountdownTimer } from './CountdownTimer';
 import type { TicketResponse } from '@/lib/api';
 import { useTheme } from '@/lib/theme';
@@ -236,6 +237,7 @@ function MetricCard({
 // ---------------------------------------------------------------------------
 
 export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse; onTicketUpdated?: () => void }) {
+  const { t: tr } = useTranslation();
   const { isDark } = useTheme();
   const t = isDark ? darkPalette : lightPalette;
 
@@ -266,10 +268,10 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
         onTicketUpdated?.();
       } else {
         const err = await res.json().catch(() => ({}));
-        setSaveError(err.error ?? 'Failed to save');
+        setSaveError(err.error ?? tr('customer.failedToSave'));
       }
     } catch {
-      setSaveError('Network error — try again');
+      setSaveError(tr('customer.networkError'));
     } finally {
       setSaving(false);
     }
@@ -353,11 +355,11 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp.sm }}>
                 <PulseDot color={ticket.position === 1 ? '#10b981' : t.accent} />
                 <Text style={[layout.progressLabelText, { color: ticket.position === 1 ? '#10b981' : t.textSecondary }]}>
-                  {ticket.position === 1 ? 'Get ready!' : ticket.position != null && ticket.position <= 3 ? 'Almost there!' : 'In Queue'}
+                  {ticket.position === 1 ? tr('customer.getReady') : ticket.position != null && ticket.position <= 3 ? tr('customer.almostThere') : tr('customer.inQueue')}
                 </Text>
               </View>
               <Text style={[layout.progressPosition, { color: t.textMuted }]}>
-                {ticket.position === 1 ? 'Get ready!' : `#${ticket.position ?? '-'} of ${(ticket.position ?? 0) + peopleAhead + 1}`}
+                {ticket.position === 1 ? tr('customer.getReady') : `#${ticket.position ?? '-'} of ${(ticket.position ?? 0) + peopleAhead + 1}`}
               </Text>
             </View>
             <ProgressBar position={ticket.position} t={t} />
@@ -375,10 +377,10 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
             }}>
               <Ionicons name="checkmark-circle" size={28} color="#10b981" />
               <Text style={{ color: '#10b981', fontSize: fs.lg, fontWeight: '800', marginTop: sp.xs }}>
-                You&apos;re Next!
+                {tr('customer.youreNext')}
               </Text>
               <Text style={{ color: t.textSecondary, fontSize: fs.sm, marginTop: 2 }}>
-                Get ready — you&apos;ll be called any moment
+                {tr('customer.getReadyMsg')}
               </Text>
             </Animated.View>
           )}
@@ -386,27 +388,27 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
           <View style={layout.metricsRow}>
             <MetricCard
               icon="time-outline"
-              value={ticket.position === 1 ? 'Now' : ticket.estimated_wait_minutes != null ? `${ticket.estimated_wait_minutes}m` : '--'}
-              label={ticket.position === 1 ? 'Any moment' : 'Est. Wait'}
+              value={ticket.position === 1 ? tr('time.anyMoment') : ticket.estimated_wait_minutes != null ? `${ticket.estimated_wait_minutes}m` : '--'}
+              label={ticket.position === 1 ? tr('time.anyMoment') : tr('customer.estWait')}
               t={t}
             />
             <MetricCard
               icon="list-outline"
               value={ticket.position != null ? `#${ticket.position}` : '--'}
-              label="Position"
+              label={tr('customer.position')}
               t={t}
             />
             <MetricCard
               icon="people-outline"
               value={peopleAhead}
-              label={peopleAhead === 0 ? 'No one ahead' : 'Ahead'}
+              label={peopleAhead === 0 ? tr('customer.noOneAhead') : tr('customer.ahead')}
               t={t}
             />
           </View>
 
           <View style={layout.syncRow}>
             <Ionicons name="sync-outline" size={12} color={t.textMuted} />
-            <Text style={[layout.syncText, { color: t.textMuted }]}>Synced {syncedAt}</Text>
+            <Text style={[layout.syncText, { color: t.textMuted }]}>{tr('customer.syncedTime', { time: syncedAt })}</Text>
           </View>
 
           <TouchableOpacity
@@ -420,7 +422,7 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
             }}
           >
             <Ionicons name="pencil-outline" size={14} color={t.textMuted} />
-            <Text style={[layout.editButtonText, { color: t.textMuted }]}>Edit my info</Text>
+            <Text style={[layout.editButtonText, { color: t.textMuted }]}>{tr('customer.editInfo')}</Text>
           </TouchableOpacity>
         </>
       )}
@@ -433,37 +435,37 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
         >
           <View style={layout.modalOverlay}>
             <View style={[layout.modalCard, { backgroundColor: t.cardBg, borderColor: t.cardBorder }]}>
-              <Text style={[layout.modalTitle, { color: t.textPrimary }]}>Edit Visit Info</Text>
+              <Text style={[layout.modalTitle, { color: t.textPrimary }]}>{tr('customer.editVisitInfo')}</Text>
 
               <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Full Name</Text>
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>{tr('customer.fullName')}</Text>
                 <TextInput
                   style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
                   value={editName}
                   onChangeText={setEditName}
-                  placeholder="Your name"
+                  placeholder={tr('customer.yourName')}
                   placeholderTextColor={t.textMuted}
                   returnKeyType="next"
                   autoCapitalize="words"
                 />
 
-                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Phone Number</Text>
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>{tr('customer.phoneNumber')}</Text>
                 <TextInput
                   style={[layout.modalInput, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
                   value={editPhone}
                   onChangeText={setEditPhone}
-                  placeholder="Your phone"
+                  placeholder={tr('customer.yourPhone')}
                   placeholderTextColor={t.textMuted}
                   keyboardType="phone-pad"
                   returnKeyType="next"
                 />
 
-                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>Reason for Visit</Text>
+                <Text style={[layout.modalLabel, { color: t.textSecondary }]}>{tr('customer.reasonForVisit')}</Text>
                 <TextInput
                   style={[layout.modalInput, layout.modalTextArea, { color: t.textPrimary, borderColor: t.cardBorder, backgroundColor: t.metricBg }]}
                   value={editReason}
                   onChangeText={setEditReason}
-                  placeholder="e.g. Follow-up, Consultation…"
+                  placeholder={tr('customer.reasonPlaceholder')}
                   placeholderTextColor={t.textMuted}
                   multiline
                   numberOfLines={3}
@@ -477,10 +479,10 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
 
               <View style={layout.modalButtons}>
                 <TouchableOpacity style={[layout.modalCancel, { borderColor: t.cardBorder }]} onPress={() => setEditVisible(false)}>
-                  <Text style={[layout.modalCancelText, { color: t.textSecondary }]}>Cancel</Text>
+                  <Text style={[layout.modalCancelText, { color: t.textSecondary }]}>{tr('common.cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[layout.modalSave, { backgroundColor: t.accent }]} onPress={saveEdit} disabled={saving}>
-                  <Text style={layout.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
+                  <Text style={layout.modalSaveText}>{saving ? tr('common.saving') : tr('common.save')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -493,9 +495,9 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
         <PulsingBorder color={t.calledOrange}>
           <View style={[layout.calledSection, { backgroundColor: t.calledOrange + '12' }]}>
             <Ionicons name="notifications" size={36} color={t.calledOrange} />
-            <Text style={[layout.calledTitle, { color: t.calledOrange }]}>It's Your Turn!</Text>
+            <Text style={[layout.calledTitle, { color: t.calledOrange }]}>{tr('customer.itsYourTurn')}</Text>
             {ticket.desk && (
-              <Text style={[layout.deskText, { color: t.textPrimary }]}>Go to {ticket.desk.name}</Text>
+              <Text style={[layout.deskText, { color: t.textPrimary }]}>{tr('customer.goToDesk', { desk: ticket.desk.name })}</Text>
             )}
             <CountdownTimer calledAt={ticket.called_at} />
           </View>
@@ -506,10 +508,10 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
       {isServing && (
         <View style={[layout.servingSection, { backgroundColor: t.emerald + '12' }]}>
           <Ionicons name="checkmark-circle" size={40} color={t.emerald} />
-          <Text style={[layout.servingTitle, { color: t.emerald }]}>Being Served</Text>
+          <Text style={[layout.servingTitle, { color: t.emerald }]}>{tr('customer.beingServed')}</Text>
           {ticket.desk && (
             <Text style={[layout.servingSubtitle, { color: t.textSecondary }]}>
-              At {ticket.desk.name}
+              {tr('customer.atDesk', { desk: ticket.desk.name })}
             </Text>
           )}
           {ticket.serving_started_at && (
@@ -534,14 +536,14 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
           />
           <Text style={[layout.terminalTitle, { color: accentColor }]}>
             {ticket.status === 'served'
-              ? 'Visit Complete'
+              ? tr('customer.visitComplete')
               : ticket.status === 'no_show'
-                ? 'Missed'
-                : 'Cancelled'}
+                ? tr('customer.missed')
+                : tr('customer.cancelled')}
           </Text>
           {completedDurationMin != null && (
             <Text style={[layout.terminalDuration, { color: t.textMuted }]}>
-              Completed in {completedDurationMin} min
+              {tr('customer.completedIn', { min: completedDurationMin })}
             </Text>
           )}
         </View>

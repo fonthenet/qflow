@@ -11,12 +11,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 const REFRESH_INTERVAL_MS = 15_000;
 
 export default function QueuePeekScreen() {
+  const { t } = useTranslation();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const router = useRouter();
   const { colors, isDark } = useTheme();
@@ -67,7 +69,7 @@ export default function QueuePeekScreen() {
     return (
       <View style={[s.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading queue status...</Text>
+        <Text style={[s.loadingText, { color: colors.textSecondary }]}>{t('queuePeek.loadingStatus')}</Text>
       </View>
     );
   }
@@ -79,15 +81,15 @@ export default function QueuePeekScreen() {
         <View style={[s.iconCircle, { backgroundColor: colors.error + '15' }]}>
           <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
         </View>
-        <Text style={[s.errorTitle, { color: colors.text }]}>Queue Unavailable</Text>
+        <Text style={[s.errorTitle, { color: colors.text }]}>{t('queuePeek.queueUnavailable')}</Text>
         <Text style={[s.errorSub, { color: colors.textSecondary }]}>
-          This business could not be found or its queue is currently offline.
+          {t('queuePeek.unavailableMsg')}
         </Text>
         <TouchableOpacity
           style={[s.outlineBtn, { borderColor: colors.border }]}
           onPress={() => router.back()}
         >
-          <Text style={[s.outlineBtnText, { color: colors.textSecondary }]}>Go Back</Text>
+          <Text style={[s.outlineBtnText, { color: colors.textSecondary }]}>{t('queuePeek.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -117,7 +119,7 @@ export default function QueuePeekScreen() {
       {/* Back */}
       <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
         <Ionicons name="arrow-back" size={20} color={colors.primary} />
-        <Text style={[s.backText, { color: colors.primary }]}>Back</Text>
+        <Text style={[s.backText, { color: colors.primary }]}>{t('common.back')}</Text>
       </TouchableOpacity>
 
       {/* Header */}
@@ -145,20 +147,20 @@ export default function QueuePeekScreen() {
           style={[s.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
         >
           <Text style={[s.summaryValue, { color: colors.primary }]}>{status.totalWaiting}</Text>
-          <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>Waiting</Text>
+          <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>{t('queuePeek.waiting')}</Text>
         </View>
         <View
           style={[s.summaryCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
         >
           <Text style={[s.summaryValue, { color: colors.success }]}>{status.totalServing}</Text>
-          <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>Being Served</Text>
+          <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>{t('queuePeek.beingServed')}</Text>
         </View>
       </View>
 
       {/* Queues */}
-      <Text style={[s.sectionTitle, { color: colors.text }]}>Available Queues</Text>
+      <Text style={[s.sectionTitle, { color: colors.text }]}>{t('queuePeek.availableQueues')}</Text>
       <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
-        Pull down to refresh · auto-updates every 15s
+        {t('queuePeek.pullToRefresh')}
       </Text>
 
       {status.departments.map((dept) => {
@@ -182,12 +184,14 @@ export default function QueuePeekScreen() {
                   <View style={[s.statusDot, { backgroundColor: dept.waiting === 0 ? colors.success : colors.warning }]} />
                   <Text style={[s.deptMetaText, { color: colors.textSecondary }]}>
                     {dept.waiting === 0
-                      ? 'No wait'
-                      : `${dept.waiting} waiting${hasWait ? ` · ~${dept.estimatedWaitMinutes} min` : ''}`}
+                      ? t('queuePeek.noWait')
+                      : hasWait
+                        ? t('queuePeek.waitingWithTime', { count: dept.waiting, minutes: dept.estimatedWaitMinutes })
+                        : t('queuePeek.waitingCount', { count: dept.waiting })}
                   </Text>
                   {dept.serving > 0 && (
                     <Text style={[s.servingBadge, { color: colors.success }]}>
-                      {dept.serving} serving
+                      {t('queuePeek.servingCount', { count: dept.serving })}
                     </Text>
                   )}
                 </View>
@@ -199,7 +203,7 @@ export default function QueuePeekScreen() {
                 onPress={() => handleJoinDept(dept.id)}
                 activeOpacity={0.8}
               >
-                <Text style={s.joinDeptBtnText}>Join</Text>
+                <Text style={s.joinDeptBtnText}>{t('queuePeek.join')}</Text>
                 <Ionicons name="arrow-forward" size={14} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -211,7 +215,7 @@ export default function QueuePeekScreen() {
       {updatedStr && (
         <View style={s.updatedRow}>
           <Ionicons name="refresh-outline" size={12} color={colors.textMuted} />
-          <Text style={[s.updatedText, { color: colors.textMuted }]}>Updated {updatedStr}</Text>
+          <Text style={[s.updatedText, { color: colors.textMuted }]}>{t('queuePeek.updated', { time: updatedStr })}</Text>
         </View>
       )}
 
@@ -222,7 +226,7 @@ export default function QueuePeekScreen() {
         activeOpacity={0.8}
       >
         <Ionicons name="ticket-outline" size={20} color="#fff" />
-        <Text style={s.joinAnyBtnText}>Get a Ticket Now</Text>
+        <Text style={s.joinAnyBtnText}>{t('queuePeek.getTicketNow')}</Text>
       </TouchableOpacity>
 
       {status?.bookingMode !== 'disabled' && (
@@ -232,7 +236,7 @@ export default function QueuePeekScreen() {
           activeOpacity={0.8}
         >
           <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>Book for Later</Text>
+          <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>{t('queuePeek.bookForLater')}</Text>
         </TouchableOpacity>
       )}
     </ScrollView>

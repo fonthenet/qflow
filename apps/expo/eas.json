@@ -13,14 +13,21 @@
     },
     "production": {
       "autoIncrement": true,
-      "credentialsSource": "remote"
+      "credentialsSource": "remote",
+      "env": {
+        "ELECTRON_SKIP_BINARY_DOWNLOAD": "1"
+      }
     }
   },
   "submit": {
     "production": {
       "ios": {
         "appleTeamId": "W69MRY2826",
-        "ascAppId": "6760506845"
+        "ascAppId": "6761509429"
+      },
+      "android": {
+        "track": "production",
+        "releaseStatus": "draft"
       }
     }
   }

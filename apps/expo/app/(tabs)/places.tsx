@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAppStore, type SavedPlace } from '@/lib/store';
@@ -31,6 +32,7 @@ function PlaceCard({
   colors: any;
   isDark: boolean;
 }) {
+  const { t } = useTranslation();
   const dateStr = place.lastSeenAt
     ? new Date(place.lastSeenAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : null;
@@ -80,7 +82,7 @@ function PlaceCard({
           <View style={styles.metaItem}>
             <Ionicons name="receipt-outline" size={13} color={colors.textMuted} />
             <Text style={[styles.metaText, { color: colors.textMuted }]}>
-              {visitCount} ticket{visitCount !== 1 ? 's' : ''}
+              {t('places.ticket', { count: visitCount })}
             </Text>
           </View>
         )}
@@ -95,7 +97,7 @@ function PlaceCard({
           ]}
         >
           <Ionicons name="people-outline" size={15} color="#fff" />
-          <Text style={styles.viewQueuesBtnText}>View Queues</Text>
+          <Text style={styles.viewQueuesBtnText}>{t('places.viewQueues')}</Text>
           <Ionicons name="chevron-forward" size={14} color="#fff" />
         </View>
       </View>
@@ -107,6 +109,7 @@ function PlaceCard({
 // Main screen
 // ===========================================================================
 export default function PlacesScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { savedPlaces, removePlace, history } = useAppStore();
@@ -174,9 +177,9 @@ export default function PlacesScreen() {
         >
           <Ionicons name="storefront-outline" size={56} color={colors.primary} />
         </View>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>No places yet</Text>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('places.noPlaces')}</Text>
         <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-          Scan a business QR code to add it here. You'll be able to check wait times and join queues without scanning again.
+          {t('places.noPlacesMsg')}
         </Text>
         <TouchableOpacity
           style={[styles.emptyAction, { backgroundColor: colors.primary }]}
@@ -184,7 +187,7 @@ export default function PlacesScreen() {
           activeOpacity={0.7}
         >
           <Ionicons name="qr-code-outline" size={20} color="#fff" />
-          <Text style={styles.emptyActionText}>Scan QR Code</Text>
+          <Text style={styles.emptyActionText}>{t('places.scanQR')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -216,7 +219,7 @@ export default function PlacesScreen() {
         <Ionicons name="search-outline" size={18} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search places..."
+          placeholder={t('places.searchPlaces')}
           placeholderTextColor={colors.textMuted}
           value={search}
           onChangeText={setSearch}
@@ -246,9 +249,9 @@ export default function PlacesScreen() {
           <Ionicons name="qr-code-outline" size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.scanBannerTitle, { color: colors.text }]}>Add a new place</Text>
+          <Text style={[styles.scanBannerTitle, { color: colors.text }]}>{t('places.addNewPlace')}</Text>
           <Text style={[styles.scanBannerSub, { color: colors.textSecondary }]}>
-            Scan a QR code to save a business
+            {t('places.scanQR')}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -264,7 +267,7 @@ export default function PlacesScreen() {
         <View style={styles.noResults}>
           <Ionicons name="search-outline" size={32} color={colors.textMuted} />
           <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-            No places match your search.
+            {t('common.noResults')}
           </Text>
         </View>
       ) : (

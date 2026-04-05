@@ -4,6 +4,8 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Image,
+  Linking,
   Modal,
   RefreshControl,
   ScrollView,
@@ -15,19 +17,32 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 
-import { useRealtimeQueue, QueueTicket } from '@/lib/use-realtime-queue';
-import { useNameLookup } from '@/lib/use-realtime-queue';
+import { QueueTicket } from '@/lib/use-realtime-queue';
+import { useAdaptiveQueue, useAdaptiveNameLookup } from '@/lib/use-adaptive-queue';
 import { useOrg } from '@/lib/use-org';
-import * as Actions from '@/lib/ticket-actions';
+import * as Actions from '@/lib/data-adapter';
 import { sendHeartbeat, triggerRecovery } from '@/lib/api';
 import { useOperatorStore } from '@/lib/operator-store';
 import { supabase } from '@/lib/supabase';
+import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { ConnectionBanner } from '@/components/ConnectionBanner';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function dialPhone(raw: string) {
+  const t = raw.trim();
+  if (t.startsWith('+')) { Linking.openURL(`tel:${t}`); return; }
+  const d = t.replace(/\D/g, '');
+  if (d.length === 10 && d.startsWith('0')) { Linking.openURL(`tel:+213${d.slice(1)}`); return; }
+  if (d.length === 10) { Linking.openURL(`tel:+1${d}`); return; }
+  if (d.length === 11 && d.startsWith('1')) { Linking.openURL(`tel:+${d}`); return; }
+  Linking.openURL(`tel:${t}`);
+}
 
 function formatElapsed(since: string | null): string {
   if (!since) return '--:--';
@@ -83,6 +98,7 @@ function TransferModal({
   onClose: () => void;
   onSelect: (target: TransferTarget) => void;
 }) {
+  const { t } = useTranslation();
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [services, setServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
@@ -94,12 +110,14 @@ function TransferModal({
     setLoadingData(true);
 
     const load = async () => {
-      const [dResp, sResp] = await Promise.all([
-        supabase.from('departments').select('id, name').eq('office_id', officeId).order('name'),
-        supabase.from('services').select('id, name, department_id').eq('office_id', officeId).order('name'),
-      ]);
-      setDepartments(dResp.data ?? []);
-      setServices(sResp.data ?? []);
+      try {
+        const [depts, svcs] = await Promise.all([
+          Actions.fetchOfficeDepartments(officeId),
+          Actions.fetchDepartmentServices(officeId),
+        ]);
+        setDepartments((depts as any)?.data ?? depts ?? []);
+        setServices((svcs as any)?.data ?? svcs ?? []);
+      } catch { /* ignore load errors */ }
       setLoadingData(false);
     };
     load();
@@ -116,7 +134,7 @@ function TransferModal({
       <View style={modalStyles.overlay}>
         <View style={modalStyles.container}>
           <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>Transfer Ticket</Text>
+            <Text style={modalStyles.title}>{t('desk.transferTicket')}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={12}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
@@ -126,7 +144,7 @@ function TransferModal({
             <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: spacing.xxl }} />
           ) : !selectedDept ? (
             <>
-              <Text style={modalStyles.sectionLabel}>Select Department</Text>
+              <Text style={modalStyles.sectionLabel}>{t('desk.selectDepartment')}</Text>
               <ScrollView style={modalStyles.list}>
                 {departments.map((d) => (
                   <TouchableOpacity
@@ -140,7 +158,7 @@ function TransferModal({
                   </TouchableOpacity>
                 ))}
                 {departments.length === 0 && (
-                  <Text style={modalStyles.emptyText}>No departments available</Text>
+                  <Text style={modalStyles.emptyText}>{t('desk.noDepartments')}</Text>
                 )}
               </ScrollView>
             </>
@@ -153,7 +171,7 @@ function TransferModal({
                 <Ionicons name="arrow-back" size={20} color={colors.primary} />
                 <Text style={modalStyles.backText}>{selectedDeptName}</Text>
               </TouchableOpacity>
-              <Text style={modalStyles.sectionLabel}>Select Service</Text>
+              <Text style={modalStyles.sectionLabel}>{t('desk.selectService')}</Text>
               <ScrollView style={modalStyles.list}>
                 {filteredServices.map((s) => (
                   <TouchableOpacity
@@ -174,7 +192,7 @@ function TransferModal({
                   </TouchableOpacity>
                 ))}
                 {filteredServices.length === 0 && (
-                  <Text style={modalStyles.emptyText}>No services in this department</Text>
+                  <Text style={modalStyles.emptyText}>{t('desk.noServicesInDept')}</Text>
                 )}
               </ScrollView>
             </>
@@ -264,6 +282,7 @@ const modalStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function DeskScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { session, clearSession } = useOperatorStore();
   const { orgId } = useOrg();
@@ -273,13 +292,18 @@ export default function DeskScreen() {
   const staffId = session?.staffId ?? null;
 
   const officeIds = useMemo(() => (officeId ? [officeId] : []), [officeId]);
-  const { queue, loading, refresh } = useRealtimeQueue({ officeId });
-  const names = useNameLookup(orgId, officeIds);
+  const { queue, loading, refresh } = useAdaptiveQueue({ officeId });
+  const names = useAdaptiveNameLookup(orgId, officeIds);
 
   const [actionLoading, setActionLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [transferVisible, setTransferVisible] = useState(false);
   const [recentlyServedExpanded, setRecentlyServedExpanded] = useState(false);
+  const [servedSortNewest, setServedSortNewest] = useState(true);
+  const [deskStatus, setDeskStatus] = useState<'open' | 'closed' | 'on_break'>('open');
+  const [switchDeskVisible, setSwitchDeskVisible] = useState(false);
+  const [availableDesks, setAvailableDesks] = useState<any[]>([]);
+  const [switchLoading, setSwitchLoading] = useState(false);
 
   const screenWidth = useScreenWidth();
   const isWide = screenWidth > 768;
@@ -292,8 +316,12 @@ export default function DeskScreen() {
   useEffect(() => {
     if (!deskId || !staffId) return;
 
+    const isLocal = useLocalConnectionStore.getState().mode === 'local';
     const ping = async () => {
-      // Ping both local Supabase and cloud API
+      if (isLocal) {
+        // In local mode, the health monitor handles connectivity
+        return;
+      }
       Actions.pingDeskHeartbeat(deskId);
       const ok = await sendHeartbeat(deskId, staffId);
       if (!ok) {
@@ -304,6 +332,22 @@ export default function DeskScreen() {
         setIsOffline(false);
       }
     };
+
+    // Fetch current desk status on mount — only auto-open if closed
+    const loadDeskStatus = async () => {
+      try {
+        const desks = await Actions.fetchAvailableDesks(officeId);
+        const myDesk = (desks as any[])?.find?.((d: any) => d.id === deskId);
+        if (myDesk?.status === 'on_break') {
+          setDeskStatus('on_break');
+        } else if (myDesk?.status === 'closed' || !myDesk) {
+          Actions.openDesk(deskId, staffId).catch((err) =>
+            console.warn('[Desk] auto-open error:', err.message)
+          );
+        }
+      } catch { /* ignore */ }
+    };
+    loadDeskStatus();
 
     ping(); // immediate first ping
     const heartbeat = setInterval(ping, 30_000);
@@ -319,9 +363,11 @@ export default function DeskScreen() {
     }, 60_000);
 
     // Cleanup stale tickets on mount + trigger cloud recovery + auto-resolve
-    Actions.cleanupStaleTickets();
-    Actions.autoResolveTickets();
-    triggerRecovery();
+    if (!isLocal) {
+      Actions.cleanupStaleTickets();
+      Actions.autoResolveTickets();
+      triggerRecovery();
+    }
 
     return () => {
       clearInterval(heartbeat);
@@ -329,6 +375,45 @@ export default function DeskScreen() {
       clearInterval(autoResolve);
     };
   }, [deskId, staffId]);
+
+  // ── Realtime desk status sync (pick up changes from Station/web) ──
+  const localMode = useLocalConnectionStore((s) => s.mode);
+  const stationUrl = useLocalConnectionStore((s) => s.stationUrl);
+
+  // Cloud mode: Supabase realtime
+  useEffect(() => {
+    if (!deskId || localMode === 'local') return;
+    const channel = supabase.channel(`desk-status-${deskId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'desks', filter: `id=eq.${deskId}` },
+        (payload: any) => {
+          const newStatus = payload.new?.status;
+          if (newStatus && (newStatus === 'open' || newStatus === 'closed' || newStatus === 'on_break')) {
+            setDeskStatus(newStatus);
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [deskId, localMode]);
+
+  // Local mode: poll Station desk status every 5s
+  const deskStatusRef = useRef(deskStatus);
+  deskStatusRef.current = deskStatus;
+  useEffect(() => {
+    if (localMode !== 'local' || !stationUrl || !deskId || !officeId) return;
+    const poll = async () => {
+      try {
+        const SC = require('@/lib/station-client');
+        const desks = await SC.stationQuery(stationUrl, 'desks', [officeId]);
+        const myDesk = desks.find((d: any) => d.id === deskId);
+        if (myDesk?.status && myDesk.status !== deskStatusRef.current) {
+          setDeskStatus(myDesk.status);
+        }
+      } catch {}
+    };
+    poll();
+    const iv = setInterval(poll, 2000);
+    return () => clearInterval(iv);
+  }, [localMode, stationUrl, deskId, officeId]);
 
   // ── Derive desk-specific tickets ─────────────────────────────────
   const myCalledTickets = useMemo(
@@ -346,18 +431,26 @@ export default function DeskScreen() {
   // Timer ticks for live elapsed display
   useTimer(hasActive);
 
-  // Determine status dot color
-  const statusColor = myServingTickets.length > 0
-    ? colors.serving
-    : myCalledTickets.length > 0
-      ? colors.called
-      : colors.textMuted;
+  // Determine status dot color — desk status takes priority when on_break
+  const statusColor = deskStatus === 'on_break'
+    ? colors.warning
+    : myServingTickets.length > 0
+      ? colors.serving
+      : myCalledTickets.length > 0
+        ? colors.called
+        : queue.waiting.length > 0
+          ? colors.primary
+          : colors.success;
 
-  const statusLabel = myServingTickets.length > 0
-    ? 'Serving'
-    : myCalledTickets.length > 0
-      ? 'Called'
-      : 'Idle';
+  const statusLabel = deskStatus === 'on_break'
+    ? t('desk.onBreak')
+    : myServingTickets.length > 0
+      ? t('status.serving')
+      : myCalledTickets.length > 0
+        ? t('status.called')
+        : queue.waiting.length > 0
+          ? t('desk.idle')
+          : t('desk.idle');
 
   // ── Pull-to-refresh ──────────────────────────────────────────────
   const onRefresh = useCallback(async () => {
@@ -374,9 +467,9 @@ export default function DeskScreen() {
     destructive = false,
   ) => {
     Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Confirm',
+        text: t('common.confirm'),
         style: destructive ? 'destructive' : 'default',
         onPress: async () => {
           setActionLoading(true);
@@ -384,7 +477,7 @@ export default function DeskScreen() {
             await action();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } catch (err: any) {
-            Alert.alert('Error', err?.message ?? 'Action failed');
+            Alert.alert(t('common.error'), err?.message ?? t('adminQueue.actionFailed'));
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           }
           await refresh();
@@ -398,12 +491,12 @@ export default function DeskScreen() {
   const handleCallNext = () => {
     if (!deskId || !staffId) return;
     confirmAction(
-      'Call Next',
-      'Call the next ticket in the queue?',
+      t('desk.callNext'),
+      t('adminQueue.callTicketMsgGeneric', { ticket: t('adminQueue.nextInLine') }),
       async () => {
         const result = await Actions.callNextTicket(deskId, staffId);
         if (!result) {
-          Alert.alert('Queue Empty', 'No tickets waiting in queue');
+          Alert.alert(t('desk.noOneWaiting'), t('desk.noOneWaiting'));
         }
       },
     );
@@ -412,8 +505,8 @@ export default function DeskScreen() {
   const handleStartServing = () => {
     if (!activeTicket) return;
     confirmAction(
-      'Start Serving',
-      `Start serving ticket ${activeTicket.ticket_number}?`,
+      t('desk.startService'),
+      t('adminQueue.startServingMsg', { ticket: activeTicket.ticket_number }),
       () => Actions.startServing(activeTicket.id),
     );
   };
@@ -427,15 +520,15 @@ export default function DeskScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         refresh();
       })
-      .catch((err) => Alert.alert('Error', err.message))
+      .catch((err) => Alert.alert(t('common.error'), err.message))
       .finally(() => setActionLoading(false));
   };
 
   const handleNoShow = () => {
     if (!activeTicket) return;
     confirmAction(
-      'No Show',
-      `Mark ${activeTicket.ticket_number} as no-show?`,
+      t('desk.markNoShow'),
+      t('adminQueue.noShowMsg', { ticket: activeTicket.ticket_number }),
       () => Actions.markNoShow(activeTicket.id),
       true,
     );
@@ -444,8 +537,8 @@ export default function DeskScreen() {
   const handleBackToQueue = () => {
     if (!activeTicket) return;
     confirmAction(
-      'Back to Queue',
-      `Send ${activeTicket.ticket_number} back to the waiting queue?`,
+      t('adminQueue.backToQueue'),
+      t('adminQueue.backToQueueMsg', { ticket: activeTicket.ticket_number }),
       () => Actions.resetToQueue(activeTicket.id),
     );
   };
@@ -453,8 +546,8 @@ export default function DeskScreen() {
   const handlePark = () => {
     if (!activeTicket) return;
     confirmAction(
-      'Park Ticket',
-      `Put ${activeTicket.ticket_number} on hold?`,
+      t('desk.parkHold'),
+      t('adminQueue.parkMsg', { ticket: activeTicket.ticket_number }),
       () => Actions.parkTicket(activeTicket.id),
     );
   };
@@ -462,8 +555,8 @@ export default function DeskScreen() {
   const handleMarkServed = () => {
     if (!activeTicket) return;
     confirmAction(
-      'Mark Served',
-      `Complete service for ${activeTicket.ticket_number}?`,
+      t('desk.markServed'),
+      t('adminQueue.completeMsg', { ticket: activeTicket.ticket_number }),
       () => Actions.markServed(activeTicket.id),
     );
   };
@@ -472,55 +565,133 @@ export default function DeskScreen() {
     if (!activeTicket) return;
     setTransferVisible(false);
     confirmAction(
-      'Transfer Ticket',
-      `Transfer ${activeTicket.ticket_number} to ${target.departmentName} / ${target.serviceName}?`,
+      t('desk.transferTicket'),
+      `${t('desk.transfer')} ${activeTicket.ticket_number} → ${target.departmentName} / ${target.serviceName}?`,
       () => Actions.transferTicket(activeTicket.id, target.departmentId, target.serviceId),
     );
   };
 
-  const handleUnpark = (ticket: QueueTicket) => {
+  const handleResumeParked = (ticket: QueueTicket) => {
+    if (!deskId || !staffId) return;
+    if (hasActive) {
+      Alert.alert(t('common.error'), t('desk.needDeskSession'));
+      return;
+    }
     confirmAction(
-      'Resume Ticket',
-      `Resume ticket ${ticket.ticket_number} from hold?`,
-      () => Actions.unparkTicket(ticket.id),
+      t('adminQueue.callToDesk'),
+      t('adminQueue.callTicketMsg', { ticket: ticket.ticket_number, desk: session?.deskName ?? '' }),
+      () => Actions.resumeParkedTicket(ticket.id, deskId, staffId),
     );
+  };
+
+  const handleUnparkToQueue = (ticket: QueueTicket) => {
+    confirmAction(
+      t('adminQueue.backToQueue'),
+      t('adminQueue.backToQueueMsg', { ticket: ticket.ticket_number }),
+      () => Actions.unparkToQueue(ticket.id),
+    );
+  };
+
+  const handleDeskOnBreak = () => {
+    if (!deskId) return;
+    confirmAction(
+      t('desk.takeBreak'),
+      t('desk.takeBreakMsg'),
+      async () => {
+        await Actions.setDeskOnBreak(deskId);
+        setDeskStatus('on_break');
+      },
+    );
+  };
+
+  const handleDeskResume = () => {
+    if (!deskId) return;
+    setActionLoading(true);
+    Actions.setDeskOpen(deskId)
+      .then(() => {
+        setDeskStatus('open');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      })
+      .catch((err) => Alert.alert(t('common.error'), err.message))
+      .finally(() => setActionLoading(false));
   };
 
   const handleCallSpecific = (ticket: QueueTicket) => {
     if (!deskId || !staffId) return;
     confirmAction(
-      'Call Ticket',
-      `Call ticket ${ticket.ticket_number} to your desk?`,
+      t('adminQueue.callTicket'),
+      t('adminQueue.callTicketMsg', { ticket: ticket.ticket_number, desk: session?.deskName ?? t('desk.noDesk') }),
       () => Actions.callSpecificTicket(ticket.id, deskId, staffId),
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert('Sign Out', 'End your desk session and sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase.auth.signOut();
-          clearSession();
-          router.replace('/(tabs)');
-        },
-      },
-    ]);
+  const openSwitchDesk = async () => {
+    if (!officeId) return;
+    setSwitchLoading(true);
+    setSwitchDeskVisible(true);
+    try {
+      const desks = await Actions.fetchAvailableDesks(officeId);
+      setAvailableDesks(desks);
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err.message ?? t('adminQueue.actionFailed'));
+    }
+    setSwitchLoading(false);
+  };
+
+  const handleSwitchToDesk = async (newDesk: any) => {
+    if (!staffId) return;
+    if (newDesk.id === deskId) {
+      setSwitchDeskVisible(false);
+      return;
+    }
+    if (hasActive) {
+      Alert.alert(t('common.error'), t('desk.needDeskSession'));
+      return;
+    }
+    setSwitchLoading(true);
+    try {
+      const result = await Actions.switchDesk(newDesk.id, staffId, deskId);
+      // Update operator store with new desk info
+      const { setSession } = useOperatorStore.getState();
+      setSession({
+        staffId,
+        deskId: result.id,
+        deskName: result.display_name || result.name,
+        officeId: (result as any).offices?.id ?? officeId!,
+        officeName: (result as any).offices?.name ?? session!.officeName,
+        departmentId: (result as any).departments?.id ?? null,
+        departmentName: (result as any).departments?.name ?? null,
+      });
+      setDeskStatus('open');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSwitchDeskVisible(false);
+      refresh();
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err.message ?? t('adminQueue.actionFailed'));
+    }
+    setSwitchLoading(false);
   };
 
   // ── Guards ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!session) {
+      router.replace('/(auth)/login');
+    }
+  }, [session, router]);
+
   if (!session) {
-    router.replace('/(auth)/login');
-    return null;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
   }
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading queue data...</Text>
+        <Text style={styles.loadingText}>{t('desk.loadingQueue')}</Text>
       </View>
     );
   }
@@ -531,8 +702,8 @@ export default function DeskScreen() {
       <View style={styles.stationTopRow}>
         <View style={{ flex: 1, gap: spacing.xs }}>
           <View style={styles.stationRow}>
-            <Ionicons name="desktop-outline" size={20} color={colors.primary} />
-            <Text style={styles.stationDeskName}>{session.deskName ?? 'No desk'}</Text>
+            <Image source={require('@/assets/icon.png')} style={styles.stationIcon} />
+            <Text style={styles.stationDeskName}>{session.deskName ?? t('desk.noDesk')}</Text>
           </View>
           <View style={styles.stationRow}>
             <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
@@ -544,6 +715,36 @@ export default function DeskScreen() {
           <Text style={[styles.statusDotLabel, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
+      {/* Desk status controls */}
+      <View style={styles.deskControlsRow}>
+        {deskStatus === 'on_break' ? (
+          <TouchableOpacity
+            style={[styles.deskControlBtn, { backgroundColor: colors.success + '15', borderColor: colors.success + '30' }]}
+            onPress={handleDeskResume}
+            disabled={actionLoading}
+          >
+            <Ionicons name="play-circle-outline" size={16} color={colors.success} />
+            <Text style={[styles.deskControlText, { color: colors.success }]}>{t('adminQueue.resumeServing')}</Text>
+          </TouchableOpacity>
+        ) : !hasActive ? (
+          <TouchableOpacity
+            style={[styles.deskControlBtn, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '30' }]}
+            onPress={handleDeskOnBreak}
+            disabled={actionLoading}
+          >
+            <Ionicons name="cafe-outline" size={16} color={colors.warning} />
+            <Text style={[styles.deskControlText, { color: colors.warning }]}>{t('desk.onBreak')}</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.deskControlBtn, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}
+          onPress={openSwitchDesk}
+          disabled={actionLoading}
+        >
+          <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
+          <Text style={[styles.deskControlText, { color: colors.primary }]}>{t('desk.switchDesk')}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -551,7 +752,7 @@ export default function DeskScreen() {
     <View style={styles.waitingCard}>
       <Ionicons name="people-outline" size={18} color={colors.waiting} />
       <Text style={styles.waitingNumber}>{queue.waiting.length}</Text>
-      <Text style={styles.waitingSubtext}>waiting</Text>
+      <Text style={styles.waitingSubtext}>{t('desk.waiting')}</Text>
     </View>
   );
 
@@ -589,7 +790,7 @@ export default function DeskScreen() {
           <Text style={[styles.ticketLabel, {
             color: activeTicket.status === 'serving' ? colors.serving : colors.called,
           }]}>
-            {activeTicket.status === 'serving' ? 'Now Serving' : 'Called'}
+            {activeTicket.status === 'serving' ? t('status.serving') : t('status.called')}
           </Text>
           <Text style={styles.ticketNumber}>{activeTicket.ticket_number}</Text>
         </View>
@@ -611,56 +812,65 @@ export default function DeskScreen() {
               },
             ]}
           >
-            {activeTicket.status === 'called' ? 'Called' : 'Serving'}
+            {activeTicket.status === 'called' ? t('status.called') : t('status.serving')}
           </Text>
         </View>
       </View>
 
       {/* Customer & meta */}
       <View style={styles.metaCompact}>
-        <Text style={styles.metaName}>
-          {activeTicket.customer_data?.name || 'Walk-in Customer'}
-        </Text>
-        {/* Source badge */}
-        <View style={styles.sourceBadgeRow}>
-          {(() => {
-            const src = activeTicket.source;
-            const iconMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string; label: string }> = {
-              whatsapp: { name: 'logo-whatsapp', color: '#25D366', label: 'WhatsApp' },
-              messenger: { name: 'chatbubble-ellipses', color: '#0084FF', label: 'Messenger' },
-              kiosk: { name: 'tablet-portrait-outline', color: '#8B5CF6', label: 'Kiosk' },
-              qr_code: { name: 'qr-code-outline', color: '#F59E0B', label: 'QR Code' },
-              walk_in: { name: 'walk-outline', color: '#64748B', label: 'Walk-in' },
-              in_house: { name: 'business-outline', color: '#6366F1', label: 'In-house' },
-            };
-            const info = iconMap[src ?? ''] ?? { name: 'globe-outline' as keyof typeof Ionicons.glyphMap, color: colors.textMuted, label: 'Web' };
-            return (
-              <View style={[styles.sourceBadge, { backgroundColor: info.color + '15' }]}>
-                <Ionicons name={info.name} size={13} color={info.color} />
-                <Text style={[styles.sourceBadgeText, { color: info.color }]}>{info.label}</Text>
-              </View>
-            );
-          })()}
-          {activeTicket.customer_data?.phone ? (
-            <View style={styles.phoneBadge}>
-              <Ionicons name="call-outline" size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: fontSize.xs, color: colors.textSecondary }}>
-                {activeTicket.customer_data.phone}
-              </Text>
+        {(() => {
+          const hasName = !!activeTicket.customer_data?.name;
+          const hasPhone = !!activeTicket.customer_data?.phone;
+          const src = activeTicket.source;
+          const iconMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string; labelKey: string }> = {
+            whatsapp: { name: 'logo-whatsapp', color: '#25D366', labelKey: 'source.whatsapp' },
+            messenger: { name: 'chatbubble-ellipses', color: '#0084FF', labelKey: 'source.messenger' },
+            kiosk: { name: 'tablet-portrait-outline', color: '#8B5CF6', labelKey: 'source.kiosk' },
+            qr_code: { name: 'qr-code-outline', color: '#F59E0B', labelKey: 'source.qrCode' },
+            walk_in: { name: 'walk-outline', color: '#64748B', labelKey: 'source.walkIn' },
+            in_house: { name: 'business-outline', color: '#6366F1', labelKey: 'source.inHouse' },
+          };
+          const info = iconMap[src ?? ''] ?? { name: 'globe-outline' as keyof typeof Ionicons.glyphMap, color: colors.textMuted, labelKey: 'source.web' };
+
+          const sourceBadgeEl = (
+            <View style={[styles.sourceBadge, { backgroundColor: info.color + '15' }]}>
+              <Ionicons name={info.name} size={13} color={info.color} />
+              <Text style={[styles.sourceBadgeText, { color: info.color }]}>{t(info.labelKey)}</Text>
             </View>
-          ) : null}
-        </View>
-        {[
-          activeTicket.service_id ? names.services[activeTicket.service_id] : null,
-          activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
-        ].filter(Boolean).length > 0 ? (
-          <Text style={styles.metaSub} numberOfLines={1}>
-            {[
-              activeTicket.service_id ? names.services[activeTicket.service_id] : null,
-              activeTicket.department_id ? names.departments[activeTicket.department_id] : null,
-            ].filter(Boolean).join(' · ')}
-          </Text>
-        ) : null}
+          );
+
+          return (
+            <>
+              {/* Name row — or source badge if no name & no phone */}
+              {(!hasName && !hasPhone) ? (
+                <View style={styles.sourceBadgeRow}>{sourceBadgeEl}</View>
+              ) : (
+                <Text style={styles.metaName}>
+                  {activeTicket.customer_data?.name || t('booking.walkIn')}
+                </Text>
+              )}
+              {/* Phone + source row (only when source NOT in name slot) */}
+              {(hasName || hasPhone) && (
+                <View style={styles.sourceBadgeRow}>
+                  {hasPhone && (
+                    <TouchableOpacity
+                      style={styles.phoneBadge}
+                      onPress={() => dialPhone(activeTicket.customer_data!.phone)}
+                      activeOpacity={0.6}
+                    >
+                      <Ionicons name="call" size={12} color={colors.primary} />
+                      <Text style={{ fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' }}>
+                        {activeTicket.customer_data!.phone}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {sourceBadgeEl}
+                </View>
+              )}
+            </>
+          );
+        })()}
         {priorityInfo ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Ionicons name="flag" size={12} color={priorityInfo.color ?? colors.warning} />
@@ -691,7 +901,7 @@ export default function DeskScreen() {
                 color={isCallExpiring ? colors.error : colors.called}
               />
               <Text style={[styles.countdownText, isCallExpiring && { color: colors.error }]}>
-                {Math.max(0, CALL_TIMEOUT_SEC - calledElapsedSec)}s remaining
+                {t('desk.secondsRemaining', { seconds: Math.max(0, CALL_TIMEOUT_SEC - calledElapsedSec) })}
               </Text>
             </View>
             <View style={styles.countdownBarBg}>
@@ -715,26 +925,26 @@ export default function DeskScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="play-circle" size={28} color="#fff" />
-            <Text style={styles.primaryActionText}>Start Serving</Text>
+            <Text style={styles.primaryActionText}>{t('desk.startService')}</Text>
           </TouchableOpacity>
 
           {/* Secondary actions row */}
           <View style={styles.secondaryRow}>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handleRecall} disabled={actionLoading}>
               <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
-              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Recall</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>{t('desk.recallCustomer')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handleNoShow} disabled={actionLoading}>
               <Ionicons name="close-circle-outline" size={18} color={colors.error} />
-              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>No Show</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>{t('desk.markNoShow')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handleBackToQueue} disabled={actionLoading}>
               <Ionicons name="arrow-undo-outline" size={18} color={colors.textSecondary} />
-              <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>Requeue</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>{t('adminQueue.requeue')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handlePark} disabled={actionLoading}>
               <Ionicons name="pause-outline" size={18} color={colors.warning} />
-              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>Park</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>{t('adminQueue.park')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -744,7 +954,7 @@ export default function DeskScreen() {
           {activeTicket.serving_started_at ? (
             <View style={styles.timerRow}>
               <View style={styles.timerBlock}>
-                <Text style={styles.timerLabel}>Service Time</Text>
+                <Text style={styles.timerLabel}>{t('desk.serviceTime')}</Text>
                 <Text
                   style={[
                     styles.timerValue,
@@ -765,22 +975,22 @@ export default function DeskScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="checkmark-circle" size={28} color="#fff" />
-            <Text style={styles.primaryActionText}>Mark Served</Text>
+            <Text style={styles.primaryActionText}>{t('desk.markServed')}</Text>
           </TouchableOpacity>
 
           {/* Secondary actions row */}
           <View style={styles.secondaryRow}>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handleNoShow} disabled={actionLoading}>
               <Ionicons name="close-circle-outline" size={18} color={colors.error} />
-              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>No Show</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.error }]}>{t('desk.markNoShow')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => setTransferVisible(true)} disabled={actionLoading}>
               <Ionicons name="swap-horizontal-outline" size={18} color={colors.primary} />
-              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Transfer</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>{t('desk.transfer')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={handlePark} disabled={actionLoading}>
               <Ionicons name="pause-outline" size={18} color={colors.warning} />
-              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>Park</Text>
+              <Text style={[styles.secondaryBtnText, { color: colors.warning }]}>{t('adminQueue.park')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -796,8 +1006,28 @@ export default function DeskScreen() {
     </View>
   ) : null;
 
-  // ── Call Next button (when idle) ─────────────────────────────────
-  const CallNextButton = !hasActive ? (
+  // ── On Break banner ─────────────────────────────────────────────
+  const OnBreakBanner = deskStatus === 'on_break' ? (
+    <View style={styles.onBreakBanner}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        <Ionicons name="cafe" size={22} color={colors.warning} />
+        <View>
+          <Text style={styles.onBreakTitle}>{t('desk.onBreak')}</Text>
+          <Text style={styles.onBreakSub}>{t('desk.waitingInQueue', { count: queue.waiting.length })}</Text>
+        </View>
+      </View>
+      <TouchableOpacity
+        style={styles.onBreakResumeBtn}
+        onPress={handleDeskResume}
+        disabled={actionLoading}
+      >
+        <Text style={styles.onBreakResumeText}>{t('adminQueue.resumeServing')}</Text>
+      </TouchableOpacity>
+    </View>
+  ) : null;
+
+  // ── Call Next button (when ready) ────────────────────────────────
+  const CallNextButton = !hasActive && deskStatus !== 'on_break' ? (
     <TouchableOpacity
       style={[
         styles.callNextButton,
@@ -808,14 +1038,14 @@ export default function DeskScreen() {
       activeOpacity={0.8}
     >
       {actionLoading ? (
-        <ActivityIndicator color="#fff" size="large" />
+        <ActivityIndicator color="#fff" size="small" />
       ) : (
         <>
-          <Ionicons name="megaphone-outline" size={32} color="#fff" />
-          <Text style={styles.callNextText}>Call Next</Text>
+          <Ionicons name="megaphone-outline" size={20} color="#fff" />
+          <Text style={styles.callNextText}>{t('desk.callNext')}</Text>
           {queue.waiting.length > 0 && (
             <Text style={styles.callNextSub}>
-              {queue.waiting.length} waiting
+              ({queue.waiting.length})
             </Text>
           )}
         </>
@@ -828,26 +1058,36 @@ export default function DeskScreen() {
     <View style={styles.sectionCard}>
       <View style={styles.sectionHeader}>
         <Ionicons name="pause-circle-outline" size={20} color={colors.warning} />
-        <Text style={styles.sectionTitle}>On Hold ({queue.parked.length})</Text>
+        <Text style={styles.sectionTitle}>{t('operatorQueue.onHold')} ({queue.parked.length})</Text>
       </View>
       {queue.parked.map((ticket) => (
         <View key={ticket.id} style={styles.parkedItem}>
           <View style={{ flex: 1 }}>
             <Text style={styles.parkedTicketNum}>{ticket.ticket_number}</Text>
             <Text style={styles.parkedDetail}>
-              {ticket.customer_data?.name ?? 'Walk-in'}
+              {ticket.customer_data?.name ?? t('booking.walkIn')}
               {' \u00B7 '}
-              {formatElapsed(ticket.parked_at)} on hold
+              {formatElapsed(ticket.parked_at)} {t('operatorQueue.onHold').toLowerCase()}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.resumeBtn}
-            onPress={() => handleUnpark(ticket)}
-            disabled={actionLoading}
-          >
-            <Ionicons name="play-outline" size={16} color={colors.primary} />
-            <Text style={styles.resumeBtnText}>Resume</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TouchableOpacity
+              style={styles.resumeBtn}
+              onPress={() => handleResumeParked(ticket)}
+              disabled={actionLoading || hasActive}
+            >
+              <Ionicons name="megaphone-outline" size={14} color={hasActive ? colors.textMuted : colors.called} />
+              <Text style={[styles.resumeBtnText, hasActive && { color: colors.textMuted }]}>{t('adminQueue.callToDesk')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.requeueBtn}
+              onPress={() => handleUnparkToQueue(ticket)}
+              disabled={actionLoading}
+            >
+              <Ionicons name="arrow-undo-outline" size={14} color={colors.warning} />
+              <Text style={styles.requeueBtnText}>{t('adminQueue.toQueue')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ))}
     </View>
@@ -858,10 +1098,10 @@ export default function DeskScreen() {
     <View style={styles.sectionCard}>
       <View style={styles.sectionHeader}>
         <Ionicons name="people-outline" size={20} color={colors.waiting} />
-        <Text style={styles.sectionTitle}>Waiting Queue ({queue.waiting.length})</Text>
+        <Text style={styles.sectionTitle}>{t('adminQueue.waitingQueue')} ({queue.waiting.length})</Text>
       </View>
       {queue.waiting.length === 0 ? (
-        <Text style={styles.emptyText}>No customers waiting</Text>
+        <Text style={styles.emptyText}>{t('desk.noOneWaiting')}</Text>
       ) : (
         queue.waiting.map((ticket, idx) => {
           const srcMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
@@ -879,7 +1119,7 @@ export default function DeskScreen() {
               <Text style={styles.queueTicketNum}>{ticket.ticket_number}</Text>
               <Ionicons name={srcInfo.name} size={13} color={srcInfo.color} />
               <Text style={styles.queueName} numberOfLines={1}>
-                {ticket.customer_data?.name ?? 'Walk-in'}
+                {ticket.customer_data?.name ?? t('booking.walkIn')}
               </Text>
               {ticket.priority_category_id && names.priorities[ticket.priority_category_id] ? (
                 <Ionicons name="flag" size={10} color={names.priorities[ticket.priority_category_id].color ?? colors.warning} />
@@ -904,6 +1144,12 @@ export default function DeskScreen() {
   );
 
   // ── Recently Served (collapsed) ──────────────────────────────────
+  const sortedServed = servedSortNewest
+    ? [...queue.recentlyServed].sort((a, b) =>
+        new Date(b.completed_at ?? b.created_at).getTime() - new Date(a.completed_at ?? a.created_at).getTime())
+    : [...queue.recentlyServed].sort((a, b) =>
+        new Date(a.completed_at ?? a.created_at).getTime() - new Date(b.completed_at ?? b.created_at).getTime());
+
   const RecentlyServedSection = queue.recentlyServed.length > 0 ? (
     <View style={styles.sectionCard}>
       <TouchableOpacity
@@ -913,7 +1159,7 @@ export default function DeskScreen() {
       >
         <Ionicons name="checkmark-done-outline" size={20} color={colors.success} />
         <Text style={styles.sectionTitle}>
-          Recently Served ({queue.recentlyServed.length})
+          {t('desk.recentlyServed')} ({queue.recentlyServed.length})
         </Text>
         <View style={{ flex: 1 }} />
         <Ionicons
@@ -922,44 +1168,54 @@ export default function DeskScreen() {
           color={colors.textMuted}
         />
       </TouchableOpacity>
-      {recentlyServedExpanded &&
-        queue.recentlyServed.map((ticket) => (
-          <View key={ticket.id} style={styles.servedItem}>
-            <Text style={styles.servedTicketNum}>{ticket.ticket_number}</Text>
-            <Text style={styles.servedDetail}>
-              {ticket.customer_data?.name ?? 'Walk-in'}
-            </Text>
-            <Text style={styles.servedTime}>
-              {ticket.completed_at
-                ? new Date(ticket.completed_at).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : ''}
-            </Text>
+      {recentlyServedExpanded && (
+        <>
+          <View style={styles.sortRow}>
+            <TouchableOpacity
+              style={[styles.sortChip, servedSortNewest && styles.sortChipActive]}
+              onPress={() => setServedSortNewest(true)}
+            >
+              <Text style={[styles.sortChipText, servedSortNewest && styles.sortChipTextActive]}>
+                {t('desk.newest')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.sortChip, !servedSortNewest && styles.sortChipActive]}
+              onPress={() => setServedSortNewest(false)}
+            >
+              <Text style={[styles.sortChipText, !servedSortNewest && styles.sortChipTextActive]}>
+                {t('desk.oldest')}
+              </Text>
+            </TouchableOpacity>
           </View>
-        ))}
+          {sortedServed.map((ticket) => (
+            <View key={ticket.id} style={styles.servedItem}>
+              <Text style={styles.servedTicketNum}>{ticket.ticket_number}</Text>
+              <Text style={styles.servedDetail}>
+                {ticket.customer_data?.name ?? t('booking.walkIn')}
+              </Text>
+              <Text style={styles.servedTime}>
+                {ticket.completed_at
+                  ? new Date(ticket.completed_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : ''}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
     </View>
   ) : null;
 
-  // ── Quick Links ──────────────────────────────────────────────────
-  const QuickLinks = (
-    <View style={styles.quickLinks}>
-      <TouchableOpacity
-        style={[styles.linkButton, { borderBottomWidth: 0 }]}
-        onPress={() => router.push('/(operator)/queue')}
-      >
-        <Ionicons name="list-outline" size={22} color={colors.primary} />
-        <Text style={styles.linkText}>Queue Overview</Text>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-      </TouchableOpacity>
-    </View>
-  );
+  // Quick Links removed — queue tab handles this
 
   // ── Layout ───────────────────────────────────────────────────────
   const leftColumn = (
     <View style={isWide ? styles.leftColumn : undefined}>
       {StationHeader}
+      {OnBreakBanner}
       {WaitingCountCard}
       {CurrentTicketCard}
       {CallNextButton}
@@ -970,8 +1226,6 @@ export default function DeskScreen() {
   const rightColumn = (
     <View style={isWide ? styles.rightColumn : undefined}>
       {WaitingQueueList}
-      {RecentlyServedSection}
-      {QuickLinks}
     </View>
   );
 
@@ -979,13 +1233,14 @@ export default function DeskScreen() {
     <View style={styles.offlineBanner}>
       <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
       <Text style={styles.offlineBannerText}>
-        Connection lost — working offline. Actions will sync when restored.
+        {t('desk.offlineMsg')}
       </Text>
     </View>
   ) : null;
 
   return (
     <>
+      <ConnectionBanner />
       {OfflineBanner}
       <ScrollView
         style={styles.container}
@@ -1003,23 +1258,107 @@ export default function DeskScreen() {
         }
       >
         {isWide ? (
-          <View style={styles.wideRow}>
-            {leftColumn}
-            {rightColumn}
-          </View>
+          <>
+            <View style={styles.wideRow}>
+              {leftColumn}
+              {rightColumn}
+            </View>
+            {RecentlyServedSection}
+          </>
         ) : (
           <>
             {StationHeader}
+            {OnBreakBanner}
             {WaitingCountCard}
             {CurrentTicketCard}
             {CallNextButton}
             {ParkedSection}
             {WaitingQueueList}
             {RecentlyServedSection}
-            {QuickLinks}
           </>
         )}
       </ScrollView>
+
+      {/* Switch Desk Modal */}
+      <Modal
+        visible={switchDeskVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSwitchDeskVisible(false)}
+      >
+        <View style={switchStyles.overlay}>
+          <View style={switchStyles.container}>
+            <View style={switchStyles.header}>
+              <Text style={switchStyles.title}>{t('desk.switchDesk')}</Text>
+              <TouchableOpacity onPress={() => setSwitchDeskVisible(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {switchLoading ? (
+              <View style={switchStyles.loadingWrap}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : availableDesks.length === 0 ? (
+              <Text style={switchStyles.emptyText}>{t('desk.noDesksAvailable')}</Text>
+            ) : (
+              <ScrollView style={switchStyles.list}>
+                {availableDesks.map((desk) => {
+                  const isCurrent = desk.id === deskId;
+                  const isOccupied = desk.current_staff_id && desk.current_staff_id !== staffId;
+                  const deptName = (desk as any).departments?.name ?? null;
+                  const deskStatusColor =
+                    desk.status === 'open'
+                      ? colors.success
+                      : desk.status === 'on_break'
+                      ? colors.warning
+                      : colors.textMuted;
+
+                  return (
+                    <TouchableOpacity
+                      key={desk.id}
+                      style={[
+                        switchStyles.deskItem,
+                        isCurrent && switchStyles.deskItemCurrent,
+                        isOccupied && { opacity: 0.5 },
+                      ]}
+                      onPress={() => handleSwitchToDesk(desk)}
+                      disabled={isOccupied || switchLoading}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[switchStyles.deskDot, { backgroundColor: deskStatusColor }]} />
+                      <View style={{ flex: 1 }}>
+                        <View style={switchStyles.deskNameRow}>
+                          <Text style={switchStyles.deskName}>
+                            {desk.display_name || desk.name}
+                          </Text>
+                          {isCurrent && (
+                            <View style={switchStyles.currentBadge}>
+                              <Text style={switchStyles.currentBadgeText}>{t('desk.current')}</Text>
+                            </View>
+                          )}
+                        </View>
+                        {deptName && (
+                          <Text style={switchStyles.deskDept}>{deptName}</Text>
+                        )}
+                        {isOccupied && (
+                          <Text style={switchStyles.deskOccupied}>{t('desk.occupied')}</Text>
+                        )}
+                      </View>
+                      {!isCurrent && !isOccupied && (
+                        <Ionicons name="arrow-forward" size={18} color={colors.primary} />
+                      )}
+                      {isCurrent && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {officeId && (
         <TransferModal
@@ -1103,6 +1442,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  stationIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
   },
   stationDeskName: {
     fontSize: fontSize.lg,
@@ -1220,6 +1564,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    backgroundColor: colors.primaryLight + '12',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
   },
   notesBubble: {
     flexDirection: 'row',
@@ -1314,16 +1662,17 @@ const styles = StyleSheet.create({
 
   // Call next button
   callNextButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
     backgroundColor: colors.primary,
-    paddingVertical: spacing.xl + spacing.md,
-    borderRadius: borderRadius.xl,
+    paddingVertical: 14,
+    borderRadius: borderRadius.lg,
   },
   callNextText: {
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
+    fontSize: fontSize.lg,
+    fontWeight: '700',
     color: '#fff',
   },
   callNextSub: {
@@ -1378,16 +1727,30 @@ const styles = StyleSheet.create({
   resumeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 3,
     backgroundColor: colors.primaryLight + '15',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.lg,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.md,
   },
   resumeBtnText: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     fontWeight: '700',
     color: colors.primary,
+  },
+  requeueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.warning + '15',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.md,
+  },
+  requeueBtnText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.warning,
   },
 
   // Queue items — compact single row
@@ -1428,6 +1791,30 @@ const styles = StyleSheet.create({
   },
 
   // Recently served
+  sortRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  sortChip: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  sortChipActive: {
+    backgroundColor: colors.primary + '15',
+  },
+  sortChipText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  sortChipTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
   servedItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1471,5 +1858,155 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
     color: colors.text,
+  },
+
+  // Desk status controls
+  deskControlsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    paddingTop: spacing.md,
+  },
+  deskControlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  deskControlText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+
+  // On Break banner
+  onBreakBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.warning + '12',
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  onBreakTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.warning,
+  },
+  onBreakSub: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  onBreakResumeBtn: {
+    backgroundColor: colors.success,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: borderRadius.lg,
+  },
+  onBreakResumeText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: '#fff',
+  },
+});
+
+// Switch Desk Modal styles
+const switchStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '70%',
+    paddingBottom: spacing.xxl,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  loadingWrap: {
+    padding: spacing.xxl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: fontSize.md,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  list: {
+    paddingHorizontal: spacing.md,
+  },
+  deskItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  deskItemCurrent: {
+    backgroundColor: colors.primaryLight + '10',
+    borderRadius: borderRadius.lg,
+    borderBottomWidth: 0,
+    marginVertical: 2,
+  },
+  deskDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  deskNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  deskName: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  deskDept: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  deskOccupied: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.error,
+    marginTop: 2,
+  },
+  currentBadge: {
+    backgroundColor: colors.success + '20',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  currentBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.success,
   },
 });

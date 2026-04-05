@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -106,6 +107,7 @@ function Pill({ label, onPress, tone = 'primary' }: { label: string; onPress: ()
 // Countdown circle (matches web YourTurn countdown)
 // ---------------------------------------------------------------------------
 function CountdownCircle({ calledAt }: { calledAt: string }) {
+  const { t } = useTranslation();
   const [remaining, setRemaining] = useState(CALL_WAIT_SECONDS);
   useEffect(() => {
     const start = new Date(calledAt).getTime();
@@ -120,7 +122,7 @@ function CountdownCircle({ calledAt }: { calledAt: string }) {
   return (
     <View style={[s.countdownCircle, { borderColor: 'rgba(255,255,255,0.30)', backgroundColor: 'rgba(255,255,255,0.15)' }]}>
       <Text style={s.countdownNumber}>{remaining}</Text>
-      <Text style={s.countdownLabel}>{expired ? 'EXPIRED' : 'SECONDS'}</Text>
+      <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
     </View>
   );
 }
@@ -129,6 +131,7 @@ function CountdownCircle({ calledAt }: { calledAt: string }) {
 // Countdown bar (linear, for called card bottom)
 // ---------------------------------------------------------------------------
 function CountdownBar({ calledAt }: { calledAt: string }) {
+  const { t } = useTranslation();
   const [remaining, setRemaining] = useState(CALL_WAIT_SECONDS);
   useEffect(() => {
     const start = new Date(calledAt).getTime();
@@ -145,7 +148,7 @@ function CountdownBar({ calledAt }: { calledAt: string }) {
         <View style={[s.progressFill, { width: `${progress * 100}%`, backgroundColor: color }]} />
       </View>
       <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textAlign: 'center' }}>
-        {remaining === 0 ? "Time's up – please check with staff" : 'Please proceed to the counter'}
+        {remaining === 0 ? t('customer.timesUp') : t('customer.proceedToCounter')}
       </Text>
     </View>
   );
@@ -189,16 +192,17 @@ function StarRating({ rating, onRate }: { rating: number; onRate: (n: number) =>
 // ---------------------------------------------------------------------------
 // History card
 // ---------------------------------------------------------------------------
-const HISTORY_STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  served: { label: 'Served', color: '#22c55e', icon: 'checkmark-circle' },
-  no_show: { label: 'Missed', color: '#f59e0b', icon: 'alert-circle' },
-  cancelled: { label: 'Cancelled', color: '#ef4444', icon: 'close-circle' },
-  waiting: { label: 'Waiting', color: '#3b82f6', icon: 'time' },
-  called: { label: 'Called', color: '#f59e0b', icon: 'megaphone' },
-  serving: { label: 'Serving', color: '#8b5cf6', icon: 'pulse' },
+const HISTORY_STATUS_CONFIG: Record<string, { statusKey: string; color: string; icon: string }> = {
+  served: { statusKey: 'status.served', color: '#22c55e', icon: 'checkmark-circle' },
+  no_show: { statusKey: 'status.missed', color: '#f59e0b', icon: 'alert-circle' },
+  cancelled: { statusKey: 'status.cancelled', color: '#ef4444', icon: 'close-circle' },
+  waiting: { statusKey: 'status.waiting', color: '#3b82f6', icon: 'time' },
+  called: { statusKey: 'status.called', color: '#f59e0b', icon: 'megaphone' },
+  serving: { statusKey: 'status.serving', color: '#8b5cf6', icon: 'pulse' },
 };
 
 function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string }; onPress: () => void; colors?: any }) {
+  const { t } = useTranslation();
   const { colors: themeColors } = useTheme();
   const col = c || themeColors;
   const d = new Date(entry.date);
@@ -214,7 +218,7 @@ function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ti
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
         <View style={[s.historyStatusBadge, { backgroundColor: statusCfg.color + '18' }]}>
           <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.color} />
-          <Text style={[s.historyStatusText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+          <Text style={[s.historyStatusText, { color: statusCfg.color }]}>{t(statusCfg.statusKey)}</Text>
         </View>
         <Text style={[s.historyCardDate, { color: col.textMuted }]}>{dateStr}</Text>
       </View>
@@ -240,14 +244,15 @@ function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap;
 // ---------------------------------------------------------------------------
 // Visit details grid (SERVICE / SOURCE / CHECKED IN / DEPARTMENT)
 // ---------------------------------------------------------------------------
-function VisitDetailsGrid({ ticket: t }: { ticket: import('@/lib/api').TicketResponse }) {
-  const checkedIn = new Date(t.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  const source = t.is_remote ? 'Remote join' : 'Walk-in visit';
+function VisitDetailsGrid({ ticket: tk }: { ticket: import('@/lib/api').TicketResponse }) {
+  const { t } = useTranslation();
+  const checkedIn = new Date(tk.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const source = tk.is_remote ? t('customer.remoteJoin') : t('customer.walkInVisit');
   const items: Array<{ label: string; value: string }> = [
-    { label: 'SERVICE', value: t.service?.name ?? t.department?.name ?? '--' },
-    { label: 'SOURCE', value: source },
-    { label: 'CHECKED IN', value: checkedIn },
-    { label: 'DEPARTMENT', value: t.department?.name ?? '--' },
+    { label: t('customer.service'), value: tk.service?.name ?? tk.department?.name ?? '--' },
+    { label: t('customer.source'), value: source },
+    { label: t('customer.checkedIn'), value: checkedIn },
+    { label: t('customer.department'), value: tk.department?.name ?? '--' },
   ];
   return (
     <View style={s.detailsGrid}>
@@ -264,8 +269,9 @@ function VisitDetailsGrid({ ticket: t }: { ticket: import('@/lib/api').TicketRes
 // ---------------------------------------------------------------------------
 // Customer info card — always shown, fallback to "No intake collected"
 // ---------------------------------------------------------------------------
-function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketResponse }) {
-  const cd = t.customer_data;
+function CustomerInfoCard({ ticket: tk }: { ticket: import('@/lib/api').TicketResponse }) {
+  const { t } = useTranslation();
+  const cd = tk.customer_data;
   const [draft, setDraft] = React.useState({ name: cd?.name ?? '', phone: cd?.phone ?? '', email: cd?.email ?? '' });
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -275,7 +281,7 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${WEB_BASE}/api/tickets/${t.id}/customer-data`, {
+      const res = await fetch(`${WEB_BASE}/api/tickets/${tk.id}/customer-data`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ customer_data: { ...cd, ...draft } }),
@@ -290,7 +296,7 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Ionicons name="person-circle-outline" size={18} color="#94a3b8" />
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>My Information</Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>{t('customer.myInfo')}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#64748b" />
       </TouchableOpacity>
@@ -298,9 +304,9 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
       {expanded && (
         <View style={{ marginTop: 14, gap: 12 }}>
           {[
-            { key: 'name', label: 'Name', icon: 'person-outline', keyboard: 'default' },
-            { key: 'phone', label: 'Phone', icon: 'call-outline', keyboard: 'phone-pad' },
-            { key: 'email', label: 'Email', icon: 'mail-outline', keyboard: 'email-address' },
+            { key: 'name', label: t('customer.fullName'), icon: 'person-outline', keyboard: 'default' },
+            { key: 'phone', label: t('customer.phoneNumber'), icon: 'call-outline', keyboard: 'phone-pad' },
+            { key: 'email', label: t('customer.email'), icon: 'mail-outline', keyboard: 'email-address' },
           ].map(({ key, label, icon, keyboard }) => (
             <View key={key} style={{ gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -312,7 +318,7 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
                 onChangeText={v => setDraft(d => ({ ...d, [key]: v }))}
                 keyboardType={keyboard as any}
                 autoCapitalize={key === 'email' ? 'none' : 'words'}
-                placeholder={`Enter ${label.toLowerCase()}`}
+                placeholder={t('customer.enterField', { field: label.toLowerCase() })}
                 placeholderTextColor="#475569"
                 style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#f1f5f9' }}
               />
@@ -323,20 +329,20 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
             disabled={saving}
             style={{ backgroundColor: saving ? '#334155' : '#1d4ed8', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 4 }}
           >
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{saved ? '✓ Saved' : saving ? 'Saving...' : 'Save Changes'}</Text>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>{saved ? `✓ ${t('common.saved')}` : saving ? t('common.saving') : t('common.save')}</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {!expanded && hasData && (
         <View style={{ marginTop: 10, gap: 6 }}>
-          {cd?.name ? <View style={s.customerRow}><Ionicons name="person-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Name</Text><Text style={s.customerValue}>{cd.name}</Text></View> : null}
-          {cd?.phone ? <View style={s.customerRow}><Ionicons name="call-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Phone</Text><Text style={s.customerValue}>{cd.phone}</Text></View> : null}
-          {cd?.email ? <View style={s.customerRow}><Ionicons name="mail-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>Email</Text><Text style={s.customerValue}>{cd.email}</Text></View> : null}
+          {cd?.name ? <View style={s.customerRow}><Ionicons name="person-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.fullName')}</Text><Text style={s.customerValue}>{cd.name}</Text></View> : null}
+          {cd?.phone ? <View style={s.customerRow}><Ionicons name="call-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.phoneNumber')}</Text><Text style={s.customerValue}>{cd.phone}</Text></View> : null}
+          {cd?.email ? <View style={s.customerRow}><Ionicons name="mail-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.email')}</Text><Text style={s.customerValue}>{cd.email}</Text></View> : null}
         </View>
       )}
       {!expanded && !hasData && (
-        <Text style={{ fontSize: 14, color: '#475569', fontStyle: 'italic', marginTop: 10 }}>Tap to add your information</Text>
+        <Text style={{ fontSize: 14, color: '#475569', fontStyle: 'italic', marginTop: 10 }}>{t('customer.editInfo')}</Text>
       )}
     </View>
   );
@@ -346,6 +352,7 @@ function CustomerInfoCard({ ticket: t }: { ticket: import('@/lib/api').TicketRes
 // Main screen
 // ===========================================================================
 export default function HomeScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { activeToken, activeTicket, setActiveToken, setActiveTicket, clearActiveTicket, history } = useAppStore();
@@ -358,7 +365,7 @@ export default function HomeScreen() {
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncLabel, setSyncLabel] = useState('Syncing...');
+  const [syncLabel, setSyncLabel] = useState(t('customer.syncing'));
   const [isOffline, setIsOffline] = useState(false);
   const failCountRef = useRef(0);
   const activeTicketRef = useRef(activeTicket);
@@ -372,15 +379,15 @@ export default function HomeScreen() {
       failCountRef.current += 1;
       if (failCountRef.current >= 2) {
         setIsOffline(true);
-        setSyncLabel('Offline — showing last known data');
+        setSyncLabel(t('customer.offline'));
       }
-      if (failCountRef.current >= 5 && !activeTicketRef.current) setLoadError('Could not find this ticket. The code may be invalid or expired.');
+      if (failCountRef.current >= 5 && !activeTicketRef.current) setLoadError(t('customer.ticketInvalid'));
       return;
     }
     failCountRef.current = 0;
     setLoadError(null);
     setIsOffline(false);
-    setSyncLabel(`Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
+    setSyncLabel(t('customer.syncedTime', { time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }));
     if (prevStatusRef.current && prevStatusRef.current !== ticket.status) {
       if (ticket.status === 'called') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       else if (ticket.status === 'serving') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -408,11 +415,11 @@ export default function HomeScreen() {
   };
   const confirmEndVisit = () => {
     Alert.alert(
-      'End visit?',
-      'You will stop tracking this ticket. You can rejoin later from your history.',
+      t('customer.endVisit'),
+      t('customer.endVisitMsg'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End Visit', style: 'destructive', onPress: handleStopTracking },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('customer.endVisitConfirm'), style: 'destructive', onPress: handleStopTracking },
       ],
     );
   };
@@ -467,22 +474,22 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-        <Text style={[s.emptyHeadline, { color: colors.text }]}>Join a Queue</Text>
-        <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>Scan a QR code at any location to get your ticket</Text>
+        <Text style={[s.emptyHeadline, { color: colors.text }]}>{t('customer.joinQueue')}</Text>
+        <Text style={[s.emptySubtitle, { color: colors.textSecondary }]}>{t('scan.pointAtQR')}</Text>
         <TouchableOpacity style={[s.scanButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]} onPress={() => router.push('/scan' as any)} activeOpacity={0.8}>
-          <Ionicons name="qr-code-outline" size={22} color="#fff" /><Text style={s.scanButtonText}>Scan QR Code</Text>
+          <Ionicons name="qr-code-outline" size={22} color="#fff" /><Text style={s.scanButtonText}>{t('scan.scanQR')}</Text>
         </TouchableOpacity>
         {!showManualEntry ? (
-          <TouchableOpacity onPress={() => setShowManualEntry(true)} activeOpacity={0.6}><Text style={[s.manualLink, { color: colors.textMuted }]}>Or enter code manually</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowManualEntry(true)} activeOpacity={0.6}><Text style={[s.manualLink, { color: colors.textMuted }]}>{t('scan.enterManually')}</Text></TouchableOpacity>
         ) : (
           <View style={s.manualBox}>
-            <TextInput style={[s.manualInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} placeholder="Paste ticket code..." placeholderTextColor={colors.textMuted} value={manualCode} onChangeText={setManualCode} autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={handleManualSubmit} />
+            <TextInput style={[s.manualInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]} placeholder={t('customer.pasteCode')} placeholderTextColor={colors.textMuted} value={manualCode} onChangeText={setManualCode} autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={handleManualSubmit} />
             <TouchableOpacity style={[s.manualGo, { backgroundColor: colors.primary }, !manualCode.trim() && { backgroundColor: colors.textMuted }]} onPress={handleManualSubmit} disabled={!manualCode.trim()}><Ionicons name="arrow-forward" size={20} color="#fff" /></TouchableOpacity>
           </View>
         )}
         {recentHistory.length > 0 && (
           <View style={s.recentSection}>
-            <Text style={[s.recentTitle, { color: colors.textMuted }]}>Recent visits</Text>
+            <Text style={[s.recentTitle, { color: colors.textMuted }]}>{t('customer.recentVisits')}</Text>
             {recentHistory.map((e) => <HistoryCard key={e.token} entry={e} onPress={() => setActiveToken(e.token)} colors={colors} />)}
           </View>
         )}
@@ -498,42 +505,42 @@ export default function HomeScreen() {
       return (
         <View style={[s.centerScreen, { backgroundColor: colors.background }]}>
           <View style={[s.errorCircle, { backgroundColor: colors.errorLight }]}><Ionicons name="alert-circle-outline" size={48} color={colors.error} /></View>
-          <Text style={[s.errorTitle, { color: colors.text }]}>Ticket Not Found</Text>
+          <Text style={[s.errorTitle, { color: colors.text }]}>{t('customer.ticketNotFound')}</Text>
           <Text style={[s.errorSub, { color: colors.textSecondary }]}>{loadError}</Text>
           <View style={{ gap: 10, marginTop: 16, width: '100%', maxWidth: 260 }}>
             <TouchableOpacity style={[s.retryBtn, { backgroundColor: colors.primary }]} onPress={() => { failCountRef.current = 0; setLoadError(null); poll(); }} activeOpacity={0.7}>
-              <Ionicons name="refresh" size={18} color="#fff" /><Text style={s.retryBtnText}>Retry</Text>
+              <Ionicons name="refresh" size={18} color="#fff" /><Text style={s.retryBtnText}>{t('customer.retry')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[s.dismissBtn, { borderColor: colors.border }]} onPress={() => { setActiveToken(null); setActiveTicket(null); setLoadError(null); failCountRef.current = 0; }} activeOpacity={0.7}>
-              <Text style={[s.dismissBtnText, { color: colors.textSecondary }]}>Go Back</Text>
+              <Text style={[s.dismissBtnText, { color: colors.textSecondary }]}>{t('customer.goBack')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       );
     }
-    return <View style={[s.centerScreen, { backgroundColor: colors.background }]}><ActivityIndicator size="large" color={colors.primary} /><Text style={{ fontSize: 15, color: colors.textSecondary }}>Loading your ticket...</Text></View>;
+    return <View style={[s.centerScreen, { backgroundColor: colors.background }]}><ActivityIndicator size="large" color={colors.primary} /><Text style={{ fontSize: 15, color: colors.textSecondary }}>{t('customer.loadingTicket')}</Text></View>;
   }
 
   // =======================================================================
   // Derived state
   // =======================================================================
-  const t = activeTicket;
-  const isWaiting = t.status === 'waiting';
-  const isCalled = t.status === 'called';
-  const isServing = t.status === 'serving';
-  const isTerminal = ['served', 'no_show', 'cancelled'].includes(t.status);
-  const serviceLabel = t.service?.name ?? t.department?.name ?? '';
-  const officeName = t.office?.name ?? 'Queue';
-  const peopleAhead = t.position != null && t.position > 0 ? t.position - 1 : 0;
-  const positionText = t.position ? (t.position === 1 ? "You're Next!" : t.position <= 3 ? 'Almost there!' : `${peopleAhead} ahead of you`) : '--';
-  const deskName = t.desk?.name ?? 'your desk';
+  const tk = activeTicket;
+  const isWaiting = tk.status === 'waiting';
+  const isCalled = tk.status === 'called';
+  const isServing = tk.status === 'serving';
+  const isTerminal = ['served', 'no_show', 'cancelled'].includes(tk.status);
+  const serviceLabel = tk.service?.name ?? tk.department?.name ?? '';
+  const officeName = tk.office?.name ?? t('customer.queue');
+  const peopleAhead = tk.position != null && tk.position > 0 ? tk.position - 1 : 0;
+  const positionText = tk.position ? (tk.position === 1 ? t('customer.youreNext') : tk.position <= 3 ? t('customer.almostThere') : `${peopleAhead} ${t('customer.ahead')}`) : '--';
+  const deskName = tk.desk?.name ?? t('customer.yourDesk');
 
   // =======================================================================
   // CALLED STATE — gradient background, bell, countdown circle, info card
   // Matches web your-turn.tsx exactly
   // =======================================================================
   if (isCalled) {
-    const remaining = t.called_at ? Math.max(0, CALL_WAIT_SECONDS - Math.floor((Date.now() - new Date(t.called_at).getTime()) / 1000)) : CALL_WAIT_SECONDS;
+    const remaining = tk.called_at ? Math.max(0, CALL_WAIT_SECONDS - Math.floor((Date.now() - new Date(tk.called_at).getTime()) / 1000)) : CALL_WAIT_SECONDS;
     const phase = remaining > 30 ? 'green' : remaining > 10 ? 'yellow' : 'red';
     const bgColor = phase === 'green' ? '#1a6f49' : phase === 'yellow' ? '#b97613' : '#8e1f1f';
 
@@ -553,11 +560,11 @@ export default function HomeScreen() {
           </View>
           <View style={{ alignItems: 'flex-end', gap: 8 }}>
             <View style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(255,255,255,0.14)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 9999 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.88)', letterSpacing: 1.5 }}>Ticket {t.ticket_number}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.88)', letterSpacing: 1.5 }}>{t('customer.ticket')} {tk.ticket_number}</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pill label="Refresh" onPress={handleRefresh} tone="primary" />
-              <Pill label="End" onPress={confirmEndVisit} tone="danger" />
+              <Pill label={t('customer.refresh')} onPress={handleRefresh} tone="primary" />
+              <Pill label={t('customer.end')} onPress={confirmEndVisit} tone="danger" />
             </View>
           </View>
         </View>
@@ -575,36 +582,36 @@ export default function HomeScreen() {
           </View>
 
           <Text style={{ fontSize: 36, fontWeight: '900', color: '#fff', textAlign: 'center', letterSpacing: -0.5, marginTop: 12 }}>
-            Go to {deskName}
+            {t('customer.goToDesk', { desk: deskName })}
           </Text>
 
           {/* Recall badge */}
-          {(t.recall_count ?? 0) > 0 && (
+          {(tk.recall_count ?? 0) > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.12)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999 }}>
               <Ionicons name="refresh" size={14} color="#fff" />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Recalled {t.recall_count} {(t.recall_count ?? 0) === 1 ? 'time' : 'times'}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>{t('customer.recalledCount', { count: tk.recall_count })}</Text>
             </View>
           )}
 
           {/* Countdown circle */}
-          {t.called_at && <CountdownCircle calledAt={t.called_at} />}
+          {tk.called_at && <CountdownCircle calledAt={tk.called_at} />}
 
           {/* Message */}
           <Text style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', textAlign: 'center', marginTop: 8 }}>
-            {remaining === 0 ? 'Time expired. Please go to the desk immediately.' : phase === 'red' ? 'Please head over now. Staff is waiting.' : 'Show this screen if staff asks for your number.'}
+            {remaining === 0 ? t('customer.timeExpired') : phase === 'red' ? t('customer.hurry') : t('customer.showScreen')}
           </Text>
 
           {/* Info card */}
           <View style={s.infoCard}>
-            <InfoRow icon="location-outline" label="Where to go" value={deskName} />
-            <InfoRow icon="document-text-outline" label="What to show" value={`Ticket ${t.ticket_number}`} />
-            <InfoRow icon="time-outline" label="What to do now" value="Walk straight to the desk while the countdown is active." />
+            <InfoRow icon="location-outline" label={t('customer.whereToGo')} value={deskName} />
+            <InfoRow icon="document-text-outline" label={t('customer.whatToShow')} value={`${t('customer.ticket')} ${tk.ticket_number}`} />
+            <InfoRow icon="time-outline" label={t('customer.whatToDo')} value={t('customer.walkToDesk')} />
           </View>
         </View>
 
-        <CustomerInfoCard ticket={t} />
+        <CustomerInfoCard ticket={tk} />
 
-        <Text style={s.footer}>POWERED BY QFLO</Text>
+        <Text style={s.footer}>{t('customer.poweredBy')}</Text>
       </ScrollView>
       </Animated.View>
     );
@@ -630,8 +637,8 @@ export default function HomeScreen() {
             <Text style={s.syncText}>{syncLabel}</Text>
           </View>
           <View style={{ alignItems: 'flex-end', gap: 8 }}>
-            <Pill label="Refresh" onPress={handleRefresh} tone="secondary" />
-            <Pill label="End" onPress={confirmEndVisit} tone="danger" />
+            <Pill label={t('customer.refresh')} onPress={handleRefresh} tone="secondary" />
+            <Pill label={t('customer.end')} onPress={confirmEndVisit} tone="danger" />
           </View>
         </View>
 
@@ -641,27 +648,27 @@ export default function HomeScreen() {
             <Ionicons name="people" size={36} color="#7dd3fc" />
           </View>
           <View style={{ backgroundColor: 'rgba(56,189,248,0.12)', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 9999 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#7dd3fc', letterSpacing: 1.5, textTransform: 'uppercase' }}>With staff now</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#7dd3fc', letterSpacing: 1.5, textTransform: 'uppercase' }}>{t('customer.beingServed')}</Text>
           </View>
-          <Text style={{ fontSize: 26, fontWeight: '700', color: '#fff', textAlign: 'center' }}>You are being served</Text>
-          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20 }}>Stay with the staff member at {deskName}.</Text>
+          <Text style={{ fontSize: 26, fontWeight: '700', color: '#fff', textAlign: 'center' }}>{t('customer.beingServed')}</Text>
+          <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20 }}>{t('customer.atDesk', { desk: deskName })}</Text>
 
           <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
-            <MetricCard label="Ticket" value={t.ticket_number} detail="Keep visible if asked" accentColor="#7dd3fc" />
-            <MetricCard label="Desk" value={deskName} detail="Current service point" accentColor="#34d399" />
+            <MetricCard label={t('customer.ticket')} value={tk.ticket_number} detail={t('customer.keepVisible')} accentColor="#7dd3fc" />
+            <MetricCard label={t('customer.desk')} value={deskName} detail={t('customer.currentServicePoint')} accentColor="#34d399" />
           </View>
 
-          {t.serving_started_at && (
+          {tk.serving_started_at && (
             <View style={{ alignItems: 'center', marginTop: 4 }}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>Session time</Text>
-              <ElapsedTimer since={t.serving_started_at} />
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>{t('customer.sessionTime')}</Text>
+              <ElapsedTimer since={tk.serving_started_at} />
             </View>
           )}
         </View>
 
-        <CustomerInfoCard ticket={t} />
+        <CustomerInfoCard ticket={tk} />
 
-        <Text style={s.footer}>Qflo</Text>
+        <Text style={s.footer}>{t('customer.poweredBy')}</Text>
       </ScrollView>
       </Animated.View>
     );
@@ -672,10 +679,10 @@ export default function HomeScreen() {
   // Matches web feedback-form.tsx / queue-session-ended.tsx
   // =======================================================================
   if (isTerminal) {
-    const iconName = t.status === 'served' ? 'checkmark-circle' : t.status === 'no_show' ? 'alert-circle' : 'close-circle';
-    const iconColor = t.status === 'served' ? '#4ade80' : t.status === 'no_show' ? '#fbbf24' : '#f87171';
-    const title = t.status === 'served' ? 'Visit complete!' : t.status === 'no_show' ? 'Missed your turn' : 'Ticket cancelled';
-    const description = t.status === 'served' ? 'Thank you for visiting.' : t.status === 'no_show' ? 'The desk marked this ticket as missed. Please talk to staff if you still need help.' : 'This ticket is no longer active in the queue.';
+    const iconName = tk.status === 'served' ? 'checkmark-circle' : tk.status === 'no_show' ? 'alert-circle' : 'close-circle';
+    const iconColor = tk.status === 'served' ? '#4ade80' : tk.status === 'no_show' ? '#fbbf24' : '#f87171';
+    const title = tk.status === 'served' ? t('customer.visitComplete') : tk.status === 'no_show' ? t('customer.missed') : t('customer.cancelled');
+    const description = tk.status === 'served' ? t('customer.thanksForVisiting') : tk.status === 'no_show' ? t('customer.missedMsg') : t('customer.cancelledMsg');
 
     return (
       <ScrollView style={s.darkBg} contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 40, flexGrow: 1 }}>
@@ -687,27 +694,27 @@ export default function HomeScreen() {
           <Ionicons name={iconName as any} size={56} color={iconColor} />
           <Text style={{ fontSize: 24, fontWeight: '700', color: '#f1f5f9', textAlign: 'center' }}>{title}</Text>
           <Text style={{ fontSize: 14, color: '#94a3b8', textAlign: 'center', lineHeight: 20, maxWidth: 280 }}>{description}</Text>
-          <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600' }}>Ticket {t.ticket_number}</Text>
+          <Text style={{ fontSize: 13, color: '#64748b', fontWeight: '600' }}>{t('customer.ticket')} {tk.ticket_number}</Text>
 
-          {t.status === 'served' && (
+          {tk.status === 'served' && (
             <View style={{ alignItems: 'center', gap: 8, marginTop: 4 }}>
               {!ratingSubmitted ? (
                 <>
-                  <Text style={{ fontSize: 15, color: '#94a3b8' }}>Rate your experience</Text>
+                  <Text style={{ fontSize: 15, color: '#94a3b8' }}>{t('customer.rateExperience')}</Text>
                   <StarRating rating={rating} onRate={(n) => { setRating(n); setRatingSubmitted(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} />
                 </>
               ) : (
-                <Text style={{ fontSize: 15, color: '#4ade80', fontWeight: '600' }}>Thanks for your feedback!</Text>
+                <Text style={{ fontSize: 15, color: '#4ade80', fontWeight: '600' }}>{t('customer.thanksFeedback')}</Text>
               )}
             </View>
           )}
 
           <TouchableOpacity onPress={handleStopTracking} activeOpacity={0.8} style={{ alignItems: 'center', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 9999, backgroundColor: '#3b82f6', width: '100%', marginTop: 8 }}>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#fff' }}>Done</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#fff' }}>{t('common.done')}</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={s.footer}>Qflo</Text>
+        <Text style={s.footer}>{t('customer.poweredBy')}</Text>
       </ScrollView>
     );
   }
@@ -732,11 +739,11 @@ export default function HomeScreen() {
         </View>
         <View style={{ alignItems: 'flex-end', gap: 8 }}>
           <View style={{ backgroundColor: 'rgba(251,191,36,0.15)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 9999 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: '#fde68a', letterSpacing: 1.5 }}>WAITING IN LINE</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#fde68a', letterSpacing: 1.5 }}>{t('customer.inQueue').toUpperCase()}</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pill label="Refresh" onPress={handleRefresh} tone="secondary" />
-            <Pill label="End" onPress={confirmEndVisit} tone="danger" />
+            <Pill label={t('customer.refresh')} onPress={handleRefresh} tone="secondary" />
+            <Pill label={t('customer.end')} onPress={confirmEndVisit} tone="danger" />
           </View>
         </View>
       </View>
@@ -745,13 +752,13 @@ export default function HomeScreen() {
       <View style={s.mainCard}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, width: '100%' }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 2, textTransform: 'uppercase' }}>Ticket</Text>
-            <Text style={{ fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 1, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>{t.ticket_number}</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 2, textTransform: 'uppercase' }}>{t('customer.ticket')}</Text>
+            <Text style={{ fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 1, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>{tk.ticket_number}</Text>
             {serviceLabel ? <Text style={{ fontSize: 14, fontWeight: '500', color: '#cbd5e1', marginTop: 4 }}>{serviceLabel}</Text> : null}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 48, fontWeight: '700', color: t.position === 1 ? '#10b981' : '#fff', lineHeight: 52 }}>{t.position ? `#${t.position}` : '--'}</Text>
-            <Text style={{ fontSize: 13, color: t.position === 1 ? '#10b981' : 'rgba(34,211,238,0.7)', fontWeight: t.position === 1 ? '700' : '400', marginTop: 4 }}>{positionText}</Text>
+            <Text style={{ fontSize: 48, fontWeight: '700', color: tk.position === 1 ? '#10b981' : '#fff', lineHeight: 52 }}>{tk.position ? `#${tk.position}` : '--'}</Text>
+            <Text style={{ fontSize: 13, color: tk.position === 1 ? '#10b981' : 'rgba(34,211,238,0.7)', fontWeight: tk.position === 1 ? '700' : '400', marginTop: 4 }}>{positionText}</Text>
           </View>
         </View>
 
@@ -760,36 +767,36 @@ export default function HomeScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <PulsingDot color="#22d3ee" />
-              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.2, textTransform: 'uppercase' }}>Queue progress</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', letterSpacing: 1.2, textTransform: 'uppercase' }}>{t('customer.queueProgress')}</Text>
             </View>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: t.position === 1 ? '#10b981' : '#34d399', letterSpacing: 1.2 }}>
-              {t.position ? `#${t.position} in line` : '--'}
+            <Text style={{ fontSize: 11, fontWeight: '600', color: tk.position === 1 ? '#10b981' : '#34d399', letterSpacing: 1.2 }}>
+              {tk.position ? `#${tk.position} ${t('customer.inQueue')}` : '--'}
             </Text>
           </View>
-          <ProgressBar position={t.position} />
+          <ProgressBar position={tk.position} />
         </View>
       </View>
 
       {/* 3 Metric cards */}
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <MetricCard label="Wait" value={t.position === 1 ? 'Now' : t.estimated_wait_minutes != null ? `${t.estimated_wait_minutes} min` : '--'} detail={t.position === 1 ? 'Any moment now' : t.estimated_wait_minutes != null ? 'Approximate timing' : 'Calculating time'} accentColor="#38bdf8" />
-        <MetricCard label="Now serving" value={t.now_serving ?? '--'} detail="Current desk activity" accentColor="#34d399" smallValue />
-        <MetricCard label="Alerts" value="Ready" detail="Background alerts on" accentColor="#fbbf24" />
+        <MetricCard label={t('customer.estWait')} value={tk.position === 1 ? t('time.anyMoment') : tk.estimated_wait_minutes != null ? `${tk.estimated_wait_minutes} ${t('time.min')}` : '--'} detail={tk.position === 1 ? t('time.anyMoment') : tk.estimated_wait_minutes != null ? t('customer.approximateTiming') : t('customer.calculatingTime')} accentColor="#38bdf8" />
+        <MetricCard label={t('customer.nowServing')} value={tk.now_serving ?? '--'} detail={t('customer.currentDeskActivity')} accentColor="#34d399" smallValue />
+        <MetricCard label={t('customer.alerts')} value={t('customer.ready')} detail={t('customer.backgroundAlertsOn')} accentColor="#fbbf24" />
       </View>
 
       {/* Visit details grid */}
-      <VisitDetailsGrid ticket={t} />
+      <VisitDetailsGrid ticket={tk} />
 
       {/* Customer info card — always shown */}
-      <CustomerInfoCard ticket={t} />
+      <CustomerInfoCard ticket={tk} />
 
       {/* Alerts enabled banner */}
       <View style={s.alertsBanner}>
         <Ionicons name="notifications-outline" size={16} color="#34d399" />
-        <Text style={{ fontSize: 13, fontWeight: '500', color: '#cbd5e1', flex: 1 }}>Alerts enabled — we'll notify you when it's your turn</Text>
+        <Text style={{ fontSize: 13, fontWeight: '500', color: '#cbd5e1', flex: 1 }}>{t('customer.alertsEnabled')}</Text>
       </View>
 
-      <Text style={s.footer}>Qflo</Text>
+      <Text style={s.footer}>{t('customer.poweredBy')}</Text>
     </ScrollView>
     </Animated.View>
   );

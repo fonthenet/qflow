@@ -11,16 +11,16 @@
     {
       "name": "web",
       "runtimeExecutable": "C:\\nvm4w\\nodejs\\node.exe",
-      "runtimeArgs": ["../../node_modules/.pnpm/next@15.5.12_@playwright+test@1.58.2_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "0.0.0.0"],
+      "runtimeArgs": ["../../node_modules/.pnpm/next@15.5.12_@playwright+test@1.58.2_babel-plugin-react-compiler@1.0.0_react-dom@19.2.4_react@19.2.4__react@19.2.4/node_modules/next/dist/bin/next", "dev", "--turbopack", "--hostname", "0.0.0.0"],
       "cwd": "apps/web",
       "autoPort": true
     },
     {
       "name": "expo",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web", "--port", "8083"],
+      "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web", "--port", "8082"],
       "cwd": "apps/expo",
-      "port": 8083
+      "port": 8082
     }
   ]
 }

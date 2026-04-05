@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useOrg } from '@/lib/use-org';
 import { useNameLookup } from '@/lib/use-realtime-queue';
 import { supabase } from '@/lib/supabase';
@@ -35,12 +36,12 @@ interface Appointment {
 
 type StatusFilter = 'all' | 'pending' | 'confirmed' | 'checked_in' | 'cancelled';
 
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'confirmed', label: 'Confirmed' },
-  { key: 'checked_in', label: 'Checked In' },
-  { key: 'cancelled', label: 'Cancelled' },
+const STATUS_FILTERS: { key: StatusFilter; labelKey: string }[] = [
+  { key: 'all', labelKey: 'common.all' },
+  { key: 'pending', labelKey: 'bookings.pending' },
+  { key: 'confirmed', labelKey: 'bookings.confirmed' },
+  { key: 'checked_in', labelKey: 'bookings.checkedIn' },
+  { key: 'cancelled', labelKey: 'bookings.cancelled' },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ function formatDateLabel(dateStr: string): string {
 // ── Main Screen ──────────────────────────────────────────────────────
 
 export default function BookingsScreen() {
+  const { t } = useTranslation();
   const { orgId, officeIds, loading: orgLoading } = useOrg();
   const names = useNameLookup(orgId, officeIds);
 
@@ -179,17 +181,17 @@ export default function BookingsScreen() {
 
   const handleCheckIn = useCallback(
     (appt: Appointment) => {
-      Alert.alert('Check In', `Check in ${appt.customer_name} and create a ticket?`, [
-        { text: 'Cancel', style: 'cancel' },
+      Alert.alert(t('bookings.checkIn'), t('bookings.checkInMsg', { name: appt.customer_name }), [
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Check In',
+          text: t('bookings.checkIn'),
           onPress: async () => {
             setActionLoading(appt.id);
             try {
               await Actions.checkInAppointment(appt.id, appt.office_id, appt.department_id, appt.service_id);
               await fetchData(false);
             } catch (err: any) {
-              Alert.alert('Error', err.message ?? 'Failed to check in');
+              Alert.alert(t('common.error'), err.message ?? t('bookings.checkIn'));
             } finally {
               setActionLoading(null);
             }
@@ -202,10 +204,10 @@ export default function BookingsScreen() {
 
   const handleCancel = useCallback(
     (appt: Appointment) => {
-      Alert.alert('Cancel Appointment', `Cancel ${appt.customer_name}'s booking?`, [
-        { text: 'Keep', style: 'cancel' },
+      Alert.alert(t('bookings.cancelAppointment'), t('bookings.cancelMsg', { name: appt.customer_name }), [
+        { text: t('bookings.keep'), style: 'cancel' },
         {
-          text: 'Cancel Booking',
+          text: t('bookings.cancelBooking'),
           style: 'destructive',
           onPress: async () => {
             setActionLoading(appt.id);
@@ -213,7 +215,7 @@ export default function BookingsScreen() {
               await Actions.cancelAppointment(appt.id);
               await fetchData(false);
             } catch (err: any) {
-              Alert.alert('Error', err.message ?? 'Failed to cancel');
+              Alert.alert(t('common.error'), err.message ?? t('bookings.cancelBooking'));
             } finally {
               setActionLoading(null);
             }
@@ -280,10 +282,10 @@ export default function BookingsScreen() {
 
       {/* Stats row */}
       <View style={s.statsRow}>
-        <StatBadge label="Total" value={stats.total} color={colors.primary} />
-        <StatBadge label="Pending" value={stats.pending} color={colors.warning} />
-        <StatBadge label="Checked In" value={stats.checkedIn} color={colors.success} />
-        <StatBadge label="Cancelled" value={stats.cancelled} color={colors.error} />
+        <StatBadge label={t('bookings.total')} value={stats.total} color={colors.primary} />
+        <StatBadge label={t('bookings.pending')} value={stats.pending} color={colors.warning} />
+        <StatBadge label={t('bookings.checkedIn')} value={stats.checkedIn} color={colors.success} />
+        <StatBadge label={t('bookings.cancelled')} value={stats.cancelled} color={colors.error} />
       </View>
 
       {/* Status filter chips */}
@@ -294,7 +296,7 @@ export default function BookingsScreen() {
             style={[s.chip, statusFilter === f.key && s.chipActive]}
             onPress={() => setStatusFilter(f.key)}
           >
-            <Text style={[s.chipText, statusFilter === f.key && s.chipTextActive]}>{f.label}</Text>
+            <Text style={[s.chipText, statusFilter === f.key && s.chipTextActive]}>{t(f.labelKey)}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -306,7 +308,7 @@ export default function BookingsScreen() {
             style={[s.chip, deptFilter === 'all' && s.chipActive]}
             onPress={() => setDeptFilter('all')}
           >
-            <Text style={[s.chipText, deptFilter === 'all' && s.chipTextActive]}>All Depts</Text>
+            <Text style={[s.chipText, deptFilter === 'all' && s.chipTextActive]}>{t('adminManage.departments')}</Text>
           </TouchableOpacity>
           {departments.map((d) => (
             <TouchableOpacity
@@ -332,10 +334,9 @@ export default function BookingsScreen() {
           ) : (
             <View style={s.emptyState}>
               <Ionicons name="calendar-outline" size={56} color={colors.textMuted} />
-              <Text style={s.emptyTitle}>No Bookings</Text>
+              <Text style={s.emptyTitle}>{t('bookings.noBookings')}</Text>
               <Text style={s.emptySubtitle}>
-                No appointments for {formatDateLabel(dateFilter)}
-                {statusFilter !== 'all' ? ` with status "${statusFilter.replace('_', ' ')}"` : ''}
+                {t('bookings.noBookingsMsg')}
               </Text>
             </View>
           )

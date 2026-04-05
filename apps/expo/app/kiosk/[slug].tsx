@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import {
   fetchKioskInfo,
   createKioskTicket,
@@ -25,6 +26,7 @@ type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'issued
 const IDLE_TIMEOUT_MS = 60_000;
 
 export default function KioskScreen() {
+  const { t } = useTranslation();
   const { slug, deptId: initialDeptId } = useLocalSearchParams<{ slug: string; deptId?: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveKioskSlug, recordPlace } = useAppStore();
@@ -86,7 +88,7 @@ export default function KioskScreen() {
     const data = await fetchKioskInfo(slug);
     if (!data) {
       setStep('error');
-      setErrorMsg('This kiosk is unavailable or the office was not found.');
+      setErrorMsg(t('kiosk.unavailableMsg'));
       return;
     }
     setInfo(data);
@@ -242,7 +244,7 @@ export default function KioskScreen() {
     return (
       <View style={s.center}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={s.loadingText}>Loading kiosk...</Text>
+        <Text style={s.loadingText}>{t('kiosk.loadingKiosk')}</Text>
       </View>
     );
   }
@@ -254,10 +256,10 @@ export default function KioskScreen() {
         <View style={s.errorCircle}>
           <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
         </View>
-        <Text style={s.errorTitle}>Kiosk Unavailable</Text>
+        <Text style={s.errorTitle}>{t('kiosk.kioskUnavailable')}</Text>
         <Text style={s.errorSub}>{errorMsg}</Text>
         <TouchableOpacity style={s.outlineBtn} onPress={() => router.back()}>
-          <Text style={s.outlineBtnText}>Go Back</Text>
+          <Text style={s.outlineBtnText}>{t('kiosk.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -321,9 +323,9 @@ export default function KioskScreen() {
           <View style={s.welcomeIcon}>
             <Ionicons name="ticket-outline" size={isTablet ? 72 : 56} color={colors.primary} />
           </View>
-          <Text style={[s.welcomeTitle, { fontSize: headingSize }]}>Welcome</Text>
+          <Text style={[s.welcomeTitle, { fontSize: headingSize }]}>{t('kiosk.welcome')}</Text>
           <Text style={[s.welcomeSub, { fontSize: bodySize }]}>
-            Tap below to get your queue ticket
+            {t('kiosk.tapToGetTicket')}
           </Text>
 
           {errorMsg ? (
@@ -340,7 +342,7 @@ export default function KioskScreen() {
           >
             <Ionicons name="ticket" size={isTablet ? 26 : 22} color="#fff" />
             <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
-              Get Ticket
+              {t('kiosk.getTicket')}
             </Text>
           </TouchableOpacity>
 
@@ -355,7 +357,7 @@ export default function KioskScreen() {
                 color={colors.primary}
               />
               <Text style={[s.secondaryBtnText, isTablet && { fontSize: fontSize.lg }]}>
-                Check-in Appointment
+                {t('kiosk.checkInAppointment')}
               </Text>
             </TouchableOpacity>
           )}
@@ -368,7 +370,7 @@ export default function KioskScreen() {
             >
               <Ionicons name="calendar-outline" size={isTablet ? 20 : 16} color={colors.primary} />
               <Text style={[s.bookBtnText, { color: colors.primary }, isTablet && { fontSize: fontSize.md }]}>
-                Book for Later
+                {t('kiosk.bookForLater')}
               </Text>
             </TouchableOpacity>
           )}
@@ -380,7 +382,7 @@ export default function KioskScreen() {
           >
             <Ionicons name="eye-outline" size={isTablet ? 20 : 16} color={colors.textMuted} />
             <Text style={[s.peekBtnText, isTablet && { fontSize: fontSize.md }]}>
-              View current wait times
+              {t('kiosk.viewWaitTimes')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -397,9 +399,9 @@ export default function KioskScreen() {
           contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
           style={s.scrollView}
         >
-          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Department</Text>
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>{t('kiosk.selectDepartment')}</Text>
           <Text style={[s.stepSub, { fontSize: bodySize }]}>
-            Choose the department for your visit
+            {t('kiosk.chooseDepartment')}
           </Text>
 
           {renderGrid(departments, (dept) => (
@@ -433,10 +435,10 @@ export default function KioskScreen() {
           contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
           style={s.scrollView}
         >
-          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Service</Text>
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>{t('kiosk.selectService')}</Text>
           {selectedDept && (
             <Text style={[s.stepSub, { fontSize: bodySize }]}>
-              {selectedDept.name} department
+              {selectedDept.name} {t('kiosk.department')}
             </Text>
           )}
 
@@ -458,7 +460,7 @@ export default function KioskScreen() {
                   </Text>
                 )}
                 {svc.estimated_service_time != null && (
-                  <Text style={s.cardEst}>~{svc.estimated_service_time} min</Text>
+                  <Text style={s.cardEst}>~{svc.estimated_service_time} {t('kiosk.min')}</Text>
                 )}
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
@@ -478,9 +480,9 @@ export default function KioskScreen() {
           contentContainerStyle={[s.scrollContent, { maxWidth: containerMaxWidth, padding: containerPadding }]}
           style={s.scrollView}
         >
-          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>Select Priority</Text>
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>{t('kiosk.selectPriority')}</Text>
           <Text style={[s.stepSub, { fontSize: bodySize }]}>
-            Choose a priority level if applicable
+            {t('kiosk.choosePriority')}
           </Text>
 
           {renderGrid(priorities, (p) => (
@@ -509,7 +511,7 @@ export default function KioskScreen() {
           ))}
 
           <TouchableOpacity style={s.skipBtn} onPress={skipPriority} activeOpacity={0.7}>
-            <Text style={[s.skipBtnText, { fontSize: bodySize }]}>Skip - Standard Priority</Text>
+            <Text style={[s.skipBtnText, { fontSize: bodySize }]}>{t('kiosk.skipStandardPriority')}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -526,7 +528,7 @@ export default function KioskScreen() {
             <Ionicons name="checkmark-circle" size={isTablet ? 80 : 64} color={colors.success} />
           </View>
 
-          <Text style={[s.issuedLabel, { fontSize: bodySize }]}>Your Ticket Number</Text>
+          <Text style={[s.issuedLabel, { fontSize: bodySize }]}>{t('kiosk.yourTicketNumber')}</Text>
           <Text style={[s.ticketNumber, { fontSize: isTablet ? 72 : 60 }]}>
             {ticket.ticket_number}
           </Text>
@@ -550,7 +552,7 @@ export default function KioskScreen() {
             <View style={s.waitBadge}>
               <Ionicons name="time-outline" size={18} color={colors.warning} />
               <Text style={[s.waitBadgeText, { fontSize: bodySize }]}>
-                Estimated wait: ~{ticket.estimated_wait_minutes} min
+                {t('kiosk.estimatedWait', { minutes: ticket.estimated_wait_minutes })}
               </Text>
             </View>
           )}
@@ -562,7 +564,7 @@ export default function KioskScreen() {
           >
             <Ionicons name="navigate" size={isTablet ? 24 : 20} color="#fff" />
             <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
-              Track Your Position
+              {t('kiosk.trackPosition')}
             </Text>
           </TouchableOpacity>
 
@@ -573,7 +575,7 @@ export default function KioskScreen() {
           >
             <Ionicons name="add-circle-outline" size={isTablet ? 24 : 20} color={colors.primary} />
             <Text style={[s.secondaryBtnText, isTablet && { fontSize: fontSize.lg }]}>
-              Take Another Ticket
+              {t('kiosk.takeAnotherTicket')}
             </Text>
           </TouchableOpacity>
         </View>

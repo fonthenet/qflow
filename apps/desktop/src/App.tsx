@@ -3,6 +3,7 @@ import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
 import type { StaffSession, SyncStatus, UpdateStatus } from './lib/types';
+import { getSupabase, restoreSession } from './lib/supabase';
 import { getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
 import './styles.css';
 
@@ -71,6 +72,9 @@ export function App() {
         }
       } catch {
         // ignore persistence failures
+      }
+      if (s?.access_token && s?.refresh_token) {
+        restoreSession(s.access_token, s.refresh_token).catch(() => {});
       }
       setSession(s);
       setLocale(normalizeLocale(savedLocale));
@@ -155,6 +159,9 @@ export function App() {
 
   const handleLogin = useCallback(async (s: StaffSession) => {
     await window.qf.session.save(s);
+    if (s.access_token && s.refresh_token) {
+      await restoreSession(s.access_token, s.refresh_token);
+    }
     // Pull cloud data into SQLite BEFORE showing the Station screen
     // so tickets are visible immediately (avoids blank queue on first load)
     try { await window.qf.sync.forceSync(); } catch { /* non-critical */ }
@@ -162,9 +169,22 @@ export function App() {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    // Close the desk in Supabase before logging out
+    if (session?.desk_id) {
+      try {
+        const sb = await getSupabase();
+        if (sb) {
+          await sb.from('desks')
+            .update({ status: 'closed', current_staff_id: null })
+            .eq('id', session.desk_id);
+        }
+      } catch (err) {
+        console.warn('[App] desk close-on-logout error:', err);
+      }
+    }
     await window.qf.session.clear();
     setSession(null);
-  }, []);
+  }, [session?.desk_id]);
 
   const t = useCallback((key: string, values?: Record<string, string | number | null | undefined>) => {
     return translate(locale, key, values);

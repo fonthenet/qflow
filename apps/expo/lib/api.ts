@@ -69,7 +69,7 @@ export async function registerApns(params: {
         deviceToken: params.deviceToken,
         kind: params.kind ?? 'alert',
         environment: params.environment ?? 'production',
-        bundleId: params.bundleId ?? 'com.queueflow.mobile',
+        bundleId: params.bundleId ?? 'com.qflo.app',
       }),
     });
     return res.ok;
@@ -92,7 +92,7 @@ export async function registerAndroid(params: {
         ticketId: params.ticketId,
         qrToken: params.qrToken,
         deviceToken: params.deviceToken,
-        packageName: params.packageName ?? 'com.queueflow.mobile',
+        packageName: params.packageName ?? 'com.qflo.app',
       }),
     });
     if (!res.ok) return { ok: false };

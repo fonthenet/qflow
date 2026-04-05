@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { useOrg } from '@/lib/use-org';
 import {
@@ -122,6 +123,7 @@ function formatDate(iso: string): string {
 // ── Component ────────────────────────────────────────────────────────
 
 export default function VirtualCodesScreen() {
+  const { t } = useTranslation();
   const { orgId, loading: orgLoading } = useOrg();
 
   const [codes, setCodes] = useState<VirtualCode[]>([]);
@@ -190,7 +192,7 @@ export default function VirtualCodesScreen() {
 
       setNames(lookup);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to load virtual codes');
+      Alert.alert(t('common.error'), err.message || t('common.error'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -279,25 +281,25 @@ export default function VirtualCodesScreen() {
         prev.map((c) => (c.id === code.id ? { ...c, is_active: !c.is_active } : c))
       );
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to toggle code');
+      Alert.alert(t('common.error'), err.message || t('common.error'));
     }
   };
 
   const handleDelete = (code: VirtualCode) => {
     Alert.alert(
-      'Delete Virtual Code',
-      'Are you sure you want to delete this virtual code? This action cannot be undone.',
+      t('common.delete'),
+      t('virtualCodes.deleteConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
               await deleteVirtualCode(code.id);
               setCodes((prev) => prev.filter((c) => c.id !== code.id));
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete code');
+              Alert.alert(t('common.error'), err.message || t('common.error'));
             }
           },
         },
@@ -310,15 +312,15 @@ export default function VirtualCodesScreen() {
 
     // Validate selections based on scope
     if (scope !== 'business' && !selectedOffice) {
-      Alert.alert('Validation', 'Please select an office.');
+      Alert.alert(t('common.error'), t('desk.selectDepartment'));
       return;
     }
     if ((scope === 'department' || scope === 'service') && !selectedDept) {
-      Alert.alert('Validation', 'Please select a department.');
+      Alert.alert(t('common.error'), t('desk.selectDepartment'));
       return;
     }
     if (scope === 'service' && !selectedService) {
-      Alert.alert('Validation', 'Please select a service.');
+      Alert.alert(t('common.error'), t('desk.selectService'));
       return;
     }
 
@@ -334,7 +336,7 @@ export default function VirtualCodesScreen() {
       setScope('business');
       await loadCodes();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create virtual code');
+      Alert.alert(t('common.error'), err.message || t('common.error'));
     } finally {
       setCreating(false);
     }
@@ -386,7 +388,7 @@ export default function VirtualCodesScreen() {
                 { color: item.is_active ? colors.success : colors.error },
               ]}
             >
-              {item.is_active ? 'Active' : 'Inactive'}
+              {item.is_active ? t('virtualCodes.active') : t('virtualCodes.inactive')}
             </Text>
           </View>
         </View>
@@ -401,7 +403,7 @@ export default function VirtualCodesScreen() {
           activeOpacity={0.7}
         >
           <Ionicons name="qr-code-outline" size={16} color={colors.primary} />
-          <Text style={styles.qrToggleText}>Show QR Code</Text>
+          <Text style={styles.qrToggleText}>{t('adminMore.qrCodes')}</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.primary} />
         </TouchableOpacity>
 
@@ -433,7 +435,7 @@ export default function VirtualCodesScreen() {
                 { color: isCopied ? colors.success : colors.primary },
               ]}
             >
-              {isCopied ? 'Copied!' : 'Copy URL'}
+              {isCopied ? t('common.copied') : t('virtualCodes.copyLink')}
             </Text>
           </TouchableOpacity>
 
@@ -452,7 +454,7 @@ export default function VirtualCodesScreen() {
                 { color: item.is_active ? colors.warning : colors.success },
               ]}
             >
-              {item.is_active ? 'Deactivate' : 'Activate'}
+              {item.is_active ? t('common.disabled') : t('common.enabled')}
             </Text>
           </TouchableOpacity>
 
@@ -461,7 +463,7 @@ export default function VirtualCodesScreen() {
             onPress={() => handleDelete(item)}
           >
             <Ionicons name="trash-outline" size={16} color={colors.error} />
-            <Text style={[styles.actionButtonText, { color: colors.error }]}>Delete</Text>
+            <Text style={[styles.actionButtonText, { color: colors.error }]}>{t('common.delete')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -501,7 +503,7 @@ export default function VirtualCodesScreen() {
     <View style={styles.pickerSection}>
       <Text style={styles.pickerLabel}>{label}</Text>
       {options.length === 0 ? (
-        <Text style={styles.pickerEmpty}>No options available</Text>
+        <Text style={styles.pickerEmpty}>{t('common.noResults')}</Text>
       ) : (
         <ScrollView
           horizontal
@@ -548,7 +550,7 @@ export default function VirtualCodesScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Virtual QR Codes</Text>
+        <Text style={styles.headerTitle}>{t('virtualCodes.title')}</Text>
         <Text style={styles.headerSubtitle}>
           {codes.length} code{codes.length !== 1 ? 's' : ''}
         </Text>
@@ -574,13 +576,13 @@ export default function VirtualCodesScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="qr-code-outline" size={64} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>No Virtual Codes</Text>
+            <Text style={styles.emptyTitle}>{t('virtualCodes.noCodesYet')}</Text>
             <Text style={styles.emptySubtitle}>
-              Create a virtual QR code to let customers join your queue remotely.
+              {t('virtualCodes.noCodesMsg')}
             </Text>
             <TouchableOpacity style={styles.emptyButton} onPress={openCreateModal}>
               <Ionicons name="add-outline" size={20} color={colors.surface} />
-              <Text style={styles.emptyButtonText}>Create Code</Text>
+              <Text style={styles.emptyButtonText}>{t('virtualCodes.createNew')}</Text>
             </TouchableOpacity>
           </View>
         }
@@ -623,7 +625,7 @@ export default function VirtualCodesScreen() {
                   style={styles.qrPopupImage}
                   resizeMode="contain"
                 />
-                <Text style={styles.qrPopupHint}>Scan to join queue</Text>
+                <Text style={styles.qrPopupHint}>{t('history.scanToJoin')}</Text>
                 <Text style={styles.qrPopupUrl} numberOfLines={1} ellipsizeMode="middle">
                   {JOIN_BASE_URL}/{qrModalCode.qr_token}
                 </Text>
@@ -639,7 +641,7 @@ export default function VirtualCodesScreen() {
                     color="#fff"
                   />
                   <Text style={styles.qrPopupCopyText}>
-                    {copiedId === qrModalCode.id ? 'Copied!' : 'Copy Link'}
+                    {copiedId === qrModalCode.id ? t('common.copied') : t('virtualCodes.copyLink')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -661,7 +663,7 @@ export default function VirtualCodesScreen() {
             <TouchableOpacity onPress={() => setModalVisible(false)}>
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>New Virtual Code</Text>
+            <Text style={styles.modalTitle}>{t('virtualCodes.createNew')}</Text>
             <View style={{ width: 24 }} />
           </View>
 
@@ -702,7 +704,7 @@ export default function VirtualCodesScreen() {
               ) : (
                 <>
                   <Ionicons name="qr-code-outline" size={20} color={colors.surface} />
-                  <Text style={styles.createButtonText}>Create Virtual Code</Text>
+                  <Text style={styles.createButtonText}>{t('virtualCodes.createNew')}</Text>
                 </>
               )}
             </TouchableOpacity>

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
@@ -44,6 +45,7 @@ interface DeptQueue {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { session: operatorSession } = useOperatorStore();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -104,7 +106,7 @@ export default function AdminDashboard() {
       supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'served').gte('completed_at', todayISO),
       supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'no_show').gte('completed_at', todayISO),
       supabase.from('tickets').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('status', 'cancelled').gte('created_at', todayISO),
-      supabase.from('desks').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('is_active', true).eq('status', 'active'),
+      supabase.from('desks').select('id', { count: 'exact', head: true }).in('office_id', officeIds).eq('is_active', true).eq('status', 'open'),
       supabase.from('desks').select('id', { count: 'exact', head: true }).in('office_id', officeIds),
       supabase.from('tickets').select('created_at, serving_started_at, completed_at, status').in('office_id', officeIds).gte('created_at', todayISO).in('status', ['served', 'no_show', 'cancelled']),
       // Departments
@@ -179,9 +181,9 @@ export default function AdminDashboard() {
 
   const greeting = () => {
     const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (h < 12) return t('admin.goodMorning');
+    if (h < 17) return t('admin.goodAfternoon');
+    return t('admin.goodEvening');
   };
 
   if (loading) {
@@ -213,23 +215,36 @@ export default function AdminDashboard() {
       </View>
 
       {/* Live Status Banner */}
-      <TouchableOpacity style={s.liveBanner} onPress={goToQueue} activeOpacity={0.8}>
-        <View style={s.liveRow}>
-          <View style={s.liveDot} />
-          <Text style={s.liveLabel}>LIVE QUEUE</Text>
-          <Text style={s.liveCount}>{liveTotal} {liveTotal === 1 ? 'customer' : 'customers'}</Text>
-        </View>
-        <View style={s.liveStats}>
-          <LivePill label="Waiting" count={stats?.totalWaiting ?? 0} color={colors.waiting} bg={colors.waitingBg} />
-          <LivePill label="Called" count={stats?.totalCalled ?? 0} color={colors.called} bg={colors.calledBg} />
-          <LivePill label="Serving" count={stats?.totalServing ?? 0} color={colors.serving} bg={colors.servingBg} />
-        </View>
-      </TouchableOpacity>
+      <View style={s.liveBanner}>
+        <TouchableOpacity onPress={goToQueue} activeOpacity={0.8}>
+          <View style={s.liveRow}>
+            <View style={s.liveDot} />
+            <Text style={s.liveLabel}>{t('admin.liveQueue')}</Text>
+            <Text style={s.liveCount}>{t('admin.customer', { count: liveTotal })}</Text>
+          </View>
+          <View style={s.liveStats}>
+            <LivePill label={t('status.waiting')} count={stats?.totalWaiting ?? 0} color={colors.waiting} bg={colors.waitingBg} />
+            <LivePill label={t('status.called')} count={stats?.totalCalled ?? 0} color={colors.called} bg={colors.calledBg} />
+            <LivePill label={t('status.serving')} count={stats?.totalServing ?? 0} color={colors.serving} bg={colors.servingBg} />
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={s.startServingBtn}
+          onPress={() => router.navigate(operatorSession?.deskId ? '/(operator)/desk' : '/(auth)/role-select')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="desktop-outline" size={18} color="#fff" />
+          <Text style={s.startServingText}>
+            {operatorSession?.deskId ? t('admin.goToDesk') : t('admin.startServing')}
+          </Text>
+          <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.7)" />
+        </TouchableOpacity>
+      </View>
 
       {/* Department Breakdown — only if there are active tickets */}
       {deptQueues.length > 0 && (
         <View style={s.section}>
-          <Text style={s.sectionTitle}>By Department</Text>
+          <Text style={s.sectionTitle}>{t('admin.byDepartment')}</Text>
           {deptQueues.map((d) => (
             <View key={d.id} style={s.deptRow}>
               <View style={s.deptInfo}>
@@ -250,34 +265,34 @@ export default function AdminDashboard() {
 
       {/* Today's Summary */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Today&apos;s Summary</Text>
+        <Text style={s.sectionTitle}>{t('admin.todaySummary')}</Text>
         <View style={s.metricsGrid}>
           <MetricCard
             icon="checkmark-circle"
-            label="Served"
+            label={t('status.served')}
             value={stats?.todayServed ?? 0}
             color={colors.success}
             bg={colors.successLight}
           />
           <MetricCard
             icon="alert-circle"
-            label="No Show"
+            label={t('status.noShow')}
             value={stats?.todayNoShow ?? 0}
             color={colors.warning}
             bg={colors.warningLight}
           />
           <MetricCard
             icon="close-circle"
-            label="Cancelled"
+            label={t('status.cancelled')}
             value={stats?.todayCancelled ?? 0}
             color={colors.error}
             bg={colors.errorLight}
           />
           <MetricCard
             icon="calendar"
-            label="Bookings"
+            label={t('admin.bookings')}
             value={stats?.todayBookings ?? 0}
-            sub={stats?.pendingBookings ? `${stats.pendingBookings} pending` : undefined}
+            sub={stats?.pendingBookings ? `${stats.pendingBookings} ${t('admin.pending')}` : undefined}
             color={colors.info}
             bg={colors.infoLight}
           />
@@ -286,45 +301,44 @@ export default function AdminDashboard() {
 
       {/* Performance */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Performance</Text>
+        <Text style={s.sectionTitle}>{t('admin.performance')}</Text>
         <View style={s.perfRow}>
-          <PerfBar label="Avg Wait" value={`${stats?.avgWaitMinutes ?? 0}m`} icon="hourglass" />
-          <PerfBar label="Avg Service" value={`${stats?.avgServiceMinutes ?? 0}m`} icon="stopwatch" />
-          <PerfBar label="Completion" value={`${stats?.completionRate ?? 0}%`} icon="trending-up" />
+          <PerfBar label={t('admin.avgWait')} value={`${stats?.avgWaitMinutes ?? 0}m`} icon="hourglass" />
+          <PerfBar label={t('admin.avgService')} value={`${stats?.avgServiceMinutes ?? 0}m`} icon="stopwatch" />
+          <PerfBar label={t('admin.completion')} value={`${stats?.completionRate ?? 0}%`} icon="trending-up" />
         </View>
       </View>
 
       {/* Desks */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Desks</Text>
+        <Text style={s.sectionTitle}>{t('admin.desks')}</Text>
         <View style={s.deskBar}>
           <View style={s.deskInfo}>
             <Text style={s.deskValue}>{stats?.activeDesks ?? 0}</Text>
-            <Text style={s.deskLabel}>active</Text>
+            <Text style={s.deskLabel}>{t('common.open')}</Text>
           </View>
           <View style={s.deskSep} />
           <View style={s.deskInfo}>
             <Text style={[s.deskValue, { color: colors.textMuted }]}>{(stats?.totalDesks ?? 0) - (stats?.activeDesks ?? 0)}</Text>
-            <Text style={s.deskLabel}>idle</Text>
+            <Text style={s.deskLabel}>{t('common.closed')}</Text>
           </View>
           <View style={{ flex: 1 }} />
           <TouchableOpacity style={s.deskAction} onPress={goToManage}>
             <Ionicons name="settings-outline" size={16} color={colors.primary} />
-            <Text style={s.deskActionText}>Manage</Text>
+            <Text style={s.deskActionText}>{t('admin.manage')}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Quick Actions */}
       <View style={s.section}>
-        <Text style={s.sectionTitle}>Quick Actions</Text>
+        <Text style={s.sectionTitle}>{t('admin.quickActions')}</Text>
         <View style={s.actionsGrid}>
-          <ActionBtn icon="list" label="Live Queue" onPress={goToQueue} />
-          <ActionBtn icon="desktop-outline" label="Start Serving" onPress={() => router.navigate(operatorSession?.deskId ? '/(operator)/desk' : '/(auth)/role-select')} />
-          <ActionBtn icon="calendar-outline" label="Bookings" onPress={() => router.push('/admin/bookings')} />
-          <ActionBtn icon="people-outline" label="Staff" onPress={goToManage} />
-          <ActionBtn icon="link-outline" label="QR & Links" onPress={() => router.push('/admin/virtual-codes')} />
-          <ActionBtn icon="ticket-outline" label="Customer" onPress={() => router.navigate('/(tabs)')} />
+          <ActionBtn icon="list" label={t('admin.liveQueueAction')} onPress={goToQueue} />
+          <ActionBtn icon="calendar-outline" label={t('admin.bookings')} onPress={() => router.push('/admin/bookings')} />
+          <ActionBtn icon="people-outline" label={t('admin.manageAction')} onPress={goToManage} />
+          <ActionBtn icon="qr-code-outline" label={t('admin.qrLinks')} onPress={() => router.push('/admin/virtual-codes')} />
+          <ActionBtn icon="add-circle-outline" label={t('admin.newTicket')} onPress={() => router.navigate('/(operator)/booking')} />
         </View>
       </View>
     </ScrollView>
@@ -416,6 +430,12 @@ const s = StyleSheet.create({
   liveLabel: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary, letterSpacing: 1 },
   liveCount: { fontSize: fontSize.sm, fontWeight: '600', color: colors.text, marginLeft: 'auto' },
   liveStats: { flexDirection: 'row', gap: spacing.sm },
+  startServingBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: colors.primary, paddingVertical: 12,
+    borderRadius: borderRadius.lg, marginTop: 4,
+  },
+  startServingText: { fontSize: fontSize.sm, fontWeight: '700', color: '#fff' },
   livePill: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, paddingVertical: 10, borderRadius: borderRadius.md,

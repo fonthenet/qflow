@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import { QueueCard } from '@/components/QueueCard';
 import { useAppStore } from '@/lib/store';
 import { fetchTicket, type TicketResponse } from '@/lib/api';
@@ -18,6 +19,7 @@ import { registerForPush } from '@/lib/notifications';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 export default function TicketScreen() {
+  const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveTicket } = useAppStore();
@@ -58,17 +60,17 @@ export default function TicketScreen() {
     setLoading(false);
   }, [token]);
 
-  // Poll faster when called (2s) vs normal (5s)
-  const pollInterval = ticket?.status === 'called' ? 2000 : 5000;
-
   useEffect(() => {
     if (!token) return;
     poll();
-    intervalRef.current = setInterval(poll, pollInterval);
+    // Start at 5s; the interval updates itself based on current ticket status
+    intervalRef.current = setInterval(() => {
+      poll();
+    }, 5000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [token, poll, pollInterval]);
+  }, [token, poll]);
 
   const handleTrack = async () => {
     if (!ticket || !token) return;
@@ -86,7 +88,7 @@ export default function TicketScreen() {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading ticket...</Text>
+        <Text style={styles.loadingText}>{t('ticketView.loadingTicket')}</Text>
       </View>
     );
   }
@@ -95,15 +97,15 @@ export default function TicketScreen() {
     return (
       <View style={styles.error}>
         <Ionicons name="alert-circle-outline" size={64} color={colors.error} />
-        <Text style={styles.errorTitle}>Ticket not found</Text>
+        <Text style={styles.errorTitle}>{t('ticketView.ticketNotFound')}</Text>
         <Text style={styles.errorSubtitle}>
-          This ticket may have expired or the QR code is invalid
+          {t('ticketView.ticketExpiredMsg')}
         </Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>{t('ticketView.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -124,14 +126,14 @@ export default function TicketScreen() {
       {!isTerminal && (
         <TouchableOpacity style={styles.trackButton} onPress={handleTrack}>
           <Ionicons name="eye-outline" size={20} color="#fff" />
-          <Text style={styles.trackButtonText}>Track This Ticket</Text>
+          <Text style={styles.trackButtonText}>{t('ticketView.trackThisTicket')}</Text>
         </TouchableOpacity>
       )}
 
       {notifRegistered && (
         <View style={styles.notifBanner}>
           <Ionicons name="notifications" size={16} color={colors.success} />
-          <Text style={styles.notifText}>Notifications enabled</Text>
+          <Text style={styles.notifText}>{t('ticketView.notificationsEnabled')}</Text>
         </View>
       )}
     </ScrollView>

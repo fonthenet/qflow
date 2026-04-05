@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -43,6 +43,7 @@ interface DeskOption {
 export default function OperatorSettingsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { session, setSession, clearSession } = useOperatorStore();
   const { staffRole } = useAuth();
   const localMode = useLocalConnectionStore((s) => s.mode);
@@ -389,7 +390,8 @@ export default function OperatorSettingsScreen() {
                     onPress: () => {
                       disconnectStation();
                       clearSession();
-                      router.replace('/(auth)/role-select');
+                      // Small delay to let state clear before navigating
+                      setTimeout(() => router.replace('/(tabs)'), 50);
                     },
                   },
                 ],
@@ -499,8 +501,8 @@ export default function OperatorSettingsScreen() {
       </Modal>
 
       {/* WebView Preview Modal */}
-      <Modal visible={!!previewUrl} animationType="slide" onRequestClose={() => setPreviewUrl(null)}>
-        <SafeAreaView style={styles.previewContainer}>
+      <Modal visible={!!previewUrl} animationType="slide" statusBarTranslucent onRequestClose={() => setPreviewUrl(null)}>
+        <View style={[styles.previewContainer, { paddingTop: insets.top }]}>
           <View style={styles.previewHeader}>
             <TouchableOpacity onPress={() => setPreviewUrl(null)} hitSlop={12}>
               <Ionicons name="close" size={24} color={colors.text} />
@@ -522,7 +524,7 @@ export default function OperatorSettingsScreen() {
               domStorageEnabled
             />
           )}
-        </SafeAreaView>
+        </View>
       </Modal>
     </ScrollView>
   );

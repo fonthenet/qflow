@@ -1,11 +1,45 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Text, TextInput, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import { useTranslation } from 'react-i18next';
+import '@/lib/i18n'; // initialise i18n
+import { isRTL } from '@/lib/i18n';
+
+// ── Global RTL text defaults ────────────────────────────────────────
+// Sets writingDirection on ALL Text & TextInput so Arabic renders
+// with proper shaping (smooth glyphs) and correct alignment.
+const origTextRender = (Text as any).render;
+if (origTextRender) {
+  (Text as any).render = function (props: any, ref: any) {
+    const rtl = isRTL();
+    return origTextRender.call(this, {
+      ...props,
+      style: [
+        rtl ? { writingDirection: 'rtl', textAlign: 'right' } : { writingDirection: 'ltr' },
+        props.style,
+      ],
+    }, ref);
+  };
+}
+const origInputRender = (TextInput as any).render;
+if (origInputRender) {
+  (TextInput as any).render = function (props: any, ref: any) {
+    const rtl = isRTL();
+    return origInputRender.call(this, {
+      ...props,
+      style: [
+        rtl ? { writingDirection: 'rtl', textAlign: 'right' } : { writingDirection: 'ltr' },
+        props.style,
+      ],
+    }, ref);
+  };
+}
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme';
 import { useAppStore } from '@/lib/store';
+import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import {
   setupAndroidChannels,
   addNotificationResponseListener,
@@ -25,12 +59,18 @@ function RootNavigator() {
     // The admin dashboard is the separate Next.js app — never redirect to it.
     if (Platform.OS === 'web') return;
 
-    // Only auto-redirect once on app start / auth change
-    // Don't redirect if user is already in a pro section or deliberately navigated
     const currentGroup = segments[0] as string | undefined;
     const inProSection = currentGroup === '(admin)' || currentGroup === '(operator)';
     const inCustomerSection = currentGroup === '(tabs)' || !currentGroup;
     const inJoinFlow = currentGroup === 'join' || currentGroup === 'ticket';
+
+    // ── Local mode takes over: always stay in operator ──
+    const localState = useLocalConnectionStore.getState();
+    const isLocalMode = localState.mode === 'local';
+    if (isLocalMode && currentGroup && currentGroup !== '(operator)' && !inJoinFlow) {
+      router.replace('/(operator)/desk');
+      return;
+    }
 
     // Staff user landed on customer section → redirect to pro
     // But NOT if they're in the join or ticket flow (those are customer-facing)
@@ -45,7 +85,8 @@ function RootNavigator() {
     }
 
     // Signed out but in pro section → redirect to customer
-    if (!user && inProSection) {
+    // EXCEPT when in local mode (no Supabase auth needed)
+    if (!user && inProSection && !isLocalMode) {
       hasRedirected.current = false;
       router.replace('/(tabs)');
       return;
@@ -56,6 +97,16 @@ function RootNavigator() {
       hasRedirected.current = false;
     }
   }, [isLoading, user, isStaff, staffRole, segments]);
+
+  // ---- Local mode health monitor -----------------------------------------
+  const localMode = useLocalConnectionStore((s) => s.mode);
+  const startHealthMonitor = useLocalConnectionStore((s) => s.startHealthMonitor);
+
+  useEffect(() => {
+    if (localMode !== 'local') return;
+    const cleanup = startHealthMonitor();
+    return cleanup;
+  }, [localMode]);
 
   // ---- Push notification setup -------------------------------------------
   useEffect(() => {
@@ -90,16 +141,19 @@ function RootNavigator() {
   }, []);
 
   const { colors, isDark } = useTheme();
+  const { t } = useTranslation();
+
+  const rtl = isRTL();
 
   return (
-    <>
+    <View style={{ flex: 1, direction: rtl ? 'rtl' : 'ltr' }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.text,
           headerShadowVisible: false,
-          headerBackTitle: 'Back',
+          headerBackTitle: t('common.back'),
           contentStyle: { backgroundColor: colors.background },
         }}
       >
@@ -110,8 +164,8 @@ function RootNavigator() {
         <Stack.Screen
           name="admin/bookings"
           options={{
-            title: 'Bookings',
-            headerBackTitle: 'Back',
+            title: t('admin.bookings'),
+            headerBackTitle: t('common.back'),
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
           }}
@@ -119,8 +173,8 @@ function RootNavigator() {
         <Stack.Screen
           name="admin/virtual-codes"
           options={{
-            title: 'Virtual Codes',
-            headerBackTitle: 'Back',
+            title: t('virtualCodes.title'),
+            headerBackTitle: t('common.back'),
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
           }}
@@ -128,16 +182,16 @@ function RootNavigator() {
         <Stack.Screen
           name="ticket/[token]"
           options={{
-            title: 'Your Ticket',
-            headerBackTitle: 'Back',
+            title: t('tabs.queue'),
+            headerBackTitle: t('common.back'),
             presentation: 'modal',
           }}
         />
         <Stack.Screen
           name="join/[token]"
           options={{
-            title: 'Join Queue',
-            headerBackTitle: 'Back',
+            title: t('scan.join'),
+            headerBackTitle: t('common.back'),
             presentation: 'modal',
           }}
         />
@@ -145,7 +199,7 @@ function RootNavigator() {
         <Stack.Screen name="queue-peek/[slug]" options={{ headerShown: false }} />
         <Stack.Screen name="book-appointment/[slug]" options={{ headerShown: false }} />
       </Stack>
-    </>
+    </View>
   );
 }
 

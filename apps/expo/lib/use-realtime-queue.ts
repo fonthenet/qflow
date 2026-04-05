@@ -76,7 +76,7 @@ export function useRealtimeQueue({ officeId, departmentId, enabled = true }: Use
       .in('status', doneStatuses)
       .gte('created_at', yesterday)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(200);
 
     if (departmentId) {
       activeQuery = activeQuery.eq('department_id', departmentId);
@@ -98,11 +98,11 @@ export function useRealtimeQueue({ officeId, departmentId, enabled = true }: Use
     ];
 
     const waiting = tickets.filter(t => t.status === 'waiting' && !t.parked_at);
+    const parked = tickets.filter(t => t.parked_at != null && (t.status === 'called' || t.status === 'serving' || t.status === 'waiting'));
     const called = tickets.filter(t => t.status === 'called' && !t.parked_at);
     const serving = tickets.filter(t => t.status === 'serving' && !t.parked_at);
-    const parked = tickets.filter(t => t.parked_at != null && (t.status === 'called' || t.status === 'serving' || t.status === 'waiting'));
-    const recentlyServed = tickets.filter(t => t.status === 'served').slice(-5).reverse();
-    const cancelled = tickets.filter(t => t.status === 'no_show' || t.status === 'cancelled').slice(-5).reverse();
+    const recentlyServed = tickets.filter(t => t.status === 'served').reverse();
+    const cancelled = tickets.filter(t => t.status === 'no_show' || t.status === 'cancelled').reverse();
 
     setQueue({ waiting, called, serving, recentlyServed, cancelled, parked, all: tickets });
     setLoading(false);

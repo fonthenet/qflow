@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
@@ -45,6 +46,7 @@ interface StaffAssignment {
 
 export default function RoleSelectScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { signOut } = useAuth();
   const { setSession, clearSession } = useOperatorStore();
   const [assignments, setAssignments] = useState<StaffAssignment[]>([]);
@@ -137,9 +139,9 @@ export default function RoleSelectScreen() {
     return (
       <View style={styles.empty}>
         <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
-        <Text style={styles.emptyTitle}>No assignments found</Text>
+        <Text style={styles.emptyTitle}>{t('auth.noAssignments')}</Text>
         <Text style={styles.emptySubtitle}>
-          Contact your admin to get assigned to a desk
+          {t('auth.contactAdmin')}
         </Text>
         <TouchableOpacity
           style={styles.logoutButton}
@@ -149,7 +151,7 @@ export default function RoleSelectScreen() {
             router.replace('/(tabs)');
           }}
         >
-          <Text style={styles.logoutText}>Sign Out</Text>
+          <Text style={styles.logoutText}>{t('auth.signOut')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -162,7 +164,7 @@ export default function RoleSelectScreen() {
       data={assignments}
       keyExtractor={(item, index) => `${item.staffId}-${item.deskId ?? index}`}
       ListHeaderComponent={
-        <Text style={styles.header}>Select your station</Text>
+        <Text style={styles.header}>{t('auth.selectStation')}</Text>
       }
       renderItem={({ item }) => (
         <TouchableOpacity
@@ -179,7 +181,7 @@ export default function RoleSelectScreen() {
             <Text style={styles.cardSubtitle}>
               {item.officeName}
               {item.departmentName ? ` · ${item.departmentName}` : ''}
-              {!item.deskName ? ' · No desk' : ''}
+              {!item.deskName ? ` · ${t('auth.noDesk')}` : ''}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />

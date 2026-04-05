@@ -83,9 +83,11 @@ export function initDB() {
     CREATE TABLE IF NOT EXISTS desks (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      display_name TEXT,
       department_id TEXT,
       office_id TEXT,
       is_active INTEGER DEFAULT 1,
+      status TEXT DEFAULT 'open',
       current_staff_id TEXT,
       updated_at TEXT
     );
@@ -178,6 +180,8 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN synced_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN source TEXT DEFAULT 'walk_in'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN daily_sequence INTEGER DEFAULT 0`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
 
   // Indexes that depend on migrated columns (must come after ALTER TABLEs)
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }

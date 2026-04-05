@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,16 +13,21 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { borderRadius, fontSize, spacing } from '@/lib/theme';
 
+const { width: SCREEN_W } = Dimensions.get('window');
+
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { user, isStaff, staffRole, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,6 +35,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!authLoading && user && isStaff) {
@@ -41,11 +49,11 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim()) {
-      Alert.alert('Email Required', 'Please enter your staff email address.');
+      Alert.alert(t('auth.emailRequired'), t('auth.emailRequiredMsg'));
       return;
     }
     if (!password.trim()) {
-      Alert.alert('Password Required', 'Please enter your password.');
+      Alert.alert(t('auth.passwordRequired'), t('auth.passwordRequiredMsg'));
       return;
     }
 
@@ -59,13 +67,13 @@ export default function LoginScreen() {
       if (error) {
         const msg = error.message.toLowerCase();
         if (msg.includes('invalid login credentials') || msg.includes('invalid_credentials')) {
-          Alert.alert('Login Failed', 'Incorrect email or password. Please try again.');
+          Alert.alert(t('auth.loginFailed'), t('auth.loginFailedMsg'));
         } else if (msg.includes('email not confirmed')) {
-          Alert.alert('Email Not Confirmed', 'Please check your email and confirm your account first.');
+          Alert.alert(t('auth.emailNotConfirmed'), t('auth.emailNotConfirmedMsg'));
         } else if (msg.includes('too many requests')) {
-          Alert.alert('Too Many Attempts', 'Please wait a moment before trying again.');
+          Alert.alert(t('auth.tooManyAttempts'), t('auth.tooManyAttemptsMsg'));
         } else {
-          Alert.alert('Login Failed', error.message);
+          Alert.alert(t('auth.loginFailed'), error.message);
         }
       } else if (data.user) {
         const { data: staff } = await supabase
@@ -84,7 +92,7 @@ export default function LoginScreen() {
         }
       }
     } catch {
-      Alert.alert('Connection Error', 'Could not connect to the server. Check your internet and try again.');
+      Alert.alert(t('auth.connectionError'), t('auth.connectionErrorMsg'));
     } finally {
       setLoading(false);
     }
@@ -92,7 +100,7 @@ export default function LoginScreen() {
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Enter Your Email', 'Type your email address in the field above, then tap Forgot Password.');
+      Alert.alert(t('auth.enterEmail'), t('auth.enterEmailMsg'));
       return;
     }
     try {
@@ -100,74 +108,74 @@ export default function LoginScreen() {
         redirectTo: 'queueflow://reset-password',
       });
       if (error) {
-        Alert.alert('Error', error.message);
+        Alert.alert(t('common.error'), error.message);
       } else {
-        Alert.alert('Check Your Email', `A password reset link has been sent to ${email.trim()}.`);
+        Alert.alert(t('auth.checkEmail'), t('auth.checkEmailMsg', { email: email.trim() }));
       }
     } catch {
-      Alert.alert('Error', 'Could not send reset email. Please try again.');
+      Alert.alert(t('common.error'), t('auth.resetError'));
     }
   };
 
   return (
-    <LinearGradient colors={['#1e40af', '#3b82f6', '#6366f1']} style={styles.gradient}>
+    <>
+    <StatusBar style="light" />
+    <LinearGradient colors={['#1e40af', '#2563eb', '#4f46e5']} style={styles.gradient}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: insets.top + spacing.xxl,
-            paddingBottom: insets.bottom + spacing.xxl,
-          },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Logo & Header */}
-        <View style={styles.header}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>Q</Text>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 16,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Logo & Header — compact, pushed to top */}
+          <View style={styles.header}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoText}>Q</Text>
+            </View>
+            <Text style={styles.title}>Qflo</Text>
+            <Text style={styles.subtitle}>{t('auth.staffPortal')}</Text>
           </View>
-          <Text style={styles.title}>Qflo</Text>
-          <Text style={styles.subtitle}>Staff Portal</Text>
-        </View>
 
-        {/* Login Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sign In</Text>
-          <Text style={styles.cardSubtitle}>Enter your staff credentials</Text>
+          {/* Login Card */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t('auth.welcomeBack')}</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={18} color="#94a3b8" />
+              <Ionicons name="mail-outline" size={17} color="#94a3b8" />
               <TextInput
                 style={styles.input}
                 value={email}
                 onChangeText={setEmail}
-                placeholder="staff@company.com"
+                placeholder={t('auth.emailPlaceholder')}
                 placeholderTextColor="#94a3b8"
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
                 returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
               />
             </View>
-          </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={18} color="#94a3b8" />
+              <Ionicons name="lock-closed-outline" size={17} color="#94a3b8" />
               <TextInput
+                ref={passwordRef}
                 style={styles.input}
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Enter password"
+                placeholder={t('auth.passwordPlaceholder')}
                 placeholderTextColor="#94a3b8"
                 secureTextEntry={!showPassword}
                 autoComplete="password"
@@ -175,45 +183,68 @@ export default function LoginScreen() {
                 onSubmitEditing={handleLogin}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#94a3b8" />
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={17} color="#94a3b8" />
               </TouchableOpacity>
             </View>
+
+            {/* Remember me + Forgot password */}
+            <View style={styles.optionsRow}>
+              <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe(!rememberMe)} activeOpacity={0.7}>
+                <Ionicons name={rememberMe ? 'checkbox' : 'square-outline'} size={16} color={rememberMe ? '#2563eb' : '#94a3b8'} />
+                <Text style={styles.rememberText}>{t('auth.rememberMe')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+                <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sign In Button */}
+            <TouchableOpacity
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#2563eb', '#1d4ed8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.loginButtonGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.loginButtonText}>{t('auth.signIn')}</Text>
+                    <Ionicons name="arrow-forward" size={16} color="#fff" />
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
-          {/* Remember me + Forgot password */}
-          <View style={styles.optionsRow}>
-            <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe(!rememberMe)} activeOpacity={0.7}>
-              <Ionicons name={rememberMe ? 'checkbox' : 'square-outline'} size={18} color={rememberMe ? '#1d4ed8' : '#94a3b8'} />
-              <Text style={styles.rememberText}>Remember me</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Sign In Button */}
+          {/* Local Station */}
           <TouchableOpacity
-            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.8}
+            style={styles.localStationLink}
+            onPress={() => router.push('/(auth)/connect-station')}
+            activeOpacity={0.7}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginButtonText}>Sign In</Text>
-            )}
+            <Ionicons name="wifi" size={16} color="rgba(255,255,255,0.8)" />
+            <Text style={styles.localStationText}>{t('connectStation.connectLocal')}</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Back link */}
-        <TouchableOpacity style={styles.backLink} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={16} color="rgba(255,255,255,0.8)" />
-          <Text style={styles.backLinkText}>Back to customer view</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Back link */}
+          <TouchableOpacity style={styles.backLink} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="arrow-back" size={16} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.backLinkText}>{t('auth.backToCustomer')}</Text>
+          </TouchableOpacity>
+
+          {/* Footer */}
+          <Text style={styles.footer}>{t('auth.poweredBy')}</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </LinearGradient>
+    </>
   );
 }
 
@@ -223,82 +254,71 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    justifyContent: 'center',
-    padding: spacing.lg,
-    gap: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    gap: 12,
   },
   header: {
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 2,
   },
   logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
     elevation: 8,
   },
   logoText: {
-    fontSize: 36,
+    fontSize: 30,
     fontWeight: '900',
     color: '#1d4ed8',
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
     color: 'white',
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.75)',
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '500',
   },
   card: {
     backgroundColor: 'white',
-    borderRadius: 24,
-    padding: spacing.lg + 4,
-    gap: spacing.md,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    gap: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.12,
-    shadowRadius: 32,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
   },
   cardTitle: {
-    fontSize: fontSize.xl,
+    fontSize: fontSize.lg,
     fontWeight: '700',
     color: '#0f172a',
-  },
-  cardSubtitle: {
-    fontSize: fontSize.sm,
-    color: '#64748b',
-    marginTop: -8,
-  },
-  inputGroup: {
-    gap: 4,
-  },
-  label: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: '#64748b',
+    marginBottom: 2,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 10,
     backgroundColor: '#f8fafc',
-    borderRadius: borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 14,
+    minHeight: 50,
   },
   input: {
     flex: 1,
@@ -324,19 +344,24 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#2563eb',
   },
   loginButton: {
-    backgroundColor: '#1d4ed8',
-    paddingVertical: 16,
+    marginTop: 0,
     borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    marginTop: spacing.xs,
+    overflow: 'hidden',
     shadowColor: '#1d4ed8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 4,
+  },
+  loginButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
   },
   loginButtonDisabled: {
     opacity: 0.6,
@@ -346,15 +371,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
+  localStationLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  localStationText: {
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+  },
   backLink: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+    marginTop: 4,
   },
   backLinkText: {
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '600',
+    fontSize: fontSize.sm,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
+  footer: {
+    textAlign: 'center',
+    fontSize: fontSize.xs,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 'auto' as any,
+    paddingTop: spacing.md,
   },
 });

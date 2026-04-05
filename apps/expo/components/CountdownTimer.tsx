@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '@/lib/theme';
 
 interface Props {
@@ -18,9 +19,35 @@ function getPhaseColor(remaining: number): string {
 }
 
 export function CountdownTimer({ calledAt, durationSeconds = 60 }: Props) {
+  const { t } = useTranslation();
   const { isDark } = useTheme();
   const [remaining, setRemaining] = useState(durationSeconds);
+  const animatedProgress = useRef(new Animated.Value(1)).current;
 
+  // Single smooth animation for the bar — runs once from current position to 0
+  useEffect(() => {
+    const calledTime = new Date(calledAt).getTime();
+    const elapsed = (Date.now() - calledTime) / 1000;
+    const startProgress = Math.max(0, Math.min(1, (durationSeconds - elapsed) / durationSeconds));
+    const remainingDuration = Math.max(0, durationSeconds - elapsed) * 1000;
+
+    animatedProgress.setValue(startProgress);
+
+    if (remainingDuration > 0) {
+      Animated.timing(animatedProgress, {
+        toValue: 0,
+        duration: remainingDuration,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }).start();
+    }
+
+    return () => {
+      animatedProgress.stopAnimation();
+    };
+  }, [calledAt, durationSeconds, animatedProgress]);
+
+  // Separate interval just for the number display (seconds)
   useEffect(() => {
     const calledTime = new Date(calledAt).getTime();
     const update = () => {
@@ -32,11 +59,16 @@ export function CountdownTimer({ calledAt, durationSeconds = 60 }: Props) {
     return () => clearInterval(interval);
   }, [calledAt, durationSeconds]);
 
-  const progress = remaining / durationSeconds;
   const phaseColor = getPhaseColor(remaining);
   const isExpired = remaining === 0;
   const mutedColor = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
   const trackColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+
+  const animatedWidth = animatedProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={styles.container}>
@@ -44,15 +76,15 @@ export function CountdownTimer({ calledAt, durationSeconds = 60 }: Props) {
         {isExpired ? '0' : String(remaining)}
       </Text>
       <Text style={[styles.label, { color: mutedColor }, isExpired && styles.labelExpired]}>
-        {isExpired ? "TIME'S UP" : 'seconds remaining'}
+        {isExpired ? t('customer.expired') : t('time.seconds')}
       </Text>
 
       <View style={[styles.barTrack, { backgroundColor: trackColor }]}>
-        <View
+        <Animated.View
           style={[
             styles.barFill,
             {
-              width: `${progress * 100}%`,
+              width: animatedWidth,
               backgroundColor: phaseColor,
             },
           ]}
@@ -61,8 +93,8 @@ export function CountdownTimer({ calledAt, durationSeconds = 60 }: Props) {
 
       <Text style={[styles.hint, { color: mutedColor }, isExpired && { color: RED }]}>
         {isExpired
-          ? 'Time expired \u2013 please check with staff'
-          : 'Please proceed to the counter'}
+          ? t('customer.timesUp')
+          : t('customer.proceedToCounter')}
       </Text>
     </View>
   );

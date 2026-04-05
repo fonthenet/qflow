@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,16 +22,19 @@ import { useAuth } from '@/lib/auth-context';
 import { useOperatorStore } from '@/lib/operator-store';
 import { requestPermissions } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
+import { setLanguage, LANGUAGES } from '@/lib/i18n';
+import type { LangCode } from '@/lib/i18n';
 import { useTheme, type ThemeColors, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { SUPPORT_EMAIL, PRIVACY_URL, TERMS_URL } from '@/lib/config';
 
-const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { value: 'light', label: 'Light', icon: 'sunny-outline' },
-  { value: 'dark', label: 'Dark', icon: 'moon-outline' },
-  { value: 'system', label: 'System', icon: 'phone-portrait-outline' },
+const THEME_OPTIONS: { value: ThemeMode; labelKey: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'light', labelKey: 'profile.light', icon: 'sunny-outline' },
+  { value: 'dark', labelKey: 'profile.dark', icon: 'moon-outline' },
+  { value: 'system', labelKey: 'profile.system', icon: 'phone-portrait-outline' },
 ];
 
 export default function ProfileScreen() {
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { user, isStaff, staffRole, signOut } = useAuth();
   const { clearSession } = useOperatorStore();
@@ -40,6 +44,7 @@ export default function ProfileScreen() {
   const [phone, setPhone] = useState(customerPhone);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState(!customerName && !customerPhone);
 
   // Read actual OS permission status on mount and when app comes back to foreground
   useEffect(() => {
@@ -56,6 +61,7 @@ export default function ProfileScreen() {
   const handleSave = () => {
     setCustomerInfo(name, phone);
     setSaved(true);
+    setEditing(false);
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -66,12 +72,12 @@ export default function ProfileScreen() {
       if (existing === 'denied') {
         // Already denied — iOS/Android won't show dialog again, send to Settings
         Alert.alert(
-          'Enable Notifications',
-          'Notifications are blocked. Open Settings to enable them.',
+          t('profile.enableNotifications'),
+          t('profile.notificationsBlocked'),
           [
-            { text: 'Cancel', style: 'cancel' },
+            { text: t('common.cancel'), style: 'cancel' },
             {
-              text: 'Open Settings',
+              text: t('profile.openSettings'),
               onPress: () => {
                 if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
@@ -90,12 +96,12 @@ export default function ProfileScreen() {
       setNotificationsEnabled(granted);
       if (!granted) {
         Alert.alert(
-          'Notifications Disabled',
-          'Enable notifications in your device settings to receive queue alerts.',
+          t('profile.notificationsDisabled'),
+          t('profile.notificationsDisabledMsg'),
           [
-            { text: 'Cancel', style: 'cancel' },
+            { text: t('common.cancel'), style: 'cancel' },
             {
-              text: 'Open Settings',
+              text: t('profile.openSettings'),
               onPress: () => {
                 if (Platform.OS === 'ios') {
                   Linking.openURL('app-settings:');
@@ -110,12 +116,12 @@ export default function ProfileScreen() {
     } else {
       // Can't programmatically revoke — direct to settings
       Alert.alert(
-        'Turn Off Notifications',
-        'To disable notifications, go to your device Settings.',
+        t('profile.turnOffNotifications'),
+        t('profile.turnOffNotificationsMsg'),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: 'Open Settings',
+            text: t('profile.openSettings'),
             onPress: () => {
               if (Platform.OS === 'ios') {
                 Linking.openURL('app-settings:');
@@ -135,20 +141,20 @@ export default function ProfileScreen() {
       redirectTo: 'qflo://reset-password',
     });
     if (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert(t('common.error'), error.message);
     } else {
-      Alert.alert('Check Your Email', `A password reset link has been sent to ${user.email}.`);
+      Alert.alert(t('auth.checkEmail'), t('auth.checkEmailMsg', { email: user.email }));
     }
   };
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      t('profile.deleteAccount'),
+      t('profile.deleteConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete My Account',
+          text: t('profile.deleteMyAccount'),
           style: 'destructive',
           onPress: () => {
             Linking.openURL(
@@ -177,7 +183,7 @@ export default function ProfileScreen() {
             <View style={{ flex: 1 }}>
               <Text style={ds.sectionTitle}>{user.email}</Text>
               <Text style={ds.rowSubtitle}>
-                {staffRole === 'admin' ? 'Administrator' : staffRole === 'manager' ? 'Manager' : 'Operator'}
+                {staffRole === 'admin' ? t('profile.administrator') : staffRole === 'manager' ? t('profile.manager') : t('profile.operator')}
               </Text>
             </View>
           </View>
@@ -195,8 +201,8 @@ export default function ProfileScreen() {
             <Ionicons name="arrow-forward-circle" size={20} color="#fff" />
             <Text style={styles.proButtonText}>
               {staffRole === 'admin' || staffRole === 'manager' || staffRole === 'branch_admin'
-                ? 'Open Admin Dashboard'
-                : 'Open Desk Panel'}
+                ? t('profile.openAdmin')
+                : t('profile.openDesk')}
             </Text>
           </TouchableOpacity>
 
@@ -206,8 +212,8 @@ export default function ProfileScreen() {
             <View style={styles.rowLeft}>
               <Ionicons name="key-outline" size={20} color={colors.text} />
               <View>
-                <Text style={ds.rowTitle}>Change Password</Text>
-                <Text style={ds.rowSubtitle}>Send a password reset email</Text>
+                <Text style={ds.rowTitle}>{t('profile.changePassword')}</Text>
+                <Text style={ds.rowSubtitle}>{t('profile.changePasswordSub')}</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -217,8 +223,8 @@ export default function ProfileScreen() {
             <View style={styles.rowLeft}>
               <Ionicons name="trash-outline" size={20} color={colors.error} />
               <View>
-                <Text style={[ds.rowTitle, { color: colors.error }]}>Delete Account</Text>
-                <Text style={ds.rowSubtitle}>Request permanent deletion</Text>
+                <Text style={[ds.rowTitle, { color: colors.error }]}>{t('profile.deleteAccount')}</Text>
+                <Text style={ds.rowSubtitle}>{t('profile.deleteAccountSub')}</Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -226,10 +232,10 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.row}
             onPress={() => {
-              Alert.alert('Sign Out', 'Sign out of your staff account?', [
-                { text: 'Cancel', style: 'cancel' },
+              Alert.alert(t('auth.signOut'), t('auth.signOutStaffConfirm'), [
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                  text: 'Sign Out',
+                  text: t('auth.signOut'),
                   style: 'destructive',
                   onPress: async () => {
                     clearSession();
@@ -242,8 +248,8 @@ export default function ProfileScreen() {
             <View style={styles.rowLeft}>
               <Ionicons name="log-out-outline" size={20} color={colors.error} />
               <View>
-                <Text style={[ds.rowTitle, { color: colors.error }]}>Sign Out</Text>
-                <Text style={ds.rowSubtitle}>Return to customer mode</Text>
+                <Text style={[ds.rowTitle, { color: colors.error }]}>{t('auth.signOut')}</Text>
+                <Text style={ds.rowSubtitle}>{t('profile.returnToCustomer')}</Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -258,8 +264,8 @@ export default function ProfileScreen() {
             <Ionicons name="briefcase" size={24} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>Staff Login</Text>
-            <Text style={ds.rowSubtitle}>Access the operator or admin dashboard</Text>
+            <Text style={[ds.rowTitle, { fontSize: fontSize.md }]}>{t('auth.staffPortal')}</Text>
+            <Text style={ds.rowSubtitle}>{t('settings.adminDashboardSub')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.primary} />
         </TouchableOpacity>
@@ -267,59 +273,88 @@ export default function ProfileScreen() {
 
       {/* ── Personal Information ─────────────────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>Personal Information</Text>
-        <Text style={ds.sectionSubtitle}>Used to identify you when joining a queue</Text>
+        <Text style={ds.sectionTitle}>{t('customer.myInfo')}</Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={ds.label}>Name</Text>
-          <TextInput
-            style={ds.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Your name"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="words"
-          />
-        </View>
+        {editing ? (
+          <>
+            <Text style={ds.sectionSubtitle}>{t('customer.editInfo')}</Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={ds.label}>Phone</Text>
-          <TextInput
-            style={ds.input}
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Phone number"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="phone-pad"
-          />
-        </View>
+            <View style={styles.inputGroup}>
+              <Text style={ds.label}>{t('customer.fullName')}</Text>
+              <TextInput
+                style={ds.input}
+                value={name}
+                onChangeText={setName}
+                placeholder={t('customer.yourName')}
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="words"
+              />
+            </View>
 
-        <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: colors.primary }, saved && { backgroundColor: colors.success }]}
-          onPress={handleSave}
-        >
-          {saved ? (
-            <>
-              <Ionicons name="checkmark" size={18} color="#fff" />
-              <Text style={styles.saveButtonText}>Saved</Text>
-            </>
-          ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
-          )}
-        </TouchableOpacity>
+            <View style={styles.inputGroup}>
+              <Text style={ds.label}>{t('customer.phoneNumber')}</Text>
+              <TextInput
+                style={ds.input}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder={t('customer.yourPhone')}
+                placeholderTextColor={colors.textMuted}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              onPress={handleSave}
+            >
+              <Text style={styles.saveButtonText}>{t('common.save')}</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {saved && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                <Text style={{ fontSize: 13, color: colors.success, fontWeight: '600' }}>{t('common.saved')}</Text>
+              </View>
+            )}
+
+            {name ? (
+              <View style={styles.savedRow}>
+                <Text style={ds.label}>{t('customer.fullName')}</Text>
+                <Text style={[ds.savedValue]}>{name}</Text>
+              </View>
+            ) : null}
+
+            {phone ? (
+              <View style={styles.savedRow}>
+                <Text style={ds.label}>{t('customer.phoneNumber')}</Text>
+                <Text style={[ds.savedValue]}>{phone}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary }]}
+              onPress={() => { setEditing(true); setSaved(false); }}
+            >
+              <Ionicons name="create-outline" size={16} color={colors.primary} />
+              <Text style={[styles.saveButtonText, { color: colors.primary }]}>{t('common.edit')}</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* ── Notifications ────────────────────────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>Notifications</Text>
+        <Text style={ds.sectionTitle}>{t('profile.notifications')}</Text>
 
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="notifications" size={20} color={notificationsEnabled ? colors.primary : colors.textMuted} />
             <View>
-              <Text style={ds.rowTitle}>Push Notifications</Text>
+              <Text style={ds.rowTitle}>{t('profile.pushNotifications')}</Text>
               <Text style={ds.rowSubtitle}>
-                {notificationsEnabled ? 'You\'ll be alerted when it\'s your turn' : 'Tap to enable queue alerts'}
+                {notificationsEnabled ? t('profile.notificationsOnSub') : t('profile.notificationsOffSub')}
               </Text>
             </View>
           </View>
@@ -334,7 +369,7 @@ export default function ProfileScreen() {
 
       {/* ── Appearance ───────────────────────────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>Appearance</Text>
+        <Text style={ds.sectionTitle}>{t('profile.appearance')}</Text>
         <View style={styles.themeRow}>
           {THEME_OPTIONS.map((opt) => {
             const active = themeMode === opt.value;
@@ -351,7 +386,29 @@ export default function ProfileScreen() {
                   color={active ? colors.primary : colors.textMuted}
                 />
                 <Text style={[ds.themeLabel, active && ds.themeLabelActive]}>
-                  {opt.label}
+                  {t(opt.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* ── Language ─────────────────────────────────────────── */}
+      <View style={ds.section}>
+        <Text style={ds.sectionTitle}>{t('adminMore.language')}</Text>
+        <View style={styles.themeRow}>
+          {LANGUAGES.map((lang) => {
+            const active = i18n.language === lang.code;
+            return (
+              <TouchableOpacity
+                key={lang.code}
+                style={[ds.themeOption, active && ds.themeOptionActive]}
+                onPress={() => setLanguage(lang.code as LangCode)}
+                activeOpacity={0.7}
+              >
+                <Text style={[ds.themeLabel, active && ds.themeLabelActive]}>
+                  {lang.nativeLabel}
                 </Text>
               </TouchableOpacity>
             );
@@ -361,13 +418,13 @@ export default function ProfileScreen() {
 
       {/* ── About, Support & Legal (combined) ────────────────── */}
       <View style={ds.section}>
-        <Text style={ds.sectionTitle}>About & Support</Text>
+        <Text style={ds.sectionTitle}>{t('profile.aboutSupport')}</Text>
 
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="information-circle-outline" size={20} color={colors.textMuted} />
             <View>
-              <Text style={ds.rowTitle}>Version</Text>
+              <Text style={ds.rowTitle}>{t('profile.version')}</Text>
               <Text style={ds.rowSubtitle}>Qflo {appVersion}</Text>
             </View>
           </View>
@@ -379,7 +436,7 @@ export default function ProfileScreen() {
           <View style={styles.rowLeft}>
             <Ionicons name="mail-outline" size={20} color={colors.text} />
             <View>
-              <Text style={ds.rowTitle}>Contact Support</Text>
+              <Text style={ds.rowTitle}>{t('profile.contactSupport')}</Text>
               <Text style={ds.rowSubtitle}>{SUPPORT_EMAIL}</Text>
             </View>
           </View>
@@ -389,7 +446,7 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
           <View style={styles.rowLeft}>
             <Ionicons name="document-text-outline" size={20} color={colors.text} />
-            <Text style={ds.rowTitle}>Privacy Policy</Text>
+            <Text style={ds.rowTitle}>{t('profile.privacyPolicy')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
@@ -397,7 +454,7 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(TERMS_URL)}>
           <View style={styles.rowLeft}>
             <Ionicons name="document-outline" size={20} color={colors.text} />
-            <Text style={ds.rowTitle}>Terms of Service</Text>
+            <Text style={ds.rowTitle}>{t('profile.termsOfService')}</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
@@ -450,6 +507,11 @@ function dynamicStyles(colors: ThemeColors, isDark: boolean) {
       borderWidth: isDark ? 1 : 0,
       borderColor: colors.border,
     },
+    savedValue: {
+      fontSize: fontSize.md,
+      fontWeight: '500',
+      color: colors.text,
+    },
     rowTitle: {
       fontSize: fontSize.md,
       fontWeight: '600',
@@ -496,6 +558,10 @@ const styles = StyleSheet.create({
   themeRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  savedRow: {
+    gap: 2,
+    paddingVertical: spacing.xs,
   },
   saveButton: {
     flexDirection: 'row',

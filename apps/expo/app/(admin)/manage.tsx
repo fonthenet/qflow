@@ -15,10 +15,31 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useOrg } from '@/lib/use-org';
 import * as Actions from '@/lib/ticket-actions';
 import { supabase } from '@/lib/supabase';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+
+// ── Constants ─────────────────────────────────────────────────────────
+
+const TZ_OPTIONS = [
+  'Africa/Algiers', 'Africa/Cairo', 'Africa/Casablanca', 'Africa/Johannesburg',
+  'Africa/Lagos', 'Africa/Nairobi', 'Africa/Tunis',
+  'America/Anchorage', 'America/Argentina/Buenos_Aires', 'America/Bogota',
+  'America/Chicago', 'America/Denver', 'America/Halifax', 'America/Lima',
+  'America/Los_Angeles', 'America/Mexico_City', 'America/New_York',
+  'America/Phoenix', 'America/Santiago', 'America/Sao_Paulo', 'America/Toronto',
+  'Asia/Baghdad', 'Asia/Bangkok', 'Asia/Beirut', 'Asia/Colombo',
+  'Asia/Dhaka', 'Asia/Dubai', 'Asia/Ho_Chi_Minh', 'Asia/Hong_Kong',
+  'Asia/Istanbul', 'Asia/Jakarta', 'Asia/Karachi', 'Asia/Kolkata',
+  'Asia/Kuala_Lumpur', 'Asia/Manila', 'Asia/Riyadh', 'Asia/Seoul',
+  'Asia/Shanghai', 'Asia/Singapore', 'Asia/Taipei', 'Asia/Tokyo',
+  'Australia/Melbourne', 'Australia/Perth', 'Australia/Sydney',
+  'Europe/Amsterdam', 'Europe/Berlin', 'Europe/London', 'Europe/Madrid',
+  'Europe/Moscow', 'Europe/Paris', 'Europe/Rome', 'Europe/Zurich',
+  'Pacific/Auckland', 'Pacific/Honolulu',
+];
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -100,15 +121,15 @@ interface AppointmentRow {
 
 // ── Tab Configuration ────────────────────────────────────────────────
 
-const TABS: { key: ManageTab; label: string; icon: string }[] = [
-  { key: 'offices', label: 'Offices', icon: 'location' },
-  { key: 'staff', label: 'Staff', icon: 'people' },
-  { key: 'desks', label: 'Desks', icon: 'desktop' },
-  { key: 'departments', label: 'Depts', icon: 'git-branch' },
-  { key: 'services', label: 'Services', icon: 'layers' },
-  { key: 'priorities', label: 'Priority', icon: 'flag' },
-  { key: 'customers', label: 'Clients', icon: 'person-outline' },
-  { key: 'bookings', label: 'Bookings', icon: 'calendar' },
+const TABS: { key: ManageTab; labelKey: string; icon: string }[] = [
+  { key: 'offices', labelKey: 'adminManage.offices', icon: 'location' },
+  { key: 'staff', labelKey: 'adminManage.staff', icon: 'people' },
+  { key: 'desks', labelKey: 'adminManage.desks', icon: 'desktop' },
+  { key: 'departments', labelKey: 'adminManage.departments', icon: 'git-branch' },
+  { key: 'services', labelKey: 'adminManage.services', icon: 'layers' },
+  { key: 'priorities', labelKey: 'adminManage.priority', icon: 'flag' },
+  { key: 'customers', labelKey: 'adminManage.clients', icon: 'person-outline' },
+  { key: 'bookings', labelKey: 'adminManage.bookingsTab', icon: 'calendar' },
 ];
 
 const STAFF_ROLES = ['admin', 'manager', 'desk_operator', 'receptionist', 'floor_manager'] as const;
@@ -116,6 +137,7 @@ const STAFF_ROLES = ['admin', 'manager', 'desk_operator', 'receptionist', 'floor
 // ── Main Component ───────────────────────────────────────────────────
 
 export default function ManageScreen() {
+  const { t } = useTranslation();
   const { orgId, officeIds } = useOrg();
   const [tab, setTab] = useState<ManageTab>('offices');
 
@@ -143,6 +165,8 @@ export default function ManageScreen() {
   // Picker sub-modal state
   const [pickerField, setPickerField] = useState<string | null>(null);
   const [pickerOptions, setPickerOptions] = useState<{ label: string; value: string }[]>([]);
+  const [tzPickerOpen, setTzPickerOpen] = useState(false);
+  const [tzSearch, setTzSearch] = useState('');
 
   // ── Data Loading ─────────────────────────────────────────────────
 
@@ -281,7 +305,7 @@ export default function ManageScreen() {
         }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to load data');
+      Alert.alert(t('common.error'), err.message || t('common.error'));
     }
   }, [tab, orgId, officeIds, customerSearch, bookingDateFilter, bookingStatusFilter, bookingDeptFilter]);
 
@@ -292,7 +316,7 @@ export default function ManageScreen() {
       await Actions.updateStaff(staffId, { is_active: !currentlyActive });
       loadTab();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert(t('common.error'), err.message);
     }
   };
 
@@ -301,7 +325,7 @@ export default function ManageScreen() {
       await Actions.updateDesk(deskId, { is_active: !currentlyActive });
       loadTab();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert(t('common.error'), err.message);
     }
   };
 
@@ -310,7 +334,7 @@ export default function ManageScreen() {
       await Actions.updateOffice(officeId, { is_active: !currentlyActive });
       loadTab();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert(t('common.error'), err.message);
     }
   };
 
@@ -319,7 +343,7 @@ export default function ManageScreen() {
       await Actions.updatePriority(priorityId, { is_active: !currentlyActive });
       loadTab();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert(t('common.error'), err.message);
     }
   };
 
@@ -412,7 +436,7 @@ export default function ManageScreen() {
     try {
       switch (tab) {
         case 'offices': {
-          if (!formData.name?.trim()) throw new Error('Name is required');
+          if (!formData.name?.trim()) throw new Error(t('adminManage.nameRequired'));
           if (editingItem) {
             await Actions.updateOffice(editingItem.id, {
               name: formData.name.trim(),
@@ -430,9 +454,9 @@ export default function ManageScreen() {
           break;
         }
         case 'staff': {
-          if (!formData.full_name?.trim()) throw new Error('Name is required');
-          if (!formData.email?.trim()) throw new Error('Email is required');
-          if (!formData.role) throw new Error('Role is required');
+          if (!formData.full_name?.trim()) throw new Error(t('adminManage.nameRequired'));
+          if (!formData.email?.trim()) throw new Error(t('adminManage.emailRequired'));
+          if (!formData.role) throw new Error(t('adminManage.roleRequired'));
           if (editingItem) {
             await Actions.updateStaff(editingItem.id, {
               full_name: formData.full_name.trim(),
@@ -441,7 +465,7 @@ export default function ManageScreen() {
               department_id: formData.department_id || null,
             });
           } else {
-            if (!formData.password || formData.password.length < 6) throw new Error('Password must be at least 6 characters');
+            if (!formData.password || formData.password.length < 6) throw new Error(t('adminManage.passwordMin'));
             await Actions.createStaff({
               full_name: formData.full_name.trim(),
               email: formData.email.trim(),
@@ -452,15 +476,15 @@ export default function ManageScreen() {
               department_id: formData.department_id || null,
             });
             Alert.alert(
-              'Staff Created',
-              `${formData.full_name.trim()} has been added.\n\nThey can log in with:\nEmail: ${formData.email.trim()}\nPassword: the one you just set`,
+              t('common.success'),
+              t('adminManage.staffAdded', { name: formData.full_name.trim(), email: formData.email.trim() }),
             );
           }
           break;
         }
         case 'desks': {
-          if (!formData.name?.trim()) throw new Error('Name is required');
-          if (!formData.office_id) throw new Error('Office is required');
+          if (!formData.name?.trim()) throw new Error(t('adminManage.nameRequired'));
+          if (!formData.office_id) throw new Error(t('adminManage.officeRequired'));
           if (editingItem) {
             await Actions.updateDesk(editingItem.id, {
               name: formData.name.trim(),
@@ -478,9 +502,9 @@ export default function ManageScreen() {
           break;
         }
         case 'departments': {
-          if (!formData.name?.trim()) throw new Error('Name is required');
-          if (!formData.code?.trim()) throw new Error('Code is required');
-          if (!formData.office_id) throw new Error('Office is required');
+          if (!formData.name?.trim()) throw new Error(t('adminManage.nameRequired'));
+          if (!formData.code?.trim()) throw new Error(t('adminManage.codeRequired'));
+          if (!formData.office_id) throw new Error(t('adminManage.officeRequired'));
           if (editingItem) {
             await Actions.updateDepartment(editingItem.id, {
               name: formData.name.trim(),
@@ -496,10 +520,10 @@ export default function ManageScreen() {
           break;
         }
         case 'services': {
-          if (!formData.name?.trim()) throw new Error('Name is required');
-          if (!formData.code?.trim()) throw new Error('Code is required');
-          if (!formData.department_id) throw new Error('Department is required');
-          if (!formData.office_id) throw new Error('Office is required');
+          if (!formData.name?.trim()) throw new Error(t('adminManage.nameRequired'));
+          if (!formData.code?.trim()) throw new Error(t('adminManage.codeRequired'));
+          if (!formData.department_id) throw new Error(t('adminManage.deptRequired'));
+          if (!formData.office_id) throw new Error(t('adminManage.officeRequired'));
           if (editingItem) {
             await Actions.updateService(editingItem.id, {
               name: formData.name.trim(),
@@ -516,7 +540,7 @@ export default function ManageScreen() {
           break;
         }
         case 'priorities': {
-          if (!formData.name?.trim()) throw new Error('Name is required');
+          if (!formData.name?.trim()) throw new Error(t('adminManage.nameRequired'));
           const weight = parseInt(formData.weight, 10);
           if (editingItem) {
             await Actions.updatePriority(editingItem.id, {
@@ -541,7 +565,7 @@ export default function ManageScreen() {
       closeModal();
       await loadTab();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save');
+      Alert.alert(t('common.error'), err.message || t('common.error'));
     } finally {
       setSaving(false);
     }
@@ -550,17 +574,17 @@ export default function ManageScreen() {
   // ── Delete Helpers ───────────────────────────────────────────────
 
   const confirmDeleteDesk = (deskId: string, deskName: string) => {
-    Alert.alert('Delete Desk', `Are you sure you want to delete "${deskName}"?`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('common.delete'), t('adminManage.deleteConfirm', { name: deskName }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           try {
             await Actions.deleteDesk(deskId);
             loadTab();
           } catch (err: any) {
-            Alert.alert('Error', err.message);
+            Alert.alert(t('common.error'), err.message);
           }
         },
       },
@@ -568,17 +592,17 @@ export default function ManageScreen() {
   };
 
   const confirmDeleteDepartment = (deptId: string, deptName: string) => {
-    Alert.alert('Delete Department', `Are you sure you want to delete "${deptName}"?`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('common.delete'), t('adminManage.deleteConfirm', { name: deptName }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           try {
             await Actions.deleteDepartment(deptId);
             loadTab();
           } catch (err: any) {
-            Alert.alert('Error', err.message);
+            Alert.alert(t('common.error'), err.message);
           }
         },
       },
@@ -669,7 +693,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No staff members" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.card} onPress={() => openEdit(item)} activeOpacity={0.7}>
                 <View style={styles.cardMain}>
@@ -704,7 +728,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No desks" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => {
               const statusColor =
                 item.status === 'active' ? colors.serving : item.status === 'paused' ? colors.warning : colors.textMuted;
@@ -722,7 +746,7 @@ export default function ManageScreen() {
                       </Text>
                       <View style={styles.badges}>
                         <Badge label={item.status} color={statusColor} />
-                        {(item.staff as any)?.full_name ? <Badge label={(item.staff as any).full_name} color={colors.success} /> : item.current_staff_id ? <Badge label="Staffed" color={colors.success} /> : null}
+                        {(item.staff as any)?.full_name ? <Badge label={(item.staff as any).full_name} color={colors.success} /> : item.current_staff_id ? <Badge label={t('adminManage.staffed')} color={colors.success} /> : null}
                       </View>
                     </View>
                   </View>
@@ -753,7 +777,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No departments" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.card}
@@ -790,7 +814,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No services" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.card} onPress={() => openEdit(item)} activeOpacity={0.7}>
                 <View style={styles.cardMain}>
@@ -819,7 +843,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No offices" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.card} onPress={() => openEdit(item)} activeOpacity={0.7}>
                 <View style={styles.cardMain}>
@@ -856,7 +880,7 @@ export default function ManageScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-            ListEmptyComponent={<EmptyState text="No priority categories" />}
+            ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
             renderItem={({ item }) => {
               const displayColor = item.color || colors.textMuted;
               return (
@@ -872,7 +896,7 @@ export default function ManageScreen() {
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitle}>{item.name}</Text>
                       <View style={styles.badges}>
-                        <Badge label={`Weight: ${item.weight}`} color={displayColor} />
+                        <Badge label={t('adminManage.weightLabel', { weight: item.weight })} color={displayColor} />
                       </View>
                     </View>
                   </View>
@@ -895,7 +919,7 @@ export default function ManageScreen() {
               <Ionicons name="search" size={18} color={colors.textMuted} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search by name, phone, or email..."
+                placeholder={t('adminManage.searchCustomers')}
                 placeholderTextColor={colors.textMuted}
                 value={customerSearch}
                 onChangeText={setCustomerSearch}
@@ -913,7 +937,7 @@ export default function ManageScreen() {
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.list}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
-              ListEmptyComponent={<EmptyState text="No customers found" />}
+              ListEmptyComponent={<EmptyState text={t('common.noResults')} />}
               renderItem={({ item }) => (
                 <View style={styles.card}>
                   <View style={styles.cardMain}>
@@ -921,12 +945,12 @@ export default function ManageScreen() {
                       <Ionicons name="person" size={20} color={colors.primary} />
                     </View>
                     <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>{item.name || 'Anonymous'}</Text>
+                      <Text style={styles.cardTitle}>{item.name || t('adminManage.anonymous')}</Text>
                       <Text style={styles.cardSubtitle}>
-                        {[item.phone, item.email].filter(Boolean).join(' · ') || 'No contact info'}
+                        {[item.phone, item.email].filter(Boolean).join(' · ') || t('adminManage.noContactInfo')}
                       </Text>
                       <View style={styles.badges}>
-                        <Badge label={`${item.visit_count} visit${item.visit_count !== 1 ? 's' : ''}`} color={colors.primary} />
+                        <Badge label={item.visit_count === 1 ? t('adminManage.visit', { count: 1 }) : t('adminManage.visits', { count: item.visit_count })} color={colors.primary} />
                         {item.last_visit && (
                           <Badge label={new Date(item.last_visit).toLocaleDateString()} color={colors.textSecondary} />
                         )}
@@ -946,9 +970,9 @@ export default function ManageScreen() {
           today.setHours(12, 0, 0, 0);
           const tomorrow = new Date(today);
           tomorrow.setDate(tomorrow.getDate() + 1);
-          if (d.toDateString() === today.toDateString()) return 'Today';
-          if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-          return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          if (d.toDateString() === today.toDateString()) return t('adminManage.today');
+          if (d.toDateString() === tomorrow.toDateString()) return t('adminManage.tomorrow');
+          return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
         };
 
         const navigateBookingDate = (delta: number) => {
@@ -959,7 +983,7 @@ export default function ManageScreen() {
 
         const formatTime12 = (isoStr: string) => {
           const d = new Date(isoStr);
-          return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
         };
 
         const getBookingStatusColor = (status: string) => {
@@ -972,10 +996,10 @@ export default function ManageScreen() {
         };
 
         const handleCheckIn = (id: string, name: string) => {
-          Alert.alert('Check In', `Check in ${name}?`, [
-            { text: 'Cancel', style: 'cancel' },
+          Alert.alert(t('bookings.checkIn'), t('bookings.checkInMsg', { name }), [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-              text: 'Check In',
+              text: t('bookings.checkIn'),
               onPress: async () => {
                 await supabase.from('appointments').update({ status: 'checked_in' }).eq('id', id);
                 loadTab();
@@ -985,10 +1009,10 @@ export default function ManageScreen() {
         };
 
         const handleCancelBooking = (id: string, name: string) => {
-          Alert.alert('Cancel Booking', `Cancel ${name}'s appointment?`, [
-            { text: 'Keep', style: 'cancel' },
+          Alert.alert(t('bookings.cancelAppointment'), t('bookings.cancelMsg', { name }), [
+            { text: t('bookings.keep'), style: 'cancel' },
             {
-              text: 'Cancel Booking',
+              text: t('bookings.cancelBooking'),
               style: 'destructive',
               onPress: async () => {
                 await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
@@ -999,11 +1023,11 @@ export default function ManageScreen() {
         };
 
         const STATUS_CHIPS = [
-          { key: 'all', label: 'All' },
-          { key: 'pending', label: 'Pending' },
-          { key: 'confirmed', label: 'Confirmed' },
-          { key: 'checked_in', label: 'Checked In' },
-          { key: 'cancelled', label: 'Cancelled' },
+          { key: 'all', label: t('common.all') },
+          { key: 'pending', label: t('bookings.pending') },
+          { key: 'confirmed', label: t('bookings.confirmed') },
+          { key: 'checked_in', label: t('bookings.checkedIn') },
+          { key: 'cancelled', label: t('bookings.cancelled') },
         ];
 
         return (
@@ -1039,7 +1063,7 @@ export default function ManageScreen() {
                   style={[bStyles.chip, bookingDeptFilter === 'all' && bStyles.chipActive]}
                   onPress={() => setBookingDeptFilter('all')}
                 >
-                  <Text style={[bStyles.chipText, bookingDeptFilter === 'all' && bStyles.chipTextActive]}>All Depts</Text>
+                  <Text style={[bStyles.chipText, bookingDeptFilter === 'all' && bStyles.chipTextActive]}>{t('common.all')}</Text>
                 </TouchableOpacity>
                 {deptList.map((d) => (
                   <TouchableOpacity
@@ -1056,7 +1080,7 @@ export default function ManageScreen() {
             {/* Count */}
             <View style={bStyles.countRow}>
               <Text style={bStyles.countText}>
-                {appointmentList.length} booking{appointmentList.length !== 1 ? 's' : ''}
+                {appointmentList.length === 1 ? t('adminManage.bookingCount', { count: 1 }) : t('adminManage.bookingsCount', { count: appointmentList.length })}
               </Text>
             </View>
 
@@ -1069,8 +1093,8 @@ export default function ManageScreen() {
               ListEmptyComponent={
                 <View style={{ alignItems: 'center', paddingTop: spacing.xxl * 2, gap: spacing.sm }}>
                   <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
-                  <Text style={{ fontSize: fontSize.lg, fontWeight: '600', color: colors.textMuted }}>No bookings</Text>
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>No appointments for {formatBookingDate(bookingDateFilter)}</Text>
+                  <Text style={{ fontSize: fontSize.lg, fontWeight: '600', color: colors.textMuted }}>{t('bookings.noBookings')}</Text>
+                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>{t('bookings.noBookingsMsg')}</Text>
                 </View>
               }
               renderItem={({ item }) => {
@@ -1079,21 +1103,21 @@ export default function ManageScreen() {
 
                 const showDetails = () => {
                   const lines = [
-                    `Time: ${formatTime12(item.scheduled_at)}`,
-                    item.departments?.name ? `Department: ${item.departments.name}` : '',
-                    item.services?.name ? `Service: ${item.services.name}` : '',
-                    item.customer_phone ? `Phone: ${item.customer_phone}` : '',
-                    `Status: ${item.status.replace('_', ' ')}`,
+                    `${t('adminManage.time')}: ${formatTime12(item.scheduled_at)}`,
+                    item.departments?.name ? `${t('adminManage.department')}: ${item.departments.name}` : '',
+                    item.services?.name ? `${t('adminManage.service')}: ${item.services.name}` : '',
+                    item.customer_phone ? `${t('adminManage.phone')}: ${item.customer_phone}` : '',
+                    `${t('adminManage.status')}: ${item.status.replace('_', ' ')}`,
                   ].filter(Boolean).join('\n');
 
-                  const buttons: any[] = [{ text: 'Close', style: 'cancel' }];
+                  const buttons: any[] = [{ text: t('common.close'), style: 'cancel' }];
                   if (isPending) {
                     buttons.push({
-                      text: 'Check In',
+                      text: t('bookings.checkIn'),
                       onPress: () => handleCheckIn(item.id, item.customer_name),
                     });
                     buttons.push({
-                      text: 'Cancel Booking',
+                      text: t('bookings.cancelBooking'),
                       style: 'destructive',
                       onPress: () => handleCancelBooking(item.id, item.customer_name),
                     });
@@ -1144,32 +1168,33 @@ export default function ManageScreen() {
       case 'offices':
         return (
           <>
-            <FormField label="Name" required>
+            <FormField label={t('adminManage.name')} required>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, name: v }))}
-                placeholder="Office name"
+                placeholder={t('adminManage.officeName')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Address">
+            <FormField label={t('adminManage.address')}>
               <TextInput
                 style={styles.input}
                 value={formData.address || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, address: v }))}
-                placeholder="Street address"
+                placeholder={t('adminManage.streetAddress')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Timezone">
-              <TextInput
+            <FormField label={t('adminManage.timezone')}>
+              <TouchableOpacity
                 style={styles.input}
-                value={formData.timezone || ''}
-                onChangeText={(v) => setFormData((p) => ({ ...p, timezone: v }))}
-                placeholder="e.g. America/New_York"
-                placeholderTextColor={colors.textMuted}
-              />
+                onPress={() => setTzPickerOpen(true)}
+              >
+                <Text style={{ color: formData.timezone ? colors.text : colors.textMuted, fontSize: fontSize.md }}>
+                  {formData.timezone ? formData.timezone.replace(/_/g, ' ') : t('adminManage.selectTimezone')}
+                </Text>
+              </TouchableOpacity>
             </FormField>
           </>
         );
@@ -1177,16 +1202,16 @@ export default function ManageScreen() {
       case 'staff':
         return (
           <>
-            <FormField label="Full Name" required>
+            <FormField label={t('adminManage.fullName')} required>
               <TextInput
                 style={styles.input}
                 value={formData.full_name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, full_name: v }))}
-                placeholder="Full name"
+                placeholder={t('adminManage.fullNamePlaceholder')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Email" required>
+            <FormField label={t('adminManage.email')} required>
               <TextInput
                 style={styles.input}
                 value={formData.email || ''}
@@ -1199,35 +1224,35 @@ export default function ManageScreen() {
               />
             </FormField>
             {!editingItem && (
-              <FormField label="Password" required>
+              <FormField label={t('adminManage.password')} required>
                 <TextInput
                   style={styles.input}
                   value={formData.password || ''}
                   onChangeText={(v) => setFormData((p) => ({ ...p, password: v }))}
-                  placeholder="Min 6 characters"
+                  placeholder={t('adminManage.minChars')}
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry
                   autoCapitalize="none"
                 />
               </FormField>
             )}
-            <FormField label="Role" required>
+            <FormField label={t('adminManage.role')} required>
               <TouchableOpacity style={styles.pickerButton} onPress={openRolePicker}>
                 <Text style={formData.role ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.role ? formData.role.replace(/_/g, ' ') : 'Select role'}
+                  {formData.role ? formData.role.replace(/_/g, ' ') : t('adminManage.selectRole')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
-            <FormField label="Office">
+            <FormField label={t('adminManage.office')}>
               <TouchableOpacity style={styles.pickerButton} onPress={openOfficePicker}>
                 <Text style={formData.office_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.office_name || 'Select office (optional)'}
+                  {formData.office_name || t('adminManage.selectOfficeOptional')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
-            <FormField label="Department">
+            <FormField label={t('adminManage.department')}>
               <TouchableOpacity
                 style={styles.pickerButton}
                 onPress={openDepartmentPicker}
@@ -1240,7 +1265,7 @@ export default function ManageScreen() {
                       : styles.pickerButtonPlaceholder
                   }
                 >
-                  {formData.department_name || (formData.office_id ? 'Select department (optional)' : 'Select office first')}
+                  {formData.department_name || (formData.office_id ? t('adminManage.selectDeptOptional') : t('adminManage.selectOfficeFirst'))}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1251,24 +1276,24 @@ export default function ManageScreen() {
       case 'desks':
         return (
           <>
-            <FormField label="Name" required>
+            <FormField label={t('adminManage.name')} required>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, name: v }))}
-                placeholder="Desk name"
+                placeholder={t('adminManage.deskName')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Office" required>
+            <FormField label={t('adminManage.office')} required>
               <TouchableOpacity style={styles.pickerButton} onPress={openOfficePicker}>
                 <Text style={formData.office_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.office_name || 'Select office'}
+                  {formData.office_name || t('adminManage.selectOffice')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
-            <FormField label="Department">
+            <FormField label={t('adminManage.department')}>
               <TouchableOpacity
                 style={styles.pickerButton}
                 onPress={openDepartmentPicker}
@@ -1281,15 +1306,15 @@ export default function ManageScreen() {
                       : styles.pickerButtonPlaceholder
                   }
                 >
-                  {formData.department_name || (formData.office_id ? 'Select department (optional)' : 'Select office first')}
+                  {formData.department_name || (formData.office_id ? t('adminManage.selectDeptOptional') : t('adminManage.selectOfficeFirst'))}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
-            <FormField label="Assigned Staff">
+            <FormField label={t('adminManage.assignedStaff')}>
               <TouchableOpacity style={styles.pickerButton} onPress={openStaffPicker}>
                 <Text style={formData.current_staff_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.staff_name || 'No staff assigned'}
+                  {formData.staff_name || t('adminManage.noStaffAssigned')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1300,29 +1325,29 @@ export default function ManageScreen() {
       case 'departments':
         return (
           <>
-            <FormField label="Name" required>
+            <FormField label={t('adminManage.name')} required>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, name: v }))}
-                placeholder="Department name"
+                placeholder={t('adminManage.departmentName')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Code" required>
+            <FormField label={t('adminManage.code')} required>
               <TextInput
                 style={styles.input}
                 value={formData.code || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, code: v }))}
-                placeholder="e.g. FIN, HR, CS"
+                placeholder={t('adminManage.codePlaceholder')}
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="characters"
               />
             </FormField>
-            <FormField label="Office" required>
+            <FormField label={t('adminManage.office')} required>
               <TouchableOpacity style={styles.pickerButton} onPress={openOfficePicker}>
                 <Text style={formData.office_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.office_name || 'Select office'}
+                  {formData.office_name || t('adminManage.selectOffice')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1333,34 +1358,34 @@ export default function ManageScreen() {
       case 'services':
         return (
           <>
-            <FormField label="Name" required>
+            <FormField label={t('adminManage.name')} required>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, name: v }))}
-                placeholder="Service name"
+                placeholder={t('adminManage.serviceName')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Code" required>
+            <FormField label={t('adminManage.code')} required>
               <TextInput
                 style={styles.input}
                 value={formData.code || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, code: v }))}
-                placeholder="e.g. ACC-OPEN"
+                placeholder={t('adminManage.serviceCodePlaceholder')}
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="characters"
               />
             </FormField>
-            <FormField label="Office" required>
+            <FormField label={t('adminManage.office')} required>
               <TouchableOpacity style={styles.pickerButton} onPress={openOfficePicker}>
                 <Text style={formData.office_id ? styles.pickerButtonText : styles.pickerButtonPlaceholder}>
-                  {formData.office_name || 'Select office'}
+                  {formData.office_name || t('adminManage.selectOffice')}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             </FormField>
-            <FormField label="Department" required>
+            <FormField label={t('adminManage.department')} required>
               <TouchableOpacity
                 style={styles.pickerButton}
                 onPress={openDepartmentPicker}
@@ -1373,7 +1398,7 @@ export default function ManageScreen() {
                       : styles.pickerButtonPlaceholder
                   }
                 >
-                  {formData.department_name || (formData.office_id ? 'Select department' : 'Select office first')}
+                  {formData.department_name || (formData.office_id ? t('adminManage.selectDepartment') : t('adminManage.selectOfficeFirst'))}
                 </Text>
                 <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1384,25 +1409,25 @@ export default function ManageScreen() {
       case 'priorities':
         return (
           <>
-            <FormField label="Name" required>
+            <FormField label={t('adminManage.name')} required>
               <TextInput
                 style={styles.input}
                 value={formData.name || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, name: v }))}
-                placeholder="Priority name"
+                placeholder={t('adminManage.priorityName')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Icon (emoji)">
+            <FormField label={t('adminManage.iconEmoji')}>
               <TextInput
                 style={styles.input}
                 value={formData.icon || ''}
                 onChangeText={(v) => setFormData((p) => ({ ...p, icon: v }))}
-                placeholder="e.g. elderly, wheelchair"
+                placeholder={t('adminManage.iconPlaceholder')}
                 placeholderTextColor={colors.textMuted}
               />
             </FormField>
-            <FormField label="Color (hex)">
+            <FormField label={t('adminManage.colorHex')}>
               <View style={styles.colorInputRow}>
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
@@ -1417,7 +1442,7 @@ export default function ManageScreen() {
                 ) : null}
               </View>
             </FormField>
-            <FormField label="Weight">
+            <FormField label={t('adminManage.weight')}>
               <TextInput
                 style={styles.input}
                 value={formData.weight || ''}
@@ -1438,19 +1463,19 @@ export default function ManageScreen() {
   // ── Modal Title ──────────────────────────────────────────────────
 
   const modalTitle = useMemo(() => {
-    const action = editingItem ? 'Edit' : 'Create';
-    const entity: Record<ManageTab, string> = {
-      offices: 'Office',
-      staff: 'Staff Member',
-      desks: 'Desk',
-      departments: 'Department',
-      services: 'Service',
-      priorities: 'Priority',
-      customers: 'Customer',
-      bookings: 'Booking',
+    const action = editingItem ? t('adminManage.editAction') : t('adminManage.createAction');
+    const entityKeys: Record<ManageTab, string> = {
+      offices: 'adminManage.office',
+      staff: 'adminManage.staffMember',
+      desks: 'adminManage.desk',
+      departments: 'adminManage.department',
+      services: 'adminManage.service',
+      priorities: 'adminManage.priorityItem',
+      customers: 'adminManage.customer',
+      bookings: 'adminManage.booking',
     };
-    return `${action} ${entity[tab]}`;
-  }, [tab, editingItem]);
+    return `${action} ${t(entityKeys[tab])}`;
+  }, [tab, editingItem, t]);
 
   // ── Show FAB? ────────────────────────────────────────────────────
 
@@ -1467,14 +1492,14 @@ export default function ManageScreen() {
         style={styles.tabsScroll}
         contentContainerStyle={styles.tabs}
       >
-        {TABS.map((t) => (
+        {TABS.map((tb) => (
           <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, tab === t.key && styles.tabActive]}
-            onPress={() => setTab(t.key)}
+            key={tb.key}
+            style={[styles.tab, tab === tb.key && styles.tabActive]}
+            onPress={() => setTab(tb.key)}
           >
-            <Ionicons name={t.icon as any} size={18} color={tab === t.key ? colors.primary : colors.textMuted} />
-            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
+            <Ionicons name={tb.icon as any} size={18} color={tab === tb.key ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabText, tab === tb.key && styles.tabTextActive]}>{t(tb.labelKey)}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -1510,16 +1535,16 @@ export default function ManageScreen() {
                 <View style={styles.pickerHeader}>
                   <TouchableOpacity onPress={() => setPickerField(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Ionicons name="arrow-back" size={20} color={colors.primary} />
-                    <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' }}>Back</Text>
+                    <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' }}>{t('common.back')}</Text>
                   </TouchableOpacity>
                   <Text style={styles.pickerTitle}>
                     {pickerField === 'role'
-                      ? 'Select Role'
+                      ? t('adminManage.selectRole2')
                       : pickerField === 'office_id'
-                        ? 'Select Office'
+                        ? t('adminManage.selectOffice2')
                         : pickerField === 'current_staff_id'
-                          ? 'Assign Staff'
-                          : 'Select Department'}
+                          ? t('adminManage.assignStaff')
+                          : t('adminManage.selectDepartment2')}
                   </Text>
                   <View style={{ width: 60 }} />
                 </View>
@@ -1550,7 +1575,7 @@ export default function ManageScreen() {
                       }}
                     >
                       <Text style={[styles.pickerItemText, { color: colors.textMuted, fontStyle: 'italic' }]}>
-                        None
+                        {t('common.none')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -1590,7 +1615,7 @@ export default function ManageScreen() {
                   })}
                   {pickerOptions.length === 0 && (
                     <View style={styles.pickerEmpty}>
-                      <Text style={styles.pickerEmptyText}>No options available</Text>
+                      <Text style={styles.pickerEmptyText}>{t('common.noResults')}</Text>
                     </View>
                   )}
                 </ScrollView>
@@ -1609,20 +1634,65 @@ export default function ManageScreen() {
                 {/* Actions */}
                 <View style={styles.modalFooter}>
                   <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                    <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.saveButton, saving && styles.saveButtonDisabled]}
                     onPress={handleSave}
                     disabled={saving}
                   >
-                    <Text style={styles.saveButtonText}>{saving ? 'Saving...' : editingItem ? 'Update' : 'Create'}</Text>
+                    <Text style={styles.saveButtonText}>{saving ? t('common.saving') : editingItem ? t('common.save') : t('common.save')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Timezone Picker Modal */}
+      <Modal visible={tzPickerOpen} animationType="slide" presentationStyle="pageSheet">
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: fontSize.lg, fontWeight: '700', color: colors.text }}>{t('adminManage.selectTimezone')}</Text>
+            <TouchableOpacity onPress={() => setTzPickerOpen(false)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, margin: spacing.md, paddingHorizontal: 12, backgroundColor: colors.surfaceSecondary, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border }}>
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              style={{ flex: 1, paddingVertical: 10, fontSize: fontSize.md, color: colors.text }}
+              placeholder={t('adminManage.searchTimezones')}
+              placeholderTextColor={colors.textMuted}
+              value={tzSearch}
+              onChangeText={setTzSearch}
+            />
+          </View>
+          <FlatList
+            data={TZ_OPTIONS.filter((tz) => tz.toLowerCase().includes(tzSearch.toLowerCase()))}
+            keyExtractor={(item) => item}
+            renderItem={({ item }) => {
+              const isSelected = formData.timezone === item;
+              return (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: spacing.md, backgroundColor: isSelected ? colors.primary + '10' : undefined }}
+                  onPress={() => {
+                    const normalized = item === 'Europe/Algiers' ? 'Africa/Algiers' : item;
+                    setFormData((p) => ({ ...p, timezone: normalized }));
+                    setTzPickerOpen(false);
+                  }}
+                >
+                  <Text style={{ fontSize: fontSize.md, color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '400' }}>
+                    {item.replace(/_/g, ' ')}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                </TouchableOpacity>
+              );
+            }}
+            ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: colors.borderLight }} />}
+          />
+        </View>
       </Modal>
     </View>
   );

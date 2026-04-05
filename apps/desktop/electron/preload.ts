@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:query', table, officeIds),
     banCustomer: (ticketId: string, reason?: string) =>
       ipcRenderer.invoke('db:ban-customer', ticketId, reason),
+    updateDesk: (deskId: string, updates: any) =>
+      ipcRenderer.invoke('db:update-desk', deskId, updates),
   },
 
   // Sync
@@ -97,6 +99,13 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('tickets:changed', handler);
       return () => ipcRenderer.removeListener('tickets:changed', handler);
     },
+  },
+
+  // Port change notification (default port was in use)
+  onPortChanged: (callback: (info: { requested: number; actual: number }) => void) => {
+    const handler = (_: any, info: any) => callback(info);
+    ipcRenderer.on('port-changed', handler);
+    return () => ipcRenderer.removeListener('port-changed', handler);
   },
 
   // Activity log

@@ -18,8 +18,8 @@ const fs = require('fs');
 
 // ── Constants ────────────────────────────────────────────────────────
 const TEAM_ID = 'W69MRY2826';
-const CLIP_BUNDLE_ID = 'com.queueflow.app.QueueFlowClip';
-const LIVE_ACTIVITY_BUNDLE_ID = 'com.queueflow.app.QueueFlowClip.LiveActivity';
+const CLIP_BUNDLE_ID = 'com.qflo.app.Qflo-Clip';
+const LIVE_ACTIVITY_BUNDLE_ID = 'com.qflo.app.Qflo-Clip.LiveActivity';
 const DEPLOYMENT_TARGET = '16.4';
 const ASSOCIATED_DOMAIN = 'qflo.net';
 
@@ -47,6 +47,9 @@ function uuid() {
 // ── Main Plugin ──────────────────────────────────────────────────────
 
 function withAppClip(config) {
+  // Get the app name for target matching (Expo uses config.name for the Xcode target)
+  const APP_NAME = config.name || 'Qflo';
+
   // Step 1: Entitlements — add appclips domain
   config = withEntitlementsPlist(config, (mod) => {
     const domains = mod.modResults['com.apple.developer.associated-domains'] || [];
@@ -238,9 +241,13 @@ function withAppClip(config) {
       );
 
       // ── Inject Container Item Proxies + Target Dependencies ──
+      // Find the project object UUID dynamically
+      const projectObjMatch = pbx.match(/([A-F0-9]{24}) \/\* Project object \*\//);
+      const projectObjUuid = projectObjMatch ? projectObjMatch[1] : '83CBB9F71A601CBA00E9B192';
+
       const proxyEntries = [
-        `\t\t${ids.clipContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.clipTarget};\n\t\t\tremoteInfo = QueueFlowClip;\n\t\t};`,
-        `\t\t${ids.liveContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.liveTarget};\n\t\t\tremoteInfo = QueueFlowLiveActivity;\n\t\t};`,
+        `\t\t${ids.clipContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = ${projectObjUuid} /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.clipTarget};\n\t\t\tremoteInfo = QueueFlowClip;\n\t\t};`,
+        `\t\t${ids.liveContainerProxy} /* PBXContainerItemProxy */ = {\n\t\t\tisa = PBXContainerItemProxy;\n\t\t\tcontainerPortal = ${projectObjUuid} /* Project object */;\n\t\t\tproxyType = 1;\n\t\t\tremoteGlobalIDString = ${ids.liveTarget};\n\t\t\tremoteInfo = QueueFlowLiveActivity;\n\t\t};`,
       ].join('\n');
 
       if (pbx.includes('/* End PBXContainerItemProxy section */')) {
@@ -274,8 +281,10 @@ function withAppClip(config) {
       }
 
       // ── Inject Build Configurations ──
-      const buildSettingsClip = `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = QueueFlowClip/QueueFlowClip.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = ${TEAM_ID}; ENABLE_PREVIEWS = YES; INFOPLIST_FILE = QueueFlowClip/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = "${CLIP_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTS_MACCATALYST = NO; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
-      const buildSettingsLive = `APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_ENTITLEMENTS = QueueFlowLiveActivity/QueueFlowLiveActivity.entitlements; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = ${TEAM_ID}; INFOPLIST_FILE = QueueFlowLiveActivity/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../../Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = "${LIVE_ACTIVITY_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
+      const appVersion = modConfig.ios?.buildNumber || '1';
+      const marketingVersion = modConfig.version || '1.0.0';
+      const buildSettingsClip = `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CLANG_ENABLE_MODULES = YES; CODE_SIGN_ENTITLEMENTS = QueueFlowClip/QueueFlowClip.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = ${appVersion}; DEVELOPMENT_TEAM = ${TEAM_ID}; ENABLE_PREVIEWS = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = QueueFlowClip/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; MARKETING_VERSION = ${marketingVersion}; PRODUCT_BUNDLE_IDENTIFIER = "${CLIP_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
+      const buildSettingsLive = `APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_ENTITLEMENTS = QueueFlowLiveActivity/QueueFlowLiveActivity.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = ${appVersion}; DEVELOPMENT_TEAM = ${TEAM_ID}; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = QueueFlowLiveActivity/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = ${DEPLOYMENT_TARGET}; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../../Frameworks"; MARKETING_VERSION = ${marketingVersion}; PRODUCT_BUNDLE_IDENTIFIER = "${LIVE_ACTIVITY_BUNDLE_ID}"; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"`;
 
       const configEntries = [
         `\t\t${ids.clipDebugConfig} /* Debug */ = {\n\t\t\tisa = XCBuildConfiguration;\n\t\t\tbuildSettings = {\n\t\t\t\t${buildSettingsClip.split('; ').join(';\n\t\t\t\t')};\n\t\t\t};\n\t\t\tname = Debug;\n\t\t};`,
@@ -312,22 +321,31 @@ function withAppClip(config) {
       );
 
       // ── Add targets to project object + dependencies + embed phases to main target ──
-      // Find the main target UUID and add dependencies + embed phases
-      const mainTargetMatch = pbx.match(/([A-F0-9]{24}) \/\* QueueFlow \*\/ = \{\s*isa = PBXNativeTarget;/);
+      // Find the main target UUID — try the app name first, then common Expo names
+      const escapedName = APP_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const mainTargetMatch = pbx.match(new RegExp(`([A-F0-9]{24}) \\/\\* ${escapedName} \\*\\/ = \\{\\s*isa = PBXNativeTarget;`))
+        || pbx.match(/([A-F0-9]{24}) \/\* [^*]+ \*\/ = \{\s*isa = PBXNativeTarget;[^}]*productType = "com\.apple\.product-type\.application";\s*\};/);
+
       if (mainTargetMatch) {
         const mainTargetUuid = mainTargetMatch[1];
+        const mainTargetName = pbx.match(new RegExp(`${mainTargetUuid} \\/\\* ([^*]+) \\*\\/`))?.[1] || APP_NAME;
+        const escapedMainName = mainTargetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        console.log(`[with-app-clip] Found main target: "${mainTargetName}" (${mainTargetUuid})`);
 
         // Add target dependencies to main target
         pbx = pbx.replace(
-          new RegExp(`(${mainTargetUuid} \\/\\* QueueFlow \\*\\/ = \\{[\\s\\S]*?dependencies = \\()([\\s\\S]*?)(\\);)`),
+          new RegExp(`(${mainTargetUuid} \\/\\* ${escapedMainName} \\*\\/ = \\{[\\s\\S]*?dependencies = \\()([\\s\\S]*?)(\\);)`),
           `$1$2\t\t\t\t${ids.clipDependency} /* PBXTargetDependency */,\n\t\t\t\t${ids.liveDependency} /* PBXTargetDependency */,\n$3`
         );
 
         // Add embed phases to main target's buildPhases
         pbx = pbx.replace(
-          new RegExp(`(${mainTargetUuid} \\/\\* QueueFlow \\*\\/ = \\{[\\s\\S]*?buildPhases = \\([\\s\\S]*?)(\\);\\s*buildRules)`),
+          new RegExp(`(${mainTargetUuid} \\/\\* ${escapedMainName} \\*\\/ = \\{[\\s\\S]*?buildPhases = \\([\\s\\S]*?)(\\);\\s*buildRules)`),
           `$1\t\t\t\t${ids.clipEmbedPhase} /* Embed App Clips */,\n\t\t\t\t${ids.liveEmbedPhase} /* Embed App Extensions */,\n\t\t\t$2`
         );
+      } else {
+        console.warn('[with-app-clip] WARNING: Could not find main app target! App Clip will NOT be embedded.');
       }
 
       // Add targets to project's targets list

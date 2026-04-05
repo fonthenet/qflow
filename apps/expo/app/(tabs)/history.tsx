@@ -7,21 +7,22 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '@/lib/store';
 import { useTheme, type ThemeColors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
-const STATUS_CONFIG: Record<string, { label: string; colorKey: string; icon: string }> = {
-  served: { label: 'Served', colorKey: 'success', icon: 'checkmark-circle' },
-  no_show: { label: 'Missed', colorKey: 'warning', icon: 'alert-circle' },
-  cancelled: { label: 'Cancelled', colorKey: 'error', icon: 'close-circle' },
-  waiting: { label: 'Waiting', colorKey: 'waiting', icon: 'time' },
-  called: { label: 'Called', colorKey: 'called', icon: 'megaphone' },
-  serving: { label: 'Serving', colorKey: 'serving', icon: 'pulse' },
+const STATUS_CONFIG: Record<string, { statusKey: string; colorKey: string; icon: string }> = {
+  served: { statusKey: 'status.served', colorKey: 'success', icon: 'checkmark-circle' },
+  no_show: { statusKey: 'status.missed', colorKey: 'warning', icon: 'alert-circle' },
+  cancelled: { statusKey: 'status.cancelled', colorKey: 'error', icon: 'close-circle' },
+  waiting: { statusKey: 'status.waiting', colorKey: 'waiting', icon: 'time' },
+  called: { statusKey: 'status.called', colorKey: 'called', icon: 'megaphone' },
+  serving: { statusKey: 'status.serving', colorKey: 'serving', icon: 'pulse' },
 };
 
-function formatSectionDate(dateStr: string): string {
+function formatSectionDate(dateStr: string, t: (key: string) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
 
@@ -31,8 +32,8 @@ function formatSectionDate(dateStr: string): string {
     (todayOnly.getTime() - dateOnly.getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 0) return t('time.today');
+  if (diffDays === 1) return t('time.yesterday');
 
   return date.toLocaleDateString(undefined, {
     month: 'long',
@@ -42,7 +43,8 @@ function formatSectionDate(dateStr: string): string {
 }
 
 function groupByDate(
-  history: Array<{ token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string }>
+  history: Array<{ token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string }>,
+  t: (key: string) => string
 ) {
   const groups: Record<string, typeof history> = {};
 
@@ -56,12 +58,13 @@ function groupByDate(
   return Object.entries(groups)
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([key, data]) => ({
-      title: formatSectionDate(data[0].date),
+      title: formatSectionDate(data[0].date, t),
       data,
     }));
 }
 
 export default function HistoryScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { history } = useAppStore();
   const { colors, isDark } = useTheme();
@@ -72,7 +75,7 @@ export default function HistoryScreen() {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
-  const sections = useMemo(() => groupByDate(history), [history]);
+  const sections = useMemo(() => groupByDate(history, t), [history, t]);
 
   const stats = useMemo(() => {
     const total = history.length;
@@ -87,9 +90,9 @@ export default function HistoryScreen() {
         <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.primaryLight + '15' }]}>
           <Ionicons name="time-outline" size={56} color={colors.primary} />
         </View>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>No visits yet</Text>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('history.noVisits')}</Text>
         <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-          Your queue history will appear here after your first visit
+          {t('history.noVisitsMsg')}
         </Text>
         <TouchableOpacity
           style={[styles.emptyButton, { backgroundColor: colors.primary }]}
@@ -97,7 +100,7 @@ export default function HistoryScreen() {
           onPress={() => router.push('/scan' as any)}
         >
           <Ionicons name="qr-code-outline" size={18} color="#fff" />
-          <Text style={styles.emptyButtonText}>Scan to join</Text>
+          <Text style={styles.emptyButtonText}>{t('history.scanToJoin')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -122,21 +125,21 @@ export default function HistoryScreen() {
         <View style={[styles.summaryBar, { backgroundColor: colors.surface, shadowOpacity: isDark ? 0.2 : 0.04 }]}>
           <View style={styles.summaryItem}>
             <Text style={[styles.summaryNumber, { color: colors.text }]}>{stats.total}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>visits</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.visits')}</Text>
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
           <View style={styles.summaryItem}>
             <Text style={[styles.summaryNumber, { color: colors.success }]}>
               {stats.served}
             </Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>served</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.served')}</Text>
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
           <View style={styles.summaryItem}>
             <Text style={[styles.summaryNumber, { color: colors.warning }]}>
               {stats.missed}
             </Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>missed</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.missed')}</Text>
           </View>
         </View>
       }
@@ -178,7 +181,7 @@ export default function HistoryScreen() {
             <View style={styles.cardRight}>
               <View style={[styles.statusBadge, { backgroundColor: statusColor + '18' }]}>
                 <Text style={[styles.statusText, { color: statusColor }]}>
-                  {config.label}
+                  {t(config.statusKey)}
                 </Text>
               </View>
               <Ionicons

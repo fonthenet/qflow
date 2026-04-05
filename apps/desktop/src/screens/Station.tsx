@@ -97,6 +97,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   const [isPriority, setIsPriority] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<{ id: string; ticket_number: string; qr_token: string } | null>(null);
+  const [whatsappStatus, setWhatsappStatus] = useState<{ sent: boolean; error?: string } | null>(null);
 
   const deptServices = useMemo(() =>
     services.filter(s => s.department_id === selectedDept),
@@ -158,6 +159,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
       console.log('[booking-modal] onBook result:', JSON.stringify(result));
       if (result?.ticket_number) {
         setCreatedTicket({ id: result.id, ticket_number: result.ticket_number, qr_token: result.qr_token });
+        setWhatsappStatus(result.whatsappStatus ?? null);
       } else {
         console.error('[booking-modal] No ticket_number in result:', result);
       }
@@ -170,6 +172,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
 
   const handleNewTicket = () => {
     setCreatedTicket(null);
+    setWhatsappStatus(null);
     setCustomerName('');
     setCustomerPhone('');
     setCustomerReason('');
@@ -226,6 +229,26 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
                 <p style={{ margin: '4px 0', fontSize: 13, color: 'var(--text2)' }}>{customerName.trim()}</p>
               )}
             </div>
+
+            {/* WhatsApp status feedback */}
+            {whatsappStatus && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 12px', borderRadius: 8, margin: '10px 0 0',
+                background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+              }}>
+                <span style={{ fontSize: 16 }}>{whatsappStatus.sent ? '\u2705' : '\u26A0\uFE0F'}</span>
+                <div style={{ fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
+                    {whatsappStatus.sent ? t('WhatsApp notification sent') : t('WhatsApp notification failed')}
+                  </div>
+                  {!whatsappStatus.sent && whatsappStatus.error && (
+                    <div style={{ color: 'var(--text3)', marginTop: 2 }}>{whatsappStatus.error}</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* QR Code + URL */}
             <div style={{ textAlign: 'center', margin: '16px 0' }}>
@@ -670,6 +693,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       .catch(() => {});
   }, []);
 
+  // ── Port conflict notification ─────────────────────────────────
+  useEffect(() => {
+    const unsub = window.qf.onPortChanged?.((info: { requested: number; actual: number }) => {
+      showToast(`Port ${info.requested} was in use — running on port ${info.actual}`, 'info');
+    });
+    return () => unsub?.();
+  }, [showToast]);
+
   // ── Fetch tickets ────────────────────────────────────────────────
 
   // ALWAYS read from SQLite — the sync engine keeps it up to date
@@ -720,6 +751,58 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     });
     return () => { unsub?.(); };
   }, [showToast]);
+
+  // ── Sync staff status + queue pause → desk status in Supabase ──
+  useEffect(() => {
+    if (!session.desk_id) return;
+
+    const deskStatus = staffStatus === 'on_break' ? 'on_break'
+      : staffStatus === 'away' ? 'closed'
+      : queuePaused ? 'on_break'
+      : 'open';
+
+    const update: Record<string, unknown> = { status: deskStatus };
+    // When going available/open, also claim the desk for this staff
+    if (deskStatus === 'open' && session.staff_id) {
+      update.current_staff_id = session.staff_id;
+    }
+
+    // Update local SQLite so mobile app (polling via HTTP) sees the change
+    window.qf.db.updateDesk?.(session.desk_id, update).catch(() => {});
+
+    getSupabase().then((sb) => {
+      sb.from('desks')
+        .update(update)
+        .eq('id', session.desk_id)
+        .then(({ error }: { error: any }) => {
+          if (error) console.warn('[Station] desk status sync error:', error.message);
+        });
+    });
+  }, [staffStatus, queuePaused, session.desk_id, session.staff_id]);
+
+  // ── Listen for desk status changes from other platforms ─────────
+  useEffect(() => {
+    if (!session.desk_id) return;
+    let channel: any;
+    getSupabase().then((sb) => {
+      channel = sb.channel(`desk-status-${session.desk_id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'desks', filter: `id=eq.${session.desk_id}` },
+          (payload: any) => {
+            const newStatus = payload.new?.status;
+            if (!newStatus) return;
+            // Only apply if the change wasn't triggered by this Station
+            if (newStatus === 'on_break' && staffStatus === 'available' && !queuePaused) {
+              onQueuePausedChange(true);
+            } else if (newStatus === 'open' && queuePaused) {
+              onQueuePausedChange(false);
+            } else if (newStatus === 'open' && staffStatus !== 'available') {
+              onStaffStatusChange('available');
+            }
+          })
+        .subscribe();
+    });
+    return () => { if (channel) getSupabase().then((sb) => sb.removeChannel(channel)); };
+  }, [session.desk_id, staffStatus, queuePaused]);
 
   // ── Track active ticket (called/serving by this desk) ──────────
 
@@ -883,14 +966,38 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const resumeParked = (id: string) => {
+    // Check if desk already has an active ticket
+    const hasActive = tickets.some(
+      (tk) => (tk.status === 'called' || tk.status === 'serving') &&
+        tk.desk_id === session.desk_id
+    );
+    if (hasActive) {
+      showToast(t('Complete or park the current ticket first'), 'error');
+      return;
+    }
+    updateTicketStatus(id, {
+      status: 'called',
+      desk_id: session.desk_id,
+      called_by_staff_id: session.staff_id,
+      called_at: new Date().toISOString(),
+      parked_at: null,
+    });
+    const ticket = tickets.find((tk) => tk.id === id);
+    if (ticket) {
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket called back to desk'));
+      showToast(t('Ticket called back to desk'), 'success');
+    }
+  };
+
+  const unparkToQueue = (id: string) => {
     updateTicketStatus(id, {
       status: 'waiting',
       parked_at: null,
     });
-    const ticket = tickets.find((t) => t.id === id);
+    const ticket = tickets.find((tk) => tk.id === id);
     if (ticket) {
-      addActivity(ticket.ticket_number, translate(locale, 'Ticket resumed'));
-      showToast(t('Ticket resumed'), 'success');
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket sent back to queue'));
+      showToast(t('Ticket sent back to queue'), 'info');
     }
   };
 
@@ -1651,16 +1758,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <button
                       className="btn-sm btn-outline"
                       onClick={() => resumeParked(ticket.id)}
+                      disabled={!!activeTicket}
+                      title={activeTicket ? t('Complete or park the current ticket first') : t('Resume serving this ticket')}
                       aria-label={`${t('Resume ticket')} ${ticket.ticket_number}`}
                     >
                       {t('Resume')}
                     </button>
                     <button
                       className="btn-sm btn-outline"
-                      onClick={() => requeue(ticket.id)}
-                      aria-label={`${t('Reset stuck ticket')} ${ticket.ticket_number}`}
+                      onClick={() => unparkToQueue(ticket.id)}
+                      aria-label={`${t('Send back to queue')} ${ticket.ticket_number}`}
                     >
-                      {t('Reset to Queue')}
+                      {t('Back to Queue')}
                     </button>
                   </div>
                 </div>

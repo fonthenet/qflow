@@ -2,7 +2,7 @@
   "expo": {
     "name": "Qflo",
     "slug": "queueflow",
-    "version": "1.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "queueflow",
@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.queueflow.app",
+      "bundleIdentifier": "com.qflo.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Qflo uses the camera to scan QR codes at service locations.",
         "ITSAppUsesNonExemptEncryption": false
@@ -28,7 +28,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1d4ed8"
       },
-      "package": "com.queueflow.mobile",
+      "package": "com.qflo.app",
+      "usesCleartextTraffic": true,
       "permissions": [
         "CAMERA",
         "NOTIFICATIONS",
@@ -36,7 +37,9 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.ACCESS_NETWORK_STATE"
       ],
       "intentFilters": [
         {
@@ -96,7 +99,8 @@
         }
       ],
       "expo-font",
-      "./plugins/with-app-clip"
+      "./plugins/with-app-clip",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

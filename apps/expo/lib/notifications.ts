@@ -80,7 +80,7 @@ export async function registerForPush(ticketId: string, qrToken?: string): Promi
         deviceToken: token.data as string,
         kind: 'alert',
         environment: 'production',
-        bundleId: 'com.queueflow.app', // must match app.json bundleIdentifier
+        bundleId: 'com.qflo.app',
       });
     }
 
@@ -90,7 +90,7 @@ export async function registerForPush(ticketId: string, qrToken?: string): Promi
         ticketId,
         qrToken,
         deviceToken: token.data as string,
-        packageName: 'com.queueflow.mobile',
+        packageName: 'com.qflo.app',
       });
       return result.ok;
     }

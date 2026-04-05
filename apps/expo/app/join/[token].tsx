@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import { fetchJoinInfo, joinQueue, type JoinInfoResponse } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -20,6 +21,7 @@ import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 type Step = 'loading' | 'select' | 'joining' | 'success' | 'error';
 
 export default function JoinScreen() {
+  const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
@@ -47,7 +49,7 @@ export default function JoinScreen() {
     const data = await fetchJoinInfo(token);
     if (!data) {
       setStep('error');
-      setErrorMsg('This join link is invalid or the queue is closed.');
+      setErrorMsg(t('join.invalidOrClosed'));
       return;
     }
     setInfo(data);
@@ -149,7 +151,7 @@ export default function JoinScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading queue info...</Text>
+        <Text style={styles.loadingText}>{t('join.loadingQueueInfo')}</Text>
       </View>
     );
   }
@@ -161,10 +163,10 @@ export default function JoinScreen() {
         <View style={styles.errorCircle}>
           <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
         </View>
-        <Text style={styles.errorTitle}>Queue Unavailable</Text>
+        <Text style={styles.errorTitle}>{t('join.queueUnavailable')}</Text>
         <Text style={styles.errorSub}>{errorMsg}</Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>{t('join.goBack')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -177,13 +179,13 @@ export default function JoinScreen() {
         <View style={styles.successCircle}>
           <Ionicons name="checkmark-circle" size={64} color={colors.success} />
         </View>
-        <Text style={styles.successTitle}>You're in the Queue!</Text>
-        <Text style={styles.successSub}>Your ticket number is</Text>
+        <Text style={styles.successTitle}>{t('join.youreInQueue')}</Text>
+        <Text style={styles.successSub}>{t('join.yourTicketNumber')}</Text>
         <Text style={styles.ticketNumberBig}>{ticketNumber}</Text>
 
         <TouchableOpacity style={styles.trackButton} onPress={handleTrack} activeOpacity={0.8}>
           <Ionicons name="navigate" size={20} color="#fff" />
-          <Text style={styles.trackButtonText}>Track Your Position</Text>
+          <Text style={styles.trackButtonText}>{t('join.trackPosition')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -202,9 +204,9 @@ export default function JoinScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.orgName}>{info?.organization.name ?? 'Queue'}</Text>
-        <Text style={styles.headline}>Join the Queue</Text>
-        <Text style={styles.subline}>Choose your service to get a live ticket</Text>
+        <Text style={styles.orgName}>{info?.organization.name ?? t('admin.queue')}</Text>
+        <Text style={styles.headline}>{t('join.joinTheQueue')}</Text>
+        <Text style={styles.subline}>{t('join.chooseService')}</Text>
       </View>
 
       {/* Wait info */}
@@ -212,14 +214,14 @@ export default function JoinScreen() {
         <View style={styles.waitBar}>
           <View style={styles.waitItem}>
             <Text style={styles.waitValue}>{waitingCount}</Text>
-            <Text style={styles.waitLabel}>waiting</Text>
+            <Text style={styles.waitLabel}>{t('join.waiting')}</Text>
           </View>
           {selectedService?.estimated_service_time && (
             <>
               <View style={styles.waitDivider} />
               <View style={styles.waitItem}>
                 <Text style={styles.waitValue}>~{selectedService.estimated_service_time}</Text>
-                <Text style={styles.waitLabel}>min/person</Text>
+                <Text style={styles.waitLabel}>{t('join.minPerPerson')}</Text>
               </View>
             </>
           )}
@@ -237,7 +239,7 @@ export default function JoinScreen() {
       {/* Office selection */}
       {!officeLocked && info && info.offices.length > 1 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Location</Text>
+          <Text style={styles.sectionTitle}>{t('join.selectLocation')}</Text>
           {info.offices.map((office) => (
             <TouchableOpacity
               key={office.id}
@@ -268,7 +270,7 @@ export default function JoinScreen() {
       {/* Department selection */}
       {!deptLocked && availableDepts.length > 1 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Department</Text>
+          <Text style={styles.sectionTitle}>{t('join.selectDepartment')}</Text>
           {availableDepts.map((dept) => (
             <TouchableOpacity
               key={dept.id}
@@ -297,7 +299,7 @@ export default function JoinScreen() {
       {/* Service selection */}
       {!serviceLocked && availableServices.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Service</Text>
+          <Text style={styles.sectionTitle}>{t('join.selectService')}</Text>
           {availableServices.map((svc) => (
             <TouchableOpacity
               key={svc.id}
@@ -317,7 +319,7 @@ export default function JoinScreen() {
                 </Text>
                 {svc.description && <Text style={styles.optionDetail}>{svc.description}</Text>}
                 {svc.estimated_service_time && (
-                  <Text style={styles.optionEst}>~{svc.estimated_service_time} min</Text>
+                  <Text style={styles.optionEst}>~{svc.estimated_service_time} {t('time.min')}</Text>
                 )}
               </View>
               {selectedServiceId === svc.id && (
@@ -330,11 +332,11 @@ export default function JoinScreen() {
 
       {/* Customer details */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Your Details</Text>
-        <Text style={styles.sectionSub}>Optional — helps staff identify you</Text>
+        <Text style={styles.sectionTitle}>{t('join.yourDetails')}</Text>
+        <Text style={styles.sectionSub}>{t('join.optionalHelpsStaff')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="Name"
+          placeholder={t('join.namePlaceholder')}
           placeholderTextColor={colors.textMuted}
           value={name}
           onChangeText={setName}
@@ -343,7 +345,7 @@ export default function JoinScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Phone number"
+          placeholder={t('join.phonePlaceholder')}
           placeholderTextColor={colors.textMuted}
           value={phone}
           onChangeText={setPhone}
@@ -352,7 +354,7 @@ export default function JoinScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Reason for visit (optional)"
+          placeholder={t('join.reasonPlaceholder')}
           placeholderTextColor={colors.textMuted}
           value={reason}
           onChangeText={setReason}
@@ -372,7 +374,7 @@ export default function JoinScreen() {
         ) : (
           <>
             <Ionicons name="enter-outline" size={20} color="#fff" />
-            <Text style={styles.joinButtonText}>Join Queue</Text>
+            <Text style={styles.joinButtonText}>{t('join.joinQueue')}</Text>
           </>
         )}
       </TouchableOpacity>
