@@ -318,9 +318,11 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
   }
 
   // Send WhatsApp "joined" notification and capture result for feedback
+  // Skip if ticket was created via WhatsApp/Messenger — the webhook handler sends its own formatted message
   let whatsappStatus: { sent: boolean; error?: string } = { sent: false };
+  const isMessagingSource = input.source === 'whatsapp' || input.source === 'messenger';
   const rawPhone = typeof input.customerData?.phone === 'string' ? (input.customerData.phone as string).trim() : null;
-  if (ticket && rawPhone) {
+  if (ticket && rawPhone && !isMessagingSource) {
     const officeCC = (office.settings as Record<string, unknown> | null)?.country_code as string | undefined;
     const normalizedPhone = normalizePhone(rawPhone, office.timezone, officeCC);
     if (normalizedPhone) {
