@@ -22,7 +22,7 @@ import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 // ── Types ────────────────────────────────────────────────────────────
 
-type Filter = 'active' | 'waiting' | 'called' | 'serving' | 'parked' | 'done';
+type Filter = 'active' | 'waiting' | 'called' | 'serving' | 'done';
 type ViewMode = 'list' | 'by_desk';
 
 const FILTERS: { key: Filter; labelKey: string; icon: string }[] = [
@@ -30,7 +30,6 @@ const FILTERS: { key: Filter; labelKey: string; icon: string }[] = [
   { key: 'waiting', labelKey: 'adminQueue.waiting', icon: 'time-outline' },
   { key: 'called', labelKey: 'adminQueue.called', icon: 'megaphone-outline' },
   { key: 'serving', labelKey: 'adminQueue.serving', icon: 'hand-left-outline' },
-  { key: 'parked', labelKey: 'adminQueue.onHold', icon: 'pause-circle-outline' },
   { key: 'done', labelKey: 'adminQueue.done', icon: 'checkmark-done-outline' },
 ];
 
@@ -136,7 +135,6 @@ function formatWait(dateStr: string, t: any): string {
 function statusesForFilter(filter: Filter): string[] {
   switch (filter) {
     case 'active': return ['waiting', 'called', 'serving'];
-    case 'parked': return ['waiting', 'called', 'serving']; // parked tickets have these statuses + parked_at
     case 'done': return ['served', 'no_show', 'cancelled'];
     default: return [filter];
   }
@@ -224,27 +222,25 @@ export default function AdminQueueScreen() {
   // ── Derived data ─────────────────────────────────────────────────
 
   const filteredTickets = useMemo(() => {
-    if (filter === 'parked') {
-      return tickets.filter((t) => t.parked_at != null);
+    // Active tab includes both active and parked (parked sorted to the bottom)
+    if (filter === 'active') {
+      const active = tickets.filter((t) => t.parked_at == null);
+      const parked = tickets.filter((t) => t.parked_at != null);
+      return [...active, ...parked];
     }
     return tickets.filter((t) => t.parked_at == null);
   }, [tickets, filter]);
 
-  const parkedCount = useMemo(
-    () => tickets.filter((t) => t.parked_at != null).length,
-    [tickets],
-  );
 
   const counts = useMemo(() => {
-    // For counts, get all active tickets to show accurate numbers
-    const active = tickets.filter((t) => t.parked_at == null);
+    // Active count includes parked tickets
+    const nonParked = tickets.filter((t) => t.parked_at == null);
     const parked = tickets.filter((t) => t.parked_at != null);
     return {
-      active: active.length,
-      waiting: active.filter((t) => t.status === 'waiting').length,
-      called: active.filter((t) => t.status === 'called').length,
-      serving: active.filter((t) => t.status === 'serving').length,
-      parked: parked.length,
+      active: nonParked.length + parked.length,
+      waiting: nonParked.filter((t) => t.status === 'waiting').length,
+      called: nonParked.filter((t) => t.status === 'called').length,
+      serving: nonParked.filter((t) => t.status === 'serving').length,
       done: filter === 'done' ? tickets.length : 0,
     };
   }, [tickets, filter]);
@@ -746,10 +742,6 @@ export default function AdminQueueScreen() {
           <Text style={styles.summaryLabel}>{t('adminQueue.serving')}</Text>
         </View>
         <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryCount, { color: colors.warning }]}>{counts.parked}</Text>
-          <Text style={styles.summaryLabel}>{t('adminQueue.onHold')}</Text>
-        </View>
         {longestWait && (
           <>
             <View style={styles.summaryDivider} />
@@ -771,7 +763,7 @@ export default function AdminQueueScreen() {
         >
           {FILTERS.map((f) => {
             const isActive = filter === f.key;
-            const count = f.key === 'parked' ? parkedCount : counts[f.key as keyof typeof counts] ?? 0;
+            const count = counts[f.key as keyof typeof counts] ?? 0;
             return (
               <TouchableOpacity
                 key={f.key}
@@ -886,8 +878,6 @@ export default function AdminQueueScreen() {
                 <Text style={styles.emptySubtext}>
                   {filter === 'active'
                     ? t('adminQueue.allClear')
-                    : filter === 'parked'
-                    ? t('adminQueue.noOnHold')
                     : t('adminQueue.noStatus', { status: t(`adminQueue.${filter}`).toLowerCase() })}
                 </Text>
               </View>
