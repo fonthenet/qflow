@@ -173,6 +173,21 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم حظرك ولا يمكنك الانضمام إلى هذا الطابور 🚫',
     en: '🚫 You have been blocked and cannot join this queue.',
   },
+  choose_department: {
+    fr: '🏢 *{name}*\n\nChoisissez un département :\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour annuler.',
+    ar: '*{name}* 🏢\n\nاختر قسمًا:\n{list}\nأرسل *الرقم*.\nأرسل *0* للإلغاء.',
+    en: '🏢 *{name}*\n\nChoose a department:\n{list}\nReply with the *number*.\nSend *0* to cancel.',
+  },
+  choose_service: {
+    fr: '📋 *{dept}*\n\nChoisissez un service :\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
+    ar: '*{dept}* 📋\n\nاختر خدمة:\n{list}\nأرسل *الرقم*.\nأرسل *0* للعودة.',
+    en: '📋 *{dept}*\n\nChoose a service:\n{list}\nReply with the *number*.\nSend *0* to go back.',
+  },
+  invalid_choice: {
+    fr: '⚠️ Choix invalide. Répondez avec un *numéro* de la liste ci-dessus.',
+    ar: 'اختيار غير صالح. أرسل *رقمًا* من القائمة أعلاه ⚠️',
+    en: '⚠️ Invalid choice. Reply with a *number* from the list above.',
+  },
   directory_header: {
     fr: '📋 *Catégories disponibles :*\n',
     ar: 'الفئات المتاحة 📋\n\n',
@@ -682,7 +697,11 @@ export async function handleInboundMessage(
         const { data: orgRow } = await supabaseCheck
           .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
         if (orgRow) {
-          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid);
+          // Pass pre-resolved IDs if the selection flow already chose dept/service
+          const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
+            ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
+            : undefined;
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved);
           // Clean up the pending session (handleJoin creates a new active one)
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
         }
@@ -695,6 +714,63 @@ export async function handleInboundMessage(
       }
       // Something else — clear pending and fall through to normal processing
       await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+    }
+  }
+
+  // ── Pending department / service selection ──
+  {
+    const supabaseSel = createAdminClient() as any;
+    const identColSel = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: selSession } = await supabaseSel
+      .from('whatsapp_sessions')
+      .select('id, organization_id, office_id, department_id, state, locale, channel')
+      .eq(identColSel, identifier)
+      .in('state', ['pending_department', 'pending_service'])
+      .eq('channel', channel)
+      .gte('created_at', new Date(Date.now() - PENDING_JOIN_TTL_MINUTES * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (selSession) {
+      const selLocale = (selSession.locale as Locale) || detectedLocale;
+      const numMatch = cleaned.match(/^(\d{1,2})$/);
+      const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+
+      if (isCancel) {
+        await supabaseSel.from('whatsapp_sessions').delete().eq('id', selSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join_cancelled', selLocale) });
+        return;
+      }
+
+      if (numMatch) {
+        const idx = parseInt(numMatch[1], 10);
+
+        if (idx === 0) {
+          if (selSession.state === 'pending_service') {
+            // Go back to department list
+            await handleBackToDepartments(selSession, identifier, selLocale, channel, sendMessage);
+            return;
+          }
+          // In pending_department, 0 = cancel
+          await supabaseSel.from('whatsapp_sessions').delete().eq('id', selSession.id);
+          await sendMessage({ to: identifier, body: t('confirm_join_cancelled', selLocale) });
+          return;
+        }
+
+        if (selSession.state === 'pending_department') {
+          await handleDepartmentChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
+          return;
+        }
+        if (selSession.state === 'pending_service') {
+          await handleServiceChoice(selSession, idx, identifier, selLocale, channel, sendMessage, profileName, bsuid);
+          return;
+        }
+      }
+
+      // Invalid input — keep session, ask again
+      await sendMessage({ to: identifier, body: t('invalid_choice', selLocale) });
+      return;
     }
   }
 
@@ -1297,6 +1373,196 @@ async function tryLinkKioskTicket(
   return true;
 }
 
+// ── Numbered list formatter ──────────────────────────────────────────
+function formatNumberedList(items: Array<{ name: string }>, locale: Locale): string {
+  return items.map((item, i) => {
+    if (locale === 'ar') return `*${i + 1}* — ${item.name}`;
+    return `*${i + 1}.* ${item.name}`;
+  }).join('\n');
+}
+
+// ── Fetch departments and services for an org/office ─────────────────
+async function fetchOrgDeptServices(orgId: string, officeIdFilter?: string | null) {
+  const supabase = createAdminClient() as any;
+  let officeQuery = supabase.from('offices').select('id, name').eq('organization_id', orgId).eq('is_active', true);
+  if (officeIdFilter) officeQuery = officeQuery.eq('id', officeIdFilter);
+  const { data: offices } = await officeQuery.order('name');
+
+  if (!offices?.length) return { offices: [], departments: [], services: [] };
+
+  const { data: departments } = await supabase
+    .from('departments').select('id, name, office_id')
+    .in('office_id', offices.map((o: any) => o.id))
+    .eq('is_active', true).order('sort_order');
+
+  if (!departments?.length) return { offices, departments: [], services: [] };
+
+  const { data: services } = await supabase
+    .from('services').select('id, name, department_id, estimated_service_time')
+    .in('department_id', departments.map((d: any) => d.id))
+    .eq('is_active', true).order('sort_order');
+
+  return { offices: offices ?? [], departments: departments ?? [], services: services ?? [] };
+}
+
+// ── Build session data helper ────────────────────────────────────────
+function buildSessionIdentifiers(identifier: string, channel: Channel, bsuid?: string): Record<string, any> {
+  const data: Record<string, any> = {};
+  if (channel === 'messenger') {
+    data.messenger_psid = identifier;
+  } else {
+    data.whatsapp_phone = identifier;
+    if (bsuid) data.whatsapp_bsuid = bsuid;
+  }
+  return data;
+}
+
+// ── Department choice handler ────────────────────────────────────────
+async function handleDepartmentChoice(
+  session: any, idx: number, identifier: string, locale: Locale,
+  channel: Channel, sendMessage: SendFn, profileName?: string, bsuid?: string,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+
+  const { data: departments } = await supabase
+    .from('departments').select('id, name, office_id')
+    .eq('office_id', session.office_id).eq('is_active', true).order('sort_order');
+
+  if (!departments?.length || idx < 1 || idx > departments.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return;
+  }
+
+  const dept = departments[idx - 1];
+
+  // Get services for this department
+  const { data: services } = await supabase
+    .from('services').select('id, name')
+    .eq('department_id', dept.id).eq('is_active', true).order('sort_order');
+
+  if (!services?.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return;
+  }
+
+  if (services.length === 1) {
+    // Auto-select single service → go to confirmation
+    await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+
+    const { data: orgRow } = await supabase
+      .from('organizations').select('id, name, settings').eq('id', session.organization_id).single();
+    if (!orgRow) return;
+
+    await askJoinConfirmationDirect(identifier, orgRow, locale, channel, sendMessage, bsuid, {
+      officeId: session.office_id, departmentId: dept.id, serviceId: services[0].id,
+    });
+    return;
+  }
+
+  // Multiple services → show service list
+  const list = formatNumberedList(services, locale);
+  await supabase.from('whatsapp_sessions')
+    .update({ state: 'pending_service', department_id: dept.id })
+    .eq('id', session.id);
+
+  await sendMessage({
+    to: identifier,
+    body: t('choose_service', locale, { dept: dept.name, list }),
+  });
+}
+
+// ── Service choice handler ───────────────────────────────────────────
+async function handleServiceChoice(
+  session: any, idx: number, identifier: string, locale: Locale,
+  channel: Channel, sendMessage: SendFn, profileName?: string, bsuid?: string,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+
+  const { data: services } = await supabase
+    .from('services').select('id, name')
+    .eq('department_id', session.department_id).eq('is_active', true).order('sort_order');
+
+  if (!services?.length || idx < 1 || idx > services.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return;
+  }
+
+  const service = services[idx - 1];
+
+  // Clean up selection session, proceed to confirmation
+  await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+
+  const { data: orgRow } = await supabase
+    .from('organizations').select('id, name, settings').eq('id', session.organization_id).single();
+  if (!orgRow) return;
+
+  await askJoinConfirmationDirect(identifier, orgRow, locale, channel, sendMessage, bsuid, {
+    officeId: session.office_id, departmentId: session.department_id, serviceId: service.id,
+  });
+}
+
+// ── Back to department list ──────────────────────────────────────────
+async function handleBackToDepartments(
+  session: any, identifier: string, locale: Locale,
+  channel: Channel, sendMessage: SendFn,
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+
+  const { data: departments } = await supabase
+    .from('departments').select('id, name')
+    .eq('office_id', session.office_id).eq('is_active', true).order('sort_order');
+
+  if (!departments?.length) return;
+
+  await supabase.from('whatsapp_sessions')
+    .update({ state: 'pending_department', department_id: null })
+    .eq('id', session.id);
+
+  const { data: orgRow } = await supabase
+    .from('organizations').select('name').eq('id', session.organization_id).single();
+  const orgName = orgRow?.name || '';
+
+  const list = formatNumberedList(departments, locale);
+  await sendMessage({
+    to: identifier,
+    body: t('choose_department', locale, { name: orgName, list }),
+  });
+}
+
+// ── Direct confirmation with pre-resolved IDs ───────────────────────
+async function askJoinConfirmationDirect(
+  identifier: string, org: any, locale: Locale, channel: Channel,
+  sendMessage: SendFn, bsuid?: string,
+  resolved?: { officeId: string; departmentId: string; serviceId: string },
+): Promise<void> {
+  const supabase = createAdminClient() as any;
+  const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+
+  // Clean up any stale pending sessions for this user
+  await supabase.from('whatsapp_sessions').delete()
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_department', 'pending_service']).eq('channel', channel);
+
+  const sessionData: Record<string, any> = {
+    organization_id: org.id,
+    state: 'pending_confirmation',
+    locale,
+    channel,
+    ...buildSessionIdentifiers(identifier, channel, bsuid),
+  };
+  if (resolved) {
+    sessionData.office_id = resolved.officeId;
+    sessionData.department_id = resolved.departmentId;
+    sessionData.service_id = resolved.serviceId;
+  }
+
+  const { error: insertErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
+  if (insertErr) {
+    console.error('[askJoinConfirmationDirect] Insert failed:', insertErr.message);
+  }
+  await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
+}
+
+// ── Join confirmation (detects multi-dept/service) ───────────────────
 async function askJoinConfirmation(
   identifier: string,
   org: OrgContext,
@@ -1309,32 +1575,108 @@ async function askJoinConfirmation(
   const supabase = createAdminClient() as any;
   const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
 
-  // Clean up any stale pending confirmations for this user
+  // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
-    .eq(identCol, identifier).eq('state', 'pending_confirmation').eq('channel', channel);
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_department', 'pending_service']).eq('channel', channel);
 
-  // Insert pending confirmation row
-  const sessionData: Record<string, any> = {
-    organization_id: org.id,
-    state: 'pending_confirmation',
-    locale,
-    channel,
-  };
-  if (channel === 'messenger') {
-    sessionData.messenger_psid = identifier;
-  } else {
-    sessionData.whatsapp_phone = identifier;
-    if (bsuid) sessionData.whatsapp_bsuid = bsuid;
+  // Look up virtual queue code to see if dept/service are pre-set
+  const virtualCodeKey = channel === 'messenger'
+    ? 'messenger_default_virtual_code_id'
+    : 'whatsapp_default_virtual_code_id';
+  const virtualCodeId = org.settings?.[virtualCodeKey] ?? org.settings?.whatsapp_default_virtual_code_id;
+
+  let resolvedOfficeId: string | null = null;
+  let resolvedDeptId: string | null = null;
+  let resolvedServiceId: string | null = null;
+
+  if (virtualCodeId) {
+    const { data: vCode } = await supabase
+      .from('virtual_queue_codes').select('*').eq('id', virtualCodeId).single();
+    if (vCode) {
+      resolvedOfficeId = vCode.office_id;
+      resolvedDeptId = vCode.department_id;
+      resolvedServiceId = vCode.service_id;
+    }
   }
 
-  const { error: insertErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
-  if (insertErr) {
-    console.error('[askJoinConfirmation] Insert failed:', insertErr.message);
-    // Fall back to direct join (skip confirmation) so the user isn't stuck
-    await handleJoin(identifier, org, locale, channel, sendMessage, profileName, bsuid);
+  // If all three are set → go straight to confirmation (existing behavior)
+  if (resolvedOfficeId && resolvedDeptId && resolvedServiceId) {
+    await askJoinConfirmationDirect(identifier, org, locale, channel, sendMessage, bsuid, {
+      officeId: resolvedOfficeId, departmentId: resolvedDeptId, serviceId: resolvedServiceId,
+    });
     return;
   }
-  await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
+
+  // Need to resolve dept/service — fetch what's available
+  const { departments, services } = await fetchOrgDeptServices(org.id, resolvedOfficeId);
+
+  if (departments.length === 0) {
+    await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+    return;
+  }
+
+  // Resolve office (use vCode office or first available)
+  const officeId = resolvedOfficeId || departments[0].office_id;
+
+  // Filter departments for this office
+  const officeDepts = departments.filter((d: any) => d.office_id === officeId);
+
+  if (officeDepts.length === 0) {
+    await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+    return;
+  }
+
+  if (officeDepts.length === 1) {
+    const dept = officeDepts[0];
+    const deptServices = services.filter((s: any) => s.department_id === dept.id);
+
+    if (deptServices.length === 0) {
+      await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+      return;
+    }
+
+    if (deptServices.length === 1) {
+      // 1 dept, 1 service → straight to confirmation
+      await askJoinConfirmationDirect(identifier, org, locale, channel, sendMessage, bsuid, {
+        officeId, departmentId: dept.id, serviceId: deptServices[0].id,
+      });
+      return;
+    }
+
+    // 1 dept, multiple services → show service picker
+    const sessionData: Record<string, any> = {
+      organization_id: org.id,
+      state: 'pending_service',
+      office_id: officeId,
+      department_id: dept.id,
+      locale, channel,
+      ...buildSessionIdentifiers(identifier, channel, bsuid),
+    };
+    await supabase.from('whatsapp_sessions').insert(sessionData);
+
+    const list = formatNumberedList(deptServices, locale);
+    await sendMessage({
+      to: identifier,
+      body: t('choose_service', locale, { dept: dept.name, list }),
+    });
+    return;
+  }
+
+  // Multiple departments → show department picker
+  const sessionData: Record<string, any> = {
+    organization_id: org.id,
+    state: 'pending_department',
+    office_id: officeId,
+    locale, channel,
+    ...buildSessionIdentifiers(identifier, channel, bsuid),
+  };
+  await supabase.from('whatsapp_sessions').insert(sessionData);
+
+  const list = formatNumberedList(officeDepts, locale);
+  await sendMessage({
+    to: identifier,
+    body: t('choose_department', locale, { name: org.name, list }),
+  });
 }
 
 async function handleJoin(
@@ -1345,6 +1687,7 @@ async function handleJoin(
   sendMessage: SendFn,
   profileName?: string,
   bsuid?: string,
+  preResolved?: { officeId: string; departmentId: string; serviceId: string },
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
@@ -1386,31 +1729,43 @@ async function handleJoin(
     return;
   }
 
-  // Use channel-specific or shared virtual code
-  const virtualCodeKey = channel === 'messenger'
-    ? 'messenger_default_virtual_code_id'
-    : 'whatsapp_default_virtual_code_id';
-  const virtualCodeId = org.settings?.[virtualCodeKey] ?? org.settings?.whatsapp_default_virtual_code_id;
+  let officeId: string | null = null;
+  let departmentId: string | null = null;
+  let serviceId: string | null = null;
+  let virtualCodeId: string | null = null;
 
-  if (!virtualCodeId) {
-    await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
-    return;
+  if (preResolved) {
+    // IDs already resolved by dept/service selection flow
+    officeId = preResolved.officeId;
+    departmentId = preResolved.departmentId;
+    serviceId = preResolved.serviceId;
+  } else {
+    // Use channel-specific or shared virtual code
+    const virtualCodeKey = channel === 'messenger'
+      ? 'messenger_default_virtual_code_id'
+      : 'whatsapp_default_virtual_code_id';
+    virtualCodeId = org.settings?.[virtualCodeKey] ?? org.settings?.whatsapp_default_virtual_code_id;
+
+    if (!virtualCodeId) {
+      await sendMessage({ to: identifier, body: t('queue_not_configured', locale, { name: org.name }) });
+      return;
+    }
+
+    const { data: vCode } = await supabase
+      .from('virtual_queue_codes')
+      .select('*')
+      .eq('id', virtualCodeId)
+      .single();
+
+    if (!vCode || !vCode.is_active) {
+      await sendMessage({ to: identifier, body: t('queue_closed', locale) });
+      return;
+    }
+
+    officeId = vCode.office_id;
+    departmentId = vCode.department_id;
+    serviceId = vCode.service_id;
   }
-
-  const { data: vCode } = await supabase
-    .from('virtual_queue_codes')
-    .select('*')
-    .eq('id', virtualCodeId)
-    .single();
-
-  if (!vCode || !vCode.is_active) {
-    await sendMessage({ to: identifier, body: t('queue_closed', locale) });
-    return;
-  }
-
-  const officeId = vCode.office_id;
-  const departmentId = vCode.department_id;
-  const serviceId = vCode.service_id;
 
   if (!officeId || !departmentId || !serviceId) {
     await sendMessage({ to: identifier, body: t('queue_requires_service', locale) });
