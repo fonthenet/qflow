@@ -1072,17 +1072,22 @@ export function KioskView({
                       </a>
                     )}
                     {messengerPageId && (
-                      <a
-                        href={`https://m.me/${messengerPageId}?ref=JOIN_${ticket.qr_token}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const mmeUrl = `https://m.me/${messengerPageId}?ref=JOIN_${ticket.qr_token}`;
+                          // Try Messenger deep link first (auto-opens app), fall back to m.me
+                          const w = window.open(mmeUrl, '_blank');
+                          if (!w) window.location.href = mmeUrl;
+                        }}
                         className="inline-flex w-full items-center justify-center gap-2.5 rounded-[14px] border-2 border-blue-200 bg-blue-50 px-4 py-4 text-[15px] font-bold text-blue-700 transition-all hover:bg-blue-100 active:scale-[0.98]"
                       >
                         <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M12 0C5.373 0 0 4.975 0 11.111c0 3.497 1.745 6.616 4.472 8.652V24l4.086-2.242c1.09.301 2.246.464 3.442.464 6.627 0 12-4.974 12-11.111C24 4.975 18.627 0 12 0zm1.193 14.963l-3.056-3.259-5.963 3.259L10.733 8.1l3.13 3.259L19.752 8.1l-6.559 6.863z"/>
                         </svg>
                         {t('Messenger')}
-                      </a>
+                        <span className="text-[11px] font-normal text-blue-400">{t('Tap "Open" when prompted')}</span>
+                      </button>
                     )}
                   </div>
                 </div>
