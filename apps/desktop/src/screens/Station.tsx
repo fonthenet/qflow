@@ -1694,7 +1694,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         </div>
 
         <div className="sidebar-section queue-list queue-active">
-          <h4>{t('Active ({count})', { count: called.length + serving.length })}</h4>
+          <h4>{t('Active ({count})', { count: called.length + serving.length + parked.length })}</h4>
           <div className="ticket-list" role="list" aria-label={t('Active tickets')}>
             {[...called, ...serving].map((ticket) => (
               <div key={ticket.id} className={`queue-item ${ticket.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem" aria-label={translate(locale, 'Ticket {ticket}, {status} at {desk}', { ticket: ticket.ticket_number, status: ticket.status === 'called' ? translate(locale, 'Called') : translate(locale, 'Serving'), desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}>
@@ -1738,43 +1738,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 ) : null}
               </div>
             ))}
-          </div>
-        </div>
-
-        <div className="sidebar-section queue-list queue-active">
-          <h4>{t('Parked ({count})', { count: parked.length })}</h4>
-          <div className="ticket-list" role="list" aria-label={t('Parked tickets')}>
-            {parked.length > 0 ? (
-              parked.map((ticket) => (
-                <div key={ticket.id} className="queue-item" role="listitem">
-                  <div className="queue-item-dot" style={{ background: '#94a3b8' }} aria-hidden="true" />
-                  <div className="queue-item-info">
-                    <span className="queue-item-number">{ticket.ticket_number}</span>
-                    <span className="queue-item-meta">
-                      {[getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), formatWait(ticket.parked_at ?? ticket.created_at)].join(' · ')}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
-                    <button
-                      className="btn-sm btn-outline"
-                      onClick={() => resumeParked(ticket.id)}
-                      disabled={!!activeTicket}
-                      title={activeTicket ? t('Complete or park the current ticket first') : t('Resume serving this ticket')}
-                      aria-label={`${t('Resume ticket')} ${ticket.ticket_number}`}
-                    >
-                      {t('Resume')}
-                    </button>
-                    <button
-                      className="btn-sm btn-outline"
-                      onClick={() => unparkToQueue(ticket.id)}
-                      aria-label={`${t('Send back to queue')} ${ticket.ticket_number}`}
-                    >
-                      {t('Back to Queue')}
-                    </button>
-                  </div>
+            {parked.map((ticket) => (
+              <div key={ticket.id} className="queue-item" role="listitem">
+                <div className="queue-item-dot" style={{ background: '#94a3b8' }} aria-hidden="true" />
+                <div className="queue-item-info">
+                  <span className="queue-item-number">{ticket.ticket_number}</span>
+                  <span className="queue-item-meta" style={{ color: '#f59e0b' }}>
+                    ⏸ {t('On Hold')} · {[getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), formatWait(ticket.parked_at ?? ticket.created_at)].join(' · ')}
+                  </span>
                 </div>
-              ))
-            ) : null}
+                <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', flexShrink: 0 }}>
+                  <button
+                    className="btn-sm btn-outline"
+                    onClick={() => resumeParked(ticket.id)}
+                    disabled={!!activeTicket}
+                    title={activeTicket ? t('Complete or park the current ticket first') : t('Resume serving this ticket')}
+                    aria-label={`${t('Resume ticket')} ${ticket.ticket_number}`}
+                  >
+                    {t('Resume')}
+                  </button>
+                  <button
+                    className="btn-sm btn-outline"
+                    onClick={() => unparkToQueue(ticket.id)}
+                    aria-label={`${t('Send back to queue')} ${ticket.ticket_number}`}
+                  >
+                    {t('Back to Queue')}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

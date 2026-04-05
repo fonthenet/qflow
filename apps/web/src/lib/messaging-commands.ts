@@ -1121,8 +1121,8 @@ async function tryLinkKioskTicket(
   const supabase = createAdminClient();
 
   // qr_tokens are 12-char lowercase hex — skip if it looks like a business code
-  const cleanCode = code.replace(/^_/, ''); // handle JOIN_token format
-  if (!/^[0-9a-f]{8,16}$/i.test(cleanCode)) return false;
+  const cleanCode = code.replace(/^_/, '').toLowerCase(); // handle JOIN_token format, DB stores lowercase
+  if (!/^[0-9a-f]{8,16}$/.test(cleanCode)) return false;
 
   const { data: ticket } = await (supabase as any)
     .from('tickets')
