@@ -217,6 +217,65 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* Reason field spans full width */
 .form-group.full-width { grid-column: 1 / -1; }
 
+/* ── Notify Step ── */
+.notify-ticket-summary {
+  text-align: center;
+  margin-bottom: 24px;
+  animation: fadeUp 0.4s ease both;
+}
+.notify-ticket-summary .result-check.small svg {
+  width: 32px; height: 32px;
+}
+.notify-ticket-summary .result-check.small {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: #dcfce7;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 8px;
+}
+.notify-ticket-summary .result-check.small svg polyline {
+  stroke: #22c55e; stroke-width: 2.5; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.notify-ticket-number {
+  font-size: 36px; font-weight: 800; color: var(--text);
+  letter-spacing: 2px;
+}
+.notify-channels {
+  display: flex; gap: 16px; justify-content: center;
+  margin: 24px 0;
+}
+.notify-channel-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 28px 40px; border-radius: 20px; border: 2px solid var(--border);
+  background: var(--surface); cursor: pointer;
+  font-size: 16px; font-weight: 700; color: var(--text);
+  transition: all 0.2s ease; min-width: 160px;
+}
+.notify-channel-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+.notify-channel-btn.whatsapp:hover { border-color: #25D366; background: rgba(37,211,102,0.04); }
+.notify-channel-btn.messenger:hover { border-color: #0084FF; background: rgba(0,132,255,0.04); }
+
+.notify-qr-card {
+  text-align: center; padding: 32px;
+  background: var(--surface); border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+}
+.notify-qr-box {
+  display: inline-block; padding: 12px;
+  background: white; border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.btn-skip {
+  display: block; margin: 20px auto 0; padding: 12px 32px;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: transparent; color: var(--text3);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-skip:hover { background: var(--bg); color: var(--text2); }
+
 /* ── RTL ── */
 html[dir="rtl"] body, html[dir="rtl"] .kiosk, html[dir="rtl"] .kiosk-content { direction: rtl; }
 html[dir="rtl"] .qr-section { text-align: right; }

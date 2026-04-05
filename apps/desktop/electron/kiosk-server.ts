@@ -407,6 +407,8 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
         handleDisplayData(url, res);
       } else if (path === '/api/events' && req.method === 'GET') {
         handleSSE(req, res);
+      } else if (path === '/api/qr' && req.method === 'GET') {
+        handleQRGeneration(url, res);
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: CONFIG.APP_VERSION, cloud: isCloudReachable ? CLOUD_URL : '' }));
@@ -693,6 +695,10 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     idle_timeout: organizationSettings.kiosk_idle_timeout || 60,
   };
 
+  // Messaging channels for notification opt-in QR codes on kiosk (platform-level)
+  const whatsappPhone = CONFIG.WHATSAPP_PHONE || '';
+  const messengerPageId = CONFIG.MESSENGER_PAGE_ID || '';
+
   res.end(JSON.stringify({
     office,
     departments,
@@ -704,6 +710,8 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
     kiosk_config: kioskConfig,
+    whatsapp_phone: whatsappPhone,
+    messenger_page_id: messengerPageId,
   }));
 }
 
@@ -863,7 +871,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       `).get(officeId, departmentId, now) as any;
 
       // Generate QR code server-side (proper library, guaranteed scannable)
-      const trackUrl = `${CLOUD_URL}/ticket/${ticketId}`;
+      const trackUrl = `${CLOUD_URL}/q/${qrToken}`;
       let qrDataUrl = '';
       try {
         qrDataUrl = await QRCode.toDataURL(trackUrl, {
@@ -956,6 +964,31 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       res.end(JSON.stringify({ error: `Failed to create ticket: ${err?.message || 'Unknown error'}. Please try again.` }));
     }
   });
+}
+
+async function handleQRGeneration(url: URL, res: http.ServerResponse) {
+  const data = url.searchParams.get('data');
+  if (!data) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing data parameter' }));
+    return;
+  }
+  try {
+    const buffer = await QRCode.toBuffer(data, {
+      errorCorrectionLevel: 'M',
+      margin: 3,
+      scale: 8,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=300',
+    });
+    res.end(buffer);
+  } catch (err: any) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'QR generation failed' }));
+  }
 }
 
 function handleQueueStatus(url: URL, res: http.ServerResponse) {

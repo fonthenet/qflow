@@ -22,6 +22,10 @@ export const CONFIG = {
   SYNC_PULL_INTERVAL: 5_000,    // pull cloud changes every 5s (fallback; Realtime WS handles instant)
   AUTO_RESOLVE_INTERVAL: 60_000,
 
+  // Messaging (platform-level shared channels)
+  WHATSAPP_PHONE: '+15551617393',
+  MESSENGER_PAGE_ID: '1097672690089929',
+
   // App
   APP_NAME: 'Qflo Station',
   APP_VERSION: pkg.version as string,

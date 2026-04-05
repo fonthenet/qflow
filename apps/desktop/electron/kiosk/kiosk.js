@@ -24,6 +24,8 @@
     queueCounts: {},
     businessHours: null,
     kioskConfig: null, // org-level kiosk settings from dashboard
+    whatsappPhone: '',
+    messengerPageId: '',
   };
   var resetTimer = null;
   var idleTimer = null;
@@ -81,6 +83,14 @@
       '#{position} in queue': "#{position} dans la file d'attente",
       'WhatsApp notifications active': "Notifications WhatsApp activ\u00e9es",
       'You will receive updates on WhatsApp': "Vous recevrez les mises \u00e0 jour sur WhatsApp",
+      'Get Notified': 'Recevoir les notifications',
+      'Scan to receive live updates on your phone': 'Scannez pour recevoir les mises \u00e0 jour en direct sur votre t\u00e9l\u00e9phone',
+      'WhatsApp': 'WhatsApp',
+      'Messenger': 'Messenger',
+      'Scan with your phone': 'Scannez avec votre t\u00e9l\u00e9phone',
+      'Open WhatsApp and tap Send': 'Ouvrez WhatsApp et appuyez sur Envoyer',
+      'Open Messenger and tap Get Started': 'Ouvrez Messenger et appuyez sur D\u00e9marrer',
+      'Skip': 'Passer',
       'Sunday': 'Dimanche',
       'Monday': 'Lundi',
       'Tuesday': 'Mardi',
@@ -139,6 +149,14 @@
       '#{position} in queue': '#{position} في الطابور',
       'WhatsApp notifications active': 'إشعارات واتساب مفعّلة',
       'You will receive updates on WhatsApp': 'ستتلقى التحديثات عبر واتساب',
+      'Get Notified': 'احصل على الإشعارات',
+      'Scan to receive live updates on your phone': 'امسح للحصول على تحديثات مباشرة على هاتفك',
+      'WhatsApp': 'واتساب',
+      'Messenger': 'ماسنجر',
+      'Scan with your phone': 'امسح بهاتفك',
+      'Open WhatsApp and tap Send': 'افتح واتساب واضغط إرسال',
+      'Open Messenger and tap Get Started': 'افتح ماسنجر واضغط ابدأ',
+      'Skip': 'تخطي',
       'Sunday': 'الأحد',
       'Monday': 'الاثنين',
       'Tuesday': 'الثلاثاء',
@@ -282,6 +300,8 @@
       S.services = data.services;
       S.businessHours = data.business_hours || null;
       S.kioskConfig = data.kiosk_config || null;
+      S.whatsappPhone = data.whatsapp_phone || '';
+      S.messengerPageId = data.messenger_page_id || '';
 
       // Apply kiosk settings from dashboard (org-level kiosk_config takes priority)
       var kc = S.kioskConfig;
@@ -375,7 +395,10 @@
   // ── Navigation ─────────────────────────────────────────────────
 
   function stepIndex() {
-    var steps = ['department', 'service', 'confirm', 'done'];
+    var hasNotify = S.whatsappPhone || S.messengerPageId;
+    var steps = ['department', 'service', 'confirm'];
+    if (hasNotify) steps.push('notify');
+    steps.push('done');
     if (S.departments.length === 1) steps.shift();
     return { steps: steps, current: steps.indexOf(S.step) };
   }
@@ -439,7 +462,9 @@
       }
       if (data.error) throw new Error(data.error);
       S.ticket = data.ticket;
-      S.step = 'done';
+      // If messaging channels available, show notification opt-in; otherwise go to done
+      var hasNotify = S.whatsappPhone || S.messengerPageId;
+      S.step = hasNotify ? 'notify' : 'done';
       render();
       playSuccessSound();
 
@@ -508,6 +533,60 @@
     resetIdle();
     fetchQueueCounts();
   }
+
+  // ── Notification opt-in helpers ─────────────────────────────────
+
+  window.skipNotify = function () {
+    S.step = 'done';
+    render();
+  };
+
+  window.showNotifyQR = function (channel) {
+    var t = S.ticket;
+    if (!t || !t.qr_token) return;
+
+    var qrUrl = '';
+    var instruction = '';
+    var icon = '';
+    if (channel === 'whatsapp') {
+      var phone = S.whatsappPhone.replace(/\D/g, '');
+      qrUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent('JOIN_' + t.qr_token);
+      instruction = tr('Open WhatsApp and tap Send');
+      icon = '<svg width="32" height="32" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>';
+    } else {
+      qrUrl = 'https://m.me/' + S.messengerPageId + '?ref=JOIN_' + t.qr_token;
+      instruction = tr('Open Messenger and tap Get Started');
+      icon = '<svg width="32" height="32" viewBox="0 0 24 24" fill="#0084FF"><path d="M12 0C5.373 0 0 4.975 0 11.111c0 3.497 1.745 6.616 4.472 8.652V24l4.086-2.242c1.09.301 2.246.464 3.442.464 6.627 0 12-4.974 12-11.111C24 4.975 18.627 0 12 0zm1.193 14.963l-3.056-3.259-5.963 3.259L10.733 8.1l3.13 3.259L19.752 8.1l-6.559 6.863z"/></svg>';
+    }
+
+    // Generate QR code for the URL
+    var qrContainer = document.getElementById('notify-qr-container');
+    var instrEl = document.getElementById('notify-instruction');
+    var channelBtns = document.getElementById('notify-channel-buttons');
+    if (!qrContainer) return;
+
+    // Show QR section, hide channel buttons
+    if (channelBtns) channelBtns.style.display = 'none';
+
+    qrContainer.innerHTML =
+      '<div class="notify-qr-card scale-in">' +
+      '<div style="margin-bottom:16px">' + icon + '</div>' +
+      '<div class="notify-qr-box" id="notify-qr-img"></div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text);margin-top:16px">' + tr('Scan with your phone') + '</div>' +
+      '<div style="font-size:13px;color:var(--text2);margin-top:4px">' + instruction + '</div>' +
+      '</div>';
+
+    // Server-side QR generation
+    var img = document.createElement('img');
+    img.src = API + '/api/qr?data=' + encodeURIComponent(qrUrl);
+    img.width = 220;
+    img.height = 220;
+    img.style.display = 'block';
+    img.style.imageRendering = 'pixelated';
+    img.alt = 'QR Code';
+    var imgEl = document.getElementById('notify-qr-img');
+    if (imgEl) imgEl.appendChild(img);
+  };
 
   // ── Success Sound ──────────────────────────────────────────────
   function playSuccessSound() {
@@ -778,9 +857,49 @@
         '</div>' +
         '</div></div>';
 
+    } else if (S.step === 'notify') {
+      var t = S.ticket;
+      var hasWA = Boolean(S.whatsappPhone);
+      var hasMessenger = Boolean(S.messengerPageId);
+
+      var channelButtons = '';
+      if (hasWA) {
+        channelButtons +=
+          '<button class="notify-channel-btn whatsapp" onclick="showNotifyQR(\'whatsapp\')">' +
+          '<svg width="36" height="36" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>' +
+          '<span>' + tr('WhatsApp') + '</span>' +
+          '</button>';
+      }
+      if (hasMessenger) {
+        channelButtons +=
+          '<button class="notify-channel-btn messenger" onclick="showNotifyQR(\'messenger\')">' +
+          '<svg width="36" height="36" viewBox="0 0 24 24" fill="#0084FF"><path d="M12 0C5.373 0 0 4.975 0 11.111c0 3.497 1.745 6.616 4.472 8.652V24l4.086-2.242c1.09.301 2.246.464 3.442.464 6.627 0 12-4.974 12-11.111C24 4.975 18.627 0 12 0zm1.193 14.963l-3.056-3.259-5.963 3.259L10.733 8.1l3.13 3.259L19.752 8.1l-6.559 6.863z"/></svg>' +
+          '<span>' + tr('Messenger') + '</span>' +
+          '</button>';
+      }
+
+      // Ticket summary at top
+      var ticketSummary =
+        '<div class="notify-ticket-summary">' +
+        '<div class="result-check small"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>' +
+        '<div class="notify-ticket-number">' + esc(t.ticket_number) + '</div>' +
+        '<div class="card-meta" style="justify-content:center;font-size:14px">' + tr('#{position} in queue', { position: t.position }) + '</div>' +
+        '</div>';
+
+      app.innerHTML = renderHeader() +
+        '<div class="kiosk-body"><div class="kiosk-content">' +
+        renderSteps() +
+        ticketSummary +
+        '<div class="section-title">' + tr('Get Notified') + '</div>' +
+        '<div class="section-subtitle">' + tr('Scan to receive live updates on your phone') + '</div>' +
+        '<div id="notify-channel-buttons" class="notify-channels">' + channelButtons + '</div>' +
+        '<div id="notify-qr-container"></div>' +
+        '<button class="btn btn-skip" onclick="skipNotify()">' + tr('Skip') + '</button>' +
+        '</div></div>';
+
     } else if (S.step === 'done') {
       var t = S.ticket;
-      var trackUrl = (CLOUD || API) + '/ticket/' + t.id;
+      var trackUrl = (CLOUD || API) + '/q/' + t.qr_token;
       var qrHtml = t.qr_data_url
         ? '<img src="' + t.qr_data_url + '" width="200" height="200" style="display:block;image-rendering:pixelated" alt="QR Code">'
         : '';
