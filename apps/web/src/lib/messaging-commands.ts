@@ -498,6 +498,68 @@ async function findAllActiveSessionsByUser(
     if (!existingIds.has(s.id)) allSessions.push(s);
   }
 
+  // ── Also find unlinked tickets by phone number (kiosk / in-house) ──
+  // WhatsApp identifier is a phone number; match against customer_data->>'phone'
+  if (channel === 'whatsapp' && identifier) {
+    // Normalize the WhatsApp phone to digits-only for flexible matching
+    const digits = identifier.replace(/\D/g, '');
+    const linkedTicketIds = new Set(allSessions.map((s: any) => s.ticket_id).filter(Boolean));
+
+    // Find active tickets where customer_data phone matches
+    const { data: phoneTickets } = await supabase
+      .from('tickets')
+      .select('id, office_id, customer_data, created_at')
+      .in('status', ['waiting', 'called', 'serving'])
+      .or(`customer_data->phone.ilike.%${digits.slice(-9)}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (phoneTickets && phoneTickets.length > 0) {
+      // Get office→org mapping
+      const officeIds = [...new Set(phoneTickets.map((t: any) => t.office_id))];
+      const { data: offices } = await supabase
+        .from('offices')
+        .select('id, organization_id')
+        .in('id', officeIds);
+      const officeOrgMap = new Map<string, string>((offices ?? []).map((o: any) => [o.id, o.organization_id]));
+
+      for (const ticket of phoneTickets) {
+        if (linkedTicketIds.has(ticket.id)) continue; // already linked
+
+        // Verify phone actually matches (the ilike is broad, do exact check)
+        const rawPhone = ticket.customer_data?.phone;
+        if (!rawPhone) continue;
+        const ticketDigits = String(rawPhone).replace(/\D/g, '');
+        // Match last 9+ digits to handle country code differences
+        const matchLen = Math.min(digits.length, ticketDigits.length, 9);
+        if (digits.slice(-matchLen) !== ticketDigits.slice(-matchLen)) continue;
+
+        const orgId = officeOrgMap.get(ticket.office_id);
+        if (!orgId) continue;
+
+        // Auto-create a session to link this ticket for future notifications
+        const { data: newSession } = await supabase
+          .from('whatsapp_sessions')
+          .insert({
+            organization_id: orgId,
+            ticket_id: ticket.id,
+            channel: 'whatsapp',
+            whatsapp_phone: identifier,
+            whatsapp_bsuid: bsuid || null,
+            state: 'active',
+            locale: 'en',
+          })
+          .select('id, ticket_id, organization_id, locale, channel')
+          .single();
+
+        if (newSession) {
+          allSessions.push(newSession);
+          linkedTicketIds.add(ticket.id);
+        }
+      }
+    }
+  }
+
   if (allSessions.length === 0) return [];
 
   // Fetch all org names in one query
