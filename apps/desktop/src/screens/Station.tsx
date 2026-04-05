@@ -620,7 +620,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
   const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
   const SHOW_DEVICES_KEY = 'qflo_station_show_devices';
-  const SHOW_LOCAL_NETWORK_KEY = 'qflo_station_show_local_network';
   const MIN_SIDEBAR_WIDTH = 320;
   const MAX_SIDEBAR_WIDTH = 720;
   const getDisplayUrlLabel = (url: string) => {
@@ -1243,7 +1242,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showDevices, setShowDevices] = useState(true);
-  const [showLocalNetwork, setShowLocalNetwork] = useState(true);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
     return filteredWaiting.slice(0, VISIBLE_CHUNK);
@@ -1258,10 +1256,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const storedShowDevices = window.localStorage.getItem(SHOW_DEVICES_KEY);
       if (storedShowDevices === 'true' || storedShowDevices === 'false') {
         setShowDevices(storedShowDevices === 'true');
-      }
-      const storedShowLocalNetwork = window.localStorage.getItem(SHOW_LOCAL_NETWORK_KEY);
-      if (storedShowLocalNetwork === 'true' || storedShowLocalNetwork === 'false') {
-        setShowLocalNetwork(storedShowLocalNetwork === 'true');
       }
     } catch {
       // ignore persistence failures
@@ -1284,13 +1278,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   }, [showDevices]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SHOW_LOCAL_NETWORK_KEY, String(showLocalNetwork));
-    } catch {
-      // ignore persistence failures
-    }
-  }, [showLocalNetwork]);
 
   // ── Render ──────────────────────────────────────────────────────
 
@@ -1811,125 +1798,116 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         <OfficeHoursBadge locale={locale} session={session} />
 
         {/* Device Status */}
-        {deviceStatuses.length > 0 && (
-          <div className="sidebar-section">
-            <button
-              onClick={() => setShowDevices((v) => !v)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-              }}
-            >
-              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
-                {t('Devices')}
-              </h4>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showDevices ? '▲' : '▼'}</span>
-            </button>
-            {showDevices && deviceStatuses.map((d: any) => (
-              <div key={d.id} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0',
-                fontSize: 13, color: d.connected ? 'var(--text2)' : 'var(--danger)',
-              }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: 4, flexShrink: 0,
-                  background: d.connected ? '#22c55e' : '#ef4444',
-                }} aria-hidden="true" />
-                <span style={{ flex: 1 }}>{d.name}</span>
-                <span style={{ fontSize: 11, color: d.connected ? 'var(--text3)' : 'var(--danger)' }}>
-                  {d.connected ? t('Online') : t('Offline')}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Local Network / Remote Access URLs */}
+        {/* Devices & Network — unified section */}
         {kioskUrl && (() => {
-          // Remote = HTTP mode on a public domain (not a local/private IP)
           const h = window.location.hostname;
           const isLocalNetwork = /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost$)/.test(h);
           const isRemote = !!(window as any).__QF_HTTP_MODE__ && !isLocalNetwork;
+
+          // Build device→URL mapping
+          const deviceMap = new Map<string, any>();
+          for (const d of deviceStatuses) {
+            deviceMap.set(d.name?.toLowerCase().replace(/\s+/g, '_'), d);
+          }
+
           const items = [
             {
-              label: t('Station (remote control)'),
+              label: t('Station'),
+              subtitle: t('remote control'),
               localUrl: kioskUrl.replace('/kiosk', '/station'),
               publicUrl: 'https://qflo.net/station',
               publicLabel: 'https://qflo.net/station',
               icon: '🖥️',
+              device: deviceMap.get('qflo_station') ?? deviceMap.get('station'),
             },
             {
-              label: t('Kiosk (take tickets)'),
+              label: t('Kiosk'),
+              subtitle: t('take tickets'),
               localUrl: kioskUrl,
               publicUrl: publicLinks.kioskUrl,
               publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
               icon: '🎫',
+              device: deviceMap.get('local_kiosk') ?? deviceMap.get('kiosk'),
             },
             {
-              label: t('Display (waiting room TV)'),
+              label: t('Display'),
+              subtitle: t('waiting room TV'),
               localUrl: kioskUrl.replace('/kiosk', '/display'),
               publicUrl: publicLinks.displayUrl,
               publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
               icon: '📺',
+              device: null,
             },
           ];
-          // In remote mode, only show items that have a distinct public URL
           const visibleItems = isRemote ? items.filter((item) => item.publicUrl) : items;
           if (visibleItems.length === 0) return null;
           return (
             <div className="sidebar-section">
               <button
-                onClick={() => setShowLocalNetwork((value) => !value)}
+                onClick={() => setShowDevices((v) => !v)}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
                   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
                 }}
               >
                 <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
-                  {isRemote ? t('Remote Access') : t('Local Network')}
+                  {isRemote ? t('Remote Access') : t('Devices & Network')}
                 </h4>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showLocalNetwork ? '▲' : '▼'}</span>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showDevices ? '▲' : '▼'}</span>
               </button>
-              {showLocalNetwork && (
+              {showDevices && (
                 <>
-                  {visibleItems.map((item) => (
-                    <div key={item.label} style={{ marginTop: 8, marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 2 }}>{item.icon} {item.label}</div>
-                      {!isRemote && (
-                        <div
-                          style={{
-                            background: 'var(--surface2)', padding: '6px 10px', borderRadius: 6,
-                            fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--primary)',
-                            wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
-                          }}
-                          title={t('Click to open')}
-                          onClick={() => { window.open(item.localUrl, '_blank'); }}
-                        >
-                          {getDisplayUrlLabel(item.localUrl)}
+                  {visibleItems.map((item) => {
+                    const connected = item.device?.connected;
+                    return (
+                      <div key={item.label} style={{ marginTop: 10, marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 14 }}>{item.icon}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.label}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text3)' }}>— {item.subtitle}</span>
+                          {item.device && (
+                            <span style={{
+                              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+                              fontSize: 11, color: connected ? '#22c55e' : 'var(--danger)',
+                            }}>
+                              <span style={{
+                                width: 6, height: 6, borderRadius: 3, flexShrink: 0,
+                                background: connected ? '#22c55e' : '#ef4444',
+                              }} />
+                              {connected ? t('Online') : t('Offline')}
+                            </span>
+                          )}
                         </div>
-                      )}
-                      {item.publicUrl ? (
-                        <div
-                          style={{
-                            marginTop: isRemote ? 0 : 6,
-                            background: 'var(--surface2)',
-                            padding: '6px 10px',
-                            borderRadius: 6,
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            color: 'var(--primary)',
-                            wordBreak: 'break-all',
-                            userSelect: 'all',
-                            cursor: 'pointer',
-                          }}
-                          title={t('Click to open')}
-                          onClick={() => { window.open(item.publicUrl!, '_blank'); }}
-                        >
-                          {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                        {!isRemote && (
+                          <div
+                            style={{
+                              background: 'var(--surface2)', padding: '5px 10px', borderRadius: 6,
+                              fontFamily: 'monospace', fontSize: 11.5, fontWeight: 600, color: 'var(--primary)',
+                              wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
+                            }}
+                            title={t('Click to open')}
+                            onClick={() => { window.open(item.localUrl, '_blank'); }}
+                          >
+                            {getDisplayUrlLabel(item.localUrl)}
+                          </div>
+                        )}
+                        {item.publicUrl ? (
+                          <div
+                            style={{
+                              marginTop: isRemote ? 0 : 4,
+                              background: 'var(--surface2)', padding: '5px 10px', borderRadius: 6,
+                              fontFamily: 'monospace', fontSize: 11.5, fontWeight: 600, color: 'var(--primary)',
+                              wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
+                            }}
+                            title={t('Click to open')}
+                            onClick={() => { window.open(item.publicUrl!, '_blank'); }}
+                          >
+                            {item.publicLabel ?? getDisplayUrlLabel(item.publicUrl)}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                   {!isRemote && (
                     <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
                       {t('Open on any device on this WiFi network. Works offline.')}
