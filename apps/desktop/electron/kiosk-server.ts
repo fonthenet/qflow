@@ -357,8 +357,9 @@ export function getLocalIP(): string {
 
 // ── Start kiosk server ────────────────────────────────────────────
 
-export function startKioskServer(port = 3847): Promise<{ url: string; port: number }> {
+export function startKioskServer(port = 3847, requestedPort?: number): Promise<{ url: string; port: number }> {
   localPort = port;
+  const originalPort = requestedPort ?? port;
 
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
@@ -425,6 +426,8 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
         handleStationGetTickets(url, res);
       } else if (path === '/api/station/update-ticket' && req.method === 'POST') {
         handleStationBody(req, res, handleStationUpdateTicket);
+      } else if (path === '/api/station/update-desk' && req.method === 'POST') {
+        handleStationBody(req, res, handleStationUpdateDesk);
       } else if (path === '/api/station/call-next' && req.method === 'POST') {
         handleStationBody(req, res, handleStationCallNext);
       } else if (path === '/api/station/query' && req.method === 'GET') {
@@ -462,16 +465,20 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
     server.listen(port, '0.0.0.0', () => {
       const ip = getLocalIP();
       const url = `http://${ip}:${port}`;
+      if (port !== originalPort) {
+        console.warn(`[kiosk] Port ${originalPort} was in use — started on port ${port} instead`);
+      }
       console.log(`Kiosk server running at ${url}/kiosk`);
       resolve({ url, port });
     });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
       if (port < 9000) {
-        // Try next port on any error (EADDRINUSE, EACCES, EPERM, etc.)
-        startKioskServer(port + 1).then(resolve).catch(reject);
+        console.warn(`[kiosk] Port ${port} unavailable (${err.code ?? err.message}) — trying ${port + 1}`);
+        startKioskServer(port + 1, originalPort).then(resolve).catch(reject);
       } else {
-        reject(err);
+        console.error(`[kiosk] All ports ${originalPort}-9000 exhausted. Cannot start server.`);
+        reject(new Error(`Could not find an available port (tried ${originalPort}-9000). Close other applications using these ports and restart.`));
       }
     });
   });
@@ -480,6 +487,79 @@ export function startKioskServer(port = 3847): Promise<{ url: string; port: numb
 export function stopKioskServer() {
   server?.close();
   server = null;
+  stopDiscoveryBroadcast();
+}
+
+// ── Discovery Service ───────────────────────────────────────────────
+//
+// Zero external dependencies — uses only Node.js built-in http module.
+//
+// How it works:
+//   The Station runs a tiny HTTP server on a FIXED port (19847) that
+//   never changes, regardless of which port the main API lands on.
+//   Mobile apps scan only this port across the subnet — 254 probes
+//   finish in ~2 seconds. The response tells the app the main API port.
+//
+//   As a second layer, the mobile app also probes the main API's
+//   /api/health endpoint on common ports (8080-8085) as a fallback.
+//
+//   GET http://<any-ip>:19847/discover
+//   → { magic, ip, port, version, name, office }
+
+const DISCOVERY_PORT = 19847;
+const DISCOVERY_MAGIC = 'QFLO_STATION';
+
+let discoveryServer: http.Server | null = null;
+
+function getOfficeName(): string {
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = 'office_name'").get() as any;
+    return row?.value ?? '';
+  } catch { return ''; }
+}
+
+export function startDiscoveryBroadcast(httpPort: number) {
+  stopDiscoveryBroadcast();
+
+  try {
+    discoveryServer = http.createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+
+      const url = req.url?.split('?')[0];
+      if (url !== '/discover') { res.writeHead(404); res.end(); return; }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        magic: DISCOVERY_MAGIC,
+        ip: getLocalIP(),
+        port: httpPort,
+        version: CONFIG.APP_VERSION,
+        name: CONFIG.APP_NAME,
+        office: getOfficeName(),
+      }));
+    });
+
+    discoveryServer.on('error', (err: NodeJS.ErrnoException) => {
+      console.warn(`[discovery] Port ${DISCOVERY_PORT} unavailable:`, err.message);
+    });
+
+    discoveryServer.listen(DISCOVERY_PORT, '0.0.0.0', () => {
+      console.log(`[discovery] Listening on :${DISCOVERY_PORT} → main API :${httpPort}`);
+    });
+  } catch (err: any) {
+    console.warn('[discovery] Failed to start (non-fatal):', err?.message);
+  }
+}
+
+export function stopDiscoveryBroadcast() {
+  if (discoveryServer) {
+    try { discoveryServer.close(); } catch { /* ignore */ }
+    discoveryServer = null;
+  }
 }
 
 function getCurrentSessionOfficeIds() {
@@ -804,6 +884,57 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       const pos = position?.pos ?? 1;
       const estimatedWait = Math.round((pos > 1 ? pos - 1 : 0) * avgMin);
 
+      // ── WhatsApp notification (fire-and-forget, don't block response) ──
+      let whatsappStatus: { sent: boolean; error?: string } | undefined;
+      if (safePhone && isCloudReachable) {
+        // Compute country dial code for phone normalization
+        const TZ_DIAL: Record<string, string> = {
+          'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
+          'Africa/Cairo': '20', 'Europe/Paris': '33', 'Europe/London': '44',
+          'America/New_York': '1', 'America/Chicago': '1', 'America/Denver': '1',
+          'America/Los_Angeles': '1', 'America/Toronto': '1',
+          'Asia/Riyadh': '966', 'Asia/Dubai': '971', 'Asia/Beirut': '961',
+        };
+        const ISO_DIAL: Record<string, string> = {
+          DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44',
+          US: '1', CA: '1', SA: '966', AE: '971', LB: '961',
+          TR: '90', DE: '49', ES: '34', IT: '39', BE: '32', NL: '31',
+        };
+        let officeCC2: string | null = null;
+        try { const s = typeof officeRow?.settings === 'string' ? JSON.parse(officeRow.settings) : (officeRow?.settings || {}); officeCC2 = s.country_code || null; } catch { /* empty */ }
+        const countryDialCode = (officeCC2 && ISO_DIAL[officeCC2.toUpperCase()]) || (officeRow?.timezone && TZ_DIAL[officeRow.timezone]) || null;
+
+        try {
+          const waRes = await fetch(`${SUPABASE_URL}/functions/v1/notify-ticket`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+            },
+            body: JSON.stringify({
+              ticketId,
+              phone: safePhone,
+              event: 'joined',
+              ticketNumber,
+              officeName: officeRow?.name ?? '',
+              position: pos,
+              trackUrl: `${CLOUD_URL}/q/${qrToken}`,
+              countryDialCode,
+              locale: loadStoredLocale(),
+            }),
+            signal: AbortSignal.timeout(8000),
+          });
+          const waBody = await waRes.json().catch(() => ({}));
+          console.log('[kiosk] WhatsApp notify response:', waRes.status, JSON.stringify(waBody));
+          whatsappStatus = waRes.ok && waBody.sent !== false
+            ? { sent: true }
+            : { sent: false, error: waBody.error || `HTTP ${waRes.status}` };
+        } catch (waErr: any) {
+          console.warn('[kiosk] WhatsApp notify failed:', waErr?.message);
+          whatsappStatus = { sent: false, error: waErr?.message || 'Network error' };
+        }
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         ticket: {
@@ -817,6 +948,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
           qr_token: qrToken,
           has_phone: Boolean(safePhone),
         },
+        whatsappStatus,
       }));
     } catch (err: any) {
       console.error('[kiosk] Ticket creation error:', err?.message, err?.stack);
@@ -2343,8 +2475,16 @@ function handleStationQuery(url: URL, res: http.ServerResponse) {
   let result: any[] = [];
   switch (table) {
     case 'departments': result = db.prepare(`SELECT id, name, code FROM departments WHERE office_id IN (${ph})`).all(...officeIds); break;
-    case 'services': result = db.prepare('SELECT id, name, department_id FROM services').all(); break;
-    case 'desks': result = db.prepare(`SELECT id, name FROM desks WHERE office_id IN (${ph})`).all(...officeIds); break;
+    case 'services': result = db.prepare(`SELECT id, name, department_id FROM services WHERE department_id IN (SELECT id FROM departments WHERE office_id IN (${ph}))`).all(...officeIds); break;
+    case 'desks': {
+      const rows = db.prepare(`SELECT id, name, display_name, department_id, current_staff_id, status, office_id FROM desks WHERE office_id IN (${ph})`).all(...officeIds) as any[];
+      // Enrich with department name for desk picker
+      result = rows.map((d: any) => {
+        const dept = d.department_id ? db.prepare('SELECT id, name FROM departments WHERE id = ?').get(d.department_id) as any : null;
+        return { ...d, departments: dept ?? null };
+      });
+      break;
+    }
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(result));
@@ -2563,8 +2703,11 @@ function handleStationBody(req: http.IncomingMessage, res: http.ServerResponse, 
   let size = 0;
   req.on('data', (chunk) => { size += chunk.length; if (size > 8192) { req.destroy(); return; } body += chunk; });
   req.on('end', () => {
-    try { handler(JSON.parse(body), res); }
-    catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON' })); }
+    let parsed: any;
+    try { parsed = JSON.parse(body); }
+    catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON' })); return; }
+    try { handler(parsed, res); }
+    catch (e: any) { console.error('[KioskServer] handler error:', e); if (!res.writableEnded) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message ?? 'Internal error' })); } }
   });
 }
 
@@ -2608,6 +2751,44 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ id: ticketId, ...safe }));
+}
+
+// ── Update Desk Status ─────────────────────────────────────────────
+function handleStationUpdateDesk(body: any, res: http.ServerResponse) {
+  const db = getDB();
+  const { deskId, updates } = body;
+  if (!deskId || !updates) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing deskId or updates' }));
+    return;
+  }
+
+  const ALLOWED = new Set(['status', 'current_staff_id']);
+  const safe: Record<string, any> = {};
+  for (const [k, v] of Object.entries(updates)) {
+    if (ALLOWED.has(k)) safe[k] = v;
+  }
+  if (!Object.keys(safe).length) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('null');
+    return;
+  }
+
+  const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
+  const vals = [...Object.values(safe), deskId];
+  db.prepare(`UPDATE desks SET ${sets} WHERE id = ?`).run(...vals);
+
+  // Sync to cloud
+  const syncId = `desk-${deskId}-${Date.now()}`;
+  db.prepare(
+    `INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'desks', ?, ?, ?)`,
+  ).run(syncId, deskId, JSON.stringify(safe), new Date().toISOString());
+  onTicketCreated?.(syncId);
+
+  notifyStationClients({ type: 'tickets_changed' });
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ id: deskId, ...safe }));
 }
 
 async function handleStationCallNext(body: any, res: http.ServerResponse) {

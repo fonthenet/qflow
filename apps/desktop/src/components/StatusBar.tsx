@@ -174,9 +174,9 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
 
     if (updateStatus.status === 'downloaded') {
       return (
-        <button className="update-badge ready" onClick={handleInstallUpdate} title={updateStatus.message ?? undefined}>
-          {t('Restart to update')}
-        </button>
+        <span className="update-badge ready" title={updateStatus.message ?? undefined}>
+          {t('Update {version} ready — will install on restart', { version: updateStatus.version ?? '' })}
+        </span>
       );
     }
 

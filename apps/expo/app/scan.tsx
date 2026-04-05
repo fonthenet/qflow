@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -56,6 +57,7 @@ function parseScannedData(data: string): ParsedCode {
 }
 
 export default function ScanScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { colors } = useTheme();
   const { setActiveToken } = useAppStore();
@@ -170,7 +172,7 @@ export default function ScanScreen() {
   if (!permission) {
     return (
       <View style={[styles.permissionContainer, { backgroundColor: colors.background }]}>
-        <Text style={[styles.permissionLoadingText, { color: colors.textSecondary }]}>Requesting camera access...</Text>
+        <Text style={[styles.permissionLoadingText, { color: colors.textSecondary }]}>{t('scan.requestingCamera')}</Text>
       </View>
     );
   }
@@ -181,16 +183,13 @@ export default function ScanScreen() {
         <View style={[styles.permissionIconCircle, { backgroundColor: colors.infoLight }]}>
           <Ionicons name="camera-outline" size={56} color={colors.primaryLight} />
         </View>
-        <Text style={[styles.permissionTitle, { color: colors.text }]}>Camera Access Needed</Text>
+        <Text style={[styles.permissionTitle, { color: colors.text }]}>{t('scan.cameraNeeded')}</Text>
         <Text style={[styles.permissionSubtitle, { color: colors.textSecondary }]}>
-          We need your camera to scan QR codes at queue locations.
+          {t('scan.cameraNeededMsg')}
         </Text>
         <TouchableOpacity style={[styles.permissionButton, { backgroundColor: colors.primary }]} onPress={requestPermission}>
           <Ionicons name="camera" size={20} color="#fff" style={{ marginRight: 8 }} />
-          <Text style={styles.permissionButtonText}>Allow Camera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
-          <Text style={[styles.backLinkText, { color: colors.primaryLight }]}>Go back</Text>
+          <Text style={styles.permissionButtonText}>{t('common.next')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -241,7 +240,7 @@ export default function ScanScreen() {
             <View style={[styles.feedbackIcon, { backgroundColor: colors.error }]}>
               <Ionicons name="close" size={48} color="#fff" />
             </View>
-            <Text style={styles.feedbackText}>Invalid QR code</Text>
+            <Text style={styles.feedbackText}>{t('scan.invalidQR')}</Text>
           </View>
         )}
       </Animated.View>
@@ -251,8 +250,8 @@ export default function ScanScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.scanTitle}>Scan QR Code</Text>
-        <Text style={styles.scanSubtitle}>Point at the queue display or ticket</Text>
+        <Text style={styles.scanTitle}>{t('scan.scanQR')}</Text>
+        <Text style={styles.scanSubtitle}>{t('scan.pointAtQR')}</Text>
       </View>
 
       {/* Bottom controls */}
@@ -261,20 +260,20 @@ export default function ScanScreen() {
           <Ionicons name={torch ? 'flash' : 'flash-outline'} size={26} color="#fff" />
         </TouchableOpacity>
         <TouchableOpacity onPress={toggleManualEntry} activeOpacity={0.7}>
-          <Text style={styles.manualEntryBottomLink}>Enter code manually</Text>
+          <Text style={styles.manualEntryBottomLink}>{t('scan.enterManually')}</Text>
         </TouchableOpacity>
-        <Text style={styles.tipText}>Having trouble? Make sure the QR code is well-lit</Text>
+        <Text style={styles.tipText}>{t('scan.scanTip')}</Text>
       </View>
 
       {/* Manual entry sheet */}
       {showManualEntry && (
         <Animated.View style={[styles.manualSheet, { backgroundColor: colors.surface, transform: [{ translateY: manualEntryTranslateY }] }]}>
           <View style={[styles.manualSheetHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.manualSheetTitle, { color: colors.text }]}>Enter Queue Code</Text>
+          <Text style={[styles.manualSheetTitle, { color: colors.text }]}>{t('scan.enterCode')}</Text>
           <View style={styles.manualInputRow}>
             <TextInput
               style={[styles.manualInput, { backgroundColor: colors.surfaceSecondary, color: colors.text, borderColor: colors.border }]}
-              placeholder="Enter queue code or paste link"
+              placeholder={t('scan.enterCodePlaceholder')}
               placeholderTextColor={colors.textMuted}
               value={manualCode}
               onChangeText={setManualCode}
@@ -289,11 +288,11 @@ export default function ScanScreen() {
               disabled={!manualCode.trim()}
               activeOpacity={0.7}
             >
-              <Text style={styles.joinButtonText}>Join</Text>
+              <Text style={styles.joinButtonText}>{t('scan.join')}</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity onPress={toggleManualEntry} activeOpacity={0.7}>
-            <Text style={[styles.manualSheetCancel, { color: colors.textSecondary }]}>Cancel</Text>
+            <Text style={[styles.manualSheetCancel, { color: colors.textSecondary }]}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </Animated.View>
       )}
@@ -311,8 +310,6 @@ const styles = StyleSheet.create({
   permissionSubtitle: { fontSize: fontSize.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.lg, paddingHorizontal: spacing.md },
   permissionButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: 14, borderRadius: borderRadius.lg },
   permissionButtonText: { fontSize: fontSize.lg, fontWeight: '600', color: '#fff' },
-  backLink: { marginTop: spacing.lg, paddingVertical: spacing.sm },
-  backLinkText: { fontSize: fontSize.md, fontWeight: '500' },
 
   overlayRegion: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.6)' },
 

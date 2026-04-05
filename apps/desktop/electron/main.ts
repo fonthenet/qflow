@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
@@ -530,13 +530,14 @@ function setupIPC() {
 
     // Auto-create WhatsApp notification session if customer has a phone number
     // (skip if source is whatsapp/messenger — those create sessions via messaging flow)
+    let whatsappStatus: { sent: boolean; error?: string } | undefined;
     const ticketSource = ticket.source ?? 'walk_in';
     if (ticketSource !== 'whatsapp' && ticketSource !== 'messenger') {
       let cd: Record<string, any> = {};
       try { cd = typeof ticket.customer_data === 'string' ? JSON.parse(ticket.customer_data) : (ticket.customer_data ?? {}); } catch { /* empty */ }
       const rawPhone = typeof cd.phone === 'string' ? cd.phone.trim() : null;
       if (rawPhone && syncEngine?.isOnline) {
-        const officeRow = db.prepare('SELECT organization_id, timezone, settings FROM offices WHERE id = ?').get(ticket.office_id) as any;
+        const officeRow = db.prepare('SELECT name, organization_id, timezone, settings FROM offices WHERE id = ?').get(ticket.office_id) as any;
         const orgId = officeRow?.organization_id;
         const tz = officeRow?.timezone;
         let officeCC: string | null = null;
@@ -558,11 +559,18 @@ function setupIPC() {
         let phone = rawPhone.replace(/[^\d]/g, '');
         if (phone.startsWith('0') && dialCode) {
           phone = dialCode + phone.slice(1);
-        } else if (phone.length === 10 && !phone.startsWith('0') && !phone.startsWith('1') && dialCode === '1') {
-          // US/Canada 10-digit local → prepend 1
+        }
+        // North American numbers: 10 digits starting with 2-9 → prepend 1
+        // Works regardless of office country
+        if (phone.length === 10 && /^[2-9]/.test(phone)) {
           phone = '1' + phone;
         }
+        // Algeria: 9-digit subscriber number without leading 0 (e.g. 551234567)
+        if (phone.length === 9 && dialCode === '213') {
+          phone = '213' + phone;
+        }
         if (orgId && phone.length >= 7) {
+          // Create WhatsApp session (fire-and-forget)
           syncEngine.ensureFreshToken().then((token: string) => {
             fetch(`${SUPABASE_URL}/rest/v1/whatsapp_sessions`, {
               method: 'POST',
@@ -585,11 +593,42 @@ function setupIPC() {
               }),
             }).catch(() => {});
           }).catch(() => {});
+
+          // Send "joined" WhatsApp notification with feedback
+          try {
+            const pos = db.prepare(`SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND status = 'waiting' AND parked_at IS NULL`).get(ticket.office_id, ticket.department_id) as any;
+            const waRes = await fetch(`${SUPABASE_URL}/functions/v1/notify-ticket`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              },
+              body: JSON.stringify({
+                ticketId: ticket.id,
+                phone,
+                event: 'joined',
+                ticketNumber: ticket.ticket_number,
+                officeName: officeRow?.name ?? '',
+                position: pos?.c ?? 1,
+                trackUrl: `${CONFIG.CLOUD_URL}/q/${ticket.qr_token}`,
+                locale: currentLocale,
+              }),
+              signal: AbortSignal.timeout(8000),
+            });
+            const waBody = await waRes.json().catch(() => ({}));
+            console.log('[ipc] WhatsApp notify response:', waRes.status, JSON.stringify(waBody));
+            whatsappStatus = waRes.ok && waBody.sent !== false
+              ? { sent: true }
+              : { sent: false, error: waBody.error || `HTTP ${waRes.status}` };
+          } catch (waErr: any) {
+            console.warn('[ipc] WhatsApp notify failed:', waErr?.message);
+            whatsappStatus = { sent: false, error: waErr?.message || 'Network error' };
+          }
         }
       }
     }
 
-    return { ...ticket, qr_token: ticket.qr_token };
+    return { ...ticket, qr_token: ticket.qr_token, whatsappStatus };
   });
 
   ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any) => {
@@ -695,6 +734,22 @@ function setupIPC() {
       default:
         return [];
     }
+  });
+
+  ipcMain.handle('db:update-desk', (_e, deskId: string, updates: any) => {
+    if (!deskId || !updates || typeof updates !== 'object') return false;
+    const allowed = ['status', 'current_staff_id'] as const;
+    const cols: string[] = [];
+    const vals: any[] = [];
+    for (const key of allowed) {
+      if (key in updates) {
+        cols.push(`${key} = ?`);
+        vals.push(updates[key]);
+      }
+    }
+    if (cols.length === 0) return false;
+    db.prepare(`UPDATE desks SET ${cols.join(', ')} WHERE id = ?`).run(...vals, deskId);
+    return true;
   });
 
   ipcMain.handle('db:call-next', async (_e, officeId: string, deskId: string, staffId: string) => {
@@ -1223,6 +1278,16 @@ app.whenReady().then(async () => {
     kioskUrl = kiosk.url + '/kiosk';
     kioskPort = kiosk.port;
     console.log(`Kiosk available at: ${kioskUrl}`);
+    if (kiosk.port !== CONFIG.KIOSK_PORT) {
+      console.warn(`[Station] Default port ${CONFIG.KIOSK_PORT} was in use — running on port ${kiosk.port}`);
+      // Notify the Station UI so the operator knows
+      mainWindow?.webContents.send('port-changed', {
+        requested: CONFIG.KIOSK_PORT,
+        actual: kiosk.port,
+      });
+    }
+    // Start UDP discovery so mobile apps can find this Station instantly
+    startDiscoveryBroadcast(kiosk.port);
     // Notify Station UI instantly when a ticket is created from the local kiosk
     // Also push to cloud immediately so QR tracking works remotely
     setOnTicketCreated((syncQueueId: string) => {
@@ -1311,6 +1376,13 @@ app.whenReady().then(async () => {
       message: null,
     });
   }
+
+  // Re-check every 4 hours for stations that run for days
+  setInterval(async () => {
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch { /* silent */ }
+  }, 4 * 60 * 60 * 1000);
 });
 
 app.on('window-all-closed', () => {

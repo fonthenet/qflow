@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import i18next from 'i18next';
 
 // ── Phone normalization for WhatsApp ────────────────────────────
 const TIMEZONE_DIAL: Record<string, string> = {
@@ -203,6 +204,7 @@ export async function createInHouseTicket(params: {
   if (error) throw new Error(error.message);
 
   // Auto-create WhatsApp notification session if customer has a phone
+  let whatsappStatus: { sent: boolean; error?: string } | undefined;
   if (data && customerData.phone) {
     try {
       const { data: officeRow } = await supabase
@@ -224,11 +226,43 @@ export async function createInHouseTicket(params: {
           state: 'active',
           locale: 'fr',
         });
+
+        // Send "joined" notification via edge function and capture result
+        try {
+          // Fetch office name and position for the message
+          const { data: officeInfo } = await supabase.from('offices').select('name').eq('id', params.officeId).single();
+          const { count: posCount } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
+            .eq('office_id', params.officeId).eq('department_id', params.departmentId).eq('status', 'waiting').is('parked_at', null);
+          const trackUrl = `https://qflo.net/q/${data.qr_token}`;
+
+          const edgeUrl = `${supabase.supabaseUrl}/functions/v1/notify-ticket`;
+          const res = await fetch(edgeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ticketId: data.id,
+              event: 'joined',
+              phone: normalizedPhone,
+              ticketNumber: data.ticket_number,
+              officeName: officeInfo?.name ?? '',
+              position: posCount ?? 1,
+              trackUrl,
+              locale: i18next.language?.substring(0, 2) || 'fr',
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const result = await res.json().catch(() => ({}));
+          whatsappStatus = { sent: Boolean(result.sent), error: result.sent ? undefined : (result.reason ?? result.error ?? 'Send failed') };
+        } catch (err: any) {
+          whatsappStatus = { sent: false, error: err?.message ?? 'Send failed' };
+        }
+      } else {
+        whatsappStatus = { sent: false, error: normalizedPhone ? undefined : 'Invalid phone number' };
       }
     } catch {}
   }
 
-  return data;
+  return { ...data, whatsappStatus };
 }
 
 /** Generate a random hex token of given length */

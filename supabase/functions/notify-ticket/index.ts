@@ -19,7 +19,7 @@ const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "https://qflo.net").replac
 // ── Types ────────────────────────────────────────────────────────────
 
 type Locale = "fr" | "ar" | "en";
-type Event = "called" | "recall" | "buzz" | "serving" | "no_show" | "served" | "cancelled" | "next_in_line" | "approaching";
+type Event = "called" | "recall" | "buzz" | "serving" | "no_show" | "served" | "cancelled" | "next_in_line" | "approaching" | "joined";
 
 interface Session {
   id: string;
@@ -74,6 +74,11 @@ const messages: Record<string, Record<Locale, string>> = {
     fr: "📍 *Bientôt votre tour chez {name} !* Vous êtes *#{position}* dans la file (ticket *{ticket}*). Commencez à vous rapprocher.\n\nSuivi : {url}",
     ar: "*اقترب دورك في {name}!* أنت *#{position}* في الطابور (التذكرة *{ticket}*). ابدأ بالتوجه 📍\n\nتتبع: {url}",
     en: "📍 *Almost your turn at {name}!* You're *#{position}* in line (ticket *{ticket}*). Start heading over.\n\nTrack: {url}",
+  },
+  joined: {
+    fr: "✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n📍 Position : *#{position}*\n⏱️ Attente estimée : *~{wait} min*\n\n📍 Suivez votre position : {url}",
+    ar: "أنت في الطابور في *{name}*! ✅\n\n🎫 التذكرة: *{ticket}*\n📍 الموقع: *#{position}*\n⏱️ الانتظار المتوقع: *~{wait} د*\n\n📍 تتبع موقعك: {url}",
+    en: "✅ You're in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n📍 Position: *#{position}*\n⏱️ Est. wait: *~{wait} min*\n\n📍 Track your position: {url}",
   },
   cancelled_notify: {
     fr: "🚫 Le ticket *{ticket}* chez *{name}* a été annulé.",
@@ -224,7 +229,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "16";
+const VERSION = "17";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -247,7 +252,7 @@ Deno.serve(async (req) => {
     };
 
     // Validate event type at runtime
-    const validEvents: Event[] = ["called", "recall", "buzz", "serving", "no_show", "served", "cancelled", "next_in_line", "approaching"];
+    const validEvents: Event[] = ["called", "recall", "buzz", "serving", "no_show", "served", "cancelled", "next_in_line", "approaching", "joined"];
     if (!validEvents.includes(event)) {
       return new Response(JSON.stringify({ error: `Invalid event: ${event}` }), { status: 400 });
     }
@@ -256,6 +261,49 @@ Deno.serve(async (req) => {
 
     if (!ticketId || !event) {
       return new Response(JSON.stringify({ error: "Missing ticketId or event" }), { status: 400 });
+    }
+
+    // ── "joined" event — direct send, no session/ticket lookup needed ──
+    if (event === "joined") {
+      const { phone, ticketNumber, officeName, position: pos, trackUrl, waitMinutes: wait, countryDialCode, locale: reqLocale } = body as {
+        phone?: string; ticketNumber?: string; officeName?: string;
+        position?: number; trackUrl?: string; waitMinutes?: number;
+        countryDialCode?: string; locale?: string;
+      };
+      if (!phone) {
+        return Response.json({ sent: false, reason: "no phone for joined event" });
+      }
+      let normalizedPhone = phone.replace(/[^\d]/g, "");
+      // Normalize local numbers: if starts with 0 and we have a country dial code, replace leading 0
+      if (normalizedPhone.startsWith("0") && countryDialCode) {
+        normalizedPhone = countryDialCode + normalizedPhone.slice(1);
+      }
+      // North American numbers: 10 digits starting with 2-9 → prepend 1
+      if (normalizedPhone.length === 10 && /^[2-9]/.test(normalizedPhone)) {
+        normalizedPhone = "1" + normalizedPhone;
+      }
+      // Algeria: 9-digit subscriber without leading 0
+      if (normalizedPhone.length === 9 && countryDialCode === "213") {
+        normalizedPhone = "213" + normalizedPhone;
+      }
+      if (normalizedPhone.length < 7) {
+        return Response.json({ sent: false, error: "Invalid phone number" });
+      }
+      const locale: Locale = (reqLocale as Locale) || "fr";
+      const message = t("joined", locale, {
+        ticket: ticketNumber ?? "—",
+        name: officeName ?? "",
+        position: String(pos ?? 1),
+        wait: String(wait ?? 10),
+        url: trackUrl ?? "",
+        desk: "",
+      });
+      const sent = await sendWhatsApp(normalizedPhone, message);
+      console.log(`[notify-ticket v${VERSION}] joined direct send: phone=***${normalizedPhone.slice(-4)} sent=${sent}`);
+      if (sent) {
+        return Response.json({ sent: true, version: VERSION });
+      }
+      return Response.json({ sent: false, error: "WhatsApp send failed (outside 24h window or invalid number)", version: VERSION });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

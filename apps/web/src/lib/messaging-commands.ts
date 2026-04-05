@@ -284,9 +284,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '🚫 Ticket *{ticket}* has been cancelled.',
   },
   joined: {
-    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}\n\n💬 Répondez *OUI* pour recevoir les alertes en direct ou *NON* pour ne plus recevoir.',
-    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\nتتبع موقعك: {url} 📍\n\n💬 أرسل *نعم* لتلقي التنبيهات المباشرة أو *لا* للإلغاء.',
-    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.',
+    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
+    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\n📍 تتبع موقعك: {url}',
+    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
   },
   default: {
     fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
