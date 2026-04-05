@@ -23,7 +23,7 @@ export const CONFIG = {
   AUTO_RESOLVE_INTERVAL: 60_000,
 
   // Messaging (platform-level shared channels)
-  WHATSAPP_PHONE: '+15551617393',
+  WHATSAPP_PHONE: '+213551176598',
   MESSENGER_PAGE_ID: '1097672690089929',
 
   // App

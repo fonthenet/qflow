@@ -337,11 +337,11 @@ export function tNotification(key: string, locale: Locale, vars?: Record<string,
 
 function parseBusinessCode(message: string): { code: string; locale: Locale } | null {
   const trimmed = message.trim();
-  const frMatch = trimmed.match(/^REJOINDRE[\s\-]+(.+)$/i);
+  const frMatch = trimmed.match(/^REJOINDRE[\s\-_]+(.+)$/i);
   if (frMatch) return { code: frMatch[1].trim().toUpperCase(), locale: 'fr' };
-  const arMatch = trimmed.match(/^انضم[\s\-]+(.+)$/);
+  const arMatch = trimmed.match(/^انضم[\s\-_]+(.+)$/);
   if (arMatch) return { code: arMatch[1].trim().toUpperCase(), locale: 'ar' };
-  const enMatch = trimmed.match(/^JOIN[\s\-]+(.+)$/i);
+  const enMatch = trimmed.match(/^JOIN[\s\-_]+(.+)$/i);
   if (enMatch) return { code: enMatch[1].trim().toUpperCase(), locale: 'en' };
   return null;
 }
@@ -798,6 +798,10 @@ export async function handleInboundMessage(
       }
     }
 
+    // Check if the code is a kiosk qr_token (link to existing ticket)
+    const linked = await tryLinkKioskTicket(parsed.code, identifier, channel, sendMessage, parsed.locale, bsuid);
+    if (linked) return;
+
     const org = await findOrgByCode(parsed.code, channel);
     if (org) {
       await askJoinConfirmation(identifier, org, parsed.locale, channel, sendMessage, profileName, bsuid);
@@ -1100,6 +1104,114 @@ async function handleTrackLink(
   });
 
   await sendMessage({ to: identifier, body: message });
+}
+
+/**
+ * Try to link a messaging session to an existing kiosk ticket by qr_token.
+ * Returns true if the code matched a ticket and the session was created/linked.
+ */
+async function tryLinkKioskTicket(
+  code: string,
+  identifier: string,
+  channel: Channel,
+  sendMessage: SendFn,
+  locale: Locale,
+  bsuid?: string,
+): Promise<boolean> {
+  const supabase = createAdminClient();
+
+  // qr_tokens are 12-char lowercase hex — skip if it looks like a business code
+  const cleanCode = code.replace(/^_/, ''); // handle JOIN_token format
+  if (!/^[0-9a-f]{8,16}$/i.test(cleanCode)) return false;
+
+  const { data: ticket } = await (supabase as any)
+    .from('tickets')
+    .select('id, ticket_number, qr_token, status, office_id, department_id, created_at')
+    .eq('qr_token', cleanCode)
+    .single();
+
+  if (!ticket) return false;
+
+  // Ticket found by qr_token — this is a kiosk opt-in
+  if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
+    await sendMessage({ to: identifier, body: t('ticket_ended', locale) });
+    return true;
+  }
+
+  // Get org info
+  const { data: office } = await (supabase as any)
+    .from('offices')
+    .select('organization_id, name')
+    .eq('id', ticket.office_id)
+    .single();
+  if (!office) return false;
+
+  const { data: org } = await (supabase as any)
+    .from('organizations')
+    .select('name')
+    .eq('id', office.organization_id)
+    .single();
+
+  // Check for existing session on this ticket
+  const { data: existingSession } = await (supabase as any)
+    .from('whatsapp_sessions')
+    .select('id')
+    .eq('ticket_id', ticket.id)
+    .eq('state', 'active')
+    .maybeSingle();
+
+  if (existingSession) {
+    // Update existing session with the new channel/identifier
+    const update: Record<string, any> = { channel };
+    if (channel === 'whatsapp') {
+      update.whatsapp_phone = identifier;
+      update.whatsapp_bsuid = bsuid || null;
+      update.messenger_psid = null;
+    } else {
+      update.messenger_psid = identifier;
+      update.whatsapp_phone = null;
+    }
+    update.locale = locale;
+    await (supabase as any).from('whatsapp_sessions').update(update).eq('id', existingSession.id);
+  } else {
+    // Create new session linked to the kiosk ticket
+    await (supabase as any).from('whatsapp_sessions').insert({
+      organization_id: office.organization_id,
+      ticket_id: ticket.id,
+      channel,
+      whatsapp_phone: channel === 'whatsapp' ? identifier : null,
+      whatsapp_bsuid: channel === 'whatsapp' ? (bsuid || null) : null,
+      messenger_psid: channel === 'messenger' ? identifier : null,
+      state: 'active',
+      locale,
+    });
+  }
+
+  // Get position
+  const { count } = await (supabase as any)
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('office_id', ticket.office_id)
+    .eq('department_id', ticket.department_id)
+    .eq('status', 'waiting')
+    .lte('created_at', ticket.created_at)
+    .is('parked_at', null);
+
+  const position = count ?? 1;
+  const orgName = org?.name || office.name || '';
+
+  // Send confirmation
+  const confirmMsg = t('joined', locale, {
+    name: orgName,
+    ticket: ticket.ticket_number,
+    position: String(position),
+    wait: String(position * 5),
+    url: `https://qflo.net/q/${ticket.qr_token}`,
+  });
+  await sendMessage({ to: identifier, body: confirmMsg });
+
+  console.log(`[messaging] Kiosk ticket ${ticket.ticket_number} linked to ${channel} ${identifier.slice(-4)}`);
+  return true;
 }
 
 async function askJoinConfirmation(
