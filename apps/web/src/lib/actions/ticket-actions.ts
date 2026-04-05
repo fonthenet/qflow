@@ -1063,25 +1063,38 @@ export async function transferTicket(
   await syncLiveActivity(ticketId, 'TransferTicket');
 
   // Send WhatsApp notification to customer about the transfer
-  const customerPhone = extractTicketPhone(originalTicket.customer_data);
-  if (customerPhone) {
-    const normalized = normalizePhone(customerPhone);
-    if (normalized) {
+  try {
+    const { data: txSession } = await (supabase as any)
+      .from('whatsapp_sessions')
+      .select('whatsapp_phone, locale')
+      .eq('ticket_id', ticketId)
+      .in('state', ['active', 'completed'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const txPhone = txSession?.whatsapp_phone || (() => {
+      const p = extractTicketPhone(originalTicket.customer_data);
+      return p ? normalizePhone(p) : null;
+    })();
+    if (txPhone) {
       const trackUrl = buildAbsoluteTicketUrl(newTicket.qr_token);
       const { data: deptRow } = await supabase
         .from('departments')
         .select('display_name, name')
         .eq('id', targetDepartmentId)
         .single();
-      const deptName = deptRow?.display_name ?? deptRow?.name ?? 'another department';
-      sendWhatsAppMessage({
-        to: normalized,
-        body: `Your ticket has been transferred to ${deptName}. New ticket: ${newTicket.ticket_number}. Track: ${trackUrl}`,
-      }).catch((err) => {
+      const deptName = deptRow?.display_name ?? deptRow?.name ?? '';
+      const loc = txSession?.locale || 'fr';
+      const txMsg = loc === 'ar'
+        ? `تم تحويل تذكرتك إلى ${deptName}. التذكرة الجديدة: ${newTicket.ticket_number}\n📍 تتبع: ${trackUrl} 🔄`
+        : loc === 'fr'
+        ? `🔄 Votre ticket a été transféré vers ${deptName}. Nouveau ticket : ${newTicket.ticket_number}\n📍 Suivre : ${trackUrl}`
+        : `🔄 Your ticket has been transferred to ${deptName}. New ticket: ${newTicket.ticket_number}\n📍 Track: ${trackUrl}`;
+      sendWhatsAppMessage({ to: txPhone, body: txMsg }).catch((err) => {
         console.warn('[TransferTicket] WhatsApp transfer notification failed:', err);
       });
     }
-  }
+  } catch {}
 
   revalidatePath('/desk');
   return { data: newTicket };
@@ -1600,14 +1613,19 @@ export async function parkTicket(ticketId: string) {
   try {
     const { data: session } = await (supabase as any)
       .from('whatsapp_sessions')
-      .select('whatsapp_phone')
+      .select('whatsapp_phone, locale')
       .eq('ticket_id', ticketId)
       .eq('state', 'active')
       .maybeSingle();
     if (session?.whatsapp_phone) {
+      const parkMsg = session.locale === 'ar'
+        ? `تم تعليق تذكرتك ${ticket.ticket_number}. سيتم إعلامك عند استئنافها ⏸`
+        : session.locale === 'fr'
+        ? `⏸ Votre ticket ${ticket.ticket_number} a été mis en pause. Vous serez notifié(e) lors de la reprise.`
+        : `⏸ Your ticket ${ticket.ticket_number} has been put on hold. You'll be notified when it's resumed.`;
       sendWhatsAppMessage({
         to: session.whatsapp_phone,
-        body: `\u23F8 Your ticket ${ticket.ticket_number} has been put on hold. You'll be notified when it's resumed.`,
+        body: parkMsg,
       }).catch((err) => console.error('[ParkTicket] WhatsApp error:', err));
     }
   } catch {}
@@ -1702,15 +1720,21 @@ export async function resumeParkedTicket(ticketId: string, deskId?: string) {
     try {
       const { data: session } = await (supabase as any)
         .from('whatsapp_sessions')
-        .select('whatsapp_phone')
+        .select('whatsapp_phone, locale')
         .eq('ticket_id', ticketId)
         .eq('state', 'active')
         .maybeSingle();
       if (session?.whatsapp_phone) {
         const pos = await getQueuePosition(ticketId);
+        const posNum = pos.position ?? '?';
+        const resumeMsg = session.locale === 'ar'
+          ? `تذكرتك ${ticket.ticket_number} عادت إلى الطابور! الترتيب: #${posNum} ▶️`
+          : session.locale === 'fr'
+          ? `▶️ Votre ticket ${ticket.ticket_number} est de retour dans la file ! Position : #${posNum}`
+          : `▶️ Your ticket ${ticket.ticket_number} is back in the queue! Position: #${posNum}`;
         sendWhatsAppMessage({
           to: session.whatsapp_phone,
-          body: `\u25B6\uFE0F Your ticket ${ticket.ticket_number} is back in the queue! Position: #${pos.position ?? '?'}`,
+          body: resumeMsg,
         }).catch((err) => console.error('[ResumeParkedTicket] WhatsApp error:', err));
       }
     } catch {}
