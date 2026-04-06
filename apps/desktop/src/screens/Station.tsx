@@ -1308,7 +1308,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const fetchBroadcastTemplates = useCallback(async () => {
     try {
+      console.log('[broadcast] Fetching templates for org:', session.organization_id);
       const data = await window.qf.templates.list(session.organization_id);
+      console.log('[broadcast] Templates fetched:', data?.length ?? 0, data);
       setBroadcastTemplates(data ?? []);
     } catch (err) {
       console.error('[broadcast] Failed to fetch templates:', err);

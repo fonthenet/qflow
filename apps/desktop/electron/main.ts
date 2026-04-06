@@ -1038,9 +1038,12 @@ function setupIPC() {
 
   // ── Broadcast templates (local SQLite) ─────────────────────────
   ipcMain.handle('templates:list', (_e, orgId: string) => {
-    return db.prepare(
+    console.log('[templates] Listing for org:', orgId);
+    const rows = db.prepare(
       "SELECT id, title, shortcut, body_fr, body_ar, created_at FROM broadcast_templates WHERE organization_id = ? ORDER BY created_at DESC"
     ).all(orgId);
+    console.log('[templates] Found:', rows.length);
+    return rows;
   });
 
   ipcMain.handle('templates:save', (_e, orgId: string, title: string, bodyFr: string, bodyAr: string, shortcut: string) => {
