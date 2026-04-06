@@ -2373,6 +2373,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <CustomersModal
             organizationId={session.organization_id}
             locale={locale}
+            storedAuth={storedAuth}
             onClose={() => setShowCustomersModal(false)}
           />
         )}

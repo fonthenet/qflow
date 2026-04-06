@@ -213,7 +213,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
   }, [customers]);
 
   const card: React.CSSProperties = {
-    flex: 1, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10,
+    flex: 1, background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)', borderRadius: 10,
     padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4,
   };
 
@@ -228,27 +228,27 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: 'var(--surface)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 920,
+          background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 920,
           maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-          border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
+          border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
       >
         {/* Header */}
         <div style={{
-          padding: '18px 22px', borderBottom: '1px solid var(--border)',
+          padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
         }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text)', fontWeight: 700 }}>{t('Customers')}</h2>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+            <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Customers')}</h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
               {t('Showing {filtered} of {total} customers', { filtered: filtered.length, total: customers.length })}
             </p>
           </div>
           <button
             onClick={onClose}
             style={{
-              background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+              background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
               width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
@@ -258,20 +258,20 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
         {/* Stat cards */}
         <div style={{ padding: '14px 22px 0', display: 'flex', gap: 10 }}>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Total')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{stats.total}</span>
+            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Total')}</span>
+            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.total}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Active (30d)')}</span>
+            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Active (30d)')}</span>
             <span style={{ fontSize: 22, fontWeight: 700, color: '#22c55e' }}>{stats.active30}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Repeat')}</span>
+            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Repeat')}</span>
             <span style={{ fontSize: 22, fontWeight: 700, color: '#3b82f6' }}>{stats.repeat}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{stats.totalVisits}</span>
+            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</span>
+            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.totalVisits}</span>
           </div>
         </div>
 
@@ -284,20 +284,20 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
               <button
                 onClick={() => toggleAllVisible(visibleIds, allOn)}
                 style={{
-                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
                   padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
                 }}
               >{allOn ? t('Clear selection') : t('Select all visible')}</button>
             );
           })()}
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text3, #64748b)' }}>
             {selected.size > 0 ? t('{n} selected', { n: selected.size }) : t('None selected — sends to all visible')}
           </span>
           <div style={{ flex: 1 }} />
           <button
             onClick={() => { setShowAdd(true); setAddError(null); }}
             style={{
-              background: 'var(--primary)', color: '#fff', border: 'none',
+              background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
           >+ {t('Add Customer')}</button>
@@ -305,7 +305,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
             onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
             disabled={filtered.length === 0}
             style={{
-              background: 'var(--success)', color: '#fff', border: 'none',
+              background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
               cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
               opacity: filtered.length === 0 ? 0.5 : 1,
@@ -316,7 +316,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
         {/* Search */}
         <div style={{ padding: '14px 22px 10px' }}>
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', fontSize: 14 }}>⌕</span>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3, #64748b)', fontSize: 14 }}>⌕</span>
             <input
               type="text"
               placeholder={t('Search by name, phone, or email...')}
@@ -324,8 +324,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
               onChange={(e) => setSearch(e.target.value)}
               style={{
                 width: '100%', padding: '10px 12px 10px 34px', borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)', background: 'var(--bg)',
-                color: 'var(--text)', fontSize: 14, outline: 'none',
+                border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
               }}
             />
           </div>
@@ -334,11 +334,11 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px' }}>
           {loading ? (
-            <p style={{ textAlign: 'center', color: 'var(--text2)', padding: 40 }}>{t('Loading...')}</p>
+            <p style={{ textAlign: 'center', color: 'var(--text2, #94a3b8)', padding: 40 }}>{t('Loading...')}</p>
           ) : error ? (
-            <p style={{ textAlign: 'center', color: 'var(--danger)', padding: 40 }}>{error}</p>
+            <p style={{ textAlign: 'center', color: 'var(--danger, #ef4444)', padding: 40 }}>{error}</p>
           ) : filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3)' }}>
+            <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3, #64748b)' }}>
               <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.4 }}>👥</div>
               <p style={{ margin: 0 }}>{search ? t('No matches') : t('No customers found')}</p>
             </div>
@@ -352,17 +352,17 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '12px 14px', borderRadius: 10,
-                      background: 'var(--bg)', border: '1px solid var(--border)',
+                      background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)',
                       transition: 'border-color 0.15s, transform 0.15s',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary, #3b82f6)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border, #475569)'; }}
                   >
                     <input
                       type="checkbox"
                       checked={selected.has(c.id)}
                       onChange={() => toggleOne(c.id)}
-                      style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                      style={{ width: 16, height: 16, accentColor: 'var(--primary, #3b82f6)', cursor: 'pointer' }}
                     />
                     <div style={{
                       width: 40, height: 40, borderRadius: 20, flexShrink: 0,
@@ -373,7 +373,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {c.name || t('Unknown')}
                         </span>
                         {(c.visit_count || 0) >= 2 && (
@@ -383,19 +383,19 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                           }}>{t('Repeat')}</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3)' }}>
+                      <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3, #64748b)' }}>
                         {c.phone && <span style={{ direction: 'ltr' }}>📱 {c.phone}</span>}
                         {c.email && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {c.email}</span>}
                       </div>
                     </div>
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{c.visit_count || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{c.visit_count || 0}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 48 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text2)' }}>{timeAgo(c.last_visit_at, t)}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Last Visit')}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)' }}>{timeAgo(c.last_visit_at, t)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Last Visit')}</div>
                     </div>
                   </div>
                 );
@@ -417,14 +417,14 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'var(--surface)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 460,
-              border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 460,
+              border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
             }}
           >
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)', fontWeight: 700 }}>{t('Add Customer')}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Add Customer')}</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
                 {t('Saved to your organization and synced everywhere.')}
               </p>
             </div>
@@ -435,7 +435,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                 { label: t('Email'), value: addEmail, set: setAddEmail, placeholder: 'john@example.com', required: false, ltr: true },
               ].map((f) => (
                 <div key={f.label}>
-                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text2)', marginBottom: 4, fontWeight: 600 }}>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>
                     {f.label}{f.required ? ' *' : ''}
                   </label>
                   <input
@@ -446,8 +446,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                     disabled={addBusy}
                     style={{
                       width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border)', background: 'var(--bg)',
-                      color: 'var(--text)', fontSize: 14, outline: 'none',
+                      border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                      color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
                       direction: f.ltr ? 'ltr' : undefined,
                     }}
                   />
@@ -456,19 +456,19 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
               {addError && (
                 <div style={{
                   padding: 10, borderRadius: 8,
-                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger)', fontSize: 13,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger, #ef4444)', fontSize: 13,
                 }}>{addError}</div>
               )}
             </div>
             <div style={{
-              padding: '14px 22px', borderTop: '1px solid var(--border)',
+              padding: '14px 22px', borderTop: '1px solid var(--border, #475569)',
               display: 'flex', gap: 10, justifyContent: 'flex-end',
             }}>
               <button
                 onClick={() => { if (!addBusy) setShowAdd(false); }}
                 disabled={addBusy}
                 style={{
-                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
                   padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
                 }}
               >{t('Cancel')}</button>
@@ -476,7 +476,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                 onClick={handleAddCustomer}
                 disabled={addBusy || !addName.trim() || !addPhone.trim()}
                 style={{
-                  background: 'var(--primary)', color: '#fff', border: 'none',
+                  background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
                   padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
                   cursor: addBusy ? 'wait' : 'pointer',
                   opacity: addBusy || !addName.trim() || !addPhone.trim() ? 0.6 : 1,
@@ -499,14 +499,14 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'var(--surface)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 520,
-              border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 520,
+              border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
             }}
           >
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)', fontWeight: 700 }}>{t('Send WhatsApp')}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Send WhatsApp')}</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
                 {selected.size > 0
                   ? t('Will send to {n} selected customers', { n: selected.size })
                   : t('Will send to {n} visible customers', { n: filtered.length })}
@@ -520,11 +520,11 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                 rows={6}
                 style={{
                   width: '100%', padding: 12, borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)', background: 'var(--bg)',
-                  color: 'var(--text)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
+                  border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                  color: 'var(--text, #f1f5f9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
                 }}
               />
-              <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text3)' }}>
+              <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text3, #64748b)' }}>
                 {t('Use {name} to personalize with each customer\'s name.')}
               </p>
               {sendResult && (
@@ -538,19 +538,19 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
               {sendError && (
                 <div style={{
                   marginTop: 14, padding: 12, borderRadius: 8,
-                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger)', fontSize: 13,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger, #ef4444)', fontSize: 13,
                 }}>{sendError}</div>
               )}
             </div>
             <div style={{
-              padding: '14px 22px', borderTop: '1px solid var(--border)',
+              padding: '14px 22px', borderTop: '1px solid var(--border, #475569)',
               display: 'flex', gap: 10, justifyContent: 'flex-end',
             }}>
               <button
                 onClick={() => { if (!sending) setShowCompose(false); }}
                 disabled={sending}
                 style={{
-                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
                   padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
                 }}
               >{sendResult ? t('Close') : t('Cancel')}</button>
@@ -566,7 +566,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                   }}
                   disabled={sending || !composeText.trim()}
                   style={{
-                    background: 'var(--success)', color: '#fff', border: 'none',
+                    background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
                     padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
                     cursor: sending ? 'wait' : 'pointer', opacity: sending || !composeText.trim() ? 0.6 : 1,
                   }}
