@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import crypto from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
@@ -1044,11 +1044,18 @@ function setupIPC() {
   });
 
   ipcMain.handle('templates:save', (_e, tmpl: { organization_id: string; title: string; shortcut?: string; body_fr?: string; body_ar?: string }) => {
-    const id = crypto.randomUUID();
-    db.prepare(
-      "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
-    ).run(id, tmpl.organization_id, tmpl.title, tmpl.shortcut || null, tmpl.body_fr || null, tmpl.body_ar || null);
-    return { id };
+    try {
+      const id = randomUUID();
+      console.log('[templates] Saving:', tmpl.title, 'org:', tmpl.organization_id);
+      db.prepare(
+        "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(id, tmpl.organization_id, tmpl.title, tmpl.shortcut || null, tmpl.body_fr || null, tmpl.body_ar || null);
+      console.log('[templates] Saved:', id);
+      return { id };
+    } catch (err: any) {
+      console.error('[templates] Save error:', err?.message ?? err);
+      throw err;
+    }
   });
 
   ipcMain.handle('templates:delete', (_e, id: string, orgId: string) => {

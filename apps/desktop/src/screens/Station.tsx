@@ -1317,6 +1317,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, shortcut?: string) => {
     try {
+      if (!window.qf?.templates?.save) {
+        console.error('[broadcast] templates.save IPC not available');
+        showToast(t('Error saving template') + ' (restart required)', 'error');
+        return;
+      }
+      console.log('[broadcast] Saving template:', title, 'org:', session.organization_id);
       await window.qf.templates.save({
         organization_id: session.organization_id,
         title,
@@ -1324,10 +1330,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         body_ar: bodyAr || undefined,
         shortcut: shortcut || undefined,
       });
+      console.log('[broadcast] Template saved OK');
       await fetchBroadcastTemplates();
       showToast(t('Template saved'), 'success');
-    } catch (err) {
-      console.error('[broadcast] Failed to save template:', err);
+    } catch (err: any) {
+      console.error('[broadcast] Failed to save template:', err?.message ?? err, err);
       showToast(t('Error saving template'), 'error');
     }
   }, [session.organization_id, fetchBroadcastTemplates]);
