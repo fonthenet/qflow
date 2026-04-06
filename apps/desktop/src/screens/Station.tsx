@@ -623,7 +623,7 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
 
   return (
     <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, marginBottom: 6 }}>
         {t('Office Hours')}
       </div>
       <div style={{
@@ -717,7 +717,7 @@ function RemoteSupportSection({ t }: { t: (key: string, values?: Record<string, 
           padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
         }}
       >
-        <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+        <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
           {t('Remote Support')}
         </h4>
         <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showSupport ? '▲' : '▼'}</span>
@@ -1350,15 +1350,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
       console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
-      // Get current Supabase session for JWT auth
+      // Get fresh Supabase session for JWT auth (refresh if expired)
       const sb = await getSupabase();
-      const { data: { session: sbSession } } = await sb.auth.getSession();
+      const { data: { session: sbSession } } = await sb.auth.refreshSession();
       const accessToken = sbSession?.access_token ?? '';
+      console.log('[broadcast] Token present:', !!accessToken, 'len:', accessToken.length);
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
           'x-org-id': session.organization_id,
           'x-user-id': session.user_id,
         },
@@ -1867,7 +1868,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     )}
                     {customerHistory.recent_tickets && customerHistory.recent_tickets.length > 0 && (
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 0.5 }}>
                           {t('Recent Visits')}
                         </div>
                         {customerHistory.recent_tickets.map((rt: any, i: number) => (
@@ -2303,7 +2304,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           if (deskMap.size === 0) return null;
           return (
             <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
-              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 8px' }}>
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: '0 0 8px' }}>
                 {t('Active Desks')}
               </h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2340,7 +2341,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
               }}
             >
-              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
                 {t('Recent Activity ({count})', { count: recentActivity.length })}
               </h4>
               <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showActivity ? '▲' : '▼'}</span>
@@ -2427,7 +2428,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
                 }}
               >
-                <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+                <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
                   {isRemote ? t('Remote Access') : t('Devices & Network')}
                 </h4>
                 <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showDevices ? '▲' : '▼'}</span>
