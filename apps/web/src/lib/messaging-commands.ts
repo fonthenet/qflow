@@ -278,6 +278,77 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '\n\n📋 *ماذا تريد أن تفعل؟*\n*1* — التحقق من موقعك\n*2* — إلغاء تذكرتك',
     en: '\n\n📋 *What would you like to do?*\n*1* — Check your position\n*2* — Cancel your ticket',
   },
+  // ── Booking flow messages ──
+  booking_disabled: {
+    fr: '❌ Les réservations ne sont pas disponibles chez *{name}*.',
+    ar: 'الحجز غير متاح في *{name}* ❌',
+    en: '❌ Booking is not available at *{name}*.',
+  },
+  booking_choose_service: {
+    fr: '📅 *Réservation — {name}*\n\nChoisissez un service :\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour annuler.',
+    ar: '*حجز — {name}* 📅\n\nاختر خدمة:\n{list}\nأرسل *الرقم*.\nأرسل *0* للإلغاء.',
+    en: '📅 *Booking — {name}*\n\nChoose a service:\n{list}\nReply with the *number*.\nSend *0* to cancel.',
+  },
+  booking_choose_date: {
+    fr: '📅 *Choisissez une date :*\n\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
+    ar: '📅 *اختر تاريخًا:*\n\n{list}\nأرسل *الرقم*.\nأرسل *0* للعودة.',
+    en: '📅 *Choose a date:*\n\n{list}\nReply with the *number*.\nSend *0* to go back.',
+  },
+  booking_choose_time: {
+    fr: '⏰ *Choisissez un créneau pour le {date} :*\n\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
+    ar: '⏰ *اختر وقتًا ليوم {date}:*\n\n{list}\nأرسل *الرقم*.\nأرسل *0* للعودة.',
+    en: '⏰ *Choose a time slot for {date}:*\n\n{list}\nReply with the *number*.\nSend *0* to go back.',
+  },
+  booking_enter_name: {
+    fr: '📝 Veuillez entrer votre *nom complet* pour la réservation.\nEnvoyez *0* pour annuler.',
+    ar: '📝 يرجى إدخال *اسمك الكامل* للحجز.\nأرسل *0* للإلغاء.',
+    en: '📝 Please enter your *full name* for the booking.\nSend *0* to cancel.',
+  },
+  booking_enter_phone: {
+    fr: '📱 Entrez votre *numéro de téléphone* (ou envoyez *SKIP* pour passer).\nEnvoyez *0* pour annuler.',
+    ar: '📱 أدخل *رقم هاتفك* (أو أرسل *SKIP* للتخطي).\nأرسل *0* للإلغاء.',
+    en: '📱 Enter your *phone number* (or send *SKIP* to skip).\nSend *0* to cancel.',
+  },
+  booking_confirm: {
+    fr: '📋 *Résumé de votre réservation :*\n\n🏢 *{name}*\n📅 Date : *{date}*\n⏰ Heure : *{time}*\n👤 Nom : *{customer}*\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
+    ar: '📋 *ملخص حجزك:*\n\n🏢 *{name}*\n📅 التاريخ: *{date}*\n⏰ الوقت: *{time}*\n👤 الاسم: *{customer}*\n\n✅ أرسل *نعم* للتأكيد\n❌ أرسل *لا* للإلغاء',
+    en: '📋 *Your booking summary:*\n\n🏢 *{name}*\n📅 Date: *{date}*\n⏰ Time: *{time}*\n👤 Name: *{customer}*\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
+  },
+  booking_confirmed: {
+    fr: '✅ *Réservation confirmée !*\n\n🏢 *{name}*\n📅 *{date}* à *{time}*\n👤 *{customer}*\n\nVous recevrez un rappel 1h avant votre rendez-vous.\n\nPour annuler, envoyez *ANNULER RDV*.',
+    ar: '✅ *تم تأكيد الحجز!*\n\n🏢 *{name}*\n📅 *{date}* الساعة *{time}*\n👤 *{customer}*\n\nستتلقى تذكيرًا قبل ساعة من موعدك.\n\nللإلغاء، أرسل *الغاء موعد*.',
+    en: '✅ *Booking confirmed!*\n\n🏢 *{name}*\n📅 *{date}* at *{time}*\n👤 *{customer}*\n\nYou\'ll receive a reminder 1 hour before your appointment.\n\nTo cancel, send *CANCEL BOOKING*.',
+  },
+  booking_failed: {
+    fr: '⚠️ Impossible de créer la réservation. Le créneau est peut-être déjà complet. Veuillez réessayer.',
+    ar: 'تعذر إنشاء الحجز. قد يكون الوقت محجوزًا بالكامل. يرجى المحاولة مرة أخرى ⚠️',
+    en: '⚠️ Could not create the booking. The slot may be full. Please try again.',
+  },
+  booking_cancelled: {
+    fr: '❌ Réservation annulée.',
+    ar: 'تم إلغاء الحجز ❌',
+    en: '❌ Booking cancelled.',
+  },
+  booking_no_dates: {
+    fr: '😔 Aucun créneau disponible dans les prochains jours. Veuillez réessayer plus tard.',
+    ar: 'لا توجد مواعيد متاحة في الأيام القادمة. يرجى المحاولة لاحقًا 😔',
+    en: '😔 No available dates in the coming days. Please try again later.',
+  },
+  booking_no_slots: {
+    fr: '😔 Aucun créneau disponible pour cette date. Essayez une autre date.',
+    ar: 'لا توجد مواعيد متاحة لهذا التاريخ. جرب تاريخًا آخر 😔',
+    en: '😔 No available time slots for this date. Try another date.',
+  },
+  cancel_booking_none: {
+    fr: 'Vous n\'avez aucune réservation à venir.',
+    ar: 'ليس لديك أي حجز قادم.',
+    en: 'You have no upcoming bookings.',
+  },
+  cancel_booking_done: {
+    fr: '🚫 Votre réservation du *{date}* à *{time}* a été annulée.',
+    ar: 'تم إلغاء حجزك ليوم *{date}* الساعة *{time}* 🚫',
+    en: '🚫 Your booking for *{date}* at *{time}* has been cancelled.',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
@@ -339,9 +410,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
-  if (/^(REJOINDRE|STATUT|ANNULER|LISTE)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|الغاء|قائمة|القائمة|دليل|الفهرس)\b/.test(trimmed)) return 'ar';
-  if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY)\b/i.test(trimmed)) return 'en';
+  if (/^(REJOINDRE|STATUT|ANNULER|LISTE|RDV|RESERVER)\b/i.test(trimmed)) return 'fr';
+  if (/^(انضم|حالة|الغاء|قائمة|القائمة|دليل|الفهرس|موعد|حجز)\b/.test(trimmed)) return 'ar';
+  if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY|BOOK)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
 }
@@ -389,6 +460,21 @@ function parseBusinessCode(message: string): { code: string; locale: Locale } | 
   }
   const enMatch = trimmed.match(/^JOIN[\s\-_]+(.+)$/i);
   if (enMatch) return { code: enMatch[1].trim().toUpperCase(), locale: 'en' };
+  return null;
+}
+
+function parseBookingCode(message: string): { code: string; locale: Locale } | null {
+  const trimmed = message.trim();
+  const frMatch = trimmed.match(/^(RDV|RESERVER|RESERVATION)[\s\-_]+(.+)$/i);
+  if (frMatch) return { code: frMatch[2].trim().toUpperCase(), locale: 'fr' };
+  const arMatch = trimmed.match(/^(موعد|حجز)[\s\-_]+(.+)$/);
+  if (arMatch) {
+    const raw = arMatch[2].trim();
+    const hasArabic = /[\u0600-\u06FF]/.test(raw);
+    return { code: hasArabic ? raw : raw.toUpperCase(), locale: 'ar' };
+  }
+  const enMatch = trimmed.match(/^(BOOK|BOOKING|RESERVE)[\s\-_]+(.+)$/i);
+  if (enMatch) return { code: enMatch[2].trim().toUpperCase(), locale: 'en' };
   return null;
 }
 
@@ -849,6 +935,36 @@ export async function handleInboundMessage(
     }
   }
 
+  // ── Pending booking states ──
+  {
+    const supabaseBook = createAdminClient() as any;
+    const identColBook = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: bookSession } = await supabaseBook
+      .from('whatsapp_sessions')
+      .select('id, organization_id, office_id, department_id, service_id, state, locale, channel, booking_date, booking_time, booking_customer_name')
+      .eq(identColBook, identifier)
+      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_confirm'])
+      .eq('channel', channel)
+      .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL for booking flow
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (bookSession) {
+      const bookLocale = (bookSession.locale as Locale) || detectedLocale;
+      const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء|0)$/i.test(cleaned);
+
+      if (isCancel && bookSession.state !== 'booking_confirm') {
+        await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', bookLocale) });
+        return;
+      }
+
+      const handled = await handleBookingState(bookSession, cleaned, identifier, bookLocale, channel, sendMessage);
+      if (handled) return;
+    }
+  }
+
   // ── YES/NO opt-in for in-house tickets (active sessions) ──
   // When an in-house ticket is created, the customer gets a "joined" message
   // with "Reply YES for live alerts". Their reply opens the 24h conversation
@@ -1015,6 +1131,32 @@ export async function handleInboundMessage(
       // Multiple sessions — ask which one to cancel
       await handleCancelPick(identifier, allSessions, detectedLocale, channel, sendMessage);
     }
+    return;
+  }
+
+  // ── CANCEL BOOKING / ANNULER RDV / الغاء موعد ──
+  const cancelBookMatch = command.match(/^(CANCEL\s+BOOKING|ANNULER\s+RDV)$/);
+  const cancelBookAr = /^(الغاء\s*موعد|إلغاء\s*موعد)$/.test(cleaned);
+  if (cancelBookMatch || cancelBookAr) {
+    await handleCancelBooking(identifier, detectedLocale, channel, sendMessage);
+    return;
+  }
+
+  // ── BOOK / RDV / موعد with code ──
+  const bookParsed = parseBookingCode(cleaned);
+  if (bookParsed) {
+    const org = await findOrgByCode(bookParsed.code, channel);
+    if (org) {
+      await startBookingFlow(identifier, org, bookParsed.locale, channel, sendMessage);
+    } else {
+      await sendMessage({ to: identifier, body: t('code_not_found', bookParsed.locale, { code: bookParsed.code }) });
+    }
+    return;
+  }
+
+  // ── Plain BOOK / RDV / موعد without code ──
+  if (command === 'BOOK' || command === 'RDV' || command === 'RESERVER' || /^(موعد|حجز)$/.test(cleaned)) {
+    await sendMessage({ to: identifier, body: t('welcome', detectedLocale) });
     return;
   }
 
@@ -2263,4 +2405,511 @@ async function handleCancelAll(
 
   const msg = t('cancelled_all', locale, { list: cancelledItems.join('\n') });
   await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(msg) : msg });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// BOOKING FLOW — Conversational appointment booking via WhatsApp/Messenger
+// ══════════════════════════════════════════════════════════════════════
+
+/**
+ * Start the booking flow for an org. Creates a booking session and
+ * shows service selection (or date selection if only 1 service).
+ */
+async function startBookingFlow(
+  identifier: string,
+  org: OrgContext,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+) {
+  // Check if booking is enabled
+  if (org.settings.booking_mode === 'disabled' || !org.settings.booking_mode || org.settings.booking_mode === '') {
+    await sendMessage({ to: identifier, body: t('booking_disabled', locale, { name: org.name }) });
+    return;
+  }
+
+  const supabase = createAdminClient() as any;
+  const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+
+  // Get offices and services for this org
+  const { data: offices } = await supabase
+    .from('offices')
+    .select('id')
+    .eq('organization_id', org.id)
+    .eq('is_active', true)
+    .limit(1);
+
+  if (!offices || offices.length === 0) {
+    await sendMessage({ to: identifier, body: t('booking_disabled', locale, { name: org.name }) });
+    return;
+  }
+
+  const officeId = offices[0].id;
+
+  // Get departments + services
+  const { data: departments } = await supabase
+    .from('departments')
+    .select('id, name, code')
+    .eq('office_id', officeId);
+
+  const deptIds = (departments ?? []).map((d: any) => d.id);
+
+  const { data: services } = await supabase
+    .from('services')
+    .select('id, name, department_id')
+    .in('department_id', deptIds.length > 0 ? deptIds : ['none']);
+
+  // Clean up existing booking sessions
+  await supabase.from('whatsapp_sessions').delete()
+    .eq(identCol, identifier)
+    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_confirm'])
+    .eq('channel', channel);
+
+  if (!services || services.length === 0) {
+    // No services configured — create session with just office and first department
+    const deptId = departments?.[0]?.id;
+    if (!deptId) {
+      await sendMessage({ to: identifier, body: t('booking_disabled', locale, { name: org.name }) });
+      return;
+    }
+
+    await supabase.from('whatsapp_sessions').insert({
+      organization_id: org.id,
+      [identCol]: identifier,
+      channel,
+      state: 'booking_select_date',
+      locale,
+      office_id: officeId,
+      department_id: deptId,
+      service_id: null,
+    });
+
+    // Show dates directly
+    await showAvailableDates(identifier, org.name, officeId, deptId, locale, channel, sendMessage);
+    return;
+  }
+
+  if (services.length === 1) {
+    // Only 1 service — skip to date selection
+    const svc = services[0];
+    await supabase.from('whatsapp_sessions').insert({
+      organization_id: org.id,
+      [identCol]: identifier,
+      channel,
+      state: 'booking_select_date',
+      locale,
+      office_id: officeId,
+      department_id: svc.department_id,
+      service_id: svc.id,
+    });
+
+    await showAvailableDates(identifier, org.name, officeId, svc.id, locale, channel, sendMessage);
+    return;
+  }
+
+  // Multiple services — show selection
+  const list = services.map((s: any, i: number) => `*${i + 1}* — ${s.name}`).join('\n');
+  await supabase.from('whatsapp_sessions').insert({
+    organization_id: org.id,
+    [identCol]: identifier,
+    channel,
+    state: 'booking_select_service',
+    locale,
+    office_id: officeId,
+  });
+
+  await sendMessage({ to: identifier, body: t('booking_choose_service', locale, { name: org.name, list }) });
+}
+
+/**
+ * Handle a message when the user is in a booking flow state.
+ */
+async function handleBookingState(
+  session: any,
+  cleaned: string,
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+): Promise<boolean> {
+  const supabase = createAdminClient() as any;
+
+  switch (session.state) {
+    case 'booking_select_service':
+      return await handleBookingServiceChoice(session, cleaned, identifier, locale, channel, sendMessage);
+
+    case 'booking_select_date':
+      return await handleBookingDateChoice(session, cleaned, identifier, locale, channel, sendMessage);
+
+    case 'booking_select_time':
+      return await handleBookingTimeChoice(session, cleaned, identifier, locale, channel, sendMessage);
+
+    case 'booking_enter_name':
+      return await handleBookingNameInput(session, cleaned, identifier, locale, channel, sendMessage);
+
+    case 'booking_enter_phone': {
+      const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
+      const phone = isSkip ? identifier : cleaned.trim();
+      // Save phone and go to confirm
+      await supabase.from('whatsapp_sessions').update({
+        state: 'booking_confirm',
+      }).eq('id', session.id);
+
+      // Store phone temporarily (we'll use identifier as phone if skipped)
+      const orgName = await getOrgName(session.organization_id);
+      const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      await sendMessage({
+        to: identifier,
+        body: t('booking_confirm', locale, {
+          name: orgName,
+          date: dateFormatted,
+          time: session.booking_time,
+          customer: session.booking_customer_name,
+        }),
+      });
+      return true;
+    }
+
+    case 'booking_confirm': {
+      const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
+      const isNo = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+
+      if (isYes) {
+        await confirmBooking(session, identifier, locale, channel, sendMessage);
+        return true;
+      }
+      if (isNo) {
+        await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
+        return true;
+      }
+      // Re-show confirmation
+      const orgName = await getOrgName(session.organization_id);
+      const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      await sendMessage({
+        to: identifier,
+        body: t('booking_confirm', locale, {
+          name: orgName,
+          date: dateFormatted,
+          time: session.booking_time,
+          customer: session.booking_customer_name,
+        }),
+      });
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+async function handleBookingServiceChoice(
+  session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+): Promise<boolean> {
+  const numMatch = cleaned.match(/^(\d{1,2})$/);
+  if (!numMatch) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const idx = parseInt(numMatch[1], 10);
+  const supabase = createAdminClient() as any;
+
+  // Get services for this org's office
+  const { data: departments } = await supabase
+    .from('departments')
+    .select('id')
+    .eq('office_id', session.office_id);
+
+  const deptIds = (departments ?? []).map((d: any) => d.id);
+  const { data: services } = await supabase
+    .from('services')
+    .select('id, name, department_id')
+    .in('department_id', deptIds.length > 0 ? deptIds : ['none']);
+
+  if (!services || idx < 1 || idx > services.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const svc = services[idx - 1];
+  await supabase.from('whatsapp_sessions').update({
+    state: 'booking_select_date',
+    department_id: svc.department_id,
+    service_id: svc.id,
+  }).eq('id', session.id);
+
+  const orgName = await getOrgName(session.organization_id);
+  await showAvailableDates(identifier, orgName, session.office_id, svc.id, locale, channel, sendMessage);
+  return true;
+}
+
+async function handleBookingDateChoice(
+  session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+): Promise<boolean> {
+  const numMatch = cleaned.match(/^(\d{1,2})$/);
+  if (!numMatch) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const idx = parseInt(numMatch[1], 10);
+  if (idx === 0) {
+    // Go back — re-show service list
+    const supabase = createAdminClient() as any;
+    await supabase.from('whatsapp_sessions').update({ state: 'booking_select_service', service_id: null }).eq('id', session.id);
+    // Re-trigger service selection by sending the org name
+    const orgName = await getOrgName(session.organization_id);
+    const { data: departments } = await supabase.from('departments').select('id').eq('office_id', session.office_id);
+    const deptIds = (departments ?? []).map((d: any) => d.id);
+    const { data: services } = await supabase.from('services').select('id, name, department_id').in('department_id', deptIds.length > 0 ? deptIds : ['none']);
+    if (services && services.length > 1) {
+      const list = services.map((s: any, i: number) => `*${i + 1}* — ${s.name}`).join('\n');
+      await sendMessage({ to: identifier, body: t('booking_choose_service', locale, { name: orgName, list }) });
+    }
+    return true;
+  }
+
+  // Fetch available dates
+  const { getAvailableDates } = await import('@/lib/slot-generator');
+  const dates = await getAvailableDates(session.office_id, session.service_id || session.department_id);
+
+  if (!dates || idx < 1 || idx > dates.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const chosen = dates[idx - 1];
+  const supabase = createAdminClient() as any;
+  await supabase.from('whatsapp_sessions').update({
+    state: 'booking_select_time',
+    booking_date: chosen.date,
+  }).eq('id', session.id);
+
+  // Show time slots
+  await showAvailableSlots(identifier, session.office_id, session.service_id || session.department_id, chosen.date, locale, channel, sendMessage);
+  return true;
+}
+
+async function handleBookingTimeChoice(
+  session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+): Promise<boolean> {
+  const numMatch = cleaned.match(/^(\d{1,2})$/);
+  if (!numMatch) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const idx = parseInt(numMatch[1], 10);
+  if (idx === 0) {
+    // Go back to date selection
+    const supabase = createAdminClient() as any;
+    await supabase.from('whatsapp_sessions').update({ state: 'booking_select_date', booking_date: null }).eq('id', session.id);
+    const orgName = await getOrgName(session.organization_id);
+    await showAvailableDates(identifier, orgName, session.office_id, session.service_id || session.department_id, locale, channel, sendMessage);
+    return true;
+  }
+
+  // Fetch slots for the date
+  const { getAvailableSlots } = await import('@/lib/slot-generator');
+  const result = await getAvailableSlots({
+    officeId: session.office_id,
+    serviceId: session.service_id || session.department_id,
+    date: session.booking_date,
+  });
+
+  if (!result.slots || idx < 1 || idx > result.slots.length) {
+    await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
+    return true;
+  }
+
+  const chosenSlot = result.slots[idx - 1];
+  const supabase = createAdminClient() as any;
+  await supabase.from('whatsapp_sessions').update({
+    state: 'booking_enter_name',
+    booking_time: chosenSlot.time,
+  }).eq('id', session.id);
+
+  await sendMessage({ to: identifier, body: t('booking_enter_name', locale) });
+  return true;
+}
+
+async function handleBookingNameInput(
+  session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+): Promise<boolean> {
+  if (cleaned.length < 2 || cleaned.length > 100) {
+    await sendMessage({ to: identifier, body: t('booking_enter_name', locale) });
+    return true;
+  }
+
+  const supabase = createAdminClient() as any;
+  await supabase.from('whatsapp_sessions').update({
+    state: 'booking_confirm',
+    booking_customer_name: cleaned,
+  }).eq('id', session.id);
+
+  // Go straight to confirm (use the WhatsApp phone as contact)
+  const orgName = await getOrgName(session.organization_id);
+  const dateFormatted = formatDateForLocale(session.booking_date, locale);
+  await sendMessage({
+    to: identifier,
+    body: t('booking_confirm', locale, {
+      name: orgName,
+      date: dateFormatted,
+      time: session.booking_time,
+      customer: cleaned,
+    }),
+  });
+  return true;
+}
+
+async function confirmBooking(
+  session: any, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+) {
+  const supabase = createAdminClient() as any;
+
+  // Build scheduled_at from booking_date + booking_time
+  const scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
+
+  // Create appointment via direct insert (using service role)
+  const { nanoid } = await import('nanoid');
+  const calendarToken = nanoid(16);
+
+  const { data: appointment, error } = await supabase
+    .from('appointments')
+    .insert({
+      office_id: session.office_id,
+      department_id: session.department_id,
+      service_id: session.service_id,
+      customer_name: session.booking_customer_name,
+      customer_phone: identifier, // WhatsApp phone number
+      scheduled_at: scheduledAt,
+      status: 'pending',
+      calendar_token: calendarToken,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[booking] Failed to create appointment:', error.message);
+    await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+    await sendMessage({ to: identifier, body: t('booking_failed', locale) });
+    return;
+  }
+
+  // Clean up booking session
+  await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+
+  const orgName = await getOrgName(session.organization_id);
+  const dateFormatted = formatDateForLocale(session.booking_date, locale);
+
+  await sendMessage({
+    to: identifier,
+    body: t('booking_confirmed', locale, {
+      name: orgName,
+      date: dateFormatted,
+      time: session.booking_time,
+      customer: session.booking_customer_name,
+    }),
+  });
+}
+
+async function handleCancelBooking(
+  identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+) {
+  const supabase = createAdminClient() as any;
+
+  // Find upcoming appointments for this phone number
+  const now = new Date().toISOString();
+  const { data: appointments } = await supabase
+    .from('appointments')
+    .select('id, scheduled_at, office_id, customer_name')
+    .eq('customer_phone', identifier)
+    .in('status', ['pending', 'confirmed'])
+    .gte('scheduled_at', now)
+    .order('scheduled_at', { ascending: true })
+    .limit(1);
+
+  if (!appointments || appointments.length === 0) {
+    await sendMessage({ to: identifier, body: t('cancel_booking_none', locale) });
+    return;
+  }
+
+  const appt = appointments[0];
+  const scheduledDate = new Date(appt.scheduled_at);
+  const dateStr = scheduledDate.toISOString().split('T')[0];
+  const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+
+  // Cancel the appointment
+  await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' })
+    .eq('id', appt.id);
+
+  const dateFormatted = formatDateForLocale(dateStr, locale);
+  await sendMessage({
+    to: identifier,
+    body: t('cancel_booking_done', locale, { date: dateFormatted, time: timeStr }),
+  });
+}
+
+// ── Booking helpers ──
+
+async function showAvailableDates(
+  identifier: string, orgName: string, officeId: string, serviceId: string,
+  locale: Locale, channel: Channel, sendMessage: SendFn,
+) {
+  const { getAvailableDates } = await import('@/lib/slot-generator');
+  const dates = await getAvailableDates(officeId, serviceId);
+
+  if (dates.length === 0) {
+    await sendMessage({ to: identifier, body: t('booking_no_dates', locale) });
+    return;
+  }
+
+  const list = dates.map((d, i) => {
+    const formatted = formatDateForLocale(d.date, locale);
+    const slotsLabel = locale === 'ar' ? `${d.slotCount} متاح` : locale === 'fr' ? `${d.slotCount} dispo.` : `${d.slotCount} avail.`;
+    return `*${i + 1}* — ${formatted} (${slotsLabel})`;
+  }).join('\n');
+
+  await sendMessage({ to: identifier, body: t('booking_choose_date', locale, { list }) });
+}
+
+async function showAvailableSlots(
+  identifier: string, officeId: string, serviceId: string, date: string,
+  locale: Locale, channel: Channel, sendMessage: SendFn,
+) {
+  const { getAvailableSlots } = await import('@/lib/slot-generator');
+  const result = await getAvailableSlots({ officeId, serviceId, date });
+
+  if (result.slots.length === 0) {
+    await sendMessage({ to: identifier, body: t('booking_no_slots', locale) });
+    return;
+  }
+
+  const list = result.slots.map((s, i) => {
+    const remaining = s.remaining > 1 ? ` (${s.remaining} ${locale === 'ar' ? 'متاح' : locale === 'fr' ? 'places' : 'spots'})` : '';
+    return `*${i + 1}* — ${s.time}${remaining}`;
+  }).join('\n');
+
+  const dateFormatted = formatDateForLocale(date, locale);
+  await sendMessage({ to: identifier, body: t('booking_choose_time', locale, { date: dateFormatted, list }) });
+}
+
+async function getOrgName(orgId: string): Promise<string> {
+  const supabase = createAdminClient() as any;
+  const { data } = await supabase.from('organizations').select('name').eq('id', orgId).single();
+  return data?.name ?? '';
+}
+
+function formatDateForLocale(dateStr: string, locale: Locale): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  if (locale === 'ar') {
+    return d.toLocaleDateString('ar-DZ', { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  if (locale === 'fr') {
+    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
