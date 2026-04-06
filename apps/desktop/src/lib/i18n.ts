@@ -334,6 +334,9 @@ const FR: Messages = {
   'Sending...': 'Envoi en cours...',
   'Broadcast sent to {count} customers': 'Diffusion envoyée à {count} clients',
   'No waiting customers with messaging': 'Aucun client en attente avec messagerie',
+  'Template saved': 'Modèle enregistré',
+  'Error saving template': "Erreur lors de l'enregistrement du modèle",
+  'Broadcast error': 'Erreur de diffusion',
   'Delete': 'Supprimer',
 };
 
@@ -667,6 +670,9 @@ const AR: Messages = {
   'Sending...': 'جاري الإرسال...',
   'Broadcast sent to {count} customers': 'تم البث إلى {count} عملاء',
   'No waiting customers with messaging': 'لا يوجد عملاء منتظرين بالرسائل',
+  'Template saved': 'تم حفظ النموذج',
+  'Error saving template': 'خطأ في حفظ النموذج',
+  'Broadcast error': 'خطأ في البث',
   'Delete': 'حذف',
 };
 

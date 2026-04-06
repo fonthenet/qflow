@@ -831,8 +831,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
-  const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string; en: string }>({ fr: '', ar: '', en: '' });
-  const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar' | 'en'>('fr');
+  const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
+  const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
   const [broadcastTemplates, setBroadcastTemplates] = useState<any[]>([]);
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed?: number } | null>(null);
@@ -1312,7 +1312,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   }, [session.organization_id]);
 
-  const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, bodyEn: string) => {
+  const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string) => {
     try {
       const sb = await getSupabase();
       await sb.from('broadcast_templates').insert({
@@ -1320,13 +1320,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         title,
         body_fr: bodyFr || null,
         body_ar: bodyAr || null,
-        body_en: bodyEn || null,
       });
       await fetchBroadcastTemplates();
-      showToast(t('Save as Template') + ' ✓', 'success');
+      showToast(t('Template saved'), 'success');
     } catch (err) {
       console.error('[broadcast] Failed to save template:', err);
-      showToast('Error saving template', 'error');
+      showToast(t('Error saving template'), 'error');
     }
   }, [session.organization_id, fetchBroadcastTemplates]);
 
@@ -1340,12 +1339,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   }, [session.organization_id]);
 
-  const sendBroadcast = useCallback(async (msg: { fr: string; ar: string; en: string }, templateId?: string) => {
+  const sendBroadcast = useCallback(async (msg: { fr: string; ar: string }, templateId?: string) => {
     setBroadcastSending(true);
     setBroadcastResult(null);
     try {
-      // Use the active language message for non-template sends
-      const messageBody = msg[broadcastLang] || msg.fr || msg.ar || msg.en;
+      const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
         headers: {
@@ -1363,14 +1361,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       });
       const result = await res.json();
       setBroadcastResult({ sent: result.sent ?? 0, failed: result.failed });
-      if (result.sent > 0) {
-        showToast(t('Broadcast sent to {count} customers', { count: result.sent }), 'success');
-      } else {
-        showToast(t('No waiting customers with messaging'), 'info');
-      }
     } catch (err: any) {
       console.error('[broadcast] Send error:', err);
-      showToast('Broadcast error: ' + (err?.message ?? 'unknown'), 'error');
+      setBroadcastResult({ sent: 0, failed: -1 });
     } finally {
       setBroadcastSending(false);
     }
@@ -2587,36 +2580,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               )}
             </div>
 
-            {/* Send button */}
-            <button
-              disabled={broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar && !broadcastMsg.en)}
-              onClick={async () => {
-                if (broadcastSaveAsTemplate && broadcastTemplateName.trim()) {
-                  await saveBroadcastTemplate(broadcastTemplateName.trim(), broadcastMsg.fr, broadcastMsg.ar, broadcastMsg.en);
-                  setBroadcastSaveAsTemplate(false);
-                  setBroadcastTemplateName('');
-                }
-                await sendBroadcast(broadcastMsg);
-              }}
-              style={{
-                marginTop: 12, width: '100%', padding: '10px', borderRadius: 8,
-                border: 'none', background: '#0ea5e9', color: '#fff', fontSize: 14,
-                fontWeight: 700, cursor: broadcastSending ? 'wait' : 'pointer',
-                opacity: broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar && !broadcastMsg.en) ? 0.5 : 1,
-              }}
-            >
-              {broadcastSending ? t('Sending...') : t('Send to all waiting')}
-            </button>
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                disabled={broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar)}
+                onClick={async () => {
+                  if (broadcastSaveAsTemplate && broadcastTemplateName.trim()) {
+                    await saveBroadcastTemplate(broadcastTemplateName.trim(), broadcastMsg.fr, broadcastMsg.ar);
+                    setBroadcastSaveAsTemplate(false);
+                    setBroadcastTemplateName('');
+                  }
+                  await sendBroadcast(broadcastMsg);
+                }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: 8,
+                  border: 'none', background: '#0ea5e9', color: '#fff', fontSize: 14,
+                  fontWeight: 700, cursor: broadcastSending ? 'wait' : 'pointer',
+                  opacity: broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar) ? 0.5 : 1,
+                }}
+              >
+                {broadcastSending ? t('Sending...') : t('Send to all waiting')}
+              </button>
+            </div>
 
             {/* Result */}
             {broadcastResult && (
               <div style={{
                 marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                background: broadcastResult.sent > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
-                color: broadcastResult.sent > 0 ? '#22c55e' : '#f59e0b',
+                background: broadcastResult.sent > 0 ? 'rgba(34,197,94,0.12)'
+                  : broadcastResult.failed === -1 ? 'rgba(239,68,68,0.12)'
+                  : 'rgba(245,158,11,0.12)',
+                color: broadcastResult.sent > 0 ? '#22c55e'
+                  : broadcastResult.failed === -1 ? '#ef4444'
+                  : '#f59e0b',
               }}>
                 {broadcastResult.sent > 0
                   ? t('Broadcast sent to {count} customers', { count: broadcastResult.sent })
+                  : broadcastResult.failed === -1
+                  ? t('Broadcast error')
                   : t('No waiting customers with messaging')}
               </div>
             )}
@@ -2639,7 +2640,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           setBroadcastMsg({
                             fr: tmpl.body_fr ?? '',
                             ar: tmpl.body_ar ?? '',
-                            en: tmpl.body_en ?? '',
                           });
                         }}
                         style={{
@@ -2653,7 +2653,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       <button
                         onClick={async () => {
                           setBroadcastSending(true);
-                          await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '', en: tmpl.body_en ?? '' }, tmpl.id);
+                          await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '' }, tmpl.id);
                           setBroadcastSending(false);
                         }}
                         style={{
