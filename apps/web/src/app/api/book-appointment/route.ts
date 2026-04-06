@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
+import { getAvailableSlots } from '@/lib/slot-generator';
 
 function getSupabase() {
   return createClient(
@@ -29,77 +30,42 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
 
-  // Fetch org settings via office
-  const { data: office, error: officeError } = await supabase
-    .from('offices')
-    .select('id, organization_id')
-    .eq('id', officeId)
-    .single();
-
-  if (officeError || !office) {
-    return NextResponse.json({ error: 'Office not found' }, { status: 404 });
-  }
-
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('settings')
-    .eq('id', office.organization_id)
-    .single();
-
-  const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
-  const bookingMode = orgSettings.booking_mode ?? 'simple';
-  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
-  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
-
-  // Check if booking is disabled
-  if (bookingMode === 'disabled') {
-    return NextResponse.json({ error: 'Booking is currently disabled for this business' }, { status: 403 });
-  }
-
-  // Validate date is within booking horizon
+  // Extract date and time for validation
   const scheduledDate = new Date(scheduledAt);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const maxDate = new Date(today);
-  maxDate.setDate(maxDate.getDate() + bookingHorizonDays);
-  maxDate.setHours(23, 59, 59, 999);
-  if (scheduledDate > maxDate) {
-    return NextResponse.json({ error: 'Booking date is beyond the allowed horizon' }, { status: 400 });
-  }
-
-  // Extract date and time for capacity + blocked checks
   const dateStr = scheduledAt.split('T')[0];
   const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
 
-  // Check blocked slots (graceful — table may not exist yet)
-  let isBlocked = false;
-  try {
-    const blockedResult = await supabase
-      .from('blocked_slots')
-      .select('start_time, end_time')
-      .eq('office_id', officeId)
-      .eq('blocked_date', dateStr);
-    const blockedRanges = (blockedResult.data ?? []) as { start_time: string; end_time: string }[];
-    isBlocked = blockedRanges.some((b) => timeStr >= b.start_time && timeStr < b.end_time);
-  } catch {
-    // Table may not exist yet
-  }
-  if (isBlocked) {
-    return NextResponse.json({ error: 'This time slot is currently blocked' }, { status: 409 });
+  // Use centralized slot generator to validate availability
+  const availability = await getAvailableSlots({
+    officeId,
+    serviceId,
+    date: dateStr,
+    staffId,
+  });
+
+  // Check if booking is disabled
+  if (availability.meta.booking_mode === 'disabled') {
+    return NextResponse.json({ error: 'Booking is currently disabled for this business' }, { status: 403 });
   }
 
-  // Check capacity — count existing appointments at the same time slot
-  const { data: slotAppointments } = await supabase
-    .from('appointments')
-    .select('id')
-    .eq('office_id', officeId)
-    .eq('service_id', serviceId)
-    .neq('status', 'cancelled')
-    .gte('scheduled_at', `${dateStr}T${timeStr}:00`)
-    .lt('scheduled_at', `${dateStr}T${timeStr}:59`);
+  // Check if office is closed or holiday
+  if (availability.meta.office_closed) {
+    return NextResponse.json({ error: 'Office is closed on this date' }, { status: 400 });
+  }
 
-  if ((slotAppointments?.length ?? 0) >= slotsPerInterval) {
-    return NextResponse.json({ error: 'This time slot is fully booked' }, { status: 409 });
+  if (availability.meta.is_holiday) {
+    return NextResponse.json({ error: 'This date is a holiday' }, { status: 400 });
+  }
+
+  // Check daily limit
+  if (availability.meta.daily_limit_reached) {
+    return NextResponse.json({ error: 'Daily booking limit reached for this date' }, { status: 409 });
+  }
+
+  // Check if the specific time slot is available
+  const slotAvailable = availability.slots.find(s => s.time === timeStr);
+  if (!slotAvailable) {
+    return NextResponse.json({ error: 'This time slot is not available' }, { status: 409 });
   }
 
   const calendarToken = nanoid(16);
@@ -123,6 +89,10 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
+    // Check if it's a capacity error from the trigger
+    if (error.message?.includes('fully booked') || error.message?.includes('Daily booking limit')) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

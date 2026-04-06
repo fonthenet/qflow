@@ -9,7 +9,7 @@ import {
 } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
-import { getDateStartIso, getDateEndIso, getOfficeDayStartIso, getOfficeDayEndIso } from '@/lib/office-day';
+import { getOfficeDayStartIso, getOfficeDayEndIso } from '@/lib/office-day';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -332,99 +332,20 @@ export async function getAppointmentsByDate(officeId: string, date: string) {
 export async function getAvailableSlots(
   officeId: string,
   serviceId: string,
-  date: string
+  date: string,
+  staffId?: string,
 ) {
-  const supabase = createAdminClient();
+  const { getAvailableSlots: generateSlots } = await import('@/lib/slot-generator');
 
-  // Fetch office operating hours
-  const { data: office, error: officeError } = await supabase
-    .from('offices')
-    .select('operating_hours')
-    .eq('id', officeId)
-    .single();
-
-  if (officeError || !office) {
-    return { error: officeError?.message ?? 'Office not found' };
-  }
-
-  // Parse operating hours - expected format: { "monday": { "open": "08:00", "close": "17:00" }, ... }
-  const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }>) ?? {};
-  const dayOfWeek = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  const dayHours = operatingHours[dayOfWeek];
-
-  if (!dayHours) {
-    // Fallback: default hours 08:00-17:00
-    return { data: generateSlots('08:00', '17:00', date) };
-  }
-
-  const allSlots = generateSlots(dayHours.open, dayHours.close, date);
-
-  // Fetch office timezone for correct date boundaries
-  const { data: officeRow } = await supabase
-    .from('offices')
-    .select('timezone')
-    .eq('id', officeId)
-    .single();
-  const tz = officeRow?.timezone ?? undefined;
-
-  // Fetch existing appointments for that date to exclude booked slots
-  const startOfDay = getDateStartIso(date, tz);
-  const endOfDay = getDateEndIso(date, tz);
-
-  const { data: existingAppointments } = await supabase
-    .from('appointments')
-    .select('scheduled_at')
-    .eq('office_id', officeId)
-    .eq('service_id', serviceId)
-    .neq('status', 'cancelled')
-    .gte('scheduled_at', startOfDay)
-    .lte('scheduled_at', endOfDay);
-
-  const bookedTimes = new Set(
-    (existingAppointments ?? []).map((a) => {
-      const d = new Date(a.scheduled_at);
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    })
-  );
-
-  // Filter out slots that are in the past (if date is today)
-  const now = new Date();
-  const isToday = date === now.toISOString().split('T')[0];
-
-  const availableSlots = allSlots.filter((slot) => {
-    if (bookedTimes.has(slot)) return false;
-    if (isToday) {
-      const [h, m] = slot.split(':').map(Number);
-      const slotTime = new Date(date + 'T12:00:00');
-      slotTime.setHours(h, m, 0, 0);
-      if (slotTime <= now) return false;
-    }
-    return true;
+  const result = await generateSlots({
+    officeId,
+    serviceId,
+    date,
+    staffId,
   });
 
-  return { data: availableSlots };
-}
-
-function generateSlots(openTime: string, closeTime: string, date: string): string[] {
-  const slots: string[] = [];
-  const [openH, openM] = openTime.split(':').map(Number);
-  const [closeH, closeM] = closeTime.split(':').map(Number);
-
-  let currentH = openH;
-  let currentM = openM;
-
-  while (currentH < closeH || (currentH === closeH && currentM < closeM)) {
-    slots.push(
-      `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`
-    );
-    currentM += 30;
-    if (currentM >= 60) {
-      currentM -= 60;
-      currentH += 1;
-    }
-  }
-
-  return slots;
+  // Return backward-compatible string[] format
+  return { data: result.slots.map(s => s.time), meta: result.meta };
 }
 
 export async function findAppointment(officeId: string, searchTerm: string): Promise<{ data: any[]; error?: string }> {
@@ -549,8 +470,8 @@ export async function joinSlotWaitlist(data: JoinSlotWaitlistData) {
     .insert({
       office_id: data.officeId,
       service_id: data.serviceId,
-      date: data.date,
-      time: data.time,
+      requested_date: data.date,
+      requested_time: data.time,
       customer_name: data.customerName.trim(),
       customer_phone: data.customerPhone?.trim() || null,
       customer_email: data.customerEmail?.trim() || null,
@@ -589,8 +510,8 @@ export async function notifyWaitlistOnCancellation(appointmentId: string) {
     .select('id')
     .eq('office_id', appointment.office_id)
     .eq('service_id', appointment.service_id)
-    .eq('date', date)
-    .eq('time', time)
+    .eq('requested_date', date)
+    .eq('requested_time', time)
     .eq('status', 'waiting')
     .order('created_at', { ascending: true })
     .limit(1);

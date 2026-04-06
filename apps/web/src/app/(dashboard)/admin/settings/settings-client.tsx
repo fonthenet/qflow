@@ -260,6 +260,29 @@ export function SettingsClient({
     settings.messenger_page_id ?? ''
   );
 
+  // Booking Settings
+  const [bookingEnabled, setBookingEnabled] = useState<boolean>(
+    (settings.booking_mode ?? 'disabled') !== 'disabled'
+  );
+  const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(
+    settings.slot_duration_minutes ?? 30
+  );
+  const [bookingHorizonDays, setBookingHorizonDays] = useState<number>(
+    settings.booking_horizon_days ?? 7
+  );
+  const [slotsPerInterval, setSlotsPerInterval] = useState<number>(
+    settings.slots_per_interval ?? 1
+  );
+  const [dailyTicketLimit, setDailyTicketLimit] = useState<number>(
+    settings.daily_ticket_limit ?? 0
+  );
+  const [minBookingLeadHours, setMinBookingLeadHours] = useState<number>(
+    settings.min_booking_lead_hours ?? 1
+  );
+  const [allowCancellation, setAllowCancellation] = useState<boolean>(
+    settings.allow_cancellation ?? true
+  );
+
   const languageOptions = [
     { code: 'en', label: t('English') },
     { code: 'fr', label: t('French') },
@@ -316,6 +339,14 @@ export function SettingsClient({
           messenger_page_id: messengerPageId.trim(),
           business_category: businessCategory,
           listed_in_directory: listedInDirectory,
+          // Booking
+          booking_mode: bookingEnabled ? 'simple' : 'disabled',
+          slot_duration_minutes: slotDurationMinutes,
+          booking_horizon_days: bookingHorizonDays,
+          slots_per_interval: slotsPerInterval,
+          daily_ticket_limit: dailyTicketLimit,
+          min_booking_lead_hours: minBookingLeadHours,
+          allow_cancellation: allowCancellation,
         },
       });
 
@@ -1085,6 +1116,141 @@ export function SettingsClient({
                 </option>
               ))}
           </select>
+        </div>
+      </section>
+
+      {/* ── Booking Settings ──────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{t('Booking Settings')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('Configure how customers book future appointments — time slots, capacity, and limits.')}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="booking-enabled"
+            checked={bookingEnabled}
+            onChange={(e) => setBookingEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          <label htmlFor="booking-enabled" className="text-sm font-medium">
+            {t('Enable Future Booking')}
+          </label>
+        </div>
+
+        <div className={bookingEnabled ? '' : 'opacity-60 pointer-events-none'}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Slot Duration */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {t('Slot Duration')}
+              </label>
+              <select
+                value={slotDurationMinutes}
+                onChange={(e) => setSlotDurationMinutes(Number(e.target.value))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+              >
+                <option value={10}>10 {t('minutes')}</option>
+                <option value={15}>15 {t('minutes')}</option>
+                <option value={20}>20 {t('minutes')}</option>
+                <option value={30}>30 {t('minutes')}</option>
+                <option value={45}>45 {t('minutes')}</option>
+                <option value={60}>60 {t('minutes')}</option>
+                <option value={90}>90 {t('minutes')}</option>
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">{t('Duration of each appointment slot')}</p>
+            </div>
+
+            {/* Booking Horizon */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {t('Booking Horizon')}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={90}
+                  value={bookingHorizonDays}
+                  onChange={(e) => setBookingHorizonDays(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground">{t('days ahead')}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{t('How far in advance customers can book')}</p>
+            </div>
+
+            {/* Slots Per Interval */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {t('Capacity Per Slot')}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={slotsPerInterval}
+                onChange={(e) => setSlotsPerInterval(Number(e.target.value))}
+                className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t('Max concurrent bookings per time slot')}</p>
+            </div>
+
+            {/* Daily Ticket Limit */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {t('Daily Booking Limit')}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={500}
+                  value={dailyTicketLimit}
+                  onChange={(e) => setDailyTicketLimit(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground">{t('per day')}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{t('0 = no limit. Max bookings allowed per day per office.')}</p>
+            </div>
+
+            {/* Min Lead Time */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">
+                {t('Minimum Lead Time')}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={48}
+                  value={minBookingLeadHours}
+                  onChange={(e) => setMinBookingLeadHours(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground">{t('hours before')}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{t('Minimum hours before appointment to allow booking')}</p>
+            </div>
+
+            {/* Allow Cancellation */}
+            <div className="flex items-center gap-3 pt-6">
+              <input
+                type="checkbox"
+                id="allow-cancellation"
+                checked={allowCancellation}
+                onChange={(e) => setAllowCancellation(e.target.checked)}
+                className="h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="allow-cancellation" className="text-sm font-medium">
+                {t('Allow Customer Cancellation')}
+              </label>
+            </div>
+          </div>
         </div>
       </section>
 
