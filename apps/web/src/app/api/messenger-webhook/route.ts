@@ -165,45 +165,26 @@ export async function POST(request: NextRequest) {
             await handleInboundMessage('messenger', senderId, 'CANCEL', sendFn);
           } else if (payload === 'GET_STARTED') {
             // New user tapped "Get Started".
-            // Facebook sometimes sends the referral in a separate event that arrives later,
-            // so we can't rely on it. Send welcome + prompt to click the link again.
+            // On Android, the referral is often stripped from GET_STARTED postback.
+            // Send a short, friendly prompt to type the JOIN code shown on their ticket.
             console.log(`[messenger-webhook] GET_STARTED from ${redactedSender}`);
             const welcomeText = [
-              '👋 Welcome to *Qflo*!',
+              '👋 Welcome to Qflo!',
               '',
-              'I can help you manage your queue tickets.',
-              '',
-              '📌 *Available commands:*',
-              '• *JOIN <code>* — Join a queue (e.g. JOIN HADABI)',
-              '• *LIST* — Browse available businesses',
-              '• *STATUS* — Check your queue position',
-              '• *CANCEL* — Leave the queue',
-              '',
-              '🔗 If you came from a tracking page, tap the Messenger link again to connect your ticket.',
+              'To connect your ticket, type the JOIN code shown on your ticket screen.',
+              'Example: JOIN abc123xyz',
               '',
               '—',
               '',
-              '👋 Bienvenue sur *Qflo* !',
-              '',
-              '📌 *Commandes disponibles :*',
-              '• *REJOINDRE <code>* — Rejoindre une file',
-              '• *LISTE* — Voir les entreprises disponibles',
-              '• *STATUT* — Vérifier votre position',
-              '• *ANNULER* — Quitter la file',
-              '',
-              '🔗 Si vous venez d\'une page de suivi, appuyez à nouveau sur le lien Messenger.',
+              '👋 Bienvenue sur Qflo !',
+              'Envoyez le code JOIN affiché sur votre ticket.',
+              'Exemple : JOIN abc123xyz',
               '',
               '—',
               '',
-              '👋 !مرحبًا بك في *Qflo*',
-              '',
-              '📌 *الأوامر المتاحة:*',
-              '• *انضم <الرمز>* — الانضمام إلى الطابور',
-              '• *القائمة* — تصفح الأعمال المتاحة',
-              '• *حالة* — التحقق من موقعك',
-              '• *إلغاء* — مغادرة الطابور',
-              '',
-              '🔗 إذا أتيت من صفحة التتبع، اضغط على رابط ماسنجر مرة أخرى.',
+              '!👋 مرحبًا بك في Qflo',
+              '.أرسل رمز JOIN الظاهر على تذكرتك',
+              'JOIN abc123xyz :مثال',
             ].join('\n');
             await sendMessengerMessage({ recipientId: senderId, text: welcomeText });
           } else {

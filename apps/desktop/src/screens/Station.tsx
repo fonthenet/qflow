@@ -301,6 +301,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
                         alt="Messenger" style={{ width: 100, height: 100, borderRadius: 8, border: '1px solid var(--border)' }}
                       />
                       <div style={{ fontSize: 11, fontWeight: 600, color: '#0084FF', marginTop: 4 }}>Messenger</div>
+                      <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 2 }}>Send: <strong>JOIN {createdTicket.qr_token}</strong></div>
                     </div>
                   )}
                 </div>

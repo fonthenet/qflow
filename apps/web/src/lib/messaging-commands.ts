@@ -1275,19 +1275,13 @@ async function tryLinkKioskTicket(
   const cleanCode = code.replace(/^_/, ''); // handle JOIN_token format
   if (cleanCode.length < 8 || cleanCode.length > 24 || /\s/.test(cleanCode)) return false;
 
-  // Try exact match first, then lowercase match (DB may store either format)
+  // Case-insensitive match — parseBusinessCode uppercases the code,
+  // but qr_tokens may be mixed-case nanoid (e.g. ffIWgDFsBdW6LZ97)
   let { data: ticket } = await (supabase as any)
     .from('tickets')
     .select('id, ticket_number, qr_token, status, office_id, department_id, created_at')
-    .eq('qr_token', cleanCode)
+    .ilike('qr_token', cleanCode)
     .maybeSingle();
-  if (!ticket && cleanCode !== cleanCode.toLowerCase()) {
-    ({ data: ticket } = await (supabase as any)
-      .from('tickets')
-      .select('id, ticket_number, qr_token, status, office_id, department_id, created_at')
-      .eq('qr_token', cleanCode.toLowerCase())
-      .maybeSingle());
-  }
 
   if (!ticket) return false;
 
