@@ -710,7 +710,13 @@ function RemoteSupportSection({ t }: { t: (key: string, values?: Record<string, 
   const downloadRustDesk = async () => {
     setDownloading(true);
     setDlProgress(0);
-    try { await (window as any).qf.support?.rustdesk?.download?.(); } catch { setDownloading(false); }
+    try {
+      const res = await (window as any).qf.support?.rustdesk?.download?.();
+      if (res && !res.ok) {
+        alert(res.error || t('Download failed'));
+        setDownloading(false);
+      }
+    } catch { setDownloading(false); }
   };
 
   const startRustDesk = async () => {

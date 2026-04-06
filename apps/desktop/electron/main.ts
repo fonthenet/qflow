@@ -1369,6 +1369,11 @@ function setupIPC() {
         }).on('error', reject);
       });
 
+      // RustDesk only publishes 64-bit Windows builds
+      if (process.arch === 'ia32') {
+        return { ok: false, error: 'RustDesk is not available for 32-bit Windows. Please use a 64-bit system for remote support.' };
+      }
+
       // Find the portable x86_64 exe
       const asset = (releaseInfo.assets ?? []).find((a: any) =>
         a.name?.match(/rustdesk.*x86_64.*\.exe$/i) && !a.name?.includes('install')
