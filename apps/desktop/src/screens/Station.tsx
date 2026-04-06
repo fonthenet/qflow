@@ -1315,12 +1315,17 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string) => {
     try {
       const sb = await getSupabase();
-      await sb.from('broadcast_templates').insert({
+      const { error } = await sb.from('broadcast_templates').insert({
         organization_id: session.organization_id,
         title,
         body_fr: bodyFr || null,
         body_ar: bodyAr || null,
       });
+      if (error) {
+        console.error('[broadcast] Supabase insert error:', error.message);
+        showToast(t('Error saving template'), 'error');
+        return;
+      }
       await fetchBroadcastTemplates();
       showToast(t('Template saved'), 'success');
     } catch (err) {
@@ -1344,6 +1349,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     setBroadcastResult(null);
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
+      console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id, 'user:', session.user_id);
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
         headers: {
@@ -1360,6 +1366,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         }),
       });
       const result = await res.json();
+      console.log('[broadcast] Response:', res.status, JSON.stringify(result));
+      if (!res.ok || result.error) {
+        console.error('[broadcast] API error:', res.status, result.error);
+        setBroadcastResult({ sent: 0, failed: -1 });
+        return;
+      }
       setBroadcastResult({ sent: result.sent ?? 0, failed: result.failed });
     } catch (err: any) {
       console.error('[broadcast] Send error:', err);
@@ -2109,6 +2121,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
                     {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')}
                   </span>
+                  {getTicketCustomerPhone(ticket.customer_data) && (
+                    <span style={{ display: 'block', fontSize: 10, color: 'var(--text3)', opacity: 0.8, direction: 'ltr', unicodeBidi: 'embed' }}>
+                      {getTicketCustomerPhone(ticket.customer_data)}
+                    </span>
+                  )}
                 </div>
                 <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">

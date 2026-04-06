@@ -27,6 +27,23 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** CORS headers for cross-origin requests (Electron desktop app) */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-org-id, x-user-id',
+};
+
+/** JSON response with CORS headers */
+function jsonResponse(data: unknown, status = 200) {
+  return NextResponse.json(data, { status, headers: CORS_HEADERS });
+}
+
+/** Handle CORS preflight */
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 /**
  * POST /api/broadcast
  *
@@ -72,7 +89,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isServiceKey && !isWebhookSecret && !isInternalCall) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
     // ── Parse body ───────────────────────────────────────────────
@@ -86,10 +103,10 @@ export async function POST(request: NextRequest) {
     };
 
     if (!organizationId) {
-      return NextResponse.json({ error: 'Missing organizationId' }, { status: 400 });
+      return jsonResponse({ error: 'Missing organizationId' }, 400);
     }
     if (!message && !templateId) {
-      return NextResponse.json({ error: 'Missing message or templateId' }, { status: 400 });
+      return jsonResponse({ error: 'Missing message or templateId' }, 400);
     }
 
     // ── Resolve template if provided ─────────────────────────────
@@ -105,7 +122,7 @@ export async function POST(request: NextRequest) {
         .single();
       template = tmpl;
       if (!template) {
-        return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+        return jsonResponse({ error: 'Template not found' }, 404);
       }
     }
 
@@ -117,7 +134,7 @@ export async function POST(request: NextRequest) {
       .eq('organization_id', organizationId);
 
     if (!orgOffices || orgOffices.length === 0) {
-      return NextResponse.json({ sent: 0, reason: 'no offices for organization' });
+      return jsonResponse({ sent: 0, reason: 'no offices for organization' });
     }
 
     const officeIds = officeId ? [officeId] : orgOffices.map((o) => o.id);
@@ -129,11 +146,11 @@ export async function POST(request: NextRequest) {
       .in('status', ['waiting', 'called']);
     if (ticketError) {
       console.error('[broadcast] Error fetching tickets:', ticketError.message);
-      return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
+      return jsonResponse({ error: 'Failed to fetch tickets' }, 500);
     }
 
     if (!tickets || tickets.length === 0) {
-      return NextResponse.json({ sent: 0, reason: 'no waiting tickets' });
+      return jsonResponse({ sent: 0, reason: 'no waiting tickets' });
     }
 
     const ticketIds = tickets.map((t) => t.id);
@@ -148,11 +165,11 @@ export async function POST(request: NextRequest) {
 
     if (sessionError) {
       console.error('[broadcast] Error fetching sessions:', sessionError.message);
-      return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 });
+      return jsonResponse({ error: 'Failed to fetch sessions' }, 500);
     }
 
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ sent: 0, reason: 'no active messaging sessions' });
+      return jsonResponse({ sent: 0, reason: 'no active messaging sessions' });
     }
 
     // ── Rate limit: cap to MAX_BROADCAST_BATCH ───────────────────
@@ -255,7 +272,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[broadcast] Complete: sent=${sentCount}, failed=${failCount}, skipped=${skipped}`);
 
-    return NextResponse.json({
+    return jsonResponse({
       sent: sentCount,
       failed: failCount,
       skipped,
@@ -264,6 +281,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (err: any) {
     console.error('[broadcast] Error:', err?.message ?? err);
-    return NextResponse.json({ sent: 0, error: err?.message }, { status: 500 });
+    return jsonResponse({ sent: 0, error: err?.message }, 500);
   }
 }
