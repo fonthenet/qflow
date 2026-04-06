@@ -1270,15 +1270,24 @@ async function tryLinkKioskTicket(
 ): Promise<boolean> {
   const supabase = createAdminClient();
 
-  // qr_tokens are 12-char lowercase hex — skip if it looks like a business code
-  const cleanCode = code.replace(/^_/, '').toLowerCase(); // handle JOIN_token format, DB stores lowercase
-  if (!/^[0-9a-f]{8,16}$/.test(cleanCode)) return false;
+  // qr_tokens can be 12-char hex (older) or 16-char nanoid (mixed case/digits)
+  // Skip if too short or too long to be a token
+  const cleanCode = code.replace(/^_/, ''); // handle JOIN_token format
+  if (cleanCode.length < 8 || cleanCode.length > 24 || /\s/.test(cleanCode)) return false;
 
-  const { data: ticket } = await (supabase as any)
+  // Try exact match first, then lowercase match (DB may store either format)
+  let { data: ticket } = await (supabase as any)
     .from('tickets')
     .select('id, ticket_number, qr_token, status, office_id, department_id, created_at')
     .eq('qr_token', cleanCode)
-    .single();
+    .maybeSingle();
+  if (!ticket && cleanCode !== cleanCode.toLowerCase()) {
+    ({ data: ticket } = await (supabase as any)
+      .from('tickets')
+      .select('id, ticket_number, qr_token, status, office_id, department_id, created_at')
+      .eq('qr_token', cleanCode.toLowerCase())
+      .maybeSingle());
+  }
 
   if (!ticket) return false;
 
