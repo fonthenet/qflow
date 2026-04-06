@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     // Try Supabase JWT auth (from desktop app)
     let isJwtAuth = false;
     let jwtUserId = '';
+    let jwtOrgId = '';
     if (!isServiceKey && !isWebhookSecret && bearerToken) {
       try {
         const { data: { user } } = await supabase.auth.getUser(bearerToken);
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
             .maybeSingle();
           if (staff) {
             isJwtAuth = true;
+            jwtOrgId = (staff as any).organization_id ?? '';
           }
         }
       } catch {
@@ -122,14 +124,16 @@ export async function POST(request: NextRequest) {
 
     // ── Parse body ───────────────────────────────────────────────
     const body = await request.json();
-    console.log('[broadcast] Body:', JSON.stringify({ organizationId: body.organizationId, officeId: body.officeId, hasMessage: !!body.message, templateId: body.templateId }));
-    const { organizationId, officeId, message, locale, templateId } = body as {
-      organizationId: string;
+    // Fall back to org ID from auth if not in body (Electron CORS may strip body)
+    const organizationId = body.organizationId || jwtOrgId || internalOrgId;
+    const { officeId, message, locale, templateId } = body as {
       officeId?: string;
       message?: string;
       locale?: 'fr' | 'ar' | 'en';
       templateId?: string;
     };
+
+    console.log('[broadcast] orgId:', organizationId, 'bodyOrgId:', body.organizationId, 'jwtOrgId:', jwtOrgId, 'hasMessage:', !!message);
 
     if (!organizationId) {
       return jsonResponse({ error: 'Missing organizationId' }, 400);
