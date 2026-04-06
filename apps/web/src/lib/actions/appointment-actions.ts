@@ -334,18 +334,23 @@ export async function getAvailableSlots(
   serviceId: string,
   date: string,
   staffId?: string,
-) {
-  const { getAvailableSlots: generateSlots } = await import('@/lib/slot-generator');
+): Promise<{ data: string[]; meta?: Record<string, unknown>; error?: string }> {
+  try {
+    const { getAvailableSlots: generateSlots } = await import('@/lib/slot-generator');
 
-  const result = await generateSlots({
-    officeId,
-    serviceId,
-    date,
-    staffId,
-  });
+    const result = await generateSlots({
+      officeId,
+      serviceId,
+      date,
+      staffId,
+    });
 
-  // Return backward-compatible string[] format
-  return { data: result.slots.map(s => s.time), meta: result.meta };
+    // Return backward-compatible string[] format
+    return { data: result.slots.map(s => s.time), meta: result.meta as unknown as Record<string, unknown> };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to load available slots';
+    return { data: [], error: message };
+  }
 }
 
 export async function findAppointment(officeId: string, searchTerm: string): Promise<{ data: any[]; error?: string }> {
