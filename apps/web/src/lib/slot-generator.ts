@@ -104,7 +104,9 @@ export async function getAvailableSlots(
   params: SlotGeneratorParams
 ): Promise<SlotGeneratorResult> {
   const { officeId, serviceId, date, staffId } = params;
-  const supabase = createAdminClient();
+  // Cast to any: this module uses tables/columns not yet in generated types
+  // (office_holidays, blocked_slots, staff.work_schedule, etc.)
+  const supabase: any = createAdminClient();
 
   // ── 1. Fetch office + org settings ──
   const { data: office } = await supabase
@@ -339,7 +341,7 @@ export async function getAvailableDates(
   maxDates: number = 7,
 ): Promise<{ date: string; slotCount: number }[]> {
   const todayStr = new Date().toISOString().split('T')[0];
-  const supabase = createAdminClient();
+  const supabase: any = createAdminClient();
 
   // Get booking horizon
   const { data: office } = await supabase
