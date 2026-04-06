@@ -299,6 +299,63 @@ export async function cancelAppointment(appointmentId: string) {
   return { data: appointment };
 }
 
+/**
+ * Cancel an entire recurring series.
+ * Cancels the parent appointment and all future child instances.
+ * Past instances (already happened) are left alone.
+ */
+export async function cancelRecurringSeries(appointmentId: string) {
+  const supabase = createAdminClient();
+
+  // Find the appointment and determine the series root
+  const { data: appt, error: apptErr } = await (supabase as any)
+    .from('appointments')
+    .select('id, recurrence_parent_id')
+    .eq('id', appointmentId)
+    .single();
+
+  if (apptErr || !appt) {
+    return { error: apptErr?.message ?? 'Appointment not found' };
+  }
+
+  const parentId = appt.recurrence_parent_id ?? appt.id;
+  const nowIso = new Date().toISOString();
+
+  // Cancel the parent (if it's still in the future) plus all children scheduled after now
+  const { data: cancelled, error: cancelErr } = await (supabase as any)
+    .from('appointments')
+    .update({ status: 'cancelled' })
+    .or(`id.eq.${parentId},recurrence_parent_id.eq.${parentId}`)
+    .gte('scheduled_at', nowIso)
+    .neq('status', 'cancelled')
+    .select('id, ticket_id');
+
+  if (cancelErr) {
+    return { error: cancelErr.message };
+  }
+
+  // Cancel any linked tickets
+  const ticketIds = (cancelled ?? [])
+    .map((a: any) => a.ticket_id)
+    .filter((id: string | null): id is string => Boolean(id));
+
+  if (ticketIds.length > 0) {
+    await (supabase as any)
+      .from('tickets')
+      .update({ status: 'cancelled', completed_at: nowIso })
+      .in('id', ticketIds)
+      .in('status', ['waiting', 'called', 'issued']);
+  }
+
+  // Notify waitlist for each freed slot
+  for (const a of cancelled ?? []) {
+    await notifyWaitlistOnCancellation(a.id);
+  }
+
+  revalidatePath('/admin/bookings');
+  return { data: { cancelled: cancelled?.length ?? 0 } };
+}
+
 export async function getAppointmentsByDate(officeId: string, date: string) {
   const supabase = await createClient();
 

@@ -131,6 +131,80 @@ export async function importCustomers(
   return { imported, skipped, errors };
 }
 
+/**
+ * Import customers from a Google Sheets URL.
+ * Accepts either a public sharing URL or the published-to-web CSV URL.
+ * Auto-converts /edit URLs to the CSV export endpoint.
+ */
+export async function importFromGoogleSheets(
+  url: string,
+): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  try {
+    let csvUrl = url.trim();
+
+    // Convert /edit?usp=sharing or /edit#gid=0 to /export?format=csv
+    const editMatch = csvUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (editMatch) {
+      const sheetId = editMatch[1];
+      const gidMatch = csvUrl.match(/[?#&]gid=(\d+)/);
+      const gid = gidMatch ? gidMatch[1] : '0';
+      csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+    }
+
+    const res = await fetch(csvUrl, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) {
+      return { imported: 0, skipped: 0, errors: [`Failed to fetch sheet: ${res.status}. Make sure the sheet is shared as "Anyone with the link can view".`] };
+    }
+
+    const text = await res.text();
+    const rows = parseCsvText(text);
+    if (rows.length === 0) {
+      return { imported: 0, skipped: 0, errors: ['No data rows found in sheet'] };
+    }
+
+    return await importCustomers(rows);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to import from Google Sheets';
+    return { imported: 0, skipped: 0, errors: [message] };
+  }
+}
+
+/**
+ * Lightweight CSV parser with header auto-detection for name/phone/email columns.
+ * Handles comma, semicolon, and tab delimiters; strips surrounding quotes.
+ */
+function parseCsvText(text: string): { name: string; phone: string; email?: string }[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length === 0) return [];
+
+  const firstLine = lines[0].toLowerCase();
+  const hasHeader = firstLine.includes('name') || firstLine.includes('phone') || firstLine.includes('email');
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  let nameIdx = 0,
+    phoneIdx = 1,
+    emailIdx = 2;
+  if (hasHeader) {
+    const headers = lines[0].split(/[,;\t]/).map((h) => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+    nameIdx = headers.findIndex((h) => h.includes('name'));
+    phoneIdx = headers.findIndex((h) => h.includes('phone') || h.includes('tel') || h.includes('mobile'));
+    emailIdx = headers.findIndex((h) => h.includes('email') || h.includes('mail'));
+    if (nameIdx === -1) nameIdx = 0;
+    if (phoneIdx === -1) phoneIdx = 1;
+  }
+
+  return dataLines
+    .map((line) => {
+      const cols = line.split(/[,;\t]/).map((c) => c.trim().replace(/^["']|["']$/g, ''));
+      return {
+        name: cols[nameIdx] ?? '',
+        phone: cols[phoneIdx] ?? '',
+        email: emailIdx >= 0 ? cols[emailIdx] ?? '' : '',
+      };
+    })
+    .filter((r) => r.phone);
+}
+
 // ── Group messaging ───────────────────────────────────────────────────
 
 export async function getCustomersForMessaging(filters?: {

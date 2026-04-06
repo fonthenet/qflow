@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
-import { CalendarClock, Clock3, Ticket, Users } from 'lucide-react';
+import { useMemo, useState, useTransition } from 'react';
+import { CalendarClock, Clock3, Ticket, Users, Repeat, X } from 'lucide-react';
 import { buildBookingCheckInPath, buildBookingPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
 import { PublicLinkActions } from './public-link-actions';
+import { cancelAppointment, cancelRecurringSeries } from '@/lib/actions/appointment-actions';
 
 interface Office {
   id: string;
@@ -53,6 +54,7 @@ interface AppointmentRecord {
   status: string | null;
   ticket_id: string | null;
   calendar_token?: string | null;
+  recurrence_parent_id?: string | null;
   ticket?: AppointmentTicket | null;
 }
 
@@ -83,7 +85,48 @@ export function BookingsHistory({
   appointments,
 }: BookingsHistoryProps) {
   const { t, formatDateTime } = useI18n();
+  const [pending, startTransition] = useTransition();
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [localCancelled, setLocalCancelled] = useState<Set<string>>(new Set());
   const activeOffices = offices.filter((office) => office.is_active);
+
+  function handleCancelOne(id: string) {
+    if (!confirm(t('Cancel this appointment?'))) return;
+    setCancellingId(id);
+    startTransition(async () => {
+      const result = await cancelAppointment(id);
+      setCancellingId(null);
+      if (result.error) {
+        alert(result.error);
+      } else {
+        setLocalCancelled((prev) => new Set(prev).add(id));
+      }
+    });
+  }
+
+  function handleCancelSeries(id: string) {
+    if (!confirm(t('Cancel the entire recurring series? This will cancel all upcoming appointments in this series.'))) return;
+    setCancellingId(id);
+    startTransition(async () => {
+      const result = await cancelRecurringSeries(id);
+      setCancellingId(null);
+      if (result.error) {
+        alert(result.error);
+      } else {
+        // Mark all in this series as cancelled locally
+        const parentId = appointments.find((a) => a.id === id)?.recurrence_parent_id ?? id;
+        const seriesIds = appointments
+          .filter((a) => a.id === parentId || a.recurrence_parent_id === parentId)
+          .map((a) => a.id);
+        setLocalCancelled((prev) => {
+          const next = new Set(prev);
+          seriesIds.forEach((sid) => next.add(sid));
+          return next;
+        });
+        alert(t('{count} appointments cancelled', { count: result.data?.cancelled ?? 0 }));
+      }
+    });
+  }
   const totalAppointments = appointments.length;
   const pendingAppointments = appointments.filter((entry) =>
     ['pending', 'confirmed'].includes(entry.status ?? 'pending')
@@ -288,6 +331,32 @@ export function BookingsHistory({
                       <Ticket className="h-3 w-3" />
                       {appointment.ticket.ticket_number}
                     </span>
+                  </div>
+                ) : null}
+
+                {/* Cancel actions */}
+                {!localCancelled.has(appointment.id) &&
+                appointment.status !== 'cancelled' &&
+                appointment.status !== 'checked_in' ? (
+                  <div className="shrink-0 flex items-center gap-1">
+                    <button
+                      onClick={() => handleCancelOne(appointment.id)}
+                      disabled={pending && cancellingId === appointment.id}
+                      title={t('Cancel appointment')}
+                      className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                    {appointment.recurrence_parent_id ? (
+                      <button
+                        onClick={() => handleCancelSeries(appointment.id)}
+                        disabled={pending && cancellingId === appointment.id}
+                        title={t('Cancel entire series')}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      >
+                        <Repeat className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

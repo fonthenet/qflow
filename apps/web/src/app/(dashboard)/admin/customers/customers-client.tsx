@@ -25,7 +25,9 @@ import {
   updateCustomer,
   deleteCustomer,
   importCustomers,
+  importFromGoogleSheets,
   sendGroupMessage,
+  getCustomersForMessaging,
 } from '@/lib/actions/customer-actions';
 
 interface Customer {
@@ -78,12 +80,16 @@ export function CustomersClient({
   // Import
   const [importPreview, setImportPreview] = useState<{ name: string; phone: string; email?: string }[] | null>(null);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [sheetsUrl, setSheetsUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Group message
   const [messageText, setMessageText] = useState('');
   const [messageChannel, setMessageChannel] = useState<'whatsapp' | 'email'>('whatsapp');
   const [messageResult, setMessageResult] = useState<{ sent: number; failed: number; error?: string } | null>(null);
+  const [filterMinVisits, setFilterMinVisits] = useState('');
+  const [filterLastVisitDays, setFilterLastVisitDays] = useState('');
+  const [filterMatched, setFilterMatched] = useState<number | null>(null);
 
   const filtered = customers.filter((c) => {
     const q = search.toLowerCase();
@@ -199,44 +205,112 @@ export function CustomersClient({
     });
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function detectColumns(headers: string[]) {
+    const lower = headers.map((h) => String(h).trim().toLowerCase());
+    let nameIdx = lower.findIndex((h) => h.includes('name'));
+    let phoneIdx = lower.findIndex((h) => h.includes('phone') || h.includes('tel') || h.includes('mobile'));
+    let emailIdx = lower.findIndex((h) => h.includes('email') || h.includes('mail'));
+    if (nameIdx === -1) nameIdx = 0;
+    if (phoneIdx === -1) phoneIdx = 1;
+    return { nameIdx, phoneIdx, emailIdx };
+  }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = String(event.target?.result ?? '');
-      const lines = text.split(/\r?\n/).filter((l) => l.trim());
-      if (lines.length === 0) return;
-
-      // Detect header
-      const firstLine = lines[0].toLowerCase();
-      const hasHeader = firstLine.includes('name') || firstLine.includes('phone') || firstLine.includes('email');
-      const dataLines = hasHeader ? lines.slice(1) : lines;
-
-      // Parse columns: try to detect order from header or assume name,phone,email
-      let nameIdx = 0, phoneIdx = 1, emailIdx = 2;
-      if (hasHeader) {
-        const headers = lines[0].split(/[,;\t]/).map((h) => h.trim().toLowerCase());
-        nameIdx = headers.findIndex((h) => h.includes('name'));
-        phoneIdx = headers.findIndex((h) => h.includes('phone') || h.includes('tel') || h.includes('mobile'));
-        emailIdx = headers.findIndex((h) => h.includes('email') || h.includes('mail'));
-        if (nameIdx === -1) nameIdx = 0;
-        if (phoneIdx === -1) phoneIdx = 1;
-      }
-
-      const rows = dataLines.map((line) => {
+  function parseCsvText(text: string) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length === 0) return [];
+    const firstLine = lines[0].toLowerCase();
+    const hasHeader = firstLine.includes('name') || firstLine.includes('phone') || firstLine.includes('email');
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+    const headers = hasHeader ? lines[0].split(/[,;\t]/) : ['name', 'phone', 'email'];
+    const { nameIdx, phoneIdx, emailIdx } = detectColumns(headers);
+    return dataLines
+      .map((line) => {
         const cols = line.split(/[,;\t]/).map((c) => c.trim().replace(/^["']|["']$/g, ''));
         return {
           name: cols[nameIdx] ?? '',
           phone: cols[phoneIdx] ?? '',
           email: emailIdx >= 0 ? cols[emailIdx] ?? '' : '',
         };
-      }).filter((r) => r.phone);
+      })
+      .filter((r) => r.phone);
+  }
 
-      setImportPreview(rows);
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+
+    if (isExcel) {
+      // Lazy-load SheetJS from CDN
+      try {
+        const w = window as any;
+        if (!w.XLSX) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load Excel parser'));
+            document.head.appendChild(script);
+          });
+        }
+        const XLSX = w.XLSX;
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        if (json.length === 0) return;
+
+        const headers = json[0].map((h) => String(h ?? '').trim());
+        const { nameIdx, phoneIdx, emailIdx } = detectColumns(headers);
+        const rows = json.slice(1).map((row) => ({
+          name: String(row[nameIdx] ?? '').trim(),
+          phone: String(row[phoneIdx] ?? '').trim(),
+          email: emailIdx >= 0 ? String(row[emailIdx] ?? '').trim() : '',
+        })).filter((r) => r.phone);
+        setImportPreview(rows);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to parse Excel file';
+        alert(msg);
+      }
+      return;
+    }
+
+    // CSV/TSV
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = String(event.target?.result ?? '');
+      setImportPreview(parseCsvText(text));
     };
     reader.readAsText(file);
+  }
+
+  function handleImportSheets() {
+    if (!sheetsUrl.trim()) return;
+    startTransition(async () => {
+      const result = await importFromGoogleSheets(sheetsUrl.trim());
+      setImportResult(result);
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('customers')
+        .select('*')
+        .order('last_visit_at', { ascending: false });
+      if (data) setCustomers(data as Customer[]);
+    });
+  }
+
+  async function applyMessageFilters() {
+    const lastVisitAfter = filterLastVisitDays
+      ? new Date(Date.now() - Number(filterLastVisitDays) * 86400000).toISOString()
+      : undefined;
+    const minVisits = filterMinVisits ? Number(filterMinVisits) : undefined;
+
+    const result = await getCustomersForMessaging({ minVisits, lastVisitAfter });
+    if (result.data) {
+      setSelected(new Set(result.data.map((c) => c.id)));
+      setFilterMatched(result.data.length);
+    }
   }
 
   function handleImport() {
@@ -572,14 +646,14 @@ export function CustomersClient({
         <Modal title={t('Import Customers')} onClose={closeModal}>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {t('Upload a CSV file with columns: name, phone, email. Or link a Google Sheet by exporting it as CSV first.')}
+              {t('Upload a CSV or Excel file with columns: name, phone, email. Or paste a Google Sheets share link.')}
             </p>
 
             <div className="rounded-lg border border-dashed border-border p-6 text-center">
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.txt,text/csv"
+                accept=".csv,.tsv,.txt,.xlsx,.xls,text/csv"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -588,7 +662,34 @@ export function CustomersClient({
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
                 <Upload className="h-4 w-4" />
-                {t('Choose CSV file')}
+                {t('Choose CSV or Excel file')}
+              </button>
+            </div>
+
+            <div className="relative flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">{t('or')}</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('Google Sheets URL')}</label>
+              <input
+                type="url"
+                value={sheetsUrl}
+                onChange={(e) => setSheetsUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('Sheet must be shared as "Anyone with the link can view"')}
+              </p>
+              <button
+                onClick={handleImportSheets}
+                disabled={pending || !sheetsUrl.trim()}
+                className="w-full rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {pending ? t('Importing...') : t('Import from Google Sheets')}
               </button>
             </div>
 
@@ -659,6 +760,45 @@ export function CustomersClient({
             <p className="text-sm text-muted-foreground">
               {t('Sending to {count} customers', { count: selected.size })}
             </p>
+
+            <details className="rounded-lg border border-border bg-muted/20 p-3">
+              <summary className="cursor-pointer text-sm font-medium">{t('Filter audience')}</summary>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium">{t('Minimum visits')}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={filterMinVisits}
+                    onChange={(e) => setFilterMinVisits(e.target.value)}
+                    placeholder="e.g. 3"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">{t('Visited within last (days)')}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={filterLastVisitDays}
+                    onChange={(e) => setFilterLastVisitDays(e.target.value)}
+                    placeholder="e.g. 30"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <button
+                  onClick={applyMessageFilters}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted"
+                >
+                  {t('Apply filters & select matching')}
+                </button>
+                {filterMatched !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('Matched {count} customers', { count: filterMatched })}
+                  </p>
+                )}
+              </div>
+            </details>
 
             <div>
               <label className="mb-1 block text-sm font-medium">{t('Channel')}</label>

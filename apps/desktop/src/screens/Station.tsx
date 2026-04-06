@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNod
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
+import { CustomersModal } from '../components/CustomersModal';
 
 // ── Transfer Modal Component ──────────────────────────────────────
 function TransferModal({ desks, onTransfer, onClose, locale }: {
@@ -1126,6 +1127,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
   const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
@@ -2247,6 +2249,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >
               + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
             </button>
+            {/* Customers pill */}
+            <button
+              onClick={() => setShowCustomersModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(59,130,246,0.4)',
+                background: 'rgba(59,130,246,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#3b82f6',
+              }}
+            >
+              👥 {t('Customers')}
+            </button>
             {/* Broadcast pill */}
             <button
               onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
@@ -2350,6 +2366,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             )}
           </div>
           </>
+        )}
+
+        {/* Customers Modal */}
+        {showCustomersModal && (
+          <CustomersModal
+            organizationId={session.organization_id}
+            locale={locale}
+            onClose={() => setShowCustomersModal(false)}
+          />
         )}
 
         {/* Docked In-House Booking Panel */}
