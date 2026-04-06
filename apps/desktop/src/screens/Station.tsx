@@ -1308,54 +1308,38 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const fetchBroadcastTemplates = useCallback(async () => {
     try {
-      await ensureAuth(storedAuth);
-      const sb = await getSupabase();
-      const { data } = await sb
-        .from('broadcast_templates')
-        .select('id, title, shortcut, body_fr, body_ar, created_at')
-        .eq('organization_id', session.organization_id)
-        .order('created_at', { ascending: false });
+      const data = await window.qf.templates.list(session.organization_id);
       setBroadcastTemplates(data ?? []);
     } catch (err) {
       console.error('[broadcast] Failed to fetch templates:', err);
     }
-  }, [session.organization_id, storedAuth]);
+  }, [session.organization_id]);
 
   const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, shortcut?: string) => {
     try {
-      await ensureAuth(storedAuth);
-      const sb = await getSupabase();
-      const { error } = await sb.from('broadcast_templates').insert({
+      await window.qf.templates.save({
         organization_id: session.organization_id,
         title,
-        body_fr: bodyFr || null,
-        body_ar: bodyAr || null,
-        shortcut: shortcut || null,
+        body_fr: bodyFr || undefined,
+        body_ar: bodyAr || undefined,
+        shortcut: shortcut || undefined,
       });
-      if (error) {
-        console.error('[broadcast] Supabase insert error:', error.message, error.details, error.hint);
-        showToast(t('Error saving template'), 'error');
-        return;
-      }
       await fetchBroadcastTemplates();
       showToast(t('Template saved'), 'success');
     } catch (err) {
       console.error('[broadcast] Failed to save template:', err);
       showToast(t('Error saving template'), 'error');
     }
-  }, [session.organization_id, storedAuth, fetchBroadcastTemplates]);
+  }, [session.organization_id, fetchBroadcastTemplates]);
 
   const deleteBroadcastTemplate = useCallback(async (id: string) => {
     try {
-      await ensureAuth(storedAuth);
-      const sb = await getSupabase();
-      const { error } = await sb.from('broadcast_templates').delete().eq('id', id).eq('organization_id', session.organization_id);
-      if (error) console.error('[broadcast] Delete error:', error.message);
+      await window.qf.templates.delete(id, session.organization_id);
       setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
     } catch (err) {
       console.error('[broadcast] Failed to delete template:', err);
     }
-  }, [session.organization_id, storedAuth]);
+  }, [session.organization_id]);
 
   const sendBroadcast = useCallback(async (msg: { fr: string; ar: string }, templateId?: string) => {
     setBroadcastSending(true);

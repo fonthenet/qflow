@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
+import crypto from 'crypto';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
@@ -1033,6 +1034,25 @@ function setupIPC() {
     persistLocale(nextLocale);
     applyLocale(nextLocale);
     return nextLocale;
+  });
+
+  // ── Broadcast templates (local SQLite) ─────────────────────────
+  ipcMain.handle('templates:list', (_e, orgId: string) => {
+    return db.prepare(
+      "SELECT id, title, shortcut, body_fr, body_ar, created_at FROM broadcast_templates WHERE organization_id = ? ORDER BY created_at DESC"
+    ).all(orgId);
+  });
+
+  ipcMain.handle('templates:save', (_e, tmpl: { organization_id: string; title: string; shortcut?: string; body_fr?: string; body_ar?: string }) => {
+    const id = crypto.randomUUID();
+    db.prepare(
+      "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(id, tmpl.organization_id, tmpl.title, tmpl.shortcut || null, tmpl.body_fr || null, tmpl.body_ar || null);
+    return { id };
+  });
+
+  ipcMain.handle('templates:delete', (_e, id: string, orgId: string) => {
+    db.prepare("DELETE FROM broadcast_templates WHERE id = ? AND organization_id = ?").run(id, orgId);
   });
 
   // ── Debug ───────────────────────────────────────────────────────

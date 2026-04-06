@@ -54,6 +54,13 @@ contextBridge.exposeInMainWorld('qf', {
     clear: () => ipcRenderer.invoke('session:clear'),
   },
 
+  // Broadcast templates (local SQLite)
+  templates: {
+    list: (orgId: string) => ipcRenderer.invoke('templates:list', orgId),
+    save: (tmpl: { organization_id: string; title: string; shortcut?: string; body_fr?: string; body_ar?: string }) => ipcRenderer.invoke('templates:save', tmpl),
+    delete: (id: string, orgId: string) => ipcRenderer.invoke('templates:delete', id, orgId),
+  },
+
   // Settings
   settings: {
     getLocale: () => ipcRenderer.invoke('settings:get-locale'),

@@ -161,7 +161,19 @@ export function initDB() {
       close_time TEXT
     );
 
+    -- Broadcast message templates (local-only, no cloud sync needed)
+    CREATE TABLE IF NOT EXISTS broadcast_templates (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      shortcut TEXT,
+      body_fr TEXT,
+      body_ar TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Indexes (only on columns guaranteed to exist in CREATE TABLE above)
+    CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id);
     CREATE INDEX IF NOT EXISTS idx_office_holidays_lookup ON office_holidays(office_id, holiday_date);
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at);
