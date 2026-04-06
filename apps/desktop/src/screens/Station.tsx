@@ -77,7 +77,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -86,9 +86,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   messengerPageId?: string | null;
   whatsappPhone?: string | null;
   onCollapse: () => void;
+  session: any;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+  const [bookingTab, setBookingTab] = useState<'walkin' | 'future'>('walkin');
   const [selectedDept, setSelectedDept] = useState(departments.length === 1 ? departments[0][0] : '');
   const [selectedService, setSelectedService] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -101,6 +103,74 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [lookupLoading, setLookupLoading] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState<{ sent: boolean; error?: string } | null>(null);
   const [enlargedQr, setEnlargedQr] = useState<{ url: string; label: string } | null>(null);
+
+  // Future booking state
+  const [futDept, setFutDept] = useState(departments.length === 1 ? departments[0][0] : '');
+  const [futService, setFutService] = useState('');
+  const [futDate, setFutDate] = useState('');
+  const [futTime, setFutTime] = useState('');
+  const [futName, setFutName] = useState('');
+  const [futPhone, setFutPhone] = useState('');
+  const [futNotes, setFutNotes] = useState('');
+  const [futSlots, setFutSlots] = useState<string[]>([]);
+  const [futSlotsLoading, setFutSlotsLoading] = useState(false);
+  const [futSubmitting, setFutSubmitting] = useState(false);
+  const [futResult, setFutResult] = useState<{ success: boolean; date?: string; time?: string; error?: string } | null>(null);
+
+  const futDeptServices = useMemo(() =>
+    services.filter(s => s.department_id === futDept),
+    [services, futDept]
+  );
+
+  // Fetch available slots when date/service changes
+  useEffect(() => {
+    if (!futDate || !futService) { setFutSlots([]); return; }
+    setFutSlotsLoading(true);
+    const ctrl = new AbortController();
+    // Use the links:public API to get the slug, or call booking-slots with officeId
+    fetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(futService)}&date=${futDate}`, { signal: ctrl.signal })
+      .then(r => r.json())
+      .then(data => { setFutSlots(data.slots ?? []); })
+      .catch(() => setFutSlots([]))
+      .finally(() => setFutSlotsLoading(false));
+    return () => ctrl.abort();
+  }, [futDate, futService, officeId]);
+
+  const handleFutureBook = async () => {
+    if (!futDept || !futService || !futDate || !futTime || !futName.trim() || futSubmitting) return;
+    setFutSubmitting(true);
+    setFutResult(null);
+    try {
+      const res = await fetch('https://qflo.net/api/book-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          officeId,
+          departmentId: futDept,
+          serviceId: futService,
+          customerName: futName.trim(),
+          customerPhone: futPhone.trim() || undefined,
+          scheduledAt: `${futDate}T${futTime}:00`,
+          notes: futNotes.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.appointment) {
+        setFutResult({ success: true, date: futDate, time: futTime });
+        setFutName(''); setFutPhone(''); setFutNotes(''); setFutTime('');
+      } else {
+        setFutResult({ success: false, error: data.error || 'Booking failed' });
+      }
+    } catch (err: any) {
+      setFutResult({ success: false, error: err.message });
+    } finally {
+      setFutSubmitting(false);
+    }
+  };
+
+  // Get min date (today) and max date (today + 30 days)
+  const today = new Date().toISOString().split('T')[0];
+  const maxDate = (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0]; })();
 
   const deptServices = useMemo(() =>
     services.filter(s => s.department_id === selectedDept),
@@ -238,21 +308,36 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       >
         <div style={{ width: 40, height: 3, borderRadius: 2, background: 'var(--border)' }} />
       </div>
-      {/* Header bar */}
+      {/* Header bar with tabs */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '4px 16px 6px', flexShrink: 0,
+        padding: '4px 16px 0', flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
-            width: 24, height: 24, borderRadius: 6,
+            width: 22, height: 22, borderRadius: 5,
             background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 700,
+            fontSize: 12, fontWeight: 700,
           }}>+</span>
-          <span style={{ fontSize: 13, fontWeight: 700 }}>{t('In-House Booking')}</span>
+          {/* Tab buttons */}
+          {(['walkin', 'future'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setBookingTab(tab)}
+              style={{
+                padding: '3px 10px', border: 'none', borderRadius: 5, cursor: 'pointer',
+                fontSize: 12, fontWeight: 600,
+                background: bookingTab === tab ? 'rgba(139,92,246,0.15)' : 'transparent',
+                color: bookingTab === tab ? '#8b5cf6' : 'var(--text3)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {tab === 'walkin' ? t('Walk-in') : t('Future Booking')}
+            </button>
+          ))}
           <span style={{
-            padding: '1px 6px', fontSize: 10, fontWeight: 600, borderRadius: 4,
+            padding: '1px 5px', fontSize: 9, fontWeight: 600, borderRadius: 3,
             background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
           }}>F6</span>
         </div>
@@ -302,7 +387,142 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       )}
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-      {createdTicket ? (
+      {bookingTab === 'future' ? (
+        /* ── Future Booking Form ── */
+        <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {futResult && (
+            <div style={{
+              padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+              background: futResult.success ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+              border: `1px solid ${futResult.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              color: futResult.success ? '#16a34a' : '#dc2626',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span>{futResult.success ? `✓ ${t('Appointment booked')} — ${futResult.date} ${t('at')} ${futResult.time}` : `✗ ${futResult.error}`}</span>
+              <button onClick={() => setFutResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 14, padding: '0 4px' }}>✕</button>
+            </div>
+          )}
+          {/* Row 1: Dept + Service + Date + Time */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+              <label style={labelStyle}>{t('Department')} *</label>
+              <select
+                value={futDept}
+                onChange={(e) => { setFutDept(e.target.value); setFutService(''); setFutSlots([]); setFutTime(''); }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="">{t('Select...')}</option>
+                {departments.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            {futDept && futDeptServices.length > 0 && (
+              <div style={{ flex: '1 1 130px', minWidth: 110 }}>
+                <label style={labelStyle}>{t('Service')} *</label>
+                <select
+                  value={futService}
+                  onChange={(e) => { setFutService(e.target.value); setFutSlots([]); setFutTime(''); }}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">{t('Select...')}</option>
+                  {futDeptServices.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ flex: '0 0 140px' }}>
+              <label style={labelStyle}>{t('Date')} *</label>
+              <input
+                type="date"
+                value={futDate}
+                onChange={(e) => { setFutDate(e.target.value); setFutTime(''); }}
+                min={today}
+                max={maxDate}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+              <label style={labelStyle}>{t('Time Slot')} *</label>
+              {futSlotsLoading ? (
+                <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: 'var(--text3)', fontSize: 11 }}>Loading...</div>
+              ) : futSlots.length > 0 ? (
+                <select
+                  value={futTime}
+                  onChange={(e) => setFutTime(e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">{t('Select...')}</option>
+                  {futSlots.map(slot => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
+                </select>
+              ) : (
+                <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: 'var(--text3)', fontSize: 11 }}>
+                  {futDate && futService ? t('No slots available') : t('Select date & service')}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2: Name + Phone + Notes + Submit */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
+              <label style={labelStyle}>{t('Name')} *</label>
+              <input
+                type="text"
+                value={futName}
+                onChange={(e) => setFutName(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                placeholder={t('Customer name')}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+              <label style={labelStyle}>{t('Phone')}</label>
+              <input
+                type="tel"
+                value={futPhone}
+                onChange={(e) => setFutPhone(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                placeholder={t('Phone number')}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
+              <label style={labelStyle}>{t('Notes')}</label>
+              <input
+                type="text"
+                value={futNotes}
+                onChange={(e) => setFutNotes(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                placeholder={t('Optional notes')}
+                style={inputStyle}
+              />
+            </div>
+
+            <button
+              onClick={handleFutureBook}
+              disabled={!futDept || !futService || !futDate || !futTime || !futName.trim() || futSubmitting}
+              style={{
+                padding: '7px 22px', border: 'none', borderRadius: 6,
+                background: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#8b5cf6' : 'var(--surface2)',
+                color: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#fff' : 'var(--text3)',
+                cursor: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? 'pointer' : 'not-allowed',
+                fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+              }}
+            >
+              {futSubmitting ? '...' : t('Book Appointment')}
+            </button>
+          </div>
+        </div>
+      ) : createdTicket ? (
         /* ── Ticket Created Confirmation ── */
         <div style={{ padding: '8px 16px' }}>
           <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
@@ -2143,6 +2363,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             onCollapse={() => setShowBookingModal(false)}
             messengerPageId={messengerPageId}
             whatsappPhone="+213551176598"
+            session={session}
           />
         )}
       </div>
