@@ -93,13 +93,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Resolve template if provided ─────────────────────────────
-    let template: {
-      id: string;
-      title: string;
-      body_fr?: string;
-      body_ar?: string;
-      body_en?: string;
-    } | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let template: any = null;
 
     if (templateId) {
       const { data: tmpl } = await (supabase as any)
@@ -108,7 +103,7 @@ export async function POST(request: NextRequest) {
         .eq('id', templateId)
         .eq('organization_id', organizationId)
         .single();
-      template = tmpl as typeof template;
+      template = tmpl;
       if (!template) {
         return NextResponse.json({ error: 'Template not found' }, { status: 404 });
       }
