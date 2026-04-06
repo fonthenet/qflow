@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 
@@ -56,6 +56,99 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const orgIdRef = useRef<string>('');
+
+  // Add customer form
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const resolveOrgId = useCallback(async (): Promise<string> => {
+    if (orgIdRef.current) return orgIdRef.current;
+    await ensureAuth(storedAuth);
+    const sb = await getSupabase();
+    let orgId = organizationId;
+    if (!orgId || orgId === 'undefined') {
+      const { data: userData } = await sb.auth.getUser();
+      const authUserId = userData?.user?.id;
+      if (!authUserId) throw new Error('Not authenticated');
+      const { data: staffRow, error: staffErr } = await sb
+        .from('staff')
+        .select('organization_id')
+        .eq('auth_user_id', authUserId)
+        .single();
+      if (staffErr) throw staffErr;
+      orgId = (staffRow as any)?.organization_id ?? '';
+      if (!orgId) throw new Error('Could not resolve organization');
+    }
+    orgIdRef.current = orgId;
+    return orgId;
+  }, [organizationId, storedAuth]);
+
+  const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const orgId = await resolveOrgId();
+      const sb = await getSupabase();
+      const { data, error } = await sb
+        .from('customers')
+        .select('id, name, phone, email, visit_count, last_visit_at')
+        .eq('organization_id', orgId)
+        .order('last_visit_at', { ascending: false, nullsFirst: false })
+        .limit(1000);
+      if (error) setError(error.message);
+      else setCustomers((data ?? []) as Customer[]);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [resolveOrgId]);
+
+  async function handleAddCustomer() {
+    setAddError(null);
+    if (!addName.trim() || !addPhone.trim()) {
+      setAddError(t('Name and phone are required'));
+      return;
+    }
+    setAddBusy(true);
+    try {
+      const orgId = await resolveOrgId();
+      const sb = await getSupabase();
+      const { data: inserted, error: insErr } = await sb
+        .from('customers')
+        .insert({
+          organization_id: orgId,
+          name: addName.trim(),
+          phone: addPhone.trim(),
+          email: addEmail.trim() || null,
+          visit_count: 0,
+          source: 'station',
+        } as any)
+        .select('id, name, phone, email, visit_count, last_visit_at')
+        .single();
+      if (insErr) {
+        if ((insErr as any).code === '23505') {
+          setAddError(t('A customer with this phone already exists.'));
+        } else {
+          setAddError(insErr.message);
+        }
+        return;
+      }
+      // Optimistic prepend so it shows immediately, also reload to be safe
+      if (inserted) setCustomers((prev) => [inserted as Customer, ...prev]);
+      setAddName(''); setAddPhone(''); setAddEmail('');
+      setShowAdd(false);
+    } catch (e: any) {
+      setAddError(e?.message ?? String(e));
+    } finally {
+      setAddBusy(false);
+    }
+  }
 
   const toggleOne = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -98,45 +191,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
     }
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        await ensureAuth(storedAuth);
-        const sb = await getSupabase();
-        let orgId = organizationId;
-        if (!orgId || orgId === 'undefined') {
-          const { data: userData } = await sb.auth.getUser();
-          const authUserId = userData?.user?.id;
-          if (!authUserId) throw new Error('Not authenticated');
-          const { data: staffRow, error: staffErr } = await sb
-            .from('staff')
-            .select('organization_id')
-            .eq('auth_user_id', authUserId)
-            .single();
-          if (staffErr) throw staffErr;
-          orgId = staffRow?.organization_id ?? '';
-          if (!orgId) throw new Error('Could not resolve organization');
-        }
-        const { data, error } = await sb
-          .from('customers')
-          .select('id, name, phone, email, visit_count, last_visit_at')
-          .eq('organization_id', orgId)
-          .order('last_visit_at', { ascending: false, nullsFirst: false })
-          .limit(1000);
-        if (cancelled) return;
-        if (error) setError(error.message);
-        else setCustomers((data ?? []) as Customer[]);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? String(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [organizationId, storedAuth]);
+  useEffect(() => { loadCustomers(); }, [loadCustomers]);
 
   const filtered = useMemo(() => customers.filter((c) => {
     if (!search.trim()) return true;
@@ -240,6 +295,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           </span>
           <div style={{ flex: 1 }} />
           <button
+            onClick={() => { setShowAdd(true); setAddError(null); }}
+            style={{
+              background: 'var(--primary)', color: '#fff', border: 'none',
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >+ {t('Add Customer')}</button>
+          <button
             onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
             disabled={filtered.length === 0}
             style={{
@@ -342,6 +404,88 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           )}
         </div>
       </div>
+
+      {/* Add Customer modal */}
+      {showAdd && (
+        <div
+          onClick={(e) => { e.stopPropagation(); if (!addBusy) setShowAdd(false); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
+            zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 460,
+              border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)', fontWeight: 700 }}>{t('Add Customer')}</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+                {t('Saved to your organization and synced everywhere.')}
+              </p>
+            </div>
+            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[
+                { label: t('Name'), value: addName, set: setAddName, placeholder: 'John Doe', required: true },
+                { label: t('Phone'), value: addPhone, set: setAddPhone, placeholder: '+213551234567', required: true, ltr: true },
+                { label: t('Email'), value: addEmail, set: setAddEmail, placeholder: 'john@example.com', required: false, ltr: true },
+              ].map((f) => (
+                <div key={f.label}>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text2)', marginBottom: 4, fontWeight: 600 }}>
+                    {f.label}{f.required ? ' *' : ''}
+                  </label>
+                  <input
+                    type="text"
+                    value={f.value}
+                    onChange={(e) => f.set(e.target.value)}
+                    placeholder={f.placeholder}
+                    disabled={addBusy}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)', background: 'var(--bg)',
+                      color: 'var(--text)', fontSize: 14, outline: 'none',
+                      direction: f.ltr ? 'ltr' : undefined,
+                    }}
+                  />
+                </div>
+              ))}
+              {addError && (
+                <div style={{
+                  padding: 10, borderRadius: 8,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger)', fontSize: 13,
+                }}>{addError}</div>
+              )}
+            </div>
+            <div style={{
+              padding: '14px 22px', borderTop: '1px solid var(--border)',
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => { if (!addBusy) setShowAdd(false); }}
+                disabled={addBusy}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                }}
+              >{t('Cancel')}</button>
+              <button
+                onClick={handleAddCustomer}
+                disabled={addBusy || !addName.trim() || !addPhone.trim()}
+                style={{
+                  background: 'var(--primary)', color: '#fff', border: 'none',
+                  padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  cursor: addBusy ? 'wait' : 'pointer',
+                  opacity: addBusy || !addName.trim() || !addPhone.trim() ? 0.6 : 1,
+                }}
+              >{addBusy ? t('Saving...') : t('Save')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Compose modal */}
       {showCompose && (
