@@ -1308,14 +1308,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const fetchBroadcastTemplates = useCallback(async () => {
     try {
-      console.log('[broadcast] Fetching templates for org:', session.organization_id);
-      const data = await window.qf.templates.list(session.organization_id);
-      console.log('[broadcast] Templates fetched:', data?.length ?? 0, data);
+      const data = await window.qf.templates.list();
       setBroadcastTemplates(data ?? []);
     } catch (err) {
       console.error('[broadcast] Failed to fetch templates:', err);
     }
-  }, [session.organization_id]);
+  }, []);
 
   const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, shortcut?: string) => {
     try {
@@ -1324,9 +1322,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         showToast(t('Error saving template') + ' (restart required)', 'error');
         return;
       }
-      const orgId = session.organization_id || '';
-      console.log('[broadcast] Saving template:', title, 'org:', orgId, 'fr:', !!bodyFr, 'ar:', !!bodyAr);
-      await window.qf.templates.save(orgId, title, bodyFr || '', bodyAr || '', shortcut || '');
+      await window.qf.templates.save(title, bodyFr || '', bodyAr || '', shortcut || '');
       console.log('[broadcast] Template saved OK');
       await fetchBroadcastTemplates();
       showToast(t('Template saved'), 'success');
@@ -1334,16 +1330,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       console.error('[broadcast] Failed to save template:', err?.message ?? err, err);
       showToast(t('Error saving template'), 'error');
     }
-  }, [session.organization_id, fetchBroadcastTemplates]);
+  }, [fetchBroadcastTemplates]);
 
   const deleteBroadcastTemplate = useCallback(async (id: string) => {
     try {
-      await window.qf.templates.delete(id, session.organization_id);
+      await window.qf.templates.delete(id);
       setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
     } catch (err) {
       console.error('[broadcast] Failed to delete template:', err);
     }
-  }, [session.organization_id]);
+  }, []);
 
   const sendBroadcast = useCallback(async (msg: { fr: string; ar: string }, templateId?: string) => {
     setBroadcastSending(true);

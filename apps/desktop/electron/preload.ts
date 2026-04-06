@@ -56,9 +56,9 @@ contextBridge.exposeInMainWorld('qf', {
 
   // Broadcast templates (local SQLite)
   templates: {
-    list: (orgId: string) => ipcRenderer.invoke('templates:list', orgId),
-    save: (orgId: string, title: string, bodyFr: string, bodyAr: string, shortcut: string) => ipcRenderer.invoke('templates:save', orgId, title, bodyFr, bodyAr, shortcut),
-    delete: (id: string, orgId: string) => ipcRenderer.invoke('templates:delete', id, orgId),
+    list: () => ipcRenderer.invoke('templates:list'),
+    save: (title: string, bodyFr: string, bodyAr: string, shortcut: string) => ipcRenderer.invoke('templates:save', title, bodyFr, bodyAr, shortcut),
+    delete: (id: string) => ipcRenderer.invoke('templates:delete', id),
   },
 
   // Settings

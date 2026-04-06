@@ -1037,27 +1037,22 @@ function setupIPC() {
   });
 
   // ── Broadcast templates (local SQLite) ─────────────────────────
-  ipcMain.handle('templates:list', (_e, orgId: string) => {
-    console.log('[templates] Listing for org:', orgId);
-    const rows = db.prepare(
-      "SELECT id, title, shortcut, body_fr, body_ar, created_at FROM broadcast_templates WHERE organization_id = ? ORDER BY created_at DESC"
-    ).all(orgId);
-    console.log('[templates] Found:', rows.length);
-    return rows;
+  ipcMain.handle('templates:list', () => {
+    return db.prepare(
+      "SELECT id, title, shortcut, body_fr, body_ar, created_at FROM broadcast_templates ORDER BY created_at DESC"
+    ).all();
   });
 
-  ipcMain.handle('templates:save', (_e, orgId: string, title: string, bodyFr: string, bodyAr: string, shortcut: string) => {
+  ipcMain.handle('templates:save', (_e, title: string, bodyFr: string, bodyAr: string, shortcut: string) => {
     const id = randomUUID();
-    console.log('[templates] Saving:', title, 'org:', orgId);
     db.prepare(
-      "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
-    ).run(id, orgId, title, shortcut || null, bodyFr || null, bodyAr || null);
-    console.log('[templates] Saved:', id);
+      "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, 'local', ?, ?, ?, ?)"
+    ).run(id, title, shortcut || null, bodyFr || null, bodyAr || null);
     return { id };
   });
 
-  ipcMain.handle('templates:delete', (_e, id: string, orgId: string) => {
-    db.prepare("DELETE FROM broadcast_templates WHERE id = ? AND organization_id = ?").run(id, orgId);
+  ipcMain.handle('templates:delete', (_e, id: string) => {
+    db.prepare("DELETE FROM broadcast_templates WHERE id = ?").run(id);
   });
 
   // ── Debug ───────────────────────────────────────────────────────
