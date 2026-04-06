@@ -33,10 +33,24 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
       try {
         await ensureAuth(storedAuth);
         const sb = await getSupabase();
+        let orgId = organizationId;
+        if (!orgId || orgId === 'undefined') {
+          const { data: userData } = await sb.auth.getUser();
+          const authUserId = userData?.user?.id;
+          if (!authUserId) throw new Error('Not authenticated');
+          const { data: staffRow, error: staffErr } = await sb
+            .from('staff')
+            .select('organization_id')
+            .eq('auth_user_id', authUserId)
+            .single();
+          if (staffErr) throw staffErr;
+          orgId = staffRow?.organization_id ?? '';
+          if (!orgId) throw new Error('Could not resolve organization');
+        }
         const { data, error } = await sb
           .from('customers')
           .select('id, name, phone, email, visit_count, last_visit_at')
-          .eq('organization_id', organizationId)
+          .eq('organization_id', orgId)
           .order('last_visit_at', { ascending: false, nullsFirst: false })
           .limit(500);
         if (cancelled) return;
