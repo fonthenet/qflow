@@ -1350,10 +1350,39 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
       console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
-      // Get fresh Supabase session for JWT auth (refresh if expired)
+      // Get fresh Supabase session for JWT auth
       const sb = await getSupabase();
-      const { data: { session: sbSession } } = await sb.auth.refreshSession();
-      const accessToken = sbSession?.access_token ?? '';
+      let accessToken = '';
+      // First try refreshing the current in-memory session
+      try {
+        const { data: { session: refreshed } } = await sb.auth.refreshSession();
+        if (refreshed?.access_token) {
+          accessToken = refreshed.access_token;
+          console.log('[broadcast] Got token via refreshSession');
+        }
+      } catch { /* ignore */ }
+      // If refresh failed, re-set session from stored credentials and try again
+      if (!accessToken && session.refresh_token) {
+        try {
+          const { data: { session: restored } } = await sb.auth.setSession({
+            access_token: session.access_token ?? '',
+            refresh_token: session.refresh_token,
+          });
+          accessToken = restored?.access_token ?? '';
+          console.log('[broadcast] Got token via setSession:', !!accessToken);
+        } catch { /* ignore */ }
+      }
+      // Last resort: re-authenticate with stored password
+      if (!accessToken && session.email && session._pwd) {
+        try {
+          const { data: { session: fresh } } = await sb.auth.signInWithPassword({
+            email: session.email,
+            password: session._pwd,
+          });
+          accessToken = fresh?.access_token ?? '';
+          console.log('[broadcast] Got token via signIn:', !!accessToken);
+        } catch { /* ignore */ }
+      }
       console.log('[broadcast] Token present:', !!accessToken, 'len:', accessToken.length);
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
