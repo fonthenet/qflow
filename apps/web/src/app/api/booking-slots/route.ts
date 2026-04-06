@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
     .select('id, name, settings, operating_hours, organization_id, timezone')
     .eq('is_active', true);
 
-  const office = (offices ?? []).find((o: any) => matchesOfficePublicSlug(o, slug));
+  // Try matching by ID first (for Station desktop), then by slug
+  const office = (offices ?? []).find((o: any) => o.id === slug) ?? (offices ?? []).find((o: any) => matchesOfficePublicSlug(o, slug));
   if (!office) return NextResponse.json({ error: 'Office not found' }, { status: 404 });
 
   // Use centralized slot generator
