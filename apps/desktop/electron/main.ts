@@ -1043,19 +1043,14 @@ function setupIPC() {
     ).all(orgId);
   });
 
-  ipcMain.handle('templates:save', (_e, tmpl: { organization_id: string; title: string; shortcut?: string; body_fr?: string; body_ar?: string }) => {
-    try {
-      const id = randomUUID();
-      console.log('[templates] Saving:', tmpl.title, 'org:', tmpl.organization_id);
-      db.prepare(
-        "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(id, tmpl.organization_id, tmpl.title, tmpl.shortcut || null, tmpl.body_fr || null, tmpl.body_ar || null);
-      console.log('[templates] Saved:', id);
-      return { id };
-    } catch (err: any) {
-      console.error('[templates] Save error:', err?.message ?? err);
-      throw err;
-    }
+  ipcMain.handle('templates:save', (_e, orgId: string, title: string, bodyFr: string, bodyAr: string, shortcut: string) => {
+    const id = randomUUID();
+    console.log('[templates] Saving:', title, 'org:', orgId);
+    db.prepare(
+      "INSERT INTO broadcast_templates (id, organization_id, title, shortcut, body_fr, body_ar) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(id, orgId, title, shortcut || null, bodyFr || null, bodyAr || null);
+    console.log('[templates] Saved:', id);
+    return { id };
   });
 
   ipcMain.handle('templates:delete', (_e, id: string, orgId: string) => {

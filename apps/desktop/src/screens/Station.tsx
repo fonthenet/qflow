@@ -1322,14 +1322,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         showToast(t('Error saving template') + ' (restart required)', 'error');
         return;
       }
-      console.log('[broadcast] Saving template:', title, 'org:', session.organization_id);
-      await window.qf.templates.save({
-        organization_id: session.organization_id,
-        title,
-        body_fr: bodyFr || undefined,
-        body_ar: bodyAr || undefined,
-        shortcut: shortcut || undefined,
-      });
+      const orgId = session.organization_id || '';
+      console.log('[broadcast] Saving template:', title, 'org:', orgId, 'fr:', !!bodyFr, 'ar:', !!bodyAr);
+      await window.qf.templates.save(orgId, title, bodyFr || '', bodyAr || '', shortcut || '');
       console.log('[broadcast] Template saved OK');
       await fetchBroadcastTemplates();
       showToast(t('Template saved'), 'success');
