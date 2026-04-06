@@ -21,35 +21,49 @@ export async function POST(req: NextRequest) {
       osInfo,
       pendingSyncs,
       lastSyncAt,
+      rustdeskId,
+      rustdeskPassword,
+      supportActive,
     } = body;
 
-    if (!machineId || !officeId || !organizationId) {
+    if (!machineId) {
       return NextResponse.json(
-        { error: 'machineId, officeId, and organizationId required' },
+        { error: 'machineId required' },
         { status: 400 },
       );
     }
 
     const ip = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown';
 
+    const record: Record<string, any> = {
+      machine_id: machineId,
+      machine_name: machineName || 'Unknown PC',
+      is_online: true,
+      last_ping: new Date().toISOString(),
+      ip_address: ip,
+    };
+
+    if (officeId) record.office_id = officeId;
+    if (organizationId) record.organization_id = organizationId;
+    if (appVersion) record.app_version = appVersion;
+    if (osInfo) record.os_info = osInfo;
+    if (pendingSyncs !== undefined) record.pending_syncs = pendingSyncs;
+    if (lastSyncAt) record.last_sync_at = lastSyncAt;
+
+    // Remote support session
+    if (supportActive === true) {
+      record.rustdesk_id = rustdeskId || null;
+      record.rustdesk_password = rustdeskPassword || null;
+      record.support_started_at = new Date().toISOString();
+    } else if (supportActive === false) {
+      record.rustdesk_id = null;
+      record.rustdesk_password = null;
+      record.support_started_at = null;
+    }
+
     const { error } = await supabase
       .from('desktop_connections')
-      .upsert(
-        {
-          machine_id: machineId,
-          machine_name: machineName || 'Unknown PC',
-          office_id: officeId,
-          organization_id: organizationId,
-          app_version: appVersion || null,
-          os_info: osInfo || null,
-          is_online: true,
-          last_ping: new Date().toISOString(),
-          pending_syncs: pendingSyncs ?? 0,
-          last_sync_at: lastSyncAt || null,
-          ip_address: ip,
-        },
-        { onConflict: 'machine_id' },
-      );
+      .upsert(record, { onConflict: 'machine_id' });
 
     if (error) {
       console.error('Desktop status upsert error:', error.message);

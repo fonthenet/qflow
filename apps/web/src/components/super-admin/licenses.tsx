@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
   Key,
@@ -13,6 +13,7 @@ import {
   XCircle,
   AlertCircle,
   Search,
+  Headset,
 } from 'lucide-react';
 
 interface Org { id: string; name: string }
@@ -39,6 +40,16 @@ interface PendingDevice {
   requested_at: string;
 }
 
+interface SupportSession {
+  machine_id: string;
+  machine_name: string | null;
+  rustdesk_id: string;
+  rustdesk_password: string;
+  support_started_at: string;
+  organization_id: string | null;
+  ip_address: string | null;
+}
+
 interface Props {
   organizations: Org[];
   licenses: License[];
@@ -53,6 +64,24 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [approveOrgId, setApproveOrgId] = useState<Record<string, string>>({});
+  const [supportSessions, setSupportSessions] = useState<SupportSession[]>([]);
+  const [copiedSupport, setCopiedSupport] = useState<string | null>(null);
+
+  // Fetch active remote support sessions
+  const fetchSupportSessions = useCallback(async () => {
+    const { data } = await supabase
+      .from('desktop_connections')
+      .select('machine_id, machine_name, rustdesk_id, rustdesk_password, support_started_at, organization_id, ip_address')
+      .not('rustdesk_id', 'is', null);
+    setSupportSessions((data as SupportSession[]) ?? []);
+  }, [supabase]);
+
+  // Poll for support sessions every 10 seconds
+  useEffect(() => {
+    fetchSupportSessions();
+    const interval = setInterval(fetchSupportSessions, 10000);
+    return () => clearInterval(interval);
+  }, [fetchSupportSessions]);
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
@@ -168,6 +197,65 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
       </div>
 
       {error && <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>}
+
+      {/* Active Remote Support Sessions */}
+      {supportSessions.length > 0 && (
+        <div className="rounded-xl border-2 border-blue-300 bg-blue-50/50 overflow-hidden">
+          <div className="px-5 py-3 bg-blue-100/60 border-b border-blue-200 flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+            <Headset size={16} className="text-blue-700" />
+            <h3 className="font-semibold text-blue-900 text-sm">
+              {supportSessions.length} Active Remote Support Session{supportSessions.length > 1 ? 's' : ''}
+            </h3>
+          </div>
+          <div className="divide-y divide-blue-200">
+            {supportSessions.map(s => {
+              const org = organizations.find(o => o.id === s.organization_id);
+              const elapsed = s.support_started_at
+                ? Math.floor((Date.now() - new Date(s.support_started_at).getTime()) / 60000)
+                : 0;
+              return (
+                <div key={s.machine_id} className="px-5 py-4 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                      <Headset size={20} className="text-blue-700" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm">{s.machine_name ?? s.machine_id.slice(0, 12)}</span>
+                        {org && <span className="text-xs text-muted-foreground">{org.name}</span>}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                          {elapsed < 1 ? 'just now' : `${elapsed}m ago`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 mt-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">ID:</span>
+                          <code className="font-mono text-lg font-bold tracking-wider text-blue-700">{s.rustdesk_id}</code>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Password:</span>
+                          <code className="font-mono text-lg font-bold tracking-wider">{s.rustdesk_password}</code>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${s.rustdesk_id}\n${s.rustdesk_password}`);
+                      setCopiedSupport(s.machine_id);
+                      setTimeout(() => setCopiedSupport(null), 2000);
+                    }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 shrink-0"
+                  >
+                    {copiedSupport === s.machine_id ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy Credentials</>}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Pending Devices */}
       {pending.length > 0 && (
