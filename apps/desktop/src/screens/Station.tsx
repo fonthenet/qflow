@@ -863,6 +863,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (normalized === 'called') return t('Called');
     return action;
   }, [locale]);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticketId: string; ticketNumber: string } | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -1079,6 +1080,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       .catch(() => setCustomerHistory(null));
     return () => ctrl.abort();
   }, [activeTicket?.id, activeTicket?.status]);
+
+  // ── Close context menu on click anywhere ───────────────────────
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [contextMenu]);
 
   // ── Sync notes when active ticket changes ──────────────────────
   useEffect(() => {
@@ -1994,7 +2003,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
           <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
             {visibleWaiting.map((ticket, i) => (
-              <div key={ticket.id} className="queue-item" role="listitem" aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: i + 1, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}>
+              <div key={ticket.id} className="queue-item" role="listitem"
+                aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: i + 1, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}
+                onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, ticketId: ticket.id, ticketNumber: ticket.ticket_number }); }}
+              >
                 <div className="queue-item-pos" aria-hidden="true">#{i + 1}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
@@ -2387,6 +2399,31 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       )}
 
       {/* In-House Booking Modal removed — now docked as panel in station-main */}
+
+      {/* Right-click context menu for queue items */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 3000,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.35)', overflow: 'hidden', minWidth: 160,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { cancel(contextMenu.ticketId); showToast(t('{ticket} cancelled', { ticket: contextMenu.ticketNumber }), 'info'); setContextMenu(null); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '10px 14px', border: 'none', cursor: 'pointer',
+              background: 'transparent', color: '#ef4444', fontSize: 13, fontWeight: 600, textAlign: 'left',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            ✕ {t('Cancel & Remove')}
+          </button>
+        </div>
+      )}
 
       {/* Toast notification */}
       {toast && (
