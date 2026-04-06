@@ -2710,7 +2710,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       <button
                         disabled={broadcastSending}
                         onClick={async () => {
-                          await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '' }, tmpl.id);
+                          await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '' });
                         }}
                         style={{
                           padding: '3px 10px', borderRadius: 6, border: 'none',
