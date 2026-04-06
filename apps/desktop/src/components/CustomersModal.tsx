@@ -50,6 +50,55 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeText, setComposeText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAllVisible = (visibleIds: string[], allOn: boolean) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (allOn) visibleIds.forEach((id) => next.delete(id));
+    else visibleIds.forEach((id) => next.add(id));
+    return next;
+  });
+
+  async function handleSend() {
+    setSending(true);
+    setSendError(null);
+    setSendResult(null);
+    try {
+      const sb = await getSupabase();
+      const { data: sessionData } = await sb.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) throw new Error('Not authenticated');
+
+      const res = await fetch('https://qflo.net/api/customer-broadcast', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          customerIds: Array.from(selected),
+          message: composeText,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+      setSendResult({ sent: json.sent ?? 0, failed: json.failed ?? 0 });
+    } catch (e: any) {
+      setSendError(e?.message ?? String(e));
+    } finally {
+      setSending(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +222,37 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           </div>
         </div>
 
+        {/* Toolbar: select-all + send */}
+        <div style={{ padding: '12px 22px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {(() => {
+            const visibleIds = filtered.map((c) => c.id);
+            const allOn = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+            return (
+              <button
+                onClick={() => toggleAllVisible(visibleIds, allOn)}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                }}
+              >{allOn ? t('Clear selection') : t('Select all visible')}</button>
+            );
+          })()}
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {selected.size > 0 ? t('{n} selected', { n: selected.size }) : t('None selected — sends to all visible')}
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
+            disabled={filtered.length === 0}
+            style={{
+              background: 'var(--success)', color: '#fff', border: 'none',
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: filtered.length === 0 ? 0.5 : 1,
+            }}
+          >📨 {t('Send WhatsApp')}</button>
+        </div>
+
         {/* Search */}
         <div style={{ padding: '14px 22px 10px' }}>
           <div style={{ position: 'relative' }}>
@@ -218,6 +298,12 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
                   >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(c.id)}
+                      onChange={() => toggleOne(c.id)}
+                      style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                    />
                     <div style={{
                       width: 40, height: 40, borderRadius: 20, flexShrink: 0,
                       background: avatarColor(seed), color: '#fff',
@@ -258,6 +344,96 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           )}
         </div>
       </div>
+
+      {/* Compose modal */}
+      {showCompose && (
+        <div
+          onClick={(e) => { e.stopPropagation(); if (!sending) setShowCompose(false); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
+            zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface)', borderRadius: 'var(--radius)', width: '100%', maxWidth: 520,
+              border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)', fontWeight: 700 }}>{t('Send WhatsApp')}</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3)' }}>
+                {selected.size > 0
+                  ? t('Will send to {n} selected customers', { n: selected.size })
+                  : t('Will send to {n} visible customers', { n: filtered.length })}
+              </p>
+            </div>
+            <div style={{ padding: 22 }}>
+              <textarea
+                value={composeText}
+                onChange={(e) => setComposeText(e.target.value)}
+                placeholder={t('Hi {name}, ...')}
+                rows={6}
+                style={{
+                  width: '100%', padding: 12, borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)', background: 'var(--bg)',
+                  color: 'var(--text)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
+                }}
+              />
+              <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text3)' }}>
+                {t('Use {name} to personalize with each customer\'s name.')}
+              </p>
+              {sendResult && (
+                <div style={{
+                  marginTop: 14, padding: 12, borderRadius: 8,
+                  background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontSize: 13,
+                }}>
+                  ✓ {t('Sent {sent}, failed {failed}', { sent: sendResult.sent, failed: sendResult.failed })}
+                </div>
+              )}
+              {sendError && (
+                <div style={{
+                  marginTop: 14, padding: 12, borderRadius: 8,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger)', fontSize: 13,
+                }}>{sendError}</div>
+              )}
+            </div>
+            <div style={{
+              padding: '14px 22px', borderTop: '1px solid var(--border)',
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => { if (!sending) setShowCompose(false); }}
+                disabled={sending}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
+                  padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                }}
+              >{sendResult ? t('Close') : t('Cancel')}</button>
+              {!sendResult && (
+                <button
+                  onClick={() => {
+                    if (!composeText.trim()) return;
+                    if (selected.size === 0) {
+                      // Auto-select all visible
+                      setSelected(new Set(filtered.map((c) => c.id)));
+                    }
+                    handleSend();
+                  }}
+                  disabled={sending || !composeText.trim()}
+                  style={{
+                    background: 'var(--success)', color: '#fff', border: 'none',
+                    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    cursor: sending ? 'wait' : 'pointer', opacity: sending || !composeText.trim() ? 0.6 : 1,
+                  }}
+                >{sending ? t('Sending...') : t('Send')}</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
