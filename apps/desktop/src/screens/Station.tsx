@@ -835,7 +835,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
   const [broadcastTemplates, setBroadcastTemplates] = useState<any[]>([]);
   const [broadcastSending, setBroadcastSending] = useState(false);
-  const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed?: number } | null>(null);
+  const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed?: number; error?: string } | null>(null);
   const [broadcastSaveAsTemplate, setBroadcastSaveAsTemplate] = useState(false);
   const [broadcastTemplateName, setBroadcastTemplateName] = useState('');
   const [showNotesField, setShowNotesField] = useState(false);
@@ -1373,14 +1373,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       const result = await res.json();
       console.log('[broadcast] Response:', res.status, JSON.stringify(result));
       if (!res.ok || result.error) {
-        console.error('[broadcast] API error:', res.status, result.error);
-        setBroadcastResult({ sent: 0, failed: -1 });
+        const errMsg = result.error || result.reason || `HTTP ${res.status}`;
+        console.error('[broadcast] API error:', res.status, errMsg);
+        setBroadcastResult({ sent: 0, failed: -1, error: errMsg });
         return;
       }
       setBroadcastResult({ sent: result.sent ?? 0, failed: result.failed });
     } catch (err: any) {
       console.error('[broadcast] Send error:', err);
-      setBroadcastResult({ sent: 0, failed: -1 });
+      setBroadcastResult({ sent: 0, failed: -1, error: err?.message ?? 'Network error' });
     } finally {
       setBroadcastSending(false);
     }
@@ -2639,7 +2640,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 {broadcastResult.sent > 0
                   ? t('Broadcast sent to {count} customers', { count: broadcastResult.sent })
                   : broadcastResult.failed === -1
-                  ? t('Broadcast error')
+                  ? `${t('Broadcast error')}${broadcastResult.error ? `: ${broadcastResult.error}` : ''}`
                   : t('No waiting customers with messaging')}
               </div>
             )}

@@ -118,8 +118,11 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
+    console.log('[broadcast] Auth passed via:', isServiceKey ? 'serviceKey' : isWebhookSecret ? 'webhookSecret' : isJwtAuth ? 'jwt' : isInternalCall ? 'internal' : 'unknown');
+
     // ── Parse body ───────────────────────────────────────────────
     const body = await request.json();
+    console.log('[broadcast] Body:', JSON.stringify({ organizationId: body.organizationId, officeId: body.officeId, hasMessage: !!body.message, templateId: body.templateId }));
     const { organizationId, officeId, message, locale, templateId } = body as {
       organizationId: string;
       officeId?: string;
