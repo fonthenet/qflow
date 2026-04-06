@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.2.17",
+  "version": "1.2.18",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",

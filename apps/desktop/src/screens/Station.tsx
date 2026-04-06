@@ -186,6 +186,31 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
   const trackUrl = createdTicket ? `https://qflo.net/q/${createdTicket.qr_token}` : '';
 
+  // Resizable panel height
+  const [panelHeight, setPanelHeight] = useState(200);
+  const resizingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
+
+  const onResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    startYRef.current = e.clientY;
+    startHeightRef.current = panelHeight;
+    const onMove = (ev: PointerEvent) => {
+      if (!resizingRef.current) return;
+      const delta = startYRef.current - ev.clientY;
+      setPanelHeight(Math.max(100, Math.min(600, startHeightRef.current + delta)));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [panelHeight]);
+
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '7px 10px', border: '1px solid var(--border)',
     borderRadius: 6, background: 'var(--surface2)', color: 'var(--text)',
@@ -199,14 +224,23 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       style={{
         borderTop: '1px solid var(--border)',
         background: 'var(--surface)',
-        maxHeight: 320, overflowY: 'auto',
+        height: panelHeight, display: 'flex', flexDirection: 'column',
       }}
     >
+      {/* Resize handle */}
+      <div
+        onPointerDown={onResizeStart}
+        style={{
+          height: 6, cursor: 'ns-resize', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <div style={{ width: 40, height: 3, borderRadius: 2, background: 'var(--border)' }} />
+      </div>
       {/* Header bar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 16px', borderBottom: '1px solid var(--border)',
-        position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2,
+        padding: '4px 16px 6px', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{
@@ -216,7 +250,10 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             fontSize: 13, fontWeight: 700,
           }}>+</span>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{t('In-House Booking')}</span>
-          <span className="shortcut-hint">F6</span>
+          <span style={{
+            padding: '1px 6px', fontSize: 10, fontWeight: 600, borderRadius: 4,
+            background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
+          }}>F6</span>
         </div>
         <button
           onClick={onCollapse}
@@ -227,6 +264,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
         </button>
       </div>
 
+      <div style={{ flex: 1, overflowY: 'auto' }}>
       {createdTicket ? (
         /* ── Compact Confirmation ── */
         <div style={{ padding: '12px 16px' }}>
@@ -407,6 +445,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
