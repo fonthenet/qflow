@@ -129,6 +129,7 @@ export function Login({ onLogin, locale }: Props) {
         role: staff.role,
         office_id: effectiveOfficeId,
         office_name: officeName,
+        organization_id: orgId ?? '',
         department_id: staff.department_id ?? undefined,
         desk_id: desk?.id ?? undefined,
         desk_name: desk?.name ?? undefined,

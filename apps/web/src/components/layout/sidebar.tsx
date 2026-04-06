@@ -24,6 +24,7 @@ import {
   House,
   LayoutDashboard,
   Rocket,
+  Megaphone,
 } from 'lucide-react';
 import { logout } from '@/lib/actions/auth-actions';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -80,6 +81,7 @@ const adminNav = [
   { href: '/admin/displays', label: 'Display Screens', icon: Tv, section: 'Channels' },
   { href: '/admin/analytics', label: 'Reports', icon: BarChart3, section: 'Insights' },
   { href: '/admin/audit', label: 'Activity Log', icon: ScrollText, section: 'Insights' },
+  { href: '/admin/broadcast', label: 'Broadcast', icon: Megaphone, section: 'Channels' },
   { href: '/admin/settings', label: 'Business Settings', icon: Cog, section: 'Insights' },
 ];
 

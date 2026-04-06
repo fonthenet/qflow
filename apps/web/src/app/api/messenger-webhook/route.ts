@@ -165,28 +165,11 @@ export async function POST(request: NextRequest) {
             await handleInboundMessage('messenger', senderId, 'CANCEL', sendFn);
           } else if (payload === 'GET_STARTED') {
             // New user tapped "Get Started".
-            // On Android, the referral is often stripped from GET_STARTED postback.
-            // Send a short, friendly prompt to type the JOIN code shown on their ticket.
+            // Route through handleInboundMessage which will:
+            // - send monolingual welcome if user has a previous session locale
+            // - trigger the language picker flow if user is brand new
             console.log(`[messenger-webhook] GET_STARTED from ${redactedSender}`);
-            const welcomeText = [
-              '👋 Welcome to Qflo!',
-              '',
-              'To connect your ticket, type the JOIN code shown on your ticket screen.',
-              'Example: JOIN abc123xyz',
-              '',
-              '—',
-              '',
-              '👋 Bienvenue sur Qflo !',
-              'Envoyez le code JOIN affiché sur votre ticket.',
-              'Exemple : JOIN abc123xyz',
-              '',
-              '—',
-              '',
-              '!👋 مرحبًا بك في Qflo',
-              '.أرسل رمز JOIN الظاهر على تذكرتك',
-              'JOIN abc123xyz :مثال',
-            ].join('\n');
-            await sendMessengerMessage({ recipientId: senderId, text: welcomeText });
+            await handleInboundMessage('messenger', senderId, 'GET_STARTED', sendFn);
           } else {
             // Treat unknown postback as text
             await handleInboundMessage('messenger', senderId, payload, sendFn);

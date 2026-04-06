@@ -45,6 +45,7 @@ export interface StaffSession {
   role: string;
   office_id: string;
   office_name: string;
+  organization_id: string;
   department_id?: string;
   desk_id?: string;
   desk_name?: string;

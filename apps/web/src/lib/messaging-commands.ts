@@ -268,6 +268,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'لن تتلقى المزيد من الإشعارات لتذكرة *{ticket}* 🔕',
     en: '🔕 You won\'t receive further notifications for ticket *{ticket}*.',
   },
+  language_picker: {
+    fr: 'مرحبا 👋\n\nChoisissez votre langue :\n1️⃣ العربية\n2️⃣ Français\n3️⃣ English',
+    ar: 'مرحبا 👋\n\nChoisissez votre langue :\n1️⃣ العربية\n2️⃣ Français\n3️⃣ English',
+    en: 'مرحبا 👋\n\nChoisissez votre langue :\n1️⃣ العربية\n2️⃣ Français\n3️⃣ English',
+  },
+  quick_menu: {
+    fr: '\n\n📋 *Que souhaitez-vous faire ?*\n*1* — Vérifier votre position\n*2* — Annuler votre ticket',
+    ar: '\n\n📋 *ماذا تريد أن تفعل؟*\n*1* — التحقق من موقعك\n*2* — إلغاء تذكرتك',
+    en: '\n\n📋 *What would you like to do?*\n*1* — Check your position\n*2* — Cancel your ticket',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
@@ -312,6 +322,11 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
     ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\n📍 تتبع موقعك: {url}',
     en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
+  },
+  position_update: {
+    fr: '📍 *{name}* — Mise à jour\n\nVous êtes maintenant *#{position}* dans la file.\n⏱ Attente estimée : ~*{wait} min*\n\nSuivi : {url}',
+    ar: '📍 *{name}* — تحديث\n\nأنت الآن *#{position}* في الطابور.\n⏱ الانتظار المتوقع: ~*{wait} دقيقة*\n\nتتبع: {url}',
+    en: '📍 *{name}* — Update\n\nYou\'re now *#{position}* in line.\n⏱ Est. wait: ~*{wait} min*\n\nTrack: {url}',
   },
   default: {
     fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
@@ -691,6 +706,46 @@ export async function handleInboundMessage(
   const command = cleaned.toUpperCase();
   const detectedLocale = detectLocale(cleaned);
 
+  // ── Pending language selection (1=ar, 2=fr, 3=en) ──
+  {
+    const supabaseLang = createAdminClient() as any;
+    const identColLang = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: langSession } = await supabaseLang
+      .from('whatsapp_sessions')
+      .select('id, locale')
+      .eq(identColLang, identifier)
+      .eq('state', 'pending_language')
+      .eq('channel', channel)
+      .gte('created_at', new Date(Date.now() - PENDING_JOIN_TTL_MINUTES * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (langSession) {
+      let chosenLocale: Locale | null = null;
+      if (cleaned === '1') chosenLocale = 'ar';
+      else if (cleaned === '2') chosenLocale = 'fr';
+      else if (cleaned === '3') chosenLocale = 'en';
+
+      if (chosenLocale) {
+        // Save preference and delete the pending session
+        await supabaseLang.from('whatsapp_sessions').delete().eq('id', langSession.id);
+        // Update any existing sessions for this user with the chosen locale
+        await supabaseLang.from('whatsapp_sessions')
+          .update({ locale: chosenLocale })
+          .eq(identColLang, identifier)
+          .eq('channel', channel);
+        // Cache the locale
+        setDirectoryLocale(identifier, chosenLocale);
+        // Send welcome in the chosen language
+        await sendMessage({ to: identifier, body: t('welcome', chosenLocale) });
+        return;
+      }
+      // Not 1/2/3 — delete pending session and fall through to normal processing
+      await supabaseLang.from('whatsapp_sessions').delete().eq('id', langSession.id);
+    }
+  }
+
   // ── Pending join confirmation (YES/OUI/نعم or NO/NON/لا) ──
   // Check DB for a pending_confirmation session for this user
   {
@@ -862,6 +917,35 @@ export async function handleInboundMessage(
     return;
   }
 
+  // ── Quick-action numbers: "1" = STATUS, "2" = CANCEL (only if user has active session) ──
+  if (command === '1' || command === '2') {
+    const quickSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    if (quickSessions.length > 0) {
+      if (command === '1') {
+        // Route to STATUS
+        if (quickSessions.length === 1) {
+          const { session, org } = quickSessions[0];
+          const sessionLocale = (session.locale as Locale) || detectedLocale;
+          await handleStatus(identifier, org, sessionLocale, channel, sendMessage, session);
+        } else {
+          await handleMultiStatus(identifier, quickSessions, detectedLocale, channel, sendMessage);
+        }
+        return;
+      }
+      if (command === '2') {
+        // Route to CANCEL
+        if (quickSessions.length === 1) {
+          const { session, org } = quickSessions[0];
+          const sessionLocale = (session.locale as Locale) || detectedLocale;
+          await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
+        } else {
+          await handleCancelPick(identifier, quickSessions, detectedLocale, channel, sendMessage);
+        }
+        return;
+      }
+    }
+  }
+
   // ── Category selection (e.g. "3") or direct join (e.g. "3-2") ──
   const catJoinMatch = command.match(/^(\d{1,2})(?:-(\d{1,2}))?$/);
   if (catJoinMatch) {
@@ -1006,10 +1090,37 @@ export async function handleInboundMessage(
     const sessionLocale = (found.session.locale as Locale) || detectedLocale;
     await sendMessage({
       to: identifier,
-      body: t('help_with_session', sessionLocale, { name: found.org.name }),
+      body: t('help_with_session', sessionLocale, { name: found.org.name }) + t('quick_menu', sessionLocale),
     });
   } else {
-    await sendMessage({ to: identifier, body: t('welcome', detectedLocale) });
+    // Auto-detect for Algerian numbers
+    const isAlgerian = identifier.startsWith('213');
+    const prevLocale = await getLastSessionLocale(identifier, channel, bsuid);
+    if (prevLocale) {
+      // User has interacted before — use their saved locale
+      await sendMessage({ to: identifier, body: t('welcome', prevLocale) });
+    } else if (isAlgerian) {
+      // Algerian number, default to Arabic
+      await sendMessage({ to: identifier, body: t('welcome', 'ar') });
+    } else {
+      // Unknown user — show language picker
+      const supabaseLp = createAdminClient() as any;
+      const identColLp = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+      // Clean up any existing pending_language sessions
+      await supabaseLp.from('whatsapp_sessions')
+        .delete()
+        .eq(identColLp, identifier)
+        .eq('state', 'pending_language')
+        .eq('channel', channel);
+      // Create pending_language session
+      await supabaseLp.from('whatsapp_sessions').insert({
+        channel,
+        [identColLp]: identifier,
+        state: 'pending_language',
+        locale: 'fr',
+      });
+      await sendMessage({ to: identifier, body: t('language_picker', 'fr') });
+    }
   }
 }
 
@@ -1853,7 +1964,7 @@ async function handleJoin(
       position: formatPosition(pos, locale),
       now_serving: formatNowServing(pos, locale),
       url: trackUrl,
-    }),
+    }) + t('quick_menu', locale),
   });
 }
 

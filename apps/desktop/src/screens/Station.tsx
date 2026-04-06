@@ -830,6 +830,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string; en: string }>({ fr: '', ar: '', en: '' });
+  const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar' | 'en'>('fr');
+  const [broadcastTemplates, setBroadcastTemplates] = useState<any[]>([]);
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed?: number } | null>(null);
+  const [broadcastSaveAsTemplate, setBroadcastSaveAsTemplate] = useState(false);
+  const [broadcastTemplateName, setBroadcastTemplateName] = useState('');
   const [showNotesField, setShowNotesField] = useState(false);
   const [ticketNotes, setTicketNotes] = useState('');
   const [priorityDropdownId, setPriorityDropdownId] = useState<string | null>(null);
@@ -1287,11 +1295,92 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
+  // ── Broadcast functions ────────────────────────────────────────
+  const CLOUD_URL = 'https://qflo.net';
+
+  const fetchBroadcastTemplates = useCallback(async () => {
+    try {
+      const sb = await getSupabase();
+      const { data } = await sb
+        .from('broadcast_templates')
+        .select('id, title, body_fr, body_ar, body_en, created_at')
+        .eq('organization_id', session.organization_id)
+        .order('created_at', { ascending: false });
+      setBroadcastTemplates(data ?? []);
+    } catch (err) {
+      console.error('[broadcast] Failed to fetch templates:', err);
+    }
+  }, [session.organization_id]);
+
+  const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, bodyEn: string) => {
+    try {
+      const sb = await getSupabase();
+      await sb.from('broadcast_templates').insert({
+        organization_id: session.organization_id,
+        title,
+        body_fr: bodyFr || null,
+        body_ar: bodyAr || null,
+        body_en: bodyEn || null,
+      });
+      await fetchBroadcastTemplates();
+      showToast(t('Save as Template') + ' ✓', 'success');
+    } catch (err) {
+      console.error('[broadcast] Failed to save template:', err);
+      showToast('Error saving template', 'error');
+    }
+  }, [session.organization_id, fetchBroadcastTemplates]);
+
+  const deleteBroadcastTemplate = useCallback(async (id: string) => {
+    try {
+      const sb = await getSupabase();
+      await sb.from('broadcast_templates').delete().eq('id', id).eq('organization_id', session.organization_id);
+      setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (err) {
+      console.error('[broadcast] Failed to delete template:', err);
+    }
+  }, [session.organization_id]);
+
+  const sendBroadcast = useCallback(async (msg: { fr: string; ar: string; en: string }, templateId?: string) => {
+    setBroadcastSending(true);
+    setBroadcastResult(null);
+    try {
+      // Use the active language message for non-template sends
+      const messageBody = msg[broadcastLang] || msg.fr || msg.ar || msg.en;
+      const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-org-id': session.organization_id,
+          'x-user-id': session.user_id,
+        },
+        body: JSON.stringify({
+          organizationId: session.organization_id,
+          officeId: session.office_id,
+          message: templateId ? undefined : messageBody,
+          locale: broadcastLang,
+          templateId,
+        }),
+      });
+      const result = await res.json();
+      setBroadcastResult({ sent: result.sent ?? 0, failed: result.failed });
+      if (result.sent > 0) {
+        showToast(t('Broadcast sent to {count} customers', { count: result.sent }), 'success');
+      } else {
+        showToast(t('No waiting customers with messaging'), 'info');
+      }
+    } catch (err: any) {
+      console.error('[broadcast] Send error:', err);
+      showToast('Broadcast error: ' + (err?.message ?? 'unknown'), 'error');
+    } finally {
+      setBroadcastSending(false);
+    }
+  }, [session.organization_id, session.office_id, session.user_id, broadcastLang]);
+
   // ── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       // Skip shortcuts when a modal with inputs is open (let typing work normally)
-      if (showBookingModal && e.key !== 'F6') return;
+      if ((showBookingModal || showBroadcast) && e.key !== 'F6') return;
 
       // Ctrl+Enter or F8: Call Next (respects pause)
       if (((e.ctrlKey && e.key === 'Enter') || e.key === 'F8') && !activeTicket && session.desk_id && !queuePaused && staffStatus === 'available') {
@@ -1321,7 +1410,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [activeTicket, session.desk_id, queuePaused, staffStatus, showBookingModal]);
+  }, [activeTicket, session.desk_id, queuePaused, staffStatus, showBookingModal, showBroadcast]);
 
   // ── Derived data ────────────────────────────────────────────────
 
@@ -1855,6 +1944,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               }}
             >
               + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
+            </button>
+            {/* Broadcast pill */}
+            <button
+              onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(14,165,233,0.4)',
+                background: 'rgba(14,165,233,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#0ea5e9',
+              }}
+            >
+              {'\u{1F4E2}'} {t('Broadcast')}
             </button>
             {/* Staff status dropdown — only show when not available */}
             {staffStatus !== 'available' && (
@@ -2399,6 +2502,198 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       )}
 
       {/* In-House Booking Modal removed — now docked as panel in station-main */}
+
+      {/* ── Broadcast Modal ─────────────────────────────────────── */}
+      {showBroadcast && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowBroadcast(false); setBroadcastResult(null); } }}
+        >
+          <div
+            role="dialog"
+            aria-label={t('Broadcast')}
+            style={{
+              background: 'var(--surface)', borderRadius: 12, padding: 24,
+              minWidth: 420, maxWidth: 520, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              maxHeight: '80vh', overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{'\u{1F4E2}'} {t('Broadcast')}</h3>
+              <button
+                onClick={() => { setShowBroadcast(false); setBroadcastResult(null); }}
+                style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 18, padding: 4 }}
+              >&times;</button>
+            </div>
+
+            {/* Language tabs */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+              {(['fr', 'ar', 'en'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => setBroadcastLang(lang)}
+                  style={{
+                    padding: '4px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: broadcastLang === lang ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                    background: broadcastLang === lang ? 'var(--primary)' : 'transparent',
+                    color: broadcastLang === lang ? '#fff' : 'var(--text2)',
+                  }}
+                >
+                  {lang === 'fr' ? t('French') : lang === 'ar' ? t('Arabic') : t('English')}
+                </button>
+              ))}
+            </div>
+
+            {/* Message textarea */}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 }}>{t('Message')}</label>
+            <textarea
+              value={broadcastMsg[broadcastLang]}
+              onChange={(e) => setBroadcastMsg(prev => ({ ...prev, [broadcastLang]: e.target.value }))}
+              placeholder={t('Send to all waiting') + '...'}
+              dir={broadcastLang === 'ar' ? 'rtl' : 'ltr'}
+              rows={4}
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)',
+                background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, resize: 'vertical',
+                fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+
+            {/* Save as template toggle */}
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--text2)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={broadcastSaveAsTemplate}
+                  onChange={(e) => setBroadcastSaveAsTemplate(e.target.checked)}
+                />
+                {t('Save as Template')}
+              </label>
+              {broadcastSaveAsTemplate && (
+                <input
+                  type="text"
+                  value={broadcastTemplateName}
+                  onChange={(e) => setBroadcastTemplateName(e.target.value)}
+                  placeholder={t('Template Name')}
+                  style={{
+                    marginTop: 6, width: '100%', padding: '8px 12px', borderRadius: 8,
+                    border: '1px solid var(--border)', background: 'var(--surface2)',
+                    color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Send button */}
+            <button
+              disabled={broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar && !broadcastMsg.en)}
+              onClick={async () => {
+                if (broadcastSaveAsTemplate && broadcastTemplateName.trim()) {
+                  await saveBroadcastTemplate(broadcastTemplateName.trim(), broadcastMsg.fr, broadcastMsg.ar, broadcastMsg.en);
+                  setBroadcastSaveAsTemplate(false);
+                  setBroadcastTemplateName('');
+                }
+                await sendBroadcast(broadcastMsg);
+              }}
+              style={{
+                marginTop: 12, width: '100%', padding: '10px', borderRadius: 8,
+                border: 'none', background: '#0ea5e9', color: '#fff', fontSize: 14,
+                fontWeight: 700, cursor: broadcastSending ? 'wait' : 'pointer',
+                opacity: broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar && !broadcastMsg.en) ? 0.5 : 1,
+              }}
+            >
+              {broadcastSending ? t('Sending...') : t('Send to all waiting')}
+            </button>
+
+            {/* Result */}
+            {broadcastResult && (
+              <div style={{
+                marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: broadcastResult.sent > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                color: broadcastResult.sent > 0 ? '#22c55e' : '#f59e0b',
+              }}>
+                {broadcastResult.sent > 0
+                  ? t('Broadcast sent to {count} customers', { count: broadcastResult.sent })
+                  : t('No waiting customers with messaging')}
+              </div>
+            )}
+
+            {/* Saved Templates */}
+            {broadcastTemplates.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>{t('Saved Templates')}</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {broadcastTemplates.map((tmpl) => (
+                    <div
+                      key={tmpl.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                        background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)',
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setBroadcastMsg({
+                            fr: tmpl.body_fr ?? '',
+                            ar: tmpl.body_ar ?? '',
+                            en: tmpl.body_en ?? '',
+                          });
+                        }}
+                        style={{
+                          flex: 1, textAlign: 'left', background: 'none', border: 'none',
+                          color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        {tmpl.title}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setBroadcastSending(true);
+                          await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '', en: tmpl.body_en ?? '' }, tmpl.id);
+                          setBroadcastSending(false);
+                        }}
+                        style={{
+                          padding: '4px 10px', borderRadius: 6, border: 'none',
+                          background: '#0ea5e9', color: '#fff', fontSize: 11, fontWeight: 700,
+                          cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {t('Send')}
+                      </button>
+                      <button
+                        onClick={() => deleteBroadcastTemplate(tmpl.id)}
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, border: 'none',
+                          background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 11,
+                          fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {t('Delete')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Close */}
+            <button
+              onClick={() => { setShowBroadcast(false); setBroadcastResult(null); }}
+              style={{
+                marginTop: 16, width: '100%', padding: '10px', border: '1px solid var(--border)',
+                borderRadius: 8, background: 'transparent', color: 'var(--text2)',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              }}
+            >
+              {t('Close')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Right-click context menu for queue items */}
       {contextMenu && (

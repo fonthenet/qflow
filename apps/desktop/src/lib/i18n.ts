@@ -324,6 +324,17 @@ const FR: Messages = {
   'Banned': 'Bloqué',
   '{name} has been banned': '{name} a été bloqué',
   'Reason for ban (optional):': 'Raison du blocage (optionnel) :',
+  'Broadcast': 'Diffusion',
+  'Send to all waiting': 'Envoyer à tous',
+  'Message': 'Message',
+  'Saved Templates': 'Modèles enregistrés',
+  'Save as Template': 'Enregistrer comme modèle',
+  'Template Name': 'Nom du modèle',
+  'Send': 'Envoyer',
+  'Sending...': 'Envoi en cours...',
+  'Broadcast sent to {count} customers': 'Diffusion envoyée à {count} clients',
+  'No waiting customers with messaging': 'Aucun client en attente avec messagerie',
+  'Delete': 'Supprimer',
 };
 
 const AR: Messages = {
@@ -646,6 +657,17 @@ const AR: Messages = {
   'Banned': 'محظور',
   '{name} has been banned': 'تم حظر {name}',
   'Reason for ban (optional):': 'سبب الحظر (اختياري):',
+  'Broadcast': 'بث',
+  'Send to all waiting': 'إرسال للجميع',
+  'Message': 'رسالة',
+  'Saved Templates': 'القوالب المحفوظة',
+  'Save as Template': 'حفظ كنموذج',
+  'Template Name': 'اسم النموذج',
+  'Send': 'إرسال',
+  'Sending...': 'جاري الإرسال...',
+  'Broadcast sent to {count} customers': 'تم البث إلى {count} عملاء',
+  'No waiting customers with messaging': 'لا يوجد عملاء منتظرين بالرسائل',
+  'Delete': 'حذف',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {
