@@ -1003,7 +1003,19 @@ function setupIPC() {
 
   ipcMain.handle('session:load', () => {
     const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
-    return row ? JSON.parse(row.value) : null;
+    if (!row) return null;
+    const session = JSON.parse(row.value);
+    // Restore encrypted password for silent re-auth
+    try {
+      const credRow = db.prepare("SELECT value FROM session WHERE key = 'auth_cred'").get() as any;
+      if (credRow && safeStorage.isEncryptionAvailable()) {
+        const cred = JSON.parse(credRow.value);
+        if (cred.enc) {
+          session._pwd = safeStorage.decryptString(Buffer.from(cred.enc, 'base64'));
+        }
+      }
+    } catch { /* ignore decryption failures */ }
+    return session;
   });
 
   ipcMain.handle('session:clear', () => {
