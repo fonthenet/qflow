@@ -29,10 +29,10 @@ function formatBroadcastMessage(
   if (!orgName) return body;
 
   if (locale === 'ar') {
-    return `📢 *${orgName}*\n━━━━━━━━━━━━━━\n\n${body}\n\n━━━━━━━━━━━━━━\nشكراً لكم`;
+    return `📢 *${orgName}*\n______________\n\n${body}\n\n______________\nشكراً لكم`;
   }
   // French / default
-  return `📢 *${orgName}*\n━━━━━━━━━━━━━━\n\n${body}\n\n━━━━━━━━━━━━━━\nMerci`;
+  return `📢 *${orgName}*\n______________\n\n${body}\n\n______________\nMerci`;
 }
 
 /** Delay between individual sends (ms) to avoid throttling */
