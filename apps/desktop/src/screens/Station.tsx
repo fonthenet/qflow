@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
-import { getSupabase } from '../lib/supabase';
+import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 
@@ -836,8 +836,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [broadcastTemplates, setBroadcastTemplates] = useState<any[]>([]);
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed?: number; error?: string } | null>(null);
-  const [broadcastSaveAsTemplate, setBroadcastSaveAsTemplate] = useState(false);
+  const [broadcastShowSave, setBroadcastShowSave] = useState(false);
   const [broadcastTemplateName, setBroadcastTemplateName] = useState('');
+  const [broadcastTemplateShortcut, setBroadcastTemplateShortcut] = useState('');
   const [showNotesField, setShowNotesField] = useState(false);
   const [ticketNotes, setTicketNotes] = useState('');
   const [priorityDropdownId, setPriorityDropdownId] = useState<string | null>(null);
@@ -1298,31 +1299,41 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Broadcast functions ────────────────────────────────────────
   const CLOUD_URL = 'https://qflo.net';
 
+  const storedAuth = useMemo(() => ({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    email: session.email,
+    password: session._pwd,
+  }), [session.access_token, session.refresh_token, session.email, session._pwd]);
+
   const fetchBroadcastTemplates = useCallback(async () => {
     try {
+      await ensureAuth(storedAuth);
       const sb = await getSupabase();
       const { data } = await sb
         .from('broadcast_templates')
-        .select('id, title, body_fr, body_ar, body_en, created_at')
+        .select('id, title, shortcut, body_fr, body_ar, created_at')
         .eq('organization_id', session.organization_id)
         .order('created_at', { ascending: false });
       setBroadcastTemplates(data ?? []);
     } catch (err) {
       console.error('[broadcast] Failed to fetch templates:', err);
     }
-  }, [session.organization_id]);
+  }, [session.organization_id, storedAuth]);
 
-  const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string) => {
+  const saveBroadcastTemplate = useCallback(async (title: string, bodyFr: string, bodyAr: string, shortcut?: string) => {
     try {
+      await ensureAuth(storedAuth);
       const sb = await getSupabase();
       const { error } = await sb.from('broadcast_templates').insert({
         organization_id: session.organization_id,
         title,
         body_fr: bodyFr || null,
         body_ar: bodyAr || null,
+        shortcut: shortcut || null,
       });
       if (error) {
-        console.error('[broadcast] Supabase insert error:', error.message);
+        console.error('[broadcast] Supabase insert error:', error.message, error.details, error.hint);
         showToast(t('Error saving template'), 'error');
         return;
       }
@@ -1332,17 +1343,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       console.error('[broadcast] Failed to save template:', err);
       showToast(t('Error saving template'), 'error');
     }
-  }, [session.organization_id, fetchBroadcastTemplates]);
+  }, [session.organization_id, storedAuth, fetchBroadcastTemplates]);
 
   const deleteBroadcastTemplate = useCallback(async (id: string) => {
     try {
+      await ensureAuth(storedAuth);
       const sb = await getSupabase();
-      await sb.from('broadcast_templates').delete().eq('id', id).eq('organization_id', session.organization_id);
+      const { error } = await sb.from('broadcast_templates').delete().eq('id', id).eq('organization_id', session.organization_id);
+      if (error) console.error('[broadcast] Delete error:', error.message);
       setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
     } catch (err) {
       console.error('[broadcast] Failed to delete template:', err);
     }
-  }, [session.organization_id]);
+  }, [session.organization_id, storedAuth]);
 
   const sendBroadcast = useCallback(async (msg: { fr: string; ar: string }, templateId?: string) => {
     setBroadcastSending(true);
@@ -1350,39 +1363,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
       console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
-      // Get fresh Supabase session for JWT auth
-      const sb = await getSupabase();
-      let accessToken = '';
-      // First try refreshing the current in-memory session
-      try {
-        const { data: { session: refreshed } } = await sb.auth.refreshSession();
-        if (refreshed?.access_token) {
-          accessToken = refreshed.access_token;
-          console.log('[broadcast] Got token via refreshSession');
-        }
-      } catch { /* ignore */ }
-      // If refresh failed, re-set session from stored credentials and try again
-      if (!accessToken && session.refresh_token) {
-        try {
-          const { data: { session: restored } } = await sb.auth.setSession({
-            access_token: session.access_token ?? '',
-            refresh_token: session.refresh_token,
-          });
-          accessToken = restored?.access_token ?? '';
-          console.log('[broadcast] Got token via setSession:', !!accessToken);
-        } catch { /* ignore */ }
-      }
-      // Last resort: re-authenticate with stored password
-      if (!accessToken && session.email && session._pwd) {
-        try {
-          const { data: { session: fresh } } = await sb.auth.signInWithPassword({
-            email: session.email,
-            password: session._pwd,
-          });
-          accessToken = fresh?.access_token ?? '';
-          console.log('[broadcast] Got token via signIn:', !!accessToken);
-        } catch { /* ignore */ }
-      }
+      const accessToken = await ensureAuth(storedAuth);
       console.log('[broadcast] Token present:', !!accessToken, 'len:', accessToken.length);
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
@@ -2608,43 +2589,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               }}
             />
 
-            {/* Save as template toggle */}
-            <div style={{ marginTop: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--text2)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={broadcastSaveAsTemplate}
-                  onChange={(e) => setBroadcastSaveAsTemplate(e.target.checked)}
-                />
-                {t('Save as Template')}
-              </label>
-              {broadcastSaveAsTemplate && (
-                <input
-                  type="text"
-                  value={broadcastTemplateName}
-                  onChange={(e) => setBroadcastTemplateName(e.target.value)}
-                  placeholder={t('Template Name')}
-                  style={{
-                    marginTop: 6, width: '100%', padding: '8px 12px', borderRadius: 8,
-                    border: '1px solid var(--border)', background: 'var(--surface2)',
-                    color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
-                  }}
-                />
-              )}
-            </div>
-
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 disabled={broadcastSending || (!broadcastMsg.fr && !broadcastMsg.ar)}
-                onClick={async () => {
-                  if (broadcastSaveAsTemplate && broadcastTemplateName.trim()) {
-                    await saveBroadcastTemplate(broadcastTemplateName.trim(), broadcastMsg.fr, broadcastMsg.ar);
-                    setBroadcastSaveAsTemplate(false);
-                    setBroadcastTemplateName('');
-                  }
-                  await sendBroadcast(broadcastMsg);
-                }}
+                onClick={async () => { await sendBroadcast(broadcastMsg); }}
                 style={{
                   flex: 1, padding: '10px', borderRadius: 8,
                   border: 'none', background: '#0ea5e9', color: '#fff', fontSize: 14,
@@ -2654,7 +2603,70 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 {broadcastSending ? t('Sending...') : t('Send to all waiting')}
               </button>
+              <button
+                disabled={!broadcastMsg.fr && !broadcastMsg.ar}
+                onClick={() => setBroadcastShowSave(v => !v)}
+                style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  border: '1px solid var(--border)', background: broadcastShowSave ? 'var(--surface2)' : 'transparent',
+                  color: 'var(--text2)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  opacity: (!broadcastMsg.fr && !broadcastMsg.ar) ? 0.4 : 1,
+                }}
+                title={t('Save as Template')}
+              >
+                💾
+              </button>
             </div>
+
+            {/* Save template form */}
+            {broadcastShowSave && (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: 'var(--surface2)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>{t('Save as Template')}</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    value={broadcastTemplateName}
+                    onChange={(e) => setBroadcastTemplateName(e.target.value)}
+                    placeholder={t('Template Name')}
+                    style={{
+                      flex: 1, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                      background: 'var(--surface)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={broadcastTemplateShortcut}
+                    onChange={(e) => setBroadcastTemplateShortcut(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3))}
+                    placeholder="F1"
+                    maxLength={3}
+                    style={{
+                      width: 50, padding: '7px 6px', borderRadius: 6, border: '1px solid var(--border)',
+                      background: 'var(--surface)', color: 'var(--text)', fontSize: 13, textAlign: 'center',
+                      fontWeight: 700, boxSizing: 'border-box',
+                    }}
+                    title={t('Shortcut key')}
+                  />
+                  <button
+                    disabled={!broadcastTemplateName.trim()}
+                    onClick={async () => {
+                      await saveBroadcastTemplate(broadcastTemplateName.trim(), broadcastMsg.fr, broadcastMsg.ar, broadcastTemplateShortcut.trim() || undefined);
+                      setBroadcastShowSave(false);
+                      setBroadcastTemplateName('');
+                      setBroadcastTemplateShortcut('');
+                    }}
+                    style={{
+                      padding: '7px 14px', borderRadius: 6, border: 'none',
+                      background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700,
+                      cursor: !broadcastTemplateName.trim() ? 'default' : 'pointer',
+                      opacity: !broadcastTemplateName.trim() ? 0.4 : 1,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {t('Save')}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Result */}
             {broadcastResult && (
@@ -2675,44 +2687,52 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </div>
             )}
 
-            {/* Saved Templates */}
+            {/* Templates — quick send with shortcuts */}
             {broadcastTemplates.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>{t('Saved Templates')}</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', marginBottom: 6 }}>{t('Templates')}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {broadcastTemplates.map((tmpl) => (
                     <div
                       key={tmpl.id}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px',
                         background: 'var(--surface2)', borderRadius: 8, border: '1px solid var(--border)',
                       }}
                     >
+                      {tmpl.shortcut && (
+                        <span style={{
+                          display: 'inline-block', padding: '2px 6px', borderRadius: 4,
+                          background: 'var(--surface)', border: '1px solid var(--border)',
+                          fontSize: 10, fontWeight: 700, color: 'var(--text3)', fontFamily: 'monospace',
+                          minWidth: 24, textAlign: 'center',
+                        }}>
+                          {tmpl.shortcut}
+                        </span>
+                      )}
                       <button
                         onClick={() => {
-                          setBroadcastMsg({
-                            fr: tmpl.body_fr ?? '',
-                            ar: tmpl.body_ar ?? '',
-                          });
+                          setBroadcastMsg({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '' });
                         }}
                         style={{
                           flex: 1, textAlign: 'left', background: 'none', border: 'none',
                           color: 'var(--text)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                          padding: 0,
+                          padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}
+                        title={tmpl.body_fr || tmpl.body_ar || ''}
                       >
                         {tmpl.title}
                       </button>
                       <button
+                        disabled={broadcastSending}
                         onClick={async () => {
-                          setBroadcastSending(true);
                           await sendBroadcast({ fr: tmpl.body_fr ?? '', ar: tmpl.body_ar ?? '' }, tmpl.id);
-                          setBroadcastSending(false);
                         }}
                         style={{
-                          padding: '4px 10px', borderRadius: 6, border: 'none',
+                          padding: '3px 10px', borderRadius: 6, border: 'none',
                           background: '#0ea5e9', color: '#fff', fontSize: 11, fontWeight: 700,
-                          cursor: 'pointer', whiteSpace: 'nowrap',
+                          cursor: broadcastSending ? 'wait' : 'pointer', whiteSpace: 'nowrap',
+                          opacity: broadcastSending ? 0.5 : 1,
                         }}
                       >
                         {t('Send')}
@@ -2720,12 +2740,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       <button
                         onClick={() => deleteBroadcastTemplate(tmpl.id)}
                         style={{
-                          padding: '4px 8px', borderRadius: 6, border: 'none',
-                          background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 11,
-                          fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                          padding: '3px 6px', borderRadius: 6, border: 'none',
+                          background: 'none', color: 'var(--text3)', fontSize: 13,
+                          cursor: 'pointer', lineHeight: 1,
                         }}
+                        title={t('Delete')}
                       >
-                        {t('Delete')}
+                        ✕
                       </button>
                     </div>
                   ))}
@@ -2735,9 +2756,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
             {/* Close */}
             <button
-              onClick={() => { setShowBroadcast(false); setBroadcastResult(null); }}
+              onClick={() => { setShowBroadcast(false); setBroadcastResult(null); setBroadcastShowSave(false); }}
               style={{
-                marginTop: 16, width: '100%', padding: '10px', border: '1px solid var(--border)',
+                marginTop: 14, width: '100%', padding: '10px', border: '1px solid var(--border)',
                 borderRadius: 8, background: 'transparent', color: 'var(--text2)',
                 cursor: 'pointer', fontSize: 13, fontWeight: 600,
               }}
