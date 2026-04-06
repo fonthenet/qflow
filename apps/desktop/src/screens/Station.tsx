@@ -654,7 +654,7 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
   );
 }
 
-function RemoteSupportSection({ t }: { t: (key: string, values?: Record<string, string | number | null | undefined>) => string }) {
+function RemoteSupportSection({ t, locale }: { t: (key: string, values?: Record<string, string | number | null | undefined>) => string; locale: DesktopLocale }) {
   const [showSupport, setShowSupport] = useState(false);
   const [rdStatus, setRdStatus] = useState<{ installed: boolean; running: boolean; id: string | null }>({ installed: false, running: false, id: null });
   const [rdSession, setRdSession] = useState<{ id: string | null } | null>(null);
@@ -2498,7 +2498,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         })()}
 
         {/* Remote Support */}
-        {!isSmallScreen && <RemoteSupportSection t={t} />}
+        {!isSmallScreen && <RemoteSupportSection t={t} locale={locale} />}
       </div>
 
       {/* Transfer modal */}

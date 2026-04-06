@@ -20,6 +20,21 @@ function safeCompare(a: string, b: string): boolean {
 /** Maximum messages per broadcast to avoid API rate limits */
 const MAX_BROADCAST_BATCH = 50;
 
+/** Format a professional broadcast message with business header */
+function formatBroadcastMessage(
+  body: string,
+  orgName: string,
+  locale: 'fr' | 'ar' | 'en',
+): string {
+  if (!orgName) return body;
+
+  if (locale === 'ar') {
+    return `📢 *${orgName}*\n━━━━━━━━━━━━━━\n\n${body}\n\n━━━━━━━━━━━━━━\nشكراً لانتظاركم 🙏`;
+  }
+  // French / default
+  return `📢 *${orgName}*\n━━━━━━━━━━━━━━\n\n${body}\n\n━━━━━━━━━━━━━━\nMerci de votre patience 🙏`;
+}
+
 /** Delay between individual sends (ms) to avoid throttling */
 const SEND_DELAY_MS = 200;
 
@@ -159,11 +174,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Fetch organization name for professional message header ─
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('name')
+      .eq('id', organizationId)
+      .single();
+    const orgName = (org as any)?.name ?? '';
+
     // ── Find active sessions for waiting/called tickets ──────────
     // Tickets don't have organization_id — find offices for this org first
     const { data: orgOffices } = await supabase
       .from('offices')
-      .select('id')
+      .select('id, name')
       .eq('organization_id', organizationId);
 
     if (!orgOffices || orgOffices.length === 0) {
@@ -240,6 +263,9 @@ export async function POST(request: NextRequest) {
         errors.push(`Empty message for session ${session.id}`);
         continue;
       }
+
+      // Wrap with professional header/footer
+      messageBody = formatBroadcastMessage(messageBody, orgName, sessionLocale);
 
       try {
         let sent = false;
