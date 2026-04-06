@@ -1147,6 +1147,14 @@ export class SyncEngine {
           // Check if Supabase actually updated any rows (RLS or status conflict = empty array)
           const body = await res.json().catch(() => []);
           if (Array.isArray(body) && body.length === 0) {
+            // PATCH returned 0 rows — RLS blocked or row changed remotely.
+            // For terminal status changes (cancelled, served, no_show), this is critical —
+            // treat as failure so the sync retries and the DB trigger can fire notifications.
+            const isTerminal = ['cancelled', 'served', 'no_show'].includes(payload.status);
+            if (isTerminal) {
+              console.warn(`[sync:replay] PATCH returned 0 rows for TERMINAL ${payload.status} on ${item.record_id} — will retry`);
+              throw new Error(`PATCH 0 rows for ${payload.status} — needs retry`);
+            }
             console.warn(`[sync:replay] PATCH returned 0 rows for ${item.operation} on ${item.record_id} — row was likely changed/deleted remotely`);
             // Still mark as synced to avoid infinite retries on a conflict
             return { status: 0 };
@@ -1276,7 +1284,7 @@ export class SyncEngine {
         "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND record_id = ? AND table_name = 'tickets'"
       );
       const getLocalTicket = this.db.prepare(
-        "SELECT status, desk_id, called_by_staff_id, called_at, serving_started_at FROM tickets WHERE id = ?"
+        "SELECT status, desk_id, called_by_staff_id, called_at, serving_started_at, cancelled_at FROM tickets WHERE id = ?"
       );
 
       const upsertBatch = this.db.transaction((rows: any[]) => {
@@ -1296,8 +1304,17 @@ export class SyncEngine {
             const cloudRank = statusRank[t.status] ?? 0;
             if (cloudRank < localRank) {
               const hasPendingSync = (checkPending.get(t.id) as any)?.c > 0;
-              // Allow cloud to override local "cancelled" when the cancellation was never pushed
-              const isLocalAutoCancel = local.status === 'cancelled' && ['waiting', 'called', 'serving'].includes(t.status);
+
+              // PROTECT intentional operator cancellations: if cancelled_at is set,
+              // the operator explicitly cancelled this ticket — never let cloud override it.
+              // Auto-cancellations (by reconciliation) only set completed_at, NOT cancelled_at.
+              if (local.status === 'cancelled' && local.cancelled_at) {
+                console.log(`[sync:pull] Protecting operator cancellation for ${t.ticket_number}: local=cancelled (cancelled_at=${local.cancelled_at}), cloud=${t.status} — skipping`);
+                continue;
+              }
+
+              // Allow cloud to override local "cancelled" when the cancellation was auto (reconciliation)
+              const isLocalAutoCancel = local.status === 'cancelled' && !local.cancelled_at && ['waiting', 'called', 'serving'].includes(t.status);
               // Allow cloud to override when another platform made a legitimate change
               // (e.g., app sent ticket back to queue, or unparked). If the station has no
               // pending sync for this ticket, the cloud is the source of truth.
