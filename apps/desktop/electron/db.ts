@@ -47,7 +47,10 @@ export function initDB() {
       is_remote INTEGER DEFAULT 0,
       is_offline INTEGER DEFAULT 0,
       appointment_id TEXT,
-      synced_at TEXT
+      synced_at TEXT,
+      source TEXT DEFAULT 'local_kiosk',
+      daily_sequence INTEGER DEFAULT 0,
+      priority_category_id TEXT
     );
 
     -- Offices cache
@@ -180,6 +183,7 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN synced_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN source TEXT DEFAULT 'walk_in'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN daily_sequence INTEGER DEFAULT 0`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN priority_category_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
 
