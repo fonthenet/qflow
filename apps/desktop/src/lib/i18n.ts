@@ -341,6 +341,9 @@ const FR: Messages = {
   'Error saving template': "Erreur lors de l'enregistrement du modèle",
   'Broadcast error': 'Erreur de diffusion',
   'Delete': 'Supprimer',
+  'Track': 'Suivi',
+  'Click to enlarge': 'Cliquer pour agrandir',
+  'Tracking QR': 'QR de suivi',
 };
 
 const AR: Messages = {
@@ -680,6 +683,9 @@ const AR: Messages = {
   'Error saving template': 'خطأ في حفظ النموذج',
   'Broadcast error': 'خطأ في البث',
   'Delete': 'حذف',
+  'Track': 'تتبع',
+  'Click to enlarge': 'انقر للتكبير',
+  'Tracking QR': 'رمز التتبع',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

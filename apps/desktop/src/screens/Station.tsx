@@ -100,6 +100,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [customerLookup, setCustomerLookup] = useState<{ visits: number; lastVisit: string; notes?: string } | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState<{ sent: boolean; error?: string } | null>(null);
+  const [enlargedQr, setEnlargedQr] = useState<{ url: string; label: string } | null>(null);
 
   const deptServices = useMemo(() =>
     services.filter(s => s.department_id === selectedDept),
@@ -264,84 +265,156 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
         </button>
       </div>
 
+      {/* QR Enlarged Overlay */}
+      {enlargedQr && (
+        <div
+          onClick={() => setEnlargedQr(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 16, padding: 24,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+          >
+            <img
+              src={enlargedQr.url.replace('80x80', '300x300')}
+              alt="QR" style={{ width: 260, height: 260, borderRadius: 8 }}
+            />
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#333' }}>{enlargedQr.label}</div>
+            <button
+              onClick={() => setEnlargedQr(null)}
+              style={{
+                padding: '6px 20px', border: 'none', borderRadius: 6,
+                background: '#8b5cf6', color: '#fff', cursor: 'pointer',
+                fontSize: 12, fontWeight: 600,
+              }}
+            >{t('Close')}</button>
+          </div>
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: 'auto' }}>
       {createdTicket ? (
-        /* ── Compact Confirmation ── */
-        <div style={{ padding: '12px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 2 }}>✓ {t('Ticket Created')}</div>
+        /* ── Ticket Created Confirmation ── */
+        <div style={{ padding: '8px 16px' }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
+            {/* Left: Ticket info */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 120 }}>
+              <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>✓ {t('Ticket Created')}</div>
               <div style={{
-                fontSize: 22, fontWeight: 800, color: '#8b5cf6',
+                fontSize: 24, fontWeight: 800, color: '#8b5cf6',
                 background: 'rgba(139,92,246,0.1)', borderRadius: 8,
-                padding: '6px 16px',
+                padding: '8px 18px', lineHeight: 1.1,
               }}>
                 {createdTicket.ticket_number}
               </div>
-              {customerName.trim() && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{customerName.trim()}</div>}
+              {customerName.trim() && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>{customerName.trim()}</div>}
+              {whatsappStatus && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 4, fontSize: 10, marginTop: 6,
+                  background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                  border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                }}>
+                  <span style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
+                    {whatsappStatus.sent ? 'WhatsApp ✓' : 'WhatsApp ✗'}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {whatsappStatus && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '6px 10px', borderRadius: 6, fontSize: 11,
-                background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
-                border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
-              }}>
-                <span>{whatsappStatus.sent ? '\u2705' : '\u26A0\uFE0F'}</span>
-                <span style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
-                  {whatsappStatus.sent ? 'WhatsApp ✓' : 'WhatsApp ✗'}
-                </span>
-              </div>
-            )}
+            {/* Divider */}
+            <div style={{ width: 1, background: 'var(--border)', alignSelf: 'stretch', margin: '4px 0' }} />
 
-            {/* QR + track link */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`}
-                alt="QR" style={{ width: 56, height: 56, borderRadius: 6, border: '1px solid var(--border)' }}
-              />
-              <div style={{ fontSize: 10, color: 'var(--text3)', maxWidth: 140, wordBreak: 'break-all' }}>{trackUrl}</div>
+            {/* Center: QR codes grid */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, justifyContent: 'center' }}>
+              {/* Track QR */}
+              <div
+                onClick={() => setEnlargedQr({ url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`, label: t('Tracking QR') })}
+                style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(139,92,246,0.08)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                title={t('Click to enlarge')}
+              >
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`}
+                  alt="QR" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
+                />
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#8b5cf6', marginTop: 3 }}>{t('Track')}</div>
+              </div>
+
+              {whatsappPhone && (
+                <div
+                  onClick={() => setEnlargedQr({
+                    url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`,
+                    label: 'WhatsApp',
+                  })}
+                  style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,211,102,0.08)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title={t('Click to enlarge')}
+                >
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
+                    alt="WA" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
+                  />
+                  <div style={{ fontSize: 9, fontWeight: 600, color: '#25D366', marginTop: 3 }}>WhatsApp</div>
+                </div>
+              )}
+
+              {messengerPageId && (
+                <div
+                  onClick={() => setEnlargedQr({
+                    url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`,
+                    label: 'Messenger',
+                  })}
+                  style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,132,255,0.08)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title={t('Click to enlarge')}
+                >
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
+                    alt="Msg" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
+                  />
+                  <div style={{ fontSize: 9, fontWeight: 600, color: '#0084FF', marginTop: 3 }}>Messenger</div>
+                </div>
+              )}
             </div>
 
-            {/* Messaging QRs - compact */}
-            {whatsappPhone && createdTicket && (
-              <div style={{ textAlign: 'center' }}>
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
-                  alt="WA" style={{ width: 48, height: 48, borderRadius: 4, border: '1px solid var(--border)' }}
-                />
-                <div style={{ fontSize: 9, fontWeight: 600, color: '#25D366', marginTop: 2 }}>WhatsApp</div>
-              </div>
-            )}
-            {messengerPageId && createdTicket && (
-              <div style={{ textAlign: 'center' }}>
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
-                  alt="Msg" style={{ width: 48, height: 48, borderRadius: 4, border: '1px solid var(--border)' }}
-                />
-                <div style={{ fontSize: 9, fontWeight: 600, color: '#0084FF', marginTop: 2 }}>Messenger</div>
-              </div>
-            )}
+            {/* Divider */}
+            <div style={{ width: 1, background: 'var(--border)', alignSelf: 'stretch', margin: '4px 0' }} />
 
-            <button
-              onClick={handleNewTicket}
-              style={{
-                padding: '8px 16px', border: 'none', borderRadius: 6,
-                background: '#8b5cf6', color: '#fff', cursor: 'pointer',
-                fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-              }}
-            >
-              + {t('New Ticket')}
-            </button>
+            {/* Right: URL + New Ticket */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minWidth: 110 }}>
+              <div style={{ fontSize: 9, color: 'var(--text3)', textAlign: 'center', wordBreak: 'break-all', maxWidth: 130, lineHeight: 1.3 }}>{trackUrl}</div>
+              <button
+                onClick={handleNewTicket}
+                style={{
+                  padding: '8px 18px', border: 'none', borderRadius: 6,
+                  background: '#8b5cf6', color: '#fff', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                }}
+              >
+                + {t('New Ticket')}
+              </button>
+            </div>
           </div>
         </div>
       ) : (
-        /* ── Compact Booking Form (2 rows) ── */
-        <div style={{ padding: '10px 16px' }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            {/* Row 1: Department + Service + Name + Phone */}
-            <div style={{ flex: '1 1 130px', minWidth: 120 }}>
+        /* ── Booking Form — 2 clear rows ── */
+        <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Row 1: Dept + Service + Name */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 150px', minWidth: 130 }}>
               <label style={labelStyle}>{t('Department')} *</label>
               <select
                 value={selectedDept}
@@ -356,7 +429,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
 
             {selectedDept && deptServices.length > 0 && (
-              <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+              <div style={{ flex: '1 1 140px', minWidth: 120 }}>
                 <label style={labelStyle}>{t('Service')}</label>
                 <select
                   value={selectedService}
@@ -371,7 +444,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               </div>
             )}
 
-            <div style={{ flex: '1 1 130px', minWidth: 110 }}>
+            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
               <label style={labelStyle}>{t('Name')}</label>
               <input
                 ref={nameRef}
@@ -383,8 +456,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 style={inputStyle}
               />
             </div>
+          </div>
 
-            <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+          {/* Row 2: Phone + Reason + Priority + Submit */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
               <label style={labelStyle}>{t('Phone')}</label>
               <input
                 type="tel"
@@ -396,7 +472,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               />
             </div>
 
-            <div style={{ flex: '1 1 130px', minWidth: 110 }}>
+            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
               <label style={labelStyle}>{t('Reason')}</label>
               <input
                 type="text"
@@ -408,7 +484,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               />
             </div>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', paddingBottom: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', paddingBottom: 6 }}>
               <input type="checkbox" checked={isPriority} onChange={(e) => setIsPriority(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f59e0b' }} />
               {t('Priority')}
             </label>
@@ -417,7 +493,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               onClick={handleSubmit}
               disabled={!selectedDept || submitting}
               style={{
-                padding: '7px 18px', border: 'none', borderRadius: 6,
+                padding: '7px 22px', border: 'none', borderRadius: 6,
                 background: (selectedDept && !submitting) ? '#8b5cf6' : 'var(--surface2)',
                 color: (selectedDept && !submitting) ? '#fff' : 'var(--text3)',
                 cursor: (selectedDept && !submitting) ? 'pointer' : 'not-allowed',
@@ -429,11 +505,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           </div>
 
           {/* Customer lookup inline */}
-          {lookupLoading && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>{t('Looking up customer...')}</div>}
+          {lookupLoading && <div style={{ fontSize: 10, color: 'var(--text3)' }}>{t('Looking up customer...')}</div>}
           {customerLookup && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '4px 10px', borderRadius: 6, marginTop: 6,
+              padding: '4px 10px', borderRadius: 6,
               background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
               fontSize: 11, color: 'var(--text)',
             }}>
