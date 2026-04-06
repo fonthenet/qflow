@@ -74,9 +74,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
     setSendError(null);
     setSendResult(null);
     try {
-      const sb = await getSupabase();
-      const { data: sessionData } = await sb.auth.getSession();
-      const accessToken = sessionData?.session?.access_token;
+      const accessToken = await ensureAuth(storedAuth);
       if (!accessToken) throw new Error('Not authenticated');
 
       const res = await fetch('https://qflo.net/api/customer-broadcast', {
