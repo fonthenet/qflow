@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Calendar, CalendarPlus, Clock, MapPin, Check, User, Bell } from 'lucide-react';
+import { Calendar, CalendarPlus, Clock, MapPin, Check, User, Bell, Users } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
   clearBookingEmailOtpVerification,
@@ -91,6 +91,7 @@ export function BookingForm({
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [detailedSlots, setDetailedSlots] = useState<{ time: string; remaining: number; total: number }[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -136,26 +137,68 @@ export function BookingForm({
     orgSettings.email_otp_resend_cooldown_seconds ?? 60
   );
 
-  // Fetch available slots when date changes
-  useEffect(() => {
+  // Fetch available slots
+  const fetchSlots = useCallback(async () => {
     if (!selectedDate || !selectedService) return;
     if (sandboxMode) {
       setAvailableSlots(sandbox?.sampleSlots ?? ['09:00', '09:30', '10:00', '10:30', '11:00']);
+      setDetailedSlots([]);
       setLoadingSlots(false);
       return;
     }
+    const result = await getAvailableSlots(office.id, selectedService.id, selectedDate);
+    if (result.error) {
+      setError(result.error);
+      setAvailableSlots([]);
+      setDetailedSlots([]);
+    } else {
+      setAvailableSlots(result.data ?? []);
+      setDetailedSlots(result.detailed ?? []);
+    }
+    setLoadingSlots(false);
+  }, [sandboxMode, sandbox?.sampleSlots, selectedDate, selectedService, office.id]);
+
+  // Fetch slots when date changes
+  useEffect(() => {
+    if (!selectedDate || !selectedService) return;
     setLoadingSlots(true);
     setSelectedTime('');
-    getAvailableSlots(office.id, selectedService.id, selectedDate).then((result) => {
-      if (result.error) {
-        setError(result.error);
-        setAvailableSlots([]);
-      } else {
-        setAvailableSlots(result.data ?? []);
+    fetchSlots();
+  }, [selectedDate, selectedService, fetchSlots]);
+
+  // Realtime: auto-refresh slots when appointments change for this office
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  useEffect(() => {
+    if (!selectedDate || !selectedService || sandboxMode) return;
+
+    // Subscribe to appointment changes on this office
+    const channel = supabase
+      .channel(`booking-slots-${office.id}-${selectedDate}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'appointments',
+          filter: `office_id=eq.${office.id}`,
+        },
+        () => {
+          // Re-fetch slots silently (no loading spinner)
+          fetchSlots();
+        }
+      )
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
       }
-      setLoadingSlots(false);
-    });
-  }, [sandboxMode, sandbox?.sampleSlots, selectedDate, selectedService, office.id]);
+    };
+  }, [supabase, office.id, selectedDate, selectedService, sandboxMode, fetchSlots]);
 
   useEffect(() => {
     setEmailOtpSent(false);
@@ -774,19 +817,31 @@ export function BookingForm({
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                {availableSlots.map((slot) => (
-                  <button
-                    key={slot}
-                    onClick={() => handleSelectTime(slot)}
-                    className={`rounded-xl border p-3 text-center font-medium transition-all ${
-                      selectedTime === slot
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-card text-foreground hover:border-primary hover:shadow-sm'
-                    }`}
-                  >
-                    {formatSlotTime(slot)}
-                  </button>
-                ))}
+                {availableSlots.map((slot) => {
+                  const detail = detailedSlots.find(d => d.time === slot);
+                  const showCapacity = detail && detail.total > 1;
+                  return (
+                    <button
+                      key={slot}
+                      onClick={() => handleSelectTime(slot)}
+                      className={`rounded-xl border p-3 text-center font-medium transition-all ${
+                        selectedTime === slot
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-card text-foreground hover:border-primary hover:shadow-sm'
+                      }`}
+                    >
+                      {formatSlotTime(slot)}
+                      {showCapacity && (
+                        <span className={`mt-1 flex items-center justify-center gap-1 text-xs ${
+                          selectedTime === slot ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                        }`}>
+                          <Users className="h-3 w-3" />
+                          {detail.remaining}/{detail.total}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
 

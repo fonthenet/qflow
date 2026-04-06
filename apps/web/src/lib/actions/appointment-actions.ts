@@ -334,7 +334,12 @@ export async function getAvailableSlots(
   serviceId: string,
   date: string,
   staffId?: string,
-): Promise<{ data: string[]; meta?: Record<string, unknown>; error?: string }> {
+): Promise<{
+  data: string[];
+  detailed?: { time: string; remaining: number; total: number }[];
+  meta?: Record<string, unknown>;
+  error?: string;
+}> {
   try {
     const { getAvailableSlots: generateSlots } = await import('@/lib/slot-generator');
 
@@ -345,8 +350,11 @@ export async function getAvailableSlots(
       staffId,
     });
 
-    // Return backward-compatible string[] format
-    return { data: result.slots.map(s => s.time), meta: result.meta as unknown as Record<string, unknown> };
+    return {
+      data: result.slots.map(s => s.time),
+      detailed: result.slots.map(s => ({ time: s.time, remaining: s.remaining, total: s.total })),
+      meta: result.meta as unknown as Record<string, unknown>,
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to load available slots';
     return { data: [], error: message };
