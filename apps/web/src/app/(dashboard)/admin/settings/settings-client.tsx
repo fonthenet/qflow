@@ -226,6 +226,9 @@ export function SettingsClient({
     settings.whatsapp_code ?? ''
   );
   const savedWhatsappCode = settings.whatsapp_code ?? '';
+  const [arabicCode, setArabicCode] = useState<string>(
+    settings.arabic_code ?? ''
+  );
   const [codeAvailability, setCodeAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const codeCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -305,6 +308,7 @@ export function SettingsClient({
           priority_alerts_phone_label: priorityAlertsPhoneLabel,
           whatsapp_enabled: whatsappEnabled,
           whatsapp_code: whatsappCode.toUpperCase().trim(),
+          arabic_code: arabicCode.trim(),
           whatsapp_business_phone: whatsappBusinessPhone,
           whatsapp_default_virtual_code_id: whatsappDefaultVirtualCodeId,
           messenger_default_virtual_code_id: whatsappDefaultVirtualCodeId,
@@ -751,6 +755,24 @@ export function SettingsClient({
 
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">
+                {t('Arabic Code')} <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
+              </label>
+              <input
+                type="text"
+                value={arabicCode}
+                onChange={(e) => setArabicCode(e.target.value)}
+                placeholder={t('e.g. حدابي')}
+                maxLength={30}
+                dir="rtl"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground tracking-wider font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('Arabic alternative for your business code. Customers can type')} <code className="font-mono font-bold" dir="rtl">انضم {arabicCode || 'حدابي'}</code>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
                 {t('Default Queue')}
               </label>
               {virtualQueueCodes.length > 0 ? (
@@ -786,6 +808,11 @@ export function SettingsClient({
                 <p className="mt-1 text-sm">
                   {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo WhatsApp number, or scan the QR code on your join page.')}
                 </p>
+                {arabicCode && (
+                  <p className="mt-1 text-sm" dir="rtl">
+                    {t('Or in Arabic:')} <code className="font-semibold">انضم {arabicCode}</code>
+                  </p>
+                )}
               </div>
             )}
           </div>

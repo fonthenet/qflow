@@ -102,7 +102,11 @@ export async function checkWhatsAppCodeAvailability(code: string): Promise<{ ava
     if (org.id === context.staff.organization_id) return false; // skip own org
     const settings = (org.settings ?? {}) as Record<string, any>;
     const orgCode = (settings.whatsapp_code ?? '').toString().toUpperCase().trim();
-    return orgCode === normalized;
+    if (orgCode === normalized) return true;
+    // Also check arabic_code
+    const arCode = (settings.arabic_code ?? '').toString().trim();
+    if (arCode && arCode === code.trim()) return true;
+    return false;
   });
 
   return { available: !taken };

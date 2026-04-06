@@ -9,11 +9,19 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { code } = await params;
   const supabase = createAdminClient();
-  const { data: org } = await supabase
+  let { data: org } = await supabase
     .from('organizations')
     .select('name')
     .ilike('settings->>whatsapp_code', code)
     .single();
+  // Fallback: try arabic_code
+  if (!org) {
+    ({ data: org } = await supabase
+      .from('organizations')
+      .select('name')
+      .eq('settings->>arabic_code', code)
+      .single());
+  }
 
   return {
     title: org ? `Join ${org.name} Queue` : 'Join Queue',
@@ -29,11 +37,20 @@ export default async function ScanJoinPage({ params }: PageProps) {
   const supabase = createAdminClient();
 
   // Look up organization by whatsapp_code
-  const { data: org } = await supabase
+  let { data: org } = await supabase
     .from('organizations')
     .select('id, name, logo_url, settings')
     .ilike('settings->>whatsapp_code', upperCode)
     .single();
+
+  // Fallback: try arabic_code
+  if (!org) {
+    ({ data: org } = await supabase
+      .from('organizations')
+      .select('id, name, logo_url, settings')
+      .eq('settings->>arabic_code', code)
+      .single());
+  }
 
   if (!org) notFound();
 

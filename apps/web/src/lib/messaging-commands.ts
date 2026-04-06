@@ -365,7 +365,13 @@ function parseBusinessCode(message: string): { code: string; locale: Locale } | 
   const frMatch = trimmed.match(/^REJOINDRE[\s\-_]+(.+)$/i);
   if (frMatch) return { code: frMatch[1].trim().toUpperCase(), locale: 'fr' };
   const arMatch = trimmed.match(/^انضم[\s\-_]+(.+)$/);
-  if (arMatch) return { code: arMatch[1].trim().toUpperCase(), locale: 'ar' };
+  if (arMatch) {
+    // Arabic code: keep original text (don't uppercase Arabic characters)
+    // but uppercase if it's a Latin code (e.g. "انضم HADABI")
+    const raw = arMatch[1].trim();
+    const hasArabic = /[\u0600-\u06FF]/.test(raw);
+    return { code: hasArabic ? raw : raw.toUpperCase(), locale: 'ar' };
+  }
   const enMatch = trimmed.match(/^JOIN[\s\-_]+(.+)$/i);
   if (enMatch) return { code: enMatch[1].trim().toUpperCase(), locale: 'en' };
   return null;
@@ -391,7 +397,11 @@ async function findOrgByCode(code: string, channel: Channel): Promise<OrgContext
     if (!settings[enabledKey] && !settings.whatsapp_enabled) return false;
     // Check channel-specific code first, then fall back to whatsapp_code (shared codes)
     const orgCode = (settings[codeKey] ?? settings.whatsapp_code ?? '').toString().toUpperCase().trim();
-    return orgCode === code;
+    if (orgCode === code) return true;
+    // Also match Arabic alternative code (stored as-is, compared case-insensitively)
+    const arCode = (settings.arabic_code ?? '').toString().trim();
+    if (arCode && arCode === code) return true;
+    return false;
   });
 
   if (!org) return null;
