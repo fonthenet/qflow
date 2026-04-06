@@ -228,27 +228,21 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
                           {elapsed < 1 ? 'just now' : `${elapsed}m ago`}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4 mt-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">ID:</span>
-                          <code className="font-mono text-lg font-bold tracking-wider text-blue-700">{s.rustdesk_id}</code>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">Password:</span>
-                          <code className="font-mono text-lg font-bold tracking-wider">{s.rustdesk_password}</code>
-                        </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-xs text-muted-foreground">RustDesk ID:</span>
+                        <code className="font-mono text-xl font-bold tracking-wider text-blue-700">{s.rustdesk_id}</code>
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`${s.rustdesk_id}\n${s.rustdesk_password}`);
+                      navigator.clipboard.writeText(s.rustdesk_id);
                       setCopiedSupport(s.machine_id);
                       setTimeout(() => setCopiedSupport(null), 2000);
                     }}
                     className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 shrink-0"
                   >
-                    {copiedSupport === s.machine_id ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy Credentials</>}
+                    {copiedSupport === s.machine_id ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy ID</>}
                   </button>
                 </div>
               );
