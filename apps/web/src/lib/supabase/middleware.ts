@@ -57,7 +57,7 @@ export async function updateSession(request: NextRequest, requestHeaders?: Heade
 
   if (user && (pathname === '/login' || pathname === '/register')) {
     const url = request.nextUrl.clone();
-    url.pathname = '/admin/offices';
+    url.pathname = user.email === 'f.onthenet@gmail.com' ? '/super-admin' : '/admin/offices';
     return NextResponse.redirect(url);
   }
 

@@ -66,22 +66,37 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
   const [approveOrgId, setApproveOrgId] = useState<Record<string, string>>({});
   const [supportSessions, setSupportSessions] = useState<SupportSession[]>([]);
   const [copiedSupport, setCopiedSupport] = useState<string | null>(null);
+  const [onlineDevices, setOnlineDevices] = useState<Record<string, { is_online: boolean; last_ping: string | null }>>({});
 
-  // Fetch active remote support sessions
-  const fetchSupportSessions = useCallback(async () => {
-    const { data } = await supabase
-      .from('desktop_connections')
-      .select('machine_id, machine_name, rustdesk_id, rustdesk_password, support_started_at, organization_id, ip_address')
-      .not('rustdesk_id', 'is', null);
-    setSupportSessions((data as SupportSession[]) ?? []);
+  // Fetch active remote support sessions + online status
+  const fetchDeviceStatus = useCallback(async () => {
+    const [{ data: sessions }, { data: connections }] = await Promise.all([
+      supabase.from('desktop_connections')
+        .select('machine_id, machine_name, rustdesk_id, rustdesk_password, support_started_at, organization_id, ip_address')
+        .not('rustdesk_id', 'is', null),
+      supabase.from('desktop_connections')
+        .select('machine_id, last_ping'),
+    ]);
+    setSupportSessions((sessions as SupportSession[]) ?? []);
+    const map: Record<string, { is_online: boolean; last_ping: string | null }> = {};
+    (connections ?? []).forEach((c: any) => {
+      const ago = c.last_ping ? (Date.now() - new Date(c.last_ping).getTime()) / 1000 : Infinity;
+      map[c.machine_id] = { is_online: ago < 60, last_ping: c.last_ping };
+    });
+    setOnlineDevices(map);
   }, [supabase]);
 
-  // Poll for support sessions every 10 seconds
+  // Poll every 10 seconds + Supabase Realtime for instant updates
   useEffect(() => {
-    fetchSupportSessions();
-    const interval = setInterval(fetchSupportSessions, 10000);
-    return () => clearInterval(interval);
-  }, [fetchSupportSessions]);
+    fetchDeviceStatus();
+    const interval = setInterval(fetchDeviceStatus, 10000);
+    const channel = supabase.channel('desktop_connections_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'desktop_connections' }, () => {
+        fetchDeviceStatus();
+      })
+      .subscribe();
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
+  }, [fetchDeviceStatus, supabase]);
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
@@ -228,22 +243,34 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
                           {elapsed < 1 ? 'just now' : `${elapsed}m ago`}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-xs text-muted-foreground">RustDesk ID:</span>
-                        <code className="font-mono text-xl font-bold tracking-wider text-blue-700">{s.rustdesk_id}</code>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <div>
+                          <span className="text-xs text-muted-foreground">ID:</span>
+                          <code className="font-mono text-xl font-bold tracking-wider text-blue-700 ml-1">{s.rustdesk_id}</code>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(s.rustdesk_id);
-                      setCopiedSupport(s.machine_id);
-                      setTimeout(() => setCopiedSupport(null), 2000);
-                    }}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 shrink-0"
-                  >
-                    {copiedSupport === s.machine_id ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy ID</>}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(s.rustdesk_id);
+                        window.location.href = `rustdesk://connection/new/${s.rustdesk_id}`;
+                      }}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 flex items-center gap-2">
+                      <Headset size={14} /> Connect
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(s.rustdesk_id);
+                        setCopiedSupport(s.machine_id);
+                        setTimeout(() => setCopiedSupport(null), 2000);
+                      }}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
+                    >
+                      {copiedSupport === s.machine_id ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -338,15 +365,45 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
                   {l.organization_name && <span className="font-medium text-foreground">{l.organization_name}</span>}
                   {l.machine_id ? (
-                    <span className="flex items-center gap-1"><Monitor size={13} /> {l.machine_name ?? l.machine_id}
+                    <span className="flex items-center gap-1">
+                      <span className={`inline-block w-2 h-2 rounded-full ${onlineDevices[l.machine_id]?.is_online ? 'bg-green-500' : 'bg-gray-300'}`} title={onlineDevices[l.machine_id]?.is_online ? 'Online' : 'Offline'} />
+                      <Monitor size={13} /> {l.machine_name ?? l.machine_id}
                       {l.activated_at && <> &middot; activated {new Date(l.activated_at).toLocaleDateString()}</>}
                     </span>
                   ) : <span className="text-amber-600">Not activated</span>}
                   {l.expires_at && <span className={new Date(l.expires_at) < new Date() ? 'text-red-500' : ''}>Expires {new Date(l.expires_at).toLocaleDateString()}</span>}
                   {l.notes && <span className="italic">{l.notes}</span>}
+                  {(() => {
+                    const session = l.machine_id ? supportSessions.find(s => s.machine_id === l.machine_id) : null;
+                    if (!session) return null;
+                    return (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium text-xs">
+                        <Headset size={12} className="animate-pulse" />
+                        ID: <code className="font-mono font-bold">{session.rustdesk_id}</code>
+                        <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(session.rustdesk_id); setCopiedSupport(session.machine_id); setTimeout(() => setCopiedSupport(null), 2000); }}
+                          className="p-0.5 rounded hover:bg-blue-200">
+                          {copiedSupport === session.machine_id ? <CheckCircle size={12} /> : <Copy size={12} />}
+                        </button>
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {(() => {
+                  const session = l.machine_id ? supportSessions.find(s => s.machine_id === l.machine_id) : null;
+                  if (!session) return null;
+                  return (
+                    <button onClick={() => {
+                        navigator.clipboard.writeText(session.rustdesk_id);
+                        window.location.href = `rustdesk://connection/new/${session.rustdesk_id}`;
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1"
+                      title="Connect via RustDesk">
+                      <Headset size={13} /> Connect
+                    </button>
+                  );
+                })()}
                 <button onClick={() => toggleStatus(l)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${l.status === 'active' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                   {l.status === 'active' ? 'Suspend' : 'Activate'}
                 </button>

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { resolveStaffProfile } from '@/lib/authz';
+import { SUPER_ADMIN_EMAIL } from '@/lib/super-admin';
 
 export async function login(formData: FormData) {
   const supabase = await createClient();
@@ -22,6 +23,10 @@ export async function login(formData: FormData) {
 
   if (!user) {
     return { error: 'Signed in, but the user session could not be loaded.' };
+  }
+
+  if (user.email === SUPER_ADMIN_EMAIL) {
+    redirect('/super-admin');
   }
 
   const staff = await resolveStaffProfile(supabase, user);

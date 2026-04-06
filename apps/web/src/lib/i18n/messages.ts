@@ -546,7 +546,8 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Track Your Position': 'Suivre votre position',
     'Scan this QR code to follow your place in the queue from your phone.':
       'Scannez ce QR code pour suivre votre place dans la file depuis votre téléphone.',
-    'Take Another Ticket': 'Prendre un autre ticket'
+    'Take Another Ticket': 'Prendre un autre ticket',
+    'Done': 'Terminé'
   },
   ar: {
     'My Counter': 'الكاونتر الخاص بي',
@@ -1083,7 +1084,8 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Track Your Position': 'تتبع موقعك',
     'Scan this QR code to follow your place in the queue from your phone.':
       'امسح رمز QR هذا لمتابعة مكانك في الطابور من هاتفك.',
-    'Take Another Ticket': 'أخذ تذكرة أخرى'
+    'Take Another Ticket': 'أخذ تذكرة أخرى',
+    'Done': 'تم'
   },
 };
 

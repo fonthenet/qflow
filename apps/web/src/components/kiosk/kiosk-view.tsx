@@ -1127,7 +1127,7 @@ export function KioskView({
                 onClick={resetSession}
                 className="mt-4 block w-full rounded-2xl border border-slate-200 bg-[#f8fafc] px-4 py-[18px] text-[17px] font-bold text-slate-950 transition-colors hover:bg-slate-100 print:hidden"
               >
-                {t('Take Another Ticket')}
+                {t('Done')}
               </button>
             </section>
           )}
