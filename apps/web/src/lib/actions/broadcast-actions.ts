@@ -4,7 +4,7 @@ import { getStaffContext } from '@/lib/authz';
 
 export async function getBroadcastTemplates() {
   const context = await getStaffContext();
-  const { data, error } = await context.supabase
+  const { data, error } = await (context.supabase as any)
     .from('broadcast_templates')
     .select('*')
     .eq('organization_id', context.staff.organization_id)
@@ -25,7 +25,7 @@ export async function saveBroadcastTemplate(template: {
 
   if (template.id) {
     // Update existing template
-    const { error } = await context.supabase
+    const { error } = await (context.supabase as any)
       .from('broadcast_templates')
       .update({
         title: template.title,
@@ -40,7 +40,7 @@ export async function saveBroadcastTemplate(template: {
     if (error) return { error: error.message };
   } else {
     // Insert new template
-    const { error } = await context.supabase
+    const { error } = await (context.supabase as any)
       .from('broadcast_templates')
       .insert({
         organization_id: context.staff.organization_id,
@@ -58,7 +58,7 @@ export async function saveBroadcastTemplate(template: {
 
 export async function deleteBroadcastTemplate(id: string) {
   const context = await getStaffContext();
-  const { error } = await context.supabase
+  const { error } = await (context.supabase as any)
     .from('broadcast_templates')
     .delete()
     .eq('id', id)

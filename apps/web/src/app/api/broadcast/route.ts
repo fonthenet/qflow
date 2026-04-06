@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     } | null = null;
 
     if (templateId) {
-      const { data: tmpl } = await supabase
+      const { data: tmpl } = await (supabase as any)
         .from('broadcast_templates')
         .select('id, title, body_fr, body_ar, body_en')
         .eq('id', templateId)
@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
 
     // ── Log the broadcast ────────────────────────────────────────
     try {
-      await supabase.from('broadcast_logs').insert({
+      await (supabase as any).from('broadcast_logs').insert({
         organization_id: organizationId,
         office_id: officeId || null,
         template_id: templateId || null,

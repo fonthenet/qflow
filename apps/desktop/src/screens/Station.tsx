@@ -2531,7 +2531,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
             {/* Language tabs */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-              {(['fr', 'ar', 'en'] as const).map((lang) => (
+              {(['fr', 'ar'] as const).map((lang) => (
                 <button
                   key={lang}
                   onClick={() => setBroadcastLang(lang)}

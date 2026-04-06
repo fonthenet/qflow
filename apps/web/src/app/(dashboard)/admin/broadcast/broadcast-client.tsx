@@ -31,10 +31,9 @@ interface BroadcastClientProps {
 const LANGS = [
   { key: 'fr', label: 'FR' },
   { key: 'ar', label: 'AR' },
-  { key: 'en', label: 'EN' },
 ] as const;
 
-type LangKey = (typeof LANGS)[number]['key'];
+type LangKey = 'fr' | 'ar' | 'en';
 
 export default function BroadcastClient({
   initialTemplates,
