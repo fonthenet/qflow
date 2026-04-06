@@ -20,6 +20,10 @@ import {
   getFeedbackSummary,
   getTemplateHealthAnalytics,
   getTemplatePerformanceAnalytics,
+  getHourlyHeatmap,
+  getServiceBreakdown,
+  getWeeklyTrends,
+  getNoShowRate,
   type AnalyticsSummary,
   type HourlyTicket,
   type DepartmentTicket,
@@ -33,6 +37,10 @@ import {
   type TemplatePerformanceAnalyticsData,
   type TemplatePerformanceRow,
   type TemplateOfficeComparisonRow,
+  type HourlyHeatmapCell,
+  type ServiceBreakdownRow,
+  type WeeklyTrendDay,
+  type NoShowRateData,
 } from '@/lib/actions/analytics-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 
@@ -45,6 +53,10 @@ interface AnalyticsDashboardProps {
   initialFeedbackSummary: FeedbackSummaryData;
   initialTemplateHealth: TemplateHealthAnalyticsData;
   initialTemplatePerformance: TemplatePerformanceAnalyticsData;
+  initialHourlyHeatmap: HourlyHeatmapCell[];
+  initialServiceBreakdown: ServiceBreakdownRow[];
+  initialWeeklyTrends: WeeklyTrendDay[];
+  initialNoShowRate: NoShowRateData;
   offices: { id: string; name: string }[];
   departments: { id: string; name: string; office_id: string }[];
 }
@@ -58,6 +70,10 @@ export function AnalyticsDashboard({
   initialFeedbackSummary,
   initialTemplateHealth,
   initialTemplatePerformance,
+  initialHourlyHeatmap,
+  initialServiceBreakdown,
+  initialWeeklyTrends,
+  initialNoShowRate,
   offices,
   departments,
 }: AnalyticsDashboardProps) {
@@ -76,6 +92,10 @@ export function AnalyticsDashboard({
   );
   const [templateHealth, setTemplateHealth] = useState(initialTemplateHealth);
   const [templatePerformance, setTemplatePerformance] = useState(initialTemplatePerformance);
+  const [hourlyHeatmap, setHourlyHeatmap] = useState(initialHourlyHeatmap);
+  const [serviceBreakdown, setServiceBreakdown] = useState(initialServiceBreakdown);
+  const [weeklyTrends, setWeeklyTrends] = useState(initialWeeklyTrends);
+  const [noShowRate, setNoShowRate] = useState(initialNoShowRate);
 
   const [selectedOffice, setSelectedOffice] = useState<string>('');
   const [selectedDateRange, setSelectedDateRange] = useState<string>('today');
@@ -88,7 +108,7 @@ export function AnalyticsDashboard({
       const days =
         dateRange === 'last30' ? 30 : dateRange === 'last7' ? 7 : 7;
 
-      const [s, tbh, tbd, wtt, sp, fs, th, tp] = await Promise.all([
+      const [s, tbh, tbd, wtt, sp, fs, th, tp, hh, sb, wt, nsr] = await Promise.all([
         getAnalyticsSummary(officeId, dateRange),
         getTicketsByHour(officeId),
         getTicketsByDepartment(officeId, dateRange),
@@ -97,6 +117,10 @@ export function AnalyticsDashboard({
         getFeedbackSummary(officeId, dateRange),
         getTemplateHealthAnalytics(officeId, dateRange),
         getTemplatePerformanceAnalytics(officeId, dateRange),
+        getHourlyHeatmap(officeId, dateRange),
+        getServiceBreakdown(officeId, dateRange),
+        getWeeklyTrends(officeId, dateRange),
+        getNoShowRate(officeId, dateRange),
       ]);
 
       setSummary(s);
@@ -107,6 +131,10 @@ export function AnalyticsDashboard({
       setFeedbackSummary(fs);
       setTemplateHealth(th);
       setTemplatePerformance(tp);
+      setHourlyHeatmap(hh);
+      setServiceBreakdown(sb);
+      setWeeklyTrends(wt);
+      setNoShowRate(nsr);
     });
   }
 
@@ -391,6 +419,50 @@ export function AnalyticsDashboard({
           Team performance
         </h3>
         <StaffPerformanceTable data={staffPerformance} />
+      </div>
+
+      {/* Weekly Trend Chart */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="mb-1 text-sm font-semibold text-foreground">
+          {t('Weekly Trend')}
+        </h3>
+        <p className="mb-4 text-xs text-muted-foreground">
+          {t('Daily ticket volume over the last 30 days')}
+        </p>
+        <WeeklyTrendChart data={weeklyTrends} />
+      </div>
+
+      {/* Peak Hours Heatmap + Service Performance */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">
+            {t('Peak Hours Heatmap')}
+          </h3>
+          <p className="mb-4 text-xs text-muted-foreground">
+            {t('Ticket volume by hour and day of week')}
+          </p>
+          <PeakHoursHeatmap data={hourlyHeatmap} />
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                {t('Service Performance')}
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('Per-service stats for the selected period')}
+              </p>
+            </div>
+            {noShowRate.total_tickets > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-center">
+                <p className="text-lg font-bold text-foreground">{noShowRate.rate}%</p>
+                <p className="text-[10px] text-muted-foreground">{t('No-show rate')}</p>
+              </div>
+            )}
+          </div>
+          <ServicePerformanceTable data={serviceBreakdown} />
+        </div>
       </div>
 
       {/* Recent Feedback Comments */}
@@ -1048,6 +1120,230 @@ function StaffPerformanceTable({ data }: { data: StaffPerformanceRow[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Peak Hours Heatmap                                                        */
+/* -------------------------------------------------------------------------- */
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function PeakHoursHeatmap({ data }: { data: HourlyHeatmapCell[] }) {
+  const { t } = useI18n();
+  const maxCount = Math.max(...data.map((c) => c.count), 1);
+  const hours = Array.from({ length: 17 }, (_, i) => i + 6); // 6-22
+
+  if (data.every((c) => c.count === 0)) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        {t('No heatmap data available')}
+      </p>
+    );
+  }
+
+  function getCellColor(count: number) {
+    if (count === 0) return 'bg-muted';
+    const ratio = count / maxCount;
+    if (ratio <= 0.25) return 'bg-green-200 dark:bg-green-900/50';
+    if (ratio <= 0.5) return 'bg-yellow-200 dark:bg-yellow-800/50';
+    if (ratio <= 0.75) return 'bg-orange-300 dark:bg-orange-700/50';
+    return 'bg-red-400 dark:bg-red-700/60';
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <div className="min-w-[500px]">
+          {/* Header row with hour labels */}
+          <div className="flex gap-0.5 mb-0.5">
+            <div className="w-10 shrink-0" />
+            {hours.map((h) => (
+              <div
+                key={h}
+                className="flex-1 text-center text-[9px] text-muted-foreground"
+              >
+                {h.toString().padStart(2, '0')}
+              </div>
+            ))}
+          </div>
+          {/* One row per day */}
+          {DAY_LABELS.map((dayLabel, dow) => (
+            <div key={dow} className="flex gap-0.5 mb-0.5">
+              <div className="w-10 shrink-0 text-[10px] text-muted-foreground flex items-center">
+                {dayLabel}
+              </div>
+              {hours.map((h) => {
+                const cell = data.find(
+                  (c) => c.dayOfWeek === dow && c.hour === h
+                );
+                const count = cell?.count ?? 0;
+                return (
+                  <div
+                    key={h}
+                    className={`flex-1 aspect-square rounded-sm ${getCellColor(count)} transition-colors`}
+                    title={`${dayLabel} ${h}:00 - ${count} ticket${count !== 1 ? 's' : ''}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Legend */}
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <span>{t('Quiet')}</span>
+        <div className="h-2.5 w-3 rounded-sm bg-green-200 dark:bg-green-900/50" />
+        <div className="h-2.5 w-3 rounded-sm bg-yellow-200 dark:bg-yellow-800/50" />
+        <div className="h-2.5 w-3 rounded-sm bg-orange-300 dark:bg-orange-700/50" />
+        <div className="h-2.5 w-3 rounded-sm bg-red-400 dark:bg-red-700/60" />
+        <span>{t('Busy')}</span>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Service Performance Table                                                 */
+/* -------------------------------------------------------------------------- */
+
+function ServicePerformanceTable({ data }: { data: ServiceBreakdownRow[] }) {
+  const { t } = useI18n();
+
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        {t('No service data available')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left">
+            <th className="pb-3 pr-4 font-medium text-muted-foreground">
+              {t('Service')}
+            </th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
+              {t('Tickets')}
+            </th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
+              {t('Avg Wait')}
+            </th>
+            <th className="pb-3 pr-4 text-right font-medium text-muted-foreground">
+              {t('Avg Service')}
+            </th>
+            <th className="pb-3 text-right font-medium text-muted-foreground">
+              {t('No-Shows')}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {data.map((row) => (
+            <tr key={row.service_id} className="hover:bg-muted/30 transition-colors">
+              <td className="py-3 pr-4 font-medium text-foreground">
+                {row.service_name}
+              </td>
+              <td className="py-3 pr-4 text-right text-foreground">
+                {row.ticket_count}
+              </td>
+              <td className="py-3 pr-4 text-right text-foreground">
+                {row.avg_wait_minutes !== null
+                  ? `${row.avg_wait_minutes} min`
+                  : '--'}
+              </td>
+              <td className="py-3 pr-4 text-right text-foreground">
+                {row.avg_service_minutes !== null
+                  ? `${row.avg_service_minutes} min`
+                  : '--'}
+              </td>
+              <td className="py-3 text-right">
+                <span
+                  className={
+                    row.no_show_count > 0
+                      ? 'font-medium text-destructive'
+                      : 'text-foreground'
+                  }
+                >
+                  {row.no_show_count}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Weekly Trend Chart (bar chart, last 30 days)                              */
+/* -------------------------------------------------------------------------- */
+
+function WeeklyTrendChart({ data }: { data: WeeklyTrendDay[] }) {
+  const { t } = useI18n();
+  const maxTickets = Math.max(...data.map((d) => d.total_tickets), 1);
+
+  if (data.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        {t('No trend data available')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-1 h-52">
+        {data.map((d) => {
+          const pct = Math.max((d.total_tickets / maxTickets) * 100, 2);
+          const dayLabel = new Date(d.date + 'T00:00:00').toLocaleDateString(
+            undefined,
+            { month: 'short', day: 'numeric' }
+          );
+          const hasNoShows = d.no_show_count > 0;
+          return (
+            <div
+              key={d.date}
+              className="group relative flex flex-1 flex-col items-center gap-1"
+            >
+              <span className="text-[10px] font-medium text-muted-foreground">
+                {d.total_tickets > 0 ? d.total_tickets : ''}
+              </span>
+              <div
+                className={`w-full rounded-t transition-all ${
+                  hasNoShows
+                    ? 'bg-rose-400/70 group-hover:bg-rose-500'
+                    : 'bg-primary/70 group-hover:bg-primary'
+                }`}
+                style={{ height: `${pct}%`, minHeight: '2px' }}
+                title={`${dayLabel}: ${d.total_tickets} tickets, ${d.no_show_count} no-shows${
+                  d.avg_wait_minutes !== null ? `, ${d.avg_wait_minutes}m avg wait` : ''
+                }`}
+              />
+              {/* Show date label every 5th day to avoid crowding */}
+              {data.indexOf(d) % 5 === 0 && (
+                <span className="text-center text-[9px] leading-tight text-muted-foreground">
+                  {dayLabel}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary/70" />
+          {t('Daily tickets')}
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
+          {t('Days with no-shows')}
+        </span>
+      </div>
     </div>
   );
 }

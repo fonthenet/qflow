@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { nanoid } from 'nanoid';
 
 function getSupabase() {
   return createClient(
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, scheduledAt, notes } =
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, staffId } =
     body as Record<string, string | undefined>;
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {
@@ -101,6 +102,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'This time slot is fully booked' }, { status: 409 });
   }
 
+  const calendarToken = nanoid(16);
+
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
@@ -109,11 +112,14 @@ export async function POST(request: NextRequest) {
       service_id: serviceId,
       customer_name: customerName.trim(),
       customer_phone: customerPhone?.trim() || null,
+      customer_email: customerEmail?.trim() || null,
       scheduled_at: scheduledAt,
       status: 'pending',
+      calendar_token: calendarToken,
       notes: (notes as string)?.trim() || null,
+      ...(staffId ? { staff_id: staffId } : {}),
     })
-    .select('id, office_id, department_id, service_id, customer_name, customer_phone, scheduled_at, status, notes')
+    .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, calendar_token, staff_id')
     .single();
 
   if (error) {

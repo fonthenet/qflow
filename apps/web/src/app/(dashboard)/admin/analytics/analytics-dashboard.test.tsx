@@ -9,6 +9,10 @@ import type {
   DepartmentTicket,
   FeedbackSummaryData,
   HourlyTicket,
+  HourlyHeatmapCell,
+  ServiceBreakdownRow,
+  WeeklyTrendDay,
+  NoShowRateData,
   StaffPerformanceRow,
   TemplateHealthAnalyticsData,
   TemplatePerformanceAnalyticsData,
@@ -24,6 +28,10 @@ const {
   getFeedbackSummaryMock,
   getTemplateHealthAnalyticsMock,
   getTemplatePerformanceAnalyticsMock,
+  getHourlyHeatmapMock,
+  getServiceBreakdownMock,
+  getWeeklyTrendsMock,
+  getNoShowRateMock,
 } = vi.hoisted(() => ({
   getAnalyticsSummaryMock: vi.fn(),
   getTicketsByHourMock: vi.fn(),
@@ -33,6 +41,10 @@ const {
   getFeedbackSummaryMock: vi.fn(),
   getTemplateHealthAnalyticsMock: vi.fn(),
   getTemplatePerformanceAnalyticsMock: vi.fn(),
+  getHourlyHeatmapMock: vi.fn(),
+  getServiceBreakdownMock: vi.fn(),
+  getWeeklyTrendsMock: vi.fn(),
+  getNoShowRateMock: vi.fn(),
 }));
 
 vi.mock('@/lib/actions/analytics-actions', () => ({
@@ -44,6 +56,10 @@ vi.mock('@/lib/actions/analytics-actions', () => ({
   getFeedbackSummary: getFeedbackSummaryMock,
   getTemplateHealthAnalytics: getTemplateHealthAnalyticsMock,
   getTemplatePerformanceAnalytics: getTemplatePerformanceAnalyticsMock,
+  getHourlyHeatmap: getHourlyHeatmapMock,
+  getServiceBreakdown: getServiceBreakdownMock,
+  getWeeklyTrends: getWeeklyTrendsMock,
+  getNoShowRate: getNoShowRateMock,
 }));
 
 import { AnalyticsDashboard } from './analytics-dashboard';
@@ -216,6 +232,22 @@ const updatedTemplatePerformance: TemplatePerformanceAnalyticsData = {
   ],
 };
 
+const initialHourlyHeatmap: HourlyHeatmapCell[] = [{ hour: 9, dayOfWeek: 1, count: 3 }];
+const initialServiceBreakdown: ServiceBreakdownRow[] = [
+  {
+    service_id: 'svc-1',
+    service_name: 'Account Opening',
+    ticket_count: 5,
+    avg_wait_minutes: 7,
+    avg_service_minutes: 10,
+    no_show_count: 0,
+  },
+];
+const initialWeeklyTrends: WeeklyTrendDay[] = [
+  { date: '2026-03-15', total_tickets: 10, avg_wait_minutes: 8, avg_service_minutes: 12, no_show_count: 1 },
+];
+const initialNoShowRate: NoShowRateData = { total_tickets: 10, no_shows: 1, rate: 10 };
+
 describe('AnalyticsDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -227,6 +259,10 @@ describe('AnalyticsDashboard', () => {
     getFeedbackSummaryMock.mockResolvedValue(updatedFeedbackSummary);
     getTemplateHealthAnalyticsMock.mockResolvedValue(updatedTemplateHealth);
     getTemplatePerformanceAnalyticsMock.mockResolvedValue(updatedTemplatePerformance);
+    getHourlyHeatmapMock.mockResolvedValue(initialHourlyHeatmap);
+    getServiceBreakdownMock.mockResolvedValue(initialServiceBreakdown);
+    getWeeklyTrendsMock.mockResolvedValue(initialWeeklyTrends);
+    getNoShowRateMock.mockResolvedValue(initialNoShowRate);
   });
 
   it('applies office and date filters before refreshing analytics', async () => {
@@ -242,6 +278,10 @@ describe('AnalyticsDashboard', () => {
         initialFeedbackSummary={feedbackSummary}
         initialTemplateHealth={initialTemplateHealth}
         initialTemplatePerformance={initialTemplatePerformance}
+        initialHourlyHeatmap={initialHourlyHeatmap}
+        initialServiceBreakdown={initialServiceBreakdown}
+        initialWeeklyTrends={initialWeeklyTrends}
+        initialNoShowRate={initialNoShowRate}
         offices={[
           { id: 'office-1', name: 'Downtown Branch' },
           { id: 'office-2', name: 'Uptown Branch' },
@@ -283,6 +323,10 @@ describe('AnalyticsDashboard', () => {
         initialFeedbackSummary={feedbackSummary}
         initialTemplateHealth={initialTemplateHealth}
         initialTemplatePerformance={initialTemplatePerformance}
+        initialHourlyHeatmap={initialHourlyHeatmap}
+        initialServiceBreakdown={initialServiceBreakdown}
+        initialWeeklyTrends={initialWeeklyTrends}
+        initialNoShowRate={initialNoShowRate}
         offices={[
           { id: 'office-1', name: 'Downtown Branch' },
           { id: 'office-2', name: 'Uptown Branch' },

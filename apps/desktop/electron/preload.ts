@@ -141,4 +141,20 @@ contextBridge.exposeInMainWorld('qf', {
   org: {
     getBranding: () => ipcRenderer.invoke('org:branding'),
   },
+
+  // Remote Support
+  support: {
+    // RustDesk (internet remote control)
+    rustdesk: {
+      status: () => ipcRenderer.invoke('support:rustdesk-status'),
+      start: () => ipcRenderer.invoke('support:rustdesk-start'),
+      stop: () => ipcRenderer.invoke('support:rustdesk-stop'),
+      download: () => ipcRenderer.invoke('support:rustdesk-download'),
+      onDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => {
+        const handler = (_: any, p: any) => cb(p);
+        ipcRenderer.on('support:download-progress', handler);
+        return () => ipcRenderer.removeListener('support:download-progress', handler);
+      },
+    },
+  },
 });

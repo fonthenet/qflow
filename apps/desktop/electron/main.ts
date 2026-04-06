@@ -149,6 +149,18 @@ function buildApplicationMenu() {
         },
         { type: 'separator' },
         {
+          label: translate(currentLocale, 'Remote Support'),
+          click: () => {
+            dialog.showMessageBox(mainWindow!, {
+              type: 'info',
+              title: translate(currentLocale, 'Remote Support'),
+              message: 'RustDesk',
+              detail: translate(currentLocale, 'Use the Remote Support section in the sidebar to start a RustDesk session.'),
+            });
+          },
+        },
+        { type: 'separator' },
+        {
           label: translate(currentLocale, 'Check for Updates'),
           click: () => autoUpdater.checkForUpdates(),
         },
@@ -209,6 +221,7 @@ function createWindow() {
     show: false,
     backgroundColor: '#0f172a',
   });
+
 
   // Content Security Policy
   const supabaseDomain = new URL(SUPABASE_URL).hostname;
@@ -589,7 +602,7 @@ function setupIPC() {
                 whatsapp_phone: phone,
                 channel: 'whatsapp',
                 state: 'active',
-                locale: 'fr',
+                locale: currentLocale || 'fr',
               }),
             }).catch(() => {});
           }).catch(() => {});
@@ -1122,10 +1135,294 @@ function setupIPC() {
           brandColor: settings?.brand_color ?? null,
           messengerPageId: settings?.messenger_enabled && settings?.messenger_page_id
             ? String(settings.messenger_page_id) : null,
+          whatsappPhone: CONFIG.WHATSAPP_PHONE || null,
         };
       }
     } catch {}
-    return { orgName: null, logoUrl: null, brandColor: null, messengerPageId: null };
+    return { orgName: null, logoUrl: null, brandColor: null, messengerPageId: null, whatsappPhone: null };
+  });
+
+  // ── Remote Support (RustDesk) ────────────────────────────────────
+
+  let rustdeskProcess: any = null;
+
+
+  // --- Heartbeat: ping cloud every 30s so super admin sees online/offline ---
+  function sendHeartbeat() {
+    try {
+      const db = getDB();
+      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+      const https = require('https');
+      const payload = JSON.stringify({
+        machineId: getMachineId(),
+        machineName: require('os').hostname(),
+        officeId: session?.office_id ?? session?.office_ids?.[0] ?? null,
+        organizationId: session?.organization_id ?? null,
+        appVersion: CONFIG.APP_VERSION,
+      });
+      const url = new URL(`${CONFIG.CLOUD_URL}/api/desktop-status`);
+      const req = https.request({
+        hostname: url.hostname, port: url.port || 443, path: url.pathname, method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 10000,
+      }, () => {});
+      req.on('timeout', () => { req.destroy(); });
+      req.on('error', () => {});
+      req.end(payload);
+    } catch (e: any) {
+      console.warn('[heartbeat] Error:', e?.message);
+    }
+  }
+  const heartbeatInterval = setInterval(sendHeartbeat, 30000);
+  sendHeartbeat(); // initial ping
+
+  // --- RustDesk process watcher: detect when RustDesk exits outside our control ---
+  let rustdeskWatcherInterval: ReturnType<typeof setInterval> | null = null;
+  function startRustdeskWatcher() {
+    if (rustdeskWatcherInterval) return;
+    rustdeskWatcherInterval = setInterval(() => {
+      require('child_process').exec('tasklist /FI "IMAGENAME eq rustdesk.exe" /NH', { timeout: 5000 }, (err: any, stdout: string) => {
+        if (err || !stdout.toLowerCase().includes('rustdesk.exe')) {
+          // RustDesk is no longer running — clear session
+          console.log('[Support] RustDesk process no longer detected — clearing session');
+          rustdeskProcess = null;
+
+          reportSupportStatus(null, null, false);
+          stopRustdeskWatcher();
+        }
+      });
+    }, 10000);
+  }
+  function stopRustdeskWatcher() {
+    if (rustdeskWatcherInterval) { clearInterval(rustdeskWatcherInterval); rustdeskWatcherInterval = null; }
+  }
+
+  // Register cleanup for quit handlers
+  cleanupSupport = () => {
+    clearInterval(heartbeatInterval);
+    stopRustdeskWatcher();
+    reportSupportStatus(null, null, false);
+  };
+
+  function reportSupportStatus(rustdeskId: string | null, rustdeskPassword: string | null, active: boolean) {
+    try {
+      const db = getDB();
+      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+      const https = require('https');
+      const payload = JSON.stringify({
+        machineId: getMachineId(),
+        machineName: require('os').hostname(),
+        officeId: session?.office_id ?? session?.office_ids?.[0] ?? null,
+        organizationId: session?.organization_id ?? null,
+        appVersion: CONFIG.APP_VERSION,
+        rustdeskId: rustdeskId,
+        rustdeskPassword: rustdeskPassword,
+        supportActive: active,
+      });
+      const url = new URL(`${CONFIG.CLOUD_URL}/api/desktop-status`);
+      console.log('[Support] Reporting to cloud:', url.href, active ? 'START' : 'STOP');
+      const req = https.request({
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      }, (res: any) => {
+        let body = '';
+        res.on('data', (c: string) => { body += c; });
+        res.on('end', () => { console.log(`[Support] Cloud response: ${res.statusCode}`, body); });
+      });
+      req.on('error', (err: any) => { console.error('[Support] Cloud report error:', err.message); });
+      req.end(payload);
+    } catch (err: any) { console.error('[Support] reportSupportStatus error:', err.message); }
+  }
+
+  function getRustDeskDir(): string {
+    const path = require('path');
+    return path.join(app.getPath('userData'), 'rustdesk');
+  }
+
+  function getSystemRustDeskExe(): string | null {
+    const path = require('path');
+    const fs = require('fs');
+    const systemPaths = [
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'RustDesk', 'rustdesk.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'RustDesk', 'rustdesk.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'RustDesk', 'rustdesk.exe'),
+    ];
+    return systemPaths.find((p: string) => fs.existsSync(p)) ?? null;
+  }
+
+  function getBundledRustDeskExe(): string | null {
+    const path = require('path');
+    const fs = require('fs');
+    const bundled = path.join(getRustDeskDir(), 'rustdesk.exe');
+    return fs.existsSync(bundled) ? bundled : null;
+  }
+
+  function getRustDeskExe(): string | null {
+    // Prefer system-installed over portable
+    return getSystemRustDeskExe() ?? getBundledRustDeskExe() ?? null;
+  }
+
+  function installRustDesk(portableExe: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      console.log('[Support] Installing RustDesk system-wide...');
+      require('child_process').exec(`"${portableExe}" --silent-install`, { timeout: 30000 }, (err: any) => {
+        if (err) console.error('[Support] RustDesk install error:', err.message);
+        else console.log('[Support] RustDesk installed successfully');
+        resolve(!err);
+      });
+    });
+  }
+
+  function getRustDeskId(): Promise<string | null> {
+    const exe = getRustDeskExe();
+    if (!exe) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      require('child_process').exec(`"${exe}" --get-id`, { timeout: 5000 }, (err: any, stdout: string) => {
+        if (err || !stdout) return resolve(null);
+        // RustDesk outputs DLL skip messages before the ID — extract the numeric ID
+        const match = stdout.match(/\b(\d{6,})\b/);
+        resolve(match ? match[1] : null);
+      });
+    });
+  }
+
+  ipcMain.handle('support:rustdesk-status', async () => {
+    const exe = getRustDeskExe();
+    const id = await getRustDeskId();
+    return {
+      installed: !!exe,
+      running: !!rustdeskProcess,
+      id,
+      exe,
+    };
+  });
+
+  ipcMain.handle('support:rustdesk-start', async () => {
+    let exe = getRustDeskExe();
+    if (!exe) return { ok: false, error: 'not_installed' };
+
+    try {
+      // Auto-install if only portable version exists (fixes UAC warning)
+      if (!getSystemRustDeskExe() && getBundledRustDeskExe()) {
+        await installRustDesk(getBundledRustDeskExe()!);
+        // After install, prefer the system-installed exe
+        exe = getSystemRustDeskExe() ?? exe;
+      }
+
+      rustdeskProcess = require('child_process').spawn(exe, [], { detached: true, stdio: 'ignore' });
+      rustdeskProcess.unref();
+      rustdeskProcess.on('exit', () => { rustdeskProcess = null; });
+
+      // Wait for RustDesk to start, then get ID
+      await new Promise(r => setTimeout(r, 3000));
+      const id = await getRustDeskId();
+
+      reportSupportStatus(id, null, true);
+      startRustdeskWatcher();
+
+      return { ok: true, id };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('support:rustdesk-stop', () => {
+    if (rustdeskProcess) {
+      try { rustdeskProcess.kill(); } catch {}
+      rustdeskProcess = null;
+    }
+    // Also try to kill any running RustDesk process
+    try { require('child_process').exec('taskkill /F /IM rustdesk.exe 2>nul'); } catch {}
+    // Clear support session from cloud
+    stopRustdeskWatcher();
+    reportSupportStatus(null, null, false);
+    return { ok: true };
+  });
+
+  ipcMain.handle('support:rustdesk-download', async () => {
+    const fs = require('fs');
+    const path = require('path');
+    const https = require('https');
+
+    const dir = getRustDeskDir();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const destPath = path.join(dir, 'rustdesk.exe');
+
+    // Download latest portable RustDesk from GitHub releases
+    try {
+      // Get latest release info
+      const releaseInfo: any = await new Promise((resolve, reject) => {
+        https.get('https://api.github.com/repos/rustdesk/rustdesk/releases/latest', {
+          headers: { 'User-Agent': 'QfloStation' },
+        }, (res: any) => {
+          let body = '';
+          res.on('data', (c: string) => { body += c; });
+          res.on('end', () => {
+            try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON')); }
+          });
+        }).on('error', reject);
+      });
+
+      // Find the portable x86_64 exe
+      const asset = (releaseInfo.assets ?? []).find((a: any) =>
+        a.name?.match(/rustdesk.*x86_64.*\.exe$/i) && !a.name?.includes('install')
+      );
+
+      if (!asset) return { ok: false, error: 'No portable exe found in latest release' };
+
+      // Download with redirect following
+      const downloadUrl = asset.browser_download_url;
+      mainWindow?.webContents.send('support:download-progress', { percent: 0, status: 'downloading' });
+
+      await new Promise<void>((resolve, reject) => {
+        const follow = (url: string, depth = 0) => {
+          if (depth > 10) { reject(new Error('Too many redirects')); return; }
+          const mod = url.startsWith('https') ? https : require('http');
+          mod.get(url, { headers: { 'User-Agent': 'QfloStation' } }, (res: any) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              follow(res.headers.location, depth + 1);
+              return;
+            }
+            if (res.statusCode !== 200) {
+              reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+              return;
+            }
+            const total = parseInt(res.headers['content-length'] ?? '0', 10);
+            let received = 0;
+            const file = fs.createWriteStream(destPath);
+            res.on('data', (chunk: Buffer) => {
+              received += chunk.length;
+              file.write(chunk);
+              if (total > 0) {
+                mainWindow?.webContents.send('support:download-progress', {
+                  percent: Math.round((received / total) * 100),
+                  status: 'downloading',
+                });
+              }
+            });
+            res.on('end', () => {
+              file.end();
+              mainWindow?.webContents.send('support:download-progress', { percent: 100, status: 'done' });
+              resolve();
+            });
+            res.on('error', reject);
+          }).on('error', reject);
+        };
+        follow(downloadUrl);
+      });
+
+      return { ok: true, path: destPath };
+    } catch (err: any) {
+      // Clean up partial download
+      try { fs.unlinkSync(destPath); } catch {}
+      return { ok: false, error: err.message };
+    }
   });
 
   // ── License ──────────────────────────────────────────────────────
@@ -1226,6 +1523,9 @@ if (!gotLock) {
     }
   });
 }
+
+// Module-level cleanup hook — set from inside whenReady
+let cleanupSupport: (() => void) | null = null;
 
 // ── App lifecycle ────────────────────────────────────────────────────
 
@@ -1405,10 +1705,12 @@ app.on('before-quit', async (e) => {
     } catch { /* don't block quit on errors */ }
   }
 
+  cleanupSupport?.();
   shutdownDesktopRuntime();
   app.quit(); // re-trigger quit after flush
 });
 
 app.on('will-quit', () => {
+  cleanupSupport?.();
   shutdownDesktopRuntime();
 });

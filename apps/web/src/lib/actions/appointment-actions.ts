@@ -19,6 +19,22 @@ interface CreateAppointmentData {
   customerPhone?: string;
   customerEmail?: string;
   scheduledAt: string; // ISO string
+  staffId?: string;
+}
+
+interface CreateRecurringAppointmentsData extends CreateAppointmentData {
+  recurrenceRule: 'weekly' | 'biweekly' | 'monthly';
+  recurrenceCount: number; // max 12
+}
+
+interface JoinSlotWaitlistData {
+  officeId: string;
+  serviceId: string;
+  date: string;
+  time: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
 }
 
 export async function createAppointment(data: CreateAppointmentData) {
@@ -60,18 +76,24 @@ export async function createAppointment(data: CreateAppointmentData) {
     }
   }
 
+  const calendarToken = nanoid(16);
+
+  const insertData: any = {
+    office_id: data.officeId,
+    department_id: data.departmentId,
+    service_id: data.serviceId,
+    customer_name: data.customerName,
+    customer_phone: data.customerPhone || null,
+    customer_email: data.customerEmail || null,
+    scheduled_at: data.scheduledAt,
+    status: 'pending',
+    calendar_token: calendarToken,
+    ...(data.staffId ? { staff_id: data.staffId } : {}),
+  };
+
   const { data: appointment, error } = await supabase
     .from('appointments')
-    .insert({
-      office_id: data.officeId,
-      department_id: data.departmentId,
-      service_id: data.serviceId,
-      customer_name: data.customerName,
-      customer_phone: data.customerPhone || null,
-      customer_email: data.customerEmail || null,
-      scheduled_at: data.scheduledAt,
-      status: 'pending',
-    })
+    .insert(insertData)
     .select()
     .single();
 
@@ -218,12 +240,13 @@ export async function checkInAppointment(appointmentId: string) {
   }
 
   // Update appointment status and link ticket
+  const checkinUpdate: any = {
+    status: 'checked_in',
+    ticket_id: ticket.id,
+  };
   const { error: updateError } = await supabase
     .from('appointments')
-    .update({
-      status: 'checked_in',
-      ticket_id: ticket.id,
-    })
+    .update(checkinUpdate)
     .eq('id', appointmentId);
 
   if (updateError) {
@@ -269,6 +292,9 @@ export async function cancelAppointment(appointmentId: string) {
       .eq('id', appointment.ticket_id)
       .in('status', ['waiting', 'called', 'issued']);
   }
+
+  // Notify waitlist entries for the freed slot
+  await notifyWaitlistOnCancellation(appointmentId);
 
   return { data: appointment };
 }
@@ -448,4 +474,166 @@ export async function findAppointment(officeId: string, searchTerm: string): Pro
   const unique = Array.from(new Map(all.map((a) => [a.id, a])).values());
 
   return { data: unique };
+}
+
+export async function createRecurringAppointments(data: CreateRecurringAppointmentsData) {
+  const supabase = createAdminClient();
+
+  const count = Math.min(Math.max(1, data.recurrenceCount), 12);
+
+  // Create the parent appointment first
+  const parentResult = await createAppointment(data);
+  if (parentResult.error || !parentResult.data) {
+    return { error: parentResult.error ?? 'Failed to create parent appointment' };
+  }
+
+  const parentAppointment = parentResult.data;
+  const appointments = [parentAppointment];
+
+  // Calculate interval in days
+  const intervalDays =
+    data.recurrenceRule === 'weekly' ? 7 :
+    data.recurrenceRule === 'biweekly' ? 14 :
+    0; // monthly handled separately
+
+  for (let i = 1; i < count; i++) {
+    const baseDate = new Date(data.scheduledAt);
+
+    if (data.recurrenceRule === 'monthly') {
+      baseDate.setMonth(baseDate.getMonth() + i);
+    } else {
+      baseDate.setDate(baseDate.getDate() + intervalDays * i);
+    }
+
+    const calendarToken = nanoid(16);
+
+    const recurringInsertData: any = {
+      office_id: data.officeId,
+      department_id: data.departmentId,
+      service_id: data.serviceId,
+      customer_name: data.customerName,
+      customer_phone: data.customerPhone || null,
+      customer_email: data.customerEmail || null,
+      scheduled_at: baseDate.toISOString(),
+      status: 'pending',
+      calendar_token: calendarToken,
+      recurrence_parent_id: parentAppointment.id,
+      ...(data.staffId ? { staff_id: data.staffId } : {}),
+    };
+
+    const { data: recurring, error } = await supabase
+      .from('appointments')
+      .insert(recurringInsertData)
+      .select()
+      .single();
+
+    if (error) {
+      // Return what we've created so far along with the error
+      return { data: appointments, error: `Failed to create instance ${i + 1}: ${error.message}` };
+    }
+
+    appointments.push(recurring);
+  }
+
+  return { data: appointments };
+}
+
+export async function joinSlotWaitlist(data: JoinSlotWaitlistData) {
+  const supabase = createAdminClient();
+
+  if (!data.officeId || !data.serviceId || !data.date || !data.time || !data.customerName) {
+    return { error: 'Missing required fields: officeId, serviceId, date, time, customerName' };
+  }
+
+  const { data: entry, error } = await (supabase.from('slot_waitlist' as any) as any)
+    .insert({
+      office_id: data.officeId,
+      service_id: data.serviceId,
+      date: data.date,
+      time: data.time,
+      customer_name: data.customerName.trim(),
+      customer_phone: data.customerPhone?.trim() || null,
+      customer_email: data.customerEmail?.trim() || null,
+      status: 'waiting',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { data: entry };
+}
+
+export async function notifyWaitlistOnCancellation(appointmentId: string) {
+  const supabase = createAdminClient();
+
+  // Fetch the cancelled appointment details
+  const { data: appointment, error: fetchError } = await supabase
+    .from('appointments')
+    .select('office_id, service_id, scheduled_at')
+    .eq('id', appointmentId)
+    .single();
+
+  if (fetchError || !appointment) {
+    return { error: fetchError?.message ?? 'Appointment not found' };
+  }
+
+  const scheduledDate = new Date(appointment.scheduled_at);
+  const date = scheduledDate.toISOString().split('T')[0];
+  const time = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+
+  // Find the first waiting entry for this slot
+  const { data: waitlistEntries, error: waitlistError } = await (supabase.from('slot_waitlist' as any) as any)
+    .select('id')
+    .eq('office_id', appointment.office_id)
+    .eq('service_id', appointment.service_id)
+    .eq('date', date)
+    .eq('time', time)
+    .eq('status', 'waiting')
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (waitlistError || !waitlistEntries || waitlistEntries.length === 0) {
+    return { data: null }; // No one on waitlist
+  }
+
+  const entryId = waitlistEntries[0].id;
+
+  const { data: updated, error: updateError } = await (supabase.from('slot_waitlist' as any) as any)
+    .update({
+      status: 'notified',
+      notified_at: new Date().toISOString(),
+    })
+    .eq('id', entryId)
+    .select()
+    .single();
+
+  if (updateError) {
+    return { error: updateError.message };
+  }
+
+  return { data: updated };
+}
+
+export async function getCalendarEvent(calendarToken: string) {
+  const supabase = createAdminClient();
+
+  const { data: appointment, error } = await (supabase
+    .from('appointments')
+    .select(
+      `*,
+       service:services(name, estimated_service_time),
+       department:departments(name),
+       office:offices(name, organization:organizations(name))`
+    ) as any)
+    .eq('calendar_token', calendarToken)
+    .single();
+
+  if (error || !appointment) {
+    return { error: error?.message ?? 'Appointment not found' };
+  }
+
+  return { data: appointment };
 }

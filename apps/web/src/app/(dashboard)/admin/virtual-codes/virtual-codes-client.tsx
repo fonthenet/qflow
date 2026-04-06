@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { useI18n } from '@/components/providers/locale-provider';
+import { QrPoster } from '@/components/admin/qr-poster';
 import {
   createVirtualCode,
   deleteVirtualCode,
@@ -59,6 +60,7 @@ export function VirtualCodesClient({
   const [codes, setCodes] = useState(initialCodes);
   const [showModal, setShowModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showPosterModal, setShowPosterModal] = useState(false);
   const [qrPreviewCode, setQrPreviewCode] = useState<VirtualCode | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -363,6 +365,16 @@ export function VirtualCodesClient({
                       {t('QR')}
                     </button>
                     <button
+                      onClick={() => {
+                        setQrPreviewCode(code);
+                        setShowPosterModal(true);
+                      }}
+                      className="rounded-md px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                      title={t('Print Poster')}
+                    >
+                      {t('Poster')}
+                    </button>
+                    <button
                       onClick={() => handleCopyUrl(code.qr_token, code.id)}
                       className="rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                     >
@@ -534,6 +546,40 @@ export function VirtualCodesClient({
         </div>
       )}
 
+      {/* QR Poster Modal */}
+      {showPosterModal && qrPreviewCode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto">
+          <div
+            className="fixed inset-0 bg-black/50"
+            onClick={() => setShowPosterModal(false)}
+          />
+          <div className="relative z-10 w-full max-w-2xl my-8 rounded-xl border border-border bg-card p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">
+                {t('QR Poster Preview')}
+              </h2>
+              <button
+                onClick={() => setShowPosterModal(false)}
+                className="rounded-md px-3 py-1 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                {t('Close')}
+              </button>
+            </div>
+            <QrPoster
+              businessName={organization?.name ?? 'Business'}
+              qrUrl={getJoinUrl(qrPreviewCode.qr_token)}
+              departmentName={
+                qrPreviewCode.department_id
+                  ? getDepartmentName(qrPreviewCode.department_id)
+                  : qrPreviewCode.office_id
+                    ? getOfficeName(qrPreviewCode.office_id)
+                    : undefined
+              }
+            />
+          </div>
+        </div>
+      )}
+
       {/* QR Code Preview Modal */}
       {showQrModal && qrPreviewCode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -584,6 +630,16 @@ export function VirtualCodesClient({
                 {t('Download QR')}
               </button>
             </div>
+
+            <button
+              onClick={() => {
+                setShowQrModal(false);
+                setShowPosterModal(true);
+              }}
+              className="mt-3 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+            >
+              {t('Print Poster')}
+            </button>
 
             <button
               onClick={() => setShowQrModal(false)}

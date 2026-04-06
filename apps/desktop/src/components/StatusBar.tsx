@@ -308,14 +308,6 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                   {staffStatus === 'on_break' ? `☕ ${t('Break')}` : `🚫 ${t('Away')}`}
                 </span>
               )}
-              {queuePaused && staffStatus === 'available' && (
-                <span style={{
-                  fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                  background: 'rgba(100,116,139,0.15)', color: '#94a3b8',
-                }}>
-                  ⏸ {t('Paused')}
-                </span>
-              )}
               <span className="operator-name">{session.full_name}</span>
               <span className="operator-role">{session.role}</span>
               {(liveDeskName ?? session.desk_name) && (

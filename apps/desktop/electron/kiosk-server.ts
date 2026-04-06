@@ -240,6 +240,8 @@ export function setSyncStatusGetter(getter: () => { isOnline: boolean; pendingCo
 let onForceSync: (() => Promise<void>) | null = null;
 export function setOnForceSync(cb: () => Promise<void>) { onForceSync = cb; }
 
+// Main window reference — set from main.ts for remote support screen capture
+
 // ── HTML entity escaping (prevent XSS) ──────────────────────────
 function escapeHtml(str: string): string {
   return str
@@ -303,8 +305,8 @@ interface DeviceInfo { id: string; type: string; name: string; lastPing: number;
 const devices: Map<string, DeviceInfo> = new Map();
 // Station (this PC) is always present
 devices.set('station', { id: 'station', type: 'station', name: 'Qflo Station', lastPing: Date.now() });
-// Update station heartbeat every 10s
-setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.now(); }, 10000);
+// Update station heartbeat every 8s (must be well within 25s timeout)
+setInterval(() => { const d = devices.get('station'); if (d) d.lastPing = Date.now(); }, 8000);
 const { CLOUD_URL, SUPABASE_URL } = CONFIG;
 const SUPABASE_KEY = CONFIG.SUPABASE_ANON_KEY;
 
@@ -412,6 +414,10 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       } else if (path === '/api/health' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', version: CONFIG.APP_VERSION, cloud: isCloudReachable ? CLOUD_URL : '' }));
+      } else if (path === '/api/check-appointment' && req.method === 'POST') {
+        handleCheckAppointment(req, res);
+      } else if (path === '/api/customer-lookup' && req.method === 'GET') {
+        handleCustomerLookup(url, res);
       } else if (path === '/api/device-ping' && req.method === 'POST') {
         handleDevicePing(req, res);
       } else if (path === '/api/device-status' && req.method === 'GET') {
@@ -640,6 +646,28 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const departments = db.prepare('SELECT * FROM departments WHERE office_id = ?').all(office.id);
   const services = db.prepare('SELECT * FROM services WHERE department_id IN (SELECT id FROM departments WHERE office_id = ?)').all(office.id);
 
+  // Fetch active priority categories
+  let priorities: any[] = [];
+  try {
+    priorities = db.prepare(
+      "SELECT id, name, icon, color, weight FROM priority_categories WHERE organization_id = ? AND is_active = 1 ORDER BY weight DESC"
+    ).all(office.organization_id) as any[];
+  } catch { /* table may not exist yet */ }
+
+  // Per-service queue counts
+  let serviceQueueCounts: any[] = [];
+  try {
+    serviceQueueCounts = db.prepare(`
+      SELECT s.id as service_id, s.name as service_name, s.department_id,
+        COUNT(t.id) as waiting,
+        COALESCE(s.estimated_service_time, 10) as avg_service_time
+      FROM services s
+      LEFT JOIN tickets t ON t.service_id = s.id AND t.status = 'waiting' AND t.office_id = ? AND t.parked_at IS NULL
+      WHERE s.department_id IN (SELECT id FROM departments WHERE office_id = ?)
+      GROUP BY s.id, s.name, s.department_id
+    `).all(office.id, office.id) as any[];
+  } catch { /* ignore */ }
+
   // Try to get org name + logo from Supabase
   let logoUrl: string | null = null;
   let orgName: string | null = null;
@@ -703,6 +731,14 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     office,
     departments,
     services,
+    priorities,
+    service_queue_counts: serviceQueueCounts.map(s => ({
+      service_id: s.service_id,
+      service_name: s.service_name,
+      department_id: s.department_id,
+      waiting: s.waiting ?? 0,
+      estimated_wait: Math.round((s.waiting ?? 0) * (s.avg_service_time ?? 10)),
+    })),
     locale: loadStoredLocale(),
     logo_url: logoUrl,
     org_name: orgName,
@@ -738,8 +774,11 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
         return;
       }
-      const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason, source: rawSource } = parsed;
+      const { officeId, departmentId, serviceId, customerName, customerPhone, customerReason, source: rawSource, priority_category_id, priority: rawPriority, appointment_id } = parsed;
       const ticketSource = typeof rawSource === 'string' && rawSource.length <= 30 ? rawSource : 'kiosk';
+      const ticketPriority = typeof rawPriority === 'number' && rawPriority >= 0 && rawPriority <= 100 ? rawPriority : 0;
+      const safePriorityCategoryId = typeof priority_category_id === 'string' && /^[0-9a-f-]{36}$/i.test(priority_category_id) ? priority_category_id : null;
+      const safeAppointmentId = typeof appointment_id === 'string' && /^[0-9a-f-]{36}$/i.test(appointment_id) ? appointment_id : null;
 
       if (!officeId || !departmentId) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -820,9 +859,9 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
       db.transaction(() => {
         db.prepare(`
-          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, daily_sequence, source)
-          VALUES (?, ?, ?, ?, ?, 'waiting', 0, ?, ?, ?, ?, ?)
-        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
+          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, priority_category_id, appointment_id, customer_data, created_at, is_offline, daily_sequence, source)
+          VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, ticketPriority, safePriorityCategoryId, safeAppointmentId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
 
         db.prepare(`
           INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -837,7 +876,9 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             department_id: departmentId,
             service_id: serviceId,
             status: 'waiting',
-            priority: 0,
+            priority: ticketPriority,
+            priority_category_id: safePriorityCategoryId,
+            appointment_id: safeAppointmentId,
             customer_data: { name: safeName || null, phone: safePhone || null, ...(safeReason ? { reason: safeReason } : {}) },
             created_at: now,
             qr_token: qrToken,
@@ -846,6 +887,22 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
           }),
           now
         );
+
+        // If appointment_id provided, mark appointment as checked in
+        if (safeAppointmentId) {
+          try {
+            db.prepare("UPDATE appointments SET status = 'checked_in' WHERE id = ?").run(safeAppointmentId);
+            db.prepare(`
+              INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+              VALUES (?, 'UPDATE', 'appointments', ?, ?, ?)
+            `).run(
+              safeAppointmentId + '-checkin',
+              safeAppointmentId,
+              JSON.stringify({ status: 'checked_in' }),
+              now
+            );
+          } catch { /* appointments table may not exist */ }
+        }
       })();
 
       // Audit log — immutable trail
@@ -1055,6 +1112,28 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
     estimated_wait: Math.round((d.waiting ?? 0) * (d.avg_service_time ?? 10)),
   }));
 
+  // Per-service breakdown
+  let serviceCounts: any[] = [];
+  try {
+    serviceCounts = db.prepare(`
+      SELECT s.id, s.name, s.department_id,
+        COUNT(t.id) as waiting,
+        COALESCE(s.estimated_service_time, 10) as avg_service_time
+      FROM services s
+      LEFT JOIN tickets t ON t.service_id = s.id AND t.status = 'waiting' AND t.office_id = ? AND t.created_at >= ? AND t.parked_at IS NULL
+      WHERE s.department_id IN (SELECT id FROM departments WHERE office_id = ?)
+      GROUP BY s.id, s.name, s.department_id
+    `).all(officeId, todayISO, officeId) as any[];
+  } catch { /* ignore */ }
+
+  const services = serviceCounts.map(s => ({
+    id: s.id,
+    name: s.name,
+    department_id: s.department_id,
+    waiting: s.waiting ?? 0,
+    estimated_wait: Math.round((s.waiting ?? 0) * (s.avg_service_time ?? 10)),
+  }));
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     waiting: waiting?.c ?? 0,
@@ -1062,6 +1141,7 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
     serving: serving?.c ?? 0,
     served: served?.c ?? 0,
     departments,
+    services,
   }));
 }
 
@@ -1205,6 +1285,33 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'served' AND created_at >= ?"
   ).get(office.id, todayISO) as any;
 
+  // Compute per-department average service time for estimated wait calculation
+  const deptAvgTimes: Record<string, number> = {};
+  try {
+    const avgRows = db.prepare(`
+      SELECT d.id, COALESCE(AVG(s.estimated_service_time), 10) as avg_time
+      FROM departments d
+      LEFT JOIN services s ON s.department_id = d.id
+      WHERE d.office_id = ?
+      GROUP BY d.id
+    `).all(office.id) as any[];
+    for (const r of avgRows) {
+      deptAvgTimes[r.id] = r.avg_time ?? 10;
+    }
+  } catch { /* ignore */ }
+
+  // Track per-department position counters for 1-based queue position
+  const deptPositionCounters: Record<string, number> = {};
+  const enrichedWaiting = waitingTickets.map((t: any) => {
+    const deptId = t.department_id || '';
+    if (!deptPositionCounters[deptId]) deptPositionCounters[deptId] = 0;
+    deptPositionCounters[deptId]++;
+    const position = deptPositionCounters[deptId];
+    const avgMin = deptAvgTimes[deptId] ?? 10;
+    const estimated_wait_minutes = Math.round(position * avgMin);
+    return { ...t, position, estimated_wait_minutes };
+  });
+
   res.writeHead(200, {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1215,8 +1322,8 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     office_name: office.name,
     cloud_connected: isCloudReachable,
     now_serving: nowServing,
-    waiting: waitingTickets,
-    waiting_count: waitingTickets.length,
+    waiting: enrichedWaiting,
+    waiting_count: enrichedWaiting.length,
     called_count: nowServing.filter((t: any) => t.status === 'called').length,
     serving_count: nowServing.filter((t: any) => t.status === 'serving').length,
     served_count: servedCount?.c ?? 0,
@@ -1224,6 +1331,151 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
 }
 
 // ── Tracking Page ─────────────────────────────────────────────────
+
+// ── Check Appointment ────────────────────────────────────────────
+
+function handleCheckAppointment(req: http.IncomingMessage, res: http.ServerResponse) {
+  let body = '';
+  let size = 0;
+  const MAX_BODY = 4096;
+  req.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > MAX_BODY) { req.destroy(); return; }
+    body += chunk;
+  });
+  req.on('end', async () => {
+    try {
+      if (size > MAX_BODY) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request too large' }));
+        return;
+      }
+
+      let parsed: any;
+      try { parsed = JSON.parse(body); } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        return;
+      }
+
+      const { phone, officeId } = parsed;
+      if (!phone || !officeId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing phone or officeId' }));
+        return;
+      }
+
+      const safePhone = String(phone).replace(/[^\d+\-() ]/g, '').slice(0, 30);
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(officeId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid officeId format' }));
+        return;
+      }
+
+      // Query cloud Supabase for today's appointments (appointments live in the cloud)
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const startOfDay = `${today}T00:00:00`;
+      const endOfDay = `${today}T23:59:59`;
+
+      let appointment: any = null;
+      try {
+        const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+        const params = new URLSearchParams({
+          select: 'id,customer_name,customer_phone,department_id,service_id,scheduled_at,status',
+          office_id: `eq.${officeId}`,
+          customer_phone: `ilike.%${safePhone}%`,
+          'scheduled_at': `gte.${startOfDay}`,
+          status: 'in.(pending,confirmed)',
+          order: 'scheduled_at.asc',
+          limit: '1',
+        });
+        const url = `${SUPABASE_URL}/rest/v1/appointments?${params.toString()}&scheduled_at=lte.${endOfDay}`;
+        const apiRes = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+        if (apiRes.ok) {
+          const rows = await apiRes.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            appointment = rows[0];
+          }
+        }
+      } catch { /* cloud unreachable — fall through with null */ }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ appointment }));
+    } catch (err: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err?.message || 'Internal error' }));
+    }
+  });
+}
+
+// ── Customer Lookup ──────────────────────────────────────────────
+
+function handleCustomerLookup(url: URL, res: http.ServerResponse) {
+  const phone = url.searchParams.get('phone');
+  const orgId = url.searchParams.get('orgId');
+
+  if (!phone || !orgId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing phone or orgId' }));
+    return;
+  }
+
+  const safePhone = String(phone).replace(/[^\d+\-() ]/g, '').slice(0, 30);
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(orgId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid orgId format' }));
+    return;
+  }
+
+  const db = getDB();
+
+  // Look up customer
+  let customer: any = null;
+  try {
+    customer = db.prepare(`
+      SELECT id, phone, name, visit_count, last_visit_at, notes, tags
+      FROM customers
+      WHERE organization_id = ? AND phone = ?
+      LIMIT 1
+    `).get(orgId, safePhone) as any;
+  } catch { /* customers table may not exist */ }
+
+  if (!customer) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ customer: null, recent_tickets: [] }));
+    return;
+  }
+
+  // Get last 5 tickets for this customer
+  let recentTickets: any[] = [];
+  try {
+    recentTickets = db.prepare(`
+      SELECT t.ticket_number, d.name as department, s.name as service, t.created_at, t.status
+      FROM tickets t
+      LEFT JOIN departments d ON d.id = t.department_id
+      LEFT JOIN services s ON s.id = t.service_id
+      WHERE t.customer_data LIKE ?
+      ORDER BY t.created_at DESC
+      LIMIT 5
+    `).all(`%${safePhone}%`) as any[];
+  } catch { /* ignore */ }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    customer: {
+      id: customer.id,
+      phone: customer.phone,
+      name: customer.name,
+      visit_count: customer.visit_count ?? 0,
+      last_visit_at: customer.last_visit_at ?? null,
+      notes: customer.notes ?? null,
+      tags: customer.tags ?? null,
+    },
+    recent_tickets: recentTickets,
+  }));
+}
 
 // ── Device Ping/Status ────────────────────────────────────────────
 
@@ -1262,10 +1514,10 @@ function handleDevicePing(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function handleDeviceStatus(res: http.ServerResponse) {
   const now = Date.now();
-  const TIMEOUT = 90_000; // 90s = considered disconnected (tolerates 2 missed 30s pings)
-  const STALE = 180_000;  // 3min = remove from list entirely
+  const TIMEOUT = 25_000; // 25s = considered disconnected (tolerates 1 missed 10s ping + network jitter)
+  const STALE = 60_000;   // 60s = remove from list entirely
 
-  // Prune devices that haven't pinged in 2+ minutes (closed tabs, disconnected devices)
+  // Prune devices that haven't pinged in 60s (closed tabs, disconnected devices)
   for (const [id, d] of devices) {
     if (id !== 'station' && (now - d.lastPing) > STALE) {
       devices.delete(id);
@@ -1660,6 +1912,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
             <button onclick="setLang('ar')" class="lang-opt" style="display:block;width:100%;text-align:center;padding:6px 12px;border:none;background:none;border-radius:12px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;transition:all 0.15s" onmouseenter="this.style.background='#f1f5f9'" onmouseleave="this.style.background='none'">AR</button>
           </div>
         </div>
+        <div id="network-badge" style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700"></div>
         <div style="text-align:right">
           <div class="clock" id="clock"></div>
           <div class="date" id="date"></div>
@@ -1698,6 +1951,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     var PAGE_PARAMS = new URLSearchParams(window.location.search || '');
     var REQUESTED_OFFICE_ID = PAGE_PARAMS.get('officeId');
     var OFFICE_QUERY = REQUESTED_OFFICE_ID ? ('?officeId=' + encodeURIComponent(REQUESTED_OFFICE_ID)) : '';
+    var IS_LOCAL = /^(192\\.168|10\\.|172\\.(1[6-9]|2\\d|3[01])\\.|127\\.|localhost)/.test(window.location.hostname);
     var lastServingHash = '';
     var lastQueueHash = '';
     var activeDept = 'all';
@@ -1705,6 +1959,16 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
     var departments = {};
     var desks = {};
     var isCloud = false;
+
+    // Set network badge
+    (function() {
+      var b = document.getElementById('network-badge');
+      if (b) {
+        b.style.background = IS_LOCAL ? '#dbeafe' : '#d1fae5';
+        b.style.color = IS_LOCAL ? '#1e40af' : '#065f46';
+        b.textContent = IS_LOCAL ? '🏠 Local' : '🌐 Remote';
+      }
+    })();
 
     // XSS-safe HTML escaping for all user-controlled data
     function esc(str) {
@@ -2077,7 +2341,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       }).catch(function(){});
     }
     pingDevice();
-    setInterval(pingDevice, 30000);
+    setInterval(pingDevice, 10000);
 
     // ── Device status warnings ──
     var disconnectCount = 0;
@@ -2194,6 +2458,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(html);
 }
+
+
 
 // ══════════════════════════════════════════════════════════════════════
 // ── Station Web Interface — mirrors the Electron IPC over HTTP ──────

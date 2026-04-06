@@ -491,11 +491,41 @@ export function DisplayBoard({
                       </div>
                       <div style={{ fontSize: isMobile ? 18 : 36, color: '#94a3b8', margin: isMobile ? '0' : '0 20px' }}>&rarr;</div>
                       <div style={{ flex: 1, width: isMobile ? '100%' : 'auto' }}>
-                        <div style={{ fontSize: isMobile ? 18 : 28, fontWeight: 700, color: '#334155' }}>
-                          {ticket.desk?.display_name || ticket.desk?.name || 'Desk'}
-                        </div>
-                        <div style={{ fontSize: isMobile ? 12 : 16, color: '#94a3b8', fontWeight: 500, marginTop: 2 }}>
-                          {ticket.department?.name || ticket.service?.name || ''}
+                        {ticket.desk?.counter_number ? (
+                          <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: isMobile ? 8 : 12,
+                            padding: isMobile ? '6px 16px' : '10px 24px',
+                            borderRadius: 14,
+                            background: '#f0f9ff',
+                            border: '2px solid #bae6fd',
+                          }}>
+                            <span style={{
+                              fontSize: isMobile ? 28 : 48,
+                              fontWeight: 900,
+                              color: '#0369a1',
+                              lineHeight: 1,
+                            }}>
+                              {ticket.desk.counter_number}
+                            </span>
+                            <span style={{
+                              fontSize: isMobile ? 14 : 20,
+                              fontWeight: 700,
+                              color: '#0c4a6e',
+                              textTransform: uc,
+                              letterSpacing: ls(1),
+                            }}>
+                              {t('Counter')}
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: isMobile ? 22 : 32, fontWeight: 800, color: '#334155' }}>
+                            {ticket.desk?.display_name || ticket.desk?.name || 'Desk'}
+                          </div>
+                        )}
+                        <div style={{ fontSize: isMobile ? 12 : 16, color: '#94a3b8', fontWeight: 500, marginTop: 4 }}>
+                          {ticket.desk?.counter_number ? (ticket.desk?.display_name || ticket.desk?.name || '') : ''}{ticket.desk?.counter_number && (ticket.department?.name || ticket.service?.name) ? ' \u00b7 ' : ''}{ticket.department?.name || ticket.service?.name || ''}
                         </div>
                       </div>
                       {ticket.status === 'called' ? (
@@ -601,6 +631,7 @@ export function DisplayBoard({
                         marginBottom: 6,
                         background: '#fff',
                         border: `2px solid ${isNext ? '#fde68a' : '#e2e8f0'}`,
+                        borderLeft: ticket.department?.color ? `5px solid ${ticket.department.color}` : `2px solid ${isNext ? '#fde68a' : '#e2e8f0'}`,
                         boxShadow: isNext ? '0 8px 18px rgba(245,158,11,0.08)' : 'none',
                       }}
                     >
@@ -614,6 +645,14 @@ export function DisplayBoard({
                         }}
                       >
                         #{index + 1}
+                        <div style={{
+                          fontSize: isMobile ? 10 : 12,
+                          fontWeight: 600,
+                          color: '#94a3b8',
+                          marginTop: 2,
+                        }}>
+                          ~{ticket.estimated_wait_minutes ?? (index + 1) * 5}m
+                        </div>
                       </div>
                       <div
                         style={{
@@ -649,11 +688,11 @@ export function DisplayBoard({
                             fontSize: isMobile ? 11 : 13,
                             fontWeight: 700,
                             marginRight: 6,
-                            background: '#fef3c7',
-                            color: '#92400e',
+                            background: ticket.priority_category?.color ? `${ticket.priority_category.color}20` : '#fef3c7',
+                            color: ticket.priority_category?.color || '#92400e',
                           }}
                         >
-                          P{ticket.priority}
+                          {ticket.priority_category?.name || `P${ticket.priority}`}
                         </span>
                       ) : null}
                       {ticket.appointment_id ? (

@@ -44,6 +44,7 @@ interface AppointmentRecord {
   office_id: string;
   department_id: string;
   service_id: string;
+  staff_id?: string | null;
   customer_name: string;
   customer_phone: string | null;
   customer_email: string | null;
@@ -51,6 +52,7 @@ interface AppointmentRecord {
   created_at: string | null;
   status: string | null;
   ticket_id: string | null;
+  calendar_token?: string | null;
   ticket?: AppointmentTicket | null;
 }
 

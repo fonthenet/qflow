@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Calendar, Clock, MapPin, Check } from 'lucide-react';
+import { Calendar, CalendarPlus, Clock, MapPin, Check, User, Bell } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
   clearBookingEmailOtpVerification,
   createAppointment,
+  createRecurringAppointments,
   getAvailableSlots,
+  joinSlotWaitlist,
   markBookingEmailOtpVerified,
   updateAppointmentContact,
 } from '@/lib/actions/appointment-actions';
@@ -39,7 +41,7 @@ interface BookingFormProps {
   };
 }
 
-type Step = 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'done';
+type Step = 'department' | 'service' | 'provider' | 'date' | 'time' | 'info' | 'confirm' | 'done';
 
 export function BookingForm({
   office,
@@ -98,6 +100,19 @@ export function BookingForm({
   const [appointment, setAppointment] = useState<any>(null);
   const [editingBookedInfo, setEditingBookedInfo] = useState(false);
   const [savingBookedInfo, setSavingBookedInfo] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceRule, setRecurrenceRule] = useState<'weekly' | 'biweekly' | 'monthly'>('weekly');
+  const [recurrenceCount, setRecurrenceCount] = useState(4);
+  const [recurringAppointments, setRecurringAppointments] = useState<any[] | null>(null);
+  const [waitlistSlot, setWaitlistSlot] = useState<string | null>(null);
+  const [waitlistName, setWaitlistName] = useState('');
+  const [waitlistPhone, setWaitlistPhone] = useState('');
+  const [waitlistEmail, setWaitlistEmail] = useState('');
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  const [waitlistSuccess, setWaitlistSuccess] = useState(false);
   const [sendingEmailOtp, setSendingEmailOtp] = useState(false);
   const [verifyingEmailOtp, setVerifyingEmailOtp] = useState(false);
   const [emailOtpCode, setEmailOtpCode] = useState('');
@@ -174,6 +189,28 @@ export function BookingForm({
     setSelectedService(service);
     setSelectedDate('');
     setSelectedTime('');
+    setSelectedStaffId(null);
+    // Fetch staff for the selected service's office
+    setLoadingStaff(true);
+    supabase.from('staff')
+      .select('id, full_name')
+      .eq('office_id', office.id)
+      .eq('is_active', true)
+      .order('full_name')
+      .then(({ data }) => {
+        const members = data ?? [];
+        setStaffMembers(members);
+        setLoadingStaff(false);
+        if (members.length > 0) {
+          setStep('provider');
+        } else {
+          setStep('date');
+        }
+      });
+  }
+
+  function handleSelectProvider(staffId: string | null) {
+    setSelectedStaffId(staffId);
     setStep('date');
   }
 
@@ -225,7 +262,7 @@ export function BookingForm({
       return;
     }
 
-    const result = await createAppointment({
+    const baseData = {
       officeId: office.id,
       departmentId: selectedDept.id,
       serviceId: selectedService.id,
@@ -233,7 +270,31 @@ export function BookingForm({
       customerPhone: customerPhone.trim() || undefined,
       customerEmail: customerEmail.trim() || undefined,
       scheduledAt,
-    });
+      ...(selectedStaffId ? { staffId: selectedStaffId } : {}),
+    };
+
+    if (isRecurring) {
+      const result = await createRecurringAppointments({
+        ...baseData,
+        recurrenceRule,
+        recurrenceCount,
+      });
+
+      if (result.error && !result.data) {
+        setError(result.error);
+        setSubmitting(false);
+        return;
+      }
+
+      const allAppointments = result.data as any[];
+      setRecurringAppointments(allAppointments);
+      setAppointment(allAppointments[0]);
+      setStep('done');
+      setSubmitting(false);
+      return;
+    }
+
+    const result = await createAppointment(baseData);
 
     if (result.error) {
       setError(result.error);
@@ -350,8 +411,11 @@ export function BookingForm({
       case 'service':
         setStep('department');
         break;
-      case 'date':
+      case 'provider':
         setStep('service');
+        break;
+      case 'date':
+        setStep(staffMembers.length > 0 ? 'provider' : 'service');
         break;
       case 'time':
         setStep('date');
@@ -375,6 +439,12 @@ export function BookingForm({
     setCustomerPhone('');
     setCustomerEmail('');
     setAppointment(null);
+    setSelectedStaffId(null);
+    setStaffMembers([]);
+    setIsRecurring(false);
+    setRecurrenceRule('weekly');
+    setRecurrenceCount(4);
+    setRecurringAppointments(null);
     setEditingBookedInfo(false);
     setEmailOtpCode('');
     setEmailOtpSent(false);
@@ -427,15 +497,10 @@ export function BookingForm({
     setSavingBookedInfo(false);
   }
 
-  const stepNumber = {
-    department: 1,
-    service: 2,
-    date: 3,
-    time: 4,
-    info: 5,
-    confirm: 6,
-    done: 7,
-  }[step];
+  const totalSteps = staffMembers.length > 0 ? 7 : 6;
+  const stepNumber = staffMembers.length > 0
+    ? { department: 1, service: 2, provider: 3, date: 4, time: 5, info: 6, confirm: 7, done: 8 }[step]
+    : { department: 1, service: 2, provider: 3, date: 3, time: 4, info: 5, confirm: 6, done: 7 }[step];
 
   function formatSlotTime(time: string) {
     return formatTime(`2000-01-01T${time}:00`, {
@@ -484,17 +549,17 @@ export function BookingForm({
       {step !== 'done' && (
         <div className="mx-auto max-w-2xl px-4 pt-6">
           <div className="mb-2 flex items-center gap-2">
-            {[1, 2, 3, 4, 5, 6].map((s) => (
+            {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
               <div
                 key={s}
                 className={`h-1.5 flex-1 rounded-full transition-colors ${
-                  s <= stepNumber ? 'bg-primary' : 'bg-muted'
+                  s <= (stepNumber ?? 0) ? 'bg-primary' : 'bg-muted'
                 }`}
               />
             ))}
           </div>
           <p className="text-center text-xs text-muted-foreground">
-            {t('Step {step} of 6', { step: stepNumber })}
+            {t('Step {step} of {total}', { step: stepNumber, total: totalSteps })}
           </p>
         </div>
       )}
@@ -584,6 +649,63 @@ export function BookingForm({
           </div>
         )}
 
+        {/* Step: Select Provider */}
+        {step === 'provider' && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <User className="mx-auto h-10 w-10 text-primary" />
+              <h2 className="mt-3 text-3xl font-bold text-foreground">{t('Choose Provider')}</h2>
+              <p className="mt-2 text-lg text-muted-foreground">
+                {t('Select who you would like to see')}
+              </p>
+            </div>
+
+            {loadingStaff ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                <button
+                  onClick={() => handleSelectProvider(null)}
+                  className={`flex items-center gap-4 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:border-primary hover:shadow-md ${
+                    selectedStaffId === null ? 'border-primary ring-2 ring-primary/20' : ''
+                  }`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                    <Clock className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-foreground">{t('First Available')}</h3>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{t('Fastest option')}</p>
+                  </div>
+                </button>
+                {staffMembers.map((member) => (
+                  <button
+                    key={member.id}
+                    onClick={() => handleSelectProvider(member.id)}
+                    className="flex items-center gap-4 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-all hover:border-primary hover:shadow-md"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                      <User className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-foreground">{member.full_name}</h3>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={handleBack}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              {t('Back')}
+            </button>
+          </div>
+        )}
+
         {/* Step 3: Select Date */}
         {step === 'date' && (
           <div className="space-y-6">
@@ -665,6 +787,101 @@ export function BookingForm({
                     {formatSlotTime(slot)}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* Waitlist for unavailable slots */}
+            {!loadingSlots && availableSlots.length > 0 && (
+              <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t('Preferred time not available?')}
+                </p>
+                {waitlistSlot === null && !waitlistSuccess && (
+                  <button
+                    type="button"
+                    onClick={() => setWaitlistSlot('')}
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                  >
+                    <Bell className="h-3.5 w-3.5" />
+                    {t('Join Waitlist')}
+                  </button>
+                )}
+                {waitlistSlot !== null && !waitlistSuccess && (
+                  <div className="mt-3 space-y-3">
+                    <input
+                      type="time"
+                      value={waitlistSlot}
+                      onChange={(e) => setWaitlistSlot(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    <input
+                      type="text"
+                      value={waitlistName}
+                      onChange={(e) => setWaitlistName(e.target.value)}
+                      placeholder={t('Name')}
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    <input
+                      type="tel"
+                      value={waitlistPhone}
+                      onChange={(e) => setWaitlistPhone(e.target.value)}
+                      placeholder={t('Phone') + ' (' + t('(optional)') + ')'}
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    <input
+                      type="email"
+                      value={waitlistEmail}
+                      onChange={(e) => setWaitlistEmail(e.target.value)}
+                      placeholder={t('Email') + ' (' + t('(optional)') + ')'}
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={waitlistSubmitting || !waitlistName.trim() || !waitlistSlot}
+                        onClick={async () => {
+                          setWaitlistSubmitting(true);
+                          const time = waitlistSlot.length === 5 ? waitlistSlot : waitlistSlot.slice(0, 5);
+                          const res = await joinSlotWaitlist({
+                            officeId: office.id,
+                            serviceId: selectedService.id,
+                            date: selectedDate,
+                            time,
+                            customerName: waitlistName.trim(),
+                            customerPhone: waitlistPhone.trim() || undefined,
+                            customerEmail: waitlistEmail.trim() || undefined,
+                          });
+                          setWaitlistSubmitting(false);
+                          if (!res.error) {
+                            setWaitlistSuccess(true);
+                          } else {
+                            setError(res.error);
+                          }
+                        }}
+                        className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {waitlistSubmitting ? t('Saving...') : t('Join Waitlist')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWaitlistSlot(null);
+                          setWaitlistName('');
+                          setWaitlistPhone('');
+                          setWaitlistEmail('');
+                        }}
+                        className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                      >
+                        {t('Cancel')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {waitlistSuccess && (
+                  <p className="mt-2 text-sm font-medium text-emerald-600">
+                    {t('You will be notified when a spot opens')}
+                  </p>
+                )}
               </div>
             )}
 
@@ -800,6 +1017,62 @@ export function BookingForm({
                   <span className="font-medium text-foreground">{customerEmail}</span>
                 </div>
               )}
+              {selectedStaffId && staffMembers.length > 0 && (
+                <div className="flex justify-between border-t border-border py-2">
+                  <span className="text-muted-foreground">{t('Provider')}</span>
+                  <span className="font-medium text-foreground">
+                    {staffMembers.find((m) => m.id === selectedStaffId)?.full_name ?? t('First Available')}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Recurring option */}
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(e) => setIsRecurring(e.target.checked)}
+                  className="h-5 w-5 rounded border-border text-primary focus:ring-primary/20"
+                />
+                <span className="text-sm font-medium text-foreground">{t('Make this recurring')}</span>
+              </label>
+              {isRecurring && (
+                <div className="mt-4 space-y-3 border-t border-border pt-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground">
+                      {t('Frequency')}
+                    </label>
+                    <select
+                      value={recurrenceRule}
+                      onChange={(e) => setRecurrenceRule(e.target.value as 'weekly' | 'biweekly' | 'monthly')}
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="weekly">{t('Weekly')}</option>
+                      <option value="biweekly">{t('Every 2 Weeks')}</option>
+                      <option value="monthly">{t('Monthly')}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground">
+                      {t('Repeat for')}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={recurrenceCount}
+                        onChange={(e) => setRecurrenceCount(Number(e.target.value))}
+                        className="w-24 rounded-xl border border-border bg-muted px-4 py-2.5 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      >
+                        {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                      <span className="text-sm text-muted-foreground">{t('times')}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {bookingEmailOtpRequired ? (
@@ -915,10 +1188,14 @@ export function BookingForm({
               </div>
 
               <h2 className="text-2xl font-bold text-foreground">
-                {t('{label} Confirmed!', { label: vocabulary.bookingLabel })}
+                {recurringAppointments
+                  ? t('{count} {label} booked', { count: recurringAppointments.length, label: bookingLabelLower + 's' })
+                  : t('{label} Confirmed!', { label: vocabulary.bookingLabel })}
               </h2>
               <p className="mt-2 text-muted-foreground">
-                {t('Your {booking} has been booked successfully.', { booking: bookingLabelLower })}
+                {recurringAppointments
+                  ? t('Your recurring {booking} series has been created.', { booking: bookingLabelLower })
+                  : t('Your {booking} has been booked successfully.', { booking: bookingLabelLower })}
               </p>
 
               <div className="mt-6 rounded-xl bg-muted p-4">
@@ -1058,6 +1335,16 @@ export function BookingForm({
                 ) : null}
               </div>
             </div>
+
+            {appointment?.calendar_token && !sandboxMode && (
+              <a
+                href={`/api/calendar/${appointment.calendar_token}`}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 text-lg font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <CalendarPlus className="h-5 w-5" />
+                {t('Add to Calendar')}
+              </a>
+            )}
 
             <Link
               href={sandboxMode ? sandbox?.trackPath ?? buildBookingCheckInPath(office) : buildBookingCheckInPath(office)}

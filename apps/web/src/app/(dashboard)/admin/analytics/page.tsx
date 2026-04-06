@@ -10,6 +10,10 @@ import {
   getFilterOptions,
   getTemplateHealthAnalytics,
   getTemplatePerformanceAnalytics,
+  getHourlyHeatmap,
+  getServiceBreakdown,
+  getWeeklyTrends,
+  getNoShowRate,
 } from '@/lib/actions/analytics-actions';
 import { AnalyticsDashboard } from './analytics-dashboard';
 
@@ -30,6 +34,10 @@ export default async function AnalyticsPage() {
     feedbackSummary,
     templateHealth,
     templatePerformance,
+    hourlyHeatmap,
+    serviceBreakdown,
+    weeklyTrends,
+    noShowRate,
     filterOptions,
   ] = await Promise.all([
     getAnalyticsSummary(),
@@ -40,6 +48,10 @@ export default async function AnalyticsPage() {
     getFeedbackSummary(),
     getTemplateHealthAnalytics(),
     getTemplatePerformanceAnalytics(),
+    getHourlyHeatmap(),
+    getServiceBreakdown(),
+    getWeeklyTrends(),
+    getNoShowRate(),
     getFilterOptions(),
   ]);
 
@@ -53,6 +65,10 @@ export default async function AnalyticsPage() {
       initialFeedbackSummary={feedbackSummary}
       initialTemplateHealth={templateHealth}
       initialTemplatePerformance={templatePerformance}
+      initialHourlyHeatmap={hourlyHeatmap}
+      initialServiceBreakdown={serviceBreakdown}
+      initialWeeklyTrends={weeklyTrends}
+      initialNoShowRate={noShowRate}
       offices={filterOptions.offices}
       departments={filterOptions.departments}
     />

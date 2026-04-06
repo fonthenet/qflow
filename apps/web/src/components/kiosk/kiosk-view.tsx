@@ -131,6 +131,7 @@ export function KioskView({
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<{ sent: boolean; error?: string } | null>(null);
   const [hoursOpen, setHoursOpen] = useState(false);
+  const [queueStats, setQueueStats] = useState<Record<string, { waiting: number; estimatedWaitMinutes: number }>>({});
   const printRef = useRef<HTMLDivElement>(null);
 
   const themeColor = ks.themeColor || '#5b8a72';
@@ -220,6 +221,33 @@ export function KioskView({
       events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
     };
   }, [defaultDept, defaultStep, ks.idleTimeout]);
+
+  // ── Fetch live queue stats for estimated wait per department ──
+  useEffect(() => {
+    if (!ks.showEstimatedTime || sandboxMode) return;
+    // Extract slug from the current URL path (e.g. /kiosk/office-name or /kiosk/office-name--id)
+    const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/') : [];
+    const kioskIdx = pathParts.indexOf('kiosk');
+    const officeSlug = kioskIdx >= 0 ? pathParts[kioskIdx + 1] : '';
+    if (!officeSlug) return;
+
+    async function fetchStats() {
+      try {
+        const res = await fetch(`/api/queue-status?slug=${encodeURIComponent(officeSlug)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const statsMap: Record<string, { waiting: number; estimatedWaitMinutes: number }> = {};
+        for (const dept of data.departments ?? []) {
+          statsMap[dept.id] = { waiting: dept.waiting, estimatedWaitMinutes: dept.estimatedWaitMinutes };
+        }
+        setQueueStats(statsMap);
+      } catch { /* ignore fetch errors */ }
+    }
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 30_000);
+    return () => clearInterval(interval);
+  }, [ks.showEstimatedTime, sandboxMode, office]);
 
   // ── Success sound + animation trigger ──
   const playSuccessSound = useCallback(() => {
@@ -734,14 +762,23 @@ export function KioskView({
                 <div className="mt-1 text-[15px] text-slate-500">{t('Choose the service area you need')}</div>
               </div>
               <div className="mt-6 flex flex-col gap-3">
-                {activeDepartments.map((department) => (
-                  <KioskCard
-                    key={department.id}
-                    icon={department.code || department.name?.charAt(0)?.toUpperCase() || 'D'}
-                    label={t(department.name)}
-                    onClick={() => { setSelectedDept(department); setStep('service'); }}
-                  />
-                ))}
+                {activeDepartments.map((department) => {
+                  const stats = queueStats[department.id];
+                  const waitMeta = ks.showEstimatedTime && stats
+                    ? stats.waiting > 0
+                      ? `${stats.waiting} ${t('waiting')} · ~${stats.estimatedWaitMinutes} ${t('min')}`
+                      : t('No wait')
+                    : undefined;
+                  return (
+                    <KioskCard
+                      key={department.id}
+                      icon={department.code || department.name?.charAt(0)?.toUpperCase() || 'D'}
+                      label={t(department.name)}
+                      meta={waitMeta}
+                      onClick={() => { setSelectedDept(department); setStep('service'); }}
+                    />
+                  );
+                })}
               </div>
             </>
           )}
@@ -861,7 +898,15 @@ export function KioskView({
                           key={service.id}
                           icon={showMedicalIcon ? <Stethoscope className="h-6 w-6" /> : (service.code || service.name?.charAt(0)?.toUpperCase() || 'S')}
                           label={t(service.name)}
-                          meta={ks.showEstimatedTime && service.estimated_service_time ? `~${service.estimated_service_time} ${t('min')}` : undefined}
+                          meta={ks.showEstimatedTime && service.estimated_service_time
+                            ? (() => {
+                                const stats = queueStats[selectedDept.id];
+                                const serviceTime = `~${service.estimated_service_time} ${t('min')}`;
+                                return stats && stats.waiting > 0
+                                  ? `${serviceTime} · ${stats.waiting} ${t('waiting')}`
+                                  : serviceTime;
+                              })()
+                            : undefined}
                           onClick={() => handleServiceSelected(service)}
                           disabled={loading || !hasRequiredCustomerInfo}
                         />
@@ -1046,11 +1091,23 @@ export function KioskView({
                   {ticket.position_in_queue != null
                     ? t('#{position} in queue', { position: ticket.position_in_queue })
                     : `${ticket.department_name} · ${ticket.service_name}`}
-                  {(ticket.estimated_wait ?? ticket.estimated_service_time) ? (
-                    <> · ⏱ ~{ticket.estimated_wait ?? ticket.estimated_service_time} {t('min')}</>
-                  ) : null}
                 </div>
               </div>
+
+              {/* Prominent estimated wait display */}
+              {(ticket.estimated_wait ?? ticket.estimated_service_time) ? (
+                <div className="mt-3 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] px-5 py-4 print:bg-white">
+                  <div className="flex items-center justify-center gap-3">
+                    <Clock3 className="h-6 w-6" style={{ color: themeColor }} />
+                    <div>
+                      <div className="text-[13px] font-semibold text-slate-400">{t('Estimated Wait Time')}</div>
+                      <div className="text-[28px] font-extrabold" style={{ color: themeColor }}>
+                        ~{ticket.estimated_wait ?? ticket.estimated_service_time} {t('min')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Notification opt-in — customer taps to open WhatsApp/Messenger and initiate (free) */}
               {ticket.qr_token && (whatsappEnabled || messengerPageId) && (

@@ -93,6 +93,35 @@ export interface TemplateHealthSummaryData {
   lastOfficeRolloutAt: string | null;
 }
 
+export interface HourlyHeatmapCell {
+  hour: number;
+  dayOfWeek: number;
+  count: number;
+}
+
+export interface ServiceBreakdownRow {
+  service_id: string;
+  service_name: string;
+  ticket_count: number;
+  avg_wait_minutes: number | null;
+  avg_service_minutes: number | null;
+  no_show_count: number;
+}
+
+export interface WeeklyTrendDay {
+  date: string;
+  total_tickets: number;
+  avg_wait_minutes: number | null;
+  avg_service_minutes: number | null;
+  no_show_count: number;
+}
+
+export interface NoShowRateData {
+  total_tickets: number;
+  no_shows: number;
+  rate: number;
+}
+
 export interface TemplateActivityPoint {
   date: string;
   organizationUpgrades: number;
@@ -1210,4 +1239,259 @@ export async function getTemplatePerformanceAnalytics(
     templateRows,
     officeRows,
   };
+}
+
+// ─── Hourly Heatmap ──────────────────────────────────────────────────────
+
+export async function getHourlyHeatmap(
+  officeId?: string,
+  dateRange?: string
+): Promise<HourlyHeatmapCell[]> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
+  const officeIds = getScopedOfficeIds(context, officeId);
+
+  // Initialize grid: 24 hours x 7 days
+  const grid: HourlyHeatmapCell[] = [];
+  for (let dow = 0; dow < 7; dow++) {
+    for (let hour = 0; hour < 24; hour++) {
+      grid.push({ hour, dayOfWeek: dow, count: 0 });
+    }
+  }
+
+  if (officeIds.length === 0) return grid;
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('created_at')
+    .in('office_id', officeIds)
+    .gte('created_at', start)
+    .lte('created_at', end);
+
+  (tickets ?? []).forEach((t: { created_at: string }) => {
+    const d = new Date(t.created_at);
+    const dow = d.getDay(); // 0=Sunday
+    const hour = d.getHours();
+    const cell = grid.find((c) => c.dayOfWeek === dow && c.hour === hour);
+    if (cell) cell.count++;
+  });
+
+  return grid;
+}
+
+// ─── Service Breakdown ───────────────────────────────────────────────────
+
+export async function getServiceBreakdown(
+  officeId?: string,
+  dateRange?: string
+): Promise<ServiceBreakdownRow[]> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
+  const officeIds = getScopedOfficeIds(context, officeId);
+
+  if (officeIds.length === 0) return [];
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('service_id, status, created_at, serving_started_at, completed_at, service:services(name)')
+    .in('office_id', officeIds)
+    .gte('created_at', start)
+    .lte('created_at', end);
+
+  const serviceMap = new Map<
+    string,
+    {
+      name: string;
+      count: number;
+      noShows: number;
+      waitMinutes: number[];
+      serviceMinutes: number[];
+    }
+  >();
+
+  (tickets ?? []).forEach((t: any) => {
+    const svcId = t.service_id;
+    if (!svcId) return;
+
+    let entry = serviceMap.get(svcId);
+    if (!entry) {
+      entry = {
+        name: t.service?.name ?? 'Unknown',
+        count: 0,
+        noShows: 0,
+        waitMinutes: [],
+        serviceMinutes: [],
+      };
+      serviceMap.set(svcId, entry);
+    }
+
+    entry.count++;
+
+    if (t.status === 'no_show') {
+      entry.noShows++;
+    }
+
+    if (t.serving_started_at && t.created_at) {
+      const waitMs =
+        new Date(t.serving_started_at).getTime() - new Date(t.created_at).getTime();
+      entry.waitMinutes.push(waitMs / 60000);
+    }
+
+    if (t.serving_started_at && t.completed_at) {
+      const serviceMs =
+        new Date(t.completed_at).getTime() - new Date(t.serving_started_at).getTime();
+      entry.serviceMinutes.push(serviceMs / 60000);
+    }
+  });
+
+  return Array.from(serviceMap.entries())
+    .map(([service_id, entry]) => ({
+      service_id,
+      service_name: entry.name,
+      ticket_count: entry.count,
+      avg_wait_minutes:
+        entry.waitMinutes.length > 0
+          ? roundMetric(
+              entry.waitMinutes.reduce((a, b) => a + b, 0) / entry.waitMinutes.length
+            )
+          : null,
+      avg_service_minutes:
+        entry.serviceMinutes.length > 0
+          ? roundMetric(
+              entry.serviceMinutes.reduce((a, b) => a + b, 0) / entry.serviceMinutes.length
+            )
+          : null,
+      no_show_count: entry.noShows,
+    }))
+    .sort((a, b) => b.ticket_count - a.ticket_count);
+}
+
+// ─── Weekly Trends ───────────────────────────────────────────────────────
+
+export async function getWeeklyTrends(
+  officeId?: string,
+  dateRange?: string
+): Promise<WeeklyTrendDay[]> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
+
+  // Always use last 30 days for weekly trends
+  const endIso = getOfficeDayEndIso(tz);
+  const startDate = new Date(getOfficeDayStartIso(tz));
+  startDate.setDate(startDate.getDate() - 29);
+  const start = startDate.toISOString();
+  const end = endIso;
+
+  const officeIds = getScopedOfficeIds(context, officeId);
+
+  if (officeIds.length === 0) return [];
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('created_at, serving_started_at, completed_at, status')
+    .in('office_id', officeIds)
+    .gte('created_at', start)
+    .lte('created_at', end);
+
+  // Initialize all 30 days
+  const dayMap = new Map<
+    string,
+    {
+      total: number;
+      noShows: number;
+      waitMinutes: number[];
+      serviceMinutes: number[];
+    }
+  >();
+
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    dayMap.set(d.toISOString().split('T')[0], {
+      total: 0,
+      noShows: 0,
+      waitMinutes: [],
+      serviceMinutes: [],
+    });
+  }
+
+  (tickets ?? []).forEach((t: any) => {
+    const dateKey = new Date(t.created_at).toISOString().split('T')[0];
+    const entry = dayMap.get(dateKey);
+    if (!entry) return;
+
+    entry.total++;
+
+    if (t.status === 'no_show') {
+      entry.noShows++;
+    }
+
+    if (t.serving_started_at) {
+      const waitMs =
+        new Date(t.serving_started_at).getTime() - new Date(t.created_at).getTime();
+      entry.waitMinutes.push(waitMs / 60000);
+    }
+
+    if (t.serving_started_at && t.completed_at) {
+      const serviceMs =
+        new Date(t.completed_at).getTime() - new Date(t.serving_started_at).getTime();
+      entry.serviceMinutes.push(serviceMs / 60000);
+    }
+  });
+
+  return Array.from(dayMap.entries())
+    .map(([date, entry]) => ({
+      date,
+      total_tickets: entry.total,
+      avg_wait_minutes:
+        entry.waitMinutes.length > 0
+          ? roundMetric(
+              entry.waitMinutes.reduce((a, b) => a + b, 0) / entry.waitMinutes.length
+            )
+          : null,
+      avg_service_minutes:
+        entry.serviceMinutes.length > 0
+          ? roundMetric(
+              entry.serviceMinutes.reduce((a, b) => a + b, 0) / entry.serviceMinutes.length
+            )
+          : null,
+      no_show_count: entry.noShows,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ─── No-Show Rate ────────────────────────────────────────────────────────
+
+export async function getNoShowRate(
+  officeId?: string,
+  dateRange?: string
+): Promise<NoShowRateData> {
+  const context = await getAnalyticsContext();
+  const { supabase } = context;
+  const tz = await resolveTimezone(context, officeId);
+  const { start, end } = getDateRange(dateRange, tz);
+  const officeIds = getScopedOfficeIds(context, officeId);
+
+  if (officeIds.length === 0) {
+    return { total_tickets: 0, no_shows: 0, rate: 0 };
+  }
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('status')
+    .in('office_id', officeIds)
+    .gte('created_at', start)
+    .lte('created_at', end);
+
+  const allTickets = tickets ?? [];
+  const total_tickets = allTickets.length;
+  const no_shows = allTickets.filter((t: { status: string }) => t.status === 'no_show').length;
+  const rate = total_tickets > 0 ? roundMetric((no_shows / total_tickets) * 100) ?? 0 : 0;
+
+  return { total_tickets, no_shows, rate };
 }

@@ -43,7 +43,7 @@ export default async function AdminBookingsPage() {
     ? await supabase
         .from('appointments')
         .select(
-          'id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, created_at, status, ticket_id'
+          'id, office_id, department_id, service_id, staff_id, customer_name, customer_phone, customer_email, scheduled_at, created_at, status, ticket_id, calendar_token'
         )
         .in('office_id', officeIds)
         .gte('scheduled_at', historyWindowStart.toISOString())

@@ -547,7 +547,28 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Scan this QR code to follow your place in the queue from your phone.':
       'Scannez ce QR code pour suivre votre place dans la file depuis votre téléphone.',
     'Take Another Ticket': 'Prendre un autre ticket',
-    'Done': 'Terminé'
+    'Done': 'Terminé',
+    'waiting': 'en attente',
+    'No wait': 'Pas d\'attente',
+    'Choose Provider': 'Choisir un prestataire',
+    'Select who you would like to see': 'Sélectionnez la personne que vous souhaitez voir',
+    'First Available': 'Premier disponible',
+    'Fastest option': 'Option la plus rapide',
+    'Provider': 'Prestataire',
+    'Add to Calendar': 'Ajouter au calendrier',
+    'Join Waitlist': 'Rejoindre la liste d\'attente',
+    'Preferred time not available?': 'Heure souhaitée non disponible ?',
+    'You will be notified when a spot opens': 'Vous serez notifié lorsqu\'une place se libère',
+    'Make this recurring': 'Rendre récurrent',
+    'Frequency': 'Fréquence',
+    'Weekly': 'Hebdomadaire',
+    'Every 2 Weeks': 'Toutes les 2 semaines',
+    'Monthly': 'Mensuel',
+    'Repeat for': 'Répéter pendant',
+    'times': 'fois',
+    '{count} {label} booked': '{count} {label} réservés',
+    'Your recurring {booking} series has been created.': 'Votre série de {booking} récurrents a été créée.',
+    'Step {step} of {total}': 'Étape {step} sur {total}'
   },
   ar: {
     'My Counter': 'الكاونتر الخاص بي',
@@ -1085,7 +1106,9 @@ export const messages: Record<AppLocale, Record<string, string>> = {
     'Scan this QR code to follow your place in the queue from your phone.':
       'امسح رمز QR هذا لمتابعة مكانك في الطابور من هاتفك.',
     'Take Another Ticket': 'أخذ تذكرة أخرى',
-    'Done': 'تم'
+    'Done': 'تم',
+    'waiting': 'في الانتظار',
+    'No wait': 'لا انتظار'
   },
 };
 
@@ -2295,4 +2318,23 @@ Object.assign(messages.ar, {
   'Less counter congestion': 'ازدحام أقل عند الكاونتر',
   'Average time saved per patient': 'متوسط الوقت الموفر لكل مريض',
   'Patient satisfaction': 'رضا المرضى',
+  'Choose Provider': 'اختر مقدم الخدمة',
+  'Select who you would like to see': 'اختر الشخص الذي تود مقابلته',
+  'First Available': 'أول متاح',
+  'Fastest option': 'الخيار الأسرع',
+  'Provider': 'مقدم الخدمة',
+  'Add to Calendar': 'إضافة إلى التقويم',
+  'Join Waitlist': 'الانضمام لقائمة الانتظار',
+  'Preferred time not available?': 'الوقت المفضل غير متاح؟',
+  'You will be notified when a spot opens': 'سيتم إشعارك عند توفر مكان',
+  'Make this recurring': 'جعل هذا متكررًا',
+  'Frequency': 'التكرار',
+  'Weekly': 'أسبوعيًا',
+  'Every 2 Weeks': 'كل أسبوعين',
+  'Monthly': 'شهريًا',
+  'Repeat for': 'تكرار لمدة',
+  'times': 'مرات',
+  '{count} {label} booked': 'تم حجز {count} {label}',
+  'Your recurring {booking} series has been created.': 'تم إنشاء سلسلة {booking} المتكررة الخاصة بك.',
+  'Step {step} of {total}': 'الخطوة {step} من {total}',
 });

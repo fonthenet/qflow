@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { getSupabase } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
@@ -77,7 +77,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Modal Component ──────────────────────────────
-function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale, messengerPageId }: {
+function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale, messengerPageId, whatsappPhone }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -85,6 +85,7 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   onClose: () => void;
   locale: DesktopLocale;
   messengerPageId?: string | null;
+  whatsappPhone?: string | null;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -97,6 +98,8 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   const [isPriority, setIsPriority] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<{ id: string; ticket_number: string; qr_token: string } | null>(null);
+  const [customerLookup, setCustomerLookup] = useState<{ visits: number; lastVisit: string; notes?: string } | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState<{ sent: boolean; error?: string } | null>(null);
 
   const deptServices = useMemo(() =>
@@ -140,6 +143,22 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose]);
+
+  // Customer lookup when phone number is entered
+  useEffect(() => {
+    const phone = customerPhone.trim();
+    if (phone.length < 6) { setCustomerLookup(null); return; }
+    setLookupLoading(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`http://localhost:8080/api/customer-lookup?phone=${encodeURIComponent(phone)}&orgId=${encodeURIComponent(officeId)}`, { signal: ctrl.signal })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.visits) setCustomerLookup({ visits: data.visits, lastVisit: data.lastVisit, notes: data.notes }); else setCustomerLookup(null); })
+        .catch(() => setCustomerLookup(null))
+        .finally(() => setLookupLoading(false));
+    }, 500);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [customerPhone, officeId]);
 
   const handleSubmit = async () => {
     if (!selectedDept || submitting) return;
@@ -258,6 +277,36 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
               </p>
             </div>
 
+            {/* WhatsApp / Messenger QR codes */}
+            {(whatsappPhone || messengerPageId) && createdTicket && (
+              <div style={{ margin: '8px 0 0' }}>
+                <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('Get Notified')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{t('Scan to receive updates')}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+                  {whatsappPhone && (
+                    <div style={{ textAlign: 'center' }}>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
+                        alt="WhatsApp" style={{ width: 100, height: 100, borderRadius: 8, border: '1px solid var(--border)' }}
+                      />
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#25D366', marginTop: 4 }}>WhatsApp</div>
+                    </div>
+                  )}
+                  {messengerPageId && (
+                    <div style={{ textAlign: 'center' }}>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
+                        alt="Messenger" style={{ width: 100, height: 100, borderRadius: 8, border: '1px solid var(--border)' }}
+                      />
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#0084FF', marginTop: 4 }}>Messenger</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 onClick={onClose}
@@ -353,6 +402,23 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
                   style={inputStyle}
                 />
               </div>
+
+              {/* Customer lookup result */}
+              {lookupLoading && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t('Looking up customer...')}</div>}
+              {customerLookup && (
+                <div style={{
+                  padding: '8px 12px', borderRadius: 8,
+                  background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
+                  fontSize: 12, color: 'var(--text)',
+                }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {t('Returning customer')} &bull; {t('{count} visits', { count: customerLookup.visits })} &bull; {t('Last: {date}', { date: customerLookup.lastVisit })}
+                  </div>
+                  {customerLookup.notes && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text2)', fontStyle: 'italic' }}>{customerLookup.notes}</div>
+                  )}
+                </div>
+              )}
 
               {/* Reason / Visit Purpose */}
               <div>
@@ -616,6 +682,140 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
   );
 }
 
+function RemoteSupportSection({ t }: { t: (key: string, values?: Record<string, string | number | null | undefined>) => string }) {
+  const [showSupport, setShowSupport] = useState(false);
+  const [rdStatus, setRdStatus] = useState<{ installed: boolean; running: boolean; id: string | null }>({ installed: false, running: false, id: null });
+  const [rdSession, setRdSession] = useState<{ id: string | null } | null>(null);
+  const [rdLoading, setRdLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [dlProgress, setDlProgress] = useState(0);
+
+  useEffect(() => {
+    if (!showSupport) return;
+    (window as any).qf.support?.rustdesk?.status?.().then((s: any) => setRdStatus(s ?? { installed: false, running: false, id: null })).catch(() => {});
+  }, [showSupport]);
+
+  useEffect(() => {
+    if (!downloading) return;
+    const unsub = (window as any).qf.support?.rustdesk?.onDownloadProgress?.((p: any) => {
+      setDlProgress(p.percent ?? 0);
+      if (p.status === 'done') {
+        setDownloading(false);
+        (window as any).qf.support?.rustdesk?.status?.().then((s: any) => setRdStatus(s));
+      }
+    });
+    return unsub;
+  }, [downloading]);
+
+  const downloadRustDesk = async () => {
+    setDownloading(true);
+    setDlProgress(0);
+    try { await (window as any).qf.support?.rustdesk?.download?.(); } catch { setDownloading(false); }
+  };
+
+  const startRustDesk = async () => {
+    setRdLoading(true);
+    try {
+      const res = await (window as any).qf.support?.rustdesk?.start?.();
+      if (res?.ok) setRdSession({ id: res.id });
+    } catch {}
+    setRdLoading(false);
+  };
+
+  const stopRustDesk = async () => {
+    try { await (window as any).qf.support?.rustdesk?.stop?.(); } catch {}
+    setRdSession(null);
+    setRdStatus(s => ({ ...s, running: false }));
+  };
+
+  const copyText = (text: string) => { navigator.clipboard?.writeText(text); };
+
+  return (
+    <div className="sidebar-section">
+      <button
+        onClick={() => setShowSupport((v) => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+          padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+        }}
+      >
+        <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: 0 }}>
+          {t('Remote Support')}
+        </h4>
+        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showSupport ? '▲' : '▼'}</span>
+      </button>
+      {showSupport && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ background: 'var(--surface2)', padding: '12px 14px', borderRadius: 8 }}>
+            {!rdStatus.installed ? (
+              /* Not installed — download */
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 24, marginBottom: 4 }}>🦀</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>RustDesk</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>{t('Full desktop remote control over the internet')}</div>
+                {downloading ? (
+                  <div>
+                    <div style={{ height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ height: '100%', width: `${dlProgress}%`, background: 'var(--primary)', borderRadius: 3, transition: 'width 0.3s' }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t('Downloading...')} {dlProgress}%</div>
+                  </div>
+                ) : (
+                  <button onClick={downloadRustDesk} style={{
+                    width: '100%', padding: '8px', borderRadius: 6, border: 'none',
+                    background: 'var(--primary)', color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                    {t('Download RustDesk')} (~15 MB)
+                  </button>
+                )}
+              </div>
+            ) : rdSession ? (
+              /* Active session — show ID */
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 6 }}>● {t('Session Active')}</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>RustDesk ID</div>
+                <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 3, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums', margin: '4px 0 10px' }}>
+                  {rdSession.id ?? '...'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 10 }}>
+                  {t('Share this ID with your tech support')}
+                </div>
+                <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                  <button onClick={() => copyText(rdSession.id ?? '')} style={{
+                    padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'transparent', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  }}>
+                    {t('Copy')}
+                  </button>
+                  <button onClick={stopRustDesk} style={{
+                    padding: '5px 10px', borderRadius: 6, border: 'none',
+                    background: '#ef4444', color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                    {t('End Session')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Ready to start */
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>RustDesk</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>{t('Full desktop remote control over the internet')}</div>
+                <button onClick={startRustDesk} disabled={rdLoading} style={{
+                  width: '100%', padding: '10px', borderRadius: 6, border: 'none',
+                  background: 'var(--primary)', color: 'white', fontSize: 13, fontWeight: 700,
+                  cursor: rdLoading ? 'default' : 'pointer', opacity: rdLoading ? 0.6 : 1,
+                }}>
+                  {rdLoading ? t('Launching...') : t('Start Support Session')}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
   const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
@@ -652,8 +852,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showNotesField, setShowNotesField] = useState(false);
+  const [ticketNotes, setTicketNotes] = useState('');
+  const [priorityDropdownId, setPriorityDropdownId] = useState<string | null>(null);
+  const [pausedAt, setPausedAt] = useState<number | null>(null);
+  const [pauseElapsed, setPauseElapsed] = useState(0);
   const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
   const [messengerPageId, setMessengerPageId] = useState<string | null>(null);
+  const [whatsappPhone, setWhatsappPhone] = useState<string | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -686,8 +892,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Fetch Messenger Page ID from org branding ───────────────────
   useEffect(() => {
     window.qf.org?.getBranding?.()
-      .then((b: { messengerPageId?: string | null }) => {
+      .then((b: { messengerPageId?: string | null; whatsappPhone?: string | null }) => {
         setMessengerPageId(b?.messengerPageId ?? null);
+        setWhatsappPhone(b?.whatsappPhone ?? null);
       })
       .catch(() => {});
   }, []);
@@ -803,6 +1010,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     return () => { if (channel) getSupabase().then((sb) => sb.removeChannel(channel)); };
   }, [session.desk_id, staffStatus, queuePaused]);
 
+  // ── Pause timer ────────────────────────────────────────────────
+  useEffect(() => {
+    if (queuePaused) {
+      if (!pausedAt) setPausedAt(Date.now());
+      const iv = setInterval(() => setPauseElapsed(pausedAt ? Math.floor((Date.now() - pausedAt) / 1000) : 0), 1000);
+      return () => clearInterval(iv);
+    } else {
+      setPausedAt(null);
+      setPauseElapsed(0);
+    }
+  }, [queuePaused, pausedAt]);
+
   // ── Track active ticket (called/serving by this desk) ──────────
 
   useEffect(() => {
@@ -850,6 +1069,25 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       if (servingTimerRef.current) clearInterval(servingTimerRef.current);
     };
   }, [tickets, session.desk_id]);
+
+  // ── Close priority dropdown on outside click ───────────────────
+  useEffect(() => {
+    if (!priorityDropdownId) return;
+    const handler = () => setPriorityDropdownId(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [priorityDropdownId]);
+
+  // ── Sync notes when active ticket changes ──────────────────────
+  useEffect(() => {
+    if (activeTicket?.status === 'serving') {
+      setTicketNotes((activeTicket as any).notes ?? '');
+      setShowNotesField(!!(activeTicket as any).notes);
+    } else {
+      setTicketNotes('');
+      setShowNotesField(false);
+    }
+  }, [activeTicket?.id, activeTicket?.status]);
 
   // ── Actions ─────────────────────────────────────────────────────
 
@@ -1434,6 +1672,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {Math.floor(servingElapsed / 60).toString().padStart(2, '0')}:{(servingElapsed % 60).toString().padStart(2, '0')}
                 </div>
 
+                {/* Collapsible Notes Field */}
+                <div style={{ width: '100%', maxWidth: 400, margin: '0 auto 12px' }}>
+                  {!showNotesField ? (
+                    <button
+                      onClick={() => setShowNotesField(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                        border: '1px solid var(--border)', borderRadius: 8, background: 'transparent',
+                        color: 'var(--text2)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      + {t('Add Note')}
+                    </button>
+                  ) : (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', marginBottom: 4 }}>
+                        {t('Notes')}
+                      </label>
+                      <textarea
+                        value={ticketNotes}
+                        onChange={(e) => setTicketNotes(e.target.value)}
+                        onBlur={() => {
+                          if (activeTicket) updateTicketStatus(activeTicket.id, { notes: ticketNotes.trim() || null });
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        placeholder={t('Add a note about this customer...')}
+                        rows={2}
+                        style={{
+                          width: '100%', padding: '8px 10px', border: '1px solid var(--border)',
+                          borderRadius: 8, background: 'var(--surface2)', color: 'var(--text)',
+                          fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div className="active-actions">
                   <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
                     {t('Complete Service')} <span className="shortcut-hint">F10</span>
@@ -1476,9 +1752,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   cursor: 'pointer', fontSize: 12, fontWeight: 600,
                   color: queuePaused ? '#f59e0b' : '#f97316',
                 }}
-                aria-label={queuePaused ? t('Resume queue') : t('Pause queue')}
+                aria-label={queuePaused ? t('Resume') : t('Pause')}
               >
-                {queuePaused ? `▶ ${t('Resume queue')}` : `⏸ ${t('Pause queue')}`} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
+                {queuePaused ? `▶ ${t('Resume')}` : `⏸ ${t('Pause')}`}
+                {queuePaused && pauseElapsed > 0 && <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8 }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</span>}
+                {!queuePaused && waiting.length > 0 && <span style={{ background: 'rgba(0,0,0,0.12)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>{waiting.length}</span>}
+                <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
               </button>
             )}
             {/* In-House Booking pill */}
@@ -1552,10 +1831,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <div className="idle-panel">
             {queuePaused || staffStatus !== 'available' ? (
               <>
-                <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : staffStatus === 'away' ? '#ef4444' : '#64748b' }}>
-                  {staffStatus === 'on_break' ? '☕' : staffStatus === 'away' ? '🚫' : '⏸'}
-                </div>
+                {(staffStatus === 'on_break' || staffStatus === 'away') && (
+                  <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444' }}>
+                    {staffStatus === 'on_break' ? '☕' : '🚫'}
+                  </div>
+                )}
                 <h2>{staffStatus === 'on_break' ? t('On Break') : staffStatus === 'away' ? t('Away') : t('Queue Paused')}</h2>
+                {pauseElapsed > 0 && <p style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', margin: '4px 0' }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</p>}
                 <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
                 <button
                   className="btn-primary btn-xl"
@@ -1645,6 +1927,39 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {ticket.source === 'kiosk' && <span className="badge kiosk">{translate(locale, 'Kiosk')}</span>}
                   {ticket.source === 'in_house' && <span className="badge in-house">{translate(locale, 'In-House')}</span>}
                   {ticket.is_remote && (!ticket.source || ticket.source === 'walk_in') && <span className="badge remote">{translate(locale, 'Remote')}</span>}
+                </div>
+                {/* Priority upgrade */}
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <button
+                    className="btn-sm"
+                    style={{ padding: '2px 6px', fontSize: 13, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text3)', cursor: 'pointer', borderRadius: 4, lineHeight: 1 }}
+                    title={translate(locale, 'Set Priority')}
+                    onClick={(e) => { e.stopPropagation(); setPriorityDropdownId(priorityDropdownId === ticket.id ? null : ticket.id); }}
+                    aria-label={`${translate(locale, 'Set Priority')} ${ticket.ticket_number}`}
+                  >
+                    &#9650;
+                  </button>
+                  {priorityDropdownId === ticket.id && (
+                    <div style={{
+                      position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 20,
+                      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.3)', overflow: 'hidden', minWidth: 110,
+                    }}>
+                      {[{ label: translate(locale, 'Normal'), value: 0 }, { label: translate(locale, 'Urgent'), value: 2 }, { label: translate(locale, 'VIP'), value: 3 }].map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={(e) => { e.stopPropagation(); updateTicketStatus(ticket.id, { priority: opt.value }); setPriorityDropdownId(null); showToast(translate(locale, 'Priority set to {level}', { level: opt.label }), 'info'); }}
+                          style={{
+                            display: 'block', width: '100%', padding: '8px 14px', border: 'none',
+                            background: ticket.priority === opt.value ? 'var(--surface2)' : 'transparent',
+                            color: 'var(--text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                          }}
+                        >
+                          {opt.label} {ticket.priority === opt.value ? '✓' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {session.desk_id && !activeTicket && !queuePaused && staffStatus === 'available' && (
                   <button
@@ -1757,6 +2072,47 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
         </div>
 
+
+        {/* Active Desks */}
+        {(() => {
+          // Show other desks that have active tickets (called/serving)
+          const otherDeskTickets = [...called, ...serving].filter(tk => tk.desk_id && tk.desk_id !== session.desk_id);
+          const deskMap = new Map<string, { deskName: string; ticket: Ticket }>();
+          for (const tk of otherDeskTickets) {
+            if (tk.desk_id && !deskMap.has(tk.desk_id)) {
+              deskMap.set(tk.desk_id, { deskName: names.desks[tk.desk_id] ?? t('desk'), ticket: tk });
+            }
+          }
+          if (deskMap.size === 0) return null;
+          return (
+            <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
+              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, margin: '0 0 8px' }}>
+                {t('Active Desks')}
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {Array.from(deskMap.entries()).map(([deskId, { deskName, ticket }]) => (
+                  <div key={deskId} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                    borderRadius: 8, background: 'var(--surface2)', fontSize: 12,
+                  }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: ticket.status === 'serving' ? '#22c55e' : '#3b82f6',
+                    }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--text)' }}>{deskName}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {ticket.ticket_number} &middot; {ticket.status === 'serving' ? t('Serving') : t('Called')}
+                        {getTicketCustomerName(ticket.customer_data) ? ` &middot; ${getTicketCustomerName(ticket.customer_data)}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Recent Activity — collapsed by default */}
         {recentActivity.length > 0 && (
           <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
@@ -1804,11 +2160,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           const isLocalNetwork = /^(192\.168|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost$)/.test(h);
           const isRemote = !!(window as any).__QF_HTTP_MODE__ && !isLocalNetwork;
 
-          // Build device→URL mapping
+          // Build device→URL mapping (by normalized name + by type)
           const deviceMap = new Map<string, any>();
+          const deviceByType = new Map<string, any>();
           for (const d of deviceStatuses) {
             deviceMap.set(d.name?.toLowerCase().replace(/\s+/g, '_'), d);
+            if (d.type) deviceByType.set(d.type, d);
           }
+          const findDevice = (names: string[], type: string) =>
+            names.reduce<any>((found, n) => found ?? deviceMap.get(n), null) ?? deviceByType.get(type);
 
           const items = [
             {
@@ -1818,7 +2178,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               publicUrl: 'https://qflo.net/station',
               publicLabel: 'https://qflo.net/station',
               icon: '🖥️',
-              device: deviceMap.get('qflo_station') ?? deviceMap.get('station'),
+              device: findDevice(['qflo_station', 'station'], 'station'),
             },
             {
               label: t('Kiosk'),
@@ -1827,7 +2187,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               publicUrl: publicLinks.kioskUrl,
               publicLabel: publicLinks.kioskUrl ? getFriendlyPublicUrlLabel(publicLinks.kioskUrl, 'kiosk') : null,
               icon: '🎫',
-              device: deviceMap.get('local_kiosk') ?? deviceMap.get('kiosk'),
+              device: findDevice(['local_kiosk', 'kiosk'], 'kiosk'),
             },
             {
               label: t('Display'),
@@ -1836,7 +2196,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               publicUrl: publicLinks.displayUrl,
               publicLabel: publicLinks.displayUrl ? getFriendlyPublicUrlLabel(publicLinks.displayUrl, 'display') : null,
               icon: '📺',
-              device: null,
+              device: findDevice(['waiting_room_display', 'display'], 'display'),
             },
           ];
           const visibleItems = isRemote ? items.filter((item) => item.publicUrl) : items;
@@ -1896,7 +2256,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                             style={{
                               marginTop: isRemote ? 0 : 4,
                               background: 'var(--surface2)', padding: '5px 10px', borderRadius: 6,
-                              fontFamily: 'monospace', fontSize: 11.5, fontWeight: 600, color: 'var(--primary)',
+                              fontFamily: 'monospace', fontSize: 11.5, fontWeight: 600, color: '#16a34a',
                               wordBreak: 'break-all', userSelect: 'all', cursor: 'pointer',
                             }}
                             title={t('Click to open')}
@@ -1918,6 +2278,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             </div>
           );
         })()}
+
+        {/* Remote Support */}
+        {!isSmallScreen && <RemoteSupportSection t={t} />}
       </div>
 
       {/* Transfer modal */}
@@ -1947,6 +2310,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           onBook={bookInHouse}
           onClose={() => setShowBookingModal(false)}
           messengerPageId={messengerPageId}
+          whatsappPhone="+213551176598"
         />
       )}
 
