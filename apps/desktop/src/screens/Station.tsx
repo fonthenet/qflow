@@ -1349,11 +1349,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     setBroadcastResult(null);
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
-      console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id, 'user:', session.user_id);
+      console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
+      // Get current Supabase session for JWT auth
+      const sb = await getSupabase();
+      const { data: { session: sbSession } } = await sb.auth.getSession();
+      const accessToken = sbSession?.access_token ?? '';
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
           'x-org-id': session.organization_id,
           'x-user-id': session.user_id,
         },

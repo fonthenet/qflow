@@ -68,12 +68,35 @@ export async function POST(request: NextRequest) {
     const isServiceKey = serviceKey && safeCompare(bearerToken, serviceKey);
     const isWebhookSecret = webhookSecret && safeCompare(bearerToken, webhookSecret);
 
+    // Try Supabase JWT auth (from desktop app)
+    let isJwtAuth = false;
+    let jwtUserId = '';
+    if (!isServiceKey && !isWebhookSecret && bearerToken) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser(bearerToken);
+        if (user) {
+          jwtUserId = user.id;
+          const { data: staff } = await supabase
+            .from('staff')
+            .select('id, organization_id')
+            .eq('auth_user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          if (staff) {
+            isJwtAuth = true;
+          }
+        }
+      } catch {
+        // Invalid JWT, continue to other auth methods
+      }
+    }
+
     // Internal call from server action: validate x-org-id + x-user-id
     const internalOrgId = request.headers.get('x-org-id') ?? '';
     const internalUserId = request.headers.get('x-user-id') ?? '';
     let isInternalCall = false;
 
-    if (!isServiceKey && !isWebhookSecret && internalOrgId && internalUserId) {
+    if (!isServiceKey && !isWebhookSecret && !isJwtAuth && internalOrgId && internalUserId) {
       // Verify the user is a staff member of this organization
       const { data: staff } = await supabase
         .from('staff')
@@ -85,10 +108,13 @@ export async function POST(request: NextRequest) {
 
       if (staff) {
         isInternalCall = true;
+      } else {
+        console.warn('[broadcast] Internal auth failed: no staff found for user', internalUserId, 'org', internalOrgId);
       }
     }
 
-    if (!isServiceKey && !isWebhookSecret && !isInternalCall) {
+    if (!isServiceKey && !isWebhookSecret && !isJwtAuth && !isInternalCall) {
+      console.warn('[broadcast] Auth failed. Headers present: org=', !!internalOrgId, 'user=', !!internalUserId, 'bearer=', !!bearerToken);
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
@@ -263,7 +289,7 @@ export async function POST(request: NextRequest) {
         message: template ? template.title : (message ?? '').slice(0, 500),
         recipients_count: sentCount,
         channel: 'all',
-        sent_by: isInternalCall ? internalUserId : null,
+        sent_by: isJwtAuth ? jwtUserId : isInternalCall ? internalUserId : null,
       });
     } catch {
       // Non-critical: log table might not exist yet
