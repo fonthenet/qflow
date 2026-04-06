@@ -76,18 +76,17 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
   );
 }
 
-// ── In-House Booking Modal Component ──────────────────────────────
-function InHouseBookingModal({ departments, services, officeId, onBook, onClose, locale, messengerPageId, whatsappPhone }: {
+// ── In-House Booking Panel (docked at bottom of main area) ───────
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
   onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string }; priority: number; source: string }) => Promise<any>;
-  onClose: () => void;
   locale: DesktopLocale;
   messengerPageId?: string | null;
   whatsappPhone?: string | null;
+  onCollapse: () => void;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
   const [selectedDept, setSelectedDept] = useState(departments.length === 1 ? departments[0][0] : '');
@@ -107,18 +106,14 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
     [services, selectedDept]
   );
 
-  // Focus name input only once on mount
   useEffect(() => {
     setTimeout(() => nameRef.current?.focus(), 50);
   }, []);
 
-  // Listen for ticket number rewrite after sync (L-G-007 → G-026)
-  // Uses both event listener AND polling fallback to catch rewrites quickly
+  // Listen for ticket number rewrite after sync
   useEffect(() => {
     if (!createdTicket?.id) return;
-    // Skip if already rewritten (no L- prefix)
     if (!createdTicket.ticket_number.startsWith('L-')) return;
-
     const checkRewrite = async () => {
       try {
         const fresh = await window.qf.db.getTickets([officeId], ['waiting', 'called', 'serving']);
@@ -128,21 +123,10 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
         }
       } catch { /* ignore */ }
     };
-
-    // Event-driven: listen for sync changes
     const unsub = window.qf.tickets.onChange(checkRewrite);
-
-    // Polling fallback: check every 1s in case event is missed
     const iv = setInterval(checkRewrite, 1000);
-
     return () => { unsub(); clearInterval(iv); };
   }, [createdTicket?.id, createdTicket?.ticket_number, officeId]);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
 
   // Customer lookup when phone number is entered
   useEffect(() => {
@@ -153,7 +137,11 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
     const timer = setTimeout(() => {
       fetch(`http://localhost:8080/api/customer-lookup?phone=${encodeURIComponent(phone)}&orgId=${encodeURIComponent(officeId)}`, { signal: ctrl.signal })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data?.visits) setCustomerLookup({ visits: data.visits, lastVisit: data.lastVisit, notes: data.notes }); else setCustomerLookup(null); })
+        .then(data => {
+          if (data?.customer) setCustomerLookup({ visits: data.customer.visit_count, lastVisit: data.customer.last_visit_at, notes: data.customer.notes });
+          else if (data?.visits) setCustomerLookup({ visits: data.visits, lastVisit: data.lastVisit, notes: data.notes });
+          else setCustomerLookup(null);
+        })
         .catch(() => setCustomerLookup(null))
         .finally(() => setLookupLoading(false));
     }, 500);
@@ -175,15 +163,12 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
         priority: isPriority ? 2 : 0,
         source: 'in_house',
       });
-      console.log('[booking-modal] onBook result:', JSON.stringify(result));
       if (result?.ticket_number) {
         setCreatedTicket({ id: result.id, ticket_number: result.ticket_number, qr_token: result.qr_token });
         setWhatsappStatus(result.whatsappStatus ?? null);
-      } else {
-        console.error('[booking-modal] No ticket_number in result:', result);
       }
     } catch (err) {
-      console.error('[booking-modal] handleSubmit error:', err);
+      console.error('[booking-panel] handleSubmit error:', err);
     } finally {
       setSubmitting(false);
     }
@@ -200,281 +185,228 @@ function InHouseBookingModal({ departments, services, officeId, onBook, onClose,
   };
 
   const trackUrl = createdTicket ? `https://qflo.net/q/${createdTicket.qr_token}` : '';
-  const qrUrl = createdTicket ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(trackUrl)}` : '';
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', border: '1px solid var(--border)',
-    borderRadius: 8, background: 'var(--surface2)', color: 'var(--text)',
-    fontSize: 14, outline: 'none', boxSizing: 'border-box',
+    width: '100%', padding: '7px 10px', border: '1px solid var(--border)',
+    borderRadius: 6, background: 'var(--surface2)', color: 'var(--text)',
+    fontSize: 13, outline: 'none', boxSizing: 'border-box',
   };
-
-  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 4 };
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', marginBottom: 2 };
 
   return (
     <div
+      className="booking-panel"
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
+        borderTop: '1px solid var(--border)',
+        background: 'var(--surface)',
+        maxHeight: 320, overflowY: 'auto',
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-label={t('In-House Booking')}
-        style={{
-          background: 'var(--surface)', borderRadius: 12, padding: 24,
-          minWidth: 420, maxWidth: 540, width: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-          outline: 'none',
-        }}
-      >
-        {createdTicket ? (
-          /* ── Confirmation Screen ── */
-          <>
+      {/* Header bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 16px', borderBottom: '1px solid var(--border)',
+        position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            width: 24, height: 24, borderRadius: 6,
+            background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 13, fontWeight: 700,
+          }}>+</span>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{t('In-House Booking')}</span>
+          <span className="shortcut-hint">F6</span>
+        </div>
+        <button
+          onClick={onCollapse}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, padding: '2px 6px', borderRadius: 4 }}
+          title={t('Hide')}
+        >
+          ✕
+        </button>
+      </div>
+
+      {createdTicket ? (
+        /* ── Compact Confirmation ── */
+        <div style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>&#10003;</div>
-              <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: '#22c55e' }}>
-                {t('Ticket Created')}
-              </h3>
+              <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 2 }}>✓ {t('Ticket Created')}</div>
               <div style={{
-                fontSize: 28, fontWeight: 800, color: '#8b5cf6',
-                background: 'rgba(139,92,246,0.1)', borderRadius: 10,
-                padding: '12px 24px', margin: '12px 0', display: 'inline-block',
+                fontSize: 22, fontWeight: 800, color: '#8b5cf6',
+                background: 'rgba(139,92,246,0.1)', borderRadius: 8,
+                padding: '6px 16px',
               }}>
                 {createdTicket.ticket_number}
               </div>
-              {customerName.trim() && (
-                <p style={{ margin: '4px 0', fontSize: 13, color: 'var(--text2)' }}>{customerName.trim()}</p>
-              )}
+              {customerName.trim() && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{customerName.trim()}</div>}
             </div>
 
-            {/* WhatsApp status feedback */}
             {whatsappStatus && (
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '8px 12px', borderRadius: 8, margin: '10px 0 0',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 10px', borderRadius: 6, fontSize: 11,
                 background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
                 border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
               }}>
-                <span style={{ fontSize: 16 }}>{whatsappStatus.sent ? '\u2705' : '\u26A0\uFE0F'}</span>
-                <div style={{ fontSize: 12 }}>
-                  <div style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
-                    {whatsappStatus.sent ? t('WhatsApp notification sent') : t('WhatsApp notification failed')}
-                  </div>
-                  {!whatsappStatus.sent && whatsappStatus.error && (
-                    <div style={{ color: 'var(--text3)', marginTop: 2 }}>{whatsappStatus.error}</div>
-                  )}
-                </div>
+                <span>{whatsappStatus.sent ? '\u2705' : '\u26A0\uFE0F'}</span>
+                <span style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
+                  {whatsappStatus.sent ? 'WhatsApp ✓' : 'WhatsApp ✗'}
+                </span>
               </div>
             )}
 
-            {/* QR Code + URL */}
-            <div style={{ textAlign: 'center', margin: '16px 0' }}>
-              <img src={qrUrl} alt="QR" style={{ width: 140, height: 140, borderRadius: 8, border: '1px solid var(--border)' }} />
-              <p style={{ fontSize: 11, color: 'var(--text3)', margin: '8px 0 0', wordBreak: 'break-all' }}>
-                {trackUrl}
-              </p>
+            {/* QR + track link */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`}
+                alt="QR" style={{ width: 56, height: 56, borderRadius: 6, border: '1px solid var(--border)' }}
+              />
+              <div style={{ fontSize: 10, color: 'var(--text3)', maxWidth: 140, wordBreak: 'break-all' }}>{trackUrl}</div>
             </div>
 
-            {/* WhatsApp / Messenger QR codes */}
-            {(whatsappPhone || messengerPageId) && createdTicket && (
-              <div style={{ margin: '8px 0 0' }}>
-                <div style={{ textAlign: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('Get Notified')}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{t('Scan to receive updates')}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-                  {whatsappPhone && (
-                    <div style={{ textAlign: 'center' }}>
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
-                        alt="WhatsApp" style={{ width: 100, height: 100, borderRadius: 8, border: '1px solid var(--border)' }}
-                      />
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#25D366', marginTop: 4 }}>WhatsApp</div>
-                    </div>
-                  )}
-                  {messengerPageId && (
-                    <div style={{ textAlign: 'center' }}>
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
-                        alt="Messenger" style={{ width: 100, height: 100, borderRadius: 8, border: '1px solid var(--border)' }}
-                      />
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#0084FF', marginTop: 4 }}>Messenger</div>
-                      <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 2 }}>Send: <strong>JOIN {createdTicket.qr_token}</strong></div>
-                    </div>
-                  )}
-                </div>
+            {/* Messaging QRs - compact */}
+            {whatsappPhone && createdTicket && (
+              <div style={{ textAlign: 'center' }}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
+                  alt="WA" style={{ width: 48, height: 48, borderRadius: 4, border: '1px solid var(--border)' }}
+                />
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#25D366', marginTop: 2 }}>WhatsApp</div>
+              </div>
+            )}
+            {messengerPageId && createdTicket && (
+              <div style={{ textAlign: 'center' }}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
+                  alt="Msg" style={{ width: 48, height: 48, borderRadius: 4, border: '1px solid var(--border)' }}
+                />
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#0084FF', marginTop: 2 }}>Messenger</div>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                onClick={onClose}
-                style={{
-                  flex: 1, padding: '10px', border: '1px solid var(--border)',
-                  borderRadius: 8, background: 'transparent', color: 'var(--text2)',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                }}
+            <button
+              onClick={handleNewTicket}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 6,
+                background: '#8b5cf6', color: '#fff', cursor: 'pointer',
+                fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+              }}
+            >
+              + {t('New Ticket')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* ── Compact Booking Form (2 rows) ── */
+        <div style={{ padding: '10px 16px' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            {/* Row 1: Department + Service + Name + Phone */}
+            <div style={{ flex: '1 1 130px', minWidth: 120 }}>
+              <label style={labelStyle}>{t('Department')} *</label>
+              <select
+                value={selectedDept}
+                onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
               >
-                {t('Close')}
-              </button>
-              <button
-                onClick={handleNewTicket}
-                style={{
-                  flex: 1, padding: '10px', border: 'none',
-                  borderRadius: 8, background: '#8b5cf6', color: '#fff',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 700,
-                }}
-              >
-                + {t('New Ticket')}
-              </button>
-            </div>
-          </>
-        ) : (
-          /* ── Booking Form ── */
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <span style={{
-                width: 32, height: 32, borderRadius: 8,
-                background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 16, fontWeight: 700, flexShrink: 0,
-              }}>+</span>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{t('In-House Booking')}</h3>
+                <option value="">{t('Select...')}</option>
+                {departments.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Department */}
-              <div>
-                <label style={labelStyle}>{t('Department')} *</label>
+            {selectedDept && deptServices.length > 0 && (
+              <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+                <label style={labelStyle}>{t('Service')}</label>
                 <select
-                  value={selectedDept}
-                  onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                 >
-                  <option value="">{t('Select Department')}</option>
-                  {departments.map(([id, name]) => (
-                    <option key={id} value={id}>{name}</option>
+                  <option value="">{t('General')}</option>
+                  {deptServices.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
+            )}
 
-              {/* Service (if department has services) */}
-              {selectedDept && deptServices.length > 0 && (
-                <div>
-                  <label style={labelStyle}>{t('Service')}</label>
-                  <select
-                    value={selectedService}
-                    onChange={(e) => setSelectedService(e.target.value)}
-                    style={{ ...inputStyle, cursor: 'pointer' }}
-                  >
-                    <option value="">{t('General')}</option>
-                    {deptServices.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Customer Name */}
-              <div>
-                <label style={labelStyle}>{t('Customer Name')}</label>
-                <input
-                  ref={nameRef}
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder={t('Enter customer name')}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Customer Phone */}
-              <div>
-                <label style={labelStyle}>{t('Customer Phone')}</label>
-                <input
-                  type="tel"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder={t('Enter phone number')}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Customer lookup result */}
-              {lookupLoading && <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t('Looking up customer...')}</div>}
-              {customerLookup && (
-                <div style={{
-                  padding: '8px 12px', borderRadius: 8,
-                  background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
-                  fontSize: 12, color: 'var(--text)',
-                }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {t('Returning customer')} &bull; {t('{count} visits', { count: customerLookup.visits })} &bull; {t('Last: {date}', { date: customerLookup.lastVisit })}
-                  </div>
-                  {customerLookup.notes && (
-                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text2)', fontStyle: 'italic' }}>{customerLookup.notes}</div>
-                  )}
-                </div>
-              )}
-
-              {/* Reason / Visit Purpose */}
-              <div>
-                <label style={labelStyle}>{t('Reason for Visit')}</label>
-                <input
-                  type="text"
-                  value={customerReason}
-                  onChange={(e) => setCustomerReason(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder={t('Enter reason for visit')}
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Priority toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text2)' }}>
-                <input
-                  type="checkbox"
-                  checked={isPriority}
-                  onChange={(e) => setIsPriority(e.target.checked)}
-                  style={{ width: 16, height: 16, accentColor: '#f59e0b' }}
-                />
-                {t('Priority Customer')}
-              </label>
+            <div style={{ flex: '1 1 130px', minWidth: 110 }}>
+              <label style={labelStyle}>{t('Name')}</label>
+              <input
+                ref={nameRef}
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                placeholder={t('Customer name')}
+                style={inputStyle}
+              />
             </div>
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button
-                onClick={onClose}
-                style={{
-                  flex: 1, padding: '10px', border: '1px solid var(--border)',
-                  borderRadius: 8, background: 'transparent', color: 'var(--text2)',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                }}
-              >
-                {t('Cancel')}
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!selectedDept || submitting}
-                style={{
-                  flex: 1, padding: '10px', border: 'none',
-                  borderRadius: 8, background: (selectedDept && !submitting) ? '#8b5cf6' : 'var(--surface2)',
-                  color: (selectedDept && !submitting) ? '#fff' : 'var(--text3)',
-                  cursor: (selectedDept && !submitting) ? 'pointer' : 'not-allowed',
-                  fontSize: 13, fontWeight: 700,
-                }}
-              >
-                {submitting ? t('Creating...') : t('Create Ticket')}
-              </button>
+            <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+              <label style={labelStyle}>{t('Phone')}</label>
+              <input
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                placeholder={t('Phone number')}
+                style={inputStyle}
+              />
             </div>
-          </>
-        )}
-      </div>
+
+            <div style={{ flex: '1 1 130px', minWidth: 110 }}>
+              <label style={labelStyle}>{t('Reason')}</label>
+              <input
+                type="text"
+                value={customerReason}
+                onChange={(e) => setCustomerReason(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                placeholder={t('Reason for visit')}
+                style={inputStyle}
+              />
+            </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', paddingBottom: 4 }}>
+              <input type="checkbox" checked={isPriority} onChange={(e) => setIsPriority(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f59e0b' }} />
+              {t('Priority')}
+            </label>
+
+            <button
+              onClick={handleSubmit}
+              disabled={!selectedDept || submitting}
+              style={{
+                padding: '7px 18px', border: 'none', borderRadius: 6,
+                background: (selectedDept && !submitting) ? '#8b5cf6' : 'var(--surface2)',
+                color: (selectedDept && !submitting) ? '#fff' : 'var(--text3)',
+                cursor: (selectedDept && !submitting) ? 'pointer' : 'not-allowed',
+                fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+              }}
+            >
+              {submitting ? '...' : t('Create Ticket')}
+            </button>
+          </div>
+
+          {/* Customer lookup inline */}
+          {lookupLoading && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 6 }}>{t('Looking up customer...')}</div>}
+          {customerLookup && (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '4px 10px', borderRadius: 6, marginTop: 6,
+              background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
+              fontSize: 11, color: 'var(--text)',
+            }}>
+              <span style={{ fontWeight: 600 }}>
+                {t('Returning customer')} &bull; {t('{count} visits', { count: customerLookup.visits })}
+              </span>
+              {customerLookup.notes && <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>{customerLookup.notes}</span>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -867,6 +799,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
   const [messengerPageId, setMessengerPageId] = useState<string | null>(null);
   const [whatsappPhone, setWhatsappPhone] = useState<string | null>(null);
+  const [customerHistory, setCustomerHistory] = useState<{ customer: any; recent_tickets: any[] } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1084,6 +1018,28 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
   }, [priorityDropdownId]);
+
+  // ── Fetch customer history when serving a ticket with phone ─────
+  useEffect(() => {
+    const phone = activeTicket ? getTicketCustomerPhone(activeTicket.customer_data) : null;
+    if (!phone || !activeTicket || activeTicket.status !== 'serving') {
+      setCustomerHistory(null);
+      setShowHistory(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    fetch(`http://localhost:8080/api/customer-lookup?phone=${encodeURIComponent(phone)}&orgId=${encodeURIComponent(session.office_id)}`, { signal: ctrl.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.customer || (data?.recent_tickets && data.recent_tickets.length > 0)) {
+          setCustomerHistory(data);
+        } else {
+          setCustomerHistory(null);
+        }
+      })
+      .catch(() => setCustomerHistory(null));
+    return () => ctrl.abort();
+  }, [activeTicket?.id, activeTicket?.status]);
 
   // ── Sync notes when active ticket changes ──────────────────────
   useEffect(() => {
@@ -1679,8 +1635,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {Math.floor(servingElapsed / 60).toString().padStart(2, '0')}:{(servingElapsed % 60).toString().padStart(2, '0')}
                 </div>
 
-                {/* Collapsible Notes Field */}
-                <div style={{ width: '100%', maxWidth: 400, margin: '0 auto 12px' }}>
+                {/* Notes + Customer History row */}
+                <div style={{ width: '100%', maxWidth: 500, margin: '0 auto 12px', display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  {/* Notes toggle */}
                   {!showNotesField ? (
                     <button
                       onClick={() => setShowNotesField(true)}
@@ -1693,7 +1650,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       + {t('Add Note')}
                     </button>
                   ) : (
-                    <div>
+                    <div style={{ flex: '1 1 250px' }}>
                       <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', marginBottom: 4 }}>
                         {t('Notes')}
                       </label>
@@ -1715,7 +1672,76 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       />
                     </div>
                   )}
+
+                  {/* Customer History toggle */}
+                  {customerHistory && (
+                    <button
+                      onClick={() => setShowHistory(v => !v)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                        border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8,
+                        background: showHistory ? 'rgba(139,92,246,0.12)' : 'transparent',
+                        color: '#8b5cf6', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      {t('History')} ({customerHistory.customer?.visit_count ?? customerHistory.recent_tickets?.length ?? 0})
+                      <span style={{ fontSize: 9 }}>{showHistory ? '▲' : '▼'}</span>
+                    </button>
+                  )}
                 </div>
+
+                {/* Customer History Panel */}
+                {showHistory && customerHistory && (
+                  <div style={{
+                    width: '100%', maxWidth: 500, margin: '0 auto 12px',
+                    padding: '10px 14px', borderRadius: 8,
+                    background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)',
+                  }}>
+                    {customerHistory.customer && (
+                      <div style={{ display: 'flex', gap: 12, marginBottom: 8, fontSize: 12, color: 'var(--text)' }}>
+                        <div><strong>{t('Visits:')}</strong> {customerHistory.customer.visit_count ?? 0}</div>
+                        {customerHistory.customer.last_visit_at && (
+                          <div><strong>{t('Last:')}</strong> {new Date(customerHistory.customer.last_visit_at).toLocaleDateString()}</div>
+                        )}
+                        {customerHistory.customer.tags && customerHistory.customer.tags.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {(typeof customerHistory.customer.tags === 'string' ? JSON.parse(customerHistory.customer.tags) : customerHistory.customer.tags).map((tag: string, i: number) => (
+                              <span key={i} style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(139,92,246,0.15)', fontSize: 10, fontWeight: 600 }}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {customerHistory.customer?.notes && (
+                      <div style={{ fontSize: 11, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 8 }}>
+                        {customerHistory.customer.notes}
+                      </div>
+                    )}
+                    {customerHistory.recent_tickets && customerHistory.recent_tickets.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          {t('Recent Visits')}
+                        </div>
+                        {customerHistory.recent_tickets.map((rt: any, i: number) => (
+                          <div key={i} style={{
+                            display: 'flex', gap: 8, alignItems: 'center',
+                            padding: '4px 0', borderTop: i > 0 ? '1px solid rgba(139,92,246,0.1)' : 'none',
+                            fontSize: 11, color: 'var(--text2)',
+                          }}>
+                            <span style={{ fontWeight: 700, color: 'var(--text)', minWidth: 70 }}>{rt.ticket_number}</span>
+                            <span>{rt.department ?? ''}{rt.service ? ` / ${rt.service}` : ''}</span>
+                            <span style={{ marginLeft: 'auto', color: 'var(--text3)', fontSize: 10 }}>
+                              {new Date(rt.created_at).toLocaleDateString()} &middot;{' '}
+                              <span style={{ color: rt.status === 'served' ? '#22c55e' : rt.status === 'cancelled' ? '#ef4444' : 'var(--text3)' }}>
+                                {rt.status}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="active-actions">
                   <button className="btn-success btn-lg" onClick={() => complete(activeTicket.id)} title="F10">
@@ -1871,6 +1897,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             )}
           </div>
           </>
+        )}
+
+        {/* Docked In-House Booking Panel */}
+        {showBookingModal && session.desk_id && (
+          <InHouseBookingPanel
+            locale={locale}
+            departments={Object.entries(names.departments)}
+            services={allServices}
+            officeId={session.office_id}
+            onBook={bookInHouse}
+            onCollapse={() => setShowBookingModal(false)}
+            messengerPageId={messengerPageId}
+            whatsappPhone="+213551176598"
+          />
         )}
       </div>
 
@@ -2307,19 +2347,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         />
       )}
 
-      {/* In-House Booking Modal */}
-      {showBookingModal && (
-        <InHouseBookingModal
-          locale={locale}
-          departments={Object.entries(names.departments)}
-          services={allServices}
-          officeId={session.office_id}
-          onBook={bookInHouse}
-          onClose={() => setShowBookingModal(false)}
-          messengerPageId={messengerPageId}
-          whatsappPhone="+213551176598"
-        />
-      )}
+      {/* In-House Booking Modal removed — now docked as panel in station-main */}
 
       {/* Toast notification */}
       {toast && (

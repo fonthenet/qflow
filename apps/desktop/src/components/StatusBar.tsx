@@ -183,7 +183,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
     if (updateStatus.status === 'checking') {
       return (
         <span className="update-badge info" title={updateStatus.message ?? undefined}>
-          {t('Checking for updates...')}
+          {t('Checking...')}
         </span>
       );
     }
@@ -191,7 +191,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
     if (updateStatus.status === 'no_update') {
       return (
         <button className="update-badge neutral" onClick={handleCheckForUpdates} title={updateStatus.message ?? undefined}>
-          {t('No updates available')}
+          {t('Up to date')}
         </button>
       );
     }
