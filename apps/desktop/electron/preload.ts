@@ -70,6 +70,11 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('settings:locale-changed', handler);
       return () => ipcRenderer.removeListener('settings:locale-changed', handler);
     },
+    onOpenSettings: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('menu:open-settings', handler);
+      return () => ipcRenderer.removeListener('menu:open-settings', handler);
+    },
   },
 
   // Connection

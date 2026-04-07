@@ -93,6 +93,12 @@ function buildApplicationMenu() {
     {
       label: translate(currentLocale, 'File'),
       submenu: [
+        {
+          label: translate(currentLocale, 'Settings'),
+          accelerator: 'CmdOrCtrl+,',
+          click: () => { mainWindow?.webContents.send('menu:open-settings'); mainWindow?.show(); mainWindow?.focus(); },
+        },
+        { type: 'separator' },
         { label: translate(currentLocale, 'Quit'), click: () => { mainWindow?.destroy(); app.quit(); } },
       ],
     },

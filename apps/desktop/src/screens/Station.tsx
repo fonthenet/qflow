@@ -1351,6 +1351,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  // Listen for native File > Settings menu click
+  useEffect(() => {
+    const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
   const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
@@ -2500,20 +2505,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               }}
             >
               📅 {t('Appointments')}
-            </button>
-            {/* Settings pill */}
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(100,116,139,0.4)',
-                background: 'rgba(100,116,139,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#64748b',
-              }}
-            >
-              ⚙ {t('Settings')}
             </button>
             {/* Broadcast pill */}
             <button
