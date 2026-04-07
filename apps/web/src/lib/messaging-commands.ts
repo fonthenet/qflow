@@ -2984,7 +2984,7 @@ async function handleMyBookings(
   const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error: apptErr } = await supabase
     .from('appointments')
-    .select('id, scheduled_at, status, customer_name, customer_phone, organization_id, service_id')
+    .select('id, scheduled_at, status, customer_name, customer_phone, office_id, service_id')
     .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
     .lte('scheduled_at', in60d)
@@ -3009,14 +3009,16 @@ async function handleMyBookings(
     return;
   }
 
-  // Fetch org names + service names in bulk
-  const orgIds = Array.from(new Set(appts.map((a: any) => a.organization_id).filter(Boolean)));
+  // Resolve office → organization, and fetch service names
+  const officeIds = Array.from(new Set(appts.map((a: any) => a.office_id).filter(Boolean)));
   const svcIds = Array.from(new Set(appts.map((a: any) => a.service_id).filter(Boolean)));
-  const [orgsRes, svcsRes] = await Promise.all([
-    orgIds.length ? supabase.from('organizations').select('id, name').in('id', orgIds) : Promise.resolve({ data: [] }),
+  const [officesRes, svcsRes] = await Promise.all([
+    officeIds.length ? supabase.from('offices').select('id, organization_id, organizations(name)').in('id', officeIds) : Promise.resolve({ data: [] }),
     svcIds.length ? supabase.from('services').select('id, name').in('id', svcIds) : Promise.resolve({ data: [] }),
   ]);
-  const orgMap = new Map<string, string>((orgsRes.data ?? []).map((o: any) => [o.id, o.name]));
+  const officeOrgMap = new Map<string, string>(
+    (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.name ?? ''])
+  );
   const svcMap = new Map<string, string>((svcsRes.data ?? []).map((s: any) => [s.id, s.name]));
 
   const statusLabel = (s: string): string => {
@@ -3030,7 +3032,7 @@ async function handleMyBookings(
     const dateStr = d.toISOString().split('T')[0];
     const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     const dateFormatted = formatDateForLocale(dateStr, locale);
-    const org = orgMap.get(a.organization_id) ?? '';
+    const org = officeOrgMap.get(a.office_id) ?? '';
     const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
     const svcPart = svc ? ` — ${svc}` : '';
     return `*${i + 1}* — 🏢 ${org}${svcPart}\n   📅 ${dateFormatted} ⏰ ${timeStr}\n   ${statusLabel(a.status)}`;
