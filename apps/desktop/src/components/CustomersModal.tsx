@@ -9,6 +9,7 @@ interface Customer {
   email: string | null;
   visit_count: number;
   last_visit_at: string | null;
+  notes?: string | null;
 }
 
 interface Props {
@@ -85,11 +86,85 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
   const [sendError, setSendError] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
 
+  // Detail / edit panel
+  const [detail, setDetail] = useState<Customer | null>(null);
+  const [detailName, setDetailName] = useState('');
+  const [detailPhone, setDetailPhone] = useState('');
+  const [detailEmail, setDetailEmail] = useState('');
+  const [detailNotes, setDetailNotes] = useState('');
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  function openDetail(c: Customer) {
+    setDetail(c);
+    setDetailName(c.name ?? '');
+    setDetailPhone(formatPhoneDisplay(c.phone));
+    setDetailEmail(c.email ?? '');
+    setDetailNotes(c.notes ?? '');
+    setDetailError(null);
+  }
+
+  async function handleSaveDetail() {
+    if (!detail) return;
+    setDetailBusy(true);
+    setDetailError(null);
+    try {
+      await resolveOrgId();
+      const sb = await getSupabase();
+      const updates = {
+        name: detailName.trim() || null,
+        phone: normalizePhoneForStorage(detailPhone),
+        email: detailEmail.trim() || null,
+        notes: detailNotes.trim() || null,
+      };
+      const { data: updated, error: updErr } = await sb
+        .from('customers')
+        .update(updates as any)
+        .eq('id', detail.id)
+        .select('id, name, phone, email, visit_count, last_visit_at, notes')
+        .single();
+      if (updErr) {
+        if ((updErr as any).code === '23505') setDetailError(t('A customer with this phone already exists.'));
+        else setDetailError(updErr.message);
+        return;
+      }
+      if (updated) {
+        const u = updated as Customer;
+        setCustomers((prev) => prev.map((c) => (c.id === u.id ? u : c)));
+      }
+      setDetail(null);
+    } catch (e: any) {
+      setDetailError(e?.message ?? String(e));
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
+  async function handleDeleteDetail() {
+    if (!detail) return;
+    if (!confirm(t('Delete this customer?'))) return;
+    setDetailBusy(true);
+    setDetailError(null);
+    try {
+      const sb = await getSupabase();
+      const { error: delErr } = await sb.from('customers').delete().eq('id', detail.id);
+      if (delErr) { setDetailError(delErr.message); return; }
+      setCustomers((prev) => prev.filter((c) => c.id !== detail.id));
+      setSelected((prev) => { const next = new Set(prev); next.delete(detail.id); return next; });
+      setDetail(null);
+    } catch (e: any) {
+      setDetailError(e?.message ?? String(e));
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
   // Add customer form
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState('');
   const [addPhone, setAddPhone] = useState('');
   const [addEmail, setAddEmail] = useState('');
+  const [addNotes, setAddNotes] = useState('');
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -123,7 +198,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
       const sb = await getSupabase();
       const { data, error } = await sb
         .from('customers')
-        .select('id, name, phone, email, visit_count, last_visit_at')
+        .select('id, name, phone, email, visit_count, last_visit_at, notes')
         .eq('organization_id', orgId)
         .order('last_visit_at', { ascending: false, nullsFirst: false })
         .limit(1000);
@@ -153,10 +228,11 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           name: addName.trim(),
           phone: normalizePhoneForStorage(addPhone),
           email: addEmail.trim() || null,
+          notes: addNotes.trim() || null,
           visit_count: 0,
           source: 'station',
         } as any)
-        .select('id, name, phone, email, visit_count, last_visit_at')
+        .select('id, name, phone, email, visit_count, last_visit_at, notes')
         .single();
       if (insErr) {
         if ((insErr as any).code === '23505') {
@@ -168,7 +244,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
       }
       // Optimistic prepend so it shows immediately, also reload to be safe
       if (inserted) setCustomers((prev) => [inserted as Customer, ...prev]);
-      setAddName(''); setAddPhone(''); setAddEmail('');
+      setAddName(''); setAddPhone(''); setAddEmail(''); setAddNotes('');
       setShowAdd(false);
     } catch (e: any) {
       setAddError(e?.message ?? String(e));
@@ -377,11 +453,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                 return (
                   <div
                     key={c.id}
+                    onClick={() => openDetail(c)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '12px 14px', borderRadius: 10,
                       background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)',
                       transition: 'border-color 0.15s, transform 0.15s',
+                      cursor: 'pointer',
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary, #3b82f6)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border, #475569)'; }}
@@ -389,6 +467,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                     <input
                       type="checkbox"
                       checked={selected.has(c.id)}
+                      onClick={(e) => e.stopPropagation()}
                       onChange={() => toggleOne(c.id)}
                       style={{ width: 16, height: 16, accentColor: 'var(--primary, #3b82f6)', cursor: 'pointer' }}
                     />
@@ -415,6 +494,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                         {c.phone && <span style={{ direction: 'ltr' }}>📱 {formatPhoneDisplay(c.phone)}</span>}
                         {c.email && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {c.email}</span>}
                       </div>
+                      {c.notes && (
+                        <div style={{
+                          marginTop: 4, fontSize: 11, color: 'var(--text2, #94a3b8)',
+                          fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap', maxWidth: 480,
+                        }}>📝 {c.notes}</div>
+                      )}
                     </div>
 
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -432,6 +518,155 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
           )}
         </div>
       </div>
+
+      {/* Customer detail / notes modal */}
+      {detail && (
+        <div
+          onClick={(e) => { e.stopPropagation(); if (!detailBusy) setDetail(null); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
+            zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 520,
+              maxHeight: '88vh', border: '1px solid var(--border, #475569)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}
+          >
+            <div style={{
+              padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
+            }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 24, flexShrink: 0,
+                background: avatarColor(detail.id), color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 700, fontSize: 16,
+              }}>{initials(detail.name, detail.phone)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>
+                  {detail.name || t('Unknown')}
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
+                  {(detail.visit_count || 0)} {t('Visits')} · {detail.last_visit_at ? timeAgo(detail.last_visit_at, t) : '—'}
+                </p>
+              </div>
+              <button
+                onClick={() => { if (!detailBusy) setDetail(null); }}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                  width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >×</button>
+            </div>
+
+            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Name')}</label>
+                <input
+                  type="text"
+                  value={detailName}
+                  onChange={(e) => setDetailName(e.target.value)}
+                  disabled={detailBusy}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
+                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Phone')}</label>
+                <input
+                  type="text"
+                  value={detailPhone}
+                  onChange={(e) => setDetailPhone(e.target.value)}
+                  disabled={detailBusy}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
+                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none', direction: 'ltr',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Email')}</label>
+                <input
+                  type="text"
+                  value={detailEmail}
+                  onChange={(e) => setDetailEmail(e.target.value)}
+                  disabled={detailBusy}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
+                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none', direction: 'ltr',
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>📝 {t('Notes')}</label>
+                <textarea
+                  value={detailNotes}
+                  onChange={(e) => setDetailNotes(e.target.value)}
+                  disabled={detailBusy}
+                  rows={5}
+                  placeholder={t('Internal notes about this customer...')}
+                  style={{
+                    width: '100%', padding: 12, borderRadius: 'var(--radius-sm, 8px)',
+                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                    color: 'var(--text, #f1f5f9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
+                  }}
+                />
+              </div>
+              {detailError && (
+                <div style={{
+                  padding: 10, borderRadius: 8,
+                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger, #ef4444)', fontSize: 13,
+                }}>{detailError}</div>
+              )}
+            </div>
+
+            <div style={{
+              padding: '14px 22px', borderTop: '1px solid var(--border, #475569)',
+              display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <button
+                onClick={handleDeleteDetail}
+                disabled={detailBusy}
+                style={{
+                  background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--danger, #ef4444)',
+                  padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                }}
+              >🗑 {t('Delete')}</button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => { if (!detailBusy) setDetail(null); }}
+                  disabled={detailBusy}
+                  style={{
+                    background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                    padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                  }}
+                >{t('Cancel')}</button>
+                <button
+                  onClick={handleSaveDetail}
+                  disabled={detailBusy}
+                  style={{
+                    background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
+                    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    cursor: detailBusy ? 'wait' : 'pointer', opacity: detailBusy ? 0.6 : 1,
+                  }}
+                >{detailBusy ? t('Saving...') : t('Save')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Customer modal */}
       {showAdd && (
@@ -481,6 +716,21 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                   />
                 </div>
               ))}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>📝 {t('Notes')}</label>
+                <textarea
+                  value={addNotes}
+                  onChange={(e) => setAddNotes(e.target.value)}
+                  disabled={addBusy}
+                  rows={3}
+                  placeholder={t('Internal notes about this customer...')}
+                  style={{
+                    width: '100%', padding: 10, borderRadius: 'var(--radius-sm, 8px)',
+                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                    color: 'var(--text, #f1f5f9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
+                  }}
+                />
+              </div>
               {addError && (
                 <div style={{
                   padding: 10, borderRadius: 8,
