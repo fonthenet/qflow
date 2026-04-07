@@ -1189,6 +1189,7 @@ export async function handleInboundMessage(
     if (/^(مواعيدي|حجوزاتي)$/.test(cleaned)) myLocale = 'ar';
     else if (command.startsWith('MES')) myLocale = 'fr';
     else if (command.startsWith('MY')) myLocale = 'en';
+    console.log('[my-bookings] dispatch, locale=', myLocale, 'identifier=', identifier, 'command=', command);
     await handleMyBookings(identifier, myLocale, sendMessage);
     return;
   }
@@ -2978,6 +2979,7 @@ async function handleMyBookings(
   // phone format stored in customer_phone is matched reliably.
   const digits = identifier.replace(/\D/g, '');
   const last9 = digits.slice(-9);
+  console.log('[my-bookings] identifier=', identifier, 'digits=', digits, 'last9=', last9);
 
   const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error: apptErr } = await supabase
@@ -2993,11 +2995,14 @@ async function handleMyBookings(
   if (apptErr) {
     console.error('[my-bookings] query error', apptErr);
   }
+  console.log('[my-bookings] candidates=', (candidates ?? []).length,
+    'samplePhones=', (candidates ?? []).slice(0, 5).map((c: any) => c.customer_phone));
 
   const appts = (candidates ?? []).filter((a: any) => {
     const d = String(a.customer_phone ?? '').replace(/\D/g, '');
     return d.length >= 9 && d.slice(-9) === last9;
   }).slice(0, 20);
+  console.log('[my-bookings] matched=', appts.length);
 
   if (!appts || appts.length === 0) {
     await sendMessage({ to: identifier, body: t('my_bookings_none', locale) });
