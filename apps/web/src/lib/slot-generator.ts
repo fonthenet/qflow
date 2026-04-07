@@ -255,7 +255,9 @@ export async function getAvailableSlots(
     .select('scheduled_at')
     .eq('office_id', officeId)
     .eq('service_id', serviceId)
-    .neq('status', 'cancelled')
+    // Exclude inactive statuses so freed/past slots become bookable again.
+    // Active statuses (= occupy a seat): pending, confirmed, checked_in, serving.
+    .not('status', 'in', '(cancelled,no_show,completed)')
     .gte('scheduled_at', startOfDay)
     .lte('scheduled_at', endOfDay);
 
@@ -276,7 +278,9 @@ export async function getAvailableSlots(
       .from('appointments')
       .select('id')
       .eq('office_id', officeId)
-      .neq('status', 'cancelled')
+      // Exclude inactive statuses so freed/past slots become bookable again.
+    // Active statuses (= occupy a seat): pending, confirmed, checked_in, serving.
+    .not('status', 'in', '(cancelled,no_show,completed)')
       .gte('scheduled_at', startOfDay)
       .lte('scheduled_at', endOfDay);
     totalDayAllServices = allDayAppts?.length ?? 0;

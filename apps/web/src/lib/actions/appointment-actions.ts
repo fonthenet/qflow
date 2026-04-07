@@ -98,7 +98,13 @@ export async function createAppointment(data: CreateAppointmentData) {
     .single();
 
   if (error) {
-    return { error: error.message };
+    // Race protection: unique-index/trigger raises 23505 when slot is taken.
+    const code = (error as any).code;
+    const msg = error.message || '';
+    if (code === '23505' || msg.includes('slot_full') || msg.includes('uniq_appointments_active_slot') || msg.includes('fully booked')) {
+      return { error: 'This time slot was just booked by someone else. Please choose another.' };
+    }
+    return { error: msg };
   }
 
   await clearBookingEmailOtpCookie();

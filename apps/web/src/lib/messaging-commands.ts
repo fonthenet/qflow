@@ -325,6 +325,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تعذر إنشاء الحجز. قد يكون الوقت محجوزًا بالكامل. يرجى المحاولة مرة أخرى ⚠️',
     en: '⚠️ Could not create the booking. The slot may be full. Please try again.',
   },
+  booking_slot_taken: {
+    fr: '⚠️ Désolé, ce créneau vient d\'être réservé par quelqu\'un d\'autre. Voici les créneaux encore disponibles :',
+    ar: '⚠️ عذرًا، تم حجز هذا الموعد للتو من قبل شخص آخر. إليك المواعيد المتاحة :',
+    en: '⚠️ Sorry, that slot was just taken by someone else. Here are the slots still available:',
+  },
   booking_cancelled: {
     fr: '❌ Réservation annulée.',
     ar: 'تم إلغاء الحجز ❌',
@@ -2864,7 +2869,25 @@ async function confirmBooking(
     .single();
 
   if (error) {
-    console.error('[booking] Failed to create appointment:', error.message);
+    // Race protection: 23505 is raised by both the partial unique index
+    // `uniq_appointments_active_slot` and the `check_slot_capacity` trigger
+    // when the slot was taken by a concurrent booker between slot listing
+    // and confirmation. Don't kill the session — loop the user back to slot
+    // selection with a fresh list.
+    const code = (error as any).code;
+    const msg = error.message || '';
+    const slotTaken = code === '23505' || msg.includes('slot_full') || msg.includes('uniq_appointments_active_slot') || msg.includes('fully booked');
+    if (slotTaken) {
+      console.warn('[booking] slot just taken (race), restarting time selection:', msg);
+      await sendMessage({ to: identifier, body: t('booking_slot_taken', locale) });
+      await supabase.from('whatsapp_sessions').update({
+        state: 'booking_select_time',
+        booking_time: null,
+      }).eq('id', session.id);
+      await showAvailableSlots(identifier, session.office_id, session.service_id || session.department_id, session.booking_date, locale, channel, sendMessage);
+      return;
+    }
+    console.error('[booking] Failed to create appointment:', msg);
     await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
     await sendMessage({ to: identifier, body: t('booking_failed', locale) });
     return;

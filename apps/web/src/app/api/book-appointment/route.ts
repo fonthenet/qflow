@@ -90,9 +90,25 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
-    // Check if it's a capacity error from the trigger
-    if (error.message?.includes('fully booked') || error.message?.includes('Daily booking limit')) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
+    // Race protection: the partial unique index `uniq_appointments_active_slot`
+    // and the `check_slot_capacity` trigger both raise SQLSTATE 23505 (unique
+    // violation) when a slot has just been taken by a concurrent request.
+    // Surface as 409 so clients can refresh slots and retry.
+    const code = (error as any).code;
+    const msg = error.message || '';
+    if (
+      code === '23505' ||
+      msg.includes('slot_full') ||
+      msg.includes('fully booked') ||
+      msg.includes('uniq_appointments_active_slot')
+    ) {
+      return NextResponse.json(
+        { error: 'slot_just_taken', message: 'This time slot was just booked by someone else. Please choose another.' },
+        { status: 409 }
+      );
+    }
+    if (msg.includes('daily_limit_reached') || msg.includes('Daily booking limit')) {
+      return NextResponse.json({ error: 'daily_limit_reached', message: msg }, { status: 409 });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
