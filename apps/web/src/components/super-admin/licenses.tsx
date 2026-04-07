@@ -68,16 +68,25 @@ export function LicensesManager({ organizations, licenses: init, pendingDevices:
   const [copiedSupport, setCopiedSupport] = useState<string | null>(null);
   const [onlineDevices, setOnlineDevices] = useState<Record<string, { is_online: boolean; last_ping: string | null }>>({});
 
-  // Fetch active remote support sessions + online status
+  // Fetch active remote support sessions + online status.
+  // A session is considered "active" only if the station is still heartbeating
+  // (last_ping within ~2 minutes). This prevents stale sessions from lingering
+  // after a station is shut down abruptly (crash, power loss, force-quit).
   const fetchDeviceStatus = useCallback(async () => {
     const [{ data: sessions }, { data: connections }] = await Promise.all([
       supabase.from('desktop_connections')
-        .select('machine_id, machine_name, rustdesk_id, rustdesk_password, support_started_at, organization_id, ip_address')
+        .select('machine_id, machine_name, rustdesk_id, rustdesk_password, support_started_at, organization_id, ip_address, last_ping')
         .not('rustdesk_id', 'is', null),
       supabase.from('desktop_connections')
         .select('machine_id, last_ping'),
     ]);
-    setSupportSessions((sessions as SupportSession[]) ?? []);
+    const STALE_SECONDS = 120; // 2 min: 4× the 30s heartbeat interval
+    const liveSessions = ((sessions as any[]) ?? []).filter((s) => {
+      if (!s.last_ping) return false;
+      const ago = (Date.now() - new Date(s.last_ping).getTime()) / 1000;
+      return ago < STALE_SECONDS;
+    });
+    setSupportSessions(liveSessions as SupportSession[]);
     const map: Record<string, { is_online: boolean; last_ping: string | null }> = {};
     (connections ?? []).forEach((c: any) => {
       const ago = c.last_ping ? (Date.now() - new Date(c.last_ping).getTime()) / 1000 : Infinity;
