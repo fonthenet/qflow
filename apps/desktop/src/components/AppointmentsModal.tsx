@@ -168,6 +168,28 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     });
   }, [appointments, query]);
 
+  // Detect overbooked slots: 2+ active appointments share the same scheduled_at.
+  // After the partial unique index `uniq_appointments_active_slot` (DB migration
+  // slot_integrity_unique_and_race_safe_capacity) this should not happen for new
+  // bookings, but legacy duplicates may still exist.
+  const overbookedIds = useMemo(() => {
+    const counts = new Map<string, string[]>();
+    for (const a of appointments) {
+      if (a.status === 'cancelled' || a.status === 'no_show' || a.status === 'completed') continue;
+      const key = a.scheduled_at;
+      if (!counts.has(key)) counts.set(key, []);
+      counts.get(key)!.push(a.id);
+    }
+    const flagged = new Set<string>();
+    for (const [slot, ids] of counts.entries()) {
+      if (ids.length > 1) {
+        console.warn('[AppointmentsModal] overbooked slot detected', { scheduled_at: slot, appointment_ids: ids });
+        ids.forEach((id) => flagged.add(id));
+      }
+    }
+    return flagged;
+  }, [appointments]);
+
   // Group by day
   const grouped = useMemo(() => {
     const map = new Map<string, Appointment[]>();
@@ -356,6 +378,20 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                     }}>
                       {t(a.status)}
                     </span>
+                    {overbookedIds.has(a.id) && (
+                      <span
+                        title={t('Multiple appointments share this time slot')}
+                        style={{
+                          padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700,
+                          textTransform: 'uppercase', letterSpacing: 0.4,
+                          background: '#ef444422', color: '#ef4444',
+                          border: '1px solid #ef444466',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        ⚠ {t('Overbooked')}
+                      </span>
+                    )}
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                       {canConfirm && (
                         <button
