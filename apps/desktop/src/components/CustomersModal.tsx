@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilayas';
+import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
 
 interface Customer {
   id: string;
@@ -9,8 +11,29 @@ interface Customer {
   email: string | null;
   visit_count: number;
   last_visit_at: string | null;
+  last_booking_at?: string | null;
+  booking_count?: number | null;
   notes?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  blood_type?: string | null;
+  file_number?: string | null;
+  address?: string | null;
+  wilaya_code?: string | null;
+  city?: string | null;
+  is_couple?: boolean | null;
+  spouse_name?: string | null;
+  spouse_dob?: string | null;
+  spouse_blood_type?: string | null;
+  spouse_gender?: string | null;
+  marriage_date?: string | null;
+  created_at?: string | null;
 }
+
+const CUSTOMER_SELECT = 'id, name, phone, email, visit_count, last_visit_at, last_booking_at, booking_count, notes, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, spouse_gender, marriage_date, created_at';
+
+type SortKey = 'name' | 'last_visit' | 'bookings' | 'created';
+type GroupKey = 'none' | 'wilaya' | 'city' | 'gender' | 'visit_month';
 
 interface Props {
   organizationId: string;
@@ -34,31 +57,16 @@ function avatarColor(seed: string) {
   return palette[hash % palette.length];
 }
 
-/** Display Algerian numbers in local format (0XXXXXXXXX), keep others as-is */
+/** Display phone: strip any '+' and country-code noise, show digits as stored. */
 function formatPhoneDisplay(phone: string | null): string {
   if (!phone) return '';
-  const digits = phone.replace(/[^\d+]/g, '');
-  // +213XXXXXXXXX or 213XXXXXXXXX → 0XXXXXXXXX
-  if (digits.startsWith('+213')) return '0' + digits.slice(4);
-  if (digits.startsWith('213') && digits.length >= 12) return '0' + digits.slice(3);
-  return phone;
+  const digits = phone.replace(/\D/g, '');
+  return digits;
 }
 
-/** Normalize Algerian local input (0XXXXXXXXX) to international (+213XXXXXXXXX) for storage/sending */
+/** Normalize phone for storage: just digits, no country code. */
 function normalizePhoneForStorage(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return '';
-  // Already international
-  if (trimmed.startsWith('+')) return trimmed.replace(/\s+/g, '');
-  const digits = trimmed.replace(/\D/g, '');
-  // Algerian local format: 0XXXXXXXXX (10 digits starting with 0)
-  if (digits.length === 10 && digits.startsWith('0')) return '+213' + digits.slice(1);
-  // Algerian without leading 0: 9 digits (5/6/7XXXXXXXX)
-  if (digits.length === 9 && /^[567]/.test(digits)) return '+213' + digits;
-  // Already 213 prefix
-  if (digits.startsWith('213')) return '+' + digits;
-  // Fallback: prepend +
-  return '+' + digits;
+  return (input ?? '').replace(/\D/g, '');
 }
 
 function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
@@ -87,21 +95,42 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   const [sendError, setSendError] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
 
+  // Filter / sort / group state
+  const [filterWilaya, setFilterWilaya] = useState('');
+  const [filterCity, setFilterCity] = useState('');
+  const [filterGender, setFilterGender] = useState('');
+  const [filterBlood, setFilterBlood] = useState('');
+  const [filterCoupleOnly, setFilterCoupleOnly] = useState(false);
+  const [filterVisitMonth, setFilterVisitMonth] = useState(''); // '' | 'this' | 'last' | 'YYYY-MM'
+  const [sortKey, setSortKey] = useState<SortKey>('last_visit');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [groupBy, setGroupBy] = useState<GroupKey>('none');
+  const [showFilters, setShowFilters] = useState(false);
+
   // Detail / edit panel
   const [detail, setDetail] = useState<Customer | null>(null);
-  const [detailName, setDetailName] = useState('');
-  const [detailPhone, setDetailPhone] = useState('');
-  const [detailEmail, setDetailEmail] = useState('');
-  const [detailNotes, setDetailNotes] = useState('');
+  const [detailForm, setDetailForm] = useState<Partial<Customer>>({});
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  // Backwards compat helpers
+  const detailName = detailForm.name ?? '';
+  const detailPhone = detailForm.phone ?? '';
+  const detailEmail = detailForm.email ?? '';
+  const detailNotes = detailForm.notes ?? '';
+  const setDetailName = (v: string) => setDetailForm(f => ({ ...f, name: v }));
+  const setDetailPhone = (v: string) => setDetailForm(f => ({ ...f, phone: v }));
+  const setDetailEmail = (v: string) => setDetailForm(f => ({ ...f, email: v }));
+  const setDetailNotes = (v: string) => setDetailForm(f => ({ ...f, notes: v }));
+  const setDetailField = <K extends keyof Customer>(k: K, v: Customer[K]) =>
+    setDetailForm(f => ({ ...f, [k]: v }));
+
   function openDetail(c: Customer) {
     setDetail(c);
-    setDetailName(c.name ?? '');
-    setDetailPhone(formatPhoneDisplay(c.phone));
-    setDetailEmail(c.email ?? '');
-    setDetailNotes(c.notes ?? '');
+    setDetailForm({
+      ...c,
+      phone: formatPhoneDisplay(c.phone),
+    });
     setDetailError(null);
   }
 
@@ -112,23 +141,41 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     try {
       await resolveOrgId();
       const sb = await getSupabase();
-      const updates = {
-        name: detailName.trim() || null,
-        phone: normalizePhoneForStorage(detailPhone),
-        email: detailEmail.trim() || null,
-        notes: detailNotes.trim() || null,
+      const f = detailForm;
+      const updates: any = {
+        name: (f.name ?? '').trim() || null,
+        phone: normalizePhoneForStorage(f.phone ?? ''),
+        email: (f.email ?? '').trim() || null,
+        notes: (f.notes ?? '').trim() || null,
+        gender: f.gender || null,
+        date_of_birth: f.date_of_birth || null,
+        blood_type: f.blood_type || null,
+        file_number: (f.file_number ?? '').trim() || null,
+        address: (f.address ?? '').trim() || null,
+        wilaya_code: f.wilaya_code || null,
+        city: f.city || null,
+        is_couple: !!f.is_couple,
+        spouse_name: f.is_couple ? ((f.spouse_name ?? '').trim() || null) : null,
+        spouse_dob: f.is_couple ? (f.spouse_dob || null) : null,
+        spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
+        spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
+        marriage_date: f.is_couple ? (f.marriage_date || null) : null,
       };
-      const { data: updated, error: updErr } = await sb
+      const { error: updErr } = await sb
         .from('customers')
-        .update(updates as any)
-        .eq('id', detail.id)
-        .select('id, name, phone, email, visit_count, last_visit_at, notes')
-        .single();
+        .update(updates)
+        .eq('id', detail.id);
       if (updErr) {
         if ((updErr as any).code === '23505') setDetailError(t('A customer with this phone already exists.'));
         else setDetailError(updErr.message);
         return;
       }
+      // Refetch the row separately to avoid PostgREST "single object" coercion issues under RLS
+      const { data: updated } = await sb
+        .from('customers')
+        .select(CUSTOMER_SELECT)
+        .eq('id', detail.id)
+        .maybeSingle();
       if (updated) {
         const u = updated as Customer;
         setCustomers((prev) => prev.map((c) => (c.id === u.id ? u : c)));
@@ -160,14 +207,29 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     }
   }
 
-  // Add customer form
+  // Add customer form (uses a single form object)
+  const emptyAddForm: Partial<Customer> = {
+    name: '', phone: '', email: '', notes: '',
+    gender: '', date_of_birth: '', blood_type: '',
+    address: '', wilaya_code: '', city: '',
+    is_couple: false, spouse_name: '', spouse_dob: '', spouse_blood_type: '', spouse_gender: '', marriage_date: '',
+  };
   const [showAdd, setShowAdd] = useState(false);
-  const [addName, setAddName] = useState('');
-  const [addPhone, setAddPhone] = useState('');
-  const [addEmail, setAddEmail] = useState('');
-  const [addNotes, setAddNotes] = useState('');
+  const [addForm, setAddForm] = useState<Partial<Customer>>(emptyAddForm);
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const setAddField = <K extends keyof Customer>(k: K, v: any) =>
+    setAddForm(f => ({ ...f, [k]: v }));
+  const addName = addForm.name ?? '';
+  const addPhone = addForm.phone ?? '';
+
+  // Import modal state
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState<ParsedCustomerRow[]>([]);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{ inserted: number; skipped: number } | null>(null);
+  const [sheetUrl, setSheetUrl] = useState('');
 
   const resolveOrgId = useCallback(async (): Promise<string> => {
     if (orgIdRef.current) return orgIdRef.current;
@@ -199,10 +261,10 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
       const sb = await getSupabase();
       const { data, error } = await sb
         .from('customers')
-        .select('id, name, phone, email, visit_count, last_visit_at, notes')
+        .select(CUSTOMER_SELECT)
         .eq('organization_id', orgId)
         .order('last_visit_at', { ascending: false, nullsFirst: false })
-        .limit(1000);
+        .limit(5000);
       if (error) setError(error.message);
       else setCustomers((data ?? []) as Customer[]);
     } catch (e: any) {
@@ -222,19 +284,32 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     try {
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
+      const f = addForm;
       const { data: inserted, error: insErr } = await sb
         .from('customers')
         .insert({
           organization_id: orgId,
-          name: addName.trim(),
-          phone: normalizePhoneForStorage(addPhone),
-          email: addEmail.trim() || null,
-          notes: addNotes.trim() || null,
+          name: (f.name ?? '').trim(),
+          phone: normalizePhoneForStorage(f.phone ?? ''),
+          email: (f.email ?? '').trim() || null,
+          notes: (f.notes ?? '').trim() || null,
+          gender: f.gender || null,
+          date_of_birth: f.date_of_birth || null,
+          blood_type: f.blood_type || null,
+          address: (f.address ?? '').trim() || null,
+          wilaya_code: f.wilaya_code || null,
+          city: f.city || null,
+          is_couple: !!f.is_couple,
+          spouse_name: f.is_couple ? ((f.spouse_name ?? '').trim() || null) : null,
+          spouse_dob: f.is_couple ? (f.spouse_dob || null) : null,
+          spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
+          spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
+          marriage_date: f.is_couple ? (f.marriage_date || null) : null,
           visit_count: 0,
           source: 'station',
         } as any)
-        .select('id, name, phone, email, visit_count, last_visit_at, notes')
-        .single();
+        .select('id')
+        .maybeSingle();
       if (insErr) {
         if ((insErr as any).code === '23505') {
           setAddError(t('A customer with this phone already exists.'));
@@ -243,9 +318,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         }
         return;
       }
-      // Optimistic prepend so it shows immediately, also reload to be safe
-      if (inserted) setCustomers((prev) => [inserted as Customer, ...prev]);
-      setAddName(''); setAddPhone(''); setAddEmail(''); setAddNotes('');
+      if (inserted?.id) {
+        const { data: full } = await sb.from('customers').select(CUSTOMER_SELECT).eq('id', inserted.id).maybeSingle();
+        if (full) setCustomers((prev) => [full as Customer, ...prev]);
+      } else {
+        await loadCustomers();
+      }
+      setAddForm(emptyAddForm);
       setShowAdd(false);
     } catch (e: any) {
       setAddError(e?.message ?? String(e));
@@ -297,16 +376,127 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
 
-  const filtered = useMemo(() => customers.filter((c) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      (c.name?.toLowerCase().includes(q) ?? false) ||
-      (c.phone?.includes(q) ?? false) ||
-      (formatPhoneDisplay(c.phone).includes(q)) ||
-      (c.email?.toLowerCase().includes(q) ?? false)
-    );
-  }), [customers, search]);
+  async function handleImportRows(rows: ParsedCustomerRow[]) {
+    setImportBusy(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const orgId = await resolveOrgId();
+      const sb = await getSupabase();
+      const payload = rows
+        .map(r => ({
+          organization_id: orgId,
+          name: (r.name ?? '').trim() || null,
+          phone: r.phone ? normalizePhoneForStorage(r.phone) : null,
+          email: r.email || null,
+          notes: r.notes || null,
+          gender: r.gender === 'male' || r.gender === 'female' ? r.gender : null,
+          date_of_birth: r.date_of_birth || null,
+          blood_type: r.blood_type || null,
+          file_number: r.file_number || null,
+          address: r.address || null,
+          wilaya_code: r.wilaya_code || null,
+          city: r.city || null,
+          is_couple: !!r.is_couple,
+          spouse_name: r.spouse_name || null,
+          spouse_dob: r.spouse_dob || null,
+          spouse_blood_type: r.spouse_blood_type || null,
+          spouse_gender: r.spouse_gender === 'male' || r.spouse_gender === 'female' ? r.spouse_gender : null,
+          marriage_date: r.marriage_date || null,
+          source: 'import',
+          visit_count: 0,
+        }))
+        .filter(p => p.phone || p.name);
+      if (payload.length === 0) { setImportError(t('No valid rows to import')); return; }
+      // Upsert by (organization_id, phone) — ignore duplicates
+      const { data: ins, error: insErr } = await sb
+        .from('customers')
+        .upsert(payload as any, { onConflict: 'organization_id,phone', ignoreDuplicates: true })
+        .select('id');
+      if (insErr) { setImportError(insErr.message); return; }
+      const inserted = ins?.length ?? 0;
+      setImportResult({ inserted, skipped: payload.length - inserted });
+      await loadCustomers();
+    } catch (e: any) {
+      setImportError(e?.message ?? String(e));
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  // === FILTERS ===
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return customers.filter((c) => {
+      if (q) {
+        const hit =
+          (c.name?.toLowerCase().includes(q) ?? false) ||
+          (c.phone?.includes(q) ?? false) ||
+          (formatPhoneDisplay(c.phone).includes(q)) ||
+          (c.email?.toLowerCase().includes(q) ?? false) ||
+          (c.file_number?.toLowerCase().includes(q) ?? false);
+        if (!hit) return false;
+      }
+      if (filterWilaya && c.wilaya_code !== filterWilaya) return false;
+      if (filterCity && c.city !== filterCity) return false;
+      if (filterGender && c.gender !== filterGender) return false;
+      if (filterBlood && c.blood_type !== filterBlood) return false;
+      if (filterCoupleOnly && !c.is_couple) return false;
+      if (filterVisitMonth) {
+        const lv = c.last_visit_at ? new Date(c.last_visit_at) : null;
+        if (!lv) return false;
+        const now = new Date();
+        if (filterVisitMonth === 'this') {
+          if (lv.getFullYear() !== now.getFullYear() || lv.getMonth() !== now.getMonth()) return false;
+        } else if (filterVisitMonth === 'last') {
+          const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          if (lv.getFullYear() !== d.getFullYear() || lv.getMonth() !== d.getMonth()) return false;
+        } else {
+          // YYYY-MM
+          const [y, m] = filterVisitMonth.split('-').map(Number);
+          if (lv.getFullYear() !== y || lv.getMonth() + 1 !== m) return false;
+        }
+      }
+      return true;
+    }).sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name': cmp = (a.name ?? '').localeCompare(b.name ?? ''); break;
+        case 'bookings': cmp = (a.booking_count ?? 0) - (b.booking_count ?? 0); break;
+        case 'created': cmp = (a.created_at ?? '').localeCompare(b.created_at ?? ''); break;
+        case 'last_visit':
+        default:
+          cmp = (a.last_visit_at ?? '').localeCompare(b.last_visit_at ?? ''); break;
+      }
+      return sortDesc ? -cmp : cmp;
+    });
+  }, [customers, search, filterWilaya, filterCity, filterGender, filterBlood, filterCoupleOnly, filterVisitMonth, sortKey, sortDesc]);
+
+  // Group rendering
+  const grouped = useMemo(() => {
+    if (groupBy === 'none') return [{ label: '', items: filtered }];
+    const map = new Map<string, Customer[]>();
+    for (const c of filtered) {
+      let key = '—';
+      if (groupBy === 'wilaya') {
+        const w = ALGERIA_WILAYAS.find(x => x.code === c.wilaya_code);
+        key = w ? `${w.code} — ${w.name}` : t('Unknown');
+      } else if (groupBy === 'city') key = c.city || t('Unknown');
+      else if (groupBy === 'gender') key = c.gender === 'male' ? t('Male') : c.gender === 'female' ? t('Female') : t('Unknown');
+      else if (groupBy === 'visit_month') {
+        if (!c.last_visit_at) key = t('Never');
+        else {
+          const d = new Date(c.last_visit_at);
+          key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+      }
+      const arr = map.get(key) ?? [];
+      arr.push(c);
+      map.set(key, arr);
+    }
+    return Array.from(map.entries()).map(([label, items]) => ({ label, items }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [filtered, groupBy]);
 
   const stats = useMemo(() => {
     const total = customers.length;
@@ -400,6 +590,22 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           </span>
           <div style={{ flex: 1 }} />
           <button
+            onClick={() => setShowFilters(s => !s)}
+            style={{
+              background: showFilters ? 'rgba(59,130,246,0.15)' : 'transparent',
+              border: '1px solid var(--border, #475569)',
+              color: showFilters ? '#3b82f6' : 'var(--text2, #94a3b8)',
+              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+            }}
+          >⚙ {t('Filters')}</button>
+          <button
+            onClick={() => { setShowImport(true); setImportError(null); setImportResult(null); setImportRows([]); setSheetUrl(''); }}
+            style={{
+              background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+            }}
+          >⬆ {t('Import')}</button>
+          <button
             onClick={() => { setShowAdd(true); setAddError(null); }}
             style={{
               background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
@@ -417,6 +623,111 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
             }}
           >📨 {t('Send WhatsApp')}</button>
         </div>
+
+        {/* Filter panel */}
+        {showFilters && (() => {
+          const sel: React.CSSProperties = {
+            padding: '6px 8px', borderRadius: 6, background: 'var(--bg, #0f172a)',
+            border: '1px solid var(--border, #475569)', color: 'var(--text, #f1f5f9)', fontSize: 12,
+          };
+          const lbl: React.CSSProperties = { fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 };
+          const communes = filterWilaya ? getCommunes(filterWilaya) : [];
+          return (
+            <div style={{
+              margin: '10px 22px 0', padding: 12, borderRadius: 10,
+              background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)',
+              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10,
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Wilaya')}</span>
+                <select style={sel} value={filterWilaya} onChange={(e) => { setFilterWilaya(e.target.value); setFilterCity(''); }}>
+                  <option value="">{t('All')}</option>
+                  {ALGERIA_WILAYAS.map(w => <option key={w.code} value={w.code}>{w.code} — {w.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('City')}</span>
+                <select style={sel} value={filterCity} onChange={(e) => setFilterCity(e.target.value)} disabled={!filterWilaya}>
+                  <option value="">{t('All')}</option>
+                  {communes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Gender')}</span>
+                <select style={sel} value={filterGender} onChange={(e) => setFilterGender(e.target.value)}>
+                  <option value="">{t('All')}</option>
+                  <option value="male">{t('Male')}</option>
+                  <option value="female">{t('Female')}</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Blood Type')}</span>
+                <select style={sel} value={filterBlood} onChange={(e) => setFilterBlood(e.target.value)}>
+                  <option value="">{t('All')}</option>
+                  {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Visit Month')}</span>
+                <select style={sel} value={filterVisitMonth} onChange={(e) => setFilterVisitMonth(e.target.value)}>
+                  <option value="">{t('Any')}</option>
+                  <option value="this">{t('This month')}</option>
+                  <option value="last">{t('Last month')}</option>
+                  {(() => {
+                    const opts: React.ReactNode[] = [];
+                    const now = new Date();
+                    for (let i = 2; i < 14; i++) {
+                      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                      const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                      opts.push(<option key={v} value={v}>{v}</option>);
+                    }
+                    return opts;
+                  })()}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Sort by')}</span>
+                <select style={sel} value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
+                  <option value="last_visit">{t('Last Visit')}</option>
+                  <option value="name">{t('Name')}</option>
+                  <option value="bookings">{t('Bookings')}</option>
+                  <option value="created">{t('Created')}</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Order')}</span>
+                <select style={sel} value={sortDesc ? 'desc' : 'asc'} onChange={(e) => setSortDesc(e.target.value === 'desc')}>
+                  <option value="desc">{t('Descending')}</option>
+                  <option value="asc">{t('Ascending')}</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={lbl}>{t('Group by')}</span>
+                <select style={sel} value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupKey)}>
+                  <option value="none">{t('None')}</option>
+                  <option value="wilaya">{t('Wilaya')}</option>
+                  <option value="city">{t('City')}</option>
+                  <option value="gender">{t('Gender')}</option>
+                  <option value="visit_month">{t('Visit Month')}</option>
+                </select>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2, #94a3b8)', gridColumn: '1 / span 2' }}>
+                <input type="checkbox" checked={filterCoupleOnly} onChange={(e) => setFilterCoupleOnly(e.target.checked)} />
+                {t('Couple files only')}
+              </label>
+              <button
+                onClick={() => {
+                  setFilterWilaya(''); setFilterCity(''); setFilterGender(''); setFilterBlood('');
+                  setFilterCoupleOnly(false); setFilterVisitMonth('');
+                }}
+                style={{
+                  gridColumn: '3 / span 2', background: 'transparent', border: '1px solid var(--border, #475569)',
+                  color: 'var(--text2, #94a3b8)', padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                }}
+              >{t('Reset filters')}</button>
+            </div>
+          );
+        })()}
 
         {/* Search */}
         <div style={{ padding: '14px 22px 10px' }}>
@@ -449,7 +760,17 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {filtered.map((c) => {
+              {grouped.map((grp, gi) => (
+                <div key={gi}>
+                  {grp.label && (
+                    <div style={{
+                      margin: '10px 0 6px', padding: '6px 10px', borderRadius: 6,
+                      background: 'rgba(59,130,246,0.08)', color: '#3b82f6',
+                      fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
+                    }}>{grp.label} · {grp.items.length}</div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {grp.items.map((c) => {
                 const seed = c.id || c.phone || c.name || 'x';
                 return (
                   <div
@@ -515,6 +836,9 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                   </div>
                 );
               })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -532,7 +856,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 520,
+              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 720,
               maxHeight: '88vh', border: '1px solid var(--border, #475569)',
               boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -568,63 +892,17 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
             </div>
 
             <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Name')}</label>
-                <input
-                  type="text"
-                  value={detailName}
-                  onChange={(e) => setDetailName(e.target.value)}
-                  disabled={detailBusy}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
-                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Phone')}</label>
-                <input
-                  type="text"
-                  value={detailPhone}
-                  onChange={(e) => setDetailPhone(e.target.value)}
-                  disabled={detailBusy}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
-                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none', direction: 'ltr',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>{t('Email')}</label>
-                <input
-                  type="text"
-                  value={detailEmail}
-                  onChange={(e) => setDetailEmail(e.target.value)}
-                  disabled={detailBusy}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm, 8px)',
-                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                    color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none', direction: 'ltr',
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>📝 {t('Notes')}</label>
-                <textarea
-                  value={detailNotes}
-                  onChange={(e) => setDetailNotes(e.target.value)}
-                  disabled={detailBusy}
-                  rows={5}
-                  placeholder={t('Internal notes about this customer...')}
-                  style={{
-                    width: '100%', padding: 12, borderRadius: 'var(--radius-sm, 8px)',
-                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                    color: 'var(--text, #f1f5f9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
-                  }}
-                />
-              </div>
+              {detail.file_number && (
+                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
+                  {t('File number')}: <span style={{ color: 'var(--text, #f1f5f9)', fontFamily: 'monospace' }}>{detail.file_number}</span>
+                </div>
+              )}
+              <CustomerFormFields
+                t={t}
+                form={detailForm}
+                setField={setDetailField as any}
+                disabled={detailBusy}
+              />
               {detailError && (
                 <div style={{
                   padding: 10, borderRadius: 8,
@@ -711,46 +989,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                 {t('Saved to your organization and synced everywhere.')}
               </p>
             </div>
-            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {[
-                { label: t('Name'), value: addName, set: setAddName, placeholder: 'John Doe', required: true },
-                { label: t('Phone'), value: addPhone, set: setAddPhone, placeholder: '0551234567', required: true, ltr: true },
-                { label: t('Email'), value: addEmail, set: setAddEmail, placeholder: 'john@example.com', required: false, ltr: true },
-              ].map((f) => (
-                <div key={f.label}>
-                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>
-                    {f.label}{f.required ? ' *' : ''}
-                  </label>
-                  <input
-                    type="text"
-                    value={f.value}
-                    onChange={(e) => f.set(e.target.value)}
-                    placeholder={f.placeholder}
-                    disabled={addBusy}
-                    style={{
-                      width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                      color: 'var(--text, #f1f5f9)', fontSize: 14, outline: 'none',
-                      direction: f.ltr ? 'ltr' : undefined,
-                    }}
-                  />
-                </div>
-              ))}
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4, fontWeight: 600 }}>📝 {t('Notes')}</label>
-                <textarea
-                  value={addNotes}
-                  onChange={(e) => setAddNotes(e.target.value)}
-                  disabled={addBusy}
-                  rows={3}
-                  placeholder={t('Internal notes about this customer...')}
-                  style={{
-                    width: '100%', padding: 10, borderRadius: 'var(--radius-sm, 8px)',
-                    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
-                    color: 'var(--text, #f1f5f9)', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
-                  }}
-                />
-              </div>
+            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '65vh', overflowY: 'auto' }}>
+              <CustomerFormFields
+                t={t}
+                form={addForm}
+                setField={setAddField as any}
+                disabled={addBusy}
+              />
               {addError && (
                 <div style={{
                   padding: 10, borderRadius: 8,
@@ -874,6 +1119,288 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           </div>
         </div>
       )}
+
+      {/* Import modal */}
+      {showImport && (
+        <div
+          onClick={(e) => { e.stopPropagation(); if (!importBusy) setShowImport(false); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
+            zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 600,
+              maxHeight: '88vh', border: '1px solid var(--border, #475569)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Import Customers')}</h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
+                {t('Upload Excel/CSV or paste a Google Sheets URL. Duplicates (same phone) are skipped.')}
+              </p>
+            </div>
+            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 6, fontWeight: 600 }}>
+                  {t('Excel or CSV file')}
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.tsv,.txt"
+                  disabled={importBusy}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setImportError(null); setImportResult(null);
+                    try {
+                      const rows = file.name.match(/\.(xlsx|xls)$/i)
+                        ? await parseExcelFile(file)
+                        : parseCsvText(await file.text());
+                      setImportRows(rows);
+                    } catch (err: any) {
+                      setImportError(err?.message ?? String(err));
+                    }
+                  }}
+                  style={{ color: 'var(--text2, #94a3b8)', fontSize: 12 }}
+                />
+              </div>
+              <div style={{ borderTop: '1px dashed var(--border, #475569)', paddingTop: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 6, fontWeight: 600 }}>
+                  {t('Google Sheets URL')}
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={sheetUrl}
+                    onChange={(e) => setSheetUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    disabled={importBusy}
+                    style={{
+                      flex: 1, padding: '8px 10px', borderRadius: 6, direction: 'ltr',
+                      border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+                      color: 'var(--text, #f1f5f9)', fontSize: 12, outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!sheetUrl.trim()) return;
+                      setImportError(null); setImportResult(null); setImportBusy(true);
+                      try {
+                        const rows = await fetchGoogleSheet(sheetUrl.trim());
+                        setImportRows(rows);
+                      } catch (err: any) {
+                        setImportError(err?.message ?? String(err));
+                      } finally { setImportBusy(false); }
+                    }}
+                    disabled={importBusy || !sheetUrl.trim()}
+                    style={{
+                      background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
+                      padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >{t('Fetch')}</button>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--text3, #64748b)' }}>
+                  {t('Sheet must be shared: Anyone with the link can view.')}
+                </p>
+              </div>
+              {importRows.length > 0 && (
+                <div style={{
+                  padding: 10, borderRadius: 8, background: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.3)', fontSize: 12, color: 'var(--text2, #94a3b8)',
+                }}>
+                  ✓ {t('{n} rows ready to import', { n: importRows.length })}
+                </div>
+              )}
+              {importResult && (
+                <div style={{
+                  padding: 10, borderRadius: 8, background: 'rgba(34,197,94,0.12)',
+                  fontSize: 13, color: '#22c55e',
+                }}>
+                  ✓ {t('Imported {inserted}, skipped {skipped}', { inserted: importResult.inserted, skipped: importResult.skipped })}
+                </div>
+              )}
+              {importError && (
+                <div style={{
+                  padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.12)',
+                  fontSize: 13, color: 'var(--danger, #ef4444)',
+                }}>{importError}</div>
+              )}
+            </div>
+            <div style={{
+              padding: '14px 22px', borderTop: '1px solid var(--border, #475569)',
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+            }}>
+              <button
+                onClick={() => { if (!importBusy) setShowImport(false); }}
+                disabled={importBusy}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                  padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                }}
+              >{importResult ? t('Close') : t('Cancel')}</button>
+              {!importResult && (
+                <button
+                  onClick={() => handleImportRows(importRows)}
+                  disabled={importBusy || importRows.length === 0}
+                  style={{
+                    background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
+                    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    cursor: importBusy ? 'wait' : 'pointer',
+                    opacity: importBusy || importRows.length === 0 ? 0.6 : 1,
+                  }}
+                >{importBusy ? t('Importing...') : t('Import')}</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== Shared customer form fields with prefilled dropdowns =====
+interface FormFieldsProps {
+  t: (k: string, v?: any) => string;
+  form: Partial<Customer>;
+  setField: (k: keyof Customer, v: any) => void;
+  disabled?: boolean;
+}
+
+function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
+  const inp: React.CSSProperties = {
+    width: '100%', padding: '9px 11px', borderRadius: 6,
+    border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
+    color: 'var(--text, #f1f5f9)', fontSize: 13, outline: 'none',
+  };
+  const lbl: React.CSSProperties = {
+    display: 'block', fontSize: 11, color: 'var(--text2, #94a3b8)', marginBottom: 3, fontWeight: 600,
+  };
+  const sect: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: 0.8,
+    margin: '4px 0 2px', paddingBottom: 4, borderBottom: '1px solid rgba(59,130,246,0.2)',
+  };
+  const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
+  const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 };
+  const communes = form.wilaya_code ? getCommunes(form.wilaya_code) : [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={sect}>{t('Contact')}</div>
+      <div style={grid2}>
+        <div>
+          <label style={lbl}>{t('Name')} *</label>
+          <input type="text" style={inp} value={form.name ?? ''} onChange={(e) => setField('name', e.target.value)} disabled={disabled} placeholder="John Doe" />
+        </div>
+        <div>
+          <label style={lbl}>{t('Phone')} *</label>
+          <input type="text" style={{ ...inp, direction: 'ltr' }} value={form.phone ?? ''} onChange={(e) => setField('phone', e.target.value)} disabled={disabled} placeholder="0551234567" />
+        </div>
+      </div>
+      <div>
+        <label style={lbl}>{t('Email')}</label>
+        <input type="text" style={{ ...inp, direction: 'ltr' }} value={form.email ?? ''} onChange={(e) => setField('email', e.target.value)} disabled={disabled} placeholder="john@example.com" />
+      </div>
+
+      <div style={sect}>{t('Personal')}</div>
+      <div style={grid3}>
+        <div>
+          <label style={lbl}>{t('Gender')}</label>
+          <select style={inp} value={form.gender ?? ''} onChange={(e) => setField('gender', e.target.value)} disabled={disabled}>
+            <option value="">—</option>
+            <option value="male">{t('Male')}</option>
+            <option value="female">{t('Female')}</option>
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>{t('Date of Birth')}</label>
+          <input type="date" style={inp} value={form.date_of_birth ?? ''} onChange={(e) => setField('date_of_birth', e.target.value)} disabled={disabled} />
+        </div>
+        <div>
+          <label style={lbl}>{t('Blood Type')}</label>
+          <select style={inp} value={form.blood_type ?? ''} onChange={(e) => setField('blood_type', e.target.value)} disabled={disabled}>
+            <option value="">—</option>
+            {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={sect}>{t('Address')}</div>
+      <div style={grid2}>
+        <div>
+          <label style={lbl}>{t('Wilaya')}</label>
+          <select style={inp} value={form.wilaya_code ?? ''} onChange={(e) => { setField('wilaya_code', e.target.value); setField('city', ''); }} disabled={disabled}>
+            <option value="">—</option>
+            {ALGERIA_WILAYAS.map(w => <option key={w.code} value={w.code}>{w.code} — {w.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>{t('City')}</label>
+          <select style={inp} value={form.city ?? ''} onChange={(e) => setField('city', e.target.value)} disabled={disabled || !form.wilaya_code}>
+            <option value="">—</option>
+            {communes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style={lbl}>{t('Street Address')}</label>
+        <input type="text" style={inp} value={form.address ?? ''} onChange={(e) => setField('address', e.target.value)} disabled={disabled} />
+      </div>
+
+      <div style={sect}>{t('Couple File')}</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2, #94a3b8)' }}>
+        <input type="checkbox" checked={!!form.is_couple} onChange={(e) => setField('is_couple', e.target.checked)} disabled={disabled} />
+        {t('This is a married couple file (husband & wife in one record)')}
+      </label>
+      {form.is_couple && (
+        <>
+          <div style={grid3}>
+            <div>
+              <label style={lbl}>{t('Spouse Name')}</label>
+              <input type="text" style={inp} value={form.spouse_name ?? ''} onChange={(e) => setField('spouse_name', e.target.value)} disabled={disabled} />
+            </div>
+            <div>
+              <label style={lbl}>{t('Spouse Gender')}</label>
+              <select style={inp} value={form.spouse_gender ?? ''} onChange={(e) => setField('spouse_gender', e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                <option value="male">{t('Male')}</option>
+                <option value="female">{t('Female')}</option>
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>{t('Spouse Blood Type')}</label>
+              <select style={inp} value={form.spouse_blood_type ?? ''} onChange={(e) => setField('spouse_blood_type', e.target.value)} disabled={disabled}>
+                <option value="">—</option>
+                {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={grid2}>
+            <div>
+              <label style={lbl}>{t('Spouse Date of Birth')}</label>
+              <input type="date" style={inp} value={form.spouse_dob ?? ''} onChange={(e) => setField('spouse_dob', e.target.value)} disabled={disabled} />
+            </div>
+            <div>
+              <label style={lbl}>{t('Marriage Date')}</label>
+              <input type="date" style={inp} value={form.marriage_date ?? ''} onChange={(e) => setField('marriage_date', e.target.value)} disabled={disabled} />
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={sect}>📝 {t('Notes')}</div>
+      <textarea
+        value={form.notes ?? ''}
+        onChange={(e) => setField('notes', e.target.value)}
+        disabled={disabled}
+        rows={3}
+        placeholder={t('Internal notes about this customer...')}
+        style={{ ...inp, fontFamily: 'inherit', resize: 'vertical' }}
+      />
     </div>
   );
 }

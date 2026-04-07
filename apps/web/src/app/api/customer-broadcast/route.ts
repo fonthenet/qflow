@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -54,6 +54,16 @@ export async function POST(request: NextRequest) {
 
     const orgId = (staff as any).organization_id as string;
 
+    // Fetch an office timezone for phone normalization (local-format numbers like "0551234567")
+    const { data: officeRow } = await (supabase as any)
+      .from('offices')
+      .select('timezone')
+      .eq('organization_id', orgId)
+      .limit(1)
+      .maybeSingle();
+    const orgTimezone = (officeRow as any)?.timezone ?? 'Africa/Algiers';
+    const orgCountry: string | null = null;
+
     // ── Body ──
     const body = await request.json();
     const customerIds: string[] = Array.isArray(body.customerIds) ? body.customerIds : [];
@@ -98,7 +108,10 @@ export async function POST(request: NextRequest) {
       if (!c.phone) { failed++; continue; }
       try {
         const personalMessage = message.replace(/\{name\}/g, c.name || '');
-        const result = await sendWhatsAppMessage({ to: c.phone, body: personalMessage });
+        // Normalize using the organization's country/timezone so local-format
+        // numbers (e.g. "0551234567") get the correct dial code at send time.
+        const normalized = normalizePhone(c.phone, orgTimezone, orgCountry) ?? c.phone;
+        const result = await sendWhatsAppMessage({ to: normalized, body: personalMessage });
         if (result.ok) sent++;
         else { failed++; if (errors.length < 10) errors.push(`${c.phone}: ${result.error ?? 'failed'}`); }
       } catch (err: any) {
