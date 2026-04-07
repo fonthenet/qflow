@@ -379,6 +379,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم إلغاء حجزك ليوم *{date}* الساعة *{time}* 🚫',
     en: '🚫 Your booking for *{date}* at *{time}* has been cancelled.',
   },
+  cancel_booking_pick: {
+    fr: '📅 *Quelle réservation annuler ?*\n\n{list}\n\nRépondez avec *ANNULER RDV 1*, *ANNULER RDV 2*, etc.',
+    ar: '📅 *أي حجز تريد إلغاءه؟*\n\n{list}\n\nأجب بـ *الغاء موعد 1* أو *الغاء موعد 2* وهكذا.',
+    en: '📅 *Which booking to cancel?*\n\n{list}\n\nReply with *CANCEL BOOKING 1*, *CANCEL BOOKING 2*, etc.',
+  },
+  cancel_booking_bad_index: {
+    fr: '❌ Numéro invalide. Envoyez *MES RDV* pour voir la liste.',
+    ar: '❌ رقم غير صالح. أرسل *مواعيدي* لرؤية القائمة.',
+    en: '❌ Invalid number. Send *MY BOOKINGS* to see the list.',
+  },
   my_bookings_none: {
     fr: '📭 Vous n\'avez aucune réservation à venir.\n\nPour réserver : *RDV CODE* (ex: *RDV HADABI*)',
     ar: '📭 ليس لديك أي حجز قادم.\n\nللحجز: *موعد رمز* (مثال: *موعد HADABI*)',
@@ -1189,16 +1199,18 @@ export async function handleInboundMessage(
     if (/^(مواعيدي|حجوزاتي)$/.test(cleaned)) myLocale = 'ar';
     else if (command.startsWith('MES')) myLocale = 'fr';
     else if (command.startsWith('MY')) myLocale = 'en';
-    console.log('[my-bookings] dispatch, locale=', myLocale, 'identifier=', identifier, 'command=', command);
     await handleMyBookings(identifier, myLocale, sendMessage);
     return;
   }
 
-  // ── CANCEL BOOKING / ANNULER RDV / الغاء موعد ──
-  const cancelBookMatch = command.match(/^(CANCEL\s+BOOKING|ANNULER\s+RDV)$/);
-  const cancelBookAr = /^(الغاء\s*موعد|إلغاء\s*موعد)$/.test(cleaned);
+  // ── CANCEL BOOKING [N] / ANNULER RDV [N] / الغاء موعد [N] ──
+  const cancelBookMatch = command.match(/^(CANCEL\s+BOOKING|ANNULER\s+RDV)(?:\s+(\d+))?$/);
+  const cancelBookAr = cleaned.match(/^(?:الغاء|إلغاء)\s*موعد(?:\s*(\d+))?$/);
   if (cancelBookMatch || cancelBookAr) {
-    await handleCancelBooking(identifier, detectedLocale, channel, sendMessage);
+    const idx = cancelBookMatch?.[2]
+      ? parseInt(cancelBookMatch[2], 10)
+      : (cancelBookAr?.[1] ? parseInt(cancelBookAr[1], 10) : null);
+    await handleCancelBooking(identifier, detectedLocale, channel, sendMessage, idx);
     return;
   }
 
@@ -2979,7 +2991,6 @@ async function handleMyBookings(
   // phone format stored in customer_phone is matched reliably.
   const digits = identifier.replace(/\D/g, '');
   const last9 = digits.slice(-9);
-  console.log('[my-bookings] identifier=', identifier, 'digits=', digits, 'last9=', last9);
 
   const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error: apptErr } = await supabase
@@ -2995,14 +3006,11 @@ async function handleMyBookings(
   if (apptErr) {
     console.error('[my-bookings] query error', apptErr);
   }
-  console.log('[my-bookings] candidates=', (candidates ?? []).length,
-    'samplePhones=', (candidates ?? []).slice(0, 5).map((c: any) => c.customer_phone));
 
   const appts = (candidates ?? []).filter((a: any) => {
     const d = String(a.customer_phone ?? '').replace(/\D/g, '');
     return d.length >= 9 && d.slice(-9) === last9;
   }).slice(0, 20);
-  console.log('[my-bookings] matched=', appts.length);
 
   if (!appts || appts.length === 0) {
     await sendMessage({ to: identifier, body: t('my_bookings_none', locale) });
@@ -3043,17 +3051,18 @@ async function handleMyBookings(
 
 async function handleCancelBooking(
   identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
+  pickIndex: number | null = null,
 ) {
   const supabase = createAdminClient() as any;
 
-  // Find upcoming appointments for this phone number
+  // Find upcoming appointments for this phone number (same ordering as MY BOOKINGS)
   const now = new Date().toISOString();
   const digits = identifier.replace(/\D/g, '');
   const last9 = digits.slice(-9);
   const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates } = await supabase
     .from('appointments')
-    .select('id, scheduled_at, office_id, customer_name, customer_phone')
+    .select('id, scheduled_at, status, office_id, service_id, customer_name, customer_phone')
     .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
     .lte('scheduled_at', in60d)
@@ -3063,19 +3072,54 @@ async function handleCancelBooking(
   const appointments = (candidates ?? []).filter((a: any) => {
     const d = String(a.customer_phone ?? '').replace(/\D/g, '');
     return d.length >= 9 && d.slice(-9) === last9;
-  });
+  }).slice(0, 20);
 
   if (!appointments || appointments.length === 0) {
     await sendMessage({ to: identifier, body: t('cancel_booking_none', locale) });
     return;
   }
 
-  const appt = appointments[0];
+  // Multi-booking: present picker unless an index was supplied
+  if (appointments.length > 1 && pickIndex === null) {
+    // Resolve office → org and service names for display
+    const officeIds = Array.from(new Set(appointments.map((a: any) => a.office_id).filter(Boolean)));
+    const svcIds = Array.from(new Set(appointments.map((a: any) => a.service_id).filter(Boolean)));
+    const [officesRes, svcsRes] = await Promise.all([
+      officeIds.length ? supabase.from('offices').select('id, organizations(name)').in('id', officeIds) : Promise.resolve({ data: [] }),
+      svcIds.length ? supabase.from('services').select('id, name').in('id', svcIds) : Promise.resolve({ data: [] }),
+    ]);
+    const officeOrgMap = new Map<string, string>(
+      (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.name ?? ''])
+    );
+    const svcMap = new Map<string, string>((svcsRes.data ?? []).map((s: any) => [s.id, s.name]));
+
+    const list = appointments.map((a: any, i: number) => {
+      const d = new Date(a.scheduled_at);
+      const dateStr = d.toISOString().split('T')[0];
+      const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const dateFormatted = formatDateForLocale(dateStr, locale);
+      const org = officeOrgMap.get(a.office_id) ?? '';
+      const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
+      const svcPart = svc ? ` — ${svc}` : '';
+      return `*${i + 1}* — 🏢 ${org}${svcPart}\n   📅 ${dateFormatted} ⏰ ${timeStr}`;
+    }).join('\n\n');
+
+    await sendMessage({ to: identifier, body: t('cancel_booking_pick', locale, { list }) });
+    return;
+  }
+
+  // Single booking OR index supplied
+  const resolvedIdx = pickIndex === null ? 1 : pickIndex;
+  if (resolvedIdx < 1 || resolvedIdx > appointments.length) {
+    await sendMessage({ to: identifier, body: t('cancel_booking_bad_index', locale) });
+    return;
+  }
+
+  const appt = appointments[resolvedIdx - 1];
   const scheduledDate = new Date(appt.scheduled_at);
   const dateStr = scheduledDate.toISOString().split('T')[0];
   const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
 
-  // Cancel the appointment
   await supabase
     .from('appointments')
     .update({ status: 'cancelled' })
