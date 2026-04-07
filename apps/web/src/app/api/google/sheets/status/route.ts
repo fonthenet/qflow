@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
   const { data: link } = await sb
     .from('sheet_links')
-    .select('sheet_id, sheet_name, last_pushed_at, last_row_count')
+    .select('sheet_id, sheet_name, last_pushed_at, last_row_count, auto_sync, sheet_url')
     .eq('organization_id', orgId)
     .maybeSingle();
   return NextResponse.json(
@@ -34,9 +34,10 @@ export async function GET(req: NextRequest) {
         ? {
             id: link.sheet_id,
             name: link.sheet_name,
-            url: `https://docs.google.com/spreadsheets/d/${link.sheet_id}/edit`,
+            url: link.sheet_url || `https://docs.google.com/spreadsheets/d/${link.sheet_id}/edit`,
             lastPushedAt: link.last_pushed_at,
             rowCount: link.last_row_count,
+            autoSync: link.auto_sync !== false,
           }
         : null,
     },

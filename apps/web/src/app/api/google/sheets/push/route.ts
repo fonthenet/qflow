@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getAccessTokenForOrg, createSheet, writeSheetValues } from '@/lib/google-oauth';
+import { getAccessTokenForOrg, writeSheetValues } from '@/lib/google-oauth';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -45,20 +45,10 @@ export async function POST(req: NextRequest) {
       .eq('organization_id', orgId)
       .maybeSingle();
 
-    let sheetId: string;
-    let sheetName: string;
-    if (existingLink) {
-      sheetId = existingLink.sheet_id;
-      sheetName = existingLink.sheet_name || desiredTitle;
-    } else {
-      sheetId = await createSheet(accessToken, desiredTitle);
-      sheetName = desiredTitle;
-      await sb.from('sheet_links').insert({
-        organization_id: orgId,
-        sheet_id: sheetId,
-        sheet_name: sheetName,
-      });
+    if (!existingLink) {
+      return NextResponse.json({ error: 'No sheet linked. Use /create or /link first.' }, { status: 400, headers: CORS });
     }
+    const sheetId = existingLink.sheet_id;
 
     // 3. Fetch all customers for the org
     const { data: customers, error: custErr } = await sb

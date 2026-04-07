@@ -98,6 +98,39 @@ export async function getAccessTokenForOrg(orgId: string): Promise<string> {
   return refreshed.access_token;
 }
 
+/** Extract a sheet ID from a Google Sheets URL or return the input if it looks like an ID. */
+export function extractSheetId(input: string): string | null {
+  if (!input) return null;
+  const m = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(input.trim())) return input.trim();
+  return null;
+}
+
+/** List the user's recent Google Sheets via Drive API. */
+export async function listUserSheets(accessToken: string, query?: string): Promise<Array<{ id: string; name: string; modifiedTime: string }>> {
+  const q = [
+    "mimeType='application/vnd.google-apps.spreadsheet'",
+    'trashed=false',
+    query ? `name contains '${query.replace(/'/g, "\\'")}'` : '',
+  ].filter(Boolean).join(' and ');
+  const url = `https://www.googleapis.com/drive/v3/files?pageSize=50&orderBy=modifiedTime desc&q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) throw new Error(`Drive list failed: ${await res.text()}`);
+  const data = (await res.json()) as { files: Array<{ id: string; name: string; modifiedTime: string }> };
+  return data.files || [];
+}
+
+/** Fetch metadata for a single sheet (returns null if inaccessible). */
+export async function getSheetMeta(accessToken: string, sheetId: string): Promise<{ id: string; name: string } | null> {
+  const url = `https://www.googleapis.com/drive/v3/files/${sheetId}?fields=id,name,mimeType`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { id: string; name: string; mimeType: string };
+  if (data.mimeType !== 'application/vnd.google-apps.spreadsheet') return null;
+  return { id: data.id, name: data.name };
+}
+
 /** Create a new Google Sheet and return its ID. */
 export async function createSheet(accessToken: string, title: string): Promise<string> {
   const res = await fetch(SHEETS_BASE, {

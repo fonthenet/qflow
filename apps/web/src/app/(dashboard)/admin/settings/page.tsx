@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import { SettingsClient } from './settings-client';
+import { GoogleSheetsCard } from './google-sheets-card';
 import { isSmsProviderConfigured } from '@/lib/sms';
 import { isWhatsAppConfigured } from '@/lib/whatsapp';
 import { resolvePlatformConfig, summarizeTemplate } from '@/lib/platform/config';
@@ -90,14 +91,17 @@ export default async function SettingsPage() {
   }
 
   return (
-    <SettingsClient
-      organization={organization}
-      smsProviderReady={isSmsProviderConfigured()}
-      whatsappProviderReady={isWhatsAppConfigured()}
-      templateSummary={summarizeTemplate(platformConfig)}
-      templateConfigured={typeof (organization.settings as Record<string, unknown> | null)?.platform_template_id === 'string'}
-      messengerPageInfo={messengerPageInfo}
-      virtualQueueCodes={virtualQueueCodes}
-    />
+    <div className="space-y-6">
+      <SettingsClient
+        organization={organization}
+        smsProviderReady={isSmsProviderConfigured()}
+        whatsappProviderReady={isWhatsAppConfigured()}
+        templateSummary={summarizeTemplate(platformConfig)}
+        templateConfigured={typeof (organization.settings as Record<string, unknown> | null)?.platform_template_id === 'string'}
+        messengerPageInfo={messengerPageInfo}
+        virtualQueueCodes={virtualQueueCodes}
+      />
+      <GoogleSheetsCard organizationId={orgId} />
+    </div>
   );
 }
