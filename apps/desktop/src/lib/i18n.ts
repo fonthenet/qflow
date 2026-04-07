@@ -401,6 +401,12 @@ const FR: Messages = {
   'Check in': 'Enregistrer',
   'Complete': 'Terminer',
   'Delete this appointment?': 'Supprimer ce rendez-vous ?',
+  'On time — priority placement': 'À l\'heure — placement prioritaire',
+  'In slot window — priority placement': 'Dans le créneau — placement prioritaire',
+  'Early — slight priority': 'En avance — priorité légère',
+  'Very early — placed as walk-in': 'Très en avance — placé comme sans RDV',
+  'Late — courtesy placement': 'En retard — placement courtoisie',
+  'Missing department': 'Département manquant',
 };
 
 const AR: Messages = {
@@ -800,6 +806,12 @@ const AR: Messages = {
   'Check in': 'تسجيل الحضور',
   'Complete': 'إنهاء',
   'Delete this appointment?': 'حذف هذا الموعد؟',
+  'On time — priority placement': 'في الموعد — أولوية',
+  'In slot window — priority placement': 'ضمن الفترة — أولوية',
+  'Early — slight priority': 'مبكر — أولوية خفيفة',
+  'Very early — placed as walk-in': 'مبكر جدًا — وضع كزائر عادي',
+  'Late — courtesy placement': 'متأخر — مجاملة',
+  'Missing department': 'القسم مفقود',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

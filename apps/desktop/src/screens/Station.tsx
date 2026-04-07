@@ -2595,16 +2595,45 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 showToast(translate(locale, 'Missing department'), 'error');
                 return false;
               }
+              // Smart slot-aware priority placement
+              // offset in minutes: positive = late, negative = early
+              const offsetMin = Math.round((Date.now() - new Date(appt.scheduled_at).getTime()) / 60000);
+              let priority = 0;
+              let reason = '';
+              if (offsetMin >= -15 && offsetMin <= 30) {
+                // In slot window (15 min early → 30 min late): VIP priority
+                priority = 2;
+                reason = offsetMin < 0
+                  ? translate(locale, 'On time — priority placement')
+                  : translate(locale, 'In slot window — priority placement');
+              } else if (offsetMin < -15 && offsetMin >= -60) {
+                // Early 15–60 min: slight boost
+                priority = 1;
+                reason = translate(locale, 'Early — slight priority');
+              } else if (offsetMin < -60) {
+                // Very early: normal walk-in
+                priority = 0;
+                reason = translate(locale, 'Very early — placed as walk-in');
+              } else {
+                // Very late (>30 min): courtesy, slight demotion
+                priority = 1;
+                reason = translate(locale, 'Late — courtesy placement');
+              }
+              const slotTime = new Date(appt.scheduled_at);
+              const slotLabel = `${String(slotTime.getHours()).padStart(2, '0')}:${String(slotTime.getMinutes()).padStart(2, '0')}`;
               const res = await bookInHouse({
                 department_id: appt.department_id,
                 service_id: appt.service_id ?? undefined,
                 customer_data: {
                   name: appt.customer_name || undefined,
                   phone: appt.customer_phone || undefined,
-                },
-                priority: 0,
+                  scheduled_at: appt.scheduled_at,
+                  slot_label: slotLabel,
+                } as any,
+                priority,
                 source: 'appointment',
               });
+              if (res) showToast(`${slotLabel} · ${reason}`, 'info');
               return !!res;
             }}
           />
@@ -2703,7 +2732,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
-                  {(ticket.appointment_id || ticket.source === 'appointment') && <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {translate(locale, 'Booked')}</span>}
+                  {(ticket.appointment_id || ticket.source === 'appointment') && (() => {
+                    let slotLabel = '';
+                    try { const cd = typeof ticket.customer_data === 'string' ? JSON.parse(ticket.customer_data) : ticket.customer_data; slotLabel = cd?.slot_label || ''; } catch {}
+                    return <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {slotLabel ? `${translate(locale, 'Booked')} ${slotLabel}` : translate(locale, 'Booked')}</span>;
+                  })()}
                   {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
                   {ticket.source === 'messenger' && <span className="badge messenger">{translate(locale, 'Messenger')}</span>}
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}

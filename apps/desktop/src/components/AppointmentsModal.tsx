@@ -23,7 +23,7 @@ interface Props {
   departments?: Record<string, string>;
   services?: Record<string, string>;
   onClose: () => void;
-  onCheckIn?: (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null }) => Promise<boolean>;
+  onCheckIn?: (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string }) => Promise<boolean>;
 }
 
 function formatPhoneDisplay(phone: string | null): string {
@@ -83,6 +83,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
             service_id: appt.service_id,
             customer_name: appt.customer_name,
             customer_phone: appt.customer_phone,
+            scheduled_at: appt.scheduled_at,
           });
           if (!ok) throw new Error('Check-in failed');
         }
