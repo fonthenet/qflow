@@ -1128,17 +1128,22 @@ export function SettingsClient({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <input
             type="checkbox"
             id="booking-enabled"
             checked={bookingEnabled}
             onChange={(e) => setBookingEnabled(e.target.checked)}
-            className="h-4 w-4 rounded border-border"
+            className="mt-1 h-4 w-4 rounded border-border"
           />
-          <label htmlFor="booking-enabled" className="text-sm font-medium">
-            {t('Enable Future Booking')}
-          </label>
+          <div>
+            <label htmlFor="booking-enabled" className="text-sm font-medium">
+              {t('Online Booking')}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t('Allow customers to book appointments via WhatsApp, Messenger, and web')}
+            </p>
+          </div>
         </div>
 
         <div className={bookingEnabled ? '' : 'opacity-60 pointer-events-none'}>
