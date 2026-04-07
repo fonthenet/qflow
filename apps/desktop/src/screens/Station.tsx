@@ -78,7 +78,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -89,6 +89,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   onCollapse: () => void;
   session: any;
   prefill?: { name?: string; phone?: string; notes?: string } | null;
+  storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
@@ -117,11 +118,20 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const runCustomerSearch = useCallback(async (query: string) => {
     const raw = query.trim();
     if (raw.length < 1) { setCustSuggestions([]); setShowCustSuggestions(false); return; }
-    const orgId = session?.organization_id;
-    if (!orgId) return;
     const mySeq = ++custSearchSeq.current;
     try {
+      await ensureAuth(storedAuth);
       const sb = await getSupabase();
+      let orgId = session?.organization_id;
+      if (!orgId || orgId === 'undefined') {
+        const { data: userData } = await sb.auth.getUser();
+        const authUserId = userData?.user?.id;
+        if (authUserId) {
+          const { data: staffRow } = await sb.from('staff').select('organization_id').eq('auth_user_id', authUserId).single();
+          orgId = (staffRow as any)?.organization_id ?? '';
+        }
+      }
+      if (!orgId) { console.warn('[customer-search] no orgId'); return; }
       // Sanitize out PostgREST .or() delimiters
       const safe = raw.replace(/[%,()]/g, ' ').trim();
       const digits = raw.replace(/\D/g, '');
@@ -180,7 +190,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     } catch (err) {
       console.warn('[customer-search] failed', err);
     }
-  }, [session?.organization_id]);
+  }, [session?.organization_id, storedAuth]);
 
   // Debounced search triggered by either name or phone typing
   const [custSearchQuery, setCustSearchQuery] = useState('');
@@ -2582,6 +2592,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             whatsappPhone="+213551176598"
             session={session}
             prefill={bookingPrefill}
+            storedAuth={storedAuth}
           />
         )}
       </div>
