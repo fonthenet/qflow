@@ -397,6 +397,10 @@ const FR: Messages = {
   'completed': 'terminé',
   'cancelled': 'annulé',
   'no_show': 'absent',
+  'Confirm': 'Confirmer',
+  'Check in': 'Enregistrer',
+  'Complete': 'Terminer',
+  'Delete this appointment?': 'Supprimer ce rendez-vous ?',
 };
 
 const AR: Messages = {
@@ -792,6 +796,10 @@ const AR: Messages = {
   'completed': 'مكتمل',
   'cancelled': 'ملغى',
   'no_show': 'لم يحضر',
+  'Confirm': 'تأكيد',
+  'Check in': 'تسجيل الحضور',
+  'Complete': 'إنهاء',
+  'Delete this appointment?': 'حذف هذا الموعد؟',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

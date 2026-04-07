@@ -67,6 +67,42 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<'today' | '7days'>('today');
   const [query, setQuery] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const updateStatus = useCallback(async (id: string, nextStatus: string) => {
+    setBusyId(id);
+    try {
+      await ensureAuth(storedAuth);
+      const sb = await getSupabase();
+      const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
+      if (uErr) throw uErr;
+      setAppointments((prev) =>
+        nextStatus === 'cancelled'
+          ? prev.filter((a) => a.id !== id)
+          : prev.map((a) => (a.id === id ? { ...a, status: nextStatus } : a))
+      );
+    } catch (e: any) {
+      setError(e?.message || 'Update failed');
+    } finally {
+      setBusyId(null);
+    }
+  }, [storedAuth]);
+
+  const deleteAppointment = useCallback(async (id: string) => {
+    if (!confirm(t('Delete this appointment?'))) return;
+    setBusyId(id);
+    try {
+      await ensureAuth(storedAuth);
+      const sb = await getSupabase();
+      const { error: dErr } = await sb.from('appointments').delete().eq('id', id);
+      if (dErr) throw dErr;
+      setAppointments((prev) => prev.filter((a) => a.id !== id));
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    } finally {
+      setBusyId(null);
+    }
+  }, [storedAuth, t]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,7 +183,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
           background: 'var(--surface, #1e293b)',
           border: '1px solid var(--border, #334155)',
           borderRadius: 16,
-          width: '100%', maxWidth: 900, maxHeight: '85vh',
+          width: '100%', maxWidth: 900, height: '85vh',
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         }}
@@ -256,6 +292,11 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                 const color = STATUS_COLORS[a.status] || '#64748b';
                 const deptName = (a.department_id && departments?.[a.department_id]) || '';
                 const svcName = (a.service_id && services?.[a.service_id]) || '';
+                const busy = busyId === a.id;
+                const canConfirm = a.status === 'pending';
+                const canCheckIn = a.status === 'pending' || a.status === 'confirmed';
+                const canComplete = a.status === 'checked_in' || a.status === 'serving' || a.status === 'confirmed';
+                const canCancel = a.status !== 'cancelled' && a.status !== 'completed';
                 return (
                   <div
                     key={a.id}
@@ -266,6 +307,8 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       border: '1px solid var(--border, #334155)',
                       borderLeft: `3px solid ${color}`,
                       borderRadius: 10,
+                      opacity: busy ? 0.5 : 1,
+                      transition: 'opacity 150ms',
                     }}
                   >
                     <div style={{
@@ -293,9 +336,80 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700,
                       textTransform: 'uppercase', letterSpacing: 0.4,
                       background: `${color}22`, color,
+                      whiteSpace: 'nowrap',
                     }}>
                       {t(a.status)}
                     </span>
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                      {canConfirm && (
+                        <button
+                          disabled={busy}
+                          onClick={() => updateStatus(a.id, 'confirmed')}
+                          title={t('Confirm')}
+                          style={{
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #3b82f640',
+                            background: '#3b82f622', color: '#3b82f6', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          ✓ {t('Confirm')}
+                        </button>
+                      )}
+                      {canCheckIn && (
+                        <button
+                          disabled={busy}
+                          onClick={() => updateStatus(a.id, 'checked_in')}
+                          title={t('Check in')}
+                          style={{
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #8b5cf640',
+                            background: '#8b5cf622', color: '#8b5cf6', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          → {t('Check in')}
+                        </button>
+                      )}
+                      {canComplete && (
+                        <button
+                          disabled={busy}
+                          onClick={() => updateStatus(a.id, 'completed')}
+                          title={t('Complete')}
+                          style={{
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e40',
+                            background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          ✓ {t('Complete')}
+                        </button>
+                      )}
+                      {canCancel && (
+                        <button
+                          disabled={busy}
+                          onClick={() => updateStatus(a.id, 'cancelled')}
+                          title={t('Cancel')}
+                          style={{
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444440',
+                            background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                      <button
+                        disabled={busy}
+                        onClick={() => deleteAppointment(a.id)}
+                        title={t('Delete')}
+                        style={{
+                          padding: '6px 10px', borderRadius: 6, border: '1px solid #64748b40',
+                          background: 'transparent', color: '#64748b', cursor: busy ? 'wait' : 'pointer',
+                          fontSize: 11, fontWeight: 600,
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
                 );
               })}
