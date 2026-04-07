@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 import { CustomersModal } from '../components/CustomersModal';
+import { AppointmentsModal } from '../components/AppointmentsModal';
 
 // ── Transfer Modal Component ──────────────────────────────────────
 function TransferModal({ desks, onTransfer, onClose, locale }: {
@@ -1323,6 +1324,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
+  const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
   const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
@@ -2459,6 +2461,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >
               👥 {t('Customers')}
             </button>
+            {/* Appointments pill */}
+            <button
+              onClick={() => setShowAppointmentsModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(34,197,94,0.4)',
+                background: 'rgba(34,197,94,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#22c55e',
+              }}
+            >
+              📅 {t('Appointments')}
+            </button>
             {/* Broadcast pill */}
             <button
               onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
@@ -2562,6 +2578,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             )}
           </div>
           </>
+        )}
+
+        {/* Appointments Modal */}
+        {showAppointmentsModal && (
+          <AppointmentsModal
+            organizationId={session.organization_id}
+            officeId={session.office_id}
+            locale={locale}
+            storedAuth={storedAuth}
+            departments={names.departments}
+            services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
+            onClose={() => setShowAppointmentsModal(false)}
+          />
         )}
 
         {/* Customers Modal */}
