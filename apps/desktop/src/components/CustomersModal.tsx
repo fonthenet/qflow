@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilayas';
 import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
+import { GoogleSheetsModal } from './GoogleSheetsModal';
 
 interface Customer {
   id: string;
@@ -243,13 +244,9 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   const [sheetUrl, setSheetUrl] = useState('');
 
   // Google Sheets sync state
-  const [gStatus, setGStatus] = useState<{
-    connected: boolean;
-    email: string | null;
-    sheet: { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number } | null;
-  } | null>(null);
-  const [gBusy, setGBusy] = useState(false);
-  const [gError, setGError] = useState<string | null>(null);
+  const [showGoogleSheets, setShowGoogleSheets] = useState(false);
+  const [gConnected, setGConnected] = useState(false);
+  const [gAutoSync, setGAutoSync] = useState(false);
 
   const resolveOrgId = useCallback(async (): Promise<string> => {
     if (orgIdRef.current) return orgIdRef.current;
@@ -444,78 +441,37 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     }
   }
 
-  // === GOOGLE SHEETS SYNC ===
+  // === GOOGLE SHEETS SYNC (status + background auto-push) ===
   const refreshGStatus = useCallback(async () => {
     try {
       const orgId = await resolveOrgId();
       const res = await fetch(`https://qflo.net/api/google/sheets/status?org=${encodeURIComponent(orgId)}`);
-      if (res.ok) setGStatus(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setGConnected(!!data.connected);
+        setGAutoSync(!!data.sheet?.autoSync);
+      }
     } catch {}
   }, [resolveOrgId]);
 
   useEffect(() => { refreshGStatus(); }, [refreshGStatus]);
+  // Refresh when modal closes (in case user changed something)
+  useEffect(() => { if (!showGoogleSheets) refreshGStatus(); }, [showGoogleSheets, refreshGStatus]);
 
-  // Auto-push every 5 minutes when connected
+  // Auto-push every 5 minutes when connected & auto-sync enabled
   useEffect(() => {
-    if (!gStatus?.connected) return;
-    const id = window.setInterval(() => { void handleGooglePush(true); }, 5 * 60 * 1000);
+    if (!gConnected || !gAutoSync) return;
+    const id = window.setInterval(async () => {
+      try {
+        const orgId = await resolveOrgId();
+        await fetch('https://qflo.net/api/google/sheets/push', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ organizationId: orgId }),
+        });
+      } catch {}
+    }, 5 * 60 * 1000);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gStatus?.connected]);
-
-  async function handleGoogleConnect() {
-    try {
-      const orgId = await resolveOrgId();
-      const url = `https://qflo.net/api/google/oauth/start?org=${encodeURIComponent(orgId)}`;
-      // Open in default browser
-      window.open(url, '_blank');
-      // Poll status for up to 2 minutes
-      let tries = 0;
-      const poll = window.setInterval(async () => {
-        tries++;
-        await refreshGStatus();
-        if (gStatus?.connected || tries > 60) window.clearInterval(poll);
-      }, 2000);
-    } catch (e: any) {
-      setGError(e?.message ?? String(e));
-    }
-  }
-
-  async function handleGooglePush(silent = false) {
-    setGBusy(true);
-    if (!silent) setGError(null);
-    try {
-      const orgId = await resolveOrgId();
-      const res = await fetch('https://qflo.net/api/google/sheets/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId: orgId, sheetTitle: 'Qflow Customers' }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Push failed');
-      await refreshGStatus();
-    } catch (e: any) {
-      if (!silent) setGError(e?.message ?? String(e));
-    } finally {
-      setGBusy(false);
-    }
-  }
-
-  async function handleGoogleDisconnect() {
-    if (!confirm(t('Disconnect Google Sheets?'))) return;
-    setGBusy(true);
-    try {
-      const orgId = await resolveOrgId();
-      await fetch('https://qflo.net/api/google/sheets/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId: orgId }),
-      });
-      setGStatus({ connected: false, email: null, sheet: null });
-    } finally {
-      setGBusy(false);
-    }
-  }
+  }, [gConnected, gAutoSync, resolveOrgId]);
 
   // === FILTERS ===
   const filtered = useMemo(() => {
@@ -698,37 +654,16 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
               padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
             }}
           >⬆ {t('Import')}</button>
-          {gStatus?.connected ? (
-            <button
-              onClick={() => handleGooglePush(false)}
-              disabled={gBusy}
-              title={gStatus.sheet?.url ? `${gStatus.email} → ${gStatus.sheet.name}` : gStatus.email || ''}
-              style={{
-                background: 'transparent', border: '1px solid #10b981', color: '#10b981',
-                padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: gBusy ? 'wait' : 'pointer',
-              }}
-            >📊 {gBusy ? t('Syncing…') : t('Sync to Sheet')}{gStatus.sheet?.lastPushedAt ? ` · ${new Date(gStatus.sheet.lastPushedAt).toLocaleTimeString()}` : ''}</button>
-          ) : (
-            <button
-              onClick={handleGoogleConnect}
-              style={{
-                background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-                padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-              }}
-            >📊 {t('Connect Google')}</button>
-          )}
-          {gStatus?.connected && (
-            <button
-              onClick={handleGoogleDisconnect}
-              disabled={gBusy}
-              title={t('Disconnect')}
-              style={{
-                background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-                padding: '8px 8px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-              }}
-            >✕</button>
-          )}
-          {gError && <span style={{ color: '#ef4444', fontSize: 11 }}>{gError}</span>}
+          <button
+            onClick={() => setShowGoogleSheets(true)}
+            title={gConnected ? t('Google Sheets sync (connected)') : t('Connect Google Sheets')}
+            style={{
+              background: gConnected ? 'rgba(16,185,129,0.15)' : 'transparent',
+              border: `1px solid ${gConnected ? '#10b981' : 'var(--border, #475569)'}`,
+              color: gConnected ? '#10b981' : 'var(--text2, #94a3b8)',
+              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+            }}
+          >📊 {t('Google Sheets')}{gConnected ? ' ✓' : ''}</button>
           <button
             onClick={() => { setShowAdd(true); setAddError(null); }}
             style={{
@@ -1383,6 +1318,13 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           </div>
         </div>
       )}
+
+      <GoogleSheetsModal
+        open={showGoogleSheets}
+        onClose={() => setShowGoogleSheets(false)}
+        resolveOrgId={resolveOrgId}
+        t={t}
+      />
     </div>
   );
 }
