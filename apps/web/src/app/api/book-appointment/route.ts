@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 import { getAvailableSlots } from '@/lib/slot-generator';
+import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 
 function getSupabase() {
   return createClient(
@@ -94,6 +95,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Auto-add / update the customer in the customers table (non-fatal on error)
+  try {
+    const { data: office } = await supabase
+      .from('offices')
+      .select('organization_id')
+      .eq('id', officeId)
+      .single();
+    const orgId = (office as any)?.organization_id;
+    if (orgId) {
+      await upsertCustomerFromBooking(supabase, {
+        organizationId: orgId,
+        name: customerName,
+        phone: customerPhone,
+        email: customerEmail,
+        source: 'booking',
+      });
+    }
+  } catch (e) {
+    console.warn('[book-appointment] customer upsert failed:', (e as any)?.message ?? e);
   }
 
   return NextResponse.json({ appointment }, { status: 201 });

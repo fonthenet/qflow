@@ -6,6 +6,7 @@ type Messages = Record<string, string>;
 
 const FR: Messages = {
   'Customers': 'Clients',
+  'Book In-House': 'Réserver sur place',
   'Add Customer': 'Ajouter un client',
   'Send WhatsApp': 'Envoyer WhatsApp',
   'Select all visible': 'Tout sélectionner',
@@ -384,6 +385,7 @@ const FR: Messages = {
 
 const AR: Messages = {
   'Customers': 'العملاء',
+  'Book In-House': 'حجز في المكان',
   'Add Customer': 'إضافة عميل',
   'Send WhatsApp': 'إرسال واتساب',
   'Select all visible': 'تحديد الكل',

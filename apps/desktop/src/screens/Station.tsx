@@ -78,7 +78,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -88,15 +88,16 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   whatsappPhone?: string | null;
   onCollapse: () => void;
   session: any;
+  prefill?: { name?: string; phone?: string; notes?: string } | null;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
   const [bookingTab, setBookingTab] = useState<'walkin' | 'future'>('walkin');
   const [selectedDept, setSelectedDept] = useState(departments.length === 1 ? departments[0][0] : '');
   const [selectedService, setSelectedService] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerReason, setCustomerReason] = useState('');
+  const [customerName, setCustomerName] = useState(prefill?.name ?? '');
+  const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
+  const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
   const [isPriority, setIsPriority] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<{ id: string; ticket_number: string; qr_token: string } | null>(null);
@@ -110,9 +111,9 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [futService, setFutService] = useState('');
   const [futDate, setFutDate] = useState('');
   const [futTime, setFutTime] = useState('');
-  const [futName, setFutName] = useState('');
-  const [futPhone, setFutPhone] = useState('');
-  const [futNotes, setFutNotes] = useState('');
+  const [futName, setFutName] = useState(prefill?.name ?? '');
+  const [futPhone, setFutPhone] = useState(prefill?.phone ?? '');
+  const [futNotes, setFutNotes] = useState(prefill?.notes ?? '');
   const [futSlots, setFutSlots] = useState<string[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
   const [futSubmitting, setFutSubmitting] = useState(false);
@@ -1128,6 +1129,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
+  const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
   const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
@@ -2375,6 +2377,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             locale={locale}
             storedAuth={storedAuth}
             onClose={() => setShowCustomersModal(false)}
+            onBookCustomer={(c) => {
+              setBookingPrefill(c);
+              setShowCustomersModal(false);
+              setShowBookingModal(true);
+            }}
           />
         )}
 
@@ -2386,10 +2393,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             services={allServices}
             officeId={session.office_id}
             onBook={bookInHouse}
-            onCollapse={() => setShowBookingModal(false)}
+            onCollapse={() => { setShowBookingModal(false); setBookingPrefill(null); }}
             messengerPageId={messengerPageId}
             whatsappPhone="+213551176598"
             session={session}
+            prefill={bookingPrefill}
           />
         )}
       </div>

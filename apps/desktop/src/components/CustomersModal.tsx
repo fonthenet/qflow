@@ -17,6 +17,7 @@ interface Props {
   locale: DesktopLocale;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   onClose: () => void;
+  onBookCustomer?: (customer: { name: string; phone: string; notes?: string }) => void;
 }
 
 function initials(name: string | null, phone: string | null) {
@@ -72,7 +73,7 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function CustomersModal({ organizationId, locale, storedAuth, onClose }: Props) {
+export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -645,6 +646,25 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                 }}
               >🗑 {t('Delete')}</button>
               <div style={{ display: 'flex', gap: 10 }}>
+                {onBookCustomer && (
+                  <button
+                    onClick={() => {
+                      if (!detail) return;
+                      onBookCustomer({
+                        name: detail.name ?? '',
+                        phone: formatPhoneDisplay(detail.phone),
+                        notes: detail.notes ?? '',
+                      });
+                      setDetail(null);
+                      onClose();
+                    }}
+                    disabled={detailBusy}
+                    style={{
+                      background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
+                      padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >📅 {t('Book In-House')}</button>
+                )}
                 <button
                   onClick={() => { if (!detailBusy) setDetail(null); }}
                   disabled={detailBusy}

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
@@ -2796,6 +2797,14 @@ async function confirmBooking(
     await sendMessage({ to: identifier, body: t('booking_failed', locale) });
     return;
   }
+
+  // Auto-add this customer to the customers table (non-fatal on error)
+  await upsertCustomerFromBooking(supabase, {
+    organizationId: session.organization_id,
+    name: session.booking_customer_name,
+    phone: identifier,
+    source: channel === 'messenger' ? 'messenger' : 'whatsapp',
+  });
 
   // Clean up booking session
   await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
