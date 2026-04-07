@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         <body>
           <div class="card">
             <h1>✓ Connected</h1>
-            <p>Google account <strong>${escapeHtml(email)}</strong> is now linked to Qflow.</p>
+            <p>Google account <strong>${escapeHtml(email)}</strong> is now linked to Qflo.</p>
             <p>You can close this window and return to the Station.</p>
           </div>
           <script>setTimeout(()=>window.close(),2500)</script>
