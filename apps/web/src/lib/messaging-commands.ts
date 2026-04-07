@@ -2972,22 +2972,19 @@ async function handleMyBookings(
   const supabase = createAdminClient() as any;
   const now = new Date().toISOString();
 
-  // Normalize phone variants to maximize match (stored format may vary)
-  const variants = new Set<string>([identifier]);
-  if (identifier.startsWith('+')) variants.add(identifier.slice(1));
-  else variants.add('+' + identifier);
-  if (identifier.startsWith('213')) variants.add('0' + identifier.slice(3));
-  if (identifier.startsWith('+213')) variants.add('0' + identifier.slice(4));
-  if (identifier.startsWith('0')) { variants.add('213' + identifier.slice(1)); variants.add('+213' + identifier.slice(1)); }
+  // Match by digits-only: stored phone may be in any format
+  // (213..., +213..., 0..., local...). Compare by last 9 significant digits.
+  const digits = identifier.replace(/\D/g, '');
+  const last9 = digits.slice(-9);
 
   const { data: appts } = await supabase
     .from('appointments')
-    .select('id, scheduled_at, status, customer_name, organization_id, service_id')
-    .in('customer_phone', Array.from(variants))
+    .select('id, scheduled_at, status, customer_name, customer_phone, organization_id, service_id')
+    .ilike('customer_phone', `%${last9}%`)
     .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
     .order('scheduled_at', { ascending: true })
-    .limit(10);
+    .limit(20);
 
   if (!appts || appts.length === 0) {
     await sendMessage({ to: identifier, body: t('my_bookings_none', locale) });
@@ -3031,11 +3028,13 @@ async function handleCancelBooking(
 
   // Find upcoming appointments for this phone number
   const now = new Date().toISOString();
+  const digits = identifier.replace(/\D/g, '');
+  const last9 = digits.slice(-9);
   const { data: appointments } = await supabase
     .from('appointments')
     .select('id, scheduled_at, office_id, customer_name')
-    .eq('customer_phone', identifier)
-    .in('status', ['pending', 'confirmed'])
+    .ilike('customer_phone', `%${last9}%`)
+    .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
     .order('scheduled_at', { ascending: true })
     .limit(1);
