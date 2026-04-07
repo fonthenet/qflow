@@ -13,7 +13,7 @@ export async function OPTIONS() {
 }
 
 const HEADERS = [
-  'qflo_id', 'full_name', 'phone', 'email', 'gender', 'date_of_birth',
+  'qflo_id', 'name', 'phone', 'email', 'gender', 'date_of_birth',
   'blood_type', 'file_number', 'address', 'wilaya_code', 'city',
   'is_couple', 'spouse_name', 'spouse_dob', 'spouse_blood_type', 'marriage_date',
   'notes', 'created_at',
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     // 3. Fetch all customers for the org
     const { data: customers, error: custErr } = await sb
       .from('customers')
-      .select('id, full_name, phone, email, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, marriage_date, notes, created_at')
+      .select('id, name, phone, email, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, marriage_date, notes, created_at')
       .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
     if (custErr) throw new Error(custErr.message);
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     for (const c of customers || []) {
       rows.push([
         c.id,
-        c.full_name ?? '',
+        c.name ?? '',
         c.phone ?? '',
         c.email ?? '',
         c.gender ?? '',
