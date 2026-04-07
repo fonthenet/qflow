@@ -2073,8 +2073,8 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
 
     function updateClock() {
       var now = new Date();
-      updateText('clock', now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      updateText('date', now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+      updateText('clock', now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+      updateText('date', now.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
     }
 
     var CALL_TIMEOUT = 60;

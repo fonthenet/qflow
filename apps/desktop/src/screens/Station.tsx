@@ -2371,7 +2371,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       <div style={{ display: 'flex', gap: 12, marginBottom: 8, fontSize: 12, color: 'var(--text)' }}>
                         <div><strong>{t('Visits:')}</strong> {customerHistory.customer.visit_count ?? 0}</div>
                         {customerHistory.customer.last_visit_at && (
-                          <div><strong>{t('Last:')}</strong> {new Date(customerHistory.customer.last_visit_at).toLocaleDateString()}</div>
+                          <div><strong>{t('Last:')}</strong> {new Date(customerHistory.customer.last_visit_at).toLocaleDateString('fr-FR')}</div>
                         )}
                         {customerHistory.customer.tags && customerHistory.customer.tags.length > 0 && (
                           <div style={{ display: 'flex', gap: 4 }}>
@@ -2401,7 +2401,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                             <span style={{ fontWeight: 700, color: 'var(--text)', minWidth: 70 }}>{rt.ticket_number}</span>
                             <span>{rt.department ?? ''}{rt.service ? ` / ${rt.service}` : ''}</span>
                             <span style={{ marginLeft: 'auto', color: 'var(--text3)', fontSize: 10 }}>
-                              {new Date(rt.created_at).toLocaleDateString()} &middot;{' '}
+                              {new Date(rt.created_at).toLocaleDateString('fr-FR')} &middot;{' '}
                               <span style={{ color: rt.status === 'served' ? '#22c55e' : rt.status === 'cancelled' ? '#ef4444' : 'var(--text3)' }}>
                                 {rt.status}
                               </span>

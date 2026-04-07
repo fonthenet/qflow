@@ -439,6 +439,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
     border: '1px solid var(--border, #475569)',
     borderRadius: 10,
     overflow: 'hidden',
+    flexShrink: 0,
   };
   const labelStyle: React.CSSProperties = {
     fontSize: 12,

@@ -9,6 +9,9 @@ import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
 
+// ── Force French (Algeria) locale for native inputs (date pickers, etc.) ─
+app.commandLine.appendSwitch('lang', 'fr-FR');
+
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
   console.error('[FATAL] Uncaught exception:', err);

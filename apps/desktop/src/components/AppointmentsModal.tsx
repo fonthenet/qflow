@@ -43,7 +43,7 @@ function formatDayLabel(d: Date, t: (k: string, v?: any) => string) {
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
   if (sameDay(d, today)) return t('Today');
   if (sameDay(d, tomorrow)) return t('Tomorrow');
-  return d.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
 function formatTime(iso: string) {

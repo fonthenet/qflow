@@ -422,7 +422,7 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
   if (/^(REJOINDRE|STATUT|ANNULER|LISTE|RDV|RESERVER)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|الغاء|قائمة|القائمة|دليل|الفهرس|موعد|حجز)\b/.test(trimmed)) return 'ar';
+  if (/^(انضم|حالة|الغاء|إلغاء|قائمة|القائمة|دليل|الفهرس|موعد|حجز|احجز)\b/.test(trimmed)) return 'ar';
   if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY|BOOK)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
@@ -478,7 +478,7 @@ function parseBookingCode(message: string): { code: string; locale: Locale } | n
   const trimmed = message.trim();
   const frMatch = trimmed.match(/^(RDV|RESERVER|RESERVATION)[\s\-_]+(.+)$/i);
   if (frMatch) return { code: frMatch[2].trim().toUpperCase(), locale: 'fr' };
-  const arMatch = trimmed.match(/^(موعد|حجز)[\s\-_]+(.+)$/);
+  const arMatch = trimmed.match(/^(موعد|حجز|احجز)[\s\-_]+(.+)$/);
   if (arMatch) {
     const raw = arMatch[2].trim();
     const hasArabic = /[\u0600-\u06FF]/.test(raw);
