@@ -355,6 +355,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم إلغاء حجزك ليوم *{date}* الساعة *{time}* 🚫',
     en: '🚫 Your booking for *{date}* at *{time}* has been cancelled.',
   },
+  my_bookings_none: {
+    fr: '📭 Vous n\'avez aucune réservation à venir.\n\nPour réserver : *RDV CODE* (ex: *RDV HADABI*)',
+    ar: '📭 ليس لديك أي حجز قادم.\n\nللحجز: *موعد رمز* (مثال: *موعد HADABI*)',
+    en: '📭 You have no upcoming bookings.\n\nTo book: *BOOK CODE* (e.g. *BOOK HADABI*)',
+  },
+  my_bookings_list: {
+    fr: '📅 *Vos réservations à venir :*\n\n{list}\n\nPour annuler : *ANNULER RDV*',
+    ar: '📅 *حجوزاتك القادمة:*\n\n{list}\n\nللإلغاء: *الغاء موعد*',
+    en: '📅 *Your upcoming bookings:*\n\n{list}\n\nTo cancel: *CANCEL BOOKING*',
+  },
   book_needs_org: {
     fr: '📅 Pour réserver, indiquez d\'abord le code de l\'entreprise.\n\nExemple : *RDV HADABI*\n\nOu envoyez *LISTE* pour parcourir les entreprises disponibles.',
     ar: '📅 للحجز، يرجى إرسال رمز المؤسسة أولاً.\n\nمثال: *موعد HADABI*\n\nأو أرسل *القائمة* لتصفح الأعمال المتاحة.',
@@ -422,7 +432,7 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
 function detectLocale(message: string): Locale {
   const trimmed = message.trim();
   if (/^(REJOINDRE|STATUT|ANNULER|LISTE|RDV|RESERVER)\b/i.test(trimmed)) return 'fr';
-  if (/^(انضم|حالة|الغاء|إلغاء|قائمة|القائمة|دليل|الفهرس|موعد|حجز|احجز)\b/.test(trimmed)) return 'ar';
+  if (/^(انضم|حالة|الغاء|إلغاء|قائمة|القائمة|دليل|الفهرس|موعد|حجز|احجز|مواعيدي|حجوزاتي)\b/.test(trimmed)) return 'ar';
   if (/^(JOIN|STATUS|CANCEL|LIST|DIRECTORY|BOOK)\b/i.test(trimmed)) return 'en';
   if (/[\u0600-\u06FF]/.test(trimmed)) return 'ar';
   return 'fr';
@@ -1142,6 +1152,20 @@ export async function handleInboundMessage(
       // Multiple sessions — ask which one to cancel
       await handleCancelPick(identifier, allSessions, detectedLocale, channel, sendMessage);
     }
+    return;
+  }
+
+  // ── MY BOOKINGS / MES RDV / مواعيدي ──
+  if (
+    command === 'MY BOOKINGS' || command === 'MY BOOKING' ||
+    command === 'MES RDV' || command === 'MES RESERVATIONS' || command === 'MES RÉSERVATIONS' ||
+    /^(مواعيدي|حجوزاتي)$/.test(cleaned)
+  ) {
+    let myLocale: Locale = detectedLocale;
+    if (/^(مواعيدي|حجوزاتي)$/.test(cleaned)) myLocale = 'ar';
+    else if (command.startsWith('MES')) myLocale = 'fr';
+    else if (command.startsWith('MY')) myLocale = 'en';
+    await handleMyBookings(identifier, myLocale, sendMessage);
     return;
   }
 
@@ -2916,6 +2940,64 @@ async function confirmBooking(
       customer: session.booking_customer_name,
     }),
   });
+}
+
+async function handleMyBookings(
+  identifier: string, locale: Locale, sendMessage: SendFn,
+) {
+  const supabase = createAdminClient() as any;
+  const now = new Date().toISOString();
+
+  // Normalize phone variants to maximize match (stored format may vary)
+  const variants = new Set<string>([identifier]);
+  if (identifier.startsWith('+')) variants.add(identifier.slice(1));
+  else variants.add('+' + identifier);
+  if (identifier.startsWith('213')) variants.add('0' + identifier.slice(3));
+  if (identifier.startsWith('+213')) variants.add('0' + identifier.slice(4));
+  if (identifier.startsWith('0')) { variants.add('213' + identifier.slice(1)); variants.add('+213' + identifier.slice(1)); }
+
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('id, scheduled_at, status, customer_name, organization_id, service_id')
+    .in('customer_phone', Array.from(variants))
+    .in('status', ['pending', 'confirmed', 'checked_in'])
+    .gte('scheduled_at', now)
+    .order('scheduled_at', { ascending: true })
+    .limit(10);
+
+  if (!appts || appts.length === 0) {
+    await sendMessage({ to: identifier, body: t('my_bookings_none', locale) });
+    return;
+  }
+
+  // Fetch org names + service names in bulk
+  const orgIds = Array.from(new Set(appts.map((a: any) => a.organization_id).filter(Boolean)));
+  const svcIds = Array.from(new Set(appts.map((a: any) => a.service_id).filter(Boolean)));
+  const [orgsRes, svcsRes] = await Promise.all([
+    orgIds.length ? supabase.from('organizations').select('id, name').in('id', orgIds) : Promise.resolve({ data: [] }),
+    svcIds.length ? supabase.from('services').select('id, name').in('id', svcIds) : Promise.resolve({ data: [] }),
+  ]);
+  const orgMap = new Map<string, string>((orgsRes.data ?? []).map((o: any) => [o.id, o.name]));
+  const svcMap = new Map<string, string>((svcsRes.data ?? []).map((s: any) => [s.id, s.name]));
+
+  const statusLabel = (s: string): string => {
+    if (locale === 'ar') return s === 'confirmed' ? '✅ مؤكد' : s === 'checked_in' ? '🟣 تم الحضور' : '⏳ قيد الانتظار';
+    if (locale === 'fr') return s === 'confirmed' ? '✅ confirmé' : s === 'checked_in' ? '🟣 enregistré' : '⏳ en attente';
+    return s === 'confirmed' ? '✅ confirmed' : s === 'checked_in' ? '🟣 checked in' : '⏳ pending';
+  };
+
+  const list = appts.map((a: any, i: number) => {
+    const d = new Date(a.scheduled_at);
+    const dateStr = d.toISOString().split('T')[0];
+    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const dateFormatted = formatDateForLocale(dateStr, locale);
+    const org = orgMap.get(a.organization_id) ?? '';
+    const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
+    const svcPart = svc ? ` — ${svc}` : '';
+    return `*${i + 1}* — 🏢 ${org}${svcPart}\n   📅 ${dateFormatted} ⏰ ${timeStr}\n   ${statusLabel(a.status)}`;
+  }).join('\n\n');
+
+  await sendMessage({ to: identifier, body: t('my_bookings_list', locale, { list }) });
 }
 
 async function handleCancelBooking(
