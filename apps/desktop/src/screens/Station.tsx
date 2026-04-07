@@ -2703,7 +2703,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
-                  {ticket.appointment_id && <span className="badge booked">{translate(locale, 'Booked')}</span>}
+                  {(ticket.appointment_id || ticket.source === 'appointment') && <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {translate(locale, 'Booked')}</span>}
                   {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
                   {ticket.source === 'messenger' && <span className="badge messenger">{translate(locale, 'Messenger')}</span>}
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
