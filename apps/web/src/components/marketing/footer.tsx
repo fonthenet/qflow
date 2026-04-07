@@ -7,7 +7,6 @@ import { LanguageSwitcher } from '@/components/shared/language-switcher';
 const footerLinks = {
   Product: [
     { href: '/solutions', label: 'Solutions' },
-    { href: '/pricing', label: 'Pricing' },
     { href: '/how-it-works', label: 'How It Works' },
     { href: '/resources', label: 'Resources' },
   ],
@@ -21,7 +20,6 @@ const footerLinks = {
   Company: [
     { href: '/contact', label: 'Contact' },
     { href: '/login', label: 'Log in' },
-    { href: '/register', label: 'Sign up' },
   ],
 };
 
@@ -43,7 +41,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {t('Smart queue management for modern businesses. Free push notifications, no SMS fees.')}
+              {t('Smart queue management for modern businesses.')}
             </p>
           </div>
 

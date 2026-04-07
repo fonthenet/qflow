@@ -75,17 +75,11 @@ export default function SolutionsPage() {
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link
-              href="/register"
+              href="/contact"
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow transition-all hover:bg-primary/90"
             >
-              Get Started Free
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/contact"
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-8 py-3.5 text-sm font-semibold shadow-sm transition-all hover:bg-muted"
-            >
               Contact Us
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </div>

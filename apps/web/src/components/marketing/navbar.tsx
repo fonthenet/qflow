@@ -8,7 +8,6 @@ import { LanguageSwitcher } from '@/components/shared/language-switcher';
 
 const navLinks = [
   { href: '/solutions', label: 'Solutions' },
-  { href: '/pricing', label: 'Pricing' },
   { href: '/how-it-works', label: 'How It Works' },
   { href: '/resources', label: 'Resources' },
   { href: '/contact', label: 'Contact' },
@@ -68,20 +67,12 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
               </Link>
             </>
           ) : (
-            <>
-              <Link
-                href="/login"
-                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {t('Log in')}
-              </Link>
-              <Link
-                href="/register"
-                className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
-              >
-                {t('Get Started Free')}
-              </Link>
-            </>
+            <Link
+              href="/login"
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
+            >
+              {t('Log in')}
+            </Link>
           )}
         </div>
 
@@ -124,22 +115,13 @@ export function Navbar({ signedIn = false, organizationName }: NavbarProps) {
                 </Link>
               </>
             ) : (
-              <>
-                <Link
-                  href="/login"
-                  onClick={() => setMobileOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted"
-                >
-                  {t('Log in')}
-                </Link>
-                <Link
-                  href="/register"
-                  onClick={() => setMobileOpen(false)}
-                  className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
-                >
-                  {t('Get Started Free')}
-                </Link>
-              </>
+              <Link
+                href="/login"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-lg bg-primary px-3 py-2.5 text-center text-sm font-semibold text-primary-foreground"
+              >
+                {t('Log in')}
+              </Link>
             )}
           </div>
         </div>

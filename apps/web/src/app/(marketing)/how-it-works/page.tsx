@@ -12,7 +12,7 @@ const steps = [
     title: 'Create Your Account',
     description: 'Sign up in 30 seconds. Choose your industry template (restaurant, clinic, retail, etc.) or start from scratch.',
     details: [
-      'No credit card required',
+      'Quick setup from the admin dashboard',
       'Industry-specific templates auto-configure departments, services, and desks',
       'Or start blank and set up everything exactly how you need it',
     ],
@@ -180,21 +180,16 @@ export default function HowItWorksPage() {
             Ready to Get Started?
           </h2>
           <p className="mt-4 text-lg text-primary-foreground/80">
-            Set up your first queue in under 3 minutes. Free forever for up to 50 customers/month.
+            Get in touch with our team to learn more about Qflo for your business.
           </p>
           <div className="mt-8">
             <Link
-              href="/register"
+              href="/contact"
               className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-lg transition-all hover:shadow-xl"
             >
-              Create Free Account
+              Contact Us
               <ArrowRight className="h-4 w-4" />
             </Link>
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-6 text-sm text-primary-foreground/70">
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> No credit card</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Free push notifications</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Cancel anytime</span>
           </div>
         </div>
       </section>

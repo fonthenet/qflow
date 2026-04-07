@@ -50,12 +50,12 @@ const labels = {
   faqTitle: { en: 'Frequently asked questions', fr: 'Questions fréquentes', ar: 'الأسئلة الشائعة' },
   faqSub: { en: 'Everything your potential clients want to know.', fr: 'Tout ce que vos clients potentiels veulent savoir.', ar: 'كل ما يريد عملاؤك المحتملون معرفته.' },
   ctaTitle: { en: 'Ready to eliminate queues?', fr: 'Prêt à éliminer les files d\'attente ?', ar: 'مستعد للتخلص من الطوابير؟' },
-  ctaSub: { en: '14-day free trial. Setup in 15 minutes. No credit card required.', fr: 'Essai gratuit de 14 jours. Installation en 15 minutes. Aucune carte bancaire requise.', ar: 'تجربة مجانية 14 يوم. تثبيت في 15 دقيقة. لا تحتاج بطاقة بنكية.' },
-  ctaStart: { en: 'Get started free', fr: 'Commencer gratuitement', ar: 'ابدأ مجاناً' },
+  ctaSub: { en: 'Get in touch to learn more about Qflo for your business.', fr: 'Contactez-nous pour en savoir plus sur Qflo pour votre entreprise.', ar: 'تواصل معنا لمعرفة المزيد عن Qflo لعملك.' },
+  ctaStart: { en: 'Contact Us', fr: 'Contactez-nous', ar: 'اتصل بنا' },
   ctaDemo: { en: 'Request a demo', fr: 'Demander une démo', ar: 'اطلب عرضاً توضيحياً' },
-  ctaTag1: { en: 'No credit card', fr: 'Sans carte bancaire', ar: 'بدون بطاقة بنكية' },
-  ctaTag2: { en: 'WhatsApp included', fr: 'WhatsApp inclus', ar: 'واتساب مشمول' },
-  ctaTag3: { en: 'FR/AR support', fr: 'Support FR/AR', ar: 'دعم FR/AR' },
+  ctaTag1: { en: 'FR/AR support', fr: 'Support FR/AR', ar: 'دعم FR/AR' },
+  ctaTag2: { en: 'Multi-location', fr: 'Multi-sites', ar: 'متعدد المواقع' },
+  ctaTag3: { en: 'Cloud & offline', fr: 'Cloud & hors ligne', ar: 'سحابي وبدون إنترنت' },
 } satisfies Record<string, T3>;
 
 /* ═══════════════════════════════════════════════ */
@@ -161,7 +161,7 @@ const faqs: { q: T3; a: T3 }[] = [
   { q: { en: 'How is the customer notified when it\'s their turn?', fr: 'Comment le client est notifié quand c\'est son tour ?', ar: 'كيف يتم إشعار العميل عندما يحين دوره؟' }, a: { en: 'The customer receives an instant notification via WhatsApp or Messenger, with the desk number. The call is also shown on the TV display.', fr: 'Le client reçoit une notification instantanée via WhatsApp ou Messenger, avec le numéro de guichet. L\'appel est aussi affiché sur l\'écran TV.', ar: 'العميل يتلقى إشعاراً فورياً عبر واتساب أو ماسنجر، مع رقم الشباك. يظهر الاستدعاء أيضاً على شاشة التلفزيون.' } },
   { q: { en: 'How long does it take to set up?', fr: 'Combien de temps faut-il pour installer ?', ar: 'كم يستغرق التثبيت؟' }, a: { en: '15 minutes. Create your account, configure departments and services, print the QR code. Our team helps if needed.', fr: '15 minutes. Créez votre compte, configurez vos départements et services, imprimez le QR code. Notre équipe vous accompagne si besoin.', ar: '15 دقيقة. أنشئ حسابك، اضبط الأقسام والخدمات، اطبع رمز QR. فريقنا يرافقك عند الحاجة.' } },
   { q: { en: 'Does it work without internet?', fr: 'Ça marche sans internet ?', ar: 'هل يعمل بدون إنترنت؟' }, a: { en: 'Yes. The operator app works offline. Queues are managed locally and sync when the connection returns.', fr: 'Oui. L\'application opérateur fonctionne en mode hors-ligne. Les files sont gérées localement et se synchronisent quand la connexion revient.', ar: 'نعم. تطبيق الموظف يعمل بدون إنترنت. الطوابير تُدار محلياً وتُزامن عند عودة الاتصال.' } },
-  { q: { en: 'How much does it cost?', fr: 'Combien ça coûte ?', ar: 'كم التكلفة؟' }, a: { en: '14-day free trial. Then pricing depends on volume and features. Contact us for a custom quote.', fr: 'Essai gratuit de 14 jours. Ensuite, les tarifs dépendent du volume et des fonctionnalités. Contactez-nous pour un devis adapté.', ar: 'تجربة مجانية 14 يوم. ثم الأسعار حسب الحجم والمميزات. تواصل معنا للحصول على عرض سعر مخصص.' } },
+  { q: { en: 'How do I learn more about Qflo?', fr: 'Comment en savoir plus sur Qflo ?', ar: 'كيف أتعرف أكثر على Qflo؟' }, a: { en: 'Contact us through the contact page and our team will get back to you with all the details you need.', fr: 'Contactez-nous via la page de contact et notre équipe vous répondra avec tous les détails nécessaires.', ar: 'تواصل معنا عبر صفحة الاتصال وسيرد عليك فريقنا بكل التفاصيل التي تحتاجها.' } },
   { q: { en: 'What languages are supported?', fr: 'Les langues supportées ?', ar: 'ما اللغات المدعومة؟' }, a: { en: 'French, Arabic and English. The client\'s language is detected automatically. The full interface is available in RTL for Arabic.', fr: 'Français, arabe et anglais. La langue du client est détectée automatiquement. L\'interface complète est disponible en RTL pour l\'arabe.', ar: 'الفرنسية، العربية والإنجليزية. يتم كشف لغة العميل تلقائياً. الواجهة كاملة متوفرة بـ RTL للعربية.' } },
   { q: { en: 'Can we manage multiple departments?', fr: 'Peut-on gérer plusieurs départements ?', ar: 'هل يمكن إدارة عدة أقسام؟' }, a: { en: 'Yes. You can create as many departments as needed (e.g. Teller, Claims, VIP), each with its own queue.', fr: 'Oui. Vous pouvez créer autant de départements que nécessaire (ex: Caisse, Réclamations, VIP), chacun avec sa propre file.', ar: 'نعم. يمكنك إنشاء أقسام بلا حدود (مثال: الصندوق، الشكاوى، VIP)، كل قسم بطابوره الخاص.' } },
   { q: { en: 'How do operators manage the queue?', fr: 'Comment les opérateurs gèrent la file ?', ar: 'كيف يدير الموظفون الطابور؟' }, a: { en: 'From the desktop or mobile app. One button to call next, one to mark as served. Transfer between departments in one click.', fr: 'Depuis l\'application desktop ou mobile. Un bouton pour appeler le suivant, un pour marquer comme servi. Transfert entre départements en un clic.', ar: 'من تطبيق سطح المكتب أو الهاتف. زر لاستدعاء التالي، وزر لتحديده كـ "تمت خدمته". التحويل بين الأقسام بنقرة واحدة.' } },
@@ -443,7 +443,7 @@ export default function ResourcesPage() {
           <h2 className="text-3xl font-black text-white md:text-4xl">{_(labels.ctaTitle)}</h2>
           <p className="mt-4 text-lg text-white/70">{_(labels.ctaSub)}</p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            <Link href="/register" className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-base font-bold text-primary shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]">
+            <Link href="/contact" className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-base font-bold text-primary shadow-lg transition-all hover:shadow-xl hover:scale-[1.02]">
               {_(labels.ctaStart)}<ArrowRight className="h-4 w-4" />
             </Link>
             <Link href="/contact" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-8 py-4 text-base font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20">

@@ -2506,20 +2506,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >
               📅 {t('Appointments')}
             </button>
-            {/* Broadcast pill */}
-            <button
-              onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(14,165,233,0.4)',
-                background: 'rgba(14,165,233,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#0ea5e9',
-              }}
-            >
-              {'\u{1F4E2}'} {t('Broadcast')}
-            </button>
             {/* Staff status dropdown — only show when not available */}
             {staffStatus !== 'available' && (
             <div style={{ position: 'relative' }}>
@@ -2730,7 +2716,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         />
         <div className="sidebar-section">
           <div className="sidebar-header">
-            <h3>{t('Queue Overview')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3 style={{ margin: 0 }}>{t('Queue Overview')}</h3>
+              <button
+                onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
+                title={t('Broadcast')}
+                aria-label={t('Broadcast')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 12px', borderRadius: 20,
+                  border: '1.5px solid rgba(14,165,233,0.4)',
+                  background: 'rgba(14,165,233,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#0ea5e9',
+                }}
+              >
+                {'\u{1F4E2}'} {t('Broadcast')}
+              </button>
+            </div>
             <div className="queue-stats" aria-label={t('{waiting} waiting, {called} called, {serving} serving', { waiting: waiting.length, called: called.length, serving: serving.length })}>
               <span className="stat-pill waiting" aria-hidden="true">{t('{count} waiting', { count: waiting.length })}</span>
               <span className="stat-pill called" aria-hidden="true">{t('{count} called', { count: called.length })}</span>

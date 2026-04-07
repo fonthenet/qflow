@@ -39,10 +39,10 @@ export default async function IndustryPage({ params }: IndustryPageProps) {
             </p>
             <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
               <Link
-                href="/register"
+                href="/contact"
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-8 py-4 text-base font-semibold text-primary-foreground shadow-lg transition-all hover:bg-primary/90"
               >
-                {t('Get Started Free')}
+                {t('Contact Us')}
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
@@ -148,23 +148,18 @@ export default async function IndustryPage({ params }: IndustryPageProps) {
             {t('Ready to Transform Your {industry}?', { industry: solution.title })}
           </h2>
           <p className="mt-4 text-lg text-primary-foreground/80">
-            {t('Start free with our {industry} template. Set up in under 3 minutes.', {
+            {t('Get in touch to learn more about our {industry} template.', {
               industry: solution.title.toLowerCase(),
             })}
           </p>
           <div className="mt-8">
             <Link
-              href="/register"
+              href="/contact"
               className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-base font-semibold text-primary shadow-lg transition-all hover:shadow-xl"
             >
-              {t('Get Started Free')}
+              {t('Contact Us')}
               <ArrowRight className="h-4 w-4" />
             </Link>
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-6 text-sm text-primary-foreground/70">
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> {t('Free forever plan')}</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> {t('No credit card')}</span>
-            <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> {t('{industry} template included', { industry: solution.title })}</span>
           </div>
         </div>
       </section>
