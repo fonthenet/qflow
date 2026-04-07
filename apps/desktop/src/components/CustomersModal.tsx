@@ -32,6 +32,33 @@ function avatarColor(seed: string) {
   return palette[hash % palette.length];
 }
 
+/** Display Algerian numbers in local format (0XXXXXXXXX), keep others as-is */
+function formatPhoneDisplay(phone: string | null): string {
+  if (!phone) return '';
+  const digits = phone.replace(/[^\d+]/g, '');
+  // +213XXXXXXXXX or 213XXXXXXXXX → 0XXXXXXXXX
+  if (digits.startsWith('+213')) return '0' + digits.slice(4);
+  if (digits.startsWith('213') && digits.length >= 12) return '0' + digits.slice(3);
+  return phone;
+}
+
+/** Normalize Algerian local input (0XXXXXXXXX) to international (+213XXXXXXXXX) for storage/sending */
+function normalizePhoneForStorage(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  // Already international
+  if (trimmed.startsWith('+')) return trimmed.replace(/\s+/g, '');
+  const digits = trimmed.replace(/\D/g, '');
+  // Algerian local format: 0XXXXXXXXX (10 digits starting with 0)
+  if (digits.length === 10 && digits.startsWith('0')) return '+213' + digits.slice(1);
+  // Algerian without leading 0: 9 digits (5/6/7XXXXXXXX)
+  if (digits.length === 9 && /^[567]/.test(digits)) return '+213' + digits;
+  // Already 213 prefix
+  if (digits.startsWith('213')) return '+' + digits;
+  // Fallback: prepend +
+  return '+' + digits;
+}
+
 function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
@@ -124,7 +151,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
         .insert({
           organization_id: orgId,
           name: addName.trim(),
-          phone: addPhone.trim(),
+          phone: normalizePhoneForStorage(addPhone),
           email: addEmail.trim() || null,
           visit_count: 0,
           source: 'station',
@@ -199,6 +226,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
     return (
       (c.name?.toLowerCase().includes(q) ?? false) ||
       (c.phone?.includes(q) ?? false) ||
+      (formatPhoneDisplay(c.phone).includes(q)) ||
       (c.email?.toLowerCase().includes(q) ?? false)
     );
   }), [customers, search]);
@@ -384,7 +412,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3, #64748b)' }}>
-                        {c.phone && <span style={{ direction: 'ltr' }}>📱 {c.phone}</span>}
+                        {c.phone && <span style={{ direction: 'ltr' }}>📱 {formatPhoneDisplay(c.phone)}</span>}
                         {c.email && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {c.email}</span>}
                       </div>
                     </div>
@@ -431,7 +459,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose }: 
             <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
                 { label: t('Name'), value: addName, set: setAddName, placeholder: 'John Doe', required: true },
-                { label: t('Phone'), value: addPhone, set: setAddPhone, placeholder: '+213551234567', required: true, ltr: true },
+                { label: t('Phone'), value: addPhone, set: setAddPhone, placeholder: '0551234567', required: true, ltr: true },
                 { label: t('Email'), value: addEmail, set: setAddEmail, placeholder: 'john@example.com', required: false, ltr: true },
               ].map((f) => (
                 <div key={f.label}>
