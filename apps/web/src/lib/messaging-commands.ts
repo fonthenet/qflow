@@ -2973,18 +2973,31 @@ async function handleMyBookings(
   const now = new Date().toISOString();
 
   // Match by digits-only: stored phone may be in any format
-  // (213..., +213..., 0..., local...). Compare by last 9 significant digits.
+  // (213..., +213..., 0..., local...). Fetch upcoming appointments in a
+  // bounded window and filter in JS by comparing digit suffixes so any
+  // phone format stored in customer_phone is matched reliably.
   const digits = identifier.replace(/\D/g, '');
   const last9 = digits.slice(-9);
 
-  const { data: appts } = await supabase
+  const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: candidates, error: apptErr } = await supabase
     .from('appointments')
     .select('id, scheduled_at, status, customer_name, customer_phone, organization_id, service_id')
-    .ilike('customer_phone', `%${last9}%`)
     .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
+    .lte('scheduled_at', in60d)
+    .not('customer_phone', 'is', null)
     .order('scheduled_at', { ascending: true })
-    .limit(20);
+    .limit(500);
+
+  if (apptErr) {
+    console.error('[my-bookings] query error', apptErr);
+  }
+
+  const appts = (candidates ?? []).filter((a: any) => {
+    const d = String(a.customer_phone ?? '').replace(/\D/g, '');
+    return d.length >= 9 && d.slice(-9) === last9;
+  }).slice(0, 20);
 
   if (!appts || appts.length === 0) {
     await sendMessage({ to: identifier, body: t('my_bookings_none', locale) });
@@ -3030,14 +3043,20 @@ async function handleCancelBooking(
   const now = new Date().toISOString();
   const digits = identifier.replace(/\D/g, '');
   const last9 = digits.slice(-9);
-  const { data: appointments } = await supabase
+  const in60d = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: candidates } = await supabase
     .from('appointments')
-    .select('id, scheduled_at, office_id, customer_name')
-    .ilike('customer_phone', `%${last9}%`)
+    .select('id, scheduled_at, office_id, customer_name, customer_phone')
     .in('status', ['pending', 'confirmed', 'checked_in'])
     .gte('scheduled_at', now)
+    .lte('scheduled_at', in60d)
+    .not('customer_phone', 'is', null)
     .order('scheduled_at', { ascending: true })
-    .limit(1);
+    .limit(500);
+  const appointments = (candidates ?? []).filter((a: any) => {
+    const d = String(a.customer_phone ?? '').replace(/\D/g, '');
+    return d.length >= 9 && d.slice(-9) === last9;
+  });
 
   if (!appointments || appointments.length === 0) {
     await sendMessage({ to: identifier, body: t('cancel_booking_none', locale) });

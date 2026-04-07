@@ -295,13 +295,23 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
           />
           <button
             onClick={load}
+            disabled={loading}
             style={{
               padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border, #334155)',
               background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)',
-              cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              cursor: loading ? 'wait' : 'pointer', fontSize: 12, fontWeight: 600,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              opacity: loading ? 0.75 : 1,
             }}
           >
-            ⟳ {t('Refresh')}
+            <span
+              style={{
+                display: 'inline-block',
+                animation: loading ? 'qf-spin 0.8s linear infinite' : 'none',
+              }}
+            >⟳</span>
+            {t('Refresh')}
+            <style>{`@keyframes qf-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
           </button>
         </div>
 
