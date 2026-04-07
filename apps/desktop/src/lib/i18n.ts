@@ -382,6 +382,21 @@ const FR: Messages = {
   'Track': 'Suivi',
   'Click to enlarge': 'Cliquer pour agrandir',
   'Tracking QR': 'QR de suivi',
+  'Appointments': 'Rendez-vous',
+  'Tomorrow': 'Demain',
+  'Next 7 days': '7 prochains jours',
+  'Search name or phone': 'Rechercher nom ou téléphone',
+  'Refresh': 'Actualiser',
+  'No appointments': 'Aucun rendez-vous',
+  '{count} appointments': '{count} rendez-vous',
+  '(no name)': '(sans nom)',
+  'pending': 'en attente',
+  'confirmed': 'confirmé',
+  'checked_in': 'enregistré',
+  'serving': 'en service',
+  'completed': 'terminé',
+  'cancelled': 'annulé',
+  'no_show': 'absent',
 };
 
 const AR: Messages = {
@@ -762,6 +777,21 @@ const AR: Messages = {
   'Track': 'تتبع',
   'Click to enlarge': 'انقر للتكبير',
   'Tracking QR': 'رمز التتبع',
+  'Appointments': 'المواعيد',
+  'Tomorrow': 'غدًا',
+  'Next 7 days': 'الأيام الـ7 القادمة',
+  'Search name or phone': 'بحث بالاسم أو الهاتف',
+  'Refresh': 'تحديث',
+  'No appointments': 'لا توجد مواعيد',
+  '{count} appointments': '{count} موعد',
+  '(no name)': '(بدون اسم)',
+  'pending': 'قيد الانتظار',
+  'confirmed': 'مؤكد',
+  'checked_in': 'تم التسجيل',
+  'serving': 'قيد الخدمة',
+  'completed': 'مكتمل',
+  'cancelled': 'ملغى',
+  'no_show': 'لم يحضر',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {
