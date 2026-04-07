@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 import { CustomersModal } from '../components/CustomersModal';
+import { SettingsModal } from '../components/SettingsModal';
 import { AppointmentsModal } from '../components/AppointmentsModal';
 
 // ── Transfer Modal Component ──────────────────────────────────────
@@ -1349,6 +1350,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
@@ -2499,6 +2501,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >
               📅 {t('Appointments')}
             </button>
+            {/* Settings pill */}
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(100,116,139,0.4)',
+                background: 'rgba(100,116,139,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#64748b',
+              }}
+            >
+              ⚙ {t('Settings')}
+            </button>
             {/* Broadcast pill */}
             <button
               onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
@@ -2660,6 +2676,17 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               if (res) showToast(`${slotLabel} · ${reason}`, 'info');
               return !!res;
             }}
+          />
+        )}
+
+        {/* Settings Modal */}
+        {showSettingsModal && (
+          <SettingsModal
+            organizationId={session.organization_id}
+            locale={locale}
+            storedAuth={storedAuth}
+            officeName={session.office_name}
+            onClose={() => setShowSettingsModal(false)}
           />
         )}
 
