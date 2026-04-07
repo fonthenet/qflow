@@ -129,9 +129,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '❌ Business code "*{code}*" not found.\n\nPlease check the code and try again.',
   },
   already_in_queue: {
-    fr: 'Vous êtes déjà dans la file chez *{name}*.\n{position}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.',
-    ar: 'أنت بالفعل في الطابور في *{name}*.\n{position}\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
-    en: 'You\'re already in the queue at *{name}*.\n{position}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
+    fr: '✅ Vous êtes déjà dans la file chez *{name}*.\n\n🎟️ Ticket : *{ticket}*{service}\n🕐 Inscrit à : {joined}\n{position}\n\n🔔 Vous recevrez automatiquement une notification lorsque votre tour approchera.\n\nRépondez *STATUT* pour une mise à jour ou *ANNULER* pour quitter la file.',
+    ar: '✅ أنت بالفعل في الطابور لدى *{name}*.\n\n🎟️ التذكرة: *{ticket}*{service}\n🕐 وقت التسجيل: {joined}\n{position}\n\n🔔 ستتلقى إشعارًا تلقائيًا عند اقتراب دورك.\n\nأرسل *حالة* للتحديث أو *إلغاء* للمغادرة.',
+    en: '✅ You\'re already in the queue at *{name}*.\n\n🎟️ Ticket: *{ticket}*{service}\n🕐 Joined at: {joined}\n{position}\n\n🔔 You\'ll automatically receive a notification when your turn is approaching.\n\nReply *STATUS* for an update or *CANCEL* to leave the queue.',
   },
   queue_not_configured: {
     fr: 'Désolé, la file n\'est pas encore configurée pour *{name}*. Veuillez rejoindre via le QR code.',
@@ -779,6 +779,35 @@ export const positionLabel: Record<Locale, string> = { fr: 'Position', ar: 'ال
 export const nowServingLabel: Record<Locale, string> = { fr: 'En service', ar: 'يُخدم الآن', en: 'Now serving' };
 export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', en: 'min' };
 
+/** Fetch ticket number, service name, and created_at for the already_in_queue message. */
+async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ ticket: string; service: string; joined: string }> {
+  const supabase = createAdminClient() as any;
+  const { data: t } = await supabase
+    .from('tickets')
+    .select('ticket_number, created_at, service_id, office_id, services(name), offices(timezone)')
+    .eq('id', ticketId)
+    .maybeSingle();
+  const ticketNum = t?.ticket_number ? String(t.ticket_number) : '—';
+  const serviceName: string = t?.services?.name || '';
+  const tz: string = t?.offices?.timezone || 'Africa/Algiers';
+  let joined = '';
+  if (t?.created_at) {
+    try {
+      const d = new Date(t.created_at);
+      const localeTag = locale === 'ar' ? 'ar-DZ' : locale === 'fr' ? 'fr-FR' : 'en-GB';
+      joined = new Intl.DateTimeFormat(localeTag, {
+        timeZone: tz, hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+      }).format(d);
+    } catch { joined = new Date(t.created_at).toLocaleString(); }
+  }
+  const serviceLine = serviceName
+    ? (locale === 'fr' ? `\n👨‍⚕️ Service : *${serviceName}*`
+      : locale === 'ar' ? `\n👨‍⚕️ الخدمة: *${serviceName}*`
+      : `\n👨‍⚕️ Service: *${serviceName}*`)
+    : '';
+  return { ticket: ticketNum, service: serviceLine, joined };
+}
+
 export function formatPosition(pos: any, locale: Locale): string {
   if (pos.position == null) return '';
   if (locale === 'ar') {
@@ -1342,11 +1371,15 @@ export async function handleInboundMessage(
     if (found) {
       const sessionLocale = (found.session.locale as Locale) || detectedLocale;
       const pos = await getQueuePosition(found.session.ticket_id);
+      const ctx = await fetchTicketContext(found.session.ticket_id, sessionLocale);
       await sendMessage({
         to: identifier,
         body: t('already_in_queue', sessionLocale, {
           name: found.org.name,
           position: formatPosition(pos, sessionLocale),
+          ticket: ctx.ticket,
+          service: ctx.service,
+          joined: ctx.joined,
         }),
       });
     } else {
@@ -2107,11 +2140,15 @@ async function handleJoin(
 
   if (existing?.ticket_id) {
     const pos = await getQueuePosition(existing.ticket_id);
+    const ctx = await fetchTicketContext(existing.ticket_id, locale);
     await sendMessage({
       to: identifier,
       body: t('already_in_queue', locale, {
         name: org.name,
         position: formatPosition(pos, locale),
+        ticket: ctx.ticket,
+        service: ctx.service,
+        joined: ctx.joined,
       }),
     });
     return;
