@@ -60,7 +60,18 @@ function avatarColor(seed: string) {
 /** Display phone: strip any '+' and country-code noise, show digits as stored. */
 function formatPhoneDisplay(phone: string | null): string {
   if (!phone) return '';
-  const digits = phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
+  // Strip common country codes so numbers display in local format.
+  // Algeria: 213XXXXXXXXX → 0XXXXXXXXX
+  if (digits.startsWith('213') && (digits.length === 12 || digits.length === 11)) {
+    digits = '0' + digits.slice(3);
+  } else if (digits.startsWith('1') && digits.length === 11) {
+    // US/Canada: 1XXXXXXXXXX → XXXXXXXXXX
+    digits = digits.slice(1);
+  } else if (digits.startsWith('33') && digits.length === 11) {
+    // France: 33XXXXXXXXX → 0XXXXXXXXX
+    digits = '0' + digits.slice(2);
+  }
   return digits;
 }
 
