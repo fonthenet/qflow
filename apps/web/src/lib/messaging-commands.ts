@@ -350,6 +350,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم إلغاء حجزك ليوم *{date}* الساعة *{time}* 🚫',
     en: '🚫 Your booking for *{date}* at *{time}* has been cancelled.',
   },
+  book_needs_org: {
+    fr: '📅 Pour réserver, indiquez d\'abord le code de l\'entreprise.\n\nExemple : *RDV HADABI*\n\nOu envoyez *LISTE* pour parcourir les entreprises disponibles.',
+    ar: '📅 للحجز، يرجى إرسال رمز المؤسسة أولاً.\n\nمثال: *موعد HADABI*\n\nأو أرسل *القائمة* لتصفح الأعمال المتاحة.',
+    en: '📅 To book, please include the business code.\n\nExample: *BOOK HADABI*\n\nOr send *LIST* to browse available businesses.',
+  },
 };
 
 // ── Notification messages (used by /api/notification-send) ───────────
@@ -1156,8 +1161,75 @@ export async function handleInboundMessage(
   }
 
   // ── Plain BOOK / RDV / موعد without code ──
-  if (command === 'BOOK' || command === 'RDV' || command === 'RESERVER' || /^(موعد|حجز)$/.test(cleaned)) {
-    await sendMessage({ to: identifier, body: t('welcome', detectedLocale) });
+  if (
+    command === 'BOOK' ||
+    command === 'BOOKING' ||
+    command === 'RESERVE' ||
+    command === 'RDV' ||
+    command === 'RESERVER' ||
+    command === 'RESERVATION' ||
+    /^(موعد|حجز|احجز)$/.test(cleaned)
+  ) {
+    // Infer locale: explicit word → known locale, else saved session locale, else detected
+    let bookLocale: Locale = detectedLocale;
+    if (/^(موعد|حجز|احجز)$/.test(cleaned)) bookLocale = 'ar';
+    else if (command === 'RDV' || command === 'RESERVER' || command === 'RESERVATION') bookLocale = 'fr';
+    else if (command === 'BOOK' || command === 'BOOKING' || command === 'RESERVE') bookLocale = 'en';
+    const savedLocale = await getLastSessionLocale(identifier, channel, bsuid);
+    if (savedLocale) bookLocale = savedLocale;
+
+    // Find the user's most recent session (any state, last 30 days) to infer org
+    const supabaseBook = createAdminClient() as any;
+    const idColBook = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    let recentRow: any = null;
+    {
+      const { data } = await supabaseBook
+        .from('whatsapp_sessions')
+        .select('organization_id, locale')
+        .eq(idColBook, identifier)
+        .eq('channel', channel)
+        .not('organization_id', 'is', null)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      recentRow = data;
+    }
+    if (!recentRow && channel === 'whatsapp' && bsuid) {
+      const { data } = await supabaseBook
+        .from('whatsapp_sessions')
+        .select('organization_id, locale')
+        .eq('whatsapp_bsuid', bsuid)
+        .eq('channel', 'whatsapp')
+        .not('organization_id', 'is', null)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      recentRow = data;
+    }
+
+    if (recentRow?.organization_id) {
+      const { data: orgRow } = await supabaseBook
+        .from('organizations')
+        .select('id, name, settings')
+        .eq('id', recentRow.organization_id)
+        .single();
+      if (orgRow) {
+        const orgCtx: OrgContext = {
+          id: orgRow.id,
+          name: orgRow.name,
+          settings: (orgRow.settings ?? {}) as Record<string, any>,
+        };
+        if (recentRow.locale) bookLocale = recentRow.locale as Locale;
+        await startBookingFlow(identifier, orgCtx, bookLocale, channel, sendMessage);
+        return;
+      }
+    }
+
+    // No previous org — ask the user to include the business code
+    await sendMessage({ to: identifier, body: t('book_needs_org', bookLocale) });
     return;
   }
 
