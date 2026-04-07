@@ -95,8 +95,20 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
   const [bookingTab, setBookingTab] = useState<'walkin' | 'future'>('walkin');
-  const [selectedDept, setSelectedDept] = useState(departments.length === 1 ? departments[0][0] : '');
+  const [selectedDept, setSelectedDept] = useState(departments[0]?.[0] ?? '');
   const [selectedService, setSelectedService] = useState('');
+  // Auto-select first dept when departments load
+  useEffect(() => {
+    if (!selectedDept && departments.length > 0) setSelectedDept(departments[0][0]);
+  }, [departments, selectedDept]);
+  // Auto-select first service for the selected dept
+  useEffect(() => {
+    if (!selectedDept) return;
+    const deptServices = services.filter(s => s.department_id === selectedDept);
+    if (deptServices.length > 0 && !deptServices.some(s => s.id === selectedService)) {
+      setSelectedService(deptServices[0].id);
+    }
+  }, [selectedDept, services, selectedService]);
   const [customerName, setCustomerName] = useState(prefill?.name ?? '');
   const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
   const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
@@ -224,8 +236,20 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [enlargedQr, setEnlargedQr] = useState<{ url: string; label: string } | null>(null);
 
   // Future booking state
-  const [futDept, setFutDept] = useState(departments.length === 1 ? departments[0][0] : '');
+  const [futDept, setFutDept] = useState(departments[0]?.[0] ?? '');
   const [futService, setFutService] = useState('');
+  // Auto-select first dept for future booking
+  useEffect(() => {
+    if (!futDept && departments.length > 0) setFutDept(departments[0][0]);
+  }, [departments, futDept]);
+  // Auto-select first service for the future-booking dept
+  useEffect(() => {
+    if (!futDept) return;
+    const deptServices = services.filter(s => s.department_id === futDept);
+    if (deptServices.length > 0 && !deptServices.some(s => s.id === futService)) {
+      setFutService(deptServices[0].id);
+    }
+  }, [futDept, services, futService]);
   const [futDate, setFutDate] = useState('');
   const [futTime, setFutTime] = useState('');
   const [futName, setFutName] = useState(prefill?.name ?? '');
