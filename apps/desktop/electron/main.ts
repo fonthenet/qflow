@@ -1045,6 +1045,18 @@ function setupIPC() {
     return nextLocale;
   });
 
+  // ── Google Sheets CSV fetch (bypasses renderer CORS) ──────────
+  ipcMain.handle('http:fetch-text', async (_e, url: string) => {
+    try {
+      const res = await fetch(url, { redirect: 'follow' });
+      if (!res.ok) return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+      const text = await res.text();
+      return { ok: true, status: res.status, text };
+    } catch (err: any) {
+      return { ok: false, status: 0, error: err?.message || 'Network error' };
+    }
+  });
+
   // ── Broadcast templates (local SQLite) ─────────────────────────
   ipcMain.handle('templates:list', () => {
     return db.prepare(

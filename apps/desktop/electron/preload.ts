@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('qf', {
   // Config
   getConfig: () => ipcRenderer.invoke('get-config'),
 
+  // HTTP fetch (main process — bypasses CORS)
+  httpFetchText: (url: string) => ipcRenderer.invoke('http:fetch-text', url),
+
   // Database operations
   db: {
     getTickets: (officeId: string, statuses: string[]) =>

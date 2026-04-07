@@ -139,8 +139,19 @@ export async function fetchGoogleSheet(url: string): Promise<ParsedCustomerRow[]
   const gidMatch = url.match(/[?&#]gid=(\d+)/);
   const gid = gidMatch ? gidMatch[1] : '0';
   const csvUrl = `https://docs.google.com/spreadsheets/d/${docId}/export?format=csv&gid=${gid}`;
-  const res = await fetch(csvUrl);
-  if (!res.ok) throw new Error(`Failed to fetch sheet (HTTP ${res.status}). Make sure the sheet is shared publicly ("Anyone with the link: Viewer").`);
-  const text = await res.text();
+  // Use Electron main-process fetch to bypass renderer CORS
+  const qf = (window as any).qf;
+  let text: string;
+  if (qf?.httpFetchText) {
+    const result = await qf.httpFetchText(csvUrl);
+    if (!result?.ok) {
+      throw new Error(`Failed to fetch sheet (${result?.error || 'unknown error'}). Make sure the sheet is shared publicly ("Anyone with the link: Viewer").`);
+    }
+    text = result.text;
+  } else {
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error(`Failed to fetch sheet (HTTP ${res.status}). Make sure the sheet is shared publicly ("Anyone with the link: Viewer").`);
+    text = await res.text();
+  }
   return parseCsvText(text);
 }
