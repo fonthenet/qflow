@@ -98,6 +98,112 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [customerName, setCustomerName] = useState(prefill?.name ?? '');
   const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
   const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
+
+  // Smart customer search (shared between walk-in and future tabs)
+  type CustSuggestion = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; visit_count: number };
+  const [custSuggestions, setCustSuggestions] = useState<CustSuggestion[]>([]);
+  const [showCustSuggestions, setShowCustSuggestions] = useState(false);
+  const custSearchSeq = useRef(0);
+
+  // Format Algerian phones for display (+213XXXXXXXXX → 0XXXXXXXXX)
+  const formatAlgPhoneLocal = (p: string | null): string => {
+    if (!p) return '';
+    const d = p.replace(/[^\d+]/g, '');
+    if (d.startsWith('+213')) return '0' + d.slice(4);
+    if (d.startsWith('213') && d.length >= 12) return '0' + d.slice(3);
+    return p;
+  };
+
+  const runCustomerSearch = useCallback(async (query: string) => {
+    const raw = query.trim();
+    if (raw.length < 1) { setCustSuggestions([]); setShowCustSuggestions(false); return; }
+    const orgId = session?.organization_id;
+    if (!orgId) return;
+    const mySeq = ++custSearchSeq.current;
+    try {
+      const sb = await getSupabase();
+      // Sanitize out PostgREST .or() delimiters
+      const safe = raw.replace(/[%,()]/g, ' ').trim();
+      const digits = raw.replace(/\D/g, '');
+      const tokens = safe.split(/\s+/).filter(Boolean);
+
+      // Build OR conditions:
+      //  - name/email ILIKE for the full query (prefix/substring)
+      //  - name/email ILIKE for each individual token (first letters, partial)
+      //  - phone ILIKE with digit-only variants (handles +213 vs local 0)
+      const conds: string[] = [];
+      if (safe) {
+        conds.push(`name.ilike.%${safe}%`);
+        conds.push(`email.ilike.%${safe}%`);
+      }
+      for (const tok of tokens) {
+        if (tok.length >= 1) {
+          conds.push(`name.ilike.${tok}%`);   // starts-with (first letters)
+          conds.push(`name.ilike.% ${tok}%`); // word-start inside name
+        }
+      }
+      if (digits.length >= 2) {
+        // Phone stored as +213XXXXXXXXX; handle local 0XXXXXXXXX input
+        const tail = digits.startsWith('0') ? digits.slice(1) : digits;
+        conds.push(`phone.ilike.%${digits}%`);
+        if (tail && tail !== digits) conds.push(`phone.ilike.%${tail}%`);
+      }
+
+      let req = sb
+        .from('customers')
+        .select('id, name, phone, email, notes, visit_count')
+        .eq('organization_id', orgId)
+        .order('last_visit_at', { ascending: false, nullsFirst: false })
+        .limit(20);
+      if (conds.length) req = req.or(conds.join(','));
+
+      const { data } = await req;
+      if (mySeq !== custSearchSeq.current) return;
+
+      // Client-side rank: multi-token AND-match on name, then by visit_count
+      const lowerTokens = tokens.map((t) => t.toLowerCase());
+      const scored = ((data ?? []) as CustSuggestion[])
+        .map((c) => {
+          const hay = `${(c.name ?? '').toLowerCase()} ${(c.email ?? '').toLowerCase()} ${(c.phone ?? '')}`;
+          const allMatch = lowerTokens.every((tok) => hay.includes(tok));
+          const phoneMatch = digits.length >= 2 && (c.phone ?? '').replace(/\D/g, '').includes(digits.startsWith('0') ? digits.slice(1) : digits);
+          const score = (allMatch ? 10 : 0) + (phoneMatch ? 5 : 0) + Math.min((c.visit_count ?? 0), 20) / 20;
+          return { c, score };
+        })
+        .filter((x) => x.score > 0 || lowerTokens.length === 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map((x) => x.c);
+
+      setCustSuggestions(scored);
+      setShowCustSuggestions(scored.length > 0);
+    } catch (err) {
+      console.warn('[customer-search] failed', err);
+    }
+  }, [session?.organization_id]);
+
+  // Debounced search triggered by either name or phone typing
+  const [custSearchQuery, setCustSearchQuery] = useState('');
+  useEffect(() => {
+    if (!custSearchQuery) { setCustSuggestions([]); setShowCustSuggestions(false); return; }
+    const id = setTimeout(() => { runCustomerSearch(custSearchQuery); }, 220);
+    return () => clearTimeout(id);
+  }, [custSearchQuery, runCustomerSearch]);
+
+  const pickCustomer = (c: CustSuggestion) => {
+    const displayPhone = formatAlgPhoneLocal(c.phone);
+    if (bookingTab === 'walkin') {
+      setCustomerName(c.name ?? '');
+      setCustomerPhone(displayPhone);
+      if (c.notes) setCustomerReason(c.notes);
+    } else {
+      setFutName(c.name ?? '');
+      setFutPhone(displayPhone);
+      if (c.notes) setFutNotes(c.notes);
+    }
+    setShowCustSuggestions(false);
+    setCustSuggestions([]);
+  };
   const [isPriority, setIsPriority] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdTicket, setCreatedTicket] = useState<{ id: string; ticket_number: string; qr_token: string } | null>(null);
@@ -473,16 +579,54 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
           {/* Row 2: Name + Phone + Notes + Submit */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
+            <div style={{ flex: '1 1 160px', minWidth: 130, position: 'relative' }}>
               <label style={labelStyle}>{t('Name')} *</label>
               <input
                 type="text"
                 value={futName}
-                onChange={(e) => setFutName(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-                placeholder={t('Customer name')}
+                onChange={(e) => { setFutName(e.target.value); setCustSearchQuery(e.target.value); }}
+                onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+                onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+                placeholder={t('Search or type name')}
                 style={inputStyle}
+                autoComplete="off"
               />
+              {bookingTab === 'future' && showCustSuggestions && custSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                  marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                  background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                  borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                }}>
+                  {custSuggestions.map((c) => (
+                    <div
+                      key={c.id}
+                      onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                      style={{
+                        padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.name || t('Unknown')}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                          {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                        </div>
+                      </div>
+                      {(c.visit_count ?? 0) > 0 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                          {c.visit_count}× {t('Visits')}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ flex: '1 1 140px', minWidth: 120 }}>
@@ -490,10 +634,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               <input
                 type="tel"
                 value={futPhone}
-                onChange={(e) => setFutPhone(e.target.value)}
+                onChange={(e) => { setFutPhone(e.target.value); setCustSearchQuery(e.target.value); }}
                 onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
                 placeholder={t('Phone number')}
                 style={inputStyle}
+                autoComplete="off"
               />
             </div>
 
@@ -666,17 +811,55 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               </div>
             )}
 
-            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
+            <div style={{ flex: '1 1 160px', minWidth: 130, position: 'relative' }}>
               <label style={labelStyle}>{t('Name')}</label>
               <input
                 ref={nameRef}
                 type="text"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-                placeholder={t('Customer name')}
+                onChange={(e) => { setCustomerName(e.target.value); setCustSearchQuery(e.target.value); }}
+                onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+                onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+                placeholder={t('Search or type name')}
                 style={inputStyle}
+                autoComplete="off"
               />
+              {bookingTab === 'walkin' && showCustSuggestions && custSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                  marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                  background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                  borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                }}>
+                  {custSuggestions.map((c) => (
+                    <div
+                      key={c.id}
+                      onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                      style={{
+                        padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.name || t('Unknown')}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                          {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                        </div>
+                      </div>
+                      {(c.visit_count ?? 0) > 0 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                          {c.visit_count}× {t('Visits')}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -687,10 +870,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               <input
                 type="tel"
                 value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
+                onChange={(e) => { setCustomerPhone(e.target.value); setCustSearchQuery(e.target.value); }}
                 onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
                 placeholder={t('Phone number')}
                 style={inputStyle}
+                autoComplete="off"
               />
             </div>
 
