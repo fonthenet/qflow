@@ -2590,6 +2590,23 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             departments={names.departments}
             services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
             onClose={() => setShowAppointmentsModal(false)}
+            onCheckIn={async (appt) => {
+              if (!appt.department_id) {
+                showToast(translate(locale, 'Missing department'), 'error');
+                return false;
+              }
+              const res = await bookInHouse({
+                department_id: appt.department_id,
+                service_id: appt.service_id ?? undefined,
+                customer_data: {
+                  name: appt.customer_name || undefined,
+                  phone: appt.customer_phone || undefined,
+                },
+                priority: 0,
+                source: 'appointment',
+              });
+              return !!res;
+            }}
           />
         )}
 

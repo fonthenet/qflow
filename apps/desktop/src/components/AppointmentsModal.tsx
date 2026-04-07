@@ -23,6 +23,7 @@ interface Props {
   departments?: Record<string, string>;
   services?: Record<string, string>;
   onClose: () => void;
+  onCheckIn?: (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null }) => Promise<boolean>;
 }
 
 function formatPhoneDisplay(phone: string | null): string {
@@ -60,7 +61,7 @@ const STATUS_COLORS: Record<string, string> = {
   no_show: '#64748b',
 };
 
-export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, onClose }: Props) {
+export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, onClose, onCheckIn }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,20 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   const updateStatus = useCallback(async (id: string, nextStatus: string) => {
     setBusyId(id);
     try {
+      // On check-in: also create a waiting ticket in the local queue
+      if (nextStatus === 'checked_in' && onCheckIn) {
+        const appt = appointments.find((a) => a.id === id);
+        if (appt) {
+          const ok = await onCheckIn({
+            id: appt.id,
+            department_id: appt.department_id,
+            service_id: appt.service_id,
+            customer_name: appt.customer_name,
+            customer_phone: appt.customer_phone,
+          });
+          if (!ok) throw new Error('Check-in failed');
+        }
+      }
       await ensureAuth(storedAuth);
       const sb = await getSupabase();
       const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
@@ -86,7 +101,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     } finally {
       setBusyId(null);
     }
-  }, [storedAuth]);
+  }, [storedAuth, appointments, onCheckIn]);
 
   const deleteAppointment = useCallback(async (id: string) => {
     if (!confirm(t('Delete this appointment?'))) return;
