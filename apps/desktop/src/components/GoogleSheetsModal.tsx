@@ -158,13 +158,13 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
       alignItems: 'center', justifyContent: 'center', zIndex: 10000,
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        background: 'var(--bg, #1e293b)', borderRadius: 12, padding: 24, width: 560, maxWidth: '90vw',
-        maxHeight: '85vh', overflow: 'auto', color: 'var(--text, #f1f5f9)',
+        background: 'var(--bg, #ffffff)', borderRadius: 12, padding: 24, width: 560, maxWidth: '90vw',
+        maxHeight: '85vh', overflow: 'auto', color: 'var(--text, #0f172a)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>📊 {t('Google Sheets sync')}</h2>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text2, #94a3b8)', fontSize: 24, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text2, #64748b)', fontSize: 24, cursor: 'pointer' }}>✕</button>
         </div>
 
         {error && (
@@ -176,7 +176,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
         {/* Not connected */}
         {!status?.connected && (
           <div>
-            <p style={{ color: 'var(--text2, #94a3b8)', fontSize: 14, lineHeight: 1.6 }}>
+            <p style={{ color: 'var(--text2, #64748b)', fontSize: 14, lineHeight: 1.6 }}>
               {t('Connect a Google account to push your customer list to Google Sheets. The sheet stays in your Drive and updates automatically.')}
             </p>
             <button onClick={connectGoogle} style={{
@@ -207,13 +207,13 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
               </div>
             ) : (
               <div>
-                <div style={{ background: 'var(--bg2, #0f172a)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginBottom: 4 }}>{t('Linked sheet')}</div>
+                <div style={{ background: 'var(--bg2, #f8fafc)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text2, #64748b)', marginBottom: 4 }}>{t('Linked sheet')}</div>
                   <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{status.sheet.name}</div>
                   <a href={status.sheet.url} target="_blank" rel="noreferrer" style={{ color: '#3b82f6', fontSize: 12, textDecoration: 'none' }}>
                     {t('Open in Google Sheets')} ↗
                   </a>
-                  <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginTop: 10 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text2, #64748b)', marginTop: 10 }}>
                     {status.sheet.lastPushedAt
                       ? `${t('Last sync')}: ${new Date(status.sheet.lastPushedAt).toLocaleString()} · ${status.sheet.rowCount} ${t('rows')}`
                       : t('Never synced')}
@@ -266,8 +266,8 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
             <div style={{ maxHeight: 240, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
               {files.map((f) => (
                 <button key={f.id} onClick={() => linkSheet(f.id)} disabled={busy} style={{
-                  background: 'var(--bg2, #0f172a)', border: '1px solid var(--border, #475569)',
-                  color: 'var(--text, #f1f5f9)', padding: '10px 12px', borderRadius: 6,
+                  background: 'var(--bg2, #f8fafc)', border: '1px solid var(--border, #cbd5e1)',
+                  color: 'var(--text, #0f172a)', padding: '10px 12px', borderRadius: 6,
                   textAlign: 'left', cursor: 'pointer', fontSize: 13,
                 }}>
                   <div style={{ fontWeight: 600 }}>{f.name}</div>
@@ -287,7 +287,7 @@ const btnPrimary: React.CSSProperties = {
   borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
 const btnSecondary: React.CSSProperties = {
-  background: 'transparent', color: 'var(--text, #f1f5f9)', border: '1px solid var(--border, #475569)',
+  background: 'transparent', color: 'var(--text, #0f172a)', border: '1px solid var(--border, #cbd5e1)',
   padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
 const btnDanger: React.CSSProperties = {
@@ -295,6 +295,6 @@ const btnDanger: React.CSSProperties = {
   padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
 const inputStyle: React.CSSProperties = {
-  flex: 1, background: 'var(--bg2, #0f172a)', border: '1px solid var(--border, #475569)',
-  color: 'var(--text, #f1f5f9)', padding: '10px 12px', borderRadius: 6, fontSize: 13,
+  flex: 1, background: '#ffffff', border: '1px solid var(--border, #cbd5e1)',
+  color: 'var(--text, #0f172a)', padding: '10px 12px', borderRadius: 6, fontSize: 13,
 };
