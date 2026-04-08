@@ -1318,8 +1318,9 @@ export async function handleInboundMessage(
   // with "Reply YES for live alerts". Their reply opens the 24h conversation
   // window (making subsequent notifications free). NO opts them out.
   {
-    const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
-    const isNo = /^(NON|NO|لا|N|0)$/i.test(cleaned);
+    // Note: "1" and "0" are excluded — they collide with the quick-action menu (1=STATUS, 2=CANCEL).
+    const isYes = /^(OUI|YES|نعم|Y|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
+    const isNo = /^(NON|NO|لا|N)$/i.test(cleaned);
 
     if (isYes || isNo) {
       const supabaseOptIn = createAdminClient() as any;
