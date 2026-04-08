@@ -2633,7 +2633,7 @@ async function handleStatus(
     .select('status')
     .eq('id', session.ticket_id)
     .maybeSingle();
-  const activeStatuses = ['waiting', 'called', 'serving'];
+  const activeStatuses = ['waiting', 'issued', 'called', 'serving', 'pending_approval'];
   if (!tRow || !activeStatuses.includes(tRow.status)) {
     const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
     await supabase
