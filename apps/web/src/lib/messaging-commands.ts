@@ -5,6 +5,65 @@ import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
+import { resolveWilaya, formatWilaya } from '@/lib/wilayas';
+
+// ── Phone normalization ──────────────────────────────────────────────
+// Single source of truth for WhatsApp phone identifiers. Stores E.164
+// without the leading "+", because Meta Cloud webhooks deliver in this
+// format. Handles Algerian (+213) and US (+1) numbers explicitly, plus
+// any other E.164 input that already includes a country code.
+//
+// Inputs that may arrive (real examples observed):
+//   "whatsapp:+16612346622"  → "16612346622"
+//   "+16612346622"           → "16612346622"
+//   "16612346622"            → "16612346622"
+//   "+213669864728"          → "213669864728"
+//   "0669864728"             → "213669864728"   (Algerian local format)
+//   "213669864728"           → "213669864728"
+//   "00213669864728"         → "213669864728"   (international 00 prefix)
+//
+// Returns digits-only E.164 with country code, no leading +.
+export function normalizePhone(raw: string | null | undefined): string {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  // Strip channel prefix and any non-digit chars
+  s = s.replace(/^whatsapp:/i, '');
+  s = s.replace(/[^\d+]/g, '');
+  // Handle "00" international prefix
+  if (s.startsWith('00')) s = s.slice(2);
+  // Drop leading +
+  if (s.startsWith('+')) s = s.slice(1);
+  // Algerian local format: leading 0 + 9 digits → prepend country code 213
+  if (s.length === 10 && s.startsWith('0')) {
+    s = '213' + s.slice(1);
+  }
+  // 9-digit Algerian without leading 0 (rare): assume Algerian
+  else if (s.length === 9 && /^[5-7]/.test(s)) {
+    s = '213' + s;
+  }
+  return s;
+}
+
+/**
+ * Returns all candidate identifier strings to try when looking up an
+ * existing session/ticket by phone. Order matters: most-specific first.
+ * This makes lookups robust during the transition while old data may
+ * still be stored under the raw inbound format.
+ */
+export function phoneLookupCandidates(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const norm = normalizePhone(raw);
+  const candidates = new Set<string>();
+  if (norm) candidates.add(norm);
+  if (raw) candidates.add(String(raw).trim());
+  if (raw) candidates.add(String(raw).replace(/^whatsapp:/i, ''));
+  if (norm) candidates.add('+' + norm);
+  // Algerian local form for backward compat
+  if (norm.startsWith('213') && norm.length === 12) {
+    candidates.add('0' + norm.slice(3));
+  }
+  return Array.from(candidates).filter(Boolean);
+}
 
 // ── Directory locale cache (in-memory, 10-min TTL) ──────────────────
 // When a user sends LIST/القائمة, we store their detected locale so the
@@ -129,9 +188,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '❌ Business code "*{code}*" not found.\n\nPlease check the code and try again.',
   },
   already_in_queue: {
-    fr: '✅ Vous êtes déjà dans la file chez *{name}*.\n\n🎟️ Ticket : *{ticket}*{service}\n🕐 Inscrit à : {joined}\n{position}\n\n🔔 Vous recevrez automatiquement une notification lorsque votre tour approchera.\n\nRépondez *STATUT* pour une mise à jour ou *ANNULER* pour quitter la file.',
-    ar: '✅ أنت بالفعل في الطابور لدى *{name}*.\n\n🎟️ التذكرة: *{ticket}*{service}\n🕐 وقت التسجيل: {joined}\n{position}\n\n🔔 ستتلقى إشعارًا تلقائيًا عند اقتراب دورك.\n\nأرسل *حالة* للتحديث أو *إلغاء* للمغادرة.',
-    en: '✅ You\'re already in the queue at *{name}*.\n\n🎟️ Ticket: *{ticket}*{service}\n🕐 Joined at: {joined}\n{position}\n\n🔔 You\'ll automatically receive a notification when your turn is approaching.\n\nReply *STATUS* for an update or *CANCEL* to leave the queue.',
+    fr: '✅ Vous êtes déjà dans la file chez *{name}*.\n\n🎟️ Ticket : *{ticket}*{service}\n🕐 Inscrit à : {joined}\n{position}\n\n📍 Suivre en direct : {url}\n\n🔔 Vous recevrez automatiquement une notification lorsque votre tour approchera.\n\nRépondez *STATUT* pour une mise à jour ou *ANNULER* pour quitter la file.',
+    ar: '✅ أنت بالفعل في الطابور لدى *{name}*.\n\n🎟️ التذكرة: *{ticket}*{service}\n🕐 وقت التسجيل: {joined}\n{position}\n\n📍 تتبّع مباشر: {url}\n\n🔔 ستتلقى إشعارًا تلقائيًا عند اقتراب دورك.\n\nأرسل *حالة* للتحديث أو *إلغاء* للمغادرة.',
+    en: '✅ You\'re already in the queue at *{name}*.\n\n🎟️ Ticket: *{ticket}*{service}\n🕐 Joined at: {joined}\n{position}\n\n📍 Track live: {url}\n\n🔔 You\'ll automatically receive a notification when your turn is approaching.\n\nReply *STATUS* for an update or *CANCEL* to leave the queue.',
   },
   queue_not_configured: {
     fr: 'Désolé, la file n\'est pas encore configurée pour *{name}*. Veuillez rejoindre via le QR code.',
@@ -184,9 +243,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: 'Your ticket is currently being served and cannot be cancelled.',
   },
   status: {
-    fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\nRépondez *ANNULER* pour quitter la file.',
-    ar: '*حالة الطابور — {name}* 📊\n\nالتذكرة: *{ticket}* 🎫\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nأرسل *إلغاء* للمغادرة.',
-    en: '📊 *Queue Status — {name}*\n\n🎫 Ticket: *{ticket}*\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\nReply *CANCEL* to leave the queue.',
+    fr: '📊 *État de la file — {name}*\n\n🎫 Ticket : *{ticket}*{service}\n📍 Votre position : *{position}*\n⏱ Attente estimée : *{wait} min*\n{now_serving}👥 En attente : *{total}*\n\n🔗 Suivre : {url}\n\nRépondez *ANNULER* pour quitter la file.',
+    ar: '*حالة الطابور — {name}* 📊\n\nالتذكرة: *{ticket}*{service} 🎫\nموقعك: *{position}* 📍\nالانتظار المقدر: *{wait} دقيقة* ⏱\n{now_serving}في الانتظار: *{total}* 👥\n\nالمتابعة: {url} 🔗\n\nأرسل *إلغاء* للمغادرة.',
+    en: '📊 *Queue Status — {name}*\n\n🎫 Ticket: *{ticket}*{service}\n📍 Your position: *{position}*\n⏱ Estimated wait: *{wait} min*\n{now_serving}👥 Total waiting: *{total}*\n\n🔗 Track: {url}\n\nReply *CANCEL* to leave the queue.',
   },
   cancelled: {
     fr: '🚫 Votre ticket *{ticket}* chez *{name}* a été annulé.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à tout moment.',
@@ -283,6 +342,26 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم الإلغاء. لم تنضم إلى الطابور ❌\n\nأرسل *انضم <الرمز>* للمحاولة مجددًا.',
     en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
+  ask_wilaya: {
+    fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *ANNULER* pour annuler.',
+    ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *إلغاء* للإلغاء.',
+    en: '📍 Which *wilaya* (province) are you from?\n\nSend the *number* (1–58) or the *name* (e.g. *16* or *Alger*).\nSend *CANCEL* to abort.',
+  },
+  ask_reason: {
+    fr: '📝 Quel est le *motif* de votre visite ? (en quelques mots)\n\nEnvoyez *SKIP* pour passer ou *0* pour annuler.',
+    ar: '📝 ما *سبب* زيارتك؟ (بإيجاز)\n\nأرسل *SKIP* للتخطي أو *0* للإلغاء.',
+    en: '📝 What is the *reason* for your visit? (briefly)\n\nSend *SKIP* to skip or *0* to cancel.',
+  },
+  intake_invalid_wilaya: {
+    fr: '⚠️ Wilaya introuvable. Envoyez un numéro entre *1* et *58*, ou le nom exact (ex: *16* ou *Alger*).',
+    ar: '⚠️ لم يتم العثور على الولاية. أرسل رقمًا بين *1* و *58*، أو الاسم الصحيح (مثال: *16* أو *الجزائر*).',
+    en: '⚠️ Wilaya not found. Send a number between *1* and *58*, or the exact name (e.g. *16* or *Alger*).',
+  },
+  intake_invalid_reason: {
+    fr: '⚠️ Motif trop long. Veuillez le résumer en quelques mots (max 200 caractères).',
+    ar: '⚠️ السبب طويل جدًا. يرجى تلخيصه في بضع كلمات (200 حرف كحد أقصى).',
+    en: '⚠️ Reason too long. Please summarise it in a few words (max 200 characters).',
+  },
   opt_in_confirmed: {
     fr: '✅ Parfait ! Vous recevrez les notifications en direct pour votre ticket *{ticket}*.',
     ar: 'ممتاز! ستتلقى إشعارات مباشرة لتذكرتك *{ticket}* ✅',
@@ -334,10 +413,20 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '📱 أدخل *رقم هاتفك* (أو أرسل *SKIP* للتخطي).\nأرسل *0* للإلغاء.',
     en: '📱 Enter your *phone number* (or send *SKIP* to skip).\nSend *0* to cancel.',
   },
+  booking_enter_wilaya: {
+    fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *0* pour annuler.',
+    ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *0* للإلغاء.',
+    en: '📍 Which *wilaya* (province) are you from?\n\nSend the *number* (1–58) or the *name* (e.g. *16* or *Alger*).\nSend *0* to cancel.',
+  },
+  booking_enter_reason: {
+    fr: '📝 Quel est le *motif* de votre rendez-vous ? (en quelques mots)\n\nEnvoyez *SKIP* pour passer ou *0* pour annuler.',
+    ar: '📝 ما *سبب* موعدك؟ (بإيجاز)\n\nأرسل *SKIP* للتخطي أو *0* للإلغاء.',
+    en: '📝 What is the *reason* for your appointment? (briefly)\n\nSend *SKIP* to skip or *0* to cancel.',
+  },
   booking_confirm: {
-    fr: '📋 *Résumé de votre réservation :*\n\n🏢 *{name}*\n📅 Date : *{date}*\n⏰ Heure : *{time}*\n👤 Nom : *{customer}*\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
-    ar: '📋 *ملخص حجزك:*\n\n🏢 *{name}*\n📅 التاريخ: *{date}*\n⏰ الوقت: *{time}*\n👤 الاسم: *{customer}*\n\n✅ أرسل *نعم* للتأكيد\n❌ أرسل *لا* للإلغاء',
-    en: '📋 *Your booking summary:*\n\n🏢 *{name}*\n📅 Date: *{date}*\n⏰ Time: *{time}*\n👤 Name: *{customer}*\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
+    fr: '📋 *Résumé de votre réservation :*\n\n🏢 *{name}*\n📅 Date : *{date}*\n⏰ Heure : *{time}*\n👤 Nom : *{customer}*\n📍 Wilaya : *{wilaya}*\n📝 Motif : *{reason}*\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
+    ar: '📋 *ملخص حجزك:*\n\n🏢 *{name}*\n📅 التاريخ: *{date}*\n⏰ الوقت: *{time}*\n👤 الاسم: *{customer}*\n📍 الولاية: *{wilaya}*\n📝 السبب: *{reason}*\n\n✅ أرسل *نعم* للتأكيد\n❌ أرسل *لا* للإلغاء',
+    en: '📋 *Your booking summary:*\n\n🏢 *{name}*\n📅 Date: *{date}*\n⏰ Time: *{time}*\n👤 Name: *{customer}*\n📍 Wilaya: *{wilaya}*\n📝 Reason: *{reason}*\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
   },
   booking_confirmed: {
     fr: '✅ *Réservation confirmée !*\n\n🏢 *{name}*\n📅 *{date}* à *{time}*\n👤 *{customer}*\n\nVous recevrez un rappel 1h avant votre rendez-vous.\n\nPour annuler, envoyez *ANNULER RDV*.',
@@ -657,14 +746,21 @@ async function findAllActiveSessionsByUser(
   identifier: string,
   channel: Channel,
   bsuid?: string,
+  fallbackLocale: Locale = 'fr',
 ): Promise<Array<{ session: any; org: OrgContext }>> {
   const supabase = createAdminClient() as any;
   const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
 
+  // Build candidate identifier list (handles legacy data stored under
+  // different formats: with/without country code, with/without leading +)
+  const lookupValues = channel === 'whatsapp'
+    ? phoneLookupCandidates(identifier)
+    : [identifier];
+
   const { data: sessions } = await supabase
     .from('whatsapp_sessions')
-    .select('id, ticket_id, organization_id, locale, channel')
-    .eq(idCol, identifier)
+    .select('id, ticket_id, organization_id, locale, channel, whatsapp_phone')
+    .in(idCol, lookupValues)
     .eq('state', 'active')
     .eq('channel', channel)
     .order('created_at', { ascending: false });
@@ -674,7 +770,7 @@ async function findAllActiveSessionsByUser(
   if (channel === 'whatsapp' && bsuid) {
     const { data } = await supabase
       .from('whatsapp_sessions')
-      .select('id, ticket_id, organization_id, locale, channel')
+      .select('id, ticket_id, organization_id, locale, channel, whatsapp_phone')
       .eq('whatsapp_bsuid', bsuid)
       .eq('state', 'active')
       .eq('channel', 'whatsapp')
@@ -689,65 +785,135 @@ async function findAllActiveSessionsByUser(
     if (!existingIds.has(s.id)) allSessions.push(s);
   }
 
+  // Filter out sessions whose ticket is no longer in an active status (cloud
+  // is the source of truth — Station/web cancels close them via DB trigger,
+  // but be defensive in case the trigger ever lags or is disabled).
+  if (allSessions.length > 0) {
+    const ticketIds = allSessions.map((s: any) => s.ticket_id).filter(Boolean);
+    if (ticketIds.length > 0) {
+      const { data: ticketRows } = await supabase
+        .from('tickets')
+        .select('id, status')
+        .in('id', ticketIds);
+      const activeTicketIds = new Set(
+        (ticketRows ?? [])
+          .filter((t: any) => ['waiting', 'called', 'serving'].includes(t.status))
+          .map((t: any) => t.id)
+      );
+      const closedSessionIds: string[] = [];
+      for (let i = allSessions.length - 1; i >= 0; i--) {
+        const s = allSessions[i];
+        if (s.ticket_id && !activeTicketIds.has(s.ticket_id)) {
+          closedSessionIds.push(s.id);
+          allSessions.splice(i, 1);
+        }
+      }
+      // Best-effort: mark them completed so we don't rescan them next time
+      if (closedSessionIds.length > 0) {
+        await supabase.from('whatsapp_sessions')
+          .update({ state: 'completed' })
+          .in('id', closedSessionIds);
+      }
+    }
+  }
+
   // ── Also find unlinked tickets by phone number (kiosk / in-house) ──
-  // WhatsApp identifier is a phone number; match against customer_data->>'phone'
+  // Match against customer_data->>'phone' but ONLY with strict last-9-digit
+  // matching. Numbers shorter than 9 digits are rejected — they would create
+  // cross-customer collisions (e.g. two unrelated 7-digit numbers matching).
   if (channel === 'whatsapp' && identifier) {
-    // Normalize the WhatsApp phone to digits-only for flexible matching
-    const digits = identifier.replace(/\D/g, '');
-    const linkedTicketIds = new Set(allSessions.map((s: any) => s.ticket_id).filter(Boolean));
+    const normIdentifier = normalizePhone(identifier);
+    if (normIdentifier.length >= 9) {
+      const last9 = normIdentifier.slice(-9);
+      const linkedTicketIds = new Set(allSessions.map((s: any) => s.ticket_id).filter(Boolean));
 
-    // Find active tickets where customer_data phone matches
-    // Use ->> for JSONB text extraction so ilike works correctly
-    const last9 = digits.slice(-9);
-    const { data: phoneTickets } = await supabase
-      .from('tickets')
-      .select('id, office_id, customer_data, created_at')
-      .in('status', ['waiting', 'called', 'serving'])
-      .filter('customer_data->>phone', 'ilike', `%${last9}%`)
-      .order('created_at', { ascending: false })
-      .limit(10);
+      const { data: phoneTickets } = await supabase
+        .from('tickets')
+        .select('id, office_id, customer_data, created_at')
+        .in('status', ['waiting', 'called', 'serving'])
+        .filter('customer_data->>phone', 'ilike', `%${last9}%`)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    if (phoneTickets && phoneTickets.length > 0) {
-      // Get office→org mapping
-      const officeIds = [...new Set(phoneTickets.map((t: any) => t.office_id))];
-      const { data: offices } = await supabase
-        .from('offices')
-        .select('id, organization_id')
-        .in('id', officeIds);
-      const officeOrgMap = new Map<string, string>((offices ?? []).map((o: any) => [o.id, o.organization_id]));
+      if (phoneTickets && phoneTickets.length > 0) {
+        const officeIds = [...new Set(phoneTickets.map((t: any) => t.office_id))];
+        const { data: offices } = await supabase
+          .from('offices')
+          .select('id, organization_id')
+          .in('id', officeIds);
+        const officeOrgMap = new Map<string, string>((offices ?? []).map((o: any) => [o.id, o.organization_id]));
 
-      for (const ticket of phoneTickets) {
-        if (linkedTicketIds.has(ticket.id)) continue; // already linked
+        for (const ticket of phoneTickets) {
+          if (linkedTicketIds.has(ticket.id)) continue; // already linked
 
-        // Verify phone actually matches (the ilike is broad, do exact check)
-        const rawPhone = ticket.customer_data?.phone;
-        if (!rawPhone) continue;
-        const ticketDigits = String(rawPhone).replace(/\D/g, '');
-        // Match last 9+ digits to handle country code differences
-        const matchLen = Math.min(digits.length, ticketDigits.length, 9);
-        if (digits.slice(-matchLen) !== ticketDigits.slice(-matchLen)) continue;
+          // Strict check: BOTH sides must have ≥9 digits and the last 9 must
+          // match exactly. Refuses to auto-link short / ambiguous numbers.
+          const rawPhone = ticket.customer_data?.phone;
+          if (!rawPhone) continue;
+          const ticketNorm = normalizePhone(String(rawPhone));
+          if (ticketNorm.length < 9) continue;
+          if (ticketNorm.slice(-9) !== last9) continue;
 
-        const orgId = officeOrgMap.get(ticket.office_id);
-        if (!orgId) continue;
+          const orgId = officeOrgMap.get(ticket.office_id);
+          if (!orgId) continue;
 
-        // Auto-create a session to link this ticket for future notifications
-        const { data: newSession } = await supabase
-          .from('whatsapp_sessions')
-          .insert({
-            organization_id: orgId,
-            ticket_id: ticket.id,
-            channel: 'whatsapp',
-            whatsapp_phone: identifier,
-            whatsapp_bsuid: bsuid || null,
-            state: 'active',
-            locale: 'en',
-          })
-          .select('id, ticket_id, organization_id, locale, channel')
-          .single();
+          // Look up any existing session for this ticket, regardless of phone
+          // format, so we don't create a duplicate active session.
+          const { data: existingForTicket } = await supabase
+            .from('whatsapp_sessions')
+            .select('id, ticket_id, organization_id, locale, channel, whatsapp_phone')
+            .eq('ticket_id', ticket.id)
+            .eq('state', 'active')
+            .eq('channel', 'whatsapp')
+            .maybeSingle();
 
-        if (newSession) {
-          allSessions.push(newSession);
-          linkedTicketIds.add(ticket.id);
+          if (existingForTicket) {
+            // Already have a session — keep its locale, just update phone/bsuid
+            // to the canonical form so future lookups hit immediately.
+            await supabase.from('whatsapp_sessions')
+              .update({ whatsapp_phone: normIdentifier, whatsapp_bsuid: bsuid || null })
+              .eq('id', existingForTicket.id);
+            allSessions.push({ ...existingForTicket, whatsapp_phone: normIdentifier });
+            linkedTicketIds.add(ticket.id);
+            continue;
+          }
+
+          // No existing session — create one. Locale: use customer's
+          // ticket-time language hint if any, else fallback. Race-safe via
+          // the unique partial index on (ticket_id) where state='active'.
+          const { data: newSession, error: insertErr } = await supabase
+            .from('whatsapp_sessions')
+            .insert({
+              organization_id: orgId,
+              ticket_id: ticket.id,
+              channel: 'whatsapp',
+              whatsapp_phone: normIdentifier,
+              whatsapp_bsuid: bsuid || null,
+              state: 'active',
+              locale: fallbackLocale,
+            })
+            .select('id, ticket_id, organization_id, locale, channel, whatsapp_phone')
+            .single();
+
+          if (insertErr) {
+            // Race lost to another insert — fetch the winner instead
+            const { data: winner } = await supabase
+              .from('whatsapp_sessions')
+              .select('id, ticket_id, organization_id, locale, channel, whatsapp_phone')
+              .eq('ticket_id', ticket.id)
+              .eq('state', 'active')
+              .maybeSingle();
+            if (winner) {
+              allSessions.push(winner);
+              linkedTicketIds.add(ticket.id);
+            }
+            continue;
+          }
+
+          if (newSession) {
+            allSessions.push(newSession);
+            linkedTicketIds.add(ticket.id);
+          }
         }
       }
     }
@@ -779,12 +945,12 @@ export const positionLabel: Record<Locale, string> = { fr: 'Position', ar: 'ال
 export const nowServingLabel: Record<Locale, string> = { fr: 'En service', ar: 'يُخدم الآن', en: 'Now serving' };
 export const minLabel: Record<Locale, string> = { fr: 'min', ar: 'دقيقة', en: 'min' };
 
-/** Fetch ticket number, service name, and created_at for the already_in_queue message. */
-async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ ticket: string; service: string; joined: string }> {
+/** Fetch ticket number, service name, join time, and tracking URL for the already_in_queue message. */
+async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ ticket: string; service: string; joined: string; url: string }> {
   const supabase = createAdminClient() as any;
   const { data: t } = await supabase
     .from('tickets')
-    .select('ticket_number, created_at, service_id, office_id, services(name), offices(timezone)')
+    .select('ticket_number, created_at, qr_token, services(name), offices(timezone)')
     .eq('id', ticketId)
     .maybeSingle();
   const ticketNum = t?.ticket_number ? String(t.ticket_number) : '—';
@@ -805,7 +971,9 @@ async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ t
       : locale === 'ar' ? `\n👨‍⚕️ الخدمة: *${serviceName}*`
       : `\n👨‍⚕️ Service: *${serviceName}*`)
     : '';
-  return { ticket: ticketNum, service: serviceLine, joined };
+  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const url = t?.qr_token ? `${baseUrl}/q/${t.qr_token}` : '';
+  return { ticket: ticketNum, service: serviceLine, joined, url };
 }
 
 export function formatPosition(pos: any, locale: Locale): string {
@@ -938,18 +1106,13 @@ export async function handleInboundMessage(
       const pendingLocale = (pendingSession.locale as Locale) || 'fr';
 
       if (isYes) {
-        // Look up org name for the joined message
-        const { data: orgRow } = await supabaseCheck
-          .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
-        if (orgRow) {
-          // Pass pre-resolved IDs if the selection flow already chose dept/service
-          const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
-            ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
-            : undefined;
-          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved);
-          // Clean up the pending session (handleJoin creates a new active one)
-          await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
-        }
+        // Transition into intake collection (wilaya, then reason) instead of
+        // creating the ticket immediately. The ticket is created after intake.
+        await supabaseCheck
+          .from('whatsapp_sessions')
+          .update({ state: 'awaiting_intake_wilaya' })
+          .eq('id', pendingSession.id);
+        await sendMessage({ to: identifier, body: t('ask_wilaya', pendingLocale) });
         return;
       }
       if (isNo) {
@@ -959,6 +1122,89 @@ export async function handleInboundMessage(
       }
       // Something else — clear pending and fall through to normal processing
       await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+    }
+  }
+
+  // ── Awaiting intake (wilaya / reason of visit) ──
+  {
+    const supabaseIntake = createAdminClient() as any;
+    const identColIntake = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: intakeSession } = await supabaseIntake
+      .from('whatsapp_sessions')
+      .select('id, organization_id, office_id, department_id, service_id, virtual_queue_code_id, state, locale, channel, intake_wilaya, intake_reason')
+      .eq(identColIntake, identifier)
+      .in('state', ['awaiting_intake_wilaya', 'awaiting_intake_reason'])
+      .eq('channel', channel)
+      .gte('created_at', new Date(Date.now() - PENDING_JOIN_TTL_MINUTES * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (intakeSession) {
+      const intakeLocale = (intakeSession.locale as Locale) || detectedLocale;
+      const isCancel = /^(0|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+      if (isCancel) {
+        await supabaseIntake.from('whatsapp_sessions').delete().eq('id', intakeSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join_cancelled', intakeLocale) });
+        return;
+      }
+
+      if (intakeSession.state === 'awaiting_intake_wilaya') {
+        const resolved = resolveWilaya(messageBody);
+        if (!resolved) {
+          await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', intakeLocale) });
+          return;
+        }
+        const canonical = formatWilaya(resolved, intakeLocale);
+        await supabaseIntake
+          .from('whatsapp_sessions')
+          .update({ intake_wilaya: canonical, state: 'awaiting_intake_reason' })
+          .eq('id', intakeSession.id);
+        await sendMessage({ to: identifier, body: t('ask_reason', intakeLocale) });
+        return;
+      }
+
+      if (intakeSession.state === 'awaiting_intake_reason') {
+        const raw = messageBody.trim();
+        const isSkip = /^SKIP$/i.test(raw);
+        const reason = isSkip ? '' : raw;
+        if (reason.length > 200) {
+          await sendMessage({ to: identifier, body: t('intake_invalid_reason', intakeLocale) });
+          return;
+        }
+        // Persist the reason on the session, then look up org and join
+        await supabaseIntake
+          .from('whatsapp_sessions')
+          .update({ intake_reason: reason || null })
+          .eq('id', intakeSession.id);
+
+        const { data: orgRow } = await supabaseIntake
+          .from('organizations').select('id, name, settings').eq('id', intakeSession.organization_id).single();
+        if (!orgRow) {
+          await supabaseIntake.from('whatsapp_sessions').delete().eq('id', intakeSession.id);
+          await sendMessage({ to: identifier, body: t('join_failed', intakeLocale) });
+          return;
+        }
+
+        const preResolved = intakeSession.office_id && intakeSession.department_id && intakeSession.service_id
+          ? { officeId: intakeSession.office_id, departmentId: intakeSession.department_id, serviceId: intakeSession.service_id }
+          : undefined;
+
+        await handleJoin(
+          identifier,
+          orgRow as OrgContext,
+          intakeLocale,
+          channel,
+          sendMessage,
+          profileName,
+          bsuid,
+          preResolved,
+          { wilaya: intakeSession.intake_wilaya || undefined, reason: reason || undefined },
+        );
+        // handleJoin creates the active session; remove the intake placeholder
+        await supabaseIntake.from('whatsapp_sessions').delete().eq('id', intakeSession.id);
+        return;
+      }
     }
   }
 
@@ -1025,9 +1271,9 @@ export async function handleInboundMessage(
     const identColBook = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
     const { data: bookSession } = await supabaseBook
       .from('whatsapp_sessions')
-      .select('id, organization_id, office_id, department_id, service_id, state, locale, channel, booking_date, booking_time, booking_customer_name')
+      .select('id, organization_id, office_id, department_id, service_id, state, locale, channel, booking_date, booking_time, booking_customer_name, booking_customer_wilaya, intake_reason')
       .eq(identColBook, identifier)
-      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_confirm'])
+      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
       .eq('channel', channel)
       .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL for booking flow
       .order('created_at', { ascending: false })
@@ -1119,7 +1365,7 @@ export async function handleInboundMessage(
 
   // ── Quick-action numbers: "1" = STATUS, "2" = CANCEL (only if user has active session) ──
   if (command === '1' || command === '2') {
-    const quickSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    const quickSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid, detectedLocale);
     if (quickSessions.length > 0) {
       if (command === '1') {
         // Route to STATUS
@@ -1172,7 +1418,7 @@ export async function handleInboundMessage(
 
   // ── STATUS / STATUT / حالة ──
   if (command === 'STATUS' || command === 'STATUT' || /^حالة$/.test(cleaned)) {
-    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid, detectedLocale);
     if (allSessions.length === 0) {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
     } else if (allSessions.length === 1) {
@@ -1192,7 +1438,7 @@ export async function handleInboundMessage(
     const isAll = cancelMatch ? !!cancelMatch[2] : (cancelAr ? !!cancelAr[1] : false);
     const cancelIdx = cancelMatch?.[3] ? parseInt(cancelMatch[3], 10) : (cancelAr?.[2] ? parseInt(cancelAr[2], 10) : null);
 
-    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid);
+    const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid, detectedLocale);
     if (allSessions.length === 0) {
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
     } else if (isAll) {
@@ -1380,6 +1626,7 @@ export async function handleInboundMessage(
           ticket: ctx.ticket,
           service: ctx.service,
           joined: ctx.joined,
+          url: ctx.url,
         }),
       });
     } else {
@@ -1748,31 +1995,58 @@ async function tryLinkKioskTicket(
     .eq('state', 'active')
     .maybeSingle();
 
+  const normPhone = channel === 'whatsapp' ? normalizePhone(identifier) : null;
+
   if (existingSession) {
-    // Update existing session with the new channel/identifier
+    // Update existing session with the new channel/identifier.
+    // IMPORTANT: do NOT overwrite locale here — that destroys the customer's
+    // language preference if it was set earlier. Locale only changes via the
+    // explicit language picker (1/2/3) or when first creating a session.
     const update: Record<string, any> = { channel };
     if (channel === 'whatsapp') {
-      update.whatsapp_phone = identifier;
+      update.whatsapp_phone = normPhone || identifier;
       update.whatsapp_bsuid = bsuid || null;
       update.messenger_psid = null;
     } else {
       update.messenger_psid = identifier;
       update.whatsapp_phone = null;
     }
-    update.locale = locale;
     await (supabase as any).from('whatsapp_sessions').update(update).eq('id', existingSession.id);
   } else {
-    // Create new session linked to the kiosk ticket
-    await (supabase as any).from('whatsapp_sessions').insert({
+    // Create new session linked to the kiosk ticket. Race-safe via the
+    // unique partial index on (ticket_id) where state='active'.
+    const { error: insErr } = await (supabase as any).from('whatsapp_sessions').insert({
       organization_id: office.organization_id,
       ticket_id: ticket.id,
       channel,
-      whatsapp_phone: channel === 'whatsapp' ? identifier : null,
+      whatsapp_phone: channel === 'whatsapp' ? (normPhone || identifier) : null,
       whatsapp_bsuid: channel === 'whatsapp' ? (bsuid || null) : null,
       messenger_psid: channel === 'messenger' ? identifier : null,
       state: 'active',
       locale,
     });
+    if (insErr) {
+      // Race lost — another session for this ticket was just created. Update
+      // it with the new identifier instead of failing.
+      const { data: winner } = await (supabase as any)
+        .from('whatsapp_sessions')
+        .select('id')
+        .eq('ticket_id', ticket.id)
+        .eq('state', 'active')
+        .maybeSingle();
+      if (winner) {
+        const update: Record<string, any> = { channel };
+        if (channel === 'whatsapp') {
+          update.whatsapp_phone = normPhone || identifier;
+          update.whatsapp_bsuid = bsuid || null;
+          update.messenger_psid = null;
+        } else {
+          update.messenger_psid = identifier;
+          update.whatsapp_phone = null;
+        }
+        await (supabase as any).from('whatsapp_sessions').update(update).eq('id', winner.id);
+      }
+    }
   }
 
   // Get position using canonical calculation
@@ -2109,6 +2383,7 @@ async function handleJoin(
   profileName?: string,
   bsuid?: string,
   preResolved?: { officeId: string; departmentId: string; serviceId: string },
+  intake?: { wilaya?: string; reason?: string },
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
@@ -2149,6 +2424,7 @@ async function handleJoin(
         ticket: ctx.ticket,
         service: ctx.service,
         joined: ctx.joined,
+        url: ctx.url,
       }),
     });
     return;
@@ -2218,6 +2494,12 @@ async function handleJoin(
   }
   if (profileName) {
     customerData.name = profileName;
+  }
+  if (intake?.wilaya) {
+    customerData.wilaya = intake.wilaya;
+  }
+  if (intake?.reason) {
+    customerData.reason_of_visit = intake.reason;
   }
 
   const result = await createPublicTicket({
@@ -2320,13 +2602,37 @@ async function handleStatus(
     return;
   }
 
-  // Fetch ticket number
-  const { data: ticketRow } = await supabase
+  // Defensive: verify the ticket is still active in the cloud before replying.
+  // The DB trigger should have closed the session already, but we double-check
+  // to avoid showing cancelled/served tickets in STATUS replies.
+  const { data: tRow } = await supabase
     .from('tickets')
-    .select('ticket_number')
+    .select('status')
     .eq('id', session.ticket_id)
-    .single();
-  const ticketNum = ticketRow?.ticket_number ?? '?';
+    .maybeSingle();
+  const activeStatuses = ['waiting', 'called', 'serving'];
+  if (!tRow || !activeStatuses.includes(tRow.status)) {
+    const idCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ state: 'completed' })
+      .eq('id', (session as any).id ?? '')
+      .eq('organization_id', org.id);
+    // Also close any other active sessions for this identifier+ticket
+    await supabase
+      .from('whatsapp_sessions')
+      .update({ state: 'completed' })
+      .eq(idCol, identifier)
+      .eq('organization_id', org.id)
+      .eq('ticket_id', session.ticket_id)
+      .eq('state', 'active');
+    await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    return;
+  }
+
+  // Fetch ticket context (number, service, tracking URL)
+  const ctx = await fetchTicketContext(session.ticket_id, locale);
+  const ticketNum = ctx.ticket;
 
   const pos = await getQueuePosition(session.ticket_id);
 
@@ -2354,10 +2660,12 @@ async function handleStatus(
     body: t('status', locale, {
       name: org.name,
       ticket: ticketNum,
+      service: ctx.service,
       position: pos.position,
       wait: pos.estimated_wait_minutes ?? '?',
       now_serving: formatNowServing(pos, locale),
       total: pos.total_waiting,
+      url: ctx.url,
     }),
   });
 }
@@ -2471,17 +2779,55 @@ async function handleMultiStatus(
   channel: Channel,
   sendMessage: SendFn,
 ): Promise<void> {
-  let body = t('multi_status_header', locale);
-
   const supabase = createAdminClient() as any;
-  for (let i = 0; i < allSessions.length; i++) {
-    const { session, org } = allSessions[i];
-    const { data: ticketRow } = await supabase
+
+  // Pre-fetch ticket rows so we can filter cancelled/served tickets out
+  // of the reply (defensive — the DB trigger should already have closed
+  // the corresponding sessions, but be robust to lag).
+  const ticketIds = allSessions.map((s) => s.session.ticket_id).filter(Boolean);
+  let ticketMap = new Map<string, any>();
+  if (ticketIds.length > 0) {
+    const { data: rows } = await supabase
       .from('tickets')
-      .select('ticket_number')
-      .eq('id', session.ticket_id)
-      .single();
-    const ticketNum = ticketRow?.ticket_number ?? '?';
+      .select('id, ticket_number, status')
+      .in('id', ticketIds);
+    ticketMap = new Map<string, any>((rows ?? []).map((r: any) => [r.id, r]));
+  }
+
+  // Filter to only active tickets and close any orphan sessions inline
+  const activeEntries: Array<{ session: any; org: OrgContext; ticket: any }> = [];
+  const orphanSessionIds: string[] = [];
+  for (const entry of allSessions) {
+    const trow = ticketMap.get(entry.session.ticket_id);
+    if (trow && ['waiting', 'called', 'serving'].includes(trow.status)) {
+      activeEntries.push({ ...entry, ticket: trow });
+    } else if (entry.session?.id) {
+      orphanSessionIds.push(entry.session.id);
+    }
+  }
+  if (orphanSessionIds.length > 0) {
+    await supabase.from('whatsapp_sessions')
+      .update({ state: 'completed' })
+      .in('id', orphanSessionIds);
+  }
+
+  // If after filtering nothing remains, fall through to "no active queues"
+  if (activeEntries.length === 0) {
+    await sendMessage({ to: identifier, body: t('not_in_queue', locale) });
+    return;
+  }
+  // If only one ticket remains, render the rich single-ticket status
+  if (activeEntries.length === 1) {
+    const { session, org } = activeEntries[0];
+    const sessionLocale = (session.locale as Locale) || locale;
+    await handleStatus(identifier, org, sessionLocale, channel, sendMessage, session);
+    return;
+  }
+
+  let body = t('multi_status_header', locale);
+  for (let i = 0; i < activeEntries.length; i++) {
+    const { session, org, ticket } = activeEntries[i];
+    const ticketNum = ticket?.ticket_number ?? '?';
     const pos = await getQueuePosition(session.ticket_id);
     const posText = pos.position != null
       ? `#${pos.position} (~${pos.estimated_wait_minutes ?? '?'} min)`
@@ -2496,7 +2842,7 @@ async function handleMultiStatus(
     }
   }
 
-  body += t('multi_status_footer', locale, { n: '1' });
+  body += t('multi_status_footer', locale, { n: String(activeEntries.length) });
   await sendMessage({ to: identifier, body: locale === 'ar' && channel === 'whatsapp' ? ensureRTL(body) : body });
 }
 
@@ -2638,7 +2984,7 @@ async function startBookingFlow(
   // Clean up existing booking sessions
   await supabase.from('whatsapp_sessions').delete()
     .eq(identCol, identifier)
-    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_confirm'])
+    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
     .eq('channel', channel);
 
   if (!services || services.length === 0) {
@@ -2723,6 +3069,48 @@ async function handleBookingState(
     case 'booking_enter_name':
       return await handleBookingNameInput(session, cleaned, identifier, locale, channel, sendMessage);
 
+    case 'booking_enter_wilaya': {
+      const resolved = resolveWilaya(cleaned);
+      if (!resolved) {
+        await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', locale) });
+        return true;
+      }
+      const canonical = formatWilaya(resolved, locale);
+      await supabase.from('whatsapp_sessions').update({
+        booking_customer_wilaya: canonical,
+        state: 'booking_enter_reason',
+      }).eq('id', session.id);
+      await sendMessage({ to: identifier, body: t('booking_enter_reason', locale) });
+      return true;
+    }
+
+    case 'booking_enter_reason': {
+      const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
+      const reason = isSkip ? '' : cleaned.trim();
+      if (reason.length > 200) {
+        await sendMessage({ to: identifier, body: t('intake_invalid_reason', locale) });
+        return true;
+      }
+      await supabase.from('whatsapp_sessions').update({
+        intake_reason: reason || null,
+        state: 'booking_confirm',
+      }).eq('id', session.id);
+      const orgName = await getOrgName(session.organization_id);
+      const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      await sendMessage({
+        to: identifier,
+        body: t('booking_confirm', locale, {
+          name: orgName,
+          date: dateFormatted,
+          time: session.booking_time,
+          customer: session.booking_customer_name,
+          wilaya: session.booking_customer_wilaya || '—',
+          reason: reason || '—',
+        }),
+      });
+      return true;
+    }
+
     case 'booking_enter_phone': {
       const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
       const phone = isSkip ? identifier : cleaned.trim();
@@ -2741,6 +3129,8 @@ async function handleBookingState(
           date: dateFormatted,
           time: session.booking_time,
           customer: session.booking_customer_name,
+          wilaya: session.booking_customer_wilaya || '—',
+          reason: session.intake_reason || '—',
         }),
       });
       return true;
@@ -2769,6 +3159,8 @@ async function handleBookingState(
           date: dateFormatted,
           time: session.booking_time,
           customer: session.booking_customer_name,
+          wilaya: session.booking_customer_wilaya || '—',
+          reason: session.intake_reason || '—',
         }),
       });
       return true;
@@ -2920,22 +3312,11 @@ async function handleBookingNameInput(
 
   const supabase = createAdminClient() as any;
   await supabase.from('whatsapp_sessions').update({
-    state: 'booking_confirm',
+    state: 'booking_enter_wilaya',
     booking_customer_name: cleaned,
   }).eq('id', session.id);
 
-  // Go straight to confirm (use the WhatsApp phone as contact)
-  const orgName = await getOrgName(session.organization_id);
-  const dateFormatted = formatDateForLocale(session.booking_date, locale);
-  await sendMessage({
-    to: identifier,
-    body: t('booking_confirm', locale, {
-      name: orgName,
-      date: dateFormatted,
-      time: session.booking_time,
-      customer: cleaned,
-    }),
-  });
+  await sendMessage({ to: identifier, body: t('booking_enter_wilaya', locale) });
   return true;
 }
 
@@ -2943,6 +3324,15 @@ async function confirmBooking(
   session: any, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
 ) {
   const supabase = createAdminClient() as any;
+
+  // Re-fetch session to ensure latest intake fields (wilaya/reason) are present
+  const { data: fresh } = await supabase
+    .from('whatsapp_sessions')
+    .select('booking_customer_wilaya, intake_reason')
+    .eq('id', session.id)
+    .maybeSingle();
+  const wilaya = fresh?.booking_customer_wilaya || session.booking_customer_wilaya || null;
+  const reason = fresh?.intake_reason || session.intake_reason || null;
 
   // Build scheduled_at from booking_date + booking_time
   const scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
@@ -2962,6 +3352,8 @@ async function confirmBooking(
       scheduled_at: scheduledAt,
       status: 'pending',
       calendar_token: calendarToken,
+      wilaya: wilaya,
+      notes: reason,
     })
     .select('id')
     .single();

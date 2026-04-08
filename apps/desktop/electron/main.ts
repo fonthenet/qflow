@@ -496,14 +496,12 @@ function setupIPC() {
       ticket.qr_token = randomUUID().replace(/-/g, '').slice(0, 12);
     }
 
-    // Generate daily_sequence if not provided (needed by Supabase NOT NULL constraint)
+    // Generate daily_sequence if not provided (monotonic per dept — never resets)
     if (!ticket.daily_sequence) {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
       const seqRow = db.prepare(
-        "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND department_id = ? AND created_at >= ?"
-      ).get(ticket.office_id, ticket.department_id, todayStart.toISOString()) as any;
-      ticket.daily_sequence = (seqRow?.c ?? 0) + 1;
+        "SELECT COALESCE(MAX(daily_sequence), 0) as m FROM tickets WHERE department_id = ?"
+      ).get(ticket.department_id) as any;
+      ticket.daily_sequence = (seqRow?.m ?? 0) + 1;
     }
 
     const now = ticket.created_at ?? new Date().toISOString();
@@ -830,15 +828,20 @@ function setupIPC() {
         const isRecent = ticketInfo?.created_at && (Date.now() - new Date(ticketInfo.created_at).getTime()) < 120_000;
 
         if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !ticketInfo?.is_offline && !hasPendingSync && !isRecent) {
-          // This ticket was cancelled/resolved remotely — mark it locally too
+          // This ticket was cancelled/resolved remotely — adopt cloud state locally.
+          // We do NOT enqueue a sync_queue row here because the cloud is already
+          // the source of truth for this transition. Setting BOTH cancelled_at and
+          // completed_at ensures the pull-merge protection at sync.ts:1333 recognizes
+          // this as an operator-style cancel (not an auto-cancel) and won't flap
+          // the row back to 'waiting' on the next pull if cloud transiently disagrees.
           logTicketEvent(candidate.id, 'auto_cancelled_call_next', {
             fromStatus: 'waiting',
             toStatus: 'cancelled',
             source: 'call_next_cloud_precheck',
             details: { reason: 'not_in_cloud_waiting' },
           });
-          db.prepare("UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ? AND status = 'waiting'")
-            .run(now, candidate.id);
+          db.prepare("UPDATE tickets SET status = 'cancelled', cancelled_at = ?, completed_at = ? WHERE id = ? AND status = 'waiting'")
+            .run(now, now, candidate.id);
           skippedCount++;
           continue;
         }

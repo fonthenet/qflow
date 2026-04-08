@@ -200,6 +200,21 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     }
   }
 
+  async function handleDeleteSelected() {
+    if (selected.size === 0) return;
+    if (!confirm(t('Delete {n} selected customers? This cannot be undone.', { n: selected.size }))) return;
+    try {
+      const sb = await getSupabase();
+      const ids = Array.from(selected);
+      const { error: delErr } = await sb.from('customers').delete().in('id', ids);
+      if (delErr) { alert(delErr.message); return; }
+      setCustomers((prev) => prev.filter((c) => !selected.has(c.id)));
+      setSelected(new Set());
+    } catch (e: any) {
+      alert(e?.message ?? String(e));
+    }
+  }
+
   async function handleDeleteDetail() {
     if (!detail) return;
     if (!confirm(t('Delete this customer?'))) return;
@@ -557,8 +572,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   }, [customers]);
 
   const card: React.CSSProperties = {
-    flex: 1, background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)', borderRadius: 10,
-    padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4,
+    flex: 1, background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)', borderRadius: 8,
+    padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
   };
 
   return (
@@ -602,86 +617,126 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         {/* Stat cards */}
         <div style={{ padding: '14px 22px 0', display: 'flex', gap: 10 }}>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Total')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.total}</span>
+            <span style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('Total')}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.total}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Active (30d)')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: '#22c55e' }}>{stats.active30}</span>
+            <span style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('Active (30d)')}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{stats.active30}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Repeat')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: '#3b82f6' }}>{stats.repeat}</span>
+            <span style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('Repeat')}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#3b82f6' }}>{stats.repeat}</span>
           </div>
           <div style={card}>
-            <span style={{ fontSize: 11, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.totalVisits}</span>
+            <span style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t('Visits')}</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{stats.totalVisits}</span>
           </div>
         </div>
 
-        {/* Toolbar: select-all + send */}
-        <div style={{ padding: '12px 22px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
-          {(() => {
-            const visibleIds = filtered.map((c) => c.id);
-            const allOn = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
-            return (
+        {/* Toolbar: compact action bar */}
+        {(() => {
+          const visibleIds = filtered.map((c) => c.id);
+          const allOn = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+          const hasSel = selected.size > 0;
+          const btnBase: React.CSSProperties = {
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '7px 11px', borderRadius: 7, fontSize: 12, fontWeight: 500,
+            cursor: 'pointer', whiteSpace: 'nowrap', lineHeight: 1,
+          };
+          const btnGhost: React.CSSProperties = {
+            ...btnBase,
+            background: 'transparent',
+            border: '1px solid var(--border, #475569)',
+            color: 'var(--text2, #94a3b8)',
+          };
+          const btnPrimary: React.CSSProperties = {
+            ...btnBase,
+            background: 'var(--primary, #3b82f6)', color: '#fff', border: '1px solid var(--primary, #3b82f6)',
+            fontWeight: 600,
+          };
+          return (
+            <div style={{ padding: '12px 22px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {/* Select all checkbox */}
+              <label style={{ ...btnGhost, gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={allOn}
+                  onChange={() => toggleAllVisible(visibleIds, allOn)}
+                  style={{ margin: 0, cursor: 'pointer' }}
+                />
+                <span>{hasSel ? t('{n} selected', { n: selected.size }) : t('Select all')}</span>
+              </label>
+
+              {/* Bulk actions appear inline when selection is active */}
+              {hasSel && (
+                <>
+                  <button
+                    onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
+                    style={{ ...btnBase, background: '#22c55e', color: '#fff', border: '1px solid #22c55e', fontWeight: 600 }}
+                    title={t('Send WhatsApp to selected')}
+                  >📨 {t('WhatsApp')} ({selected.size})</button>
+                  <button
+                    onClick={handleDeleteSelected}
+                    style={{ ...btnBase, background: '#ef4444', color: '#fff', border: '1px solid #ef4444', fontWeight: 600 }}
+                    title={t('Delete selected')}
+                  >🗑 {t('Delete')} ({selected.size})</button>
+                </>
+              )}
+
+              <div style={{ flex: 1 }} />
+
+              {/* Right-side: passive utilities */}
               <button
-                onClick={() => toggleAllVisible(visibleIds, allOn)}
+                onClick={() => setShowFilters(s => !s)}
                 style={{
-                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-                  padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  ...btnGhost,
+                  background: showFilters ? 'rgba(59,130,246,0.12)' : 'transparent',
+                  borderColor: showFilters ? '#3b82f6' : 'var(--border, #475569)',
+                  color: showFilters ? '#3b82f6' : 'var(--text2, #94a3b8)',
                 }}
-              >{allOn ? t('Clear selection') : t('Select all visible')}</button>
-            );
-          })()}
-          <span style={{ fontSize: 12, color: 'var(--text3, #64748b)' }}>
-            {selected.size > 0 ? t('{n} selected', { n: selected.size }) : t('None selected — sends to all visible')}
-          </span>
-          <div style={{ flex: 1 }} />
-          <button
-            onClick={() => setShowFilters(s => !s)}
-            style={{
-              background: showFilters ? 'rgba(59,130,246,0.15)' : 'transparent',
-              border: '1px solid var(--border, #475569)',
-              color: showFilters ? '#3b82f6' : 'var(--text2, #94a3b8)',
-              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-            }}
-          >⚙ {t('Filters')}</button>
-          <button
-            onClick={() => { setShowImport(true); setImportError(null); setImportResult(null); setImportRows([]); setSheetUrl(''); }}
-            style={{
-              background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-            }}
-          >⬆ {t('Import')}</button>
-          <button
-            onClick={() => setShowGoogleSheets(true)}
-            title={gConnected ? t('Google Sheets sync (connected)') : t('Connect Google Sheets')}
-            style={{
-              background: gConnected ? 'rgba(16,185,129,0.15)' : 'transparent',
-              border: `1px solid ${gConnected ? '#10b981' : 'var(--border, #475569)'}`,
-              color: gConnected ? '#10b981' : 'var(--text2, #94a3b8)',
-              padding: '8px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
-            }}
-          >📊 {t('Google Sheets')}{gConnected ? ' ✓' : ''}</button>
-          <button
-            onClick={() => { setShowAdd(true); setAddError(null); }}
-            style={{
-              background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}
-          >+ {t('Add Customer')}</button>
-          <button
-            onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
-            disabled={filtered.length === 0}
-            style={{
-              background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: filtered.length === 0 ? 0.5 : 1,
-            }}
-          >📨 {t('Send WhatsApp')}</button>
-        </div>
+                title={t('Filters')}
+              >⚙ {t('Filters')}</button>
+              <button
+                onClick={() => { setShowImport(true); setImportError(null); setImportResult(null); setImportRows([]); setSheetUrl(''); }}
+                style={btnGhost}
+                title={t('Import customers')}
+              >⬆ {t('Import')}</button>
+              <button
+                onClick={() => setShowGoogleSheets(true)}
+                title={gConnected ? t('Google Sheets sync (connected)') : t('Connect Google Sheets')}
+                style={{
+                  ...btnGhost,
+                  background: gConnected ? 'rgba(16,185,129,0.12)' : 'transparent',
+                  borderColor: gConnected ? '#10b981' : 'var(--border, #475569)',
+                  color: gConnected ? '#10b981' : 'var(--text2, #94a3b8)',
+                }}
+              >📊 {t('Sheets')}{gConnected ? ' ✓' : ''}</button>
+
+              {/* Send to all visible (only when no selection) */}
+              {!hasSel && (
+                <button
+                  onClick={() => { setShowCompose(true); setSendResult(null); setSendError(null); }}
+                  disabled={filtered.length === 0}
+                  style={{
+                    ...btnBase,
+                    background: filtered.length === 0 ? 'transparent' : 'rgba(34,197,94,0.12)',
+                    border: `1px solid ${filtered.length === 0 ? 'var(--border, #475569)' : '#22c55e'}`,
+                    color: filtered.length === 0 ? 'var(--text3, #94a3b8)' : '#22c55e',
+                    cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: filtered.length === 0 ? 0.5 : 1,
+                  }}
+                  title={t('Send WhatsApp to all visible')}
+                >📨 {t('WhatsApp all')}</button>
+              )}
+
+              <button
+                onClick={() => { setShowAdd(true); setAddError(null); }}
+                style={btnPrimary}
+              >+ {t('Add Customer')}</button>
+            </div>
+          );
+        })()}
 
         {/* Filter panel */}
         {showFilters && (() => {

@@ -127,9 +127,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
 
-    // Strip whatsapp: prefix from Twilio numbers
-    fromPhone = fromPhone.replace(/^whatsapp:/, '');
-    toPhone = toPhone.replace(/^whatsapp:/, '');
+    // Normalize phones to canonical E.164 (no leading +). Handles Algerian
+    // local format (0XXXXXXXXX → 213XXXXXXXXX), US (+1...), Twilio prefix,
+    // and any country code already present. See lib/messaging-commands.ts.
+    {
+      const { normalizePhone } = await import('@/lib/messaging-commands');
+      fromPhone = normalizePhone(fromPhone);
+      toPhone = normalizePhone(toPhone);
+    }
 
     if ((!fromPhone && !bsuid) || !messageBody) {
       return NextResponse.json({ ok: true });

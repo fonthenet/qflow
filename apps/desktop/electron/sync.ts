@@ -740,71 +740,93 @@ export class SyncEngine {
         "SELECT id, ticket_number, office_id, department_id, is_offline FROM tickets WHERE id = ?"
       ).get(recordId) as any;
 
-      if (!ticket || !ticket.is_offline || !ticket.ticket_number?.startsWith('L-')) return;
+      // ── Hard guards: never touch a row that isn't a fresh L- offline ticket ──
+      if (!ticket) return;
+      if (!ticket.ticket_number || !ticket.ticket_number.startsWith('L-')) return;
+      if (ticket.is_offline !== 1) return;
+      if (!ticket.department_id) return;
 
-      // Parse the sync payload for daily_sequence (already pushed to cloud)
-      let dailySequence: number | null = null;
-      if (rawPayload) {
-        try {
-          const payload = JSON.parse(rawPayload);
-          dailySequence = payload.daily_sequence ?? null;
-        } catch { /* ignore */ }
-      }
-
-      // Get department code
-      const dept = this.db.prepare("SELECT code FROM departments WHERE id = ?").get(ticket.department_id) as any;
-      const deptCode = dept?.code ?? 'Q';
-
-      // Determine the proper ticket number
-      // Strategy: query cloud for the highest ticket number for this dept today
-      // to avoid duplicates with web-created tickets
+      const oldNumber: string = ticket.ticket_number;
       const token = await this.ensureFreshToken();
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
 
-      let properSequence = dailySequence;
-
-      // Query cloud for max sequence to avoid number collisions with web/mobile tickets
+      // ── Use the SAME atomic RPC the online insert path uses ──
+      // This is timezone-correct (uses office tz), atomic (no race), and
+      // produces the canonical 4-digit format. Eliminates the after-midnight
+      // reset bug entirely (no client-side date math, no client-side max query).
+      let properNumber: string | null = null;
+      let properSequence: number | null = null;
       try {
-        const maxRes = await fetch(
-          `${this.supabaseUrl}/rest/v1/tickets?office_id=eq.${ticket.office_id}&department_id=eq.${ticket.department_id}&created_at=gte.${todayStart.toISOString()}&ticket_number=not.like.L-%25&select=daily_sequence&order=daily_sequence.desc&limit=1`,
+        const rpcRes = await fetch(
+          `${this.supabaseUrl}/rest/v1/rpc/generate_daily_ticket_number`,
           {
-            headers: { apikey: this.supabaseKey, Authorization: `Bearer ${token}` },
+            method: 'POST',
+            headers: {
+              apikey: this.supabaseKey,
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ p_department_id: ticket.department_id }),
             signal: AbortSignal.timeout(5000),
           }
         );
-        if (maxRes.ok) {
-          const rows = await maxRes.json();
-          const cloudMax = rows[0]?.daily_sequence ?? 0;
-          // Use whichever is higher: cloud max + 1, or our daily_sequence
-          if (properSequence === null || cloudMax >= properSequence) {
-            properSequence = cloudMax + 1;
+        if (rpcRes.ok) {
+          const rows = await rpcRes.json();
+          const row = Array.isArray(rows) ? rows[0] : rows;
+          if (row?.ticket_num && row?.seq) {
+            properNumber = String(row.ticket_num);
+            properSequence = Number(row.seq);
           }
         }
-      } catch { /* fallback to dailySequence from payload */ }
+      } catch { /* fall through — we'll abort safely below */ }
 
-      if (properSequence === null) properSequence = 1;
+      // If RPC failed for any reason, leave the ticket alone (keeps L- prefix
+      // working). Better to show L-G-005 than to risk overwriting with a wrong
+      // number. The next sync cycle will retry naturally.
+      if (!properNumber || !properSequence) {
+        console.warn(`[sync:rewrite] RPC unavailable, leaving ${oldNumber} as-is`);
+        return;
+      }
 
-      const properNumber = `${deptCode}-${String(properSequence).padStart(3, '0')}`;
+      // ── Compare-and-swap on the cloud PATCH ──
+      // Only update the cloud row if it STILL has the old L- number. If
+      // anything else has touched it (another sync, manual edit, etc.) we
+      // skip rather than clobber.
+      const patchRes = await fetch(
+        `${this.supabaseUrl}/rest/v1/tickets?id=eq.${recordId}&ticket_number=eq.${encodeURIComponent(oldNumber)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: this.supabaseKey,
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify({
+            ticket_number: properNumber,
+            daily_sequence: properSequence,
+            is_offline: false,
+          }),
+          signal: AbortSignal.timeout(5000),
+        }
+      );
 
-      // Update local SQLite
-      this.db.prepare("UPDATE tickets SET ticket_number = ?, is_offline = 0 WHERE id = ?")
-        .run(properNumber, recordId);
+      if (!patchRes.ok) {
+        console.warn(`[sync:rewrite] PATCH failed (${patchRes.status}) — leaving ${oldNumber} as-is`);
+        return;
+      }
 
-      // Push UPDATE to cloud
-      await fetch(`${this.supabaseUrl}/rest/v1/tickets?id=eq.${recordId}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: this.supabaseKey,
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({ ticket_number: properNumber }),
-        signal: AbortSignal.timeout(5000),
-      });
+      // Verify the PATCH actually matched a row (compare-and-swap could miss)
+      const updated = await patchRes.json().catch(() => []);
+      if (!Array.isArray(updated) || updated.length === 0) {
+        console.warn(`[sync:rewrite] CAS missed for ${recordId} — cloud row no longer ${oldNumber}`);
+        return;
+      }
 
-      console.log(`[sync:rewrite] ✓ ${ticket.ticket_number} → ${properNumber} (is_offline cleared)`);
+      // ── Only NOW update local SQLite (cloud is the source of truth) ──
+      this.db.prepare("UPDATE tickets SET ticket_number = ?, daily_sequence = ?, is_offline = 0 WHERE id = ? AND ticket_number = ?")
+        .run(properNumber, properSequence, recordId, oldNumber);
+
+      console.log(`[sync:rewrite] ✓ ${oldNumber} → ${properNumber} (seq=${properSequence}, is_offline cleared)`);
       this.onDataPulled(); // refresh UI with proper number
     } catch (err: any) {
       console.warn(`[sync:rewrite] Failed to rewrite ticket ${recordId}: ${err?.message}`);
@@ -951,25 +973,13 @@ export class SyncEngine {
                 continue;
               }
             }
-            // Refresh failed or retry still 401 — auto-discard non-INSERT items (they're stale anyway)
-            // Only INSERT items (new ticket creation) are worth keeping for retry after re-login
-            const authFailPending = this.db.prepare(
-              "SELECT id, operation FROM sync_queue WHERE synced_at IS NULL"
-            ).all() as any[];
-            let authDiscardCount = 0;
-            for (const p of authFailPending) {
-              if (p.operation !== 'INSERT') {
-                this.db.prepare("DELETE FROM sync_queue WHERE id = ?").run(p.id);
-                authDiscardCount++;
-              } else {
-                this.db.prepare(
-                  "UPDATE sync_queue SET last_error = ? WHERE id = ?"
-                ).run('AUTH_EXPIRED: re-login required', p.id);
-              }
-            }
-            if (authDiscardCount > 0) {
-              console.warn(`[sync] Auth expired — auto-discarded ${authDiscardCount} stale UPDATE/CALL items`);
-            }
+            // Auth refresh failed. Do NOT discard anything — flag every pending
+            // item with AUTH_EXPIRED so the operator can re-login. Terminal status
+            // mutations (cancels/serves) MUST survive a login expiry.
+            this.db.prepare(
+              "UPDATE sync_queue SET last_error = ? WHERE synced_at IS NULL"
+            ).run('AUTH_EXPIRED: re-login required');
+            console.warn('[sync] Auth expired — all pending items kept for retry after re-login');
             this.updatePendingCount();
 
             // Fire auth error so UI can prompt re-login (but only if not suppressed)
@@ -1037,39 +1047,68 @@ export class SyncEngine {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     this.db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < ?").run(cutoff);
 
-    // Auto-discard UPDATE/CALL items that failed 3+ times — but NEVER discard INSERTs
-    // A customer's ticket creation must never be silently lost
+    // ── Auto-discard rules ──
+    // CRITICAL invariant: terminal-status mutations (cancelled / served / no_show)
+    // are IMMORTAL. They retry forever until the cloud accepts them. Losing a
+    // cancel silently leaves a customer in the queue who isn't actually there.
+    //
+    // INSERTs are also immortal (never discard a ticket creation).
+    //
+    // Only NON-INSERT, NON-TERMINAL items (e.g. recall_count++, desk_id reassign,
+    // notes update) are eligible for auto-discard after 3 attempts or 4h age.
+    const isTerminalSql = `(
+      json_extract(payload, '$.status') IN ('cancelled','served','no_show')
+    )`;
+
     const discarded = this.db.prepare(
-      "DELETE FROM sync_queue WHERE synced_at IS NULL AND attempts >= 3 AND operation != 'INSERT'"
+      `DELETE FROM sync_queue
+        WHERE synced_at IS NULL
+          AND attempts >= 3
+          AND operation != 'INSERT'
+          AND NOT ${isTerminalSql}`
     ).run();
     if (discarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${discarded.changes} stale UPDATE/CALL sync items after 3 failed attempts`);
+      console.warn(`[sync] Auto-discarded ${discarded.changes} non-terminal sync items after 3 failed attempts`);
       this.updatePendingCount();
     }
 
-    // Auto-discard sync items for tickets that are no longer active locally
-    // (e.g., ticket was cancelled/resolved — no point pushing a stale "call" action)
+    // Orphan rule: only purge sync items whose target ticket no longer exists
+    // locally AT ALL. Do NOT purge items just because the local row is now
+    // cancelled/served — those are exactly the rows we MUST push to cloud.
     const orphanDiscarded = this.db.prepare(`
-      DELETE FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets' AND operation != 'INSERT'
-      AND record_id NOT IN (
-        SELECT id FROM tickets WHERE status IN ('waiting', 'called', 'serving')
-      )
+      DELETE FROM sync_queue
+       WHERE synced_at IS NULL
+         AND table_name = 'tickets'
+         AND operation != 'INSERT'
+         AND NOT ${isTerminalSql}
+         AND record_id NOT IN (SELECT id FROM tickets)
     `).run();
     if (orphanDiscarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${orphanDiscarded.changes} sync items for resolved/cancelled tickets`);
+      console.warn(`[sync] Auto-discarded ${orphanDiscarded.changes} sync items for deleted tickets`);
       this.updatePendingCount();
     }
 
-    // Auto-discard stale UPDATE/CALL items older than 4 hours — the cloud state has moved on
-    // (e.g., a "call" action from hours ago is meaningless now)
-    // Extended from 1h to 4h to survive extended outages
+    // 4-hour stale rule: applies only to non-terminal items.
     const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
     const staleDiscarded = this.db.prepare(
-      "DELETE FROM sync_queue WHERE synced_at IS NULL AND operation != 'INSERT' AND created_at < ?"
+      `DELETE FROM sync_queue
+        WHERE synced_at IS NULL
+          AND operation != 'INSERT'
+          AND created_at < ?
+          AND NOT ${isTerminalSql}`
     ).run(fourHoursAgo);
     if (staleDiscarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale sync items older than 4 hours`);
+      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale non-terminal sync items older than 4 hours`);
       this.updatePendingCount();
+    }
+
+    // Surface stuck terminal items (they will keep retrying forever)
+    const stuckTerminal = this.db.prepare(
+      `SELECT COUNT(*) as c FROM sync_queue
+        WHERE synced_at IS NULL AND attempts >= 5 AND ${isTerminalSql}`
+    ).get() as any;
+    if (stuckTerminal?.c > 0) {
+      console.warn(`[sync] ${stuckTerminal.c} TERMINAL status mutation(s) stuck after 5+ attempts — will keep retrying forever`);
     }
 
     // Warn about stuck INSERT items

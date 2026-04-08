@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, staffId } =
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId } =
     body as Record<string, string | undefined>;
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {
@@ -84,9 +84,10 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       calendar_token: calendarToken,
       notes: (notes as string)?.trim() || null,
+      wilaya: (wilaya as string)?.trim() || null,
       ...(staffId ? { staff_id: staffId } : {}),
     })
-    .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, calendar_token, staff_id')
+    .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')
     .single();
 
   if (error) {

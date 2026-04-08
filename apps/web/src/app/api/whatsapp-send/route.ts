@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
       .select('id')
       .eq('ticket_id', ticketId)
       .eq('type', notifType as any)
-      .gte('sent_at', new Date(Date.now() - 60_000).toISOString())
+      .gte('sent_at', new Date(Date.now() - 5 * 60_000).toISOString())
       .limit(1)
       .maybeSingle();
 

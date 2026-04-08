@@ -95,6 +95,14 @@ export function createTestDB(): Database.Database {
       PRIMARY KEY (office_id, dept_code, date)
     );
 
+    CREATE TABLE IF NOT EXISTS ticket_counter_mono (
+      office_id TEXT NOT NULL,
+      dept_code TEXT NOT NULL,
+      counter INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT,
+      PRIMARY KEY (office_id, dept_code)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tickets_office_status ON tickets(office_id, status);
     CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at);
     CREATE INDEX IF NOT EXISTS idx_sync_queue_pending ON sync_queue(synced_at) WHERE synced_at IS NULL;

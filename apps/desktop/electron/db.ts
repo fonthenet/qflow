@@ -199,6 +199,40 @@ export function initDB() {
   try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
 
+  // ── Monotonic offline counter (no daily reset) ──
+  // Replaces the per-day ticket_counter for L- prefix generation. Seeded
+  // from the highest known sequence so offline tickets never reuse a number.
+  db.exec(`CREATE TABLE IF NOT EXISTS ticket_counter_mono (
+    office_id TEXT NOT NULL,
+    dept_code TEXT NOT NULL,
+    counter INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT,
+    PRIMARY KEY (office_id, dept_code)
+  )`);
+  // Seed from any prior daily counters and from existing tickets so we never
+  // collide with a number that was already issued locally.
+  try {
+    db.exec(`
+      INSERT INTO ticket_counter_mono (office_id, dept_code, counter)
+      SELECT office_id, dept_code, MAX(counter) FROM ticket_counter
+      GROUP BY office_id, dept_code
+      ON CONFLICT (office_id, dept_code) DO UPDATE
+        SET counter = MAX(ticket_counter_mono.counter, excluded.counter)
+    `);
+  } catch { /* ticket_counter may not exist on fresh installs */ }
+  try {
+    db.exec(`
+      INSERT INTO ticket_counter_mono (office_id, dept_code, counter)
+      SELECT t.office_id, d.code, COALESCE(MAX(t.daily_sequence), 0)
+      FROM tickets t
+      JOIN departments d ON d.id = t.department_id
+      WHERE d.code IS NOT NULL
+      GROUP BY t.office_id, d.code
+      ON CONFLICT (office_id, dept_code) DO UPDATE
+        SET counter = MAX(ticket_counter_mono.counter, excluded.counter)
+    `);
+  } catch { /* tables may not exist on fresh installs */ }
+
   // Create tables that may not exist on older installations
   db.exec(`CREATE TABLE IF NOT EXISTS broadcast_templates (
     id TEXT PRIMARY KEY,
@@ -210,6 +244,9 @@ export function initDB() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_broadcast_templates_org ON broadcast_templates(organization_id)`);
+
+  // One-time cleanup: remove demo/sample customers with @example.com emails
+  try { db.exec(`DELETE FROM customers WHERE email LIKE '%@example.com'`); } catch { /* table may not exist yet */ }
 
   // Indexes that depend on migrated columns (must come after ALTER TABLEs)
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }
@@ -352,20 +389,21 @@ export function stopAutoBackup() {
 }
 
 // Generate offline ticket number: L-{DEPT_CODE}-{COUNTER}
-// Counter resets daily in the office's local timezone
+// Monotonic per (office, dept_code) — never resets. Numbers always
+// increase, even across days. Mirrors the cloud's monotonic strategy
+// so offline and online numbers stay coherent.
 export function generateOfflineTicketNumber(officeId: string, deptCode: string, dbInstance?: Database.Database): string {
   const d = dbInstance ?? db;
-  const today = getLocalDate(officeId, d);
 
   const row = d.prepare(`
-    INSERT INTO ticket_counter (office_id, dept_code, counter, date)
-    VALUES (?, ?, 1, ?)
-    ON CONFLICT (office_id, dept_code, date)
-    DO UPDATE SET counter = counter + 1
+    INSERT INTO ticket_counter_mono (office_id, dept_code, counter, updated_at)
+    VALUES (?, ?, 1, datetime('now'))
+    ON CONFLICT (office_id, dept_code)
+    DO UPDATE SET counter = counter + 1, updated_at = datetime('now')
     RETURNING counter
-  `).get(officeId, deptCode, today) as any;
+  `).get(officeId, deptCode) as any;
 
-  const num = String(row.counter).padStart(4, '0');
+  const num = String(row.counter).padStart(5, '0');
   return `L-${deptCode}-${num}`;
 }
 

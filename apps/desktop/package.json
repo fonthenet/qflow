@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.2.81",
+  "version": "1.4.3",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -61,10 +61,6 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
-        },
-        {
-          "target": "portable",
           "arch": ["x64", "ia32"]
         }
       ],

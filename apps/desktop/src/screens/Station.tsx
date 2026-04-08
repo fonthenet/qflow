@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNod
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
+import { WILAYAS, formatWilayaLabel } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { AppointmentsModal } from '../components/AppointmentsModal';
@@ -84,7 +85,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
-  onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string }; priority: number; source: string }) => Promise<any>;
+  onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string; wilaya?: string }; priority: number; source: string }) => Promise<any>;
   locale: DesktopLocale;
   messengerPageId?: string | null;
   whatsappPhone?: string | null;
@@ -113,6 +114,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [customerName, setCustomerName] = useState(prefill?.name ?? '');
   const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
   const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
+  const [customerWilaya, setCustomerWilaya] = useState('');
 
   // Smart customer search (shared between walk-in and future tabs)
   type CustSuggestion = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; visit_count: number };
@@ -256,6 +258,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [futName, setFutName] = useState(prefill?.name ?? '');
   const [futPhone, setFutPhone] = useState(prefill?.phone ?? '');
   const [futNotes, setFutNotes] = useState(prefill?.notes ?? '');
+  const [futWilaya, setFutWilaya] = useState('');
   const [futSlots, setFutSlots] = useState<string[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
   const [futSubmitting, setFutSubmitting] = useState(false);
@@ -296,12 +299,13 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           customerPhone: futPhone.trim() || undefined,
           scheduledAt: `${futDate}T${futTime}:00`,
           notes: futNotes.trim() || undefined,
+          wilaya: futWilaya.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (res.ok && data.appointment) {
         setFutResult({ success: true, date: futDate, time: futTime });
-        setFutName(''); setFutPhone(''); setFutNotes(''); setFutTime('');
+        setFutName(''); setFutPhone(''); setFutNotes(''); setFutWilaya(''); setFutTime('');
       } else {
         setFutResult({ success: false, error: data.error || 'Booking failed' });
       }
@@ -374,6 +378,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           name: customerName.trim() || undefined,
           phone: customerPhone.trim() || undefined,
           reason: customerReason.trim() || undefined,
+          wilaya: customerWilaya.trim() || undefined,
         },
         priority: isPriority ? 2 : 0,
         source: 'in_house',
@@ -395,6 +400,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     setCustomerName('');
     setCustomerPhone('');
     setCustomerReason('');
+    setCustomerWilaya('');
     setIsPriority(false);
     setTimeout(() => nameRef.current?.focus(), 50);
   };
@@ -678,6 +684,23 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               />
             </div>
 
+            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+              <label style={labelStyle}>{t('Wilaya')}</label>
+              <select
+                value={futWilaya}
+                onChange={(e) => setFutWilaya(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                style={inputStyle}
+              >
+                <option value="">{t('Wilaya (province)')}</option>
+                {WILAYAS.map(w => (
+                  <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
+                    {formatWilayaLabel(w, locale === 'ar')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div style={{ flex: '1 1 160px', minWidth: 130 }}>
               <label style={labelStyle}>{t('Notes')}</label>
               <input
@@ -912,6 +935,23 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 style={inputStyle}
                 autoComplete="off"
               />
+            </div>
+
+            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+              <label style={labelStyle}>{t('Wilaya')}</label>
+              <select
+                value={customerWilaya}
+                onChange={(e) => setCustomerWilaya(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                style={inputStyle}
+              >
+                <option value="">{t('Wilaya (province)')}</option>
+                {WILAYAS.map(w => (
+                  <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
+                    {formatWilayaLabel(w, locale === 'ar')}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={{ flex: '1 1 160px', minWidth: 130 }}>
@@ -1786,12 +1826,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const cancel = (id: string) => {
-    updateTicketStatus(id, { status: 'cancelled', cancelled_at: new Date().toISOString() });
+    const ts = new Date().toISOString();
+    updateTicketStatus(id, { status: 'cancelled', cancelled_at: ts, completed_at: ts });
     const t = tickets.find((t) => t.id === id);
     if (t) addActivity(t.ticket_number, translate(locale, 'Cancelled'));
   };
 
-  const bookInHouse = async (data: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string }; priority: number; source: string }) => {
+  const bookInHouse = async (data: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string; wilaya?: string }; priority: number; source: string }) => {
     try {
       console.log('[station] bookInHouse called, data:', JSON.stringify(data));
       // crypto.randomUUID() is only available in secure contexts (HTTPS/localhost)
@@ -2201,9 +2242,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 {getTicketCustomerPhone(activeTicket.customer_data) && (
                   <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Wilaya:')}</strong> {(activeTicket.customer_data as any).wilaya}
+                  </div>
+                )}
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                  <div className="active-notes">
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
                   </div>
                 )}
                 <div className="active-meta">
@@ -2276,9 +2322,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 {getTicketCustomerPhone(activeTicket.customer_data) && (
                   <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Wilaya:')}</strong> {(activeTicket.customer_data as any).wilaya}
+                  </div>
+                )}
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                  <div className="active-notes">
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
                   </div>
                 )}
                 <div className="active-meta">
