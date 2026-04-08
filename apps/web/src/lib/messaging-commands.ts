@@ -1106,13 +1106,16 @@ export async function handleInboundMessage(
       const pendingLocale = (pendingSession.locale as Locale) || 'fr';
 
       if (isYes) {
-        // Transition into intake collection (wilaya, then reason) instead of
-        // creating the ticket immediately. The ticket is created after intake.
-        await supabaseCheck
-          .from('whatsapp_sessions')
-          .update({ state: 'awaiting_intake_wilaya' })
-          .eq('id', pendingSession.id);
-        await sendMessage({ to: identifier, body: t('ask_wilaya', pendingLocale) });
+        // Look up org name for the joined message
+        const { data: orgRow } = await supabaseCheck
+          .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
+        if (orgRow) {
+          const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
+            ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
+            : undefined;
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved);
+          await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+        }
         return;
       }
       if (isNo) {
@@ -2682,21 +2685,56 @@ async function handleCancel(
 ): Promise<void> {
   const supabase = createAdminClient() as any;
 
-  // Use the session already found by findOrgByActiveSession to avoid
-  // maybeSingle() failing when multiple active sessions exist
-  let session = activeSession;
-  if (!session) {
-    const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+  // Look up ALL active sessions for this user/org and pick the one whose
+  // ticket is actually cancellable (waiting/issued/called). This avoids the
+  // bug where a stale session pointing to a serving/served ticket gets
+  // chosen, blocking cancellation of a fresh waiting ticket.
+  const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+  let session: { id: string; ticket_id: string } | null = null;
+  {
     const { data: sessions } = await supabase
       .from('whatsapp_sessions')
-      .select('id, ticket_id')
+      .select('id, ticket_id, created_at')
       .eq(identifierColumn, identifier)
       .eq('organization_id', org.id)
       .eq('state', 'active')
       .eq('channel', channel)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    session = sessions?.[0] ?? null;
+      .order('created_at', { ascending: false });
+
+    const candidates = (sessions ?? []).filter((s: any) => s.ticket_id);
+    if (candidates.length > 0) {
+      const ids = candidates.map((s: any) => s.ticket_id);
+      const { data: tRows } = await supabase
+        .from('tickets')
+        .select('id, status')
+        .in('id', ids);
+      const cancellable = new Set(
+        (tRows ?? [])
+          .filter((t: any) => ['waiting', 'issued', 'called'].includes(t.status))
+          .map((t: any) => t.id),
+      );
+      // Prefer most recent cancellable session; fall back to most recent
+      session =
+        candidates.find((s: any) => cancellable.has(s.ticket_id)) ??
+        candidates[0];
+
+      // Auto-close any orphan active sessions whose ticket is already terminal
+      const terminal = (tRows ?? [])
+        .filter((t: any) => !['waiting', 'issued', 'called', 'serving'].includes(t.status))
+        .map((t: any) => t.id);
+      if (terminal.length > 0) {
+        await supabase
+          .from('whatsapp_sessions')
+          .update({ state: 'completed' })
+          .in('ticket_id', terminal)
+          .eq('state', 'active');
+      }
+    }
+  }
+
+  // Honour an explicit activeSession hint only if no better cancellable one was found
+  if (activeSession && (!session || session.id === activeSession.id)) {
+    session = session ?? activeSession;
   }
 
   if (!session?.ticket_id) {
