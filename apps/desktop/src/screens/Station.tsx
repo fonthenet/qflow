@@ -3248,25 +3248,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
           <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
             {visibleWaiting.map((ticket, i) => {
-              // Service-scoped position: matches WhatsApp/customer-facing position.
-              // Counts waiting tickets in the same service that are ahead by
-              // (priority DESC, created_at ASC).
-              const svcPosition = ticket.service_id
-                ? waiting.filter((tt) =>
-                    tt.service_id === ticket.service_id &&
-                    (
-                      (tt.priority ?? 0) > (ticket.priority ?? 0) ||
-                      ((tt.priority ?? 0) === (ticket.priority ?? 0) &&
-                        new Date(tt.created_at).getTime() < new Date(ticket.created_at).getTime())
-                    )
-                  ).length + 1
-                : (i + 1);
+              // Office-wide position in the canonically-sorted waiting list.
+              // The full `waiting` array is sorted by priority DESC + created_at ASC,
+              // matching the canonical getQueuePosition() formula on the server.
+              const officePosition = waiting.findIndex((tt) => tt.id === ticket.id) + 1;
               return (
               <div key={ticket.id} className="queue-item" role="listitem"
-                aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: svcPosition, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}
+                aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: officePosition, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}
                 onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, ticketId: ticket.id, ticketNumber: ticket.ticket_number }); }}
               >
-                <div className="queue-item-pos" aria-hidden="true">#{svcPosition}</div>
+                <div className="queue-item-pos" aria-hidden="true">#{officePosition}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
                   <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>

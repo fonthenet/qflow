@@ -4,12 +4,14 @@
  * Single source of truth for queue position across the entire app.
  *
  * Rules:
- *   1. Position is SERVICE-scoped (same office + same service)
+ *   1. Position is OFFICE-scoped (same office, all services) — matches the
+ *      operator-facing waiting list in the Station so customer-facing and
+ *      operator-facing counts always agree.
  *   2. Only 'waiting' tickets count (parked tickets excluded)
  *   3. Ordering: priority DESC (higher number = served first), then created_at ASC (FIFO)
  *   4. Position is 1-based (1 = next to be called)
  *   5. Estimated wait = (position - 1) * avg service time
- *   6. Now serving = most recently called/serving ticket for the same service
+ *   6. Now serving = most recently called/serving ticket in the office
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -52,7 +54,6 @@ export async function getQueuePosition(ticketId: string): Promise<QueuePositionR
       .from('tickets')
       .select('ticket_number')
       .eq('office_id', ticket.office_id)
-      .eq('service_id', ticket.service_id)
       .in('status', ['serving', 'called'])
       .order('called_at', { ascending: false, nullsFirst: false })
       .limit(1)
