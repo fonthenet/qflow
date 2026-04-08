@@ -322,12 +322,21 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "ticket not found" });
     }
 
-    // Look up active session (WhatsApp or Messenger) — include organization_id
-    const { data: session } = await supabase
+    // Look up session (WhatsApp or Messenger) — include organization_id.
+    // For terminal events (cancelled/served/no_show) we accept any session
+    // state, since the customer must always be notified of the final outcome
+    // even if their session was previously closed.
+    const isTerminalEvent = event === "cancelled" || event === "served" || event === "no_show";
+    let sessionQuery = supabase
       .from("whatsapp_sessions")
       .select("id, organization_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, channel, locale, otn_token")
-      .eq("ticket_id", ticketId)
-      .eq("state", "active")
+      .eq("ticket_id", ticketId);
+    if (!isTerminalEvent) {
+      sessionQuery = sessionQuery.eq("state", "active");
+    }
+    const { data: session } = await sessionQuery
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle() as { data: Session | null };
 
     if (!session) {
