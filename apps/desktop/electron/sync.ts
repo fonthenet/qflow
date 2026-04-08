@@ -1124,6 +1124,12 @@ export class SyncEngine {
   // 401 is returned separately so the caller can refresh token and retry
   private async replayMutation(item: any, authToken: string): Promise<{ status: number }> {
     const payload = JSON.parse(item.payload);
+    // Strip local-only columns that don't exist in the remote schema.
+    // Adding fields here is safer than letting Supabase reject the whole UPDATE.
+    if (item.table_name === 'tickets') {
+      delete payload.cancelled_at;
+      delete payload.is_offline;
+    }
     const headers: Record<string, string> = {
       apikey: this.supabaseKey,
       Authorization: `Bearer ${authToken}`,

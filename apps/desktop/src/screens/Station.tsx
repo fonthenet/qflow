@@ -1955,7 +1955,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const cancel = (id: string) => {
     const ts = new Date().toISOString();
-    updateTicketStatus(id, { status: 'cancelled', cancelled_at: ts, completed_at: ts });
+    updateTicketStatus(id, { status: 'cancelled', completed_at: ts });
     const t = tickets.find((t) => t.id === id);
     if (t) addActivity(t.ticket_number, translate(locale, 'Cancelled'));
   };
