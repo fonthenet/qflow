@@ -148,6 +148,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
         ]},
         { key: 'show_estimated_wait', label: t('sm.field.show_estimated_wait'), type: 'bool', default: true },
         { key: 'display_wait_time', label: t('sm.field.display_wait_time'), type: 'bool', default: true },
+        { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
       ],
     },
     {

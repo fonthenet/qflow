@@ -42,6 +42,18 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
 
+  // Check if office requires ticket approval
+  const { data: officeRow } = await supabase
+    .from('offices')
+    .select('settings, organization:organizations(settings)')
+    .eq('id', officeId)
+    .single();
+  const requireApproval = Boolean(
+    (officeRow?.settings as any)?.require_ticket_approval ??
+      ((officeRow as any)?.organization?.settings?.require_ticket_approval)
+  );
+  const initialStatus = requireApproval ? 'pending_approval' : 'waiting';
+
   // Generate ticket number
   const { data: seqData, error: seqError } = await supabase.rpc(
     'generate_daily_ticket_number',
@@ -86,7 +98,7 @@ export async function POST(request: NextRequest) {
       ticket_number: ticket_num,
       daily_sequence: seq,
       qr_token: qrToken,
-      status: 'waiting',
+      status: initialStatus,
       checked_in_at: new Date().toISOString(),
       customer_data: Object.keys(customerData).length > 0 ? customerData : null,
       estimated_wait_minutes: estimatedWait,
@@ -106,8 +118,8 @@ export async function POST(request: NextRequest) {
     await supabase.from('ticket_events').insert({
       ticket_id: ticket.id,
       event_type: 'joined',
-      to_status: 'waiting',
-      metadata: { source: 'mobile_remote_join' },
+      to_status: initialStatus,
+      metadata: { source: 'mobile_remote_join', pending_approval: requireApproval },
     });
   }
 

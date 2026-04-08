@@ -7,6 +7,15 @@ import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { AppointmentsModal } from '../components/AppointmentsModal';
 
+const STATION_RDV_STATUS_COLORS: Record<string, string> = {
+  pending: '#f59e0b',
+  confirmed: '#3b82f6',
+  checked_in: '#8b5cf6',
+  serving: '#06b6d4',
+  completed: '#22c55e',
+  no_show: '#64748b',
+};
+
 // ── Transfer Modal Component ──────────────────────────────────────
 function TransferModal({ desks, onTransfer, onClose, locale }: {
   desks: [string, string][];
@@ -1390,6 +1399,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
+  const storedAuth = useMemo(() => ({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    email: session.email,
+    password: session._pwd,
+  }), [session.access_token, session.refresh_token, session.email, session._pwd]);
+  // Today's counter + RDV side panel
+  const [todayStats, setTodayStats] = useState<{ walkins: number; rdv: number }>({ walkins: 0, rdv: 0 });
+  const [todayAppointments, setTodayAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null }>>([]);
+  const [queueTab, setQueueTab] = useState<'queue' | 'rdv' | 'pending'>('queue');
+  const [rdvBusyId, setRdvBusyId] = useState<string | null>(null);
+  const [pendingTickets, setPendingTickets] = useState<Array<{ id: string; ticket_number: string; source: string | null; customer_data: any; created_at: string; department_id: string | null; service_id: string | null }>>([]);
+  const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
+  const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   // Listen for native File > Settings menu click
   useEffect(() => {
@@ -1566,6 +1589,111 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     });
     return () => { if (channel) getSupabase().then((sb) => sb.removeChannel(channel)); };
   }, [session.desk_id, staffStatus, queuePaused]);
+
+  // ── Today's counter + RDV side panel data ──────────────────────
+  useEffect(() => {
+    if (!session.office_id) return;
+    let cancelled = false;
+    const fetchToday = async () => {
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        const end = new Date(start); end.setDate(end.getDate() + 1);
+        const startIso = start.toISOString();
+        const endIso = end.toISOString();
+        // Walk-in count: tickets created today via station/whatsapp/etc (exclude appointment check-ins to avoid double count? we'll count all tickets and subtract appointments-from-checkins)
+        const [{ count: ticketCount }, { data: appts }] = await Promise.all([
+          sb.from('tickets').select('id', { count: 'exact', head: true }).eq('office_id', session.office_id).gte('created_at', startIso).lt('created_at', endIso),
+          sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id').eq('office_id', session.office_id).gte('scheduled_at', startIso).lt('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
+        ]);
+        if (cancelled) return;
+        const rdvList = (appts as any[]) || [];
+        setTodayAppointments(rdvList);
+        setTodayStats({ walkins: Math.max(0, (ticketCount || 0)), rdv: rdvList.length });
+      } catch (e) {
+        if (!cancelled) console.warn('[Station] today stats fetch failed', e);
+      }
+    };
+    fetchToday();
+    const iv = setInterval(fetchToday, 60_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [session.office_id, storedAuth]);
+
+  // ── Pending approval tickets (realtime + initial fetch) ────────
+  useEffect(() => {
+    if (!session.office_id) return;
+    let cancelled = false;
+    let channel: any;
+    const fetchPending = async () => {
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const { data } = await sb
+          .from('tickets')
+          .select('id, ticket_number, source, customer_data, created_at, department_id, service_id')
+          .eq('office_id', session.office_id)
+          .eq('status', 'pending_approval')
+          .order('created_at', { ascending: true })
+          .limit(200);
+        if (cancelled) return;
+        const list = (data as any[]) || [];
+        // Notify on new pending arrivals
+        if (list.length > prevPendingCount.current && prevPendingCount.current > 0) {
+          showToast(translate(locale, '{n} new ticket(s) awaiting approval', { n: list.length - prevPendingCount.current }), 'info');
+          try { new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQBvAAAA').play().catch(() => {}); } catch {}
+        }
+        prevPendingCount.current = list.length;
+        setPendingTickets(list);
+      } catch (e) {
+        if (!cancelled) console.warn('[Station] pending tickets fetch failed', e);
+      }
+    };
+    fetchPending();
+    // Supabase realtime subscription for pending approval changes
+    getSupabase().then((sb) => {
+      if (cancelled) return;
+      channel = sb.channel(`pending-tickets-${session.office_id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `office_id=eq.${session.office_id}` },
+          () => { fetchPending(); })
+        .subscribe();
+    });
+    const iv = setInterval(fetchPending, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      if (channel) getSupabase().then((sb) => sb.removeChannel(channel));
+    };
+  }, [session.office_id, storedAuth, locale]);
+
+  // Moderate a pending ticket via the web API (approve or decline)
+  const moderatePendingTicket = useCallback(async (ticketId: string, action: 'approve' | 'decline', reason?: string) => {
+    setPendingBusyId(ticketId);
+    try {
+      const res = await fetch('https://qflo.net/api/moderate-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId, action, reason }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      setPendingTickets((prev) => prev.filter((p) => p.id !== ticketId));
+      showToast(
+        action === 'approve'
+          ? translate(locale, 'Ticket approved — customer notified')
+          : translate(locale, 'Ticket declined — customer notified'),
+        action === 'approve' ? 'success' : 'info',
+      );
+      // Refresh local queue so approved tickets appear immediately
+      try { (window as any).qf?.tickets?.fetch?.(); } catch {}
+    } catch (e: any) {
+      showToast(e?.message || 'Moderation failed', 'error');
+    } finally {
+      setPendingBusyId(null);
+    }
+  }, [locale]);
 
   // ── Pause timer ────────────────────────────────────────────────
   useEffect(() => {
@@ -1864,15 +1992,61 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
+  // ── Appointment check-in helper (shared by RDV tab + AppointmentsModal) ──
+  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string }): Promise<boolean> => {
+    if (!appt.department_id) {
+      showToast(translate(locale, 'Missing department'), 'error');
+      return false;
+    }
+    const offsetMin = Math.round((Date.now() - new Date(appt.scheduled_at).getTime()) / 60000);
+    let priority = 0;
+    let reason = '';
+    if (offsetMin >= -15 && offsetMin <= 30) {
+      priority = 2;
+      reason = offsetMin < 0
+        ? translate(locale, 'On time — priority placement')
+        : translate(locale, 'In slot window — priority placement');
+    } else if (offsetMin < -15 && offsetMin >= -60) {
+      priority = 1;
+      reason = translate(locale, 'Early — slight priority');
+    } else if (offsetMin < -60) {
+      priority = 0;
+      reason = translate(locale, 'Very early — placed as walk-in');
+    } else {
+      priority = 1;
+      reason = translate(locale, 'Late — courtesy placement');
+    }
+    const slotTime = new Date(appt.scheduled_at);
+    const slotLabel = `${String(slotTime.getHours()).padStart(2, '0')}:${String(slotTime.getMinutes()).padStart(2, '0')}`;
+    const res = await bookInHouse({
+      department_id: appt.department_id,
+      service_id: appt.service_id ?? undefined,
+      customer_data: {
+        name: appt.customer_name || undefined,
+        phone: appt.customer_phone || undefined,
+        scheduled_at: appt.scheduled_at,
+        slot_label: slotLabel,
+      } as any,
+      priority,
+      source: 'appointment',
+    });
+    if (res) {
+      showToast(`${slotLabel} · ${reason}`, 'info');
+      // Update appointment status in Supabase + local state
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        await sb.from('appointments').update({ status: 'checked_in' }).eq('id', appt.id);
+        setTodayAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'checked_in' } : a));
+      } catch (e) {
+        console.warn('[Station] failed to update appointment status', e);
+      }
+    }
+    return !!res;
+  }, [locale, storedAuth]);
+
   // ── Broadcast functions ────────────────────────────────────────
   const CLOUD_URL = 'https://qflo.net';
-
-  const storedAuth = useMemo(() => ({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    email: session.email,
-    password: session._pwd,
-  }), [session.access_token, session.refresh_token, session.email, session._pwd]);
 
   const fetchBroadcastTemplates = useCallback(async () => {
     try {
@@ -2193,6 +2367,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // ── Render ──────────────────────────────────────────────────────
 
+  // Helper for RDV tab — minutes until scheduled time
+  const minutesUntil = (iso: string) => Math.round((new Date(iso).getTime() - Date.now()) / 60000);
   return (
     <div className="station" role="main">
       {/* Sidebar toggle for mobile/tablet */}
@@ -2658,52 +2834,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             departments={names.departments}
             services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
             onClose={() => setShowAppointmentsModal(false)}
-            onCheckIn={async (appt) => {
-              if (!appt.department_id) {
-                showToast(translate(locale, 'Missing department'), 'error');
-                return false;
-              }
-              // Smart slot-aware priority placement
-              // offset in minutes: positive = late, negative = early
-              const offsetMin = Math.round((Date.now() - new Date(appt.scheduled_at).getTime()) / 60000);
-              let priority = 0;
-              let reason = '';
-              if (offsetMin >= -15 && offsetMin <= 30) {
-                // In slot window (15 min early → 30 min late): VIP priority
-                priority = 2;
-                reason = offsetMin < 0
-                  ? translate(locale, 'On time — priority placement')
-                  : translate(locale, 'In slot window — priority placement');
-              } else if (offsetMin < -15 && offsetMin >= -60) {
-                // Early 15–60 min: slight boost
-                priority = 1;
-                reason = translate(locale, 'Early — slight priority');
-              } else if (offsetMin < -60) {
-                // Very early: normal walk-in
-                priority = 0;
-                reason = translate(locale, 'Very early — placed as walk-in');
-              } else {
-                // Very late (>30 min): courtesy, slight demotion
-                priority = 1;
-                reason = translate(locale, 'Late — courtesy placement');
-              }
-              const slotTime = new Date(appt.scheduled_at);
-              const slotLabel = `${String(slotTime.getHours()).padStart(2, '0')}:${String(slotTime.getMinutes()).padStart(2, '0')}`;
-              const res = await bookInHouse({
-                department_id: appt.department_id,
-                service_id: appt.service_id ?? undefined,
-                customer_data: {
-                  name: appt.customer_name || undefined,
-                  phone: appt.customer_phone || undefined,
-                  scheduled_at: appt.scheduled_at,
-                  slot_label: slotLabel,
-                } as any,
-                priority,
-                source: 'appointment',
-              });
-              if (res) showToast(`${slotLabel} · ${reason}`, 'info');
-              return !!res;
-            }}
+            onCheckIn={checkInAppointment}
           />
         )}
 
@@ -2790,9 +2921,317 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               <span className="stat-pill called" aria-hidden="true">{t('{count} called', { count: called.length })}</span>
               <span className="stat-pill serving" aria-hidden="true">{t('{count} serving', { count: serving.length })}</span>
             </div>
+            {/* Queue / RDV tabs */}
+            <div style={{ display: 'flex', gap: 4, marginTop: 10, background: 'var(--bg, #0f172a)', padding: 4, borderRadius: 10 }}>
+              <button
+                onClick={() => setQueueTab('queue')}
+                style={{
+                  flex: 1, padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: queueTab === 'queue' ? '#3b82f6' : 'transparent',
+                  color: queueTab === 'queue' ? '#fff' : 'var(--text3, #94a3b8)',
+                  fontSize: 12, fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                👥 {t('Queue')}
+                <span style={{
+                  background: queueTab === 'queue' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
+                  borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
+                }}>{waiting.length + called.length + serving.length}</span>
+              </button>
+              <button
+                onClick={() => setQueueTab('rdv')}
+                style={{
+                  flex: 1, padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: queueTab === 'rdv' ? '#22c55e' : 'transparent',
+                  color: queueTab === 'rdv' ? '#fff' : 'var(--text3, #94a3b8)',
+                  fontSize: 12, fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                📅 {t('RDV')}
+                <span style={{
+                  background: queueTab === 'rdv' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
+                  borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
+                }}>{todayAppointments.length}</span>
+              </button>
+              <button
+                onClick={() => setQueueTab('pending')}
+                style={{
+                  flex: 1, padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: queueTab === 'pending' ? '#f59e0b' : 'transparent',
+                  color: queueTab === 'pending' ? '#fff' : 'var(--text3, #94a3b8)',
+                  fontSize: 12, fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  position: 'relative',
+                }}
+              >
+                ⏳ {t('Pending')}
+                <span style={{
+                  background: queueTab === 'pending' ? 'rgba(0,0,0,0.18)' : (pendingTickets.length > 0 ? '#f59e0b' : 'var(--surface2, #1e293b)'),
+                  color: queueTab !== 'pending' && pendingTickets.length > 0 ? '#fff' : undefined,
+                  borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
+                }}>{pendingTickets.length}</span>
+              </button>
+            </div>
           </div>
         </div>
 
+        {queueTab === 'rdv' && (
+          <div className="sidebar-section queue-list" style={{ flex: 1, overflowY: 'auto' }}>
+            <h4 style={{ margin: '0 0 8px' }}>{t('Today RDV')} ({todayAppointments.length})</h4>
+            {todayAppointments.length === 0 ? (
+              <div className="queue-empty">{t('No appointments')}</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {todayAppointments.map((a) => {
+                  const mins = minutesUntil(a.scheduled_at);
+                  const isPast = mins < -5;
+                  const isSoon = mins >= -5 && mins <= 15;
+                  const timeStr = `${String(new Date(a.scheduled_at).getHours()).padStart(2, '0')}:${String(new Date(a.scheduled_at).getMinutes()).padStart(2, '0')}`;
+                  const color = STATION_RDV_STATUS_COLORS[a.status] || '#64748b';
+                  const svcName = (a.service_id && names.services?.[a.service_id]) || '';
+                  const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
+                  const canConfirm = a.status === 'pending';
+                  const canCheckIn = a.status === 'pending' || a.status === 'confirmed';
+                  const canCancel = a.status !== 'cancelled' && a.status !== 'completed';
+                  const busy = rdvBusyId === a.id;
+                  return (
+                    <div
+                      key={a.id}
+                      style={{
+                        padding: '8px 10px',
+                        background: isSoon ? 'rgba(34,197,94,0.10)' : 'var(--bg, #0f172a)',
+                        border: `1px solid ${isSoon ? '#22c55e55' : 'var(--border, #334155)'}`,
+                        borderLeft: `3px solid ${color}`,
+                        borderRadius: 8,
+                        opacity: isPast || busy ? 0.55 : 1,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+                          {timeStr}
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: isSoon ? '#22c55e' : 'var(--text3, #94a3b8)' }}>
+                          {mins > 0 ? t('in {n}m', { n: mins }) : mins < 0 ? t('{n}m ago', { n: -mins }) : t('now')}
+                        </div>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
+                          textTransform: 'uppercase', letterSpacing: 0.4,
+                          background: `${color}22`, color, whiteSpace: 'nowrap',
+                        }}>
+                          {t(a.status)}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {a.customer_name || t('(no name)')}
+                      </div>
+                      {(svcName || deptName || a.wilaya) && (
+                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {svcName && <span>{svcName}</span>}
+                          {deptName && <span>· {deptName}</span>}
+                          {a.wilaya && <span>· 📍 {a.wilaya}</span>}
+                        </div>
+                      )}
+                      {a.notes && (
+                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {a.notes}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                        {canConfirm && (
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              setRdvBusyId(a.id);
+                              try {
+                                await ensureAuth(storedAuth);
+                                const sb = await getSupabase();
+                                const { error } = await sb.from('appointments').update({ status: 'confirmed' }).eq('id', a.id);
+                                if (error) throw error;
+                                setTodayAppointments((prev) => prev.map((x) => x.id === a.id ? { ...x, status: 'confirmed' } : x));
+                              } catch (e: any) {
+                                showToast(e?.message || 'Failed', 'error');
+                              } finally { setRdvBusyId(null); }
+                            }}
+                            style={{
+                              flex: '1 1 auto', padding: '5px 8px', borderRadius: 6, border: '1px solid #3b82f660',
+                              background: '#3b82f622', color: '#3b82f6', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 11, fontWeight: 700,
+                            }}
+                          >
+                            ✓ {t('Confirm')}
+                          </button>
+                        )}
+                        {canCheckIn && (
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              setRdvBusyId(a.id);
+                              try {
+                                await checkInAppointment({
+                                  id: a.id,
+                                  department_id: a.department_id,
+                                  service_id: a.service_id,
+                                  customer_name: a.customer_name,
+                                  customer_phone: a.customer_phone,
+                                  scheduled_at: a.scheduled_at,
+                                });
+                                setQueueTab('queue');
+                              } finally {
+                                setRdvBusyId(null);
+                              }
+                            }}
+                            style={{
+                              flex: '1 1 auto', padding: '5px 8px', borderRadius: 6, border: '1px solid #22c55e60',
+                              background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 11, fontWeight: 700,
+                            }}
+                          >
+                            → {t('Check in')}
+                          </button>
+                        )}
+                        {canCancel && (
+                          <button
+                            disabled={busy}
+                            onClick={async () => {
+                              if (!confirm(t('Cancel') + ' ?')) return;
+                              setRdvBusyId(a.id);
+                              try {
+                                await ensureAuth(storedAuth);
+                                const sb = await getSupabase();
+                                const { error } = await sb.from('appointments').update({ status: 'cancelled' }).eq('id', a.id);
+                                if (error) throw error;
+                                setTodayAppointments((prev) => prev.filter((x) => x.id !== a.id));
+                              } catch (e: any) {
+                                showToast(e?.message || 'Failed', 'error');
+                              } finally { setRdvBusyId(null); }
+                            }}
+                            title={t('Cancel')}
+                            style={{
+                              padding: '5px 10px', borderRadius: 6, border: '1px solid #ef444460',
+                              background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 11, fontWeight: 700,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setShowAppointmentsModal(true)}
+                          style={{
+                            padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border, #334155)',
+                            background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',
+                            fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          {t('Details')}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {queueTab === 'pending' && (
+          <div className="sidebar-section queue-list" style={{ flex: 1, overflowY: 'auto' }}>
+            <h4 style={{ margin: '0 0 8px' }}>⏳ {t('Pending approval')} ({pendingTickets.length})</h4>
+            {pendingTickets.length === 0 ? (
+              <div className="queue-empty">{t('No pending tickets')}</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pendingTickets.map((p) => {
+                  const cd = (() => { try { return typeof p.customer_data === 'string' ? JSON.parse(p.customer_data) : (p.customer_data || {}); } catch { return {}; } })();
+                  const svcName = (p.service_id && names.services?.[p.service_id]) || '';
+                  const deptName = (p.department_id && names.departments?.[p.department_id]) || '';
+                  const busy = pendingBusyId === p.id;
+                  const waitedMin = Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000);
+                  const sourceLabel = p.source === 'whatsapp' ? 'WhatsApp' : p.source === 'messenger' ? 'Messenger' : p.source === 'kiosk' ? t('Kiosk') : p.source === 'mobile_app' ? t('Mobile App') : p.source === 'qr_code' ? t('QR Code') : (p.source || '');
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        padding: '10px 12px',
+                        background: 'rgba(245,158,11,0.08)',
+                        border: '1px solid rgba(245,158,11,0.35)',
+                        borderLeft: '3px solid #f59e0b',
+                        borderRadius: 8,
+                        opacity: busy ? 0.55 : 1,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>
+                          {p.ticket_number || '—'}
+                        </div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>
+                          {waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}
+                        </div>
+                        {sourceLabel && (
+                          <span style={{
+                            padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
+                            textTransform: 'uppercase', letterSpacing: 0.4,
+                            background: 'rgba(59,130,246,0.15)', color: '#3b82f6', whiteSpace: 'nowrap',
+                          }}>
+                            {sourceLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {cd.name || t('(no name)')}
+                        {cd.phone && <span style={{ fontWeight: 400, color: 'var(--text3, #94a3b8)', direction: 'ltr', unicodeBidi: 'embed' }}> · {cd.phone}</span>}
+                      </div>
+                      {(svcName || deptName || cd.wilaya) && (
+                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {svcName && <span>{svcName}</span>}
+                          {deptName && <span>· {deptName}</span>}
+                          {cd.wilaya && <span>· 📍 {cd.wilaya}</span>}
+                        </div>
+                      )}
+                      {(cd.reason_of_visit || cd.reason) && (
+                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic' }}>
+                          {cd.reason_of_visit || cd.reason}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                        <button
+                          disabled={busy}
+                          onClick={() => moderatePendingTicket(p.id, 'approve')}
+                          style={{
+                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e60',
+                            background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 12, fontWeight: 700,
+                          }}
+                        >
+                          ✓ {t('Approve')}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => {
+                            const reason = prompt(t('Decline reason (optional)')) ?? undefined;
+                            if (reason === null) return;
+                            moderatePendingTicket(p.id, 'decline', reason || undefined);
+                          }}
+                          style={{
+                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',
+                            background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                            fontSize: 12, fontWeight: 700,
+                          }}
+                        >
+                          ✕ {t('Decline')}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {queueTab === 'queue' && (<>
         <div className="sidebar-section queue-list queue-waiting">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <h4 style={{ margin: 0 }}>{t('Waiting ({count})', { count: waiting.length })}</h4>
@@ -2984,6 +3423,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             ))}
           </div>
         </div>
+        </>)}
 
 
         {/* Active Desks */}

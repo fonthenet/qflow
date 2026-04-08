@@ -10,6 +10,7 @@ interface Appointment {
   scheduled_at: string;
   status: string;
   notes: string | null;
+  wilaya: string | null;
   department_id: string | null;
   service_id: string | null;
   staff_id: string | null;
@@ -64,6 +65,7 @@ const STATUS_COLORS: Record<string, string> = {
 export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, onClose, onCheckIn }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<'today' | '7days'>('today');
@@ -135,7 +137,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
 
       const { data, error: qErr } = await sb
         .from('appointments')
-        .select('id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, department_id, service_id, staff_id')
+        .select('id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, department_id, service_id, staff_id')
         .eq('office_id', officeId)
         .gte('scheduled_at', start.toISOString())
         .lt('scheduled_at', end.toISOString())
@@ -345,9 +347,11 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                 const canCheckIn = a.status === 'pending' || a.status === 'confirmed';
                 const canComplete = a.status === 'checked_in' || a.status === 'serving' || a.status === 'confirmed';
                 const canCancel = a.status !== 'cancelled' && a.status !== 'completed';
+                const isExpanded = expandedId === a.id;
                 return (
                   <div
                     key={a.id}
+                    onClick={() => setExpandedId(isExpanded ? null : a.id)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '12px 14px', marginBottom: 6,
@@ -357,6 +361,8 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       borderRadius: 10,
                       opacity: busy ? 0.5 : 1,
                       transition: 'opacity 150ms',
+                      cursor: 'pointer',
+                      flexWrap: 'wrap',
                     }}
                   >
                     <div style={{
@@ -371,6 +377,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text3, #94a3b8)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {a.customer_phone && <span>{formatPhoneDisplay(a.customer_phone)}</span>}
+                        {a.wilaya && <span>· 📍 {a.wilaya}</span>}
                         {svcName && <span>· {svcName}</span>}
                         {deptName && <span>· {deptName}</span>}
                       </div>
@@ -402,7 +409,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         ⚠ {t('Overbooked')}
                       </span>
                     )}
-                    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                       {canConfirm && (
                         <button
                           disabled={busy}
@@ -472,6 +479,24 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         🗑
                       </button>
                     </div>
+                    {isExpanded && (
+                      <div style={{
+                        flexBasis: '100%', marginTop: 10, paddingTop: 10,
+                        borderTop: '1px dashed var(--border, #334155)',
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px',
+                        fontSize: 12, color: 'var(--text, #f1f5f9)',
+                      }}>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Name')}: </span>{a.customer_name || '—'}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Phone')}: </span>{formatPhoneDisplay(a.customer_phone) || '—'}</div>
+                        {a.customer_email && <div><span style={{ color: 'var(--text3, #94a3b8)' }}>Email: </span>{a.customer_email}</div>}
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Wilaya:')} </span>{a.wilaya || '—'}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Service')}: </span>{svcName || '—'}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Department')}: </span>{deptName || '—'}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Status')}: </span>{t(a.status)}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Scheduled')}: </span>{new Date(a.scheduled_at).toLocaleString('fr-FR')}</div>
+                        {a.notes && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Reason')}: </span>{a.notes}</div>}
+                      </div>
+                    )}
                   </div>
                 );
               })}

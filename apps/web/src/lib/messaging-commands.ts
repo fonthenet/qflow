@@ -110,7 +110,7 @@ interface OrgContext {
   settings: Record<string, any>;
 }
 
-type Locale = 'fr' | 'ar' | 'en';
+export type Locale = 'fr' | 'ar' | 'en';
 
 // ── i18n translations ────────────────────────────────────────────────
 
@@ -342,6 +342,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'تم الإلغاء. لم تنضم إلى الطابور ❌\n\nأرسل *انضم <الرمز>* للمحاولة مجددًا.',
     en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
+  pending_approval: {
+    fr: '⏳ Votre demande à *{name}* a bien été reçue.\n\nElle est en attente d\'approbation par le prestataire. Vous recevrez un message dès qu\'elle sera validée.',
+    ar: '⏳ تم استلام طلبك في *{name}*.\n\nفي انتظار موافقة المزود. ستتلقى رسالة فور الموافقة.',
+    en: '⏳ Your request at *{name}* has been received.\n\nIt is pending provider approval. You will receive a message as soon as it is approved.',
+  },
+  approval_declined: {
+    fr: '❌ Votre demande à *{name}* a été refusée.\n\n{reason}',
+    ar: '❌ تم رفض طلبك في *{name}*.\n\n{reason}',
+    en: '❌ Your request at *{name}* was declined.\n\n{reason}',
+  },
   ask_wilaya: {
     fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *ANNULER* pour annuler.',
     ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *إلغاء* للإلغاء.',
@@ -568,7 +578,7 @@ function ensureRTL(text: string): string {
   return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
 }
 
-function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
+export function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
   let msg = messages[key]?.[locale] ?? messages[key]?.['fr'] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -1103,7 +1113,12 @@ export async function handleInboundMessage(
     if (pendingSession) {
       const isYes = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد)$/i.test(cleaned);
       const isNo = /^(NON|NO|لا|N|0|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
-      const pendingLocale = (pendingSession.locale as Locale) || 'fr';
+      // If user replies in Arabic script, override locale to 'ar' (auto-switch language)
+      const hasArabicReply = /[\u0600-\u06FF]/.test(cleaned);
+      const pendingLocale: Locale = hasArabicReply ? 'ar' : ((pendingSession.locale as Locale) || 'fr');
+      if (hasArabicReply && pendingSession.locale !== 'ar') {
+        await supabaseCheck.from('whatsapp_sessions').update({ locale: 'ar' }).eq('id', pendingSession.id);
+      }
 
       if (isYes) {
         // Look up org name for the joined message
@@ -1374,7 +1389,7 @@ export async function handleInboundMessage(
         // Route to STATUS
         if (quickSessions.length === 1) {
           const { session, org } = quickSessions[0];
-          const sessionLocale = (session.locale as Locale) || detectedLocale;
+          const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
           await handleStatus(identifier, org, sessionLocale, channel, sendMessage, session);
         } else {
           await handleMultiStatus(identifier, quickSessions, detectedLocale, channel, sendMessage);
@@ -1385,7 +1400,7 @@ export async function handleInboundMessage(
         // Route to CANCEL
         if (quickSessions.length === 1) {
           const { session, org } = quickSessions[0];
-          const sessionLocale = (session.locale as Locale) || detectedLocale;
+          const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
           await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
         } else {
           await handleCancelPick(identifier, quickSessions, detectedLocale, channel, sendMessage);
@@ -1426,7 +1441,7 @@ export async function handleInboundMessage(
       await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
     } else if (allSessions.length === 1) {
       const { session, org } = allSessions[0];
-      const sessionLocale = (session.locale as Locale) || detectedLocale;
+      const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
       await handleStatus(identifier, org, sessionLocale, channel, sendMessage, session);
     } else {
       await handleMultiStatus(identifier, allSessions, detectedLocale, channel, sendMessage);
@@ -1451,14 +1466,14 @@ export async function handleInboundMessage(
       // Cancel specific session by index
       if (cancelIdx >= 1 && cancelIdx <= allSessions.length) {
         const { session, org } = allSessions[cancelIdx - 1];
-        const sessionLocale = (session.locale as Locale) || detectedLocale;
+        const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
         await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
       } else {
         await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
       }
     } else if (allSessions.length === 1) {
       const { session, org } = allSessions[0];
-      const sessionLocale = (session.locale as Locale) || detectedLocale;
+      const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
       await handleCancel(identifier, org, sessionLocale, channel, sendMessage, session);
     } else {
       // Multiple sessions — ask which one to cancel
@@ -1614,11 +1629,22 @@ export async function handleInboundMessage(
     return;
   }
 
+  // ── HELP / INFO / MENU — always reply with usage guide in detected locale ──
+  if (
+    command === 'HELP' || command === 'INFO' || command === 'MENU' ||
+    command === 'AIDE' || command === 'AYUDA' || command === 'START' ||
+    /^(مساعدة|معلومات|قائمة|بدء|ابدا|ابدأ)$/.test(cleaned) ||
+    cleaned === '?' || cleaned === '؟'
+  ) {
+    await sendMessage({ to: identifier, body: t('welcome', detectedLocale) });
+    return;
+  }
+
   // ── Plain "JOIN" / "REJOINDRE" / "انضم" without code ──
   if (command === 'JOIN' || command === 'REJOINDRE' || /^انضم$/.test(cleaned)) {
     const found = await findOrgByActiveSession(identifier, channel, bsuid);
     if (found) {
-      const sessionLocale = (found.session.locale as Locale) || detectedLocale;
+      const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((found.session.locale as Locale) || detectedLocale);
       const pos = await getQueuePosition(found.session.ticket_id);
       const ctx = await fetchTicketContext(found.session.ticket_id, sessionLocale);
       await sendMessage({
@@ -1648,44 +1674,26 @@ export async function handleInboundMessage(
     }
   }
 
-  // ── Unknown message ──
+  // ── Unknown message — always reply with descriptive usage guide in user's language ──
   const found = await findOrgByActiveSession(identifier, channel, bsuid);
   if (found) {
-    const sessionLocale = (found.session.locale as Locale) || detectedLocale;
+    const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((found.session.locale as Locale) || detectedLocale);
     await sendMessage({
       to: identifier,
-      body: t('help_with_session', sessionLocale, { name: found.org.name }) + t('quick_menu', sessionLocale),
+      body: t('help_with_session', sessionLocale, { name: found.org.name }) + '\n\n' + t('welcome', sessionLocale),
     });
-  } else {
-    // Auto-detect for Algerian numbers
-    const isAlgerian = identifier.startsWith('213');
-    const prevLocale = await getLastSessionLocale(identifier, channel, bsuid);
-    if (prevLocale) {
-      // User has interacted before — use their saved locale
-      await sendMessage({ to: identifier, body: t('welcome', prevLocale) });
-    } else if (isAlgerian) {
-      // Algerian number, default to Arabic
-      await sendMessage({ to: identifier, body: t('welcome', 'ar') });
-    } else {
-      // Unknown user — show language picker
-      const supabaseLp = createAdminClient() as any;
-      const identColLp = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
-      // Clean up any existing pending_language sessions
-      await supabaseLp.from('whatsapp_sessions')
-        .delete()
-        .eq(identColLp, identifier)
-        .eq('state', 'pending_language')
-        .eq('channel', channel);
-      // Create pending_language session
-      await supabaseLp.from('whatsapp_sessions').insert({
-        channel,
-        [identColLp]: identifier,
-        state: 'pending_language',
-        locale: 'fr',
-      });
-      await sendMessage({ to: identifier, body: t('language_picker', 'fr') });
-    }
+    return;
   }
+
+  // No active session — pick best locale and send welcome guide
+  const prevLocale = await getLastSessionLocale(identifier, channel, bsuid);
+  const isAlgerian = identifier.startsWith('213');
+  const replyLocale: Locale =
+    detectedLocale === 'ar' ? 'ar'
+    : prevLocale ? prevLocale
+    : isAlgerian ? 'ar'
+    : detectedLocale;
+  await sendMessage({ to: identifier, body: t('welcome', replyLocale) });
 }
 
 // ── DIRECTORY ────────────────────────────────────────────────────────
@@ -2550,14 +2558,25 @@ async function handleJoin(
     console.error(`[${channel}:join] Session insert error:`, JSON.stringify(sessionError));
   }
 
-  const pos = await getQueuePosition(ticket.id);
-
   const baseUrl = (
     process.env.APP_CLIP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     'https://qflo.net'
   ).replace(/\/+$/, '');
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+
+  // If the office requires provider approval, the ticket is in `pending_approval`.
+  // Send a "waiting for approval" message; the full joined message is sent later
+  // by /api/moderate-ticket when the provider approves.
+  if ((ticket as any).status === 'pending_approval') {
+    await sendMessage({
+      to: identifier,
+      body: t('pending_approval', locale, { name: org.name }),
+    });
+    return;
+  }
+
+  const pos = await getQueuePosition(ticket.id);
 
   await sendMessage({
     to: identifier,

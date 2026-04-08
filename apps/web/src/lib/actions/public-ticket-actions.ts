@@ -153,7 +153,7 @@ export async function estimatePublicWaitTime(departmentId: string, serviceId: st
 
 export async function createPublicTicket(input: CreatePublicTicketInput) {
   const supabase = createAdminClient();
-  const status = input.status ?? 'waiting';
+  let status: string = input.status ?? 'waiting';
 
   const { data: office, error: officeError } = await supabase
     .from('offices')
@@ -253,6 +253,19 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     if (!verified) {
       return { error: 'Please verify your email before joining the queue.' };
     }
+  }
+
+  // ── Same-day ticket approval gating ──────────────────────────────
+  // If the office enables `require_ticket_approval`, tickets from public
+  // channels (WhatsApp, Messenger, kiosk, mobile app, QR code) are held
+  // in `pending_approval` state until a provider approves them via Station.
+  // Provider-originated sources (`in_house`, `appointment`) always bypass.
+  const requireApproval = Boolean(
+    officeSettings.require_ticket_approval ?? organizationSettings.require_ticket_approval
+  );
+  const providerOriginated = input.source === 'in_house' || input.source === 'appointment';
+  if (requireApproval && !providerOriginated && input.status === undefined) {
+    status = 'pending_approval';
   }
 
   const { data: seqData, error: seqError } = await supabase.rpc(
