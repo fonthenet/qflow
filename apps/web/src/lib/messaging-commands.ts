@@ -2729,7 +2729,7 @@ async function handleCancel(
         .in('id', ids);
       const cancellable = new Set(
         (tRows ?? [])
-          .filter((t: any) => ['waiting', 'issued', 'called'].includes(t.status))
+          .filter((t: any) => ['waiting', 'issued', 'called', 'pending_approval'].includes(t.status))
           .map((t: any) => t.id),
       );
       // Prefer most recent cancellable session; fall back to most recent
@@ -2739,7 +2739,7 @@ async function handleCancel(
 
       // Auto-close any orphan active sessions whose ticket is already terminal
       const terminal = (tRows ?? [])
-        .filter((t: any) => !['waiting', 'issued', 'called', 'serving'].includes(t.status))
+        .filter((t: any) => !['waiting', 'issued', 'called', 'serving', 'pending_approval'].includes(t.status))
         .map((t: any) => t.id);
       if (terminal.length > 0) {
         await supabase
@@ -2769,7 +2769,7 @@ async function handleCancel(
     .single();
 
   // If the ticket is being served (or already completed), refuse to cancel
-  if (ticketRow && !['waiting', 'issued', 'called'].includes(ticketRow.status)) {
+  if (ticketRow && !['waiting', 'issued', 'called', 'pending_approval'].includes(ticketRow.status)) {
     if (ticketRow.status === 'serving') {
       await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
     } else {
@@ -2791,7 +2791,7 @@ async function handleCancel(
     .from('tickets')
     .update({ status: 'cancelled' })
     .eq('id', session.ticket_id)
-    .in('status', ['waiting', 'issued', 'called'])
+    .in('status', ['waiting', 'issued', 'called', 'pending_approval'])
     .select('id', { count: 'exact', head: true });
 
   if (cancelError) {
@@ -2966,7 +2966,7 @@ async function handleCancelAll(
       .from('tickets')
       .update({ status: 'cancelled' })
       .eq('id', session.ticket_id)
-      .in('status', ['waiting', 'issued', 'called']);
+      .in('status', ['waiting', 'issued', 'called', 'pending_approval']);
 
     await supabase.from('ticket_events').insert({
       ticket_id: session.ticket_id,
