@@ -144,12 +144,13 @@ export async function POST(request: NextRequest) {
     let notified = false;
     let notifyError: string | null = null;
     try {
-      const body = tMsg('approval_approved', locale, { name: orgName });
+      const msgBody = tMsg('approval_approved', locale, { name: orgName });
       if (channel === 'whatsapp' && toPhone) {
-        await sendWhatsAppMessage({ to: toPhone, body });
-        notified = true;
+        const result = await sendWhatsAppMessage({ to: toPhone, body: msgBody });
+        notified = result.ok === true;
+        if (!result.ok) notifyError = result.error ?? 'WhatsApp send failed';
       } else if (channel === 'messenger' && toPsid) {
-        await sendMessengerMessage({ recipientId: toPsid, text: body });
+        await sendMessengerMessage({ recipientId: toPsid, text: msgBody });
         notified = true;
       }
     } catch (e: any) {
@@ -177,12 +178,13 @@ export async function POST(request: NextRequest) {
       const reasonText =
         declineReason ||
         (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
-      const body = tMsg('approval_declined', locale, { name: orgName, reason: reasonText });
+      const msgBody = tMsg('approval_declined', locale, { name: orgName, reason: reasonText });
       if (channel === 'whatsapp' && toPhone) {
-        await sendWhatsAppMessage({ to: toPhone, body });
-        notified = true;
+        const result = await sendWhatsAppMessage({ to: toPhone, body: msgBody });
+        notified = result.ok === true;
+        if (!result.ok) notifyError = result.error ?? 'WhatsApp send failed';
       } else if (channel === 'messenger' && toPsid) {
-        await sendMessengerMessage({ recipientId: toPsid, text: body });
+        await sendMessengerMessage({ recipientId: toPsid, text: msgBody });
         notified = true;
       }
     } catch (e: any) {
@@ -207,12 +209,13 @@ export async function POST(request: NextRequest) {
   let notified = false;
   let notifyError: string | null = null;
   try {
-    const body = tMsg(templateKey, locale, { name: orgName });
+    const msgBody = tMsg(templateKey, locale, { name: orgName });
     if (channel === 'whatsapp' && toPhone) {
-      await sendWhatsAppMessage({ to: toPhone, body });
-      notified = true;
+      const result = await sendWhatsAppMessage({ to: toPhone, body: msgBody });
+      notified = result.ok === true;
+      if (!result.ok) notifyError = result.error ?? 'WhatsApp send failed';
     } else if (channel === 'messenger' && toPsid) {
-      await sendMessengerMessage({ recipientId: toPsid, text: body });
+      await sendMessengerMessage({ recipientId: toPsid, text: msgBody });
       notified = true;
     }
   } catch (e: any) {
