@@ -119,10 +119,10 @@ export async function POST(request: NextRequest) {
       const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
       const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
       const pos = await getQueuePosition(ticket.id);
-      // One combined message: "Your appointment has been approved" header
-      // followed by the full ticket details (number, position, now-serving,
-      // tracking URL, quick-menu commands).
-      const approvedHeader = tMsg('approval_approved', locale, { name: orgName });
+      // One combined message: "approved" header + full ticket details.
+      // Ticket already exists (JOIN flow), so use the sameday template
+      // which doesn't say "you'll receive a ticket when you arrive".
+      const approvedHeader = tMsg('approval_approved_sameday', locale, { name: orgName });
       const joinedBody = approvedHeader + tMsg('joined', locale, {
         name: orgName,
         ticket: ticket.ticket_number,
