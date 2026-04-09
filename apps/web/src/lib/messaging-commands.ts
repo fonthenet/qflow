@@ -3109,23 +3109,37 @@ async function handleCancel(
 
   if (cancelError) {
     console.error(`[${channel}:cancel] Failed to cancel ticket:`, cancelError);
-    // Rollback session state since the cancel failed
     await supabase
       .from('whatsapp_sessions')
       .update({ state: 'active' })
       .eq('id', session.id);
-    await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    // Fallback: try cancelling a different ticket by phone
+    const fb1 = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
+    if (!fb1) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
     return;
   }
 
   if ((cancelledCount ?? 0) === 0) {
-    // No rows matched — ticket status changed between our check and the update
-    // Rollback session state
+    // Re-check ticket status: if it's already cancelled (e.g. concurrent
+    // webhook delivery), silently succeed instead of showing an error.
+    const { data: recheck } = await supabase
+      .from('tickets')
+      .select('status')
+      .eq('id', session.ticket_id)
+      .maybeSingle();
+    if (recheck?.status === 'cancelled') {
+      // Already cancelled — don't send a duplicate error message
+      await supabase.from('whatsapp_sessions')
+        .update({ state: 'completed' }).eq('id', session.id);
+      return;
+    }
     await supabase
       .from('whatsapp_sessions')
       .update({ state: 'active' })
       .eq('id', session.id);
-    await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
+    // Fallback: try cancelling a different ticket by phone
+    const fb2 = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
+    if (!fb2) await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
     return;
   }
 
