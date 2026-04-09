@@ -116,8 +116,9 @@ export async function POST(request: NextRequest) {
       toPsid = session.messenger_psid || null;
       locale = (session.locale as Locale) || 'fr';
     } else {
-      // No session match — assume WhatsApp if it looks like a phone number.
-      if (/^\+?\d{6,}$/.test(appt.customer_phone)) {
+      // No session match — assume WhatsApp if the phone has enough digits
+      // (sendWhatsAppMessage normalizes the format itself).
+      if (digits.length >= 8) {
         channel = 'whatsapp';
         toPhone = appt.customer_phone;
       }

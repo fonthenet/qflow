@@ -186,6 +186,7 @@ export default function BroadcastClient({
   }
 
   function handleDeleteTemplate(id: string) {
+    if (!confirm(t('Delete this template? This cannot be undone.'))) return;
     startTransition(async () => {
       const result = await deleteBroadcastTemplate(id);
       if (result.error) {

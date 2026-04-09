@@ -2088,6 +2088,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const noShow = (id: string) => {
+    if (!window.confirm(t('Mark this ticket as no-show?'))) return;
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString() });
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
@@ -2192,10 +2193,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const cancel = (id: string) => {
+    if (!window.confirm(t('Cancel this ticket?'))) return;
     const ts = new Date().toISOString();
     updateTicketStatus(id, { status: 'cancelled', completed_at: ts });
-    const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, translate(locale, 'Cancelled'));
+    const tk = tickets.find((x) => x.id === id);
+    if (tk) addActivity(tk.ticket_number, translate(locale, 'Cancelled'));
   };
 
   const bookInHouse = async (data: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string; wilaya?: string }; priority: number; source: string; appointment_id?: string }) => {
@@ -2315,13 +2317,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [fetchBroadcastTemplates]);
 
   const deleteBroadcastTemplate = useCallback(async (id: string) => {
+    if (!window.confirm(translate(locale, 'Delete this template?'))) return;
     try {
       await window.qf.templates.delete(id);
       setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
     } catch (err) {
       console.error('[broadcast] Failed to delete template:', err);
     }
-  }, []);
+  }, [locale]);
 
   const sendBroadcast = useCallback(async (msg: { fr: string; ar: string }, templateId?: string) => {
     setBroadcastSending(true);
