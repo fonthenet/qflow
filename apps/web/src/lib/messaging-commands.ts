@@ -3819,6 +3819,7 @@ async function confirmBooking(
       wilaya: wilaya,
       notes: reason,
       locale,
+      source: channel === 'messenger' ? 'messenger' : 'whatsapp',
     })
     .select('id')
     .single();

@@ -178,6 +178,7 @@ export interface Appointment {
   recurrence_parent_id: string | null;
   reminder_sent: boolean;
   calendar_token: string | null;
+  source: string | null;
   created_at: string;
 }
 

@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
       notes: (notes as string)?.trim() || null,
       wilaya: (wilaya as string)?.trim() || null,
       locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
+      source: 'web',
       ...(staffId ? { staff_id: staffId } : {}),
     })
     .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')

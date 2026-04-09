@@ -77,7 +77,7 @@ const APPT_SELECT = `
   scheduled_at, status, notes, wilaya, ticket_id,
   locale, reminder_sent,
   recurrence_rule, recurrence_parent_id, calendar_token,
-  created_at
+  source, created_at
 `;
 
 // ── Main Component ────────────────────────────────────────────────
@@ -92,7 +92,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAppt, setSelectedAppt] = useState<CalendarAppointment | null>(null);
-  const [ticketSource, setTicketSource] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
@@ -195,24 +194,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleMiniMonthNav = (d: Date) => {
     if (isWithinHorizon(d, 3)) setCurrentDate(d);
   };
-
-  // ── Select appointment & fetch ticket source ──────────────────
-
-  const selectAppt = useCallback(async (appt: CalendarAppointment) => {
-    setSelectedAppt(appt);
-    setTicketSource(null);
-    if (appt.ticket_id) {
-      try {
-        const sb = await getSupabase();
-        const { data: ticket } = await sb
-          .from('tickets')
-          .select('source')
-          .eq('id', appt.ticket_id)
-          .single();
-        if (ticket?.source) setTicketSource(ticket.source);
-      } catch { /* ignore */ }
-    }
-  }, []);
 
   // ── Actions on appointment ─────────────────────────────────────
 
@@ -488,7 +469,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 locale={locale}
                 selectedApptId={selectedAppt?.id ?? null}
                 operatingHours={alwaysOpen ? null : operatingHours}
-                onSelect={selectAppt}
+                onSelect={setSelectedAppt}
               />
             ) : (
               <DesktopMonthView
@@ -500,7 +481,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 intlLocale={intlLocale}
                 locale={locale}
                 operatingHours={alwaysOpen ? null : operatingHours}
-                onSelect={selectAppt}
+                onSelect={setSelectedAppt}
                 onDayClick={(date) => { setCurrentDate(date); setViewMode('week'); }}
               />
             )}
@@ -510,7 +491,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           {selectedAppt && (
             <DesktopApptDetail
               appointment={selectedAppt}
-              ticketSource={ticketSource}
               timezone={tz}
               serviceMap={serviceMap}
               departments={departments}
@@ -951,11 +931,10 @@ function DesktopMonthView({
 // ── Appointment Detail Panel ──────────────────────────────────────
 
 function DesktopApptDetail({
-  appointment: a, ticketSource, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
+  appointment: a, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
   onClose, onCancel, onCheckIn, onApprove, onDecline,
 }: {
   appointment: CalendarAppointment;
-  ticketSource: string | null;
   timezone: string;
   serviceMap: Map<string, any>;
   departments: Record<string, string>;
@@ -1032,17 +1011,18 @@ function DesktopApptDetail({
         </div>
 
         {/* Source badge — same CSS classes as queue tickets */}
-        {ticketSource && (
+        {a.source && (
           <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-            {ticketSource === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
-            {ticketSource === 'messenger' && <span className="badge messenger">{t('Messenger')}</span>}
-            {ticketSource === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
-            {ticketSource === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
-            {ticketSource === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
-            {ticketSource === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
-            {ticketSource === 'walk_in' && <span className="badge" style={{ background: 'rgba(249,115,22,0.15)', color: '#f97316' }}>{t('Walk-in')}</span>}
-            {!['whatsapp', 'messenger', 'qr_code', 'mobile_app', 'kiosk', 'in_house', 'walk_in'].includes(ticketSource) && (
-              <span className="badge">{ticketSource}</span>
+            {a.source === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+            {a.source === 'messenger' && <span className="badge messenger">{t('Messenger')}</span>}
+            {a.source === 'web' && <span className="badge qr-code">{t('Web')}</span>}
+            {a.source === 'portal' && <span className="badge in-house">{t('Portal')}</span>}
+            {a.source === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
+            {a.source === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
+            {a.source === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
+            {a.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
+            {!['whatsapp', 'messenger', 'web', 'portal', 'qr_code', 'mobile_app', 'kiosk', 'in_house'].includes(a.source) && (
+              <span className="badge">{a.source}</span>
             )}
           </div>
         )}

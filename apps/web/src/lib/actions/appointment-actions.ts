@@ -96,6 +96,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     status: initialStatus,
     calendar_token: calendarToken,
     locale: (data.locale === 'ar' || data.locale === 'en' || data.locale === 'fr') ? data.locale : null,
+    source: 'portal',
     ...(data.staffId ? { staff_id: data.staffId } : {}),
   };
 
