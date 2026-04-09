@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { resolvePlatformConfig } from '@/lib/platform/config';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 import { getQueuePosition } from '@/lib/queue-position';
+import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 
 
 const DAYS_OF_WEEK = [
@@ -342,9 +343,47 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     if (normalizedPhone) {
       try {
         const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+        // Resolve locale + org name so the join confirmation matches the
+        // language the customer used (avoids French/English replies for
+        // Arabic chats). Falls back to 'fr' if no session is found.
+        let locale: Locale = 'fr';
+        let orgName = '';
+        try {
+          if (orgId) {
+            const digits = rawPhone.replace(/\D/g, '');
+            const phoneVariants = Array.from(new Set([rawPhone, digits, `+${digits}`, normalizedPhone].filter(Boolean)));
+            const orFilter = phoneVariants
+              .flatMap((v) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
+              .join(',');
+            const { data: sessionRows } = await (supabase as any)
+              .from('whatsapp_sessions')
+              .select('locale')
+              .eq('organization_id', orgId)
+              .or(orFilter)
+              .order('created_at', { ascending: false })
+              .limit(1);
+            if (sessionRows && sessionRows[0]?.locale) {
+              locale = sessionRows[0].locale as Locale;
+            }
+            const { data: orgRow } = await (supabase as any)
+              .from('organizations')
+              .select('name')
+              .eq('id', orgId)
+              .single();
+            orgName = orgRow?.name ?? '';
+          }
+        } catch {}
+        const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+        const body = tMsg('joined', locale, {
+          name: orgName,
+          ticket: ticket.ticket_number,
+          position: '',
+          now_serving: '',
+          url: trackUrl,
+        });
         const waResult = await sendWhatsAppMessage({
           to: normalizedPhone,
-          body: `✅ You're in the queue! Ticket: ${ticket.ticket_number}\n\n📍 Track: ${baseUrl}/q/${ticket.qr_token}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.`,
+          body,
         });
         whatsappStatus = { sent: waResult.ok, error: waResult.ok ? undefined : (waResult.error ?? 'Unknown error') };
       } catch (err: any) {

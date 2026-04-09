@@ -1752,7 +1752,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           () => { fetchPendingAppts(); })
         .subscribe();
     });
-    const iv = setInterval(fetchPendingAppts, 60_000);
+    const iv = setInterval(fetchPendingAppts, 15_000);
     return () => {
       cancelled = true;
       clearInterval(iv);
@@ -1842,51 +1842,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const busy = rdvBusyId === a.id;
     return (
       <div key={a.id} style={{
-        padding: '10px 12px',
+        padding: '6px 8px',
         background: 'rgba(245,158,11,0.08)',
         border: '1px solid rgba(245,158,11,0.35)',
         borderLeft: '3px solid #f59e0b',
-        borderRadius: 8,
+        borderRadius: 6,
         opacity: busy ? 0.55 : 1,
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
-            {opts?.showDate ? `${dateStr} · ${timeStr}` : timeStr}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
+            <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+              {opts?.showDate ? `${dateStr} · ${timeStr}` : timeStr}
+            </span>
+            <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {a.customer_name || t('(no name)')}
+            </span>
+            {a.customer_phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{a.customer_phone}</span>}
           </div>
-          <span style={{
-            padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
-            textTransform: 'uppercase', letterSpacing: 0.4,
-            background: 'rgba(245,158,11,0.18)', color: '#f59e0b', whiteSpace: 'nowrap',
-          }}>RDV</span>
+          {(svcName || deptName || a.wilaya || a.notes) && (
+            <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {svcName && <span>{svcName}</span>}
+              {deptName && <span>· {deptName}</span>}
+              {a.wilaya && <span>· 📍 {a.wilaya}</span>}
+              {a.notes && <span style={{ fontStyle: 'italic' }}>· {a.notes}</span>}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {a.customer_name || t('(no name)')}
-          {a.customer_phone && <span style={{ fontWeight: 400, color: 'var(--text3, #94a3b8)', direction: 'ltr', unicodeBidi: 'embed' }}> · {a.customer_phone}</span>}
-        </div>
-        {(svcName || deptName || a.wilaya) && (
-          <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {svcName && <span>{svcName}</span>}
-            {deptName && <span>· {deptName}</span>}
-            {a.wilaya && <span>· 📍 {a.wilaya}</span>}
-          </div>
-        )}
-        {a.notes && (
-          <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic' }}>
-            {a.notes}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 3 }}>
           <button
             disabled={busy}
             onClick={() => moderatePendingAppointment(a.id, 'approve')}
+            title={t('Approve')}
             style={{
-              flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e60',
+              padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
               background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-              fontSize: 12, fontWeight: 700,
+              fontSize: 12, fontWeight: 800,
             }}
-          >
-            ✓ {t('Approve')}
-          </button>
+          >✓</button>
           <button
             disabled={busy}
             onClick={() => {
@@ -1894,14 +1887,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               if (!ok) return;
               moderatePendingAppointment(a.id, 'decline');
             }}
+            title={t('Decline')}
             style={{
-              flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',
+              padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
               background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-              fontSize: 12, fontWeight: 700,
+              fontSize: 12, fontWeight: 800,
             }}
-          >
-            ✕ {t('Decline')}
-          </button>
+          >✕</button>
         </div>
       </div>
     );
@@ -3406,78 +3398,55 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <div
                       key={p.id}
                       style={{
-                        padding: '10px 12px',
+                        padding: '6px 8px',
                         background: 'rgba(245,158,11,0.08)',
                         border: '1px solid rgba(245,158,11,0.35)',
                         borderLeft: '3px solid #f59e0b',
-                        borderRadius: 8,
+                        borderRadius: 6,
                         opacity: busy ? 0.55 : 1,
+                        display: 'flex', alignItems: 'center', gap: 8,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>
-                          {p.ticket_number || '—'}
-                        </div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>
-                          {waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}
-                        </div>
-                        {sourceLabel && (
-                          <span style={{
-                            padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
-                            textTransform: 'uppercase', letterSpacing: 0.4,
-                            background: 'rgba(59,130,246,0.15)', color: '#3b82f6', whiteSpace: 'nowrap',
-                          }}>
-                            {sourceLabel}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
+                          <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>{p.ticket_number || '—'}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {cd.name || t('(no name)')}
                           </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {cd.name || t('(no name)')}
-                        {cd.phone && <span style={{ fontWeight: 400, color: 'var(--text3, #94a3b8)', direction: 'ltr', unicodeBidi: 'embed' }}> · {cd.phone}</span>}
-                      </div>
-                      {(svcName || deptName || cd.wilaya) && (
-                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {svcName && <span>{svcName}</span>}
-                          {deptName && <span>· {deptName}</span>}
+                          {cd.phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{cd.phone}</span>}
+                        </div>
+                        <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}</span>
+                          {sourceLabel && <span>· {sourceLabel}</span>}
+                          {svcName && <span>· {svcName}</span>}
                           {cd.wilaya && <span>· 📍 {cd.wilaya}</span>}
                         </div>
-                      )}
-                      {(cd.reason_of_visit || cd.reason) && (
-                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic' }}>
-                          {cd.reason_of_visit || cd.reason}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+                      </div>
+                      <div style={{ display: 'flex', gap: 3 }}>
                         <button
                           disabled={busy}
                           onClick={() => moderatePendingTicket(p.id, 'approve')}
+                          title={t('Approve')}
                           style={{
-                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e60',
+                            padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
                             background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 700,
+                            fontSize: 12, fontWeight: 800,
                           }}
-                        >
-                          ✓ {t('Approve')}
-                        </button>
+                        >✓</button>
                         <button
                           disabled={busy}
                           onClick={() => {
-                            // Electron's BrowserWindow disables window.prompt(), so we
-                            // can't ask for a reason inline here — fall back to a confirm
-                            // dialog and decline without a reason. (A proper inline modal
-                            // can be added later if reasons become required.)
                             const ok = window.confirm(t('Decline this ticket? The customer will be notified.'));
                             if (!ok) return;
                             moderatePendingTicket(p.id, 'decline');
                           }}
+                          title={t('Decline')}
                           style={{
-                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',
+                            padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
                             background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 700,
+                            fontSize: 12, fontWeight: 800,
                           }}
-                        >
-                          ✕ {t('Decline')}
-                        </button>
+                        >✕</button>
                       </div>
                     </div>
                   );
