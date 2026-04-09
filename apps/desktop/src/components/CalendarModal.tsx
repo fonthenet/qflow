@@ -77,7 +77,8 @@ const APPT_SELECT = `
   scheduled_at, status, notes, wilaya, ticket_id,
   locale, reminder_sent,
   recurrence_rule, recurrence_parent_id, calendar_token,
-  created_at
+  created_at,
+  ticket:tickets(source)
 `;
 
 // ── Main Component ────────────────────────────────────────────────
@@ -1010,8 +1011,30 @@ function DesktopApptDetail({
           </span>
         </div>
 
+        {/* Source tag */}
+        {(() => {
+          const ticketSource = (a as any).ticket?.source;
+          if (!ticketSource) return null;
+          const sourceConfig: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
+            whatsapp: { label: 'WhatsApp', icon: '💬', bg: 'rgba(37,211,102,0.15)', fg: '#25d366' },
+            messenger: { label: 'Messenger', icon: '💬', bg: 'rgba(0,132,255,0.15)', fg: '#0084ff' },
+            web: { label: 'Web', icon: '🌐', bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6' },
+            kiosk: { label: 'Kiosk', icon: '🖥', bg: 'rgba(168,85,247,0.15)', fg: '#a855f7' },
+            walk_in: { label: 'Walk-in', icon: '🚶', bg: 'rgba(249,115,22,0.15)', fg: '#f97316' },
+            manual: { label: t('Manual'), icon: '✏️', bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8' },
+          };
+          const cfg = sourceConfig[ticketSource] ?? { label: ticketSource, icon: '📋', bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8' };
+          return (
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: cfg.bg, color: cfg.fg, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                {cfg.icon} {cfg.label}
+              </span>
+            </div>
+          );
+        })()}
+
         {/* Date & time card */}
-        <div style={{ background: 'rgba(15,23,42,0.4)', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+        <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10, padding: 12, marginBottom: 14 }}>
           <div style={rowStyle}>
             <span style={{ fontSize: 14 }}>📅</span>
             {d.toLocaleDateString(intlLocale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}
@@ -1057,7 +1080,7 @@ function DesktopApptDetail({
         {a.notes && (
           <>
             <div style={{ ...labelStyle, marginTop: 14 }}>{t('Notes')}</div>
-            <div style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', background: 'rgba(15,23,42,0.4)', borderRadius: 8, padding: 10, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 8, padding: 10, marginBottom: 14 }}>
               {a.notes}
             </div>
           </>
