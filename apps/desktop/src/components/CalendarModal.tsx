@@ -78,7 +78,7 @@ const APPT_SELECT = `
   locale, reminder_sent,
   recurrence_rule, recurrence_parent_id, calendar_token,
   created_at,
-  ticket:tickets(source)
+  ticket:tickets!fk_appointment_ticket(source)
 `;
 
 // ── Main Component ────────────────────────────────────────────────
@@ -152,8 +152,26 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         .limit(2000);
       if (!error && data) {
         setAppointments(data as CalendarAppointment[]);
+      } else if (error) {
+        // If the join fails (e.g. ambiguous FK), retry without the ticket join
+        console.warn('[Calendar] query error, retrying without ticket join:', error.message);
+        const { data: fallback } = await sb
+          .from('appointments')
+          .select(`id, office_id, department_id, service_id, staff_id,
+            customer_name, customer_phone, customer_email,
+            scheduled_at, status, notes, wilaya, ticket_id,
+            locale, reminder_sent,
+            recurrence_rule, recurrence_parent_id, calendar_token,
+            created_at`)
+          .eq('office_id', officeId)
+          .gte('scheduled_at', monthRange.start)
+          .lte('scheduled_at', monthRange.end)
+          .not('status', 'in', '(cancelled,declined)')
+          .order('scheduled_at', { ascending: true })
+          .limit(2000);
+        if (fallback) setAppointments(fallback as CalendarAppointment[]);
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[Calendar] load error:', err); }
     setLoading(false);
   }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth]);
 
@@ -957,8 +975,8 @@ function DesktopApptDetail({
   const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
 
   const statusLabel: Record<string, string> = {
-    pending: t('Pending'), confirmed: t('Confirmed'), checked_in: t('Checked In'),
-    completed: t('Completed'), cancelled: t('Cancelled'), no_show: t('No Show'), declined: t('Declined'),
+    pending: t('Pending'), pending_approval: t('Pending'), confirmed: t('Confirmed'), checked_in: t('Checked In'),
+    completed: t('Completed'), cancelled: t('Cancelled'), no_show: t('No Show'), declined: t('Declined'), serving: t('Serving'),
   };
 
   const labelStyle: React.CSSProperties = {
