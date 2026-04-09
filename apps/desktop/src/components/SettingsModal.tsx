@@ -495,6 +495,24 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
         if (ofcErr) throw ofcErr;
       }
+
+      // Sync visit_intake_override_mode to ALL offices (match web behavior)
+      // The org setting is the source of truth; every office must have its copy
+      // so the kiosk-server can read it from office.settings without needing the org
+      if (merged.visit_intake_override_mode) {
+        const { data: allOffices } = await sb
+          .from('offices')
+          .select('id, settings')
+          .eq('organization_id', orgId);
+        for (const ofc of allOffices ?? []) {
+          const ofcSettings = ((ofc.settings as Record<string, any>) ?? {});
+          if (ofcSettings.visit_intake_override_mode !== merged.visit_intake_override_mode) {
+            await sb.from('offices').update({
+              settings: { ...ofcSettings, visit_intake_override_mode: merged.visit_intake_override_mode },
+            }).eq('id', ofc.id);
+          }
+        }
+      }
       await load();
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2200);
@@ -846,10 +864,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                                 background: d.closed ? 'transparent' : 'rgba(34,197,94,0.06)',
                                 border: `1px solid ${d.closed ? 'var(--border, #475569)' : '#22c55e33'}`,
                               }}>
-                                <span style={{ width: 30, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
+                                <span style={{ width: 80, flexShrink: 0, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
                                   {t(`sm.day.${day.key}`)}
                                 </span>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', marginRight: 'auto' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', flexShrink: 0 }}>
                                   <input
                                     type="checkbox"
                                     checked={d.closed}
@@ -861,7 +879,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                                   {t('sm.closed')}
                                 </label>
                                 {!d.closed && (
-                                  <>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                                     <input
                                       type="time"
                                       value={d.open}
@@ -881,7 +899,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                                       }))}
                                       style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
                                     />
-                                  </>
+                                  </div>
                                 )}
                               </div>
                             );

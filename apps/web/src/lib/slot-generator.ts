@@ -111,7 +111,7 @@ export async function getAvailableSlots(
   // ── 1. Fetch office + org settings ──
   const { data: office } = await supabase
     .from('offices')
-    .select('id, operating_hours, timezone, organization_id')
+    .select('id, operating_hours, timezone, organization_id, settings')
     .eq('id', officeId)
     .single();
 
@@ -152,6 +152,22 @@ export async function getAvailableSlots(
     return { officeId, date, slots: [], meta: { ...baseMeta, office_closed: true } };
   }
 
+  // ── Resolve visit intake override mode ──
+  const officeSettings = ((office.settings as Record<string, any>) ?? {});
+  const visitIntakeOverrideMode =
+    typeof orgSettings.visit_intake_override_mode === 'string'
+      ? orgSettings.visit_intake_override_mode
+      : typeof officeSettings.visit_intake_override_mode === 'string'
+        ? officeSettings.visit_intake_override_mode
+        : 'business_hours';
+
+  // If always_closed, no slots at all
+  if (visitIntakeOverrideMode === 'always_closed') {
+    return { officeId, date, slots: [], meta: { ...baseMeta, office_closed: true } };
+  }
+
+  const isAlwaysOpen = visitIntakeOverrideMode === 'always_open';
+
   // ── Check date is within horizon ──
   const todayStr = new Date().toISOString().split('T')[0];
   const maxD = new Date(todayStr + 'T12:00:00');
@@ -186,13 +202,17 @@ export async function getAvailableSlots(
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string } | null> | null) ?? {};
   let dayHours = operatingHours[dayOfWeek];
 
-  if (dayHours === null) {
-    // Explicitly closed this day
-    return { officeId, date, slots: [], meta: { ...baseMeta, office_closed: true } };
+  if (dayHours === null || (dayHours && dayHours.open === '00:00' && dayHours.close === '00:00')) {
+    // Day is marked as closed
+    if (!isAlwaysOpen) {
+      return { officeId, date, slots: [], meta: { ...baseMeta, office_closed: true } };
+    }
+    // always_open overrides: use default full-day hours
+    dayHours = { open: '08:00', close: '20:00' };
   }
 
   if (!dayHours) {
-    // Fallback to default hours
+    // No hours configured at all — use default hours
     dayHours = { open: '08:00', close: '17:00' };
   }
 

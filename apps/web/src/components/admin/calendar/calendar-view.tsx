@@ -49,6 +49,9 @@ import {
   type CalendarAppointment,
 } from '@queueflow/shared';
 import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment } from '@/lib/actions/appointment-actions';
+import { useI18n } from '@/components/providers/locale-provider';
+
+const LOCALE_MAP: Record<string, string> = { fr: 'fr-FR', ar: 'ar-SA', en: 'en-US', es: 'es-ES' };
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -95,6 +98,8 @@ type ViewMode = 'week' | 'month';
 // ── Component ──────────────────────────────────────────────────────
 
 export function CalendarView({ offices, departments, services, staffMembers }: Props) {
+  const { locale } = useI18n();
+  const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedOfficeId, setSelectedOfficeId] = useState(offices[0]?.id ?? '');
@@ -178,8 +183,8 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
   // Header date label
   const headerLabel =
     viewMode === 'week' && weekDays.length
-      ? formatWeekRange(weekDays[0].date, weekDays[6].date)
-      : formatMonthYear(currentDate);
+      ? formatWeekRange(weekDays[0].date, weekDays[6].date, intlLocale)
+      : formatMonthYear(currentDate, intlLocale);
 
   return (
     <div className="flex flex-col h-full">
@@ -326,6 +331,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             timezone={tz}
             serviceMap={serviceMap}
             operatingHours={office?.operating_hours ?? null}
+            intlLocale={intlLocale}
             onSelectAppt={setSelectedAppt}
           />
         ) : (
@@ -335,6 +341,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             appointmentsByDate={apptsByDate}
             timezone={tz}
             serviceMap={serviceMap}
+            intlLocale={intlLocale}
             onSelectAppt={setSelectedAppt}
             onDayClick={(date) => {
               setCurrentDate(date);
@@ -365,7 +372,8 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
 
 // ── Week View ──────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 60; // px per hour row
+const SLOT_HEIGHT = 30; // px per 30-min slot
+const HOUR_HEIGHT = SLOT_HEIGHT * 2; // 60px per hour
 const START_HOUR = 6;
 const END_HOUR = 22;
 
@@ -375,6 +383,7 @@ function WeekView({
   timezone,
   serviceMap,
   operatingHours,
+  intlLocale,
   onSelectAppt,
 }: {
   days: CalendarDayInfo[];
@@ -382,11 +391,17 @@ function WeekView({
   timezone: string;
   serviceMap: Map<string, Service>;
   operatingHours: Record<string, { open: string; close: string }> | null;
+  intlLocale: string;
   onSelectAppt: (a: CalendarAppointment) => void;
 }) {
   // Group by dateKey
   const byDate = useMemo(() => groupByDate(appointments, timezone), [appointments, timezone]);
-  const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+  // Build 30-min slots: 06:00, 06:30, 07:00, ...
+  const slots: { hour: number; minute: number; label: string }[] = [];
+  for (let h = START_HOUR; h < END_HOUR; h++) {
+    slots.push({ hour: h, minute: 0, label: `${String(h).padStart(2, '0')}:00` });
+    slots.push({ hour: h, minute: 30, label: `${String(h).padStart(2, '0')}:30` });
+  }
 
   return (
     <div className="flex min-h-full">
@@ -394,15 +409,17 @@ function WeekView({
       <div className="flex-shrink-0 w-16 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
         {/* Day header spacer */}
         <div className="h-12 border-b border-gray-200 dark:border-gray-700" />
-        {hours.map((h) => (
+        {slots.map((s) => (
           <div
-            key={h}
-            className="flex items-start justify-end pr-2 text-[10px] text-gray-400 dark:text-gray-500"
-            style={{ height: HOUR_HEIGHT }}
+            key={s.label}
+            className={`flex items-start justify-end pr-2 text-[10px] ${
+              s.minute === 0
+                ? 'text-gray-500 dark:text-gray-400 font-semibold'
+                : 'text-gray-300 dark:text-gray-600 font-normal'
+            }`}
+            style={{ height: SLOT_HEIGHT }}
           >
-            <span className="-mt-1.5">
-              {String(h).padStart(2, '0')}:00
-            </span>
+            <span className="-mt-1.5">{s.label}</span>
           </div>
         ))}
       </div>
@@ -429,17 +446,20 @@ function WeekView({
                     : 'text-gray-600 dark:text-gray-300 font-medium'
                 }`}
               >
-                <span>{formatDayHeader(day.date, timezone)}</span>
+                <span>{formatDayHeader(day.date, timezone, intlLocale)}</span>
                 {isClosed && <span className="text-[9px] text-red-400 font-normal">Closed</span>}
               </div>
 
-              {/* Hour slots + positioned appointments */}
+              {/* Half-hour slots + positioned appointments */}
               <div className="relative">
-                {hours.map((h) => (
+                {slots.map((s) => (
                   <div
-                    key={h}
-                    className="border-b border-gray-100 dark:border-gray-800"
-                    style={{ height: HOUR_HEIGHT }}
+                    key={s.label}
+                    className={s.minute === 0
+                      ? 'border-b border-gray-200 dark:border-gray-700'
+                      : 'border-b border-gray-100 dark:border-gray-800'
+                    }
+                    style={{ height: SLOT_HEIGHT }}
                   />
                 ))}
 
@@ -529,6 +549,7 @@ function MonthView({
   appointmentsByDate,
   timezone,
   serviceMap,
+  intlLocale,
   onSelectAppt,
   onDayClick,
 }: {
@@ -537,10 +558,15 @@ function MonthView({
   appointmentsByDate: Map<string, CalendarAppointment[]>;
   timezone: string;
   serviceMap: Map<string, Service>;
+  intlLocale: string;
   onSelectAppt: (a: CalendarAppointment) => void;
   onDayClick: (date: Date) => void;
 }) {
-  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // Localized short day names (Mon→Lun, Tue→Mar, etc.)
+  const dayNames = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(2026, 0, 5 + i); // Jan 5 2026 = Monday
+    return new Intl.DateTimeFormat(intlLocale, { weekday: 'short' }).format(d);
+  });
   const weeks: MonthDayInfo[][] = [];
   for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
 

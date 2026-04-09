@@ -613,6 +613,74 @@ function ensureRTL(text: string): string {
   return text.split('\n').map(line => line.length > 0 ? `\u202B${line}\u202C` : line).join('\n');
 }
 
+/**
+ * Translate known error strings returned by createPublicTicket().
+ * These errors are embedded in the {error} variable of the `join_error` template.
+ * Without this, Arabic/French users see English error text inside a translated wrapper.
+ */
+const errorTranslations: Record<string, Record<Locale, string>> = {
+  'Closed for the day': {
+    fr: 'Fermé pour la journée',
+    ar: 'مغلق لباقي اليوم',
+    en: 'Closed for the day',
+  },
+  'Closed today': {
+    fr: 'Fermé aujourd\'hui',
+    ar: 'مغلق اليوم',
+    en: 'Closed today',
+  },
+  'This business is not taking visits right now.': {
+    fr: 'Cette entreprise n\'accepte pas de visites pour le moment.',
+    ar: 'هذا المكان لا يستقبل زيارات حاليًا.',
+    en: 'This business is not taking visits right now.',
+  },
+  'You are not allowed to join this queue.': {
+    fr: 'Vous n\'êtes pas autorisé à rejoindre cette file.',
+    ar: 'غير مسموح لك بالانضمام إلى هذا الطابور.',
+    en: 'You are not allowed to join this queue.',
+  },
+  'Email verification is required before joining this queue.': {
+    fr: 'La vérification de l\'email est requise avant de rejoindre cette file.',
+    ar: 'يجب التحقق من البريد الإلكتروني قبل الانضمام إلى هذا الطابور.',
+    en: 'Email verification is required before joining this queue.',
+  },
+  'Please verify your email before joining the queue.': {
+    fr: 'Veuillez vérifier votre email avant de rejoindre la file.',
+    ar: 'يرجى التحقق من بريدك الإلكتروني قبل الانضمام إلى الطابور.',
+    en: 'Please verify your email before joining the queue.',
+  },
+  'Office not found': {
+    fr: 'Bureau introuvable',
+    ar: 'المكتب غير موجود',
+    en: 'Office not found',
+  },
+  'Failed to generate ticket number': {
+    fr: 'Erreur lors de la génération du numéro de ticket',
+    ar: 'فشل في إنشاء رقم التذكرة',
+    en: 'Failed to generate ticket number',
+  },
+};
+
+/** Translate a known error string, or return it as-is if not recognized */
+export function translateError(error: string, locale: Locale): string {
+  // Exact match first
+  if (errorTranslations[error]) {
+    return errorTranslations[error][locale] ?? error;
+  }
+  // Check "Opens at HH:MM" pattern
+  const opensMatch = error.match(/^Opens at (.+)$/);
+  if (opensMatch) {
+    const time = opensMatch[1];
+    const opensAt: Record<Locale, string> = {
+      fr: `Ouvre à ${time}`,
+      ar: `يفتح على الساعة ${time}`,
+      en: `Opens at ${time}`,
+    };
+    return opensAt[locale] ?? error;
+  }
+  return error;
+}
+
 export function t(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
   let msg = messages[key]?.[locale] ?? messages[key]?.['fr'] ?? key;
   if (vars) {
@@ -2571,7 +2639,7 @@ async function handleJoin(
   });
 
   if ('error' in result && result.error) {
-    await sendMessage({ to: identifier, body: t('join_error', locale, { error: result.error }) });
+    await sendMessage({ to: identifier, body: t('join_error', locale, { error: translateError(result.error, locale) }) });
     return;
   }
 
