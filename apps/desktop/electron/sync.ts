@@ -1350,33 +1350,26 @@ export class SyncEngine {
             if (cloudRank < localRank) {
               const hasPendingSync = (checkPending.get(t.id) as any)?.c > 0;
 
-              // PROTECT intentional operator cancellations: if cancelled_at is set,
-              // the operator explicitly cancelled this ticket — never let cloud override it.
-              // Auto-cancellations (by reconciliation) only set completed_at, NOT cancelled_at.
-              if (local.status === 'cancelled' && local.cancelled_at) {
-                console.log(`[sync:pull] Protecting operator cancellation for ${t.ticket_number}: local=cancelled (cancelled_at=${local.cancelled_at}), cloud=${t.status} — skipping`);
+              // RULE: cloud is the single source of truth. The business queue MUST always
+              // match what customers see on WhatsApp / Messenger / tracking / displays (they
+              // all read from Supabase directly). The only reason to keep a more-advanced
+              // local status is when the Station has an UNPUSHED change in sync_queue —
+              // in that case the cloud hasn't seen our mutation yet and a pull-downgrade
+              // would clobber a legitimate local operator action. Otherwise, cloud wins.
+              if (hasPendingSync) {
+                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank}), pending sync exists`);
                 continue;
               }
 
-              // Allow cloud to override local "cancelled" when the cancellation was auto (reconciliation)
-              const isLocalAutoCancel = local.status === 'cancelled' && !local.cancelled_at && ['waiting', 'called', 'serving'].includes(t.status);
-              // Allow cloud to override when another platform made a legitimate change
-              // (e.g., app sent ticket back to queue, or unparked). If the station has no
-              // pending sync for this ticket, the cloud is the source of truth.
-              if (!hasPendingSync) {
-                console.log(`[sync:pull] Cloud overrides local for ${t.ticket_number}: local=${local.status} → cloud=${t.status} (no pending sync)`);
-                if (isLocalAutoCancel) {
-                  logTicketEvent(t.id, 'restored_from_cloud', {
-                    ticketNumber: t.ticket_number,
-                    fromStatus: 'cancelled',
-                    toStatus: t.status,
-                    source: 'sync_pull',
-                    details: { reason: 'cloud_still_active_local_auto_cancelled' },
-                  });
-                }
-              } else {
-                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank}), pending sync exists`);
-                continue;
+              console.log(`[sync:pull] Cloud overrides local for ${t.ticket_number}: local=${local.status} → cloud=${t.status} (no pending sync)`);
+              if (local.status === 'cancelled' && ['waiting', 'called', 'serving'].includes(t.status)) {
+                logTicketEvent(t.id, 'restored_from_cloud', {
+                  ticketNumber: t.ticket_number,
+                  fromStatus: 'cancelled',
+                  toStatus: t.status,
+                  source: 'sync_pull',
+                  details: { reason: 'cloud_is_source_of_truth', hadCancelledAt: Boolean(local.cancelled_at) },
+                });
               }
             }
 
@@ -1399,13 +1392,33 @@ export class SyncEngine {
             }
           }
 
+          // Coerce every binding to a SQLite-compatible value. Supabase may omit
+          // columns entirely (e.g. `cancelled_at` was dropped from the cloud schema),
+          // which yields `undefined` — better-sqlite3 throws on undefined bindings and
+          // that would abort the whole transaction, silently losing every ticket in the
+          // batch and causing Station's waiting count to drift from the cloud.
           upsert.run(
-            t.id, t.ticket_number, t.office_id, t.department_id, t.service_id,
-            t.desk_id, t.status, t.priority ?? 0,
+            t.id ?? null,
+            t.ticket_number ?? null,
+            t.office_id ?? null,
+            t.department_id ?? null,
+            t.service_id ?? null,
+            t.desk_id ?? null,
+            t.status ?? null,
+            t.priority ?? 0,
             typeof t.customer_data === 'string' ? t.customer_data : JSON.stringify(t.customer_data ?? {}),
-            t.created_at, t.called_at, t.called_by_staff_id, t.serving_started_at,
-            t.completed_at, t.cancelled_at, t.parked_at, t.recall_count ?? 0,
-            t.notes, t.is_remote ? 1 : 0, t.appointment_id, t.source ?? 'walk_in',
+            t.created_at ?? null,
+            t.called_at ?? null,
+            t.called_by_staff_id ?? null,
+            t.serving_started_at ?? null,
+            t.completed_at ?? null,
+            t.cancelled_at ?? null,
+            t.parked_at ?? null,
+            t.recall_count ?? 0,
+            t.notes ?? null,
+            t.is_remote ? 1 : 0,
+            t.appointment_id ?? null,
+            t.source ?? 'walk_in',
             new Date().toISOString()
           );
         }
@@ -1466,67 +1479,61 @@ export class SyncEngine {
           upsertBatch(histTickets);
         }
 
-        // ── Reconcile: mark local "active" tickets as cancelled if cloud says they're gone ──
-        // If a ticket is waiting/called/serving in SQLite but NOT in the cloud active set,
-        // it was resolved elsewhere (served, cancelled, auto-resolved). Update SQLite to match.
+        // ── AUTHORITATIVE MIRROR: local active set MUST equal cloud active set ──
+        // Rule (requested by product): the business queue must ALWAYS match the customer
+        // queue (WhatsApp, Messenger, tracking page, public displays). Those channels query
+        // Supabase directly, so Supabase is the single source of truth. After every pull we
+        // align the local SQLite active set to the cloud active set — no heuristics, no
+        // auto-cancel ghosts. Any local active row not in cloud is either:
+        //   (a) resolved in cloud → adopt cloud history state
+        //   (b) truly gone from cloud → DELETE the local row (clean mirror, no zombies)
+        // Rows protected from mirroring: pending local sync, offline-created, <2min old.
+        //
+        // Cloud-active rows missing locally (or stored as cancelled/served locally with no
+        // pending sync) are already resurrected by upsertBatch's "cloud overrides local"
+        // branch above — so after this block the Station's waiting list exactly mirrors
+        // what WhatsApp /status and the display boards see.
         if (activeTickets !== null) {
           const cloudActiveIds = new Set(activeTickets.map((t: any) => t.id));
           const localActive = this.db.prepare(
-            "SELECT id, ticket_number, status, is_offline FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
+            "SELECT id, ticket_number, status, is_offline, created_at FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
           ).all(officeId) as any[];
 
           for (const local of localActive) {
-            if (cloudActiveIds.has(local.id)) continue; // still active in cloud — fine
-            if (locallyModifiedIds.has(local.id)) continue; // we have a pending local change — don't overwrite
-            if (local.is_offline) continue; // offline-created ticket not yet synced — don't cancel it
+            if (cloudActiveIds.has(local.id)) continue; // still active in cloud — already upserted
+            if (locallyModifiedIds.has(local.id)) continue; // pending local change — don't overwrite
+            if (local.is_offline) continue; // offline-created, not yet pushed — keep it
 
-            // Extra safety: never cancel tickets created less than 2 minutes ago
-            // (covers the gap between INSERT and first successful push)
-            const localTicket = this.db.prepare("SELECT created_at FROM tickets WHERE id = ?").get(local.id) as any;
-            if (localTicket?.created_at) {
-              const ageMs = Date.now() - new Date(localTicket.created_at).getTime();
+            // Grace window: never mutate tickets created in the last 2 minutes
+            // (covers INSERT → first successful push race)
+            if (local.created_at) {
+              const ageMs = Date.now() - new Date(local.created_at).getTime();
               if (ageMs < 120_000) {
-                console.log(`[sync:reconcile] Skipping ${local.ticket_number} — created ${Math.round(ageMs / 1000)}s ago, too recent to cancel`);
+                console.log(`[sync:mirror] Skipping ${local.ticket_number} — too recent (${Math.round(ageMs / 1000)}s)`);
                 continue;
               }
             }
 
-            // This ticket is active locally but gone from cloud — check history pull
             const inHistory = (histTickets ?? []).find((t: any) => t.id === local.id);
             if (inHistory) {
-              // Cloud has it as served/cancelled — adopt that status
-              console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cloud=${inHistory.status}`);
-              logTicketEvent(local.id, 'reconcile_status_update', {
-                ticketNumber: local.ticket_number,
-                fromStatus: local.status,
-                toStatus: inHistory.status,
-                source: 'sync_reconcile',
-                details: { reason: 'cloud_status_adopted' },
-              });
-              this.onTicketError({
-                message: `${local.ticket_number} was ${inHistory.status} remotely`,
-                ticketNumber: local.ticket_number,
-                type: 'reconcile_status_change',
-              });
-            } else {
-              // Not in cloud at all (auto-resolved or deleted) — mark as cancelled locally
-              console.log(`[sync:reconcile] ${local.ticket_number}: local=${local.status} → cancelled (not in cloud)`);
-              logTicketEvent(local.id, 'auto_cancelled', {
-                ticketNumber: local.ticket_number,
-                fromStatus: local.status,
-                toStatus: 'cancelled',
-                source: 'sync_reconcile',
-                details: { reason: 'not_found_in_cloud', wasOffline: Boolean(local.is_offline) },
-              });
-              this.db.prepare(
-                "UPDATE tickets SET status = 'cancelled', completed_at = ? WHERE id = ?"
-              ).run(new Date().toISOString(), local.id);
-              this.onTicketError({
-                message: `${local.ticket_number} was removed — not found in cloud`,
-                ticketNumber: local.ticket_number,
-                type: 'auto_cancelled',
-              });
+              // Cloud has it as served/cancelled/no_show — upsertBatch already adopted that.
+              // Nothing to do here; this branch is a no-op kept for observability.
+              continue;
             }
+
+            // Truly absent from cloud (active AND 48h history). Delete locally so the
+            // Station's count and position list mirror cloud exactly. We do NOT mark
+            // it 'cancelled' — that would leave a ghost row the upsert path could not
+            // cleanly distinguish from an operator cancel on next pull.
+            console.log(`[sync:mirror] Removing ${local.ticket_number}: absent from cloud (local=${local.status})`);
+            logTicketEvent(local.id, 'mirror_removed', {
+              ticketNumber: local.ticket_number,
+              fromStatus: local.status,
+              toStatus: 'deleted',
+              source: 'sync_mirror',
+              details: { reason: 'not_found_in_cloud', wasOffline: Boolean(local.is_offline) },
+            });
+            this.db.prepare("DELETE FROM tickets WHERE id = ?").run(local.id);
           }
         }
 

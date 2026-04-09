@@ -23,6 +23,11 @@ interface Props {
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   departments?: Record<string, string>;
   services?: Record<string, string>;
+  /** IANA timezone of the office (e.g. "Africa/Algiers"). All day grouping,
+   *  range filtering, and time formatting must be done in this zone so the
+   *  Station shows the same calendar day to the operator and the customer,
+   *  regardless of where the Station machine itself is located. */
+  officeTimezone?: string;
   onClose: () => void;
   onCheckIn?: (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string }) => Promise<boolean>;
 }
@@ -35,21 +40,57 @@ function formatPhoneDisplay(phone: string | null): string {
   return phone;
 }
 
-function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+// Returns "YYYY-MM-DD" for the given Date as observed in `tz`. Used as a
+// stable, sortable group key so two appointments scheduled on the same
+// calendar day in the office's timezone always group together.
+function dayKeyInTz(d: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d);
+  const y = parts.find(p => p.type === 'year')?.value ?? '0000';
+  const m = parts.find(p => p.type === 'month')?.value ?? '01';
+  const day = parts.find(p => p.type === 'day')?.value ?? '01';
+  return `${y}-${m}-${day}`;
 }
 
-function formatDayLabel(d: Date, t: (k: string, v?: any) => string) {
-  const today = new Date();
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  if (sameDay(d, today)) return t('Today');
-  if (sameDay(d, tomorrow)) return t('Tomorrow');
-  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
+function formatDayLabel(iso: string, t: (k: string, v?: any) => string, tz: string, locale: DesktopLocale) {
+  const now = new Date();
+  const todayKey = dayKeyInTz(now, tz);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowKey = dayKeyInTz(tomorrow, tz);
+  const dKey = dayKeyInTz(new Date(iso), tz);
+  if (dKey === todayKey) return t('Today');
+  if (dKey === tomorrowKey) return t('Tomorrow');
+  const tag = locale === 'ar' ? 'ar' : locale === 'en' ? 'en-US' : 'fr-FR';
+  return new Intl.DateTimeFormat(tag, {
+    weekday: 'short', day: '2-digit', month: 'short', timeZone: tz,
+  }).format(new Date(iso));
 }
 
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+function formatTime(iso: string, tz: string) {
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+  }).format(new Date(iso));
+}
+
+// Returns the UTC instant corresponding to the given calendar date at 00:00
+// in `tz`. Used to compute the start/end of "today" and "today + 7 days"
+// windows in the office's local time, so the Station shows exactly the
+// appointments the customer would see for "today" in their own timezone.
+function startOfDayInTz(d: Date, tz: string): Date {
+  const key = dayKeyInTz(d, tz); // "YYYY-MM-DD" in office tz
+  // We need the UTC instant for "key 00:00 in tz". Use a probe and the
+  // observed offset at that instant — DST-safe enough for one-day windows.
+  const probe = new Date(`${key}T00:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(probe);
+  const get = (k: string) => Number(parts.find(p => p.type === k)?.value ?? '0');
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  const offsetMs = asUtc - probe.getTime();
+  return new Date(probe.getTime() - offsetMs);
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -62,7 +103,8 @@ const STATUS_COLORS: Record<string, string> = {
   no_show: '#64748b',
 };
 
-export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, onClose, onCheckIn }: Props) {
+export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onCheckIn }: Props) {
+  const tz = (officeTimezone && officeTimezone.trim()) || 'UTC';
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -129,11 +171,12 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
       await ensureAuth(storedAuth);
       const sb = await getSupabase();
 
-      const now = new Date();
-      const start = new Date(now); start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      if (range === 'today') end.setDate(end.getDate() + 1);
-      else end.setDate(end.getDate() + 7);
+      // Anchor "today" to the OFFICE's local day, not the Station machine's
+      // local day. Otherwise an operator running the Station from a different
+      // timezone (e.g. dev in USA, business in Algeria) sees a different set
+      // of appointments than what the customer sees on their phone.
+      const start = startOfDayInTz(new Date(), tz);
+      const end = new Date(start.getTime() + (range === 'today' ? 1 : 7) * 24 * 60 * 60 * 1000);
 
       const { data, error: qErr } = await sb
         .from('appointments')
@@ -153,7 +196,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     } finally {
       setLoading(false);
     }
-  }, [officeId, range, storedAuth]);
+  }, [officeId, range, storedAuth, tz]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -192,21 +235,20 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     return flagged;
   }, [appointments]);
 
-  // Group by day
+  // Group by day in the OFFICE's timezone (not the Station machine's local
+  // timezone) so the operator and the customer always see appointments under
+  // the same day header.
   const grouped = useMemo(() => {
     const map = new Map<string, Appointment[]>();
     for (const a of filtered) {
-      const d = new Date(a.scheduled_at);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const key = dayKeyInTz(new Date(a.scheduled_at), tz);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(a);
     }
-    return Array.from(map.entries()).map(([key, items]) => ({
-      key,
-      date: new Date(items[0].scheduled_at),
-      items,
-    }));
-  }, [filtered]);
+    return Array.from(map.entries())
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, items]) => ({ key, sampleIso: items[0].scheduled_at, items }));
+  }, [filtered, tz]);
 
   return (
     <div
@@ -336,7 +378,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                 padding: '6px 0', borderBottom: '1px solid var(--border, #334155)',
                 marginBottom: 8,
               }}>
-                {formatDayLabel(g.date, t)} · {g.items.length}
+                {formatDayLabel(g.sampleIso, t, tz, locale)} · {g.items.length}
               </div>
               {g.items.map((a) => {
                 const color = STATUS_COLORS[a.status] || '#64748b';
@@ -369,7 +411,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       minWidth: 56, fontSize: 16, fontWeight: 700,
                       color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {formatTime(a.scheduled_at)}
+                      {formatTime(a.scheduled_at, tz)}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -493,7 +535,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Service')}: </span>{svcName || '—'}</div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Department')}: </span>{deptName || '—'}</div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Status')}: </span>{t(a.status)}</div>
-                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Scheduled')}: </span>{new Date(a.scheduled_at).toLocaleString('fr-FR')}</div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Scheduled')}: </span>{new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-US' : 'fr-FR', { dateStyle: 'medium', timeStyle: 'short', timeZone: tz }).format(new Date(a.scheduled_at))}</div>
                         {a.notes && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Reason')}: </span>{a.notes}</div>}
                       </div>
                     )}

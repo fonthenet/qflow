@@ -343,14 +343,19 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
   pending_approval: {
-    fr: '⏳ Votre demande à *{name}* a bien été reçue.\n\nElle est en attente d\'approbation par le prestataire. Vous recevrez un message dès qu\'elle sera validée.',
-    ar: '⏳ تم استلام طلبك في *{name}*.\n\nفي انتظار موافقة المزود. ستتلقى رسالة فور الموافقة.',
-    en: '⏳ Your request at *{name}* has been received.\n\nIt is pending provider approval. You will receive a message as soon as it is approved.',
+    fr: '⏳ Votre demande de rendez-vous à *{name}* a bien été reçue.\n\nElle est en attente d\'approbation par le prestataire. Vous recevrez un message dès qu\'elle sera approuvée ou refusée.',
+    ar: '⏳ تم استلام طلب موعدك في *{name}*.\n\nفي انتظار موافقة المزود. ستتلقى رسالة فور الموافقة أو الرفض.',
+    en: '⏳ Your appointment request at *{name}* has been received.\n\nIt is pending provider approval. You will receive a message as soon as it is approved or declined.',
+  },
+  approval_approved: {
+    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.\n\n',
+    ar: '✅ تمت *الموافقة* على موعدك في *{name}*.\n\n',
+    en: '✅ Your appointment at *{name}* has been *approved*.\n\n',
   },
   approval_declined: {
-    fr: '❌ Votre demande à *{name}* a été refusée.\n\n{reason}',
-    ar: '❌ تم رفض طلبك في *{name}*.\n\n{reason}',
-    en: '❌ Your request at *{name}* was declined.\n\n{reason}',
+    fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\nMotif : {reason}',
+    ar: '❌ تم *رفض* موعدك في *{name}*.\n\nالسبب: {reason}',
+    en: '❌ Your appointment at *{name}* has been *declined*.\n\nReason: {reason}',
   },
   ask_wilaya: {
     fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *ANNULER* pour annuler.',

@@ -124,7 +124,25 @@ export function BookingForm({
     useState(0);
   const [supabase] = useState(() => createClient());
 
-  const today = new Date().toISOString().split('T')[0];
+  // Same-day RESERVE is not allowed — customers wanting to be seen today must
+  // use the live JOIN flow. Compute "tomorrow" in the office timezone so the
+  // earliest selectable date matches what getAvailableDates() returns.
+  const _officeTz =
+    (organization?.settings as any)?.timezone ||
+    (office as any)?.timezone ||
+    'UTC';
+  const _todayParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: _officeTz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const _y = _todayParts.find((p) => p.type === 'year')?.value ?? '1970';
+  const _m = _todayParts.find((p) => p.type === 'month')?.value ?? '01';
+  const _d = _todayParts.find((p) => p.type === 'day')?.value ?? '01';
+  const _todayAnchor = new Date(`${_y}-${_m}-${_d}T12:00:00Z`);
+  _todayAnchor.setUTCDate(_todayAnchor.getUTCDate() + 1);
+  const tomorrow = _todayAnchor.toISOString().split('T')[0];
   const orgSettings = organization?.settings ?? {};
   const bookingEmailOtpEnabled = Boolean(orgSettings.email_otp_enabled);
   const bookingEmailOtpRequired = Boolean(
@@ -764,7 +782,7 @@ export function BookingForm({
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <input
                 type="date"
-                min={today}
+                min={tomorrow}
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-lg text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"

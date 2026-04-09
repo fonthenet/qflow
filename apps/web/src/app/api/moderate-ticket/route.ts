@@ -62,14 +62,32 @@ export async function POST(request: NextRequest) {
     .single();
   const orgName: string = office?.organization?.name ?? '';
 
-  // Find the channel session (if ticket came through WhatsApp/Messenger)
-  const { data: sessionRow } = await supabase
+  // Find the channel session (if ticket came through WhatsApp/Messenger).
+  // We don't filter by state — even if the session was already moved to
+  // 'completed' (e.g. by the cancel path), we still need to send the
+  // approval/decline notification to the customer. We pick the most recent
+  // session for this ticket.
+  const { data: sessionRows } = await supabase
     .from('whatsapp_sessions')
     .select('id, channel, whatsapp_phone, messenger_psid, locale')
     .eq('ticket_id', ticket.id)
-    .maybeSingle();
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const sessionRow = (sessionRows && sessionRows[0]) || null;
 
-  const locale: Locale = (sessionRow?.locale as Locale) || 'fr';
+  // Resolve customer phone/psid: prefer the session, fall back to whatever
+  // the ticket's customer_data contains (covers tickets created via the
+  // public web flow with no live channel session).
+  const cd: any = ticket.customer_data || {};
+  const fallbackPhone: string | null = cd.whatsapp_phone || cd.phone || null;
+  const fallbackPsid: string | null = cd.messenger_psid || null;
+  const channel: 'whatsapp' | 'messenger' | null =
+    sessionRow?.channel
+      ?? (fallbackPsid ? 'messenger' : fallbackPhone ? 'whatsapp' : null);
+  const toPhone: string | null = sessionRow?.whatsapp_phone || fallbackPhone;
+  const toPsid: string | null = sessionRow?.messenger_psid || fallbackPsid;
+
+  const locale: Locale = (sessionRow?.locale as Locale) || (cd.locale as Locale) || 'fr';
 
   if (action === 'approve') {
     const { error: updErr } = await supabase
@@ -88,12 +106,19 @@ export async function POST(request: NextRequest) {
       metadata: { moderated: 'approved' },
     });
 
-    // Notify customer through original channel
+    // Notify customer through original channel. We surface delivery failure
+    // back to the Station so the operator knows if the customer wasn't reached.
+    let notified = false;
+    let notifyError: string | null = null;
     try {
       const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
       const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
       const pos = await getQueuePosition(ticket.id);
-      const joinedBody = tMsg('joined', locale, {
+      // One combined message: "Your appointment has been approved" header
+      // followed by the full ticket details (number, position, now-serving,
+      // tracking URL, quick-menu commands).
+      const approvedHeader = tMsg('approval_approved', locale, { name: orgName });
+      const joinedBody = approvedHeader + tMsg('joined', locale, {
         name: orgName,
         ticket: ticket.ticket_number,
         position: formatPosition(pos, locale),
@@ -101,24 +126,28 @@ export async function POST(request: NextRequest) {
         url: trackUrl,
       }) + tMsg('quick_menu', locale);
 
-      if (sessionRow?.channel === 'whatsapp' && sessionRow?.whatsapp_phone) {
-        await sendWhatsAppMessage({ to: sessionRow.whatsapp_phone, body: joinedBody });
-      } else if (sessionRow?.channel === 'messenger' && sessionRow?.messenger_psid) {
-        await sendMessengerMessage({ recipientId: sessionRow.messenger_psid, text: joinedBody });
+      if (channel === 'whatsapp' && toPhone) {
+        await sendWhatsAppMessage({ to: toPhone, body: joinedBody });
+        notified = true;
+      } else if (channel === 'messenger' && toPsid) {
+        await sendMessengerMessage({ recipientId: toPsid, text: joinedBody });
+        notified = true;
       }
-      // Mobile/kiosk/QR customers poll the tracking URL, which will now return 'waiting'.
-    } catch (e) {
+      // Mobile/kiosk/QR customers without a chat channel poll the tracking
+      // URL, which will now return 'waiting' — that's their notification path.
+    } catch (e: any) {
+      notifyError = e?.message || String(e);
       console.error('[moderate-ticket] notify approve failed:', e);
     }
 
-    return NextResponse.json({ ok: true, status: 'waiting' });
+    return NextResponse.json({ ok: true, status: 'waiting', notified, channel, notifyError });
   }
 
   // decline
   const declineReason = (reason ?? '').trim();
   const { error: updErr } = await supabase
     .from('tickets')
-    .update({ status: 'cancelled' })
+    .update({ status: 'cancelled', completed_at: new Date().toISOString() })
     .eq('id', ticket.id)
     .eq('status', 'pending_approval');
   if (updErr) {
@@ -136,19 +165,28 @@ export async function POST(request: NextRequest) {
     await supabase.from('whatsapp_sessions').update({ state: 'completed' }).eq('id', sessionRow.id);
   }
 
+  let notified = false;
+  let notifyError: string | null = null;
   try {
+    // If no reason was given, render the template with a generic placeholder so we
+    // don't ship a message that ends in "\n\n" with nothing after it.
+    const reasonText = declineReason
+      || (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
     const declinedBody = tMsg('approval_declined', locale, {
       name: orgName,
-      reason: declineReason || '',
+      reason: reasonText,
     });
-    if (sessionRow?.channel === 'whatsapp' && sessionRow?.whatsapp_phone) {
-      await sendWhatsAppMessage({ to: sessionRow.whatsapp_phone, body: declinedBody });
-    } else if (sessionRow?.channel === 'messenger' && sessionRow?.messenger_psid) {
-      await sendMessengerMessage({ recipientId: sessionRow.messenger_psid, text: declinedBody });
+    if (channel === 'whatsapp' && toPhone) {
+      await sendWhatsAppMessage({ to: toPhone, body: declinedBody });
+      notified = true;
+    } else if (channel === 'messenger' && toPsid) {
+      await sendMessengerMessage({ recipientId: toPsid, text: declinedBody });
+      notified = true;
     }
-  } catch (e) {
+  } catch (e: any) {
+    notifyError = e?.message || String(e);
     console.error('[moderate-ticket] notify decline failed:', e);
   }
 
-  return NextResponse.json({ ok: true, status: 'cancelled' });
+  return NextResponse.json({ ok: true, status: 'cancelled', notified, channel, notifyError });
 }

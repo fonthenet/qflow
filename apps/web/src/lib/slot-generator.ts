@@ -344,17 +344,21 @@ export async function getAvailableDates(
   staffId?: string,
   maxDates: number = 7,
 ): Promise<{ date: string; slotCount: number }[]> {
-  const todayStr = new Date().toISOString().split('T')[0];
   const supabase: any = createAdminClient();
 
-  // Get booking horizon
+  // Get booking horizon AND office timezone. We must compute "today" in the
+  // OFFICE's local day, not in UTC — otherwise a customer in Algeria booking
+  // shortly after midnight local time could still see "yesterday" listed
+  // because the UTC date hasn't rolled over yet (or vice versa).
   const { data: office } = await supabase
     .from('offices')
-    .select('organization_id')
+    .select('organization_id, timezone')
     .eq('id', officeId)
     .single();
 
   if (!office) return [];
+
+  const tz: string = (office.timezone && String(office.timezone)) || 'UTC';
 
   const { data: org } = await supabase
     .from('organizations')
@@ -365,12 +369,27 @@ export async function getAvailableDates(
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
   const horizonDays = Number(orgSettings.booking_horizon_days ?? 7);
 
-  const results: { date: string; slotCount: number }[] = [];
-  const today = new Date(todayStr + 'T12:00:00');
+  // Office-local "today" as YYYY-MM-DD.
+  const todayParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const yyyy = todayParts.find(p => p.type === 'year')?.value ?? '1970';
+  const mm = todayParts.find(p => p.type === 'month')?.value ?? '01';
+  const dd = todayParts.find(p => p.type === 'day')?.value ?? '01';
+  // Anchor the iteration on a noon-UTC date so daylight-savings shifts and
+  // toISOString() rounding can never cross the date boundary.
+  const todayAnchor = new Date(`${yyyy}-${mm}-${dd}T12:00:00Z`);
 
-  for (let i = 0; i <= horizonDays && results.length < maxDates; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
+  const results: { date: string; slotCount: number }[] = [];
+
+  // POLICY: same-day RESERVE is not allowed. Customers wanting to be seen
+  // today must use the live JOIN flow (live queue ticket). The reservation
+  // day list therefore starts at TOMORROW (i = 1) and walks forward through
+  // the booking horizon. Keeping the iteration count the same ({horizonDays}
+  // bookable days) means the customer still sees a full week ahead.
+  for (let i = 1; i <= horizonDays && results.length < maxDates; i++) {
+    const d = new Date(todayAnchor);
+    d.setUTCDate(d.getUTCDate() + i);
     const dateStr = d.toISOString().split('T')[0];
 
     const result = await getAvailableSlots({

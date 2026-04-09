@@ -752,6 +752,8 @@ function setupIPC() {
         return db.prepare(`SELECT id, name, department_id FROM services`).all();
       case 'desks':
         return db.prepare(`SELECT id, name FROM desks WHERE office_id IN (${placeholders})`).all(...officeIds);
+      case 'offices':
+        return db.prepare(`SELECT id, name, timezone, settings, operating_hours FROM offices WHERE id IN (${placeholders})`).all(...officeIds);
       default:
         return [];
     }

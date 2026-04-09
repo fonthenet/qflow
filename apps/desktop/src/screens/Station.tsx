@@ -1399,6 +1399,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
+  const [officeTimezone, setOfficeTimezone] = useState<string>('UTC');
+  useEffect(() => {
+    if (!session.office_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows: any[] = (await window.qf?.db?.query?.('offices', [session.office_id])) ?? [];
+        const tz = normalizeOfficeTimezone(rows?.[0]?.timezone);
+        if (!cancelled && tz) setOfficeTimezone(tz);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [session.office_id]);
   const storedAuth = useMemo(() => ({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
@@ -1598,8 +1611,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       try {
         await ensureAuth(storedAuth);
         const sb = await getSupabase();
-        const start = new Date(); start.setHours(0, 0, 0, 0);
-        const end = new Date(start); end.setDate(end.getDate() + 1);
+        // Anchor "today" to the OFFICE's local day, not the Station machine's
+        // local day. Otherwise an operator running the Station from a different
+        // timezone sees zero RDVs for "today" while the customer has them.
+        const tz = officeTimezone || 'UTC';
+        const partsNow = new Intl.DateTimeFormat('en-CA', {
+          timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date());
+        const yyyy = partsNow.find(p => p.type === 'year')?.value ?? '1970';
+        const mm = partsNow.find(p => p.type === 'month')?.value ?? '01';
+        const dd = partsNow.find(p => p.type === 'day')?.value ?? '01';
+        const probe = new Date(`${yyyy}-${mm}-${dd}T00:00:00Z`);
+        const probeParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz, hour12: false,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        }).formatToParts(probe);
+        const get = (k: string) => Number(probeParts.find(p => p.type === k)?.value ?? '0');
+        const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+        const start = new Date(probe.getTime() - (asUtc - probe.getTime()));
+        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
         const startIso = start.toISOString();
         const endIso = end.toISOString();
         // Walk-in count: tickets created today via station/whatsapp/etc (exclude appointment check-ins to avoid double count? we'll count all tickets and subtract appointments-from-checkins)
@@ -1618,7 +1649,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     fetchToday();
     const iv = setInterval(fetchToday, 60_000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [session.office_id, storedAuth]);
+  }, [session.office_id, storedAuth, officeTimezone]);
 
   // ── Pending approval tickets (realtime + initial fetch) ────────
   useEffect(() => {
@@ -1679,11 +1710,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
+      const result = await res.json().catch(() => ({} as any));
       setPendingTickets((prev) => prev.filter((p) => p.id !== ticketId));
+      // Customer reachable via WhatsApp/Messenger? Show "customer notified",
+      // otherwise tell the operator the customer wasn't auto-reached.
+      const notified = result?.notified === true;
+      const baseKey = action === 'approve'
+        ? (notified ? 'Appointment approved — customer notified' : 'Appointment approved — customer not reachable on chat')
+        : (notified ? 'Appointment declined — customer notified' : 'Appointment declined — customer not reachable on chat');
       showToast(
-        action === 'approve'
-          ? translate(locale, 'Ticket approved — customer notified')
-          : translate(locale, 'Ticket declined — customer notified'),
+        translate(locale, baseKey),
         action === 'approve' ? 'success' : 'info',
       );
       // Refresh local queue so approved tickets appear immediately
@@ -2833,6 +2869,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             storedAuth={storedAuth}
             departments={names.departments}
             services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
+            officeTimezone={officeTimezone}
             onClose={() => setShowAppointmentsModal(false)}
             onCheckIn={checkInAppointment}
           />
@@ -2988,7 +3025,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   const mins = minutesUntil(a.scheduled_at);
                   const isPast = mins < -5;
                   const isSoon = mins >= -5 && mins <= 15;
-                  const timeStr = `${String(new Date(a.scheduled_at).getHours()).padStart(2, '0')}:${String(new Date(a.scheduled_at).getMinutes()).padStart(2, '0')}`;
+                  const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: officeTimezone || 'UTC' }).format(new Date(a.scheduled_at));
                   const color = STATION_RDV_STATUS_COLORS[a.status] || '#64748b';
                   const svcName = (a.service_id && names.services?.[a.service_id]) || '';
                   const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
@@ -3210,9 +3247,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         <button
                           disabled={busy}
                           onClick={() => {
-                            const reason = prompt(t('Decline reason (optional)')) ?? undefined;
-                            if (reason === null) return;
-                            moderatePendingTicket(p.id, 'decline', reason || undefined);
+                            // Electron's BrowserWindow disables window.prompt(), so we
+                            // can't ask for a reason inline here — fall back to a confirm
+                            // dialog and decline without a reason. (A proper inline modal
+                            // can be added later if reasons become required.)
+                            const ok = window.confirm(t('Decline this ticket? The customer will be notified.'));
+                            if (!ok) return;
+                            moderatePendingTicket(p.id, 'decline');
                           }}
                           style={{
                             flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',

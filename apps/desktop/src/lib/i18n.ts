@@ -541,8 +541,11 @@ const FR: Messages = {
   'Approve': 'Approuver',
   'Decline': 'Refuser',
   'Decline reason (optional)': 'Raison du refus (facultatif)',
-  'Ticket approved — customer notified': 'Ticket approuvé — client notifié',
-  'Ticket declined — customer notified': 'Ticket refusé — client notifié',
+  'Decline this ticket? The customer will be notified.': 'Refuser ce ticket ? Le client sera notifié.',
+  'Appointment approved — customer notified': 'Rendez-vous approuvé — client notifié',
+  'Appointment declined — customer notified': 'Rendez-vous refusé — client notifié',
+  'Appointment approved — customer not reachable on chat': 'Rendez-vous approuvé — client non joignable sur la messagerie',
+  'Appointment declined — customer not reachable on chat': 'Rendez-vous refusé — client non joignable sur la messagerie',
   '{n} new ticket(s) awaiting approval': '{n} nouveau(x) ticket(s) en attente d\'approbation',
   'sm.field.whatsapp': 'WhatsApp',
   'sm.field.messenger': 'Messenger',
@@ -1143,8 +1146,11 @@ const AR: Messages = {
   'Approve': 'موافقة',
   'Decline': 'رفض',
   'Decline reason (optional)': 'سبب الرفض (اختياري)',
-  'Ticket approved — customer notified': 'تمت الموافقة — تم إشعار العميل',
-  'Ticket declined — customer notified': 'تم الرفض — تم إشعار العميل',
+  'Decline this ticket? The customer will be notified.': 'رفض هذا التذكرة؟ سيتم إشعار العميل.',
+  'Appointment approved — customer notified': 'تمت الموافقة على الموعد — تم إشعار العميل',
+  'Appointment declined — customer notified': 'تم رفض الموعد — تم إشعار العميل',
+  'Appointment approved — customer not reachable on chat': 'تمت الموافقة على الموعد — تعذّر الوصول إلى العميل عبر الدردشة',
+  'Appointment declined — customer not reachable on chat': 'تم رفض الموعد — تعذّر الوصول إلى العميل عبر الدردشة',
   '{n} new ticket(s) awaiting approval': '{n} تذكرة جديدة بانتظار الموافقة',
   'sm.field.whatsapp': 'واتساب',
   'sm.field.messenger': 'ماسنجر',
@@ -1358,11 +1364,18 @@ export function formatDesktopTime(value: string | Date, locale: DesktopLocale): 
 }
 
 export function formatWaitLabel(dateStr: string, locale: DesktopLocale): string {
-  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (mins < 1) {
+  const totalMins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+  if (totalMins < 1) {
     return locale === 'fr' ? '<1 min' : locale === 'ar' ? '<1 د' : '<1m';
   }
-  return locale === 'fr' ? `${mins} min` : locale === 'ar' ? `${mins} د` : `${mins}m`;
+  if (totalMins < 60) {
+    return locale === 'fr' ? `${totalMins} min` : locale === 'ar' ? `${totalMins} د` : `${totalMins}m`;
+  }
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (locale === 'fr') return m === 0 ? `${h} h` : `${h} h ${m}`;
+  if (locale === 'ar') return m === 0 ? `${h} س` : `${h} س ${m} د`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 export function desktopLanguageLabel(locale: DesktopLocale, value: DesktopLocale): string {
