@@ -448,6 +448,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '✅ *تم تأكيد الحجز!*\n\n🏢 *{name}*\n📅 *{date}* الساعة *{time}*\n👤 *{customer}*\n\nستتلقى تذكيرًا قبل ساعة من موعدك.\n\nللإلغاء، أرسل *الغاء موعد*.',
     en: '✅ *Booking confirmed!*\n\n🏢 *{name}*\n📅 *{date}* at *{time}*\n👤 *{customer}*\n\nYou\'ll receive a reminder 1 hour before your appointment.\n\nTo cancel, send *CANCEL BOOKING*.',
   },
+  booking_pending_approval: {
+    fr: '⏳ *Demande de réservation reçue*\n\n🏢 *{name}*\n📅 *{date}* à *{time}*\n👤 *{customer}*\n\nVotre créneau est *réservé* en attente de la validation du prestataire. Vous recevrez un message dès qu\'elle sera approuvée ou refusée.\n\nPour annuler, envoyez *ANNULER RDV*.',
+    ar: '⏳ *تم استلام طلب الحجز*\n\n🏢 *{name}*\n📅 *{date}* الساعة *{time}*\n👤 *{customer}*\n\nتم *حجز* موعدك في انتظار موافقة المزود. ستتلقى رسالة فور الموافقة أو الرفض.\n\nللإلغاء، أرسل *الغاء موعد*.',
+    en: '⏳ *Booking request received*\n\n🏢 *{name}*\n📅 *{date}* at *{time}*\n👤 *{customer}*\n\nYour slot is *reserved* pending provider approval. You will receive a message as soon as it is approved or declined.\n\nTo cancel, send *CANCEL BOOKING*.',
+  },
   booking_failed: {
     fr: '⚠️ Impossible de créer la réservation. Le créneau est peut-être déjà complet. Veuillez réessayer.',
     ar: 'تعذر إنشاء الحجز. قد يكون الوقت محجوزًا بالكامل. يرجى المحاولة مرة أخرى ⚠️',
@@ -3404,6 +3409,18 @@ async function confirmBooking(
   const { nanoid } = await import('nanoid');
   const calendarToken = nanoid(16);
 
+  // Approval gate (mirrors web booking + admin createAppointment).
+  // Default ON: bookings stay pending until provider approves.
+  const { data: orgRowApproval } = await supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', session.organization_id)
+    .single();
+  const requireApproval = Boolean(
+    (orgRowApproval?.settings as any)?.require_appointment_approval ?? true,
+  );
+  const initialStatus = requireApproval ? 'pending' : 'confirmed';
+
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
@@ -3413,7 +3430,7 @@ async function confirmBooking(
       customer_name: session.booking_customer_name,
       customer_phone: identifier, // WhatsApp phone number
       scheduled_at: scheduledAt,
-      status: 'pending',
+      status: initialStatus,
       calendar_token: calendarToken,
       wilaya: wilaya,
       notes: reason,
@@ -3460,9 +3477,13 @@ async function confirmBooking(
   const orgName = await getOrgName(session.organization_id);
   const dateFormatted = formatDateForLocale(session.booking_date, locale);
 
+  // When approval is required, use the pending_approval message so the
+  // customer knows the booking isn't final until staff act on it. The slot
+  // is held in the meantime.
+  const templateKey = requireApproval ? 'booking_pending_approval' : 'booking_confirmed';
   await sendMessage({
     to: identifier,
-    body: t('booking_confirmed', locale, {
+    body: t(templateKey, locale, {
       name: orgName,
       date: dateFormatted,
       time: session.booking_time,

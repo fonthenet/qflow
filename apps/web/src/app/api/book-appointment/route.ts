@@ -71,6 +71,20 @@ export async function POST(request: NextRequest) {
 
   const calendarToken = nanoid(16);
 
+  // Resolve approval gate. Default ON: bookings stay pending until provider
+  // approves. Slot capacity counts pending rows so the seat stays reserved.
+  const { data: officeForApproval } = await supabase
+    .from('offices')
+    .select('settings, organization:organizations(settings)')
+    .eq('id', officeId)
+    .single();
+  const requireApproval = Boolean(
+    (officeForApproval?.settings as any)?.require_appointment_approval ??
+      ((officeForApproval as any)?.organization?.settings?.require_appointment_approval) ??
+      true,
+  );
+  const initialStatus = requireApproval ? 'pending' : 'confirmed';
+
   const { data: appointment, error } = await supabase
     .from('appointments')
     .insert({
@@ -81,7 +95,7 @@ export async function POST(request: NextRequest) {
       customer_phone: customerPhone?.trim() || null,
       customer_email: customerEmail?.trim() || null,
       scheduled_at: scheduledAt,
-      status: 'pending',
+      status: initialStatus,
       calendar_token: calendarToken,
       notes: (notes as string)?.trim() || null,
       wilaya: (wilaya as string)?.trim() || null,

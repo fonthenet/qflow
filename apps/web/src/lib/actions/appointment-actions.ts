@@ -78,6 +78,12 @@ export async function createAppointment(data: CreateAppointmentData) {
 
   const calendarToken = nanoid(16);
 
+  // Approval gate. Default ON: bookings stay pending until provider approves.
+  const requireApproval = Boolean(
+    (organizationSettings as any).require_appointment_approval ?? true,
+  );
+  const initialStatus = requireApproval ? 'pending' : 'confirmed';
+
   const insertData: any = {
     office_id: data.officeId,
     department_id: data.departmentId,
@@ -86,7 +92,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     customer_phone: data.customerPhone || null,
     customer_email: data.customerEmail || null,
     scheduled_at: data.scheduledAt,
-    status: 'pending',
+    status: initialStatus,
     calendar_token: calendarToken,
     ...(data.staffId ? { staff_id: data.staffId } : {}),
   };
@@ -512,7 +518,8 @@ export async function createRecurringAppointments(data: CreateRecurringAppointme
       customer_phone: data.customerPhone || null,
       customer_email: data.customerEmail || null,
       scheduled_at: baseDate.toISOString(),
-      status: 'pending',
+      // Mirror the parent appointment's status (already approval-gated above).
+      status: parentAppointment.status ?? 'pending',
       calendar_token: calendarToken,
       recurrence_parent_id: parentAppointment.id,
       ...(data.staffId ? { staff_id: data.staffId } : {}),

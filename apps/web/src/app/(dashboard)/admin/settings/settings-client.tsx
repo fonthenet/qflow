@@ -282,6 +282,16 @@ export function SettingsClient({
   const [allowCancellation, setAllowCancellation] = useState<boolean>(
     settings.allow_cancellation ?? true
   );
+  // Approval gates: when on, the customer's request stays in the holding bay
+  // (tickets → pending_approval, appointments → pending) until a staff member
+  // approves or declines it from the Station / admin tools. The slot or seat
+  // remains reserved while pending so capacity isn't double-booked.
+  const [requireTicketApproval, setRequireTicketApproval] = useState<boolean>(
+    settings.require_ticket_approval ?? false
+  );
+  const [requireAppointmentApproval, setRequireAppointmentApproval] = useState<boolean>(
+    settings.require_appointment_approval ?? true
+  );
 
   const languageOptions = [
     { code: 'en', label: t('English') },
@@ -347,6 +357,8 @@ export function SettingsClient({
           daily_ticket_limit: dailyTicketLimit,
           min_booking_lead_hours: minBookingLeadHours,
           allow_cancellation: allowCancellation,
+          require_ticket_approval: requireTicketApproval,
+          require_appointment_approval: requireAppointmentApproval,
         },
       });
 
@@ -1253,6 +1265,40 @@ export function SettingsClient({
               />
               <label htmlFor="allow-cancellation" className="text-sm font-medium">
                 {t('Allow Customer Cancellation')}
+              </label>
+            </div>
+
+            {/* Require Approval — Same-Day Tickets */}
+            <div className="md:col-span-2 flex items-start gap-3 pt-2">
+              <input
+                type="checkbox"
+                id="require-ticket-approval"
+                checked={requireTicketApproval}
+                onChange={(e) => setRequireTicketApproval(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="require-ticket-approval" className="text-sm">
+                <div className="font-medium">{t('Require approval for same-day tickets')}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('When on, every JOIN ticket waits for staff approval before entering the queue.')}
+                </div>
+              </label>
+            </div>
+
+            {/* Require Approval — Future Appointments */}
+            <div className="md:col-span-2 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="require-appointment-approval"
+                checked={requireAppointmentApproval}
+                onChange={(e) => setRequireAppointmentApproval(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="require-appointment-approval" className="text-sm">
+                <div className="font-medium">{t('Require approval for future appointments')}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('When on, every RESERVE booking waits for staff approval. The slot stays reserved until you approve or decline. Turn off to auto-confirm bookings.')}
+                </div>
               </label>
             </div>
           </div>

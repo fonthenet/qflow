@@ -114,6 +114,44 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // Pending → confirmed/cancelled goes through the moderate-appointment route
+  // so the customer is notified through their original chat channel and the
+  // org-level approval rules are applied consistently. Other transitions
+  // (checked_in, completed, staff cancel of an already-confirmed booking)
+  // remain direct Supabase updates.
+  const moderateAppointment = useCallback(async (id: string, action: 'approve' | 'decline') => {
+    setBusyId(id);
+    try {
+      const res = await fetch('https://qflo.net/api/moderate-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: id, action }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      const nextStatus: string = json.status; // 'confirmed' | 'cancelled'
+      setAppointments((prev) =>
+        nextStatus === 'cancelled'
+          ? prev.filter((a) => a.id !== id)
+          : prev.map((a) => (a.id === id ? { ...a, status: nextStatus } : a))
+      );
+      // Surface notification status to the operator.
+      if (json.notified) {
+        setError(null);
+      } else if (json.channel) {
+        setError(action === 'approve'
+          ? t('Appointment approved — customer not reachable on chat')
+          : t('Appointment declined — customer not reachable on chat'));
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Moderation failed');
+    } finally {
+      setBusyId(null);
+    }
+  }, [t]);
+
   const updateStatus = useCallback(async (id: string, nextStatus: string) => {
     setBusyId(id);
     try {
@@ -385,10 +423,13 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                 const deptName = (a.department_id && departments?.[a.department_id]) || '';
                 const svcName = (a.service_id && services?.[a.service_id]) || '';
                 const busy = busyId === a.id;
-                const canConfirm = a.status === 'pending';
-                const canCheckIn = a.status === 'pending' || a.status === 'confirmed';
+                const isPending = a.status === 'pending';
+                // Pending bookings need explicit approval/decline (and notify
+                // the customer through the moderation route). Once confirmed,
+                // the operator uses Check-in / Complete / Cancel as before.
+                const canCheckIn = a.status === 'confirmed';
                 const canComplete = a.status === 'checked_in' || a.status === 'serving' || a.status === 'confirmed';
-                const canCancel = a.status !== 'cancelled' && a.status !== 'completed';
+                const canCancel = !isPending && a.status !== 'cancelled' && a.status !== 'completed';
                 const isExpanded = expandedId === a.id;
                 return (
                   <div
@@ -452,19 +493,36 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       </span>
                     )}
                     <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      {canConfirm && (
-                        <button
-                          disabled={busy}
-                          onClick={() => updateStatus(a.id, 'confirmed')}
-                          title={t('Confirm')}
-                          style={{
-                            padding: '6px 10px', borderRadius: 6, border: '1px solid #3b82f640',
-                            background: '#3b82f622', color: '#3b82f6', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 11, fontWeight: 600,
-                          }}
-                        >
-                          ✓ {t('Confirm')}
-                        </button>
+                      {isPending && (
+                        <>
+                          <button
+                            disabled={busy}
+                            onClick={() => moderateAppointment(a.id, 'approve')}
+                            title={t('Approve')}
+                            style={{
+                              padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e40',
+                              background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 11, fontWeight: 600,
+                            }}
+                          >
+                            ✓ {t('Approve')}
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
+                              moderateAppointment(a.id, 'decline');
+                            }}
+                            title={t('Decline')}
+                            style={{
+                              padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444440',
+                              background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 11, fontWeight: 600,
+                            }}
+                          >
+                            ✕ {t('Decline')}
+                          </button>
+                        </>
                       )}
                       {canCheckIn && (
                         <button
