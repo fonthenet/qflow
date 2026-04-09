@@ -171,8 +171,8 @@ select { font-family: inherit; }
 .countdown-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; color: var(--text); }
 
 /* ── Sidebar ─────────────────────────────────────────────────────── */
-.sidebar-section { padding: 16px 20px; border-bottom: 1px solid rgba(71,85,105,0.3); }
-.sidebar-header h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+.sidebar-section { padding: 10px 16px; border-bottom: 1px solid rgba(71,85,105,0.3); }
+.sidebar-header h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
 .queue-stats { display: flex; gap: 8px; }
 .stat-pill { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
 .stat-pill.waiting { background: rgba(245,158,11,0.15); color: var(--warning); }
@@ -182,7 +182,7 @@ select { font-family: inherit; }
 .queue-list { overflow-y: auto; }
 .queue-list.queue-waiting { flex: 1; min-height: 0; }
 .queue-list.queue-active { flex: 0 0 auto; }
-.queue-list h4 { font-size: 12px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.queue-list h4 { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
 .ticket-list { display: flex; flex-direction: column; gap: 4px; }
 
 .queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); transition: background 0.1s; }
