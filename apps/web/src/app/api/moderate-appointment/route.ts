@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     .eq('id', appt.office_id)
     .single();
   const orgName: string = office?.organization?.name ?? '';
+  const orgId: string | null = office?.organization_id ?? office?.organization?.id ?? null;
 
   // Resolve channel by looking up the most recent session for this contact in
   // this office. customer_phone may actually hold a Messenger PSID for chats
@@ -89,14 +90,26 @@ export async function POST(request: NextRequest) {
   let locale: Locale = 'fr';
 
   if (appt.customer_phone) {
-    const { data: sessionRows } = await supabase
-      .from('whatsapp_sessions')
-      .select('id, channel, whatsapp_phone, messenger_psid, locale')
-      .eq('office_id', appt.office_id)
-      .or(`whatsapp_phone.eq.${appt.customer_phone},messenger_psid.eq.${appt.customer_phone}`)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    const session = sessionRows && sessionRows[0];
+    // Sessions are organization-scoped, not office-scoped. Try several phone
+    // shapes (digits-only, with leading +, with leading 0 stripped) so format
+    // mismatches between the booking form and the chat flow don't drop the locale.
+    const raw = appt.customer_phone.trim();
+    const digits = raw.replace(/\D/g, '');
+    const phoneVariants = Array.from(new Set([raw, digits, `+${digits}`].filter(Boolean)));
+    let session: any = null;
+    if (orgId) {
+      const orFilter = phoneVariants
+        .flatMap((v) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
+        .join(',');
+      const { data: sessionRows } = await supabase
+        .from('whatsapp_sessions')
+        .select('id, channel, whatsapp_phone, messenger_psid, locale, state')
+        .eq('organization_id', orgId)
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      session = sessionRows && sessionRows[0];
+    }
     if (session) {
       channel = session.channel as 'whatsapp' | 'messenger';
       toPhone = session.whatsapp_phone || null;

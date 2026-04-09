@@ -1698,17 +1698,100 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [session.office_id, storedAuth, locale]);
 
   // ── Lifecycle-derived appointment buckets ─────────────────────
-  // RDV tab = confirmed (waiting for check-in)
-  // Pending tab = pending appointments (awaiting approval) + pending tickets
+  // RDV tab = confirmed (today only, waiting for check-in)
+  // Pending tab = ALL pending appointments (any future date) + pending tickets
   const confirmedAppointments = useMemo(
     () => todayAppointments.filter((a) => a.status === 'confirmed'),
     [todayAppointments],
   );
-  const pendingAppointments = useMemo(
-    () => todayAppointments.filter((a) => a.status === 'pending'),
-    [todayAppointments],
-  );
-  const pendingTotalCount = pendingTickets.length + pendingAppointments.length;
+
+  // ── Pending appointments for ALL future dates (not just today) ──
+  // Approval inbox: a customer who books for next Tuesday must appear here
+  // immediately so the provider can approve before their day arrives.
+  type PendingAppt = {
+    id: string;
+    customer_name: string | null;
+    customer_phone: string | null;
+    scheduled_at: string;
+    status: string;
+    wilaya: string | null;
+    notes: string | null;
+    service_id: string | null;
+    department_id: string | null;
+  };
+  const [pendingAppointmentsAll, setPendingAppointmentsAll] = useState<PendingAppt[]>([]);
+
+  useEffect(() => {
+    if (!session.office_id) return;
+    let cancelled = false;
+    let channel: any;
+    const fetchPendingAppts = async () => {
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const nowIso = new Date().toISOString();
+        const { data } = await sb
+          .from('appointments')
+          .select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id')
+          .eq('office_id', session.office_id)
+          .eq('status', 'pending')
+          .gte('scheduled_at', nowIso)
+          .order('scheduled_at', { ascending: true })
+          .limit(500);
+        if (cancelled) return;
+        setPendingAppointmentsAll((data as PendingAppt[]) || []);
+      } catch (e) {
+        if (!cancelled) console.warn('[Station] pending appointments fetch failed', e);
+      }
+    };
+    fetchPendingAppts();
+    getSupabase().then((sb) => {
+      if (cancelled) return;
+      channel = sb.channel(`pending-appts-${session.office_id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `office_id=eq.${session.office_id}` },
+          () => { fetchPendingAppts(); })
+        .subscribe();
+    });
+    const iv = setInterval(fetchPendingAppts, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      if (channel) getSupabase().then((sb) => sb.removeChannel(channel));
+    };
+  }, [session.office_id, storedAuth]);
+
+  // Split pending appointments by today vs upcoming using office timezone
+  const { pendingApptsToday, pendingApptsUpcoming } = useMemo(() => {
+    const tz = officeTimezone || 'UTC';
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const todayKey = fmt.format(new Date());
+    const today: PendingAppt[] = [];
+    const upcoming: PendingAppt[] = [];
+    for (const a of pendingAppointmentsAll) {
+      if (fmt.format(new Date(a.scheduled_at)) === todayKey) today.push(a);
+      else upcoming.push(a);
+    }
+    return { pendingApptsToday: today, pendingApptsUpcoming: upcoming };
+  }, [pendingAppointmentsAll, officeTimezone]);
+
+  // Group upcoming by date label for layout
+  const pendingApptsUpcomingGrouped = useMemo(() => {
+    const tz = officeTimezone || 'UTC';
+    const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const dayLabel = new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', {
+      timeZone: tz, weekday: 'long', day: 'numeric', month: 'short',
+    });
+    const groups = new Map<string, { label: string; items: PendingAppt[] }>();
+    for (const a of pendingApptsUpcoming) {
+      const d = new Date(a.scheduled_at);
+      const key = dayKey.format(d);
+      if (!groups.has(key)) groups.set(key, { label: dayLabel.format(d), items: [] });
+      groups.get(key)!.items.push(a);
+    }
+    return Array.from(groups.values());
+  }, [pendingApptsUpcoming, officeTimezone, locale]);
+
+  const pendingTotalCount = pendingTickets.length + pendingAppointmentsAll.length;
 
   // Moderate a pending appointment via the web API (approve or decline)
   const moderatePendingAppointment = useCallback(async (apptId: string, action: 'approve' | 'decline') => {
@@ -1724,9 +1807,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const result = await res.json().catch(() => ({} as any));
-      // Update local state: approve → confirmed (move to RDV); decline → remove
+      // Update local state: remove from pending list; if approved & today, also bump RDV.
+      setPendingAppointmentsAll((prev) => prev.filter((a) => a.id !== apptId));
       if (action === 'approve') {
-        setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a));
+        setTodayAppointments((prev) => {
+          const existing = prev.find((a) => a.id === apptId);
+          if (existing) return prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a);
+          return prev;
+        });
       } else {
         setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
       }
@@ -1741,6 +1829,83 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       setRdvBusyId(null);
     }
   }, [locale, showToast]);
+
+  // Render a single pending-appointment card (used in Today + Upcoming sections)
+  const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
+    const tz = officeTimezone || 'UTC';
+    const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).format(new Date(a.scheduled_at));
+    const dateStr = opts?.showDate
+      ? new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: 'short', timeZone: tz }).format(new Date(a.scheduled_at))
+      : '';
+    const svcName = (a.service_id && names.services?.[a.service_id]) || '';
+    const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
+    const busy = rdvBusyId === a.id;
+    return (
+      <div key={a.id} style={{
+        padding: '10px 12px',
+        background: 'rgba(245,158,11,0.08)',
+        border: '1px solid rgba(245,158,11,0.35)',
+        borderLeft: '3px solid #f59e0b',
+        borderRadius: 8,
+        opacity: busy ? 0.55 : 1,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+            {opts?.showDate ? `${dateStr} · ${timeStr}` : timeStr}
+          </div>
+          <span style={{
+            padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
+            textTransform: 'uppercase', letterSpacing: 0.4,
+            background: 'rgba(245,158,11,0.18)', color: '#f59e0b', whiteSpace: 'nowrap',
+          }}>RDV</span>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {a.customer_name || t('(no name)')}
+          {a.customer_phone && <span style={{ fontWeight: 400, color: 'var(--text3, #94a3b8)', direction: 'ltr', unicodeBidi: 'embed' }}> · {a.customer_phone}</span>}
+        </div>
+        {(svcName || deptName || a.wilaya) && (
+          <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {svcName && <span>{svcName}</span>}
+            {deptName && <span>· {deptName}</span>}
+            {a.wilaya && <span>· 📍 {a.wilaya}</span>}
+          </div>
+        )}
+        {a.notes && (
+          <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic' }}>
+            {a.notes}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+          <button
+            disabled={busy}
+            onClick={() => moderatePendingAppointment(a.id, 'approve')}
+            style={{
+              flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e60',
+              background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+              fontSize: 12, fontWeight: 700,
+            }}
+          >
+            ✓ {t('Approve')}
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => {
+              const ok = window.confirm(t('Decline this appointment? The customer will be notified.'));
+              if (!ok) return;
+              moderatePendingAppointment(a.id, 'decline');
+            }}
+            style={{
+              flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',
+              background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+              fontSize: 12, fontWeight: 700,
+            }}
+          >
+            ✕ {t('Decline')}
+          </button>
+        </div>
+      </div>
+    );
+  }, [officeTimezone, locale, names.services, names.departments, rdvBusyId, moderatePendingAppointment, t]);
 
   // Moderate a pending ticket via the web API (approve or decline)
   const moderatePendingTicket = useCallback(async (ticketId: string, action: 'approve' | 'decline', reason?: string) => {
@@ -3209,94 +3374,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
         {queueTab === 'pending' && (
           <div className="sidebar-section queue-list" style={{ flex: 1, overflowY: 'auto' }}>
-            <h4 style={{ margin: '0 0 8px' }}>⏳ {t('Pending approval')} ({pendingTotalCount})</h4>
-            {pendingAppointments.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3, #94a3b8)', marginBottom: 2 }}>
-                  📅 {t('Appointments')} ({pendingAppointments.length})
-                </div>
-                {pendingAppointments.map((a) => {
-                  const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: officeTimezone || 'UTC' }).format(new Date(a.scheduled_at));
-                  const dateStr = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', timeZone: officeTimezone || 'UTC' }).format(new Date(a.scheduled_at));
-                  const svcName = (a.service_id && names.services?.[a.service_id]) || '';
-                  const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
-                  const busy = rdvBusyId === a.id;
-                  return (
-                    <div key={a.id} style={{
-                      padding: '10px 12px',
-                      background: 'rgba(245,158,11,0.08)',
-                      border: '1px solid rgba(245,158,11,0.35)',
-                      borderLeft: '3px solid #f59e0b',
-                      borderRadius: 8,
-                      opacity: busy ? 0.55 : 1,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
-                          {dateStr} · {timeStr}
-                        </div>
-                        <span style={{
-                          padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
-                          textTransform: 'uppercase', letterSpacing: 0.4,
-                          background: 'rgba(245,158,11,0.18)', color: '#f59e0b', whiteSpace: 'nowrap',
-                        }}>RDV</span>
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {a.customer_name || t('(no name)')}
-                        {a.customer_phone && <span style={{ fontWeight: 400, color: 'var(--text3, #94a3b8)', direction: 'ltr', unicodeBidi: 'embed' }}> · {a.customer_phone}</span>}
-                      </div>
-                      {(svcName || deptName || a.wilaya) && (
-                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {svcName && <span>{svcName}</span>}
-                          {deptName && <span>· {deptName}</span>}
-                          {a.wilaya && <span>· 📍 {a.wilaya}</span>}
-                        </div>
-                      )}
-                      {a.notes && (
-                        <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic' }}>
-                          {a.notes}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-                        <button
-                          disabled={busy}
-                          onClick={() => moderatePendingAppointment(a.id, 'approve')}
-                          style={{
-                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e60',
-                            background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 700,
-                          }}
-                        >
-                          ✓ {t('Approve')}
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            const ok = window.confirm(t('Decline this appointment? The customer will be notified.'));
-                            if (!ok) return;
-                            moderatePendingAppointment(a.id, 'decline');
-                          }}
-                          style={{
-                            flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444460',
-                            background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 700,
-                          }}
-                        >
-                          ✕ {t('Decline')}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <h4 style={{ margin: '0 0 10px' }}>⏳ {t('Pending approval')} ({pendingTotalCount})</h4>
+            {pendingTotalCount === 0 && (
+              <div className="queue-empty">{t('No pending items')}</div>
             )}
+
+            {/* ── Section 1: Live tickets (today, real-time) ── */}
             {pendingTickets.length > 0 && (
-              <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3, #94a3b8)', marginBottom: 6 }}>
-                🎫 {t('Tickets')} ({pendingTickets.length})
+              <div style={{
+                fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6,
+                color: '#f59e0b', marginBottom: 6, paddingBottom: 4,
+                borderBottom: '1px solid rgba(245,158,11,0.25)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <span>🎫 {t('Live tickets')}</span>
+                <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 7px', fontSize: 9 }}>
+                  {pendingTickets.length}
+                </span>
               </div>
             )}
-            {pendingTotalCount === 0 ? (
-              <div className="queue-empty">{t('No pending tickets')}</div>
-            ) : pendingTickets.length === 0 ? null : (
+            {pendingTickets.length === 0 ? null : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {pendingTickets.map((p) => {
                   const cd = (() => { try { return typeof p.customer_data === 'string' ? JSON.parse(p.customer_data) : (p.customer_data || {}); } catch { return {}; } })();
@@ -3385,6 +3482,58 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* ── Section 2: Today's appointments ── */}
+            {pendingApptsToday.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6,
+                  color: '#f59e0b', marginBottom: 6, paddingBottom: 4,
+                  borderBottom: '1px solid rgba(245,158,11,0.25)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <span>📅 {t('Today\'s appointments')}</span>
+                  <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 7px', fontSize: 9 }}>
+                    {pendingApptsToday.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {pendingApptsToday.map((a) => renderPendingApptCard(a, { showDate: false }))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Section 3: Upcoming reservations (grouped by day) ── */}
+            {pendingApptsUpcoming.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6,
+                  color: '#f59e0b', marginBottom: 6, paddingBottom: 4,
+                  borderBottom: '1px solid rgba(245,158,11,0.25)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <span>📆 {t('Upcoming reservations')}</span>
+                  <span style={{ background: '#f59e0b', color: '#000', borderRadius: 10, padding: '1px 7px', fontSize: 9 }}>
+                    {pendingApptsUpcoming.length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {pendingApptsUpcomingGrouped.map((g) => (
+                    <div key={g.label}>
+                      <div style={{
+                        fontSize: 10, fontWeight: 700, color: 'var(--text3, #94a3b8)',
+                        marginBottom: 4, paddingLeft: 2, textTransform: 'capitalize',
+                      }}>
+                        {g.label} · {g.items.length}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {g.items.map((a) => renderPendingApptCard(a, { showDate: false }))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
