@@ -3078,12 +3078,15 @@ async function handleCancel(
     .eq('id', session.ticket_id)
     .single();
 
-  // If the ticket is being served (or already completed), refuse to cancel
+  // If the ticket is being served (or already completed), try to find another
+  // cancellable ticket for this phone before giving up.
   if (ticketRow && !['waiting', 'issued', 'called', 'pending_approval'].includes(ticketRow.status)) {
+    // Fallback: check if there's a different cancellable ticket by phone
+    const fallbackCancelled = await cancelPendingTicketByPhone(identifier, locale, channel, sendMessage, supabase);
+    if (fallbackCancelled) return;
     if (ticketRow.status === 'serving') {
       await sendMessage({ to: identifier, body: t('cannot_cancel_serving', locale) });
     } else {
-      // Already served/cancelled/no_show — just tell them it's inactive
       await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
     }
     return;
