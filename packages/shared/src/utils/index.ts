@@ -1,4 +1,5 @@
 export * from './business-hours';
+export * from './calendar';
 
 export const isElectron = () =>
   typeof window !== 'undefined' && !!(window as any).electronAPI;

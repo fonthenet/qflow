@@ -6,6 +6,7 @@ import { WILAYAS, formatWilayaLabel } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { AppointmentsModal } from '../components/AppointmentsModal';
+import { CalendarModal } from '../components/CalendarModal';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
@@ -1428,6 +1429,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
   // Listen for native File > Settings menu click
   useEffect(() => {
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
@@ -1448,7 +1450,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [priorityDropdownId, setPriorityDropdownId] = useState<string | null>(null);
   const [pausedAt, setPausedAt] = useState<number | null>(null);
   const [pauseElapsed, setPauseElapsed] = useState(0);
-  const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string }[]>([]);
+  const [allServices, setAllServices] = useState<{ id: string; name: string; department_id: string; color?: string | null; estimated_service_time?: number }[]>([]);
   const [messengerPageId, setMessengerPageId] = useState<string | null>(null);
   const [whatsappPhone, setWhatsappPhone] = useState<string | null>(null);
   const [customerHistory, setCustomerHistory] = useState<{ customer: any; recent_tickets: any[] } | null>(null);
@@ -1526,7 +1528,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           services: Object.fromEntries((svcs ?? []).map((s: any) => [s.id, s.name])),
           desks: Object.fromEntries((desks ?? []).map((d: any) => [d.id, d.name])),
         });
-        setAllServices((svcs ?? []).map((s: any) => ({ id: s.id, name: s.name, department_id: s.department_id })));
+        setAllServices((svcs ?? []).map((s: any) => ({ id: s.id, name: s.name, department_id: s.department_id, color: s.color ?? null, estimated_service_time: s.estimated_service_time ?? 30 })));
       } catch {
         // Names will be empty until sync pulls data
       }
@@ -3000,6 +3002,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >
               📅 {t('Appointments')}
             </button>
+            {/* Calendar pill */}
+            <button
+              onClick={() => setShowCalendarModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 14px', borderRadius: 20,
+                border: '1.5px solid rgba(99,102,241,0.4)',
+                background: 'rgba(99,102,241,0.12)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: '#818cf8',
+              }}
+            >
+              🗓 {t('Calendar')}
+            </button>
             {/* Staff status dropdown — only show when not available */}
             {staffStatus !== 'available' && (
             <div style={{ position: 'relative' }}>
@@ -3106,10 +3122,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           />
         )}
 
+        {/* Calendar Modal */}
+        {showCalendarModal && (
+          <CalendarModal
+            organizationId={session.organization_id}
+            officeId={session.office_id}
+            locale={locale}
+            storedAuth={storedAuth}
+            departments={names.departments}
+            services={allServices}
+            officeTimezone={officeTimezone}
+            onClose={() => setShowCalendarModal(false)}
+            onCheckIn={checkInAppointment}
+          />
+        )}
+
         {/* Settings Modal */}
         {showSettingsModal && (
           <SettingsModal
             organizationId={session.organization_id}
+            officeId={session.office_id}
             locale={locale}
             storedAuth={storedAuth}
             officeName={session.office_name}

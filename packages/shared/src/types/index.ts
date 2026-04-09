@@ -158,6 +158,8 @@ export interface Customer {
   created_at: string;
 }
 
+export type AppointmentStatus = 'pending' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled' | 'no_show' | 'declined';
+
 export interface Appointment {
   id: string;
   office_id: string;
@@ -167,9 +169,24 @@ export interface Appointment {
   customer_phone: string | null;
   customer_email: string | null;
   scheduled_at: string;
-  status: 'pending' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled';
+  status: AppointmentStatus;
   ticket_id: string | null;
+  notes: string | null;
+  staff_id: string | null;
+  locale: string | null;
+  recurrence_rule: string | null;
+  recurrence_parent_id: string | null;
+  reminder_sent: boolean;
+  calendar_token: string | null;
   created_at: string;
+}
+
+/** Appointment with joined relations for calendar display */
+export interface CalendarAppointment extends Appointment {
+  service?: { name: string; color?: string | null; estimated_service_time: number } | null;
+  department?: { name: string; code: string } | null;
+  staff?: { full_name: string } | null;
+  wilaya?: string | null;
 }
 
 export interface Feedback {

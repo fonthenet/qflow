@@ -400,6 +400,84 @@ export async function getAppointmentsByDate(officeId: string, date: string) {
   return { data: appointments ?? [] };
 }
 
+/**
+ * Fetch appointments within a date range for calendar view.
+ * Returns appointments with joined service/department/staff data.
+ */
+export async function getAppointmentsForRange(
+  officeId: string,
+  startIso: string,
+  endIso: string,
+  filters?: { departmentId?: string; serviceId?: string; staffId?: string; excludeCancelled?: boolean },
+) {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from('appointments')
+    .select(`
+      id, office_id, department_id, service_id, staff_id,
+      customer_name, customer_phone, customer_email,
+      scheduled_at, status, notes, wilaya, ticket_id,
+      locale, reminder_sent,
+      recurrence_rule, recurrence_parent_id, calendar_token,
+      created_at,
+      service:services(name, color, estimated_service_time),
+      department:departments(name, code),
+      staff:staff(full_name)
+    `)
+    .eq('office_id', officeId)
+    .gte('scheduled_at', startIso)
+    .lte('scheduled_at', endIso)
+    .order('scheduled_at', { ascending: true })
+    .limit(1000);
+
+  if (filters?.excludeCancelled !== false) {
+    query = query.not('status', 'in', '(cancelled,declined)');
+  }
+  if (filters?.departmentId) {
+    query = query.eq('department_id', filters.departmentId);
+  }
+  if (filters?.serviceId) {
+    query = query.eq('service_id', filters.serviceId);
+  }
+  if (filters?.staffId) {
+    query = query.eq('staff_id', filters.staffId);
+  }
+
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  return { data: data ?? [] };
+}
+
+/**
+ * Reschedule an appointment to a new time.
+ */
+export async function rescheduleAppointment(appointmentId: string, newScheduledAt: string) {
+  const supabase = await createClient();
+
+  const { data: appt, error: fetchErr } = await supabase
+    .from('appointments')
+    .select('id, status, office_id')
+    .eq('id', appointmentId)
+    .single();
+
+  if (fetchErr || !appt) return { error: 'Appointment not found' };
+  if (appt.status === 'cancelled' || appt.status === 'completed') {
+    return { error: `Cannot reschedule a ${appt.status} appointment` };
+  }
+
+  const { error: updErr } = await supabase
+    .from('appointments')
+    .update({ scheduled_at: newScheduledAt })
+    .eq('id', appointmentId);
+
+  if (updErr) return { error: updErr.message };
+
+  revalidatePath('/admin/calendar');
+  revalidatePath('/admin/bookings');
+  return { data: { success: true } };
+}
+
 export async function getAvailableSlots(
   officeId: string,
   serviceId: string,

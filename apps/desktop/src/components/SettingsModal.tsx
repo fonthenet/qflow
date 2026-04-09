@@ -4,12 +4,46 @@ import { t as translate, type DesktopLocale } from '../lib/i18n';
 
 interface Props {
   organizationId: string;
+  officeId?: string;
   locale: DesktopLocale;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   officeName?: string;
   onClose: () => void;
   onSaved?: () => void;
 }
+
+const WEEK_DAYS = [
+  { key: 'monday', label: 'Monday' },
+  { key: 'tuesday', label: 'Tuesday' },
+  { key: 'wednesday', label: 'Wednesday' },
+  { key: 'thursday', label: 'Thursday' },
+  { key: 'friday', label: 'Friday' },
+  { key: 'saturday', label: 'Saturday' },
+  { key: 'sunday', label: 'Sunday' },
+] as const;
+
+const TIMEZONES = [
+  { value: 'Africa/Algiers', label: 'Africa/Algiers (UTC+1)' },
+  { value: 'Africa/Casablanca', label: 'Africa/Casablanca (UTC+0/+1)' },
+  { value: 'Africa/Cairo', label: 'Africa/Cairo (UTC+2)' },
+  { value: 'Africa/Tunis', label: 'Africa/Tunis (UTC+1)' },
+  { value: 'Africa/Lagos', label: 'Africa/Lagos (UTC+1)' },
+  { value: 'Africa/Nairobi', label: 'Africa/Nairobi (UTC+3)' },
+  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (UTC+2)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (UTC+1/+2)' },
+  { value: 'Europe/London', label: 'Europe/London (UTC+0/+1)' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (UTC+1/+2)' },
+  { value: 'Europe/Istanbul', label: 'Europe/Istanbul (UTC+3)' },
+  { value: 'Europe/Moscow', label: 'Europe/Moscow (UTC+3)' },
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (UTC+4)' },
+  { value: 'Asia/Riyadh', label: 'Asia/Riyadh (UTC+3)' },
+  { value: 'Asia/Beirut', label: 'Asia/Beirut (UTC+2/+3)' },
+  { value: 'America/New_York', label: 'America/New_York (UTC-5/-4)' },
+  { value: 'America/Chicago', label: 'America/Chicago (UTC-6/-5)' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (UTC-8/-7)' },
+  { value: 'America/Toronto', label: 'America/Toronto (UTC-5/-4)' },
+  { value: 'UTC', label: 'UTC' },
+];
 
 type SettingsShape = Record<string, any>;
 
@@ -58,7 +92,7 @@ function coerceArr(v: any, def: string[]): string[] {
 }
 
 // ─── Component ─────────────────────────────────────────────────────────
-export function SettingsModal({ organizationId, locale, storedAuth, officeName, onClose, onSaved }: Props) {
+export function SettingsModal({ organizationId, officeId, locale, storedAuth, officeName, onClose, onSaved }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
 
   const [loading, setLoading] = useState(true);
@@ -74,6 +108,16 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
   // Org-level non-settings fields
   const [orgName, setOrgName] = useState<string>('');
   const [originalOrgName, setOriginalOrgName] = useState<string>('');
+
+  // Office-level: timezone + operating hours
+  const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
+  const [originalTimezone, setOriginalTimezone] = useState<string>('Africa/Algiers');
+  type DaySchedule = { open: string; close: string; closed: boolean };
+  const defaultSchedule: Record<string, DaySchedule> = Object.fromEntries(
+    WEEK_DAYS.map(d => [d.key, { open: '08:00', close: '17:00', closed: d.key === 'friday' || d.key === 'saturday' }]),
+  );
+  const [schedule, setSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
+  const [originalSchedule, setOriginalSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
 
   // All settings values stored in a single map (string->any)
   const [values, setValues] = useState<Record<string, any>>({});
@@ -238,8 +282,8 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
         { key: 'max_no_show_allowed', label: t('sm.field.max_no_show'), type: 'num', default: 3, min: 0 },
         { key: 'visit_intake_override_mode', label: t('sm.field.intake_override'), type: 'enum', default: 'business_hours', options: [
           { value: 'business_hours', label: t('sm.intake.hours') },
-          { value: 'always', label: t('sm.intake.always') },
-          { value: 'never', label: t('sm.intake.never') },
+          { value: 'always_open', label: t('sm.intake.always') },
+          { value: 'always_closed', label: t('sm.intake.never') },
         ]},
       ],
     },
@@ -281,17 +325,38 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
     try {
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
-      const { data, error: err } = await sb
-        .from('organizations')
-        .select('name, settings')
-        .eq('id', orgId)
-        .single();
+      const [{ data, error: err }, officeResult] = await Promise.all([
+        sb.from('organizations').select('name, settings').eq('id', orgId).single(),
+        officeId
+          ? sb.from('offices').select('timezone, operating_hours, settings').eq('id', officeId).single()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
       if (err) { setError(err.message); return; }
       const s: SettingsShape = ((data as any)?.settings ?? {}) as SettingsShape;
       originalRef.current = { ...s };
       const name = ((data as any)?.name ?? '') as string;
       setOrgName(name);
       setOriginalOrgName(name);
+
+      // Load office timezone + operating hours
+      if (officeResult?.data) {
+        const ofc = officeResult.data as any;
+        const tz = ofc.timezone || 'Africa/Algiers';
+        setOfficeTimezone(tz);
+        setOriginalTimezone(tz);
+        const oh = ofc.operating_hours as Record<string, { open: string; close: string } | null> | null;
+        const sched: Record<string, DaySchedule> = {};
+        for (const d of WEEK_DAYS) {
+          const h = oh?.[d.key];
+          if (!h || (h.open === '00:00' && h.close === '00:00')) {
+            sched[d.key] = { open: '08:00', close: '17:00', closed: true };
+          } else {
+            sched[d.key] = { open: h.open, close: h.close, closed: false };
+          }
+        }
+        setSchedule(sched);
+        setOriginalSchedule(JSON.parse(JSON.stringify(sched)));
+      }
 
       // Initialize values per field
       const init: Record<string, any> = {};
@@ -332,6 +397,8 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
   // ─── Dirty tracking ───────────────────────────────────────────────
   const dirty = useMemo(() => {
     if (orgName !== originalOrgName) return true;
+    if (officeTimezone !== originalTimezone) return true;
+    if (JSON.stringify(schedule) !== JSON.stringify(originalSchedule)) return true;
     const o = originalRef.current;
     for (const key of allFieldKeys) {
       const cur = values[key];
@@ -411,6 +478,23 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
         .update(updatePayload)
         .eq('id', orgId);
       if (updErr) throw updErr;
+
+      // Save office-level fields (timezone + operating hours)
+      if (officeId) {
+        const operatingHours: Record<string, { open: string; close: string }> = {};
+        for (const d of WEEK_DAYS) {
+          const day = schedule[d.key];
+          operatingHours[d.key] = day.closed
+            ? { open: '00:00', close: '00:00' }
+            : { open: day.open, close: day.close };
+        }
+        const officeUpdate: any = {
+          timezone: officeTimezone,
+          operating_hours: operatingHours,
+        };
+        const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
+        if (ofcErr) throw ofcErr;
+      }
       await load();
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2200);
@@ -704,6 +788,110 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
                 />
                 {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
               </div>
+
+              {/* Work Schedule & Timezone section */}
+              {(!q || 'work schedule timezone hours'.includes(q)) && (
+                <div style={cardStyle}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSection('schedule')}
+                    style={{
+                      width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
+                      padding: '14px 16px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      color: 'var(--text, #f1f5f9)',
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>🕐</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>{t('sm.section.schedule')}</span>
+                    <span style={{ fontSize: 16, color: 'var(--text2, #94a3b8)', transform: openSections['schedule'] ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+                  </button>
+                  {openSections['schedule'] && (
+                    <div style={{ padding: '0 16px 14px', borderTop: '1px solid var(--border, #475569)' }}>
+                      {/* Timezone */}
+                      <div style={{ padding: '10px 0' }}>
+                        <label style={labelStyle}>{t('sm.field.timezone')}</label>
+                        <select
+                          value={officeTimezone}
+                          onChange={(e) => setOfficeTimezone(e.target.value)}
+                          style={inputStyle}
+                        >
+                          {TIMEZONES.map(tz => (
+                            <option key={tz.value} value={tz.value}>{tz.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Always Open toggle — wired to visit_intake_override_mode org setting */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{t('sm.field.always_open')}</div>
+                          <div style={helpStyle}>{t('sm.help.always_open')}</div>
+                        </div>
+                        <Toggle
+                          on={values.visit_intake_override_mode === 'always_open'}
+                          onChange={(on) => setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }))}
+                        />
+                      </div>
+
+                      {/* Weekly schedule — hidden when always open */}
+                      {values.visit_intake_override_mode !== 'always_open' && (
+                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {WEEK_DAYS.map(day => {
+                            const d = schedule[day.key];
+                            return (
+                              <div key={day.key} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '6px 10px', borderRadius: 8,
+                                background: d.closed ? 'transparent' : 'rgba(34,197,94,0.06)',
+                                border: `1px solid ${d.closed ? 'var(--border, #475569)' : '#22c55e33'}`,
+                              }}>
+                                <span style={{ width: 30, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
+                                  {t(`sm.day.${day.key}`)}
+                                </span>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', marginRight: 'auto' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={d.closed}
+                                    onChange={() => setSchedule(prev => ({
+                                      ...prev,
+                                      [day.key]: { ...prev[day.key], closed: !prev[day.key].closed },
+                                    }))}
+                                  />
+                                  {t('sm.closed')}
+                                </label>
+                                {!d.closed && (
+                                  <>
+                                    <input
+                                      type="time"
+                                      value={d.open}
+                                      onChange={(e) => setSchedule(prev => ({
+                                        ...prev,
+                                        [day.key]: { ...prev[day.key], open: e.target.value },
+                                      }))}
+                                      style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                                    />
+                                    <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>→</span>
+                                    <input
+                                      type="time"
+                                      value={d.close}
+                                      onChange={(e) => setSchedule(prev => ({
+                                        ...prev,
+                                        [day.key]: { ...prev[day.key], close: e.target.value },
+                                      }))}
+                                      style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                                    />
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {filteredSections.map(sec => {
                 const open = !!openSections[sec.id];
