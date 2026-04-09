@@ -2853,6 +2853,43 @@ async function findAndReplyAppointmentStatus(
     .order('scheduled_at', { ascending: true })
     .limit(1);
 
+  // Also check for pending_approval tickets by phone (JOIN flow creates tickets,
+  // not appointments). The old STATUS call may have closed the session, so we
+  // need to find the ticket directly.
+  const last9 = digits.slice(-9);
+  let pendingTicket: any = null;
+  if (last9.length >= 9) {
+    const { data: tickets } = await supabase
+      .from('tickets')
+      .select('id, office_id, locale, ticket_number, status')
+      .eq('status', 'pending_approval')
+      .filter('customer_data->>phone', 'ilike', `%${last9}%`)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    pendingTicket = tickets?.[0] ?? null;
+  }
+
+  // If we found a pending_approval ticket, reply with pending message
+  if (pendingTicket && !appts?.length) {
+    const ticketLocale: Locale = (pendingTicket.locale === 'ar' || pendingTicket.locale === 'en' || pendingTicket.locale === 'fr')
+      ? pendingTicket.locale : locale;
+    let orgName = '';
+    if (pendingTicket.office_id) {
+      const { data: office } = await supabase
+        .from('offices').select('organization_id').eq('id', pendingTicket.office_id).maybeSingle();
+      if (office?.organization_id) {
+        const { data: org } = await supabase
+          .from('organizations').select('name').eq('id', office.organization_id).maybeSingle();
+        orgName = org?.name ?? '';
+      }
+    }
+    await sendMessage({
+      to: identifier,
+      body: t('pending_approval', ticketLocale, { name: orgName || (ticketLocale === 'ar' ? 'المزود' : ticketLocale === 'en' ? 'Provider' : 'Prestataire') }),
+    });
+    return true;
+  }
+
   if (!appts?.length) return false;
 
   const appt = appts[0];
