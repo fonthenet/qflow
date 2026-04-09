@@ -77,8 +77,7 @@ const APPT_SELECT = `
   scheduled_at, status, notes, wilaya, ticket_id,
   locale, reminder_sent,
   recurrence_rule, recurrence_parent_id, calendar_token,
-  created_at,
-  ticket:tickets!fk_appointment_ticket(source)
+  created_at
 `;
 
 // ── Main Component ────────────────────────────────────────────────
@@ -93,6 +92,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAppt, setSelectedAppt] = useState<CalendarAppointment | null>(null);
+  const [ticketSource, setTicketSource] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
@@ -152,24 +152,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         .limit(2000);
       if (!error && data) {
         setAppointments(data as CalendarAppointment[]);
-      } else if (error) {
-        // If the join fails (e.g. ambiguous FK), retry without the ticket join
-        console.warn('[Calendar] query error, retrying without ticket join:', error.message);
-        const { data: fallback } = await sb
-          .from('appointments')
-          .select(`id, office_id, department_id, service_id, staff_id,
-            customer_name, customer_phone, customer_email,
-            scheduled_at, status, notes, wilaya, ticket_id,
-            locale, reminder_sent,
-            recurrence_rule, recurrence_parent_id, calendar_token,
-            created_at`)
-          .eq('office_id', officeId)
-          .gte('scheduled_at', monthRange.start)
-          .lte('scheduled_at', monthRange.end)
-          .not('status', 'in', '(cancelled,declined)')
-          .order('scheduled_at', { ascending: true })
-          .limit(2000);
-        if (fallback) setAppointments(fallback as CalendarAppointment[]);
       }
     } catch (err) { console.error('[Calendar] load error:', err); }
     setLoading(false);
@@ -213,6 +195,24 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleMiniMonthNav = (d: Date) => {
     if (isWithinHorizon(d, 3)) setCurrentDate(d);
   };
+
+  // ── Select appointment & fetch ticket source ──────────────────
+
+  const selectAppt = useCallback(async (appt: CalendarAppointment) => {
+    setSelectedAppt(appt);
+    setTicketSource(null);
+    if (appt.ticket_id) {
+      try {
+        const sb = await getSupabase();
+        const { data: ticket } = await sb
+          .from('tickets')
+          .select('source')
+          .eq('id', appt.ticket_id)
+          .single();
+        if (ticket?.source) setTicketSource(ticket.source);
+      } catch { /* ignore */ }
+    }
+  }, []);
 
   // ── Actions on appointment ─────────────────────────────────────
 
@@ -488,7 +488,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 locale={locale}
                 selectedApptId={selectedAppt?.id ?? null}
                 operatingHours={alwaysOpen ? null : operatingHours}
-                onSelect={setSelectedAppt}
+                onSelect={selectAppt}
               />
             ) : (
               <DesktopMonthView
@@ -500,7 +500,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 intlLocale={intlLocale}
                 locale={locale}
                 operatingHours={alwaysOpen ? null : operatingHours}
-                onSelect={setSelectedAppt}
+                onSelect={selectAppt}
                 onDayClick={(date) => { setCurrentDate(date); setViewMode('week'); }}
               />
             )}
@@ -510,6 +510,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           {selectedAppt && (
             <DesktopApptDetail
               appointment={selectedAppt}
+              ticketSource={ticketSource}
               timezone={tz}
               serviceMap={serviceMap}
               departments={departments}
@@ -950,10 +951,11 @@ function DesktopMonthView({
 // ── Appointment Detail Panel ──────────────────────────────────────
 
 function DesktopApptDetail({
-  appointment: a, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
+  appointment: a, ticketSource, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
   onClose, onCancel, onCheckIn, onApprove, onDecline,
 }: {
   appointment: CalendarAppointment;
+  ticketSource: string | null;
   timezone: string;
   serviceMap: Map<string, any>;
   departments: Record<string, string>;
@@ -1029,27 +1031,21 @@ function DesktopApptDetail({
           </span>
         </div>
 
-        {/* Source tag */}
-        {(() => {
-          const ticketSource = (a as any).ticket?.source;
-          if (!ticketSource) return null;
-          const sourceConfig: Record<string, { label: string; icon: string; bg: string; fg: string }> = {
-            whatsapp: { label: 'WhatsApp', icon: '💬', bg: 'rgba(37,211,102,0.15)', fg: '#25d366' },
-            messenger: { label: 'Messenger', icon: '💬', bg: 'rgba(0,132,255,0.15)', fg: '#0084ff' },
-            web: { label: 'Web', icon: '🌐', bg: 'rgba(59,130,246,0.15)', fg: '#3b82f6' },
-            kiosk: { label: 'Kiosk', icon: '🖥', bg: 'rgba(168,85,247,0.15)', fg: '#a855f7' },
-            walk_in: { label: 'Walk-in', icon: '🚶', bg: 'rgba(249,115,22,0.15)', fg: '#f97316' },
-            manual: { label: t('Manual'), icon: '✏️', bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8' },
-          };
-          const cfg = sourceConfig[ticketSource] ?? { label: ticketSource, icon: '📋', bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8' };
-          return (
-            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 8, background: cfg.bg, color: cfg.fg, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                {cfg.icon} {cfg.label}
-              </span>
-            </div>
-          );
-        })()}
+        {/* Source badge — same CSS classes as queue tickets */}
+        {ticketSource && (
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {ticketSource === 'whatsapp' && <span className="badge whatsapp">{t('WhatsApp')}</span>}
+            {ticketSource === 'messenger' && <span className="badge messenger">{t('Messenger')}</span>}
+            {ticketSource === 'qr_code' && <span className="badge qr-code">{t('QR Code')}</span>}
+            {ticketSource === 'mobile_app' && <span className="badge mobile-app">{t('Mobile App')}</span>}
+            {ticketSource === 'kiosk' && <span className="badge kiosk">{t('Kiosk')}</span>}
+            {ticketSource === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
+            {ticketSource === 'walk_in' && <span className="badge" style={{ background: 'rgba(249,115,22,0.15)', color: '#f97316' }}>{t('Walk-in')}</span>}
+            {!['whatsapp', 'messenger', 'qr_code', 'mobile_app', 'kiosk', 'in_house', 'walk_in'].includes(ticketSource) && (
+              <span className="badge">{ticketSource}</span>
+            )}
+          </div>
+        )}
 
         {/* Date & time card */}
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10, padding: 12, marginBottom: 14 }}>
