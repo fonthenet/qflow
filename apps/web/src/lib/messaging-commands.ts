@@ -352,6 +352,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '✅ تم *قبول* موعدك في *{name}*.\n\n🎫 ستستلم تذكرتك عند وصولك إلى المكان.',
     en: '✅ Your appointment at *{name}* has been *approved*.\n\n🎫 A ticket will be issued when you check in at the location.',
   },
+  approval_approved_sameday: {
+    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.',
+    ar: '✅ تم *قبول* موعدك في *{name}*.',
+    en: '✅ Your appointment at *{name}* has been *approved*.',
+  },
   approval_declined: {
     fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\nMotif : {reason}',
     ar: '❌ تم *رفض* موعدك في *{name}*.\n\nالسبب: {reason}',
@@ -2758,12 +2763,16 @@ async function handleAppointmentStatus(
   const officeIds = offices.map((o: any) => o.id);
 
   const phoneFilter = variants.map((v) => `customer_phone.eq.${v}`).join(',');
+  // Use start-of-day so same-day appointments whose scheduled_at is earlier
+  // than the current time are still returned (they remain valid all day).
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
   const { data: appts } = await supabase
     .from('appointments')
     .select('id, status, scheduled_at, service_id, customer_name, locale')
     .in('office_id', officeIds)
     .in('status', ['confirmed', 'pending'])
-    .gte('scheduled_at', new Date().toISOString())
+    .gte('scheduled_at', todayStart.toISOString())
     .or(phoneFilter)
     .order('scheduled_at', { ascending: true })
     .limit(1);

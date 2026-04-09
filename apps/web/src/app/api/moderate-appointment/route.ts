@@ -141,10 +141,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: updErr.message }, { status: 500 });
     }
 
+    // Detect same-day appointment: scheduled_at is today → ticket is auto-created,
+    // so don't say "you'll receive a ticket when you arrive".
+    const scheduledDate = appt.scheduled_at ? new Date(appt.scheduled_at) : null;
+    const now = new Date();
+    const isSameDay = scheduledDate !== null &&
+      scheduledDate.getFullYear() === now.getFullYear() &&
+      scheduledDate.getMonth() === now.getMonth() &&
+      scheduledDate.getDate() === now.getDate();
+    const approveTemplate = isSameDay ? 'approval_approved_sameday' : 'approval_approved';
+
     let notified = false;
     let notifyError: string | null = null;
     try {
-      const msgBody = tMsg('approval_approved', locale, { name: orgName });
+      const msgBody = tMsg(approveTemplate, locale, { name: orgName });
       if (channel === 'whatsapp' && toPhone) {
         const result = await sendWhatsAppMessage({ to: toPhone, body: msgBody });
         notified = result.ok === true;
