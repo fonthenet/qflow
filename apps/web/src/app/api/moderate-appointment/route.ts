@@ -209,7 +209,11 @@ export async function POST(request: NextRequest) {
   let notified = false;
   let notifyError: string | null = null;
   try {
-    const msgBody = tMsg(templateKey, locale, { name: orgName });
+    const cancelReason = (reason ?? '').trim();
+    const reasonBlock = cancelReason
+      ? `\n\n${locale === 'ar' ? 'السبب' : locale === 'en' ? 'Reason' : 'Motif'}: ${cancelReason}`
+      : '';
+    const msgBody = tMsg(templateKey, locale, { name: orgName, reason: reasonBlock });
     if (channel === 'whatsapp' && toPhone) {
       const result = await sendWhatsAppMessage({ to: toPhone, body: msgBody });
       notified = result.ok === true;

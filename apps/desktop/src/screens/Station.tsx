@@ -1794,13 +1794,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const pendingTotalCount = pendingTickets.length + pendingAppointmentsAll.length;
 
   // Moderate a pending appointment via the web API (approve or decline)
-  const moderatePendingAppointment = useCallback(async (apptId: string, action: 'approve' | 'decline') => {
+  const moderatePendingAppointment = useCallback(async (apptId: string, action: 'approve' | 'decline', reason?: string) => {
     setRdvBusyId(apptId);
     try {
+      const payload: any = { appointmentId: apptId, action };
+      if (reason) payload.reason = reason;
       const res = await fetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId: apptId, action }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1883,9 +1885,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <button
             disabled={busy}
             onClick={() => {
-              const ok = window.confirm(t('Decline this appointment? The customer will be notified.'));
-              if (!ok) return;
-              moderatePendingAppointment(a.id, 'decline');
+              const reason = window.prompt(t('Decline this appointment? The customer will be notified.\n\nReason (optional):'), '');
+              if (reason === null) return;
+              moderatePendingAppointment(a.id, 'decline', reason.trim() || undefined);
             }}
             title={t('Decline')}
             style={{
@@ -3314,13 +3316,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           <button
                             disabled={busy}
                             onClick={async () => {
-                              if (!confirm(t('Cancel this appointment? The customer will be notified.'))) return;
+                              const reason = window.prompt(t('Cancel this appointment? The customer will be notified.\n\nReason (optional):'), '');
+                              if (reason === null) return; // user clicked Cancel
                               setRdvBusyId(a.id);
                               try {
                                 const res = await fetch('https://qflo.net/api/moderate-appointment', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ appointmentId: a.id, action: 'cancel' }),
+                                  body: JSON.stringify({ appointmentId: a.id, action: 'cancel', reason: reason.trim() || undefined }),
                                 });
                                 if (!res.ok) {
                                   const err = await res.json().catch(() => ({}));
@@ -3439,9 +3442,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         <button
                           disabled={busy}
                           onClick={() => {
-                            const ok = window.confirm(t('Decline this ticket? The customer will be notified.'));
-                            if (!ok) return;
-                            moderatePendingTicket(p.id, 'decline');
+                            const reason = window.prompt(t('Decline this ticket? The customer will be notified.\n\nReason (optional):'), '');
+                            if (reason === null) return;
+                            moderatePendingTicket(p.id, 'decline', reason.trim() || undefined);
                           }}
                           title={t('Decline')}
                           style={{

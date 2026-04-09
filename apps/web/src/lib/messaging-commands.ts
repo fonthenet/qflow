@@ -358,9 +358,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '❌ Your appointment at *{name}* has been *declined*.\n\nReason: {reason}',
   },
   appointment_cancelled: {
-    fr: '🚫 Votre rendez-vous à *{name}* a été *annulé* par le prestataire.\n\nPour reprendre rendez-vous, contactez-nous ou réservez à nouveau.',
-    ar: '🚫 تم *إلغاء* موعدك في *{name}* من قبل المزود.\n\nلإعادة الحجز، تواصل معنا أو احجز من جديد.',
-    en: '🚫 Your appointment at *{name}* has been *cancelled* by the provider.\n\nTo reschedule, contact us or book again.',
+    fr: '🚫 Votre rendez-vous à *{name}* a été *annulé* par le prestataire.{reason}\n\nPour reprendre rendez-vous, contactez-nous ou réservez à nouveau.',
+    ar: '🚫 تم *إلغاء* موعدك في *{name}* من قبل المزود.{reason}\n\nلإعادة الحجز، تواصل معنا أو احجز من جديد.',
+    en: '🚫 Your appointment at *{name}* has been *cancelled* by the provider.{reason}\n\nTo reschedule, contact us or book again.',
   },
   appointment_no_show: {
     fr: '⏰ Vous avez manqué votre rendez-vous à *{name}*.\n\nLe créneau a été libéré. N\'hésitez pas à réserver à nouveau.',
