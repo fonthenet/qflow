@@ -367,6 +367,16 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '⏰ لقد فاتك موعدك في *{name}*.\n\nتم تحرير الموعد. يمكنك الحجز من جديد.',
     en: '⏰ You missed your appointment at *{name}*.\n\nThe slot has been released. Feel free to book again.',
   },
+  appointment_status: {
+    fr: '✅ Vous avez un rendez-vous *confirmé* chez *{name}*\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\n🎫 Un ticket vous sera remis à votre arrivée sur place.\n\nEnvoyez *ANNULER RDV* pour annuler.',
+    ar: '✅ لديك موعد *مؤكد* في *{name}*\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\n🎫 ستستلم تذكرتك عند وصولك إلى المكان.\n\nأرسل *إلغاء موعد* لإلغاء الحجز.',
+    en: '✅ You have a *confirmed* appointment at *{name}*\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nA ticket will be issued when you check in at the location.\n\nSend *CANCEL BOOKING* to cancel.',
+  },
+  appointment_status_pending: {
+    fr: '⏳ Vous avez un rendez-vous *en attente de confirmation* chez *{name}*\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\nVous recevrez une notification dès qu\'il sera confirmé.',
+    ar: '⏳ لديك موعد *بانتظار التأكيد* في *{name}*\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\nستتلقى إشعارًا عند تأكيده.',
+    en: '⏳ You have an appointment *pending confirmation* at *{name}*\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nYou\'ll be notified once it\'s confirmed.',
+  },
   ask_wilaya: {
     fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *ANNULER* pour annuler.',
     ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *إلغاء* للإلغاء.',
@@ -2642,6 +2652,9 @@ async function handleStatus(
   }
 
   if (!session?.ticket_id) {
+    // No active ticket — check for upcoming confirmed/pending appointments.
+    const apptReply = await handleAppointmentStatus(identifier, org, locale, channel, sendMessage, supabase);
+    if (apptReply) return; // appointment found and replied
     await sendMessage({ to: identifier, body: t('not_in_queue_rejoin', locale) });
     return;
   }
@@ -2670,7 +2683,11 @@ async function handleStatus(
       .eq('organization_id', org.id)
       .eq('ticket_id', session.ticket_id)
       .eq('state', 'active');
-    await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    // Before saying "ticket inactive", check for upcoming appointments.
+    const apptReply = await handleAppointmentStatus(identifier, org, locale, channel, sendMessage, supabase);
+    if (!apptReply) {
+      await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    }
     return;
   }
 
@@ -2695,7 +2712,10 @@ async function handleStatus(
       .eq('state', 'active')
       .eq('channel', channel);
 
-    await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    const apptReply3 = await handleAppointmentStatus(identifier, org, locale, channel, sendMessage, supabase);
+    if (!apptReply3) {
+      await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
+    }
     return;
   }
 
@@ -2712,6 +2732,77 @@ async function handleStatus(
       url: ctx.url,
     }),
   });
+}
+
+// ── APPOINTMENT STATUS (fallback when no active ticket) ──────────────
+
+async function handleAppointmentStatus(
+  identifier: string,
+  org: OrgContext,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  supabase: any,
+): Promise<boolean> {
+  // Find upcoming confirmed or pending appointments for this phone in this org.
+  // Phone may be stored in various formats — try digits-only matching.
+  const digits = identifier.replace(/\D/g, '');
+  const variants = Array.from(new Set([identifier, digits, `+${digits}`].filter(Boolean)));
+
+  // Get office IDs for this org
+  const { data: offices } = await supabase
+    .from('offices')
+    .select('id')
+    .eq('organization_id', org.id);
+  if (!offices?.length) return false;
+  const officeIds = offices.map((o: any) => o.id);
+
+  const phoneFilter = variants.map((v) => `customer_phone.eq.${v}`).join(',');
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('id, status, scheduled_at, service_id, customer_name, locale')
+    .in('office_id', officeIds)
+    .in('status', ['confirmed', 'pending'])
+    .gte('scheduled_at', new Date().toISOString())
+    .or(phoneFilter)
+    .order('scheduled_at', { ascending: true })
+    .limit(1);
+
+  if (!appts?.length) return false;
+
+  const appt = appts[0];
+  // Use the appointment's locale if set, otherwise the session/command locale.
+  const apptLocale: Locale = (appt.locale === 'ar' || appt.locale === 'en' || appt.locale === 'fr')
+    ? appt.locale : locale;
+
+  // Resolve service name
+  let serviceName = '';
+  if (appt.service_id) {
+    const { data: svc } = await supabase
+      .from('services')
+      .select('name')
+      .eq('id', appt.service_id)
+      .maybeSingle();
+    serviceName = svc?.name ?? '';
+  }
+
+  const dt = new Date(appt.scheduled_at);
+  const dateStr = dt.toLocaleDateString(apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStr = `${String(dt.getUTCHours()).padStart(2, '0')}:${String(dt.getUTCMinutes()).padStart(2, '0')}`;
+
+  const templateKey = appt.status === 'confirmed' ? 'appointment_status' : 'appointment_status_pending';
+  await sendMessage({
+    to: identifier,
+    body: t(templateKey, apptLocale, {
+      name: org.name,
+      date: dateStr,
+      time: timeStr,
+      service: serviceName || (apptLocale === 'ar' ? 'عام' : apptLocale === 'en' ? 'General' : 'Général'),
+    }),
+  });
+  return true;
 }
 
 // ── CANCEL ────────────────────────────────────────────────────────────

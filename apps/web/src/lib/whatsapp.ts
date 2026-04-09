@@ -208,7 +208,7 @@ async function sendViaMeta(
     console.error('[whatsapp:meta] Send failed:', errorMsg, `(code=${errorCode})`, data);
 
     // Outside 24h window or not in allowed list → retry with template
-    if (errorCode === 131047 || errorCode === 131030) {
+    if (errorCode === 131047 || errorCode === 131030 || errorCode === 130429) {
       console.log('[whatsapp:meta] Retrying with template message...');
       const templateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'qflo_queue_update';
       const templateLang = process.env.WHATSAPP_TEMPLATE_LANG ?? 'en';

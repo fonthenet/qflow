@@ -229,7 +229,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "17";
+const VERSION = "18";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -289,7 +289,17 @@ Deno.serve(async (req) => {
       if (normalizedPhone.length < 7) {
         return Response.json({ sent: false, error: "Invalid phone number" });
       }
-      const locale: Locale = (reqLocale as Locale) || "fr";
+      // Prefer the locale persisted on the ticket row over whatever the
+      // caller passed (Station/kiosk pass their UI locale, which is wrong
+      // for customers who booked in a different language).
+      let joinedLocale: Locale = (reqLocale as Locale) || "fr";
+      try {
+        const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const { data: tRow } = await sb.from("tickets").select("locale").eq("id", ticketId).single();
+        const tl = (tRow as any)?.locale;
+        if (tl === "ar" || tl === "en" || tl === "fr") joinedLocale = tl;
+      } catch { /* ignore */ }
+      const locale: Locale = joinedLocale;
       const message = t("joined", locale, {
         ticket: ticketNumber ?? "—",
         name: officeName ?? "",
@@ -314,7 +324,7 @@ Deno.serve(async (req) => {
     // Look up ticket
     const { data: ticket } = await supabase
       .from("tickets")
-      .select("id, ticket_number, qr_token, status")
+      .select("id, ticket_number, qr_token, status, locale")
       .eq("id", ticketId)
       .single();
 
@@ -352,7 +362,11 @@ Deno.serve(async (req) => {
         : "bsuid:***" + (session.whatsapp_bsuid ?? "").slice(-4);
     console.log(`[notify-ticket v${VERSION}] Session found: channel=${session.channel} orgId=${session.organization_id} ${redactedId}`);
 
-    const locale = (session.locale as Locale) || "fr";
+    // Prefer ticket-level locale (set at booking time) over session locale.
+    const tl = (ticket as any)?.locale;
+    const locale: Locale = (tl === "ar" || tl === "en" || tl === "fr")
+      ? tl
+      : ((session.locale as Locale) || "fr");
     const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
 
     // Fetch business name from organization

@@ -506,12 +506,39 @@ function setupIPC() {
 
     const now = ticket.created_at ?? new Date().toISOString();
 
+    // Resolve customer locale: explicit > linked appointment > null.
+    // This ensures lifecycle messages (joined/called/served/...) follow the
+    // language the customer originally booked in, not the Station UI locale.
+    let resolvedLocale: string | null = null;
+    const allowedLocales = new Set(['ar', 'en', 'fr']);
+    if (typeof ticket.locale === 'string' && allowedLocales.has(ticket.locale)) {
+      resolvedLocale = ticket.locale;
+    } else if (ticket.appointment_id && syncEngine?.isOnline) {
+      try {
+        const tok = await syncEngine.ensureFreshToken();
+        const r = await fetch(
+          `${SUPABASE_URL}/rest/v1/appointments?id=eq.${encodeURIComponent(ticket.appointment_id)}&select=locale`,
+          { headers: { Authorization: `Bearer ${tok}`, apikey: SUPABASE_ANON_KEY } },
+        );
+        if (r.ok) {
+          const rows = await r.json().catch(() => []);
+          const apptLoc = rows?.[0]?.locale;
+          if (typeof apptLoc === 'string' && allowedLocales.has(apptLoc)) {
+            resolvedLocale = apptLoc;
+          }
+        }
+      } catch (e) {
+        console.warn('[ipc] failed to fetch appointment locale:', (e as any)?.message);
+      }
+    }
+    ticket.locale = resolvedLocale;
+
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null);
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id, locale)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null, resolvedLocale);
 
       // Build clean sync payload with all Supabase NOT NULL fields
       const syncPayload: Record<string, any> = {
@@ -529,6 +556,7 @@ function setupIPC() {
         source: ticket.source ?? 'walk_in',
       };
       if (ticket.appointment_id) syncPayload.appointment_id = ticket.appointment_id;
+      if (resolvedLocale) syncPayload.locale = resolvedLocale;
 
       db.prepare(`
         INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -611,7 +639,7 @@ function setupIPC() {
                 whatsapp_phone: phone,
                 channel: 'whatsapp',
                 state: 'active',
-                locale: currentLocale || 'fr',
+                locale: resolvedLocale || currentLocale || 'fr',
               }),
             }).catch(() => {});
           }).catch(() => {});
@@ -633,7 +661,7 @@ function setupIPC() {
                 officeName: officeRow?.name ?? '',
                 position: pos?.c ?? 1,
                 trackUrl: `${CONFIG.CLOUD_URL}/q/${ticket.qr_token}`,
-                locale: currentLocale,
+                locale: resolvedLocale || currentLocale,
               }),
               signal: AbortSignal.timeout(8000),
             });
