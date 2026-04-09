@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
   // this office. customer_phone may actually hold a Messenger PSID for chats
   // started from Messenger — try both columns.
   let channel: 'whatsapp' | 'messenger' | null = null;
-  let toPhone: string | null = null;
+  // Default toPhone to whatever the appointment stores. sendWhatsAppMessage
+  // normalizes the format itself, so any phone-shaped string is acceptable.
+  let toPhone: string | null = appt.customer_phone || null;
   let toPsid: string | null = null;
   let locale: Locale = 'fr';
 
@@ -112,17 +114,18 @@ export async function POST(request: NextRequest) {
     }
     if (session) {
       channel = session.channel as 'whatsapp' | 'messenger';
-      toPhone = session.whatsapp_phone || null;
-      toPsid = session.messenger_psid || null;
+      // Prefer the session's stored identifiers but keep customer_phone as
+      // fallback so a session row missing whatsapp_phone still notifies.
+      if (session.whatsapp_phone) toPhone = session.whatsapp_phone;
+      if (session.messenger_psid) toPsid = session.messenger_psid;
       locale = (session.locale as Locale) || 'fr';
-    } else {
-      // No session match — assume WhatsApp if the phone has enough digits
-      // (sendWhatsAppMessage normalizes the format itself).
-      if (digits.length >= 8) {
-        channel = 'whatsapp';
-        toPhone = appt.customer_phone;
-      }
     }
+  }
+  // If session lookup didn't yield a channel but we still have a phone-shaped
+  // value, default to WhatsApp. This is the common case for web/native bookings
+  // that never went through the chat flow.
+  if (!channel && toPhone) {
+    channel = 'whatsapp';
   }
 
   if (action === 'approve') {
