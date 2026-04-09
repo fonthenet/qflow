@@ -1474,7 +1474,13 @@ export async function handleInboundMessage(
   if (command === 'STATUS' || command === 'STATUT' || /^حالة$/.test(cleaned)) {
     const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid, detectedLocale);
     if (allSessions.length === 0) {
-      await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+      // No active ticket session — check for upcoming confirmed/pending appointments
+      // across all orgs the customer may have booked with.
+      const supabaseAdmin = createAdminClient() as any;
+      const apptFound = await findAndReplyAppointmentStatus(identifier, detectedLocale, channel, sendMessage, supabaseAdmin);
+      if (!apptFound) {
+        await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+      }
     } else if (allSessions.length === 1) {
       const { session, org } = allSessions[0];
       const sessionLocale = detectedLocale === 'ar' ? 'ar' : ((session.locale as Locale) || detectedLocale);
@@ -2806,6 +2812,87 @@ async function handleAppointmentStatus(
     to: identifier,
     body: t(templateKey, apptLocale, {
       name: org.name,
+      date: dateStr,
+      time: timeStr,
+      service: serviceName || (apptLocale === 'ar' ? 'عام' : apptLocale === 'en' ? 'General' : 'Général'),
+    }),
+  });
+  return true;
+}
+
+/**
+ * Org-agnostic appointment status lookup — used when there are no active
+ * sessions at all, so we don't have an org context yet. Searches across
+ * all orgs for upcoming confirmed/pending appointments for this phone.
+ */
+async function findAndReplyAppointmentStatus(
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  supabase: any,
+): Promise<boolean> {
+  const digits = identifier.replace(/\D/g, '');
+  const variants = Array.from(new Set([identifier, digits, `+${digits}`].filter(Boolean)));
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const phoneFilter = variants.map((v) => `customer_phone.eq.${v}`).join(',');
+  const { data: appts } = await supabase
+    .from('appointments')
+    .select('id, status, scheduled_at, service_id, customer_name, locale, office_id')
+    .in('status', ['confirmed', 'pending'])
+    .gte('scheduled_at', todayStart.toISOString())
+    .or(phoneFilter)
+    .order('scheduled_at', { ascending: true })
+    .limit(1);
+
+  if (!appts?.length) return false;
+
+  const appt = appts[0];
+  const apptLocale: Locale = (appt.locale === 'ar' || appt.locale === 'en' || appt.locale === 'fr')
+    ? appt.locale : locale;
+
+  // Resolve org name from office
+  let orgName = '';
+  if (appt.office_id) {
+    const { data: office } = await supabase
+      .from('offices')
+      .select('organization_id')
+      .eq('id', appt.office_id)
+      .maybeSingle();
+    if (office?.organization_id) {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', office.organization_id)
+        .maybeSingle();
+      orgName = org?.name ?? '';
+    }
+  }
+
+  // Resolve service name
+  let serviceName = '';
+  if (appt.service_id) {
+    const { data: svc } = await supabase
+      .from('services')
+      .select('name')
+      .eq('id', appt.service_id)
+      .maybeSingle();
+    serviceName = svc?.name ?? '';
+  }
+
+  const dt = new Date(appt.scheduled_at);
+  const dateStr = dt.toLocaleDateString(apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStr = `${String(dt.getUTCHours()).padStart(2, '0')}:${String(dt.getUTCMinutes()).padStart(2, '0')}`;
+
+  const templateKey = appt.status === 'confirmed' ? 'appointment_status' : 'appointment_status_pending';
+  await sendMessage({
+    to: identifier,
+    body: t(templateKey, apptLocale, {
+      name: orgName || (apptLocale === 'ar' ? 'المزود' : apptLocale === 'en' ? 'Provider' : 'Prestataire'),
       date: dateStr,
       time: timeStr,
       service: serviceName || (apptLocale === 'ar' ? 'عام' : apptLocale === 'en' ? 'General' : 'Général'),
