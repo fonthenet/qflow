@@ -1500,7 +1500,12 @@ export async function handleInboundMessage(
 
     const allSessions = await findAllActiveSessionsByUser(identifier, channel, bsuid, detectedLocale);
     if (allSessions.length === 0) {
-      await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+      // No active session — try to find and cancel a pending_approval ticket directly
+      const supabaseAdmin = createAdminClient() as any;
+      const cancelled = await cancelPendingTicketByPhone(identifier, detectedLocale, channel, sendMessage, supabaseAdmin);
+      if (!cancelled) {
+        await sendMessage({ to: identifier, body: t('not_in_queue', detectedLocale) });
+      }
     } else if (isAll) {
       // Cancel all active sessions
       await handleCancelAll(identifier, allSessions, detectedLocale, channel, sendMessage);
@@ -2940,6 +2945,59 @@ async function findAndReplyAppointmentStatus(
       time: timeStr,
       service: serviceName || (apptLocale === 'ar' ? 'عام' : apptLocale === 'en' ? 'General' : 'Général'),
     }),
+  });
+  return true;
+}
+
+/**
+ * Cancel a pending_approval ticket by phone when no active session exists
+ * (session may have been prematurely closed by old code).
+ */
+async function cancelPendingTicketByPhone(
+  identifier: string,
+  locale: Locale,
+  channel: Channel,
+  sendMessage: SendFn,
+  supabase: any,
+): Promise<boolean> {
+  const digits = identifier.replace(/\D/g, '');
+  const last9 = digits.slice(-9);
+  if (last9.length < 9) return false;
+
+  const { data: tickets } = await supabase
+    .from('tickets')
+    .select('id, office_id, ticket_number, status, locale')
+    .in('status', ['waiting', 'issued', 'called', 'pending_approval'])
+    .filter('customer_data->>phone', 'ilike', `%${last9}%`)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (!tickets?.length) return false;
+
+  const ticket = tickets[0];
+  const ticketLocale: Locale = (ticket.locale === 'ar' || ticket.locale === 'en' || ticket.locale === 'fr')
+    ? ticket.locale : locale;
+
+  // Cancel the ticket
+  const { error, count } = await supabase
+    .from('tickets')
+    .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+    .eq('id', ticket.id)
+    .in('status', ['waiting', 'issued', 'called', 'pending_approval'])
+    .select('id', { count: 'exact', head: true });
+
+  if (error || (count ?? 0) === 0) return false;
+
+  // Close any related sessions
+  await supabase
+    .from('whatsapp_sessions')
+    .update({ state: 'completed' })
+    .eq('ticket_id', ticket.id)
+    .eq('state', 'active');
+
+  await sendMessage({
+    to: identifier,
+    body: t('cancelled', ticketLocale, { ticket: ticket.ticket_number }),
   });
   return true;
 }
