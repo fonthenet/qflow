@@ -842,7 +842,7 @@ async function findAllActiveSessionsByUser(
         .in('id', ticketIds);
       const activeTicketIds = new Set(
         (ticketRows ?? [])
-          .filter((t: any) => ['waiting', 'called', 'serving'].includes(t.status))
+          .filter((t: any) => ['waiting', 'called', 'serving', 'pending_approval'].includes(t.status))
           .map((t: any) => t.id)
       );
       const closedSessionIds: string[] = [];
@@ -2699,6 +2699,12 @@ async function handleStatus(
     if (!apptReply) {
       await sendMessage({ to: identifier, body: t('ticket_inactive', locale) });
     }
+    return;
+  }
+
+  // If ticket is pending provider approval, tell the customer it's awaiting approval.
+  if (tRow.status === 'pending_approval') {
+    await sendMessage({ to: identifier, body: t('pending_approval', locale, { name: org.name }) });
     return;
   }
 
