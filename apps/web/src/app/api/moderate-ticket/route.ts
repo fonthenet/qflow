@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   // Fetch ticket (must still be pending_approval to be moderated)
   const { data: ticket, error: fetchErr } = await supabase
     .from('tickets')
-    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id')
+    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id, locale')
     .eq('id', ticketId)
     .single();
 
@@ -87,7 +87,12 @@ export async function POST(request: NextRequest) {
   const toPhone: string | null = sessionRow?.whatsapp_phone || fallbackPhone;
   const toPsid: string | null = sessionRow?.messenger_psid || fallbackPsid;
 
-  const locale: Locale = (sessionRow?.locale as Locale) || (cd.locale as Locale) || 'fr';
+  // Locale priority: row-stored locale (set at ticket creation) > session > cd > 'fr'.
+  const locale: Locale =
+    ((ticket as any).locale as Locale)
+    || (sessionRow?.locale as Locale)
+    || (cd.locale as Locale)
+    || 'fr';
 
   if (action === 'approve') {
     const { error: updErr } = await supabase

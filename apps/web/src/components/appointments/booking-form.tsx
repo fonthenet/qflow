@@ -52,7 +52,7 @@ export function BookingForm({
   platformContext,
   sandbox,
 }: BookingFormProps) {
-  const { t, formatDate, formatTime } = useI18n();
+  const { t, formatDate, formatTime, locale } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   const vocabulary = {
     officeLabel: platformContext?.vocabulary?.officeLabel ?? 'Location',
@@ -331,6 +331,7 @@ export function BookingForm({
       customerPhone: customerPhone.trim() || undefined,
       customerEmail: customerEmail.trim() || undefined,
       scheduledAt,
+      locale,
       ...(selectedStaffId ? { staffId: selectedStaffId } : {}),
     };
 

@@ -121,6 +121,7 @@ interface CreatePublicTicketInput {
   priority?: number | null;
   priorityCategoryId?: string | null;
   groupId?: string | null;
+  locale?: string | null;
 }
 
 export async function getPublicIntakeFields(serviceId: string) {
@@ -307,6 +308,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
       priority: input.priority ?? 0,
       priority_category_id: input.priorityCategoryId ?? null,
       group_id: input.groupId ?? null,
+      locale: input.locale ?? null,
     })
     .select()
     .single();
@@ -343,28 +345,12 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     if (normalizedPhone) {
       try {
         const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
-        // Resolve locale + org name so the join confirmation matches the
-        // language the customer used (avoids French/English replies for
-        // Arabic chats). Falls back to 'fr' if no session is found.
-        let locale: Locale = 'fr';
+        // Prefer the locale stored on the ticket itself (set at creation
+        // from the chat session). Fall back to 'fr' if missing.
+        let locale: Locale = ((ticket as any)?.locale as Locale) || 'fr';
         let orgName = '';
         try {
           if (orgId) {
-            const digits = rawPhone.replace(/\D/g, '');
-            const phoneVariants = Array.from(new Set([rawPhone, digits, `+${digits}`, normalizedPhone].filter(Boolean)));
-            const orFilter = phoneVariants
-              .flatMap((v) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
-              .join(',');
-            const { data: sessionRows } = await (supabase as any)
-              .from('whatsapp_sessions')
-              .select('locale')
-              .eq('organization_id', orgId)
-              .or(orFilter)
-              .order('created_at', { ascending: false })
-              .limit(1);
-            if (sessionRows && sessionRows[0]?.locale) {
-              locale = sessionRows[0].locale as Locale;
-            }
             const { data: orgRow } = await (supabase as any)
               .from('organizations')
               .select('name')

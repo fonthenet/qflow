@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const { data: appt, error: fetchErr } = await supabase
     .from('appointments')
-    .select('id, office_id, status, customer_phone, customer_name, scheduled_at, service_id, department_id')
+    .select('id, office_id, status, customer_phone, customer_name, scheduled_at, service_id, department_id, locale')
     .eq('id', appointmentId)
     .single();
 
@@ -89,7 +89,9 @@ export async function POST(request: NextRequest) {
   // normalizes the format itself, so any phone-shaped string is acceptable.
   let toPhone: string | null = appt.customer_phone || null;
   let toPsid: string | null = null;
-  let locale: Locale = 'fr';
+  // Locale priority: row-stored locale (set at booking) > session lookup > 'fr'.
+  let locale: Locale = (appt.locale === 'ar' || appt.locale === 'en' || appt.locale === 'fr') ? appt.locale : 'fr';
+  const haveStoredLocale = appt.locale === 'ar' || appt.locale === 'en' || appt.locale === 'fr';
 
   if (appt.customer_phone) {
     // Sessions are organization-scoped, not office-scoped. Try several phone
@@ -118,7 +120,8 @@ export async function POST(request: NextRequest) {
       // fallback so a session row missing whatsapp_phone still notifies.
       if (session.whatsapp_phone) toPhone = session.whatsapp_phone;
       if (session.messenger_psid) toPsid = session.messenger_psid;
-      locale = (session.locale as Locale) || 'fr';
+      // Only override locale from session if the row didn't already have one.
+      if (!haveStoredLocale && session.locale) locale = session.locale as Locale;
     }
   }
   // If session lookup didn't yield a channel but we still have a phone-shaped

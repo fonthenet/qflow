@@ -348,9 +348,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '⏳ Your appointment request at *{name}* has been received.\n\nIt is pending provider approval. You will receive a message as soon as it is approved or declined.',
   },
   approval_approved: {
-    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.\n\n',
-    ar: '✅ تمت *الموافقة* على موعدك في *{name}*.\n\n',
-    en: '✅ Your appointment at *{name}* has been *approved*.\n\n',
+    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.\n\n🎫 Un ticket vous sera remis à votre arrivée sur place.',
+    ar: '✅ تم *قبول* موعدك في *{name}*.\n\n🎫 ستستلم تذكرتك عند وصولك إلى المكان.',
+    en: '✅ Your appointment at *{name}* has been *approved*.\n\n🎫 A ticket will be issued when you check in at the location.',
   },
   approval_declined: {
     fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\nMotif : {reason}',
@@ -2541,6 +2541,7 @@ async function handleJoin(
     customerData,
     isRemote: true,
     source: channel,
+    locale,
   });
 
   if ('error' in result && result.error) {
@@ -3444,6 +3445,7 @@ async function confirmBooking(
       calendar_token: calendarToken,
       wilaya: wilaya,
       notes: reason,
+      locale,
     })
     .select('id')
     .single();

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId } =
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale } =
     body as Record<string, string | undefined>;
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {
@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
       calendar_token: calendarToken,
       notes: (notes as string)?.trim() || null,
       wilaya: (wilaya as string)?.trim() || null,
+      locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
       ...(staffId ? { staff_id: staffId } : {}),
     })
     .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
       const dt = new Date(scheduledAt);
       const dateLabel = dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const timeLabel = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
-      const locale: Locale = 'fr';
+      const locale: Locale = (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : 'fr';
       const templateKey = requireApproval ? 'booking_pending_approval' : 'booking_confirmed';
       const messageBody = tMsg(templateKey, locale, {
         name: orgName,
