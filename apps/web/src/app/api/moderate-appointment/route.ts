@@ -143,12 +143,12 @@ export async function POST(request: NextRequest) {
 
     // Detect same-day appointment: scheduled_at is today → ticket is auto-created,
     // so don't say "you'll receive a ticket when you arrive".
-    const scheduledDate = appt.scheduled_at ? new Date(appt.scheduled_at) : null;
-    const now = new Date();
-    const isSameDay = scheduledDate !== null &&
-      scheduledDate.getFullYear() === now.getFullYear() &&
-      scheduledDate.getMonth() === now.getMonth() &&
-      scheduledDate.getDate() === now.getDate();
+    // Compare using UTC+1 (Algeria) to avoid timezone mismatch on Vercel (UTC).
+    const algeriaOffset = 60; // UTC+1 in minutes
+    const nowAlgeria = new Date(Date.now() + algeriaOffset * 60_000);
+    const todayStr = nowAlgeria.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const scheduledStr = appt.scheduled_at ? appt.scheduled_at.slice(0, 10) : '';
+    const isSameDay = scheduledStr === todayStr;
     const approveTemplate = isSameDay ? 'approval_approved_sameday' : 'approval_approved';
 
     let notified = false;
