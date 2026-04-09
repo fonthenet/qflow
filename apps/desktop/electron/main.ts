@@ -509,12 +509,12 @@ function setupIPC() {
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence);
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null);
 
       // Build clean sync payload with all Supabase NOT NULL fields
-      const syncPayload = {
+      const syncPayload: Record<string, any> = {
         id: ticket.id,
         ticket_number: ticket.ticket_number,
         office_id: ticket.office_id,
@@ -528,6 +528,7 @@ function setupIPC() {
         daily_sequence: ticket.daily_sequence,
         source: ticket.source ?? 'walk_in',
       };
+      if (ticket.appointment_id) syncPayload.appointment_id = ticket.appointment_id;
 
       db.prepare(`
         INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -738,6 +739,32 @@ function setupIPC() {
     }
     mainWindow?.webContents.send('tickets:changed');
     notifyStationClients({ type: 'tickets_changed' });
+
+    // ── Propagate terminal ticket status to linked appointment ──
+    // Keeps the appointments table in sync so the RDV sidebar, Pending tab,
+    // and Appointments modal all reflect the true lifecycle state.
+    if (safeUpdates.status === 'served' || safeUpdates.status === 'cancelled' || safeUpdates.status === 'no_show') {
+      try {
+        const linked = db.prepare('SELECT appointment_id FROM tickets WHERE id = ?').get(ticketId) as any;
+        const apptId = linked?.appointment_id;
+        if (apptId && syncEngine?.isOnline) {
+          const apptStatus = safeUpdates.status === 'served' ? 'completed' : safeUpdates.status;
+          syncEngine.ensureFreshToken().then((token: string) => {
+            fetch(`${SUPABASE_URL}/rest/v1/appointments?id=eq.${apptId}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'apikey': SUPABASE_ANON_KEY,
+                'Prefer': 'return=minimal',
+              },
+              body: JSON.stringify({ status: apptStatus }),
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+      } catch { /* ignore */ }
+    }
+
     return { id: ticketId, ...safeUpdates };
   });
 
@@ -1234,6 +1261,47 @@ function setupIPC() {
   }
   const heartbeatInterval = setInterval(sendHeartbeat, 30000);
   sendHeartbeat(); // initial ping
+
+  // --- No-show sweep: mark confirmed appointments past scheduled+1h as no_show ---
+  // Runs every 5 minutes. Only touches the office(s) the Station belongs to.
+  // Skips appointments that already have a linked ticket (those follow ticket lifecycle).
+  async function sweepNoShows() {
+    try {
+      if (!syncEngine?.isOnline) return;
+      const db = getDB();
+      const sessionRow = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = sessionRow ? JSON.parse(sessionRow.value) : null;
+      const officeId = session?.office_id ?? session?.office_ids?.[0];
+      if (!officeId) return;
+      const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const token = await syncEngine.ensureFreshToken();
+      // Find confirmed appointments past cutoff for this office
+      const findUrl = `${SUPABASE_URL}/rest/v1/appointments?office_id=eq.${officeId}&status=eq.confirmed&scheduled_at=lt.${encodeURIComponent(cutoff)}&select=id`;
+      const findRes = await fetch(findUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+      });
+      if (!findRes.ok) return;
+      const stale = await findRes.json().catch(() => []);
+      if (!Array.isArray(stale) || stale.length === 0) return;
+      for (const appt of stale) {
+        // Call the moderate-appointment API so the customer is notified via
+        // their original WhatsApp/Messenger session.
+        await fetch(`${CONFIG.CLOUD_URL}/api/moderate-appointment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appointmentId: appt.id, action: 'no_show' }),
+        }).catch(() => {});
+      }
+      console.log(`[no-show-sweep] marked ${stale.length} appointment(s) as no_show`);
+    } catch (e: any) {
+      console.warn('[no-show-sweep] error:', e?.message);
+    }
+  }
+  const noShowInterval = setInterval(sweepNoShows, 5 * 60 * 1000);
+  setTimeout(sweepNoShows, 30_000); // initial run after 30s
 
   // --- RustDesk process watcher: detect when RustDesk exits outside our control ---
   let rustdeskWatcherInterval: ReturnType<typeof setInterval> | null = null;

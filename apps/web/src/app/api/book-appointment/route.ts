@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 import { getAvailableSlots } from '@/lib/slot-generator';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 
 function getSupabase() {
   return createClient(
@@ -147,6 +149,35 @@ export async function POST(request: NextRequest) {
     }
   } catch (e) {
     console.warn('[book-appointment] customer upsert failed:', (e as any)?.message ?? e);
+  }
+
+  // ── Customer notification (WhatsApp) ───────────────────────────
+  // Web/native bookings don't go through the chat flow, so we proactively
+  // send a confirmation/pending message via WhatsApp when a phone is present.
+  // Messenger users always book via chat, so they get the message there.
+  try {
+    if (customerPhone && customerPhone.trim()) {
+      const { data: officeRow } = await supabase
+        .from('offices')
+        .select('organization:organizations(name)')
+        .eq('id', officeId)
+        .single();
+      const orgName: string = (officeRow as any)?.organization?.name ?? '';
+      const dt = new Date(scheduledAt);
+      const dateLabel = dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeLabel = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+      const locale: Locale = 'fr';
+      const templateKey = requireApproval ? 'booking_pending_approval' : 'booking_confirmed';
+      const messageBody = tMsg(templateKey, locale, {
+        name: orgName,
+        date: dateLabel,
+        time: timeLabel,
+        customer: customerName,
+      });
+      await sendWhatsAppMessage({ to: customerPhone.trim(), body: messageBody });
+    }
+  } catch (e) {
+    console.warn('[book-appointment] whatsapp notify failed:', (e as any)?.message ?? e);
   }
 
   return NextResponse.json({ appointment }, { status: 201 });

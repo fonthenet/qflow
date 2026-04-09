@@ -17,15 +17,20 @@ function getSupabase(): SupabaseClient {
 
 /**
  * POST /api/moderate-appointment
- * Body: { appointmentId: string, action: 'approve' | 'decline', reason?: string }
+ * Body: { appointmentId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show', reason?: string }
  *
- * Approves or declines a `pending` appointment. On approval the appointment
- * transitions to `confirmed`; on decline it goes to `cancelled`. The customer
- * is notified through their original messaging channel (WhatsApp/Messenger)
- * when one can be resolved from a recent session.
+ * - approve  : pending → confirmed (customer notified: approval_approved)
+ * - decline  : pending → cancelled (customer notified: approval_declined)
+ * - cancel   : confirmed/pending → cancelled (customer notified: appointment_cancelled)
+ * - no_show  : confirmed → no_show (customer notified: appointment_no_show)
+ *
+ * The customer is notified through their original messaging channel
+ * (WhatsApp/Messenger) when one can be resolved from a recent session.
  */
+type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show';
+
 export async function POST(request: NextRequest) {
-  let body: { appointmentId?: string; action?: 'approve' | 'decline'; reason?: string };
+  let body: { appointmentId?: string; action?: ModerateAction; reason?: string };
   try {
     body = await request.json();
   } catch {
@@ -33,9 +38,10 @@ export async function POST(request: NextRequest) {
   }
 
   const { appointmentId, action, reason } = body;
-  if (!appointmentId || (action !== 'approve' && action !== 'decline')) {
+  const validActions: ModerateAction[] = ['approve', 'decline', 'cancel', 'no_show'];
+  if (!appointmentId || !action || !validActions.includes(action)) {
     return NextResponse.json(
-      { error: 'appointmentId and action (approve|decline) are required' },
+      { error: 'appointmentId and action (approve|decline|cancel|no_show) are required' },
       { status: 400 },
     );
   }
@@ -51,9 +57,17 @@ export async function POST(request: NextRequest) {
   if (fetchErr || !appt) {
     return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
   }
-  if (appt.status !== 'pending') {
+  // approve/decline only valid from pending; cancel/no_show valid from any non-terminal state
+  const terminalStates = new Set(['cancelled', 'completed', 'no_show', 'declined']);
+  if ((action === 'approve' || action === 'decline') && appt.status !== 'pending') {
     return NextResponse.json(
       { error: `Appointment is not pending (current status: ${appt.status})` },
+      { status: 409 },
+    );
+  }
+  if ((action === 'cancel' || action === 'no_show') && terminalStates.has(appt.status)) {
+    return NextResponse.json(
+      { error: `Appointment already in terminal state: ${appt.status}` },
       { status: 409 },
     );
   }
@@ -126,24 +140,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, status: 'confirmed', notified, channel, notifyError });
   }
 
-  // decline
-  const declineReason = (reason ?? '').trim();
-  const { error: updErr } = await supabase
+  if (action === 'decline') {
+    const declineReason = (reason ?? '').trim();
+    const { error: updErr } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appt.id)
+      .eq('status', 'pending');
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 });
+    }
+
+    let notified = false;
+    let notifyError: string | null = null;
+    try {
+      const reasonText =
+        declineReason ||
+        (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
+      const body = tMsg('approval_declined', locale, { name: orgName, reason: reasonText });
+      if (channel === 'whatsapp' && toPhone) {
+        await sendWhatsAppMessage({ to: toPhone, body });
+        notified = true;
+      } else if (channel === 'messenger' && toPsid) {
+        await sendMessengerMessage({ recipientId: toPsid, text: body });
+        notified = true;
+      }
+    } catch (e: any) {
+      notifyError = e?.message || String(e);
+      console.error('[moderate-appointment] notify decline failed:', e);
+    }
+
+    return NextResponse.json({ ok: true, status: 'cancelled', notified, channel, notifyError });
+  }
+
+  // cancel | no_show
+  const newStatus = action === 'no_show' ? 'no_show' : 'cancelled';
+  const templateKey = action === 'no_show' ? 'appointment_no_show' : 'appointment_cancelled';
+  const { error: updErr2 } = await supabase
     .from('appointments')
-    .update({ status: 'cancelled' })
-    .eq('id', appt.id)
-    .eq('status', 'pending');
-  if (updErr) {
-    return NextResponse.json({ error: updErr.message }, { status: 500 });
+    .update({ status: newStatus })
+    .eq('id', appt.id);
+  if (updErr2) {
+    return NextResponse.json({ error: updErr2.message }, { status: 500 });
   }
 
   let notified = false;
   let notifyError: string | null = null;
   try {
-    const reasonText =
-      declineReason ||
-      (locale === 'ar' ? 'لم يتم تقديم سبب.' : locale === 'en' ? 'No reason provided.' : 'Aucune raison fournie.');
-    const body = tMsg('approval_declined', locale, { name: orgName, reason: reasonText });
+    const body = tMsg(templateKey, locale, { name: orgName });
     if (channel === 'whatsapp' && toPhone) {
       await sendWhatsAppMessage({ to: toPhone, body });
       notified = true;
@@ -153,8 +197,8 @@ export async function POST(request: NextRequest) {
     }
   } catch (e: any) {
     notifyError = e?.message || String(e);
-    console.error('[moderate-appointment] notify decline failed:', e);
+    console.error(`[moderate-appointment] notify ${action} failed:`, e);
   }
 
-  return NextResponse.json({ ok: true, status: 'cancelled', notified, channel, notifyError });
+  return NextResponse.json({ ok: true, status: newStatus, notified, channel, notifyError });
 }

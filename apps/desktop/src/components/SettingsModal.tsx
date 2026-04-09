@@ -126,6 +126,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
         { key: 'cancellation_window_hours', label: t('sm.field.cancel_window'), type: 'num', default: 2, min: 0 },
         { key: 'require_customer_phone', label: t('sm.field.require_phone'), type: 'bool', default: true },
         { key: 'require_customer_email', label: t('sm.field.require_email'), type: 'bool', default: false },
+        { key: 'require_appointment_approval', label: t('sm.field.require_appointment_approval'), type: 'bool', default: true, help: t('sm.help.require_appointment_approval') },
       ],
     },
     {
@@ -509,7 +510,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
     }
     if (f.type === 'textarea') {
       return (
-        <div key={f.key} style={{ padding: '8px 0' }}>
+        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <label style={labelStyle}>{f.label}</label>
           <textarea
             value={v ?? ''}
@@ -525,7 +526,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
     }
     if (f.type === 'enum') {
       return (
-        <div key={f.key} style={{ padding: '8px 0' }}>
+        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <label style={labelStyle}>{f.label}</label>
           <select value={v ?? f.default} onChange={(e) => setV(e.target.value)} style={inputStyle}>
             {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -537,7 +538,7 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
     if (f.type === 'multi') {
       const arr: string[] = Array.isArray(v) ? v : [];
       return (
-        <div key={f.key} style={{ padding: '8px 0' }}>
+        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
           <label style={labelStyle}>{f.label}</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {f.options?.map(o => {
@@ -590,9 +591,9 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
         </div>
       );
     }
-    // text
+    // text — full width by default since they're usually long values
     return (
-      <div key={f.key} style={{ padding: '8px 0' }}>
+      <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
         <label style={labelStyle}>{f.label}</label>
         <input
           type="text"
@@ -730,7 +731,17 @@ export function SettingsModal({ organizationId, locale, storedAuth, officeName, 
                         {sec.id === 'business' && (
                           <div style={helpStyle}>{t('sm.hours_note')}</div>
                         )}
-                        {sec.fields.map(renderField)}
+                        {/* 2-column grid: short fields (num/bool) pair up,
+                            long fields (text/textarea/enum/multi) span both
+                            columns via gridColumn '1 / -1' set in renderField. */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                          columnGap: 20,
+                          rowGap: 0,
+                        }}>
+                          {sec.fields.map(renderField)}
+                        </div>
                       </div>
                     )}
                   </div>
