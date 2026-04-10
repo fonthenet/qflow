@@ -5,6 +5,7 @@ import { getAvailableSlots } from '@/lib/slot-generator';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 
 function getSupabase() {
   return createClient(
@@ -14,6 +15,9 @@ function getSupabase() {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = await checkRateLimit(request, publicLimiter);
+  if (blocked) return blocked;
+
   let body: unknown;
   try {
     body = await request.json();

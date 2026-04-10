@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 import { getQueuePosition } from '@/lib/queue-position';
+import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 
 let _supabase: SupabaseClient | null = null;
 
@@ -16,6 +17,9 @@ function getSupabase(): SupabaseClient {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = await checkRateLimit(request, publicLimiter);
+  if (blocked) return blocked;
+
   let body: {
     officeId?: string;
     departmentId?: string;

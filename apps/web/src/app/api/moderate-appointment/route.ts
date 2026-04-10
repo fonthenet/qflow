@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { checkRateLimit, generalLimiter } from '@/lib/rate-limit';
 import { safeCompare } from '@/lib/crypto-utils';
 
 let _supabase: SupabaseClient | null = null;
@@ -58,6 +59,9 @@ async function authenticateRequest(request: NextRequest): Promise<boolean> {
 }
 
 export async function POST(request: NextRequest) {
+  const blocked = await checkRateLimit(request, generalLimiter);
+  if (blocked) return blocked;
+
   // Authenticate — require a valid Bearer token
   const isAuthenticated = await authenticateRequest(request);
   if (!isAuthenticated) {

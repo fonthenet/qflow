@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { handleWhatsAppMessage } from '@/lib/whatsapp-commands';
 import crypto from 'crypto';
+import { checkRateLimit, webhookLimiter } from '@/lib/rate-limit';
 
 /**
  * GET — Webhook verification (used by Meta Cloud API).
@@ -48,6 +49,9 @@ export async function GET(request: NextRequest) {
  * looking up an existing active session for STATUS / CANCEL commands.
  */
 export async function POST(request: NextRequest) {
+  const blocked = await checkRateLimit(request, webhookLimiter);
+  if (blocked) return blocked;
+
   try {
     const contentType = request.headers.get('content-type') ?? '';
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { handleInboundMessage, tNotification, formatPosition } from '@/lib/messaging-commands';
+import { checkRateLimit, webhookLimiter } from '@/lib/rate-limit';
 import {
   sendMessengerMessage,
   sendMessengerMessageWithTag,
@@ -48,6 +49,9 @@ export async function GET(request: NextRequest) {
  * Routing by business code (e.g. "JOIN HADABI") or active session lookup.
  */
 export async function POST(request: NextRequest) {
+  const blocked = await checkRateLimit(request, webhookLimiter);
+  if (blocked) return blocked;
+
   try {
     const rawBody = await request.text();
 
