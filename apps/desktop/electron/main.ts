@@ -8,6 +8,7 @@ import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP,
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
+import { isValidTransition } from './ticket-transitions';
 
 // ── Force French (Algeria) locale for native inputs (date pickers, etc.) ─
 app.commandLine.appendSwitch('lang', 'fr-FR');
@@ -722,6 +723,12 @@ function setupIPC() {
       ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any
       : null;
 
+    // ── Validate status transition ──
+    if (safeUpdates.status && prevTicket && !isValidTransition(prevTicket.status, safeUpdates.status)) {
+      console.warn(`[ipc] Invalid transition: ${prevTicket.status} → ${safeUpdates.status} for ticket ${ticketId}`);
+      return null;
+    }
+
     // Transaction: ticket update + sync queue insert are atomic (crash-safe)
     // For manual "Call" button: use atomic CAS to prevent two staff calling same ticket
     if (safeUpdates.status === 'called') {
@@ -1075,15 +1082,23 @@ function setupIPC() {
       console.log('[auth] Credentials encrypted and stored for silent re-auth');
     }
 
+    // Generate a station_token for authenticating HTTP station endpoints
+    const stationToken = randomUUID();
     db.prepare(`
-      INSERT OR REPLACE INTO session (key, value)
-      VALUES ('current', ?)
-    `).run(JSON.stringify(session));
+      INSERT OR REPLACE INTO session (key, value, station_token)
+      VALUES ('current', ?, ?)
+    `).run(JSON.stringify(session), stationToken);
 
     // Register Station's local IP in office settings so web kiosk can discover it
     registerStationIP(session);
     notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });
     notifyStationClients({ type: 'session_changed' });
+  });
+
+  // Expose station_token to renderer so it can pass it to the station HTML page
+  ipcMain.handle('session:get-station-token', () => {
+    const row = db.prepare("SELECT station_token FROM session WHERE key = 'current'").get() as any;
+    return row?.station_token ?? null;
   });
 
   ipcMain.handle('session:load', () => {
@@ -1229,6 +1244,8 @@ function setupIPC() {
     if (updateStatus.status !== 'downloaded') {
       return { ok: false, error: 'No update ready to install' };
     }
+    // Backup DB before installing update
+    backupDatabase();
     setImmediate(() => {
       autoUpdater.quitAndInstall(false, true);
     });
@@ -1788,9 +1805,9 @@ app.whenReady().then(async () => {
     console.error('Failed to start kiosk server:', err);
   }
 
-  // Auto-update check (silent)
+  // Auto-update check — prompt user before install, backup DB first
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on('checking-for-update', () => {
     setUpdateStatus({
       status: 'checking',
@@ -1826,17 +1843,46 @@ app.whenReady().then(async () => {
       message: translate(currentLocale, 'Qflo Station is up to date.'),
     });
   });
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', async (info) => {
     setUpdateStatus({
       status: 'downloaded',
       version: info.version,
       progress: 100,
       message: translate(currentLocale, 'Restart to apply the update.'),
     });
-    new Notification({
+
+    // Backup the database before prompting to install
+    const backup = backupDatabase();
+    if (backup) {
+      console.log(`[update] Pre-update DB backup: ${backup.path} (${(backup.size / 1024).toFixed(1)}KB)`);
+    } else {
+      console.warn('[update] Pre-update DB backup failed — proceeding anyway');
+    }
+
+    // Ask user to confirm the update
+    const { response } = await dialog.showMessageBox(mainWindow!, {
+      type: 'info',
       title: translate(currentLocale, 'Qflo Update Ready'),
-      body: translate(currentLocale, 'Restart to apply the update.'),
-    }).show();
+      message: translate(currentLocale, 'A new version ({version}) is ready to install.', { version: info.version }),
+      detail: backup
+        ? translate(currentLocale, 'A database backup was created. Restart now to apply the update?')
+        : translate(currentLocale, 'Restart now to apply the update?'),
+      buttons: [
+        translate(currentLocale, 'Restart Now'),
+        translate(currentLocale, 'Later'),
+      ],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    if (response === 0) {
+      autoUpdater.quitAndInstall(false, true);
+    } else {
+      new Notification({
+        title: translate(currentLocale, 'Qflo Update Ready'),
+        body: translate(currentLocale, 'Restart to apply the update.'),
+      }).show();
+    }
   });
   autoUpdater.on('error', (error) => {
     setUpdateStatus({

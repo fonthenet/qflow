@@ -1,8 +1,25 @@
+import type { Metadata } from 'next';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { notFound } from 'next/navigation';
 import { BookingForm } from '@/components/appointments/booking-form';
 import { matchesOfficePublicSlug } from '@/lib/office-links';
 import { resolvePlatformConfig } from '@/lib/platform/config';
+
+export async function generateMetadata({ params }: { params: Promise<{ officeSlug: string }> }): Promise<Metadata> {
+  const { officeSlug } = await params;
+  // Decode the slug for display
+  const displayName = decodeURIComponent(officeSlug).replace(/-/g, ' ');
+
+  return {
+    title: `Book Appointment — ${displayName} | Qflo`,
+    description: `Book your appointment online at ${displayName}. Skip the wait and reserve your spot.`,
+    openGraph: {
+      title: `Book Appointment — ${displayName}`,
+      description: `Book your appointment online at ${displayName}. Skip the wait and reserve your spot.`,
+      type: 'website',
+    },
+  };
+}
 
 interface BookingPageProps {
   params: Promise<{ officeSlug: string }>;

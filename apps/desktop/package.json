@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.5.45",
+  "version": "1.5.46",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -18,6 +18,7 @@
     "build:all": "tsc && vite build && bash sync-web-station.sh && electron-builder --win",
     "start": "electron dist-electron/main.js",
     "preview": "vite preview",
+    "pretest": "cd ../../node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3 && npx --yes prebuild-install --runtime=node --target=22.14.0 --arch=x64",
     "test": "vitest run",
     "posttest": "cd ../../node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3 && npx --yes prebuild-install --runtime=electron --target=35.7.5 --arch=x64"
   },

@@ -32,12 +32,24 @@ const nextConfig: NextConfig = {
   },
 
   // Ensure AASA file is served with correct content type for iOS App Clips
+  // + security headers for all routes
   async headers() {
     return [
       {
         source: '/.well-known/apple-app-site-association',
         headers: [
           { key: 'Content-Type', value: 'application/json' },
+        ],
+      },
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'X-DNS-Prefetch-Control', value: 'on' },
         ],
       },
     ];

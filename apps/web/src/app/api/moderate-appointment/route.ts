@@ -3,19 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
-import { timingSafeEqual } from 'crypto';
-
-function safeCompare(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  try {
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) return false;
-    return timingSafeEqual(bufA, bufB);
-  } catch {
-    return false;
-  }
-}
+import { safeCompare } from '@/lib/crypto-utils';
 
 let _supabase: SupabaseClient | null = null;
 function getSupabase(): SupabaseClient {
@@ -121,7 +109,7 @@ export async function POST(request: NextRequest) {
   // Org name for branded notifications.
   const { data: office } = await supabase
     .from('offices')
-    .select('id, organization_id, organization:organizations(id, name)')
+    .select('id, organization_id, timezone, organization:organizations(id, name)')
     .eq('id', appt.office_id)
     .single();
   const orgName: string = office?.organization?.name ?? '';
@@ -189,11 +177,13 @@ export async function POST(request: NextRequest) {
 
     // Detect same-day appointment: scheduled_at is today → ticket is auto-created,
     // so don't say "you'll receive a ticket when you arrive".
-    // Compare using UTC+1 (Algeria) to avoid timezone mismatch on Vercel (UTC).
-    const algeriaOffset = 60; // UTC+1 in minutes
-    const nowAlgeria = new Date(Date.now() + algeriaOffset * 60_000);
-    const todayStr = nowAlgeria.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    const scheduledStr = appt.scheduled_at ? appt.scheduled_at.slice(0, 10) : '';
+    // Detect same-day appointment using the office's actual timezone.
+    const officeTz = office?.timezone || 'Africa/Algiers';
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: officeTz }).format(new Date());
+    const scheduledDate = appt.scheduled_at ? new Date(appt.scheduled_at) : null;
+    const scheduledStr = scheduledDate
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: officeTz }).format(scheduledDate)
+      : '';
     const isSameDay = scheduledStr === todayStr;
     const approveTemplate = isSameDay ? 'approval_approved_sameday' : 'approval_approved';
 

@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('qf', {
     save: (session: any) => ipcRenderer.invoke('session:save', session),
     load: () => ipcRenderer.invoke('session:load'),
     clear: () => ipcRenderer.invoke('session:clear'),
+    getStationToken: () => ipcRenderer.invoke('session:get-station-token'),
   },
 
   // Broadcast templates (local SQLite)

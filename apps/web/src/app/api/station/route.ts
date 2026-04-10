@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getOfficeDayStartIso } from '@/lib/office-day';
+import { isValidTransition } from '@queueflow/shared';
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -203,6 +204,20 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case 'update-ticket': {
         const { ticketId, updates } = body;
+
+        // Validate status transition if status is being changed
+        if (updates?.status) {
+          const { data: current, error: fetchErr } = await supabase
+            .from('tickets')
+            .select('status')
+            .eq('id', ticketId)
+            .single();
+          if (fetchErr || !current) return json({ ok: false, error: 'Ticket not found' }, 404);
+          if (!isValidTransition(current.status, updates.status)) {
+            return json({ ok: false, error: `Invalid status transition: ${current.status} → ${updates.status}` }, 409);
+          }
+        }
+
         const { data, error } = await supabase
           .from('tickets')
           .update(updates)

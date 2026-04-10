@@ -960,6 +960,22 @@ export const industryTemplates: IndustryTemplate[] = [
     vertical: 'restaurant',
     version: versionMetadata('1.2.0', ['1.1.0', '1.0.0'], 'Host-stand waitlist with reservation-ready defaults and staff-controlled seating decisions.', [
       {
+        fromVersion: '1.0.0',
+        toVersion: '1.1.0',
+        releasedAt: '2026-03-10',
+        summary: 'Improves host-stand defaults and waitlist capacity.',
+        officeRolloutRecommended: false,
+        changes: [
+          migrationChange(
+            'restaurant-capacity-bump',
+            'queue_policy',
+            'safe',
+            'Higher default waitlist capacity',
+            'Capacity increases from 40 to 50 guests.'
+          ),
+        ],
+      },
+      {
         fromVersion: '1.1.0',
         toVersion: '1.2.0',
         releasedAt: '2026-03-16',

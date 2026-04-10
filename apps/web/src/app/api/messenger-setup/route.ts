@@ -1,18 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
-
-/** Constant-time string comparison to prevent timing attacks */
-function safeCompare(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  try {
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) return false;
-    return timingSafeEqual(bufA, bufB);
-  } catch {
-    return false;
-  }
-}
+import { safeCompare } from '@/lib/crypto-utils';
 
 /**
  * POST /api/messenger-setup

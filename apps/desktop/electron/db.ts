@@ -32,7 +32,7 @@ export function initDB() {
       department_id TEXT,
       service_id TEXT,
       desk_id TEXT,
-      status TEXT NOT NULL DEFAULT 'waiting',
+      status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred')),
       priority INTEGER DEFAULT 0,
       customer_data TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
@@ -90,7 +90,7 @@ export function initDB() {
       department_id TEXT,
       office_id TEXT,
       is_active INTEGER DEFAULT 1,
-      status TEXT DEFAULT 'open',
+      status TEXT DEFAULT 'open' CHECK(status IN ('open','closed','paused','break')),
       current_staff_id TEXT,
       updated_at TEXT
     );
@@ -122,7 +122,8 @@ export function initDB() {
     -- Session storage
     CREATE TABLE IF NOT EXISTS session (
       key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+      value TEXT NOT NULL,
+      station_token TEXT
     );
 
     -- Ticket number counter (for offline ticket generation)
@@ -199,6 +200,48 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN locale TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE session ADD COLUMN station_token TEXT`); } catch { /* already exists */ }
+
+  // ── CHECK constraint enforcement via triggers (for existing DBs without inline CHECKs) ──
+  // SQLite cannot ALTER TABLE to add CHECK constraints, so we use BEFORE triggers.
+  const VALID_TICKET_STATUSES = `('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred')`;
+  const VALID_DESK_STATUSES = `('open','closed','paused','break')`;
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_tickets_status_check_insert
+      BEFORE INSERT ON tickets
+      WHEN NEW.status NOT IN ${VALID_TICKET_STATUSES}
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid ticket status');
+      END
+    `);
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_tickets_status_check_update
+      BEFORE UPDATE OF status ON tickets
+      WHEN NEW.status NOT IN ${VALID_TICKET_STATUSES}
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid ticket status');
+      END
+    `);
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_desks_status_check_insert
+      BEFORE INSERT ON desks
+      WHEN NEW.status NOT IN ${VALID_DESK_STATUSES}
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid desk status');
+      END
+    `);
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_desks_status_check_update
+      BEFORE UPDATE OF status ON desks
+      WHEN NEW.status NOT IN ${VALID_DESK_STATUSES}
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid desk status');
+      END
+    `);
+  } catch (err) {
+    console.error('[db] Failed to create status check triggers:', err);
+  }
 
   // Prevent duplicate tickets for the same appointment (partial unique index)
   try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_appointment_unique ON tickets (appointment_id) WHERE appointment_id IS NOT NULL AND status NOT IN ('cancelled', 'no_show')`); } catch { /* already exists */ }
@@ -264,6 +307,22 @@ export function initDB() {
   } catch (err) {
     console.error('[db] Could not run integrity check:', err);
   }
+
+  // Cleanup old audit log entries (keep 90 days)
+  try {
+    const deleted = db.prepare("DELETE FROM ticket_audit_log WHERE created_at < datetime('now', '-90 days')").run();
+    if (deleted.changes > 0) {
+      console.log(`[db] Cleaned up ${deleted.changes} audit log entries older than 90 days`);
+    }
+  } catch { /* table may not exist in some versions */ }
+
+  // Cleanup old synced entries (keep 30 days of history)
+  try {
+    const deleted = db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < datetime('now', '-30 days')").run();
+    if (deleted.changes > 0) {
+      console.log(`[db] Cleaned up ${deleted.changes} old sync_queue entries`);
+    }
+  } catch { /* ignore */ }
 
   // ── One-time cleanup: remove L- prefixed local tickets that have a cloud equivalent ──
   const lCleanup = db.prepare(`

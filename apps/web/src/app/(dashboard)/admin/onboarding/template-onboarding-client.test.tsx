@@ -4,6 +4,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { LocaleProvider } from '@/components/providers/locale-provider';
 
 const { applyIndustryTemplateSetupMock } = vi.hoisted(() => ({
   applyIndustryTemplateSetupMock: vi.fn(),
@@ -22,6 +23,7 @@ describe('TemplateOnboardingClient', () => {
 
   it('prefills the first office name for new organizations', () => {
     render(
+      <LocaleProvider locale="en">
       <TemplateOnboardingClient
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={0}
@@ -37,6 +39,7 @@ describe('TemplateOnboardingClient', () => {
           recommendedRoles: ['admin'],
         }}
       />
+      </LocaleProvider>
     );
 
     expect((screen.getByLabelText('Starter Office Name') as HTMLInputElement).value).toBe(
@@ -48,6 +51,7 @@ describe('TemplateOnboardingClient', () => {
     const user = userEvent.setup();
 
     render(
+      <LocaleProvider locale="en">
       <TemplateOnboardingClient
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={2}
@@ -63,6 +67,7 @@ describe('TemplateOnboardingClient', () => {
           recommendedRoles: ['admin'],
         }}
       />
+      </LocaleProvider>
     );
 
     await user.selectOptions(screen.getByLabelText('Industry Template'), 'restaurant-waitlist');
@@ -92,6 +97,7 @@ describe('TemplateOnboardingClient', () => {
     });
 
     render(
+      <LocaleProvider locale="en">
       <TemplateOnboardingClient
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={1}
@@ -107,6 +113,7 @@ describe('TemplateOnboardingClient', () => {
           recommendedRoles: ['admin'],
         }}
       />
+      </LocaleProvider>
     );
 
     await user.clear(screen.getByLabelText('Starter Office Name'));
@@ -136,6 +143,7 @@ describe('TemplateOnboardingClient', () => {
     });
 
     render(
+      <LocaleProvider locale="en">
       <TemplateOnboardingClient
         organization={{ id: 'org-1', name: 'QueueFlow' }}
         existingOfficeCount={1}
@@ -151,6 +159,7 @@ describe('TemplateOnboardingClient', () => {
           recommendedRoles: ['admin'],
         }}
       />
+      </LocaleProvider>
     );
 
     await user.click(screen.getByLabelText('Apply Template'));

@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
 import { normalizeLocale } from '../src/lib/i18n';
+import { isValidTransition } from './ticket-transitions';
 
 // ── Static kiosk assets (loaded once at startup, served from memory) ──
 const KIOSK_DIR = join(__dirname, 'kiosk');
@@ -360,6 +361,39 @@ export function getLocalIP(): string {
   return '127.0.0.1';
 }
 
+// ── Station endpoint authentication ──────────────────────────────
+// Validates the X-Station-Token header against the stored station_token
+// in SQLite. Returns true if the request is authenticated.
+function authenticateStationRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  // Accept token from header (fetch) or query param (EventSource/SSE)
+  let token = req.headers['x-station-token'] as string | undefined;
+  if (!token) {
+    try {
+      const reqUrl = new URL(req.url ?? '/', `http://localhost:${localPort}`);
+      token = reqUrl.searchParams.get('token') ?? undefined;
+    } catch { /* ignore parse errors */ }
+  }
+  if (!token) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing X-Station-Token header' }));
+    return false;
+  }
+  try {
+    const db = getDB();
+    const row = db.prepare("SELECT station_token FROM session WHERE key = 'current'").get() as any;
+    if (!row?.station_token || row.station_token !== token) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid station token' }));
+      return false;
+    }
+    return true;
+  } catch {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Auth check failed' }));
+    return false;
+  }
+}
+
 // ── Start kiosk server ────────────────────────────────────────────
 
 export function startKioskServer(port = 3847, requestedPort?: number): Promise<{ url: string; port: number }> {
@@ -371,7 +405,7 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       // CORS headers for tablet browsers
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Station-Token');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -431,42 +465,50 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       } else if (path.startsWith('/station/assets/')) {
         serveStationAsset(path.replace('/station/', ''), res);
       // ── Station HTTP API (mirrors Electron IPC) ──────────────────
-      } else if (path === '/api/station/config' && req.method === 'GET') {
-        handleStationConfig(res);
-      } else if (path === '/api/station/tickets' && req.method === 'GET') {
-        handleStationGetTickets(url, res);
-      } else if (path === '/api/station/update-ticket' && req.method === 'POST') {
-        handleStationBody(req, res, handleStationUpdateTicket);
-      } else if (path === '/api/station/update-desk' && req.method === 'POST') {
-        handleStationBody(req, res, handleStationUpdateDesk);
-      } else if (path === '/api/station/call-next' && req.method === 'POST') {
-        handleStationBody(req, res, handleStationCallNext);
-      } else if (path === '/api/station/query' && req.method === 'GET') {
-        handleStationQuery(url, res);
-      } else if (path === '/api/station/sync-status' && req.method === 'GET') {
-        handleStationSyncStatus(res);
-      } else if (path === '/api/station/sync-force' && req.method === 'POST') {
-        handleStationSyncForce(res);
-      } else if (path === '/api/station/sync-pending' && req.method === 'GET') {
-        handleStationSyncPending(res);
-      } else if (path === '/api/station/session' && req.method === 'GET') {
-        handleStationSessionLoad(res);
-      } else if (path === '/api/station/session/clear' && req.method === 'POST') {
-        handleStationSessionClear(res);
-      } else if (path === '/api/station/settings' && req.method === 'GET') {
-        handleStationSettings(res);
-      } else if (path === '/api/station/settings/locale' && req.method === 'POST') {
-        handleStationBody(req, res, handleStationSetLocale);
-      } else if (path === '/api/station/activity' && req.method === 'GET') {
-        handleStationActivity(url, res);
-      } else if (path === '/api/station/events' && req.method === 'GET') {
-        handleStationSSE(req, res);
-      } else if (path === '/api/station/kiosk-info' && req.method === 'GET') {
-        handleStationKioskInfo(res);
-      } else if (path === '/api/station/branding' && req.method === 'GET') {
-        handleStationBranding(res);
-      } else if (path === '/api/station/public-links' && req.method === 'GET') {
-        handleStationPublicLinks(res);
+      // All /api/station/* endpoints require X-Station-Token authentication
+      } else if (path.startsWith('/api/station/') || path === '/api/station') {
+        if (!authenticateStationRequest(req, res)) return;
+
+        if (path === '/api/station/config' && req.method === 'GET') {
+          handleStationConfig(res);
+        } else if (path === '/api/station/tickets' && req.method === 'GET') {
+          handleStationGetTickets(url, res);
+        } else if (path === '/api/station/update-ticket' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationUpdateTicket);
+        } else if (path === '/api/station/update-desk' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationUpdateDesk);
+        } else if (path === '/api/station/call-next' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationCallNext);
+        } else if (path === '/api/station/query' && req.method === 'GET') {
+          handleStationQuery(url, res);
+        } else if (path === '/api/station/sync-status' && req.method === 'GET') {
+          handleStationSyncStatus(res);
+        } else if (path === '/api/station/sync-force' && req.method === 'POST') {
+          handleStationSyncForce(res);
+        } else if (path === '/api/station/sync-pending' && req.method === 'GET') {
+          handleStationSyncPending(res);
+        } else if (path === '/api/station/session' && req.method === 'GET') {
+          handleStationSessionLoad(res);
+        } else if (path === '/api/station/session/clear' && req.method === 'POST') {
+          handleStationSessionClear(res);
+        } else if (path === '/api/station/settings' && req.method === 'GET') {
+          handleStationSettings(res);
+        } else if (path === '/api/station/settings/locale' && req.method === 'POST') {
+          handleStationBody(req, res, handleStationSetLocale);
+        } else if (path === '/api/station/activity' && req.method === 'GET') {
+          handleStationActivity(url, res);
+        } else if (path === '/api/station/events' && req.method === 'GET') {
+          handleStationSSE(req, res);
+        } else if (path === '/api/station/kiosk-info' && req.method === 'GET') {
+          handleStationKioskInfo(res);
+        } else if (path === '/api/station/branding' && req.method === 'GET') {
+          handleStationBranding(res);
+        } else if (path === '/api/station/public-links' && req.method === 'GET') {
+          handleStationPublicLinks(res);
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Not found' }));
+        }
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
@@ -870,20 +912,6 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         } catch { /* non-critical — allow ticket creation if org settings unreadable */ }
       }
 
-      // Prevent duplicate tickets for the same appointment
-      if (safeAppointmentId) {
-        const existing = db.prepare(
-          "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
-        ).get(safeAppointmentId) as any;
-        if (existing) {
-          console.warn(`[kiosk] Duplicate check-in blocked: appointment ${safeAppointmentId} already has ticket ${existing.ticket_number}`);
-          const pos = (db.prepare("SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting'").get(officeId) as any)?.c ?? 0;
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ticket: { id: existing.id, ticket_number: existing.ticket_number, status: 'waiting', position: pos, duplicate: true } }));
-          return;
-        }
-      }
-
       const deptCode = dept?.code ?? 'Q';
       const ticketId = randomUUID();
       const now = new Date().toISOString();
@@ -906,54 +934,94 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         ...(safeReason ? { reason: safeReason } : {}),
       });
 
-      // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
-      db.transaction(() => {
-        db.prepare(`
-          INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, priority_category_id, appointment_id, customer_data, created_at, is_offline, daily_sequence, source)
-          VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, ticketPriority, safePriorityCategoryId, safeAppointmentId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
+      // Transaction: duplicate check + ticket insert + sync queue are atomic (crash-safe)
+      // The duplicate check MUST be inside the transaction to prevent TOCTOU races.
+      try {
+        db.transaction(() => {
+          // Check for duplicate appointment check-in INSIDE the transaction (atomic)
+          if (safeAppointmentId) {
+            const existing = db.prepare(
+              "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
+            ).get(safeAppointmentId) as any;
+            if (existing) {
+              // Throw a sentinel to abort the transaction and return the existing ticket
+              throw { __duplicate: true, id: existing.id, ticket_number: existing.ticket_number };
+            }
+          }
 
-        db.prepare(`
-          INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-          VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
-        `).run(
-          ticketId + '-create',
-          ticketId,
-          JSON.stringify({
-            id: ticketId,
-            ticket_number: ticketNumber,
-            office_id: officeId,
-            department_id: departmentId,
-            service_id: serviceId,
-            status: 'waiting',
-            priority: ticketPriority,
-            priority_category_id: safePriorityCategoryId,
-            appointment_id: safeAppointmentId,
-            customer_data: { name: safeName || null, phone: safePhone || null, ...(safeReason ? { reason: safeReason } : {}) },
-            created_at: now,
-            qr_token: qrToken,
-            daily_sequence: dailySequence,
-            source: ticketSource,
-          }),
-          now
-        );
+          db.prepare(`
+            INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, priority_category_id, appointment_id, customer_data, created_at, is_offline, daily_sequence, source)
+            VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(ticketId, ticketNumber, officeId, departmentId, serviceId, ticketPriority, safePriorityCategoryId, safeAppointmentId, customerData, now, isOffline ? 1 : 0, dailySequence, ticketSource);
 
-        // If appointment_id provided, mark appointment as checked in
-        if (safeAppointmentId) {
-          try {
-            db.prepare("UPDATE appointments SET status = 'checked_in' WHERE id = ?").run(safeAppointmentId);
-            db.prepare(`
-              INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
-              VALUES (?, 'UPDATE', 'appointments', ?, ?, ?)
-            `).run(
-              safeAppointmentId + '-checkin',
-              safeAppointmentId,
-              JSON.stringify({ status: 'checked_in' }),
-              now
-            );
-          } catch { /* appointments table may not exist */ }
+          db.prepare(`
+            INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+            VALUES (?, 'INSERT', 'tickets', ?, ?, ?)
+          `).run(
+            ticketId + '-create',
+            ticketId,
+            JSON.stringify({
+              id: ticketId,
+              ticket_number: ticketNumber,
+              office_id: officeId,
+              department_id: departmentId,
+              service_id: serviceId,
+              status: 'waiting',
+              priority: ticketPriority,
+              priority_category_id: safePriorityCategoryId,
+              appointment_id: safeAppointmentId,
+              customer_data: { name: safeName || null, phone: safePhone || null, ...(safeReason ? { reason: safeReason } : {}) },
+              created_at: now,
+              qr_token: qrToken,
+              daily_sequence: dailySequence,
+              source: ticketSource,
+            }),
+            now
+          );
+
+          // If appointment_id provided, mark appointment as checked in
+          if (safeAppointmentId) {
+            try {
+              db.prepare("UPDATE appointments SET status = 'checked_in' WHERE id = ?").run(safeAppointmentId);
+              db.prepare(`
+                INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+                VALUES (?, 'UPDATE', 'appointments', ?, ?, ?)
+              `).run(
+                safeAppointmentId + '-checkin',
+                safeAppointmentId,
+                JSON.stringify({ status: 'checked_in' }),
+                now
+              );
+            } catch { /* appointments table may not exist */ }
+          }
+        })();
+      } catch (txErr: any) {
+        // Handle duplicate detected inside transaction (sentinel throw)
+        if (txErr?.__duplicate) {
+          console.warn(`[kiosk] Duplicate check-in blocked (in-txn): appointment ${safeAppointmentId} already has ticket ${txErr.ticket_number}`);
+          const pos = (db.prepare("SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting'").get(officeId) as any)?.c ?? 0;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ticket: { id: txErr.id, ticket_number: txErr.ticket_number, status: 'waiting', position: pos, duplicate: true } }));
+          return;
         }
-      })();
+        // Handle SQLITE_CONSTRAINT from the unique partial index (concurrent race that bypassed the SELECT check)
+        if (txErr?.code === 'SQLITE_CONSTRAINT' || txErr?.code === 'SQLITE_CONSTRAINT_UNIQUE' || (txErr?.message && txErr.message.includes('UNIQUE constraint failed'))) {
+          console.warn(`[kiosk] Duplicate check-in blocked (constraint): appointment ${safeAppointmentId}`);
+          if (safeAppointmentId) {
+            const existing = db.prepare(
+              "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
+            ).get(safeAppointmentId) as any;
+            if (existing) {
+              const pos = (db.prepare("SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting'").get(officeId) as any)?.c ?? 0;
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ticket: { id: existing.id, ticket_number: existing.ticket_number, status: 'waiting', position: pos, duplicate: true } }));
+              return;
+            }
+          }
+        }
+        // Re-throw unexpected errors
+        throw txErr;
+      }
 
       // Audit log — immutable trail
       logTicketEvent(ticketId, 'created', {
@@ -1300,6 +1368,11 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     ORDER BY t.called_at DESC
   `).all(office.id) as any[];
 
+  const totalWaitingRow = db.prepare(
+    "SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting' AND parked_at IS NULL"
+  ).get(office.id) as any;
+  const totalWaitingCount = totalWaitingRow?.c ?? 0;
+
   const waitingTickets = db.prepare(`
     SELECT t.id, t.ticket_number, t.status, t.priority, t.created_at, t.service_id,
            t.department_id, t.customer_data, t.appointment_id,
@@ -1309,6 +1382,7 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     LEFT JOIN services s ON s.id = t.service_id
     WHERE t.office_id = ? AND t.status = 'waiting' AND t.parked_at IS NULL
     ORDER BY t.priority DESC, t.created_at ASC
+    LIMIT 200
   `).all(office.id) as any[];
 
   // Timezone-aware "start of today" using office timezone
@@ -1374,6 +1448,7 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     now_serving: nowServing,
     waiting: enrichedWaiting,
     waiting_count: enrichedWaiting.length,
+    total_waiting: totalWaitingCount,
     called_count: nowServing.filter((t: any) => t.status === 'called').length,
     serving_count: nowServing.filter((t: any) => t.status === 'serving').length,
     served_count: servedCount?.c ?? 0,
@@ -2546,6 +2621,14 @@ function serveStationIndex(res: http.ServerResponse) {
   try {
     let html = readFileSync(join(STATION_DIR, 'index.html'), 'utf-8');
 
+    // Read station_token from SQLite to embed in the shim for authenticated requests
+    let stationToken = '';
+    try {
+      const db = getDB();
+      const row = db.prepare("SELECT station_token FROM session WHERE key = 'current'").get() as any;
+      stationToken = row?.station_token ?? '';
+    } catch { /* no session yet */ }
+
     // Inject the HTTP shim BEFORE the app script — this creates window.qf
     // using fetch() instead of ipcRenderer
     const shimScript = `<script>
@@ -2553,9 +2636,16 @@ function serveStationIndex(res: http.ServerResponse) {
 (function() {
   window.__QF_HTTP_MODE__ = true;
   var API = window.location.origin;
+  var STATION_TOKEN = ${JSON.stringify(stationToken)};
+
+  function authHeaders(extra) {
+    var h = extra || {};
+    if (STATION_TOKEN) h['X-Station-Token'] = STATION_TOKEN;
+    return h;
+  }
 
   function get(path) {
-    return fetch(API + path).then(function(r) {
+    return fetch(API + path, { headers: authHeaders() }).then(function(r) {
       if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); }
       return r.json();
     });
@@ -2563,7 +2653,7 @@ function serveStationIndex(res: http.ServerResponse) {
   function post(path, body) {
     return fetch(API + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     }).then(function(r) {
       if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); }
@@ -2579,7 +2669,7 @@ function serveStationIndex(res: http.ServerResponse) {
 
   function connectSSE() {
     if (sse) { try { sse.close(); } catch(e) {} }
-    sse = new EventSource(API + '/api/station/events');
+    sse = new EventSource(API + '/api/station/events' + (STATION_TOKEN ? '?token=' + encodeURIComponent(STATION_TOKEN) : ''));
     sse.onmessage = function(e) {
       try {
         var data = JSON.parse(e.data);
@@ -3073,6 +3163,14 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
   const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
   const vals = Object.values(safe);
   const prev = safe.status ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any : null;
+
+  // Validate status transition
+  if (safe.status && prev && !isValidTransition(prev.status, safe.status)) {
+    console.warn(`[KioskServer] Invalid transition: ${prev.status} → ${safe.status} for ticket ${ticketId}`);
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `Invalid status transition: ${prev.status} → ${safe.status}` }));
+    return;
+  }
 
   if (safe.status === 'called') {
     const r = db.prepare(`UPDATE tickets SET ${sets} WHERE id = ? AND status = 'waiting' RETURNING *`).get(...vals, ticketId);

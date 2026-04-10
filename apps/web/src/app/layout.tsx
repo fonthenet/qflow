@@ -3,6 +3,8 @@ import './globals.css';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import { TranslationRuntime } from '@/components/providers/translation-runtime';
 import { getServerI18n } from '@/lib/i18n';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 export const viewport: Viewport = {
   themeColor: '#2563eb',
@@ -49,6 +51,8 @@ export default async function RootLayout({
           <TranslationRuntime />
           {children}
         </LocaleProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

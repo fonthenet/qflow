@@ -82,8 +82,16 @@ export async function GET(
       .select('id, department_id, ticket_number, created_at, priority, appointment_id, customer_data, department:departments(name, code)')
       .eq('office_id', screen.office_id)
       .eq('status', 'waiting')
-      .order('created_at'),
+      .order('created_at')
+      .limit(200),
   ]);
+
+  // Get total waiting count separately (may exceed the 200 limit above)
+  const { count: totalWaitingCount } = await supabase
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('office_id', screen.office_id)
+    .eq('status', 'waiting');
 
   const officeDayStartIso = getOfficeDayStartIso(office.timezone);
   const { count: servedTodayCount } = await supabase
@@ -120,6 +128,7 @@ export async function GET(
       screen: mergedScreen,
       activeTickets: sanitizedActiveTickets,
       waitingTickets: waitingTickets ?? [],
+      totalWaitingCount: totalWaitingCount ?? (waitingTickets ?? []).length,
       servedTodayCount: servedTodayCount ?? 0,
     },
     {

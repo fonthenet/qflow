@@ -5,6 +5,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TemplateGovernanceReport } from '@/lib/platform/governance';
+import { LocaleProvider } from '@/components/providers/locale-provider';
 
 const { upgradeIndustryTemplateSettingsMock, rolloutIndustryTemplateToOfficesMock, refreshMock } =
   vi.hoisted(() => ({
@@ -166,6 +167,7 @@ describe('TemplateGovernanceClient', () => {
     });
 
     render(
+      <LocaleProvider locale="en">
       <TemplateGovernanceClient
         organization={{ id: 'org-1', name: 'QueueFlow Financial' }}
         templateSummary={{
@@ -181,6 +183,7 @@ describe('TemplateGovernanceClient', () => {
         }}
         governanceReport={governanceReport}
       />
+      </LocaleProvider>
     );
 
     await user.click(screen.getByRole('button', { name: 'Capabilities Adopt Defaults' }));
@@ -211,6 +214,7 @@ describe('TemplateGovernanceClient', () => {
     });
 
     render(
+      <LocaleProvider locale="en">
       <TemplateGovernanceClient
         organization={{ id: 'org-1', name: 'QueueFlow Financial' }}
         templateSummary={{
@@ -226,6 +230,7 @@ describe('TemplateGovernanceClient', () => {
         }}
         governanceReport={governanceReport}
       />
+      </LocaleProvider>
     );
 
     await user.click(screen.getByLabelText('Select office Downtown Branch'));

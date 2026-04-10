@@ -46,7 +46,9 @@ type TableName =
   | 'desk_services'
   | 'intake_form_fields'
   | 'priority_categories'
-  | 'display_screens';
+  | 'display_screens'
+  | 'restaurant_tables'
+  | 'virtual_queue_codes';
 
 type RowRecord = Record<string, any>;
 
@@ -185,6 +187,8 @@ class FakeSupabaseClient {
       intake_form_fields: seed?.intake_form_fields ? [...seed.intake_form_fields] : [],
       priority_categories: seed?.priority_categories ? [...seed.priority_categories] : [],
       display_screens: seed?.display_screens ? [...seed.display_screens] : [],
+      restaurant_tables: seed?.restaurant_tables ? [...seed.restaurant_tables] : [],
+      virtual_queue_codes: seed?.virtual_queue_codes ? [...seed.virtual_queue_codes] : [],
     };
   }
 
@@ -254,7 +258,7 @@ describe('platform actions', () => {
         data: expect.objectContaining({
           templateId: 'restaurant-waitlist',
           departmentsCreated: 1,
-          servicesCreated: 4,
+          servicesCreated: 5,
           desksCreated: 3,
           displaysCreated: 0,
         }),
@@ -263,7 +267,7 @@ describe('platform actions', () => {
 
     expect(context.supabase.tables.offices).toHaveLength(1);
     expect(context.supabase.tables.departments).toHaveLength(1);
-    expect(context.supabase.tables.services).toHaveLength(4);
+    expect(context.supabase.tables.services).toHaveLength(5);
     expect(context.supabase.tables.desks).toHaveLength(3);
     expect(context.supabase.tables.desk_services.length).toBeGreaterThanOrEqual(4);
     expect(context.supabase.tables.display_screens).toHaveLength(0);

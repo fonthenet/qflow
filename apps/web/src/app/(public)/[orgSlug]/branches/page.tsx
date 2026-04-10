@@ -19,45 +19,43 @@ export default async function BranchesPage({ params }: BranchesPageProps) {
 
   if (!org) notFound();
 
-  // Get all active offices with their queue stats
+  // Get all active offices with departments in a single query
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, address, timezone')
+    .select('id, name, address, timezone, departments(id, name, code)')
     .eq('organization_id', org.id)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('departments.is_active', true);
 
   if (!offices) notFound();
 
-  // For each office, get waiting ticket count
-  const officeStats = await Promise.all(
-    offices.map(async (office) => {
-      const { count: waitingCount } = await supabase
-        .from('tickets')
-        .select('*', { count: 'exact', head: true })
-        .eq('office_id', office.id)
-        .eq('status', 'waiting');
+  const officeIds = offices.map((o) => o.id);
 
-      const { count: servingCount } = await supabase
-        .from('tickets')
-        .select('*', { count: 'exact', head: true })
-        .eq('office_id', office.id)
-        .in('status', ['called', 'serving']);
+  // Single aggregation query: count tickets per office per status group
+  const { data: ticketCounts } = await supabase
+    .from('tickets')
+    .select('office_id, status')
+    .in('office_id', officeIds)
+    .in('status', ['waiting', 'called', 'serving']);
 
-      // Get departments with their waiting counts
-      const { data: departments } = await supabase
-        .from('departments')
-        .select('id, name, code')
-        .eq('office_id', office.id)
-        .eq('is_active', true);
+  // Build a lookup: { officeId: { waiting: N, serving: N } }
+  const statsMap: Record<string, { waiting: number; serving: number }> = {};
+  for (const row of ticketCounts ?? []) {
+    if (!statsMap[row.office_id]) statsMap[row.office_id] = { waiting: 0, serving: 0 };
+    if (row.status === 'waiting') {
+      statsMap[row.office_id].waiting++;
+    } else {
+      // 'called' and 'serving' both count as serving
+      statsMap[row.office_id].serving++;
+    }
+  }
 
-      return {
-        ...office,
-        waitingCount: waitingCount || 0,
-        servingCount: servingCount || 0,
-        departments: departments || [],
-      };
-    })
-  );
+  const officeStats = offices.map((office) => ({
+    ...office,
+    waitingCount: statsMap[office.id]?.waiting ?? 0,
+    servingCount: statsMap[office.id]?.serving ?? 0,
+    departments: office.departments ?? [],
+  }));
 
   return (
     <BranchComparison

@@ -1,0 +1,37 @@
+name: Desktop CI
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - '.github/workflows/desktop-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Rebuild better-sqlite3 for Node
+        run: cd node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3 && npx --yes prebuild-install --runtime=node --target=22.14.0 --arch=x64
+      - name: TypeScript check
+        run: pnpm --filter qflo-station exec tsc --noEmit
+      - name: Run tests
+        run: pnpm --filter qflo-station exec vitest run

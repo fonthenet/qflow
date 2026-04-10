@@ -18,6 +18,7 @@ import type {
   TemplatePerformanceAnalyticsData,
   WaitTimeTrend,
 } from '@/lib/actions/analytics-actions';
+import { LocaleProvider } from '@/components/providers/locale-provider';
 
 const {
   getAnalyticsSummaryMock,
@@ -269,6 +270,7 @@ describe('AnalyticsDashboard', () => {
     const user = userEvent.setup();
 
     render(
+      <LocaleProvider locale="en">
       <AnalyticsDashboard
         initialSummary={initialSummary}
         initialTicketsByHour={hourlyTickets}
@@ -288,6 +290,7 @@ describe('AnalyticsDashboard', () => {
         ]}
         departments={[{ id: 'dep-1', name: 'Retail Banking', office_id: 'office-2' }]}
       />
+      </LocaleProvider>
     );
 
     await user.selectOptions(screen.getByLabelText('Date Range'), 'last30');
@@ -314,6 +317,7 @@ describe('AnalyticsDashboard', () => {
     const user = userEvent.setup();
 
     render(
+      <LocaleProvider locale="en">
       <AnalyticsDashboard
         initialSummary={initialSummary}
         initialTicketsByHour={hourlyTickets}
@@ -333,6 +337,7 @@ describe('AnalyticsDashboard', () => {
         ]}
         departments={[{ id: 'dep-1', name: 'Retail Banking', office_id: 'office-2' }]}
       />
+      </LocaleProvider>
     );
 
     await user.selectOptions(screen.getByLabelText('Date Range'), 'last7');

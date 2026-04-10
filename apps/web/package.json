@@ -30,6 +30,8 @@
     "@queueflow/ui": "workspace:*",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "class-variance-authority": "^0.7",
     "clsx": "^2",
     "jose": "^6.2.1",

@@ -29,7 +29,7 @@
         "backgroundColor": "#1d4ed8"
       },
       "package": "com.qflo.app",
-      "usesCleartextTraffic": true,
+      "usesCleartextTraffic": false,
       "permissions": [
         "CAMERA",
         "NOTIFICATIONS",

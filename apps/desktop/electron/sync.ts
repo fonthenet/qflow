@@ -1628,7 +1628,7 @@ export class SyncEngine {
   private revertStaleCalled() {
     const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const stale = this.db.prepare(`
-      SELECT id, ticket_number, desk_id FROM tickets
+      SELECT id, ticket_number, desk_id, called_at FROM tickets
       WHERE status = 'called' AND called_at IS NOT NULL AND called_at < ?
         AND serving_started_at IS NULL
     `).all(thirtyMinAgo) as any[];
@@ -1641,6 +1641,17 @@ export class SyncEngine {
     );
     for (const t of stale) {
       revert.run(t.id);
+
+      console.warn('[sync:staleCalled] AUTO-REVERT stale called ticket', {
+        ticketId: t.id,
+        ticketNumber: t.ticket_number,
+        previousDesk: t.desk_id,
+        calledAt: t.called_at ?? 'unknown',
+        revertedAt: now,
+        newStatus: 'waiting',
+        reason: 'called_30min_no_action',
+      });
+
       logTicketEvent(t.id, 'requeued', {
         ticketNumber: t.ticket_number,
         fromStatus: 'called',
@@ -1657,7 +1668,7 @@ export class SyncEngine {
       `).run(syncId, t.id, JSON.stringify({ status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null }), now);
     }
 
-    console.log(`[sync:staleCalled] Reverted ${stale.length} ticket(s) called 30+ min ago back to waiting`);
+    console.warn(`[sync:staleCalled] Reverted ${stale.length} ticket(s) called 30+ min ago back to waiting`);
     this.onTicketError({
       message: `${stale.length} ticket(s) returned to queue — called 30+ min ago with no action`,
       type: 'stale_called_reverted',

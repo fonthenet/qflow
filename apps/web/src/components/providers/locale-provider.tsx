@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext } from 'react';
+import React, { createContext, useContext } from 'react';
 import { AppLocale } from '@/lib/i18n/messages';
 import {
   CountryCode,

@@ -66,8 +66,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run platform tests
-        run: pnpm --filter @queueflow/web test:platform
+      - name: TypeScript check
+        run: pnpm --filter @queueflow/web exec tsc --noEmit
+
+      - name: Run all tests
+        run: pnpm --filter @queueflow/web exec vitest run
+
+      - name: Dependency audit (warn only)
+        run: pnpm audit --audit-level=high || true
 
       - name: Build web app
         run: pnpm --filter @queueflow/web build
