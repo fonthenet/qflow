@@ -171,10 +171,26 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
           if (!ok) throw new Error('Check-in failed');
         }
       }
-      await ensureAuth(storedAuth);
-      const sb = await getSupabase();
-      const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
-      if (uErr) throw uErr;
+
+      // Cancel goes through the lifecycle API (handles ticket sync + notifications)
+      if (nextStatus === 'cancelled') {
+        const token = await ensureAuth(storedAuth);
+        const res = await fetch('https://qflo.net/api/moderate-appointment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ appointmentId: id, action: 'cancel' }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+      } else {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
+        if (uErr) throw uErr;
+      }
+
       setAppointments((prev) =>
         nextStatus === 'cancelled'
           ? prev.filter((a) => a.id !== id)

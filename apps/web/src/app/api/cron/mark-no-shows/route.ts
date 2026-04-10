@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { transitionAppointment } from '@/lib/lifecycle';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -8,9 +9,8 @@ export const runtime = 'nodejs';
  * Auto no-show cron.
  *
  * Marks any pending/confirmed appointment whose scheduled time is more than
- * 60 minutes in the past as `no_show`. Frees the slot for re-booking (the
- * partial unique index `uniq_appointments_active_slot` only applies to
- * active statuses, so no_show no longer occupies the slot).
+ * 60 minutes in the past as `no_show`. Uses the centralized lifecycle module
+ * so linked tickets are also marked and customers are notified.
  *
  * Vercel Cron: configured in apps/web/vercel.json (every 10 minutes).
  * Auth: Bearer CRON_SECRET (env var).
@@ -26,44 +26,30 @@ export async function GET(request: NextRequest) {
 
   const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
+  // Find stale appointments (don't update directly — let lifecycle handle each)
   const { data, error } = await supabase
     .from('appointments')
-    .update({ status: 'no_show' })
+    .select('id')
     .in('status', ['pending', 'confirmed'])
-    .lt('scheduled_at', cutoff)
-    .select('id, ticket_id');
+    .lt('scheduled_at', cutoff);
 
   if (error) {
-    console.error('[cron/mark-no-shows] update failed:', error.message);
+    console.error('[cron/mark-no-shows] query failed:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const updated = Array.isArray(data) ? data.length : 0;
+  const appointments = Array.isArray(data) ? data : [];
+  let updated = 0;
 
-  // Also mark any linked tickets as no_show
+  for (const appt of appointments) {
+    const result = await transitionAppointment(appt.id, 'no_show', {
+      skipNotify: false, // notify customers they were marked no-show
+    });
+    if (result.ok) updated++;
+  }
+
   if (updated > 0) {
-    const nowIso = new Date().toISOString();
-    const appointmentIds = data.map((a: any) => a.id).filter(Boolean);
-    const ticketIds = data.map((a: any) => a.ticket_id).filter(Boolean);
-
-    // Cancel via appointment.ticket_id
-    if (ticketIds.length > 0) {
-      await supabase
-        .from('tickets')
-        .update({ status: 'no_show', completed_at: nowIso })
-        .in('id', ticketIds)
-        .in('status', ['waiting', 'called', 'issued']);
-    }
-    // Cancel via ticket.appointment_id
-    if (appointmentIds.length > 0) {
-      await supabase
-        .from('tickets')
-        .update({ status: 'no_show', completed_at: nowIso })
-        .in('appointment_id', appointmentIds)
-        .in('status', ['waiting', 'called', 'issued']);
-    }
-
-    console.log(`[cron/mark-no-shows] marked ${updated} appointment(s) and their linked tickets as no_show`);
+    console.log(`[cron/mark-no-shows] marked ${updated} appointment(s) as no_show via lifecycle`);
   }
 
   return NextResponse.json({ updated, cutoff });

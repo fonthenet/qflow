@@ -1015,7 +1015,15 @@ export default function ManageScreen() {
               text: t('bookings.cancelBooking'),
               style: 'destructive',
               onPress: async () => {
-                await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const token = session?.access_token;
+                  await fetch('https://qflo.net/api/moderate-appointment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({ appointmentId: id, action: 'cancel' }),
+                  });
+                } catch { /* fallback: raw update */ await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id); }
                 loadTab();
               },
             },

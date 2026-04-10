@@ -790,25 +790,23 @@ function setupIPC() {
     mainWindow?.webContents.send('tickets:changed');
     notifyStationClients({ type: 'tickets_changed' });
 
-    // ── Propagate terminal ticket status to linked appointment ──
-    // Keeps the appointments table in sync so the RDV sidebar, Pending tab,
-    // and Appointments modal all reflect the true lifecycle state.
+    // ── Propagate terminal ticket status to linked appointment via lifecycle API ──
+    // Uses the centralized lifecycle endpoint so ticket→appointment sync,
+    // customer notifications, and waitlist updates are all handled consistently.
     if (safeUpdates.status === 'served' || safeUpdates.status === 'cancelled' || safeUpdates.status === 'no_show') {
       try {
-        const linked = db.prepare('SELECT appointment_id FROM tickets WHERE id = ?').get(ticketId) as any;
-        const apptId = linked?.appointment_id;
-        if (apptId && syncEngine?.isOnline) {
-          const apptStatus = safeUpdates.status === 'served' ? 'completed' : safeUpdates.status;
+        if (syncEngine?.isOnline) {
           syncEngine.ensureFreshToken().then((token: string) => {
-            fetch(`${SUPABASE_URL}/rest/v1/appointments?id=eq.${apptId}`, {
-              method: 'PATCH',
+            fetch(`https://qflo.net/api/lifecycle/on-ticket-terminal`, {
+              method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'apikey': SUPABASE_ANON_KEY,
-                'Prefer': 'return=minimal',
               },
-              body: JSON.stringify({ status: apptStatus }),
+              body: JSON.stringify({
+                ticketId,
+                terminalStatus: safeUpdates.status === 'served' ? 'served' : safeUpdates.status,
+              }),
             }).catch(() => {});
           }).catch(() => {});
         }

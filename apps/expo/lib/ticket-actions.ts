@@ -363,6 +363,8 @@ export async function markServed(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  // Sync appointment via lifecycle API
+  await syncTicketTerminal(ticketId, 'served');
 }
 
 // ── Mark No-Show ──────────────────────────────────────────────────
@@ -375,6 +377,8 @@ export async function markNoShow(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  // Sync appointment via lifecycle API
+  await syncTicketTerminal(ticketId, 'no_show');
 }
 
 // ── Cancel Ticket ─────────────────────────────────────────────────
@@ -388,6 +392,24 @@ export async function cancelTicket(ticketId: string) {
     .eq('id', ticketId)
     .in('status', ['waiting', 'issued', 'called']);
   if (error) throw new Error(error.message);
+  // Sync appointment via lifecycle API
+  await syncTicketTerminal(ticketId, 'cancelled');
+}
+
+/** Fire-and-forget call to lifecycle API so appointment stays in sync */
+async function syncTicketTerminal(ticketId: string, terminalStatus: string) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    fetch('https://qflo.net/api/lifecycle/on-ticket-terminal', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ ticketId, terminalStatus }),
+    }).catch(() => {});
+  } catch { /* non-critical */ }
 }
 
 // ── Recall (re-notify customer) ───────────────────────────────────
@@ -822,10 +844,21 @@ export async function checkInAppointment(appointmentId: string, officeId: string
 }
 
 export async function cancelAppointment(appointmentId: string) {
-  const { error } = await supabase.from('appointments').update({
-    status: 'cancelled',
-  }).eq('id', appointmentId);
-  if (error) throw new Error(error.message);
+  // Route through lifecycle API so ticket sync + notifications happen
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch('https://qflo.net/api/moderate-appointment', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'cancel' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Cancel failed (HTTP ${res.status})`);
+  }
 }
 
 // ── Virtual Codes ─────────────────────────────────────────────────

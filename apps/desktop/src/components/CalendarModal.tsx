@@ -200,15 +200,19 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleCancel = async (appt: CalendarAppointment) => {
     setActionBusy(true);
     try {
-      await ensureAuth(storedAuth);
-      const sb = await getSupabase();
-      await sb.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id);
-      if (appt.ticket_id) {
-        await sb.from('tickets').update({ status: 'cancelled' }).eq('id', appt.ticket_id);
+      const token = await ensureAuth(storedAuth);
+      const res = await fetch('https://qflo.net/api/moderate-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ appointmentId: appt.id, action: 'cancel' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
       }
       setSelectedAppt(null);
       load();
-    } catch { /* ignore */ }
+    } catch (e) { console.error('[CalendarModal] cancel failed:', e); }
     setActionBusy(false);
   };
 

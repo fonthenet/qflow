@@ -159,14 +159,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
 
-  // Sync cancellation to linked appointment (if any)
-  if (ticket.appointment_id) {
-    await supabase
-      .from('appointments')
-      .update({ status: 'cancelled' })
-      .eq('id', ticket.appointment_id)
-      .in('status', ['pending', 'confirmed', 'checked_in']);
-  }
+  // Sync cancellation to linked appointment via lifecycle
+  const { onTicketTerminal } = await import('@/lib/lifecycle');
+  await onTicketTerminal(ticket.id, 'cancelled');
   await supabase.from('ticket_events').insert({
     ticket_id: ticket.id,
     event_type: 'cancelled',

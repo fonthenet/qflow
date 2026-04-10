@@ -10,9 +10,7 @@ import {
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
-import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
-import { sendMessengerMessage } from '@/lib/messenger';
-import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { transitionAppointment } from '@/lib/lifecycle';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -290,46 +288,15 @@ export async function checkInAppointment(appointmentId: string) {
 }
 
 export async function cancelAppointment(appointmentId: string) {
-  const supabase = await createClient();
+  const result = await transitionAppointment(appointmentId, 'cancelled');
 
-  const { data: appointment, error } = await supabase
-    .from('appointments')
-    .update({ status: 'cancelled' })
-    .eq('id', appointmentId)
-    .select()
-    .single();
-
-  if (error) {
-    return { error: error.message };
+  if (!result.ok) {
+    return { error: result.notifyError ?? 'Failed to cancel appointment' };
   }
-
-  // Cancel linked ticket — check both sides of the relationship:
-  // 1. appointment.ticket_id (set during checkInAppointment)
-  // 2. ticket.appointment_id (set when ticket is created for an appointment)
-  const nowIso = new Date().toISOString();
-  if (appointment?.ticket_id) {
-    await supabase
-      .from('tickets')
-      .update({ status: 'cancelled', completed_at: nowIso })
-      .eq('id', appointment.ticket_id)
-      .in('status', ['waiting', 'called', 'issued']);
-  }
-  // Also cancel any ticket that references this appointment (covers cases
-  // where appointment.ticket_id wasn't set, e.g. kiosk auto-checkin)
-  await supabase
-    .from('tickets')
-    .update({ status: 'cancelled', completed_at: nowIso })
-    .eq('appointment_id', appointmentId)
-    .in('status', ['waiting', 'called', 'issued']);
-
-  // Notify waitlist entries for the freed slot
-  await notifyWaitlistOnCancellation(appointmentId);
-
-  // Notify the customer about the cancellation via their original channel
-  await notifyAppointmentCancelled(supabase, appointment);
 
   revalidatePath('/desk');
-  return { data: appointment };
+  revalidatePath('/admin/bookings');
+  return { data: { id: appointmentId, status: 'cancelled' } };
 }
 
 /**
@@ -354,50 +321,27 @@ export async function cancelRecurringSeries(appointmentId: string) {
   const parentId = appt.recurrence_parent_id ?? appt.id;
   const nowIso = new Date().toISOString();
 
-  // Cancel the parent (if it's still in the future) plus all children scheduled after now
-  const { data: cancelled, error: cancelErr } = await (supabase as any)
+  // Find all future appointments in the series (don't update yet — let lifecycle handle each)
+  const { data: toCancel, error: findErr } = await (supabase as any)
     .from('appointments')
-    .update({ status: 'cancelled' })
+    .select('id')
     .or(`id.eq.${parentId},recurrence_parent_id.eq.${parentId}`)
     .gte('scheduled_at', nowIso)
-    .neq('status', 'cancelled')
-    .select('id, ticket_id, office_id, customer_phone, customer_name, locale');
+    .neq('status', 'cancelled');
 
-  if (cancelErr) {
-    return { error: cancelErr.message };
+  if (findErr) {
+    return { error: findErr.message };
   }
 
-  // Cancel any linked tickets — check both sides of the relationship
-  const ticketIds = (cancelled ?? [])
-    .map((a: any) => a.ticket_id)
-    .filter((id: string | null): id is string => Boolean(id));
-
-  if (ticketIds.length > 0) {
-    await (supabase as any)
-      .from('tickets')
-      .update({ status: 'cancelled', completed_at: nowIso })
-      .in('id', ticketIds)
-      .in('status', ['waiting', 'called', 'issued']);
-  }
-
-  // Also cancel tickets that reference these appointments via ticket.appointment_id
-  const cancelledIds = (cancelled ?? []).map((a: any) => a.id).filter(Boolean);
-  if (cancelledIds.length > 0) {
-    await (supabase as any)
-      .from('tickets')
-      .update({ status: 'cancelled', completed_at: nowIso })
-      .in('appointment_id', cancelledIds)
-      .in('status', ['waiting', 'called', 'issued']);
-  }
-
-  // Notify waitlist for each freed slot + notify customers
-  for (const a of cancelled ?? []) {
-    await notifyWaitlistOnCancellation(a.id);
-    await notifyAppointmentCancelled(supabase, a);
+  // Cancel each through the lifecycle (handles tickets + notify + waitlist)
+  let count = 0;
+  for (const a of toCancel ?? []) {
+    const result = await transitionAppointment(a.id, 'cancelled');
+    if (result.ok) count++;
   }
 
   revalidatePath('/admin/bookings');
-  return { data: { cancelled: cancelled?.length ?? 0 } };
+  return { data: { cancelled: count } };
 }
 
 export async function getAppointmentsByDate(officeId: string, date: string) {
@@ -678,129 +622,6 @@ export async function joinSlotWaitlist(data: JoinSlotWaitlistData) {
   }
 
   return { data: entry };
-}
-
-/**
- * Notify the customer that their appointment was cancelled.
- * Resolves the notification channel (WhatsApp/Messenger) from the most recent
- * session and sends a branded cancellation message.
- */
-async function notifyAppointmentCancelled(_supabase: any, appointment: any) {
-  try {
-    if (!appointment?.customer_phone) return;
-
-    // Always use admin client for notification lookups — the caller may have a
-    // user-scoped client that can't read whatsapp_sessions due to RLS.
-    const adminSb = createAdminClient() as any;
-
-    // Fetch org name for branded message
-    const { data: office } = await adminSb
-      .from('offices')
-      .select('organization_id, organization:organizations(id, name)')
-      .eq('id', appointment.office_id)
-      .single();
-    const orgName: string = (office?.organization as any)?.name ?? '';
-    const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
-
-    // Resolve locale from appointment or session
-    let locale: Locale = (appointment.locale === 'ar' || appointment.locale === 'en' || appointment.locale === 'fr')
-      ? appointment.locale : 'fr';
-    const haveStoredLocale = appointment.locale === 'ar' || appointment.locale === 'en' || appointment.locale === 'fr';
-
-    // Resolve notification channel from most recent session
-    let channel: 'whatsapp' | 'messenger' | null = null;
-    let toPhone: string | null = appointment.customer_phone || null;
-    let toPsid: string | null = null;
-
-    if (appointment.customer_phone && orgId) {
-      const raw = appointment.customer_phone.trim();
-      const digits = raw.replace(/\D/g, '');
-      const phoneVariants = Array.from(new Set([raw, digits, `+${digits}`].filter(Boolean)));
-      const orFilter = phoneVariants
-        .flatMap((v: string) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
-        .join(',');
-
-      const { data: sessionRows } = await adminSb
-        .from('whatsapp_sessions')
-        .select('id, channel, whatsapp_phone, messenger_psid, locale')
-        .eq('organization_id', orgId)
-        .or(orFilter)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      const session = sessionRows?.[0];
-      if (session) {
-        channel = session.channel as 'whatsapp' | 'messenger';
-        if (session.whatsapp_phone) toPhone = session.whatsapp_phone;
-        if (session.messenger_psid) toPsid = session.messenger_psid;
-        if (!haveStoredLocale && session.locale) locale = session.locale as Locale;
-      }
-    }
-
-    // Default to WhatsApp if we have a phone but no session
-    if (!channel && toPhone) channel = 'whatsapp';
-
-    const msgBody = tMsg('appointment_cancelled', locale, { name: orgName, reason: '' });
-
-    if (channel === 'whatsapp' && toPhone) {
-      await sendWhatsAppMessage({ to: toPhone, body: msgBody });
-    } else if (channel === 'messenger' && toPsid) {
-      await sendMessengerMessage({ recipientId: toPsid, text: msgBody });
-    }
-  } catch (err) {
-    console.error('[cancelAppointment] notification failed:', err);
-  }
-}
-
-export async function notifyWaitlistOnCancellation(appointmentId: string) {
-  const supabase = createAdminClient();
-
-  // Fetch the cancelled appointment details
-  const { data: appointment, error: fetchError } = await supabase
-    .from('appointments')
-    .select('office_id, service_id, scheduled_at')
-    .eq('id', appointmentId)
-    .single();
-
-  if (fetchError || !appointment) {
-    return { error: fetchError?.message ?? 'Appointment not found' };
-  }
-
-  const scheduledDate = new Date(appointment.scheduled_at);
-  const date = scheduledDate.toISOString().split('T')[0];
-  const time = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
-
-  // Find the first waiting entry for this slot
-  const { data: waitlistEntries, error: waitlistError } = await (supabase.from('slot_waitlist' as any) as any)
-    .select('id')
-    .eq('office_id', appointment.office_id)
-    .eq('service_id', appointment.service_id)
-    .eq('requested_date', date)
-    .eq('requested_time', time)
-    .eq('status', 'waiting')
-    .order('created_at', { ascending: true })
-    .limit(1);
-
-  if (waitlistError || !waitlistEntries || waitlistEntries.length === 0) {
-    return { data: null }; // No one on waitlist
-  }
-
-  const entryId = waitlistEntries[0].id;
-
-  const { data: updated, error: updateError } = await (supabase.from('slot_waitlist' as any) as any)
-    .update({
-      status: 'notified',
-      notified_at: new Date().toISOString(),
-    })
-    .eq('id', entryId)
-    .select()
-    .single();
-
-  if (updateError) {
-    return { error: updateError.message };
-  }
-
-  return { data: updated };
 }
 
 export async function getCalendarEvent(calendarToken: string) {

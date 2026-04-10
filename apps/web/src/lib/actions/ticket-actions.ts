@@ -31,6 +31,7 @@ import {
 import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 import { getQueuePosition } from '@/lib/queue-position';
+import { onTicketTerminal } from '@/lib/lifecycle';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
@@ -77,41 +78,6 @@ async function getOfficeContext(
     organizationId: data?.organization_id ?? null,
     officeName: data?.name ?? 'Qflo',
   };
-}
-
-/**
- * Sync a terminal ticket status back to the linked appointment.
- * Checks ticket.appointment_id and updates the appointment status accordingly.
- * Called after markServed, markNoShow, transferTicket, and cancelTicket.
- */
-async function syncAppointmentStatus(
-  supabase: any,
-  ticketId: string,
-  ticketStatus: 'served' | 'no_show' | 'cancelled' | 'transferred',
-) {
-  try {
-    const { data: ticket } = await supabase
-      .from('tickets')
-      .select('appointment_id')
-      .eq('id', ticketId)
-      .single();
-
-    if (!ticket?.appointment_id) return;
-
-    const appointmentStatus =
-      ticketStatus === 'served' ? 'completed' :
-      ticketStatus === 'transferred' ? 'confirmed' : // keep appointment active for new ticket
-      ticketStatus; // cancelled, no_show pass through
-
-    // Only update if appointment is in an active state
-    await supabase
-      .from('appointments')
-      .update({ status: appointmentStatus })
-      .eq('id', ticket.appointment_id)
-      .in('status', ['pending', 'confirmed', 'checked_in']);
-  } catch (err) {
-    console.error(`[syncAppointmentStatus] Failed for ticket ${ticketId}:`, err);
-  }
 }
 
 function buildPriorityAlertMessage(params: {
@@ -892,7 +858,7 @@ export async function markServed(ticketId: string) {
   await syncLiveActivity(ticketId, 'MarkServed');
 
   // Sync terminal status back to linked appointment
-  await syncAppointmentStatus(supabase, ticketId, 'served');
+  await onTicketTerminal(ticketId, 'served');
 
   revalidatePath('/desk');
   return { data: ticket };
@@ -980,7 +946,7 @@ export async function markNoShow(ticketId: string) {
   await syncLiveActivity(ticketId, 'MarkNoShow');
 
   // Sync terminal status back to linked appointment
-  await syncAppointmentStatus(supabase, ticketId, 'no_show');
+  await onTicketTerminal(ticketId, 'no_show');
 
   revalidatePath('/desk');
   return { data: ticket };
@@ -1067,14 +1033,6 @@ export async function transferTicket(
 
   await releaseRestaurantTablesForTicket(supabase, ticketId);
 
-  // Re-link appointment to the new ticket (if one exists)
-  if (originalTicket.appointment_id) {
-    await supabase
-      .from('appointments')
-      .update({ ticket_id: newTicket.id })
-      .eq('id', originalTicket.appointment_id);
-  }
-
   // Transfer notification session to new ticket
   await (supabase as any)
     .from('whatsapp_sessions')
@@ -1145,6 +1103,9 @@ export async function transferTicket(
       });
     }
   } catch {}
+
+  // Sync appointment: re-link to new ticket, keep appointment active
+  await onTicketTerminal(ticketId, 'transferred', { newTicketId: newTicket.id });
 
   revalidatePath('/desk');
   return { data: newTicket };
