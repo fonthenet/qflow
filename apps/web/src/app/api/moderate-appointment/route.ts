@@ -33,6 +33,41 @@ function getSupabase(): SupabaseClient {
  */
 type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show';
 
+/**
+ * Cancel (or no-show) any ticket linked to an appointment.
+ * Checks both directions: appointment.ticket_id and ticket.appointment_id.
+ */
+async function cancelLinkedTickets(
+  supabase: any,
+  appointmentId: string,
+  targetStatus: 'cancelled' | 'no_show' = 'cancelled',
+) {
+  const nowIso = new Date().toISOString();
+  const activeStatuses = ['waiting', 'called', 'issued', 'serving'];
+
+  // 1. Check if appointment has ticket_id set
+  const { data: appt } = await supabase
+    .from('appointments')
+    .select('ticket_id')
+    .eq('id', appointmentId)
+    .single();
+
+  if (appt?.ticket_id) {
+    await supabase
+      .from('tickets')
+      .update({ status: targetStatus, completed_at: nowIso })
+      .eq('id', appt.ticket_id)
+      .in('status', activeStatuses);
+  }
+
+  // 2. Also cancel any ticket referencing this appointment via ticket.appointment_id
+  await supabase
+    .from('tickets')
+    .update({ status: targetStatus, completed_at: nowIso })
+    .eq('appointment_id', appointmentId)
+    .in('status', activeStatuses);
+}
+
 async function authenticateRequest(request: NextRequest): Promise<boolean> {
   const authHeader = request.headers.get('authorization') ?? '';
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
@@ -221,6 +256,8 @@ export async function POST(request: NextRequest) {
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 500 });
     }
+    // Cancel any linked ticket (both relationship directions)
+    await cancelLinkedTickets(supabase, appt.id);
 
     let notified = false;
     let notifyError: string | null = null;
@@ -255,6 +292,9 @@ export async function POST(request: NextRequest) {
   if (updErr2) {
     return NextResponse.json({ error: updErr2.message }, { status: 500 });
   }
+  // Cancel/no-show any linked ticket (both relationship directions)
+  const ticketStatus = action === 'no_show' ? 'no_show' : 'cancelled';
+  await cancelLinkedTickets(supabase, appt.id, ticketStatus);
 
   let notified = false;
   let notifyError: string | null = null;

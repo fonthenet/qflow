@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     .update({ status: 'no_show' })
     .in('status', ['pending', 'confirmed'])
     .lt('scheduled_at', cutoff)
-    .select('id');
+    .select('id, ticket_id');
 
   if (error) {
     console.error('[cron/mark-no-shows] update failed:', error.message);
@@ -39,8 +39,31 @@ export async function GET(request: NextRequest) {
   }
 
   const updated = Array.isArray(data) ? data.length : 0;
+
+  // Also mark any linked tickets as no_show
   if (updated > 0) {
-    console.log(`[cron/mark-no-shows] marked ${updated} appointment(s) as no_show`);
+    const nowIso = new Date().toISOString();
+    const appointmentIds = data.map((a: any) => a.id).filter(Boolean);
+    const ticketIds = data.map((a: any) => a.ticket_id).filter(Boolean);
+
+    // Cancel via appointment.ticket_id
+    if (ticketIds.length > 0) {
+      await supabase
+        .from('tickets')
+        .update({ status: 'no_show', completed_at: nowIso })
+        .in('id', ticketIds)
+        .in('status', ['waiting', 'called', 'issued']);
+    }
+    // Cancel via ticket.appointment_id
+    if (appointmentIds.length > 0) {
+      await supabase
+        .from('tickets')
+        .update({ status: 'no_show', completed_at: nowIso })
+        .in('appointment_id', appointmentIds)
+        .in('status', ['waiting', 'called', 'issued']);
+    }
+
+    console.log(`[cron/mark-no-shows] marked ${updated} appointment(s) and their linked tickets as no_show`);
   }
 
   return NextResponse.json({ updated, cutoff });

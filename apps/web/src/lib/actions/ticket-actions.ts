@@ -79,6 +79,41 @@ async function getOfficeContext(
   };
 }
 
+/**
+ * Sync a terminal ticket status back to the linked appointment.
+ * Checks ticket.appointment_id and updates the appointment status accordingly.
+ * Called after markServed, markNoShow, transferTicket, and cancelTicket.
+ */
+async function syncAppointmentStatus(
+  supabase: any,
+  ticketId: string,
+  ticketStatus: 'served' | 'no_show' | 'cancelled' | 'transferred',
+) {
+  try {
+    const { data: ticket } = await supabase
+      .from('tickets')
+      .select('appointment_id')
+      .eq('id', ticketId)
+      .single();
+
+    if (!ticket?.appointment_id) return;
+
+    const appointmentStatus =
+      ticketStatus === 'served' ? 'completed' :
+      ticketStatus === 'transferred' ? 'confirmed' : // keep appointment active for new ticket
+      ticketStatus; // cancelled, no_show pass through
+
+    // Only update if appointment is in an active state
+    await supabase
+      .from('appointments')
+      .update({ status: appointmentStatus })
+      .eq('id', ticket.appointment_id)
+      .in('status', ['pending', 'confirmed', 'checked_in']);
+  } catch (err) {
+    console.error(`[syncAppointmentStatus] Failed for ticket ${ticketId}:`, err);
+  }
+}
+
 function buildPriorityAlertMessage(params: {
   event: PriorityAlertEvent;
   ticketNumber: string;
@@ -856,6 +891,9 @@ export async function markServed(ticketId: string) {
 
   await syncLiveActivity(ticketId, 'MarkServed');
 
+  // Sync terminal status back to linked appointment
+  await syncAppointmentStatus(supabase, ticketId, 'served');
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -941,6 +979,9 @@ export async function markNoShow(ticketId: string) {
 
   await syncLiveActivity(ticketId, 'MarkNoShow');
 
+  // Sync terminal status back to linked appointment
+  await syncAppointmentStatus(supabase, ticketId, 'no_show');
+
   revalidatePath('/desk');
   return { data: ticket };
 }
@@ -986,7 +1027,7 @@ export async function transferTicket(
   const { seq, ticket_num } = seqData[0];
   const qrToken = nanoid(16);
 
-  // Create the new ticket in the target department
+  // Create the new ticket in the target department — carry over appointment link
   const { data: newTicket, error: insertError } = await supabase
     .from('tickets')
     .insert({
@@ -1002,6 +1043,7 @@ export async function transferTicket(
       transferred_from_ticket_id: ticketId,
       priority: originalTicket.priority,
       priority_category_id: originalTicket.priority_category_id,
+      appointment_id: originalTicket.appointment_id,
     })
     .select()
     .single();
@@ -1024,6 +1066,14 @@ export async function transferTicket(
   }
 
   await releaseRestaurantTablesForTicket(supabase, ticketId);
+
+  // Re-link appointment to the new ticket (if one exists)
+  if (originalTicket.appointment_id) {
+    await supabase
+      .from('appointments')
+      .update({ ticket_id: newTicket.id })
+      .eq('id', originalTicket.appointment_id);
+  }
 
   // Transfer notification session to new ticket
   await (supabase as any)

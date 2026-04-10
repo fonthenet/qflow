@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   // Fetch ticket (must still be pending_approval to be moderated)
   const { data: ticket, error: fetchErr } = await supabase
     .from('tickets')
-    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id, locale')
+    .select('id, office_id, ticket_number, status, source, customer_data, qr_token, department_id, service_id, locale, appointment_id')
     .eq('id', ticketId)
     .single();
 
@@ -157,6 +157,15 @@ export async function POST(request: NextRequest) {
     .eq('status', 'pending_approval');
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
+  }
+
+  // Sync cancellation to linked appointment (if any)
+  if (ticket.appointment_id) {
+    await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', ticket.appointment_id)
+      .in('status', ['pending', 'confirmed', 'checked_in']);
   }
   await supabase.from('ticket_events').insert({
     ticket_id: ticket.id,

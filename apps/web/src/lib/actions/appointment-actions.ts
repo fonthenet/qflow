@@ -300,21 +300,29 @@ export async function cancelAppointment(appointmentId: string) {
     return { error: error.message };
   }
 
-  // If the appointment has a linked ticket, cancel it too
+  // Cancel linked ticket — check both sides of the relationship:
+  // 1. appointment.ticket_id (set during checkInAppointment)
+  // 2. ticket.appointment_id (set when ticket is created for an appointment)
+  const nowIso = new Date().toISOString();
   if (appointment?.ticket_id) {
     await supabase
       .from('tickets')
-      .update({
-        status: 'cancelled',
-        completed_at: new Date().toISOString(),
-      })
+      .update({ status: 'cancelled', completed_at: nowIso })
       .eq('id', appointment.ticket_id)
       .in('status', ['waiting', 'called', 'issued']);
   }
+  // Also cancel any ticket that references this appointment (covers cases
+  // where appointment.ticket_id wasn't set, e.g. kiosk auto-checkin)
+  await supabase
+    .from('tickets')
+    .update({ status: 'cancelled', completed_at: nowIso })
+    .eq('appointment_id', appointmentId)
+    .in('status', ['waiting', 'called', 'issued']);
 
   // Notify waitlist entries for the freed slot
   await notifyWaitlistOnCancellation(appointmentId);
 
+  revalidatePath('/desk');
   return { data: appointment };
 }
 
@@ -353,7 +361,7 @@ export async function cancelRecurringSeries(appointmentId: string) {
     return { error: cancelErr.message };
   }
 
-  // Cancel any linked tickets
+  // Cancel any linked tickets — check both sides of the relationship
   const ticketIds = (cancelled ?? [])
     .map((a: any) => a.ticket_id)
     .filter((id: string | null): id is string => Boolean(id));
@@ -363,6 +371,16 @@ export async function cancelRecurringSeries(appointmentId: string) {
       .from('tickets')
       .update({ status: 'cancelled', completed_at: nowIso })
       .in('id', ticketIds)
+      .in('status', ['waiting', 'called', 'issued']);
+  }
+
+  // Also cancel tickets that reference these appointments via ticket.appointment_id
+  const cancelledIds = (cancelled ?? []).map((a: any) => a.id).filter(Boolean);
+  if (cancelledIds.length > 0) {
+    await (supabase as any)
+      .from('tickets')
+      .update({ status: 'cancelled', completed_at: nowIso })
+      .in('appointment_id', cancelledIds)
       .in('status', ['waiting', 'called', 'issued']);
   }
 
