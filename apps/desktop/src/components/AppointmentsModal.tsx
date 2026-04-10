@@ -160,31 +160,32 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
       if (nextStatus === 'checked_in' && onCheckIn) {
         const appt = appointments.find((a) => a.id === id);
         if (appt) {
-          const ok = await onCheckIn({
-            id: appt.id,
-            department_id: appt.department_id,
-            service_id: appt.service_id,
-            customer_name: appt.customer_name,
-            customer_phone: appt.customer_phone,
-            scheduled_at: appt.scheduled_at,
-          });
+          const ok = await onCheckIn(appt);
           if (!ok) throw new Error('Check-in failed');
         }
       }
 
-      // Cancel goes through the lifecycle API (handles ticket sync + notifications)
-      if (nextStatus === 'cancelled') {
+      // ALL status changes go through moderate-appointment API
+      const actionMap: Record<string, string> = {
+        confirmed: 'approve',
+        cancelled: 'cancel',
+        declined: 'decline',
+        no_show: 'no_show',
+      };
+      const action = actionMap[nextStatus];
+      if (action) {
         const token = await ensureAuth(storedAuth);
         const res = await fetch('https://qflo.net/api/moderate-appointment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ appointmentId: id, action: 'cancel' }),
+          body: JSON.stringify({ appointmentId: id, action }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || `HTTP ${res.status}`);
         }
-      } else {
+      } else if (nextStatus !== 'checked_in') {
+        // Fallback for any other status (checked_in is handled by onCheckIn above)
         await ensureAuth(storedAuth);
         const sb = await getSupabase();
         const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
@@ -192,7 +193,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
       }
 
       setAppointments((prev) =>
-        nextStatus === 'cancelled'
+        nextStatus === 'cancelled' || nextStatus === 'declined'
           ? prev.filter((a) => a.id !== id)
           : prev.map((a) => (a.id === id ? { ...a, status: nextStatus } : a))
       );
@@ -235,7 +236,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
 
       const { data, error: qErr } = await sb
         .from('appointments')
-        .select('id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, department_id, service_id, staff_id')
+        .select('id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, department_id, service_id, staff_id, source')
         .eq('office_id', officeId)
         .gte('scheduled_at', start.toISOString())
         .lt('scheduled_at', end.toISOString())

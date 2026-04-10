@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import {
@@ -21,7 +21,6 @@ import {
   getStatusColor,
   getServiceColor,
   isWithinHorizon,
-  CALENDAR_DAYS,
   type CalendarDay,
   type CalendarDayInfo,
   type MonthDayInfo,
@@ -47,6 +46,47 @@ function isDayClosed(oh: OperatingHours, dayName: string): boolean {
 function parseHHMM(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h + (m || 0) / 60;
+}
+
+// ── Activity log types ────────────────────────────────────────────
+
+interface ActivityEntry {
+  id: string;
+  timestamp: Date;
+  eventType: 'booked' | 'cancelled' | 'declined' | 'approved' | 'checked_in' | 'no_show' | 'served' | 'modified' | 'deleted';
+  customerName: string;
+  serviceName?: string;
+  scheduledAt?: string;
+  source?: string | null;
+}
+
+const EVENT_META: Record<ActivityEntry['eventType'], { icon: string; color: string; labelKey: string }> = {
+  booked:     { icon: '📅', color: '#22c55e', labelKey: 'Booked' },
+  approved:   { icon: '✅', color: '#3b82f6', labelKey: 'confirmed' },
+  cancelled:  { icon: '❌', color: '#ef4444', labelKey: 'Cancelled' },
+  declined:   { icon: '🚫', color: '#f97316', labelKey: 'Declined' },
+  checked_in: { icon: '📋', color: '#8b5cf6', labelKey: 'checked_in' },
+  no_show:    { icon: '👻', color: '#64748b', labelKey: 'no_show' },
+  served:     { icon: '✔️', color: '#10b981', labelKey: 'served' },
+  modified:   { icon: '✏️', color: '#eab308', labelKey: 'Modified' },
+  deleted:    { icon: '🗑️', color: '#dc2626', labelKey: 'Deleted' },
+};
+
+function detectEventType(eventType: string, newRow: any, oldRow: any): ActivityEntry['eventType'] {
+  if (eventType === 'INSERT') return 'booked';
+  if (eventType === 'DELETE') return 'deleted';
+  // UPDATE — check status change
+  const newStatus = newRow?.status;
+  const oldStatus = oldRow?.status;
+  if (newStatus !== oldStatus) {
+    if (newStatus === 'cancelled') return 'cancelled';
+    if (newStatus === 'declined') return 'declined';
+    if (newStatus === 'confirmed' || newStatus === 'approved') return 'approved';
+    if (newStatus === 'checked_in') return 'checked_in';
+    if (newStatus === 'no_show') return 'no_show';
+    if (newStatus === 'served') return 'served';
+  }
+  return 'modified';
 }
 
 // ── Props ──────────────────────────────────────────────────────────
@@ -95,6 +135,9 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [actionBusy, setActionBusy] = useState(false);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
+  const activityEndRef = useRef<HTMLDivElement>(null);
+  const prevApptsRef = useRef<Map<string, CalendarAppointment>>(new Map());
 
   const serviceMap = useMemo(() => new Map(services.map(s => [s.id, s])), [services]);
 
@@ -133,32 +176,124 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Fetch — always load the FULL MONTH so mini calendar dots are accurate ──
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // Fetch ALL appointments (including cancelled/declined) for activity log diffing
+  const loadAll = useCallback(async (): Promise<CalendarAppointment[]> => {
     try {
       await ensureAuth(storedAuth);
       const sb = await getSupabase();
-      // Always fetch full month range so the mini calendar has complete dot data
       const monthRange = getMonthRange(currentDate.getFullYear(), currentDate.getMonth(), tz);
-      const { data, error } = await sb
+      const { data } = await sb
         .from('appointments')
         .select(APPT_SELECT)
         .eq('office_id', officeId)
         .gte('scheduled_at', monthRange.start)
         .lte('scheduled_at', monthRange.end)
-        .not('status', 'in', '(cancelled,declined)')
         .order('scheduled_at', { ascending: true })
         .limit(2000);
-      if (!error && data) {
-        setAppointments(data as CalendarAppointment[]);
+      return (data ?? []) as CalendarAppointment[];
+    } catch { return []; }
+  }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const allAppts = await loadAll();
+
+      // ── Diff for activity log ──
+      const prev = prevApptsRef.current;
+      if (prev.size > 0) {
+        // Subsequent loads — detect real-time changes
+        const newEntries: ActivityEntry[] = [];
+        const currMap = new Map(allAppts.map(a => [a.id, a]));
+
+        for (const appt of allAppts) {
+          const old = prev.get(appt.id);
+          if (!old) {
+            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
+            newEntries.push({
+              id: `${appt.id}-${Date.now()}`,
+              timestamp: new Date(),
+              eventType: 'booked',
+              customerName: appt.customer_name || '—',
+              serviceName: svc?.name,
+              scheduledAt: appt.scheduled_at,
+              source: appt.source,
+            });
+          } else if (old.status !== appt.status) {
+            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
+            const evtType = detectEventType('UPDATE', appt, old);
+            newEntries.push({
+              id: `${appt.id}-${Date.now()}`,
+              timestamp: new Date(),
+              eventType: evtType,
+              customerName: appt.customer_name || '—',
+              serviceName: svc?.name,
+              scheduledAt: appt.scheduled_at,
+              source: appt.source,
+            });
+          }
+        }
+
+        for (const [id, old] of prev) {
+          if (!currMap.has(id)) {
+            const svc = old.service_id ? serviceMap.get(old.service_id) : undefined;
+            newEntries.push({
+              id: `${id}-${Date.now()}`,
+              timestamp: new Date(),
+              eventType: 'deleted',
+              customerName: old.customer_name || '—',
+              serviceName: svc?.name,
+              scheduledAt: old.scheduled_at,
+              source: old.source,
+            });
+          }
+        }
+
+        if (newEntries.length > 0) {
+          setActivityLog(log => [...log.slice(-(100 - newEntries.length)), ...newEntries]);
+        }
+      } else {
+        // First load — seed activity log with recent history (last 24h)
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const seed: ActivityEntry[] = allAppts
+          .filter(a => new Date(a.created_at).getTime() > cutoff)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .map(appt => {
+            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
+            // Determine event type from current status
+            let evtType: ActivityEntry['eventType'] = 'booked';
+            if (appt.status === 'cancelled') evtType = 'cancelled';
+            else if (appt.status === 'declined') evtType = 'declined';
+            else if (appt.status === 'checked_in') evtType = 'checked_in';
+            else if (appt.status === 'no_show') evtType = 'no_show';
+            else if (appt.status === 'completed') evtType = 'served';
+            else if (appt.status === 'confirmed') evtType = 'approved';
+            return {
+              id: `${appt.id}-seed`,
+              timestamp: new Date(appt.created_at),
+              eventType: evtType,
+              customerName: appt.customer_name || '—',
+              serviceName: svc?.name,
+              scheduledAt: appt.scheduled_at,
+              source: appt.source,
+            };
+          });
+        if (seed.length > 0) setActivityLog(seed.slice(-100));
       }
+
+      // Update ref for next diff
+      prevApptsRef.current = new Map(allAppts.map(a => [a.id, a]));
+
+      // Set visible appointments (exclude cancelled/declined for the grid)
+      const visible = allAppts.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
+      setAppointments(visible);
     } catch (err) { console.error('[Calendar] load error:', err); }
     setLoading(false);
-  }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth]);
+  }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth, loadAll, serviceMap]);
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Realtime ───────────────────────────────────────────────────
+  // ── Realtime — triggers diff-aware reload ─────────────────────
 
   useEffect(() => {
     let sub: any;
@@ -174,6 +309,11 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     })();
     return () => { sub?.unsubscribe?.(); };
   }, [officeId, load]);
+
+  // ── Auto-scroll activity log ───────────────────────────────────
+  useEffect(() => {
+    activityEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activityLog.length]);
 
   // ── Navigation ─────────────────────────────────────────────────
 
@@ -348,7 +488,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           {/* Left sidebar */}
           <div style={{
             width: 220, flexShrink: 0, borderRight: '1px solid var(--border, #334155)',
-            overflow: 'auto', padding: '12px 10px',
+            overflow: 'hidden', padding: '12px 10px',
             background: 'var(--surface, #1e293b)',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -364,103 +504,68 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               onMonthNav={handleMiniMonthNav}
             />
 
-            {/* Today's schedule */}
-            {operatingHours && !alwaysOpen && (() => {
-              const todayName = JS_DAY_TO_NAME[new Date().getDay()];
-              const todayHours = operatingHours[todayName];
-              const closed = !todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00');
-              return (
-                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #334155)' }}>
+            {/* ─── Live Activity Log ─── */}
+            <div style={{
+              marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border, #334155)',
+              flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
+                letterSpacing: 0.6, marginBottom: 8, paddingLeft: 2,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%', background: '#22c55e',
+                  animation: 'pulse 2s ease-in-out infinite',
+                }} />
+                {t('Activity')}
+              </div>
+              <div style={{
+                flex: 1, overflow: 'auto', minHeight: 0,
+                display: 'flex', flexDirection: 'column', gap: 2,
+              }}>
+                <div ref={activityEndRef} />
+                {activityLog.length === 0 && (
                   <div style={{
-                    fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-                    letterSpacing: 0.6, marginBottom: 6, paddingLeft: 2,
+                    fontSize: 10, color: '#475569', textAlign: 'center',
+                    padding: '24px 8px', lineHeight: 1.5,
                   }}>
-                    {t('Schedule')}
+                    Waiting for changes...<br />All booking activity will appear here in real-time.
                   </div>
-                  {CALENDAR_DAYS.map(day => {
-                    const h = operatingHours[day];
-                    const isClosed = !h || (h.open === '00:00' && h.close === '00:00');
-                    const isCurrentDay = day === todayName;
-                    return (
-                      <div key={day} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '2px 2px', fontSize: 10,
-                        color: isClosed ? '#475569' : 'var(--text, #f1f5f9)',
-                        fontWeight: isCurrentDay ? 700 : 400,
-                        background: isCurrentDay ? 'rgba(59,130,246,0.08)' : 'transparent',
-                        borderRadius: 3,
-                      }}>
-                        <span style={{ textTransform: 'capitalize' }}>
-                          {new Intl.DateTimeFormat(intlLocale, { weekday: 'short' }).format(
-                            new Date(2026, 0, 5 + CALENDAR_DAYS.indexOf(day))
-                          )}
+                )}
+                {[...activityLog].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).map(entry => {
+                  const meta = EVENT_META[entry.eventType];
+                  const timeStr = entry.timestamp.toLocaleTimeString(intlLocale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  const dateStr = entry.scheduledAt
+                    ? new Date(entry.scheduledAt).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', timeZone: tz })
+                    : '';
+                  return (
+                    <div key={entry.id} style={{
+                      padding: '6px 6px', borderRadius: 6,
+                      background: 'rgba(100,116,139,0.06)',
+                      borderLeft: `3px solid ${meta.color}`,
+                      fontSize: 10, lineHeight: 1.4,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                        <span style={{ fontSize: 11 }}>{meta.icon}</span>
+                        <span style={{ fontWeight: 700, color: meta.color, fontSize: 9, textTransform: 'uppercase' }}>
+                          {t(meta.labelKey)}
                         </span>
-                        <span style={{ fontSize: 9, color: isClosed ? '#ef4444' : '#64748b' }}>
-                          {isClosed ? t('Closed') : `${h!.open} – ${h!.close}`}
-                        </span>
+                        <span style={{ marginLeft: 'auto', color: '#475569', fontSize: 9 }}>{timeStr}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-            {alwaysOpen && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #334155)' }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-                  letterSpacing: 0.6, marginBottom: 6, paddingLeft: 2,
-                }}>
-                  {t('Schedule')}
-                </div>
-                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 600, paddingLeft: 2 }}>
-                  ● {t('sm.field.always_open')}
-                </div>
+                      <div style={{ color: 'var(--text, #f1f5f9)', fontWeight: 600, paddingLeft: 2 }}>
+                        {entry.customerName}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, paddingLeft: 2, color: '#64748b', fontSize: 9, marginTop: 1 }}>
+                        {entry.serviceName && <span>{entry.serviceName}</span>}
+                        {dateStr && <span>{dateStr}</span>}
+                        {entry.source && <span style={{ opacity: 0.7 }}>via {entry.source}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-
-            {/* Service legend */}
-            {services.length > 0 && (
-              <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border, #334155)' }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-                  letterSpacing: 0.6, marginBottom: 8, paddingLeft: 2,
-                }}>
-                  {t('Services')}
-                </div>
-                {services.map(s => (
-                  <div key={s.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px',
-                    fontSize: 11, color: 'var(--text, #f1f5f9)',
-                  }}>
-                    <span style={{
-                      width: 10, height: 10, borderRadius: 3, flexShrink: 0,
-                      background: s.color || '#3b82f6',
-                    }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Departments legend */}
-            {Object.keys(departments).length > 0 && (
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border, #334155)' }}>
-                <div style={{
-                  fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-                  letterSpacing: 0.6, marginBottom: 8, paddingLeft: 2,
-                }}>
-                  {t('Departments')}
-                </div>
-                {Object.entries(departments).map(([id, name]) => (
-                  <div key={id} style={{
-                    fontSize: 11, color: 'var(--text2, #94a3b8)', padding: '3px 2px',
-                  }}>
-                    {name}
-                  </div>
-                ))}
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Calendar grid */}
@@ -513,7 +618,10 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         </div>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+      `}</style>
     </div>
   );
 }

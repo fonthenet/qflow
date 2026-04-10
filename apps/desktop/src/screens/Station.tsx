@@ -1421,8 +1421,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }), [session.access_token, session.refresh_token, session.email, session._pwd]);
   // Today's counter + RDV side panel
   const [todayStats, setTodayStats] = useState<{ walkins: number; rdv: number }>({ walkins: 0, rdv: 0 });
-  const [todayAppointments, setTodayAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null }>>([]);
-  const [upcomingAppointments, setUpcomingAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null }>>([]);
+  const [todayAppointments, setTodayAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null; source: string | null }>>([]);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null; source: string | null }>>([]);
   const [queueTab, setQueueTab] = useState<'queue' | 'rdv' | 'pending'>('queue');
   const [rdvBusyId, setRdvBusyId] = useState<string | null>(null);
   const [pendingTickets, setPendingTickets] = useState<Array<{ id: string; ticket_number: string; source: string | null; customer_data: any; created_at: string; department_id: string | null; service_id: string | null }>>([]);
@@ -1639,8 +1639,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         // Walk-in count: tickets created today via station/whatsapp/etc (exclude appointment check-ins to avoid double count? we'll count all tickets and subtract appointments-from-checkins)
         const [{ count: ticketCount }, { data: appts }, { data: upcoming }] = await Promise.all([
           sb.from('tickets').select('id', { count: 'exact', head: true }).eq('office_id', session.office_id).gte('created_at', startIso).lt('created_at', endIso),
-          sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id').eq('office_id', session.office_id).gte('scheduled_at', startIso).lt('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
-          sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id').eq('office_id', session.office_id).gte('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
+          sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id, source').eq('office_id', session.office_id).gte('scheduled_at', startIso).lt('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
+          sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id, source').eq('office_id', session.office_id).gte('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
         ]);
         if (cancelled) return;
         const rdvList = (appts as any[]) || [];
@@ -2261,7 +2261,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   // ── Appointment check-in helper (shared by RDV tab + AppointmentsModal) ──
-  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status?: string }): Promise<boolean> => {
+  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status?: string; source?: string | null }): Promise<boolean> => {
     if (!appt.department_id) {
       showToast(translate(locale, 'Missing department'), 'error');
       return false;
@@ -2301,7 +2301,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         slot_label: slotLabel,
       } as any,
       priority,
-      source: 'appointment',
+      source: appt.source || 'appointment',
       appointment_id: appt.id,
     });
     if (res) {
@@ -3349,6 +3349,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                             customer_phone: a.customer_phone,
                             scheduled_at: a.scheduled_at,
                             status: a.status,
+                            source: a.source,
                           });
                           setQueueTab('queue');
                         } finally {

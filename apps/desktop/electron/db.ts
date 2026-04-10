@@ -14,7 +14,7 @@ export function initDB() {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const dbPath = path.join(dbDir, 'queueflow.db');
+  const dbPath = path.join(dbDir, 'qflo.db');
   db = new Database(dbPath);
 
   // WAL mode for crash safety — survives power failures
