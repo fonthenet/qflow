@@ -47,7 +47,7 @@ import {
   type CalendarDayInfo,
   type MonthDayInfo,
   type CalendarAppointment,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment } from '@/lib/actions/appointment-actions';
 import { useI18n } from '@/components/providers/locale-provider';
 

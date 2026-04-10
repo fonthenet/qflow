@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getOfficeDayStartIso } from '@/lib/office-day';
-import { isValidTransition } from '@queueflow/shared';
+import { isValidTransition } from '@qflo/shared';
 
 function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });

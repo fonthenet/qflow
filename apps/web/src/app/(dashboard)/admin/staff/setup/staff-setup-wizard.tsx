@@ -13,8 +13,8 @@ import {
   MapPin,
   User,
 } from 'lucide-react';
-import type { RoleDefinition } from '@queueflow/shared';
-import { STAFF_ROLE_LABELS, STAFF_ROLES } from '@queueflow/shared';
+import type { RoleDefinition } from '@qflo/shared';
+import { STAFF_ROLE_LABELS, STAFF_ROLES } from '@qflo/shared';
 import { createStaffMember } from '@/lib/actions/admin-actions';
 
 interface Vocabulary {

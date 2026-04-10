@@ -1,4 +1,4 @@
-import { slugifyValue, type IndustryTemplate } from '@queueflow/shared';
+import { slugifyValue, type IndustryTemplate } from '@qflo/shared';
 
 interface OfficeSeedInput {
   template: IndustryTemplate;

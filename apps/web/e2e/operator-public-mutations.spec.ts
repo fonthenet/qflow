@@ -101,7 +101,7 @@ test.describe('Operator + Public Browser Mutations', () => {
     await expect(page.getByText('Your Information')).toBeVisible();
     await page.getByPlaceholder('Enter your full name').fill('QueueFlow E2E Customer');
     await page.getByPlaceholder('Enter your phone number').fill('5550001234');
-    await page.getByPlaceholder('Enter your email address').fill('customer+e2e@queueflow.local');
+    await page.getByPlaceholder('Enter your email address').fill('customer+e2e@qflo.local');
     await page.getByRole('button', { name: 'Review Appointment' }).click();
 
     await expect(page.getByText('Confirm Appointment')).toBeVisible();

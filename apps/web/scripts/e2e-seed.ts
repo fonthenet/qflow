@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
-import type { BranchType, OperatingModel } from '@queueflow/shared';
+import type { BranchType, OperatingModel } from '@qflo/shared';
 import type { Database, Json } from '../src/lib/supabase/database.types';
 import { buildPlatformSelection } from '../src/lib/platform/config';
 import {
@@ -592,42 +592,42 @@ Required:
   SUPABASE_SERVICE_ROLE_KEY
 
 Optional:
-  QUEUEFLOW_E2E_EMAIL
-  QUEUEFLOW_E2E_PASSWORD
-  QUEUEFLOW_E2E_FULL_NAME
-  QUEUEFLOW_E2E_ORG_NAME
-  QUEUEFLOW_E2E_ORG_SLUG
-  QUEUEFLOW_E2E_TEMPLATE_ID
-  QUEUEFLOW_E2E_OPERATING_MODEL
-  QUEUEFLOW_E2E_BRANCH_TYPE
-  QUEUEFLOW_E2E_OFFICE_NAME
-  QUEUEFLOW_E2E_TIMEZONE
-  QUEUEFLOW_E2E_SEED_PRIORITIES
-  QUEUEFLOW_E2E_CREATE_STARTER_DISPLAY
-  QUEUEFLOW_E2E_ASSIGN_ADMIN_OFFICE
-  QUEUEFLOW_E2E_ASSIGN_ADMIN_DESK
+  QFLO_E2E_EMAIL
+  QFLO_E2E_PASSWORD
+  QFLO_E2E_FULL_NAME
+  QFLO_E2E_ORG_NAME
+  QFLO_E2E_ORG_SLUG
+  QFLO_E2E_TEMPLATE_ID
+  QFLO_E2E_OPERATING_MODEL
+  QFLO_E2E_BRANCH_TYPE
+  QFLO_E2E_OFFICE_NAME
+  QFLO_E2E_TIMEZONE
+  QFLO_E2E_SEED_PRIORITIES
+  QFLO_E2E_CREATE_STARTER_DISPLAY
+  QFLO_E2E_ASSIGN_ADMIN_OFFICE
+  QFLO_E2E_ASSIGN_ADMIN_DESK
 `);
     return;
   }
 
   const supabase = createServiceClient();
 
-  const email = process.env.QUEUEFLOW_E2E_EMAIL ?? 'e2e-admin@queueflow.local';
-  const password = process.env.QUEUEFLOW_E2E_PASSWORD ?? 'QueueFlow123!';
-  const fullName = process.env.QUEUEFLOW_E2E_FULL_NAME ?? 'QueueFlow E2E Admin';
-  const organizationName = process.env.QUEUEFLOW_E2E_ORG_NAME ?? 'QueueFlow E2E';
-  const organizationSlug = process.env.QUEUEFLOW_E2E_ORG_SLUG ?? slugify(organizationName);
-  const templateId = process.env.QUEUEFLOW_E2E_TEMPLATE_ID ?? 'bank-branch';
-  const operatingModel = (process.env.QUEUEFLOW_E2E_OPERATING_MODEL ??
+  const email = process.env.QFLO_E2E_EMAIL ?? 'e2e-admin@qflo.local';
+  const password = process.env.QFLO_E2E_PASSWORD ?? 'QueueFlow123!';
+  const fullName = process.env.QFLO_E2E_FULL_NAME ?? 'QueueFlow E2E Admin';
+  const organizationName = process.env.QFLO_E2E_ORG_NAME ?? 'QueueFlow E2E';
+  const organizationSlug = process.env.QFLO_E2E_ORG_SLUG ?? slugify(organizationName);
+  const templateId = process.env.QFLO_E2E_TEMPLATE_ID ?? 'bank-branch';
+  const operatingModel = (process.env.QFLO_E2E_OPERATING_MODEL ??
     'service_routing') as OperatingModel;
-  const branchType = (process.env.QUEUEFLOW_E2E_BRANCH_TYPE ?? 'branch_office') as BranchType;
-  const officeName = process.env.QUEUEFLOW_E2E_OFFICE_NAME ?? 'E2E Main Branch';
-  const timezone = process.env.QUEUEFLOW_E2E_TIMEZONE ?? 'America/Los_Angeles';
-  const seedPriorities = (process.env.QUEUEFLOW_E2E_SEED_PRIORITIES ?? 'true') === 'true';
+  const branchType = (process.env.QFLO_E2E_BRANCH_TYPE ?? 'branch_office') as BranchType;
+  const officeName = process.env.QFLO_E2E_OFFICE_NAME ?? 'E2E Main Branch';
+  const timezone = process.env.QFLO_E2E_TIMEZONE ?? 'America/Los_Angeles';
+  const seedPriorities = (process.env.QFLO_E2E_SEED_PRIORITIES ?? 'true') === 'true';
   const createStarterDisplay =
-    (process.env.QUEUEFLOW_E2E_CREATE_STARTER_DISPLAY ?? 'true') === 'true';
-  const assignAdminOffice = (process.env.QUEUEFLOW_E2E_ASSIGN_ADMIN_OFFICE ?? 'true') === 'true';
-  const assignAdminDesk = (process.env.QUEUEFLOW_E2E_ASSIGN_ADMIN_DESK ?? 'false') === 'true';
+    (process.env.QFLO_E2E_CREATE_STARTER_DISPLAY ?? 'true') === 'true';
+  const assignAdminOffice = (process.env.QFLO_E2E_ASSIGN_ADMIN_OFFICE ?? 'true') === 'true';
+  const assignAdminDesk = (process.env.QFLO_E2E_ASSIGN_ADMIN_DESK ?? 'false') === 'true';
 
   const user = await ensureAdminUser(supabase, email, password, fullName);
   const { organization, staff } = await ensureOrganization(

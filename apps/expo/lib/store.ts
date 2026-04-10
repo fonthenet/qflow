@@ -157,7 +157,7 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: 'queueflow-store',
+      name: 'qflo-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         activeToken: state.activeToken,

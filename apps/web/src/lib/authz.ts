@@ -1,4 +1,4 @@
-import { ADMIN_LIKE_ROLES, STAFF_ROLES, type StaffRole } from '@queueflow/shared';
+import { ADMIN_LIKE_ROLES, STAFF_ROLES, type StaffRole } from '@qflo/shared';
 import { createClient } from '@/lib/supabase/server';
 
 type ScopeRole = StaffRole | string;

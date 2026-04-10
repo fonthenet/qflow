@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { TemplateLifecycleState } from '@queueflow/shared';
+import type { TemplateLifecycleState } from '@qflo/shared';
 import {
   AlertTriangle,
   Clock3,

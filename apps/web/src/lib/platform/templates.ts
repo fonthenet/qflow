@@ -10,7 +10,7 @@ import {
   type StarterDisplayTemplate,
   type TemplateMigration,
   type TemplateVersionChange,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 
 function rolePolicy(extraCapabilities: string[] = []): RolePolicy {
   return {

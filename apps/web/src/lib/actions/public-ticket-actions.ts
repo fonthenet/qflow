@@ -1,6 +1,6 @@
 'use server';
 
-import { TICKET_EVENT_TYPES } from '@queueflow/shared';
+import { TICKET_EVENT_TYPES } from '@qflo/shared';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hasVerifiedBookingEmail } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';

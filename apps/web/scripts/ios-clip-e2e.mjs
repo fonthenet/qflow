@@ -17,7 +17,7 @@ const lastStatePrimary = path.resolve(rootDir, '.tmp', 'ios-push-test-last.json'
 const lastStateFallback = path.resolve(os.tmpdir(), 'qflow', 'ios-push-test-last.json');
 const iosDir = path.resolve(rootDir, 'apps', 'ios', 'QueueFlow');
 const projectPath = path.resolve(iosDir, 'QueueFlow.xcodeproj');
-const derivedDataPath = path.resolve(rootDir, '.tmp', 'xcodebuild-queueflow-clip');
+const derivedDataPath = path.resolve(rootDir, '.tmp', 'xcodebuild-qflo-clip');
 const scheme = 'QueueFlowClip';
 const xcodeAppProcessPattern = '/Applications/Xcode.app/Contents/MacOS/Xcode';
 const appClipBundleId = 'com.queueflow.app.QueueFlowClip';
@@ -166,7 +166,7 @@ function findBootedOrFirstSimulatorId() {
 }
 
 async function findConnectedDeviceId() {
-  const outputFile = path.resolve(os.tmpdir(), 'qflow', 'queueflow-device-list.json');
+  const outputFile = path.resolve(os.tmpdir(), 'qflow', 'qflo-device-list.json');
   await mkdir(path.dirname(outputFile), { recursive: true });
 
   try {
@@ -259,11 +259,11 @@ async function openOnDeviceOrSimulator(destination, ticketURL, isSimulator) {
 
 function printUsage() {
   console.log(`Usage:
-  pnpm --filter @queueflow/web ios:clip-e2e
+  pnpm --filter @qflo/web ios:clip-e2e
 
 Recommended:
-  pnpm --filter @queueflow/web ios:clip-e2e:auto
-  pnpm --filter @queueflow/web ios:clip-call-again
+  pnpm --filter @qflo/web ios:clip-e2e:auto
+  pnpm --filter @qflo/web ios:clip-call-again
 
 Optional flags:
   --device-id <UDID>           Use specific device for install + launch
@@ -336,7 +336,7 @@ async function main() {
 
   if (noSend) {
     console.log('Open-url-only flag set. Run the next command when you want to send:');
-    console.log('pnpm --filter @queueflow/web ios:push-test call');
+    console.log('pnpm --filter @qflo/web ios:push-test call');
     return;
   }
 

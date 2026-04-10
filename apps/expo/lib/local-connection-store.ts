@@ -213,7 +213,7 @@ export const useLocalConnectionStore = create<LocalConnectionState>()(
       },
     }),
     {
-      name: 'queueflow-local-connection',
+      name: 'qflo-local-connection',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         mode: state.mode,

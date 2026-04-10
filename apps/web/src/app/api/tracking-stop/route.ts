@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TICKET_EVENT_TYPES } from '@queueflow/shared';
+import { TICKET_EVENT_TYPES } from '@qflo/shared';
 import { createClient } from '@supabase/supabase-js';
 import { sendPushToTicket } from '@/lib/send-push';
 import { endLiveActivityForTicket } from '@/lib/apns';

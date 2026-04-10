@@ -1,8 +1,8 @@
 {
-  "name": "queueflow",
+  "name": "qflo",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @queueflow/web dev",
+    "dev": "pnpm --filter @qflo/web dev",
     "dev:turbo": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",

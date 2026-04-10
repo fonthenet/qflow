@@ -31,7 +31,7 @@ jobs:
       QUEUEFLOW_E2E_PASSWORD: ${{ secrets.QUEUEFLOW_E2E_PASSWORD }}
       QUEUEFLOW_E2E_ALLOW_MUTATIONS: 'true'
       QUEUEFLOW_E2E_ORG_NAME: QueueFlow E2E
-      QUEUEFLOW_E2E_ORG_SLUG: queueflow-e2e
+      QFLO_E2E_ORG_SLUG: qflo-e2e
       QUEUEFLOW_E2E_TEMPLATE_ID: ${{ github.event.inputs.template_id }}
       QUEUEFLOW_E2E_OPERATING_MODEL: service_routing
       QUEUEFLOW_E2E_BRANCH_TYPE: branch_office
@@ -66,19 +66,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
-        run: pnpm --filter @queueflow/web exec playwright install --with-deps chromium
+        run: pnpm --filter @qflo/web exec playwright install --with-deps chromium
 
       - name: Seed validation tenant
-        run: pnpm --filter @queueflow/web e2e:seed
+        run: pnpm --filter @qflo/web e2e:seed
 
       - name: Run platform tests
-        run: pnpm --filter @queueflow/web test:platform
+        run: pnpm --filter @qflo/web test:platform
 
       - name: Build web app
-        run: pnpm --filter @queueflow/web build
+        run: pnpm --filter @qflo/web build
 
       - name: Run full browser validation
-        run: pnpm --filter @queueflow/web test:e2e
+        run: pnpm --filter @qflo/web test:e2e
 
       - name: Upload validation artifacts
         if: always()

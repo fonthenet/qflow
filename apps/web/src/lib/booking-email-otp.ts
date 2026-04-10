@@ -9,7 +9,7 @@ function getBookingOtpSecret() {
   const secret =
     process.env.BOOKING_OTP_COOKIE_SECRET ??
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    'queueflow-dev-booking-otp-secret';
+    'qflo-dev-booking-otp-secret';
 
   return new TextEncoder().encode(secret);
 }

@@ -11,7 +11,7 @@ import {
   type RolePolicy,
   type TemplateLifecycleState,
   type WorkflowProfile,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 import { getIndustryTemplateById } from './templates';
 
 type UnknownRecord = Record<string, unknown>;

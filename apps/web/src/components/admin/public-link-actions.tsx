@@ -17,7 +17,7 @@ export function PublicLinkActions({
   path,
   qrTitle,
   qrDescription,
-  downloadName = 'queueflow-link.png',
+  downloadName = 'qflo-link.png',
   buttonClassName = 'rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted',
 }: PublicLinkActionsProps) {
   const { t } = useI18n();

@@ -407,7 +407,7 @@ export function backupDatabase(): { path: string; size: number } | null {
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const backupPath = path.join(backupDir, `queueflow-${timestamp}.db`);
+    const backupPath = path.join(backupDir, `qflo-${timestamp}.db`);
 
     // Use SQLite backup API (safe, atomic)
     db.backup(backupPath);
@@ -417,7 +417,7 @@ export function backupDatabase(): { path: string; size: number } | null {
 
     // Cleanup: keep only the last 7 backups
     const backups = fs.readdirSync(backupDir)
-      .filter(f => f.startsWith('queueflow-') && f.endsWith('.db'))
+      .filter(f => f.startsWith('qflo-') && f.endsWith('.db'))
       .sort()
       .reverse();
 

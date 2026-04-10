@@ -10,7 +10,7 @@ importers:
     devDependencies:
       artillery:
         specifier: ^2.0.30
-        version: 2.0.30(@types/node@22.19.15)
+        version: 2.0.30(@types/node@22.19.15)(encoding@0.1.13)
       k6:
         specifier: ^0.0.0
         version: 0.0.0
@@ -84,7 +84,7 @@ importers:
       '@expo/vector-icons':
         specifier: ^15.0.3
         version: 15.1.1(expo-font@14.0.11(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      '@queueflow/shared':
+      '@qflo/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@react-native-async-storage/async-storage':
@@ -202,10 +202,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@queueflow/shared':
+      '@qflo/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@queueflow/ui':
+      '@qflo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@sentry/nextjs':
@@ -10654,7 +10654,7 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@datadog/datadog-api-client@1.53.0':
+  '@datadog/datadog-api-client@1.53.0(encoding@0.1.13)':
     dependencies:
       '@types/buffer-from': 1.1.3
       '@types/node': 22.19.15
@@ -14126,7 +14126,7 @@ snapshots:
       js-yaml: 4.1.1
       json5: 2.2.3
       lazy-val: 1.0.5
-      minimatch: 10.2.4
+      minimatch: 10.2.5
       resedit: 1.7.2
       sanitize-filename: 1.6.3
       semver: 7.7.4
@@ -14285,7 +14285,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  artillery-plugin-publish-metrics@2.35.0:
+  artillery-plugin-publish-metrics@2.35.0(encoding@0.1.13):
     dependencies:
       '@aws-sdk/client-cloudwatch': 3.1028.0
       '@opentelemetry/api': 1.9.1
@@ -14302,7 +14302,7 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
       async: 2.6.4
-      datadog-metrics: 0.12.1
+      datadog-metrics: 0.12.1(encoding@0.1.13)
       debug: 4.4.3(supports-color@8.1.1)
       dogapi: 2.8.4
       hot-shots: 10.2.1
@@ -14323,7 +14323,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  artillery@2.0.30(@types/node@22.19.15):
+  artillery@2.0.30(@types/node@22.19.15)(encoding@0.1.13):
     dependencies:
       '@artilleryio/int-commons': 2.21.0
       '@artilleryio/int-core': 2.25.0
@@ -14351,7 +14351,7 @@ snapshots:
       artillery-plugin-expect: 2.24.0
       artillery-plugin-fake-data: 1.21.0
       artillery-plugin-metrics-by-endpoint: 1.24.0
-      artillery-plugin-publish-metrics: 2.35.0
+      artillery-plugin-publish-metrics: 2.35.0(encoding@0.1.13)
       artillery-plugin-slack: 1.19.0
       async: 2.6.4
       chalk: 2.4.2
@@ -15126,9 +15126,9 @@ snapshots:
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
 
-  datadog-metrics@0.12.1:
+  datadog-metrics@0.12.1(encoding@0.1.13):
     dependencies:
-      '@datadog/datadog-api-client': 1.53.0
+      '@datadog/datadog-api-client': 1.53.0(encoding@0.1.13)
       debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - encoding

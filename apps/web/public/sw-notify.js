@@ -179,7 +179,7 @@ function buildNotification(data) {
           body: data.body || 'You have a notification',
           icon: '/icon-192x192.png',
           badge: '/badge-96x96.png',
-          tag: data.tag || `queueflow-${Date.now()}`,
+          tag: data.tag || `qflo-${Date.now()}`,
           renotify: true,
           vibrate: [300, 150, 300, 150, 300, 150, 600],
           requireInteraction: true,

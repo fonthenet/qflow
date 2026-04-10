@@ -50,7 +50,7 @@ import { useI18n } from '@/components/providers/locale-provider';
 import type { Database } from '@/lib/supabase/database.types';
 import type { CustomerDataScope } from '@/lib/privacy';
 import type { QueueData } from '@/lib/hooks/use-realtime-queue';
-import type { IndustryVertical, TemplateVocabulary } from '@queueflow/shared';
+import type { IndustryVertical, TemplateVocabulary } from '@qflo/shared';
 
 type Ticket = Database['public']['Tables']['tickets']['Row'];
 type Department = Database['public']['Tables']['departments']['Row'];

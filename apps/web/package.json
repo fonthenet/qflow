@@ -1,5 +1,5 @@
 {
-  "name": "@queueflow/web",
+  "name": "@qflo/web",
   "version": "0.0.1",
   "private": true,
   "engines": {
@@ -26,8 +26,8 @@
     "ios:clip-call-again": "node scripts/ios-clip-e2e.mjs --call-only"
   },
   "dependencies": {
-    "@queueflow/shared": "workspace:*",
-    "@queueflow/ui": "workspace:*",
+    "@qflo/shared": "workspace:*",
+    "@qflo/ui": "workspace:*",
     "@sentry/nextjs": "^10.48.0",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",

@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
-import type { RoleDefinition } from '@queueflow/shared';
-import { STAFF_ROLE_LABELS, STAFF_ROLES } from '@queueflow/shared';
+import type { RoleDefinition } from '@qflo/shared';
+import { STAFF_ROLE_LABELS, STAFF_ROLES } from '@qflo/shared';
 import { useI18n } from '@/components/providers/locale-provider';
 import {
   createStaffMember,

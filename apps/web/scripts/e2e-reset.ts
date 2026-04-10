@@ -53,20 +53,20 @@ Required:
   SUPABASE_SERVICE_ROLE_KEY
 
 Optional:
-  QUEUEFLOW_E2E_ORG_SLUG
-  QUEUEFLOW_E2E_EMAIL
-  QUEUEFLOW_E2E_DROP_ORG
-  QUEUEFLOW_E2E_DROP_USER
+  QFLO_E2E_ORG_SLUG
+  QFLO_E2E_EMAIL
+  QFLO_E2E_DROP_ORG
+  QFLO_E2E_DROP_USER
 `);
     return;
   }
 
   const supabase = createServiceClient();
 
-  const organizationSlug = process.env.QUEUEFLOW_E2E_ORG_SLUG ?? 'queueflow-e2e';
-  const dropOrganization = (process.env.QUEUEFLOW_E2E_DROP_ORG ?? 'false') === 'true';
-  const dropAdminUser = (process.env.QUEUEFLOW_E2E_DROP_USER ?? 'false') === 'true';
-  const adminEmail = process.env.QUEUEFLOW_E2E_EMAIL ?? 'e2e-admin@queueflow.local';
+  const organizationSlug = process.env.QFLO_E2E_ORG_SLUG ?? 'qflo-e2e';
+  const dropOrganization = (process.env.QFLO_E2E_DROP_ORG ?? 'false') === 'true';
+  const dropAdminUser = (process.env.QFLO_E2E_DROP_USER ?? 'false') === 'true';
+  const adminEmail = process.env.QFLO_E2E_EMAIL ?? 'e2e-admin@qflo.local';
 
   const { data: organization } = await supabase
     .from('organizations')

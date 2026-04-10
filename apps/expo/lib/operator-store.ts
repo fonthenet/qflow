@@ -48,7 +48,7 @@ export const useOperatorStore = create<OperatorState>()(
       setWaitingCount: (count) => set({ waitingCount: count }),
     }),
     {
-      name: 'queueflow-operator',
+      name: 'qflo-operator',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ session: state.session }),
     }

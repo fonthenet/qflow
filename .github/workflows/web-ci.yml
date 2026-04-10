@@ -40,7 +40,7 @@ jobs:
       QUEUEFLOW_E2E_EMAIL: ${{ secrets.QUEUEFLOW_E2E_EMAIL }}
       QUEUEFLOW_E2E_PASSWORD: ${{ secrets.QUEUEFLOW_E2E_PASSWORD }}
       QUEUEFLOW_E2E_ORG_NAME: QueueFlow E2E
-      QUEUEFLOW_E2E_ORG_SLUG: queueflow-e2e
+      QFLO_E2E_ORG_SLUG: qflo-e2e
       QUEUEFLOW_E2E_TEMPLATE_ID: bank-branch
       QUEUEFLOW_E2E_OPERATING_MODEL: service_routing
       QUEUEFLOW_E2E_BRANCH_TYPE: branch_office
@@ -67,28 +67,28 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: TypeScript check
-        run: pnpm --filter @queueflow/web exec tsc --noEmit
+        run: pnpm --filter @qflo/web exec tsc --noEmit
 
       - name: Run all tests
-        run: pnpm --filter @queueflow/web exec vitest run
+        run: pnpm --filter @qflo/web exec vitest run
 
       - name: Dependency audit (warn only)
         run: pnpm audit --audit-level=high || true
 
       - name: Build web app
-        run: pnpm --filter @queueflow/web build
+        run: pnpm --filter @qflo/web build
 
       - name: Install Playwright browser
         if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
-        run: pnpm --filter @queueflow/web exec playwright install --with-deps chromium
+        run: pnpm --filter @qflo/web exec playwright install --with-deps chromium
 
       - name: Seed E2E tenant
         if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
-        run: pnpm --filter @queueflow/web e2e:seed
+        run: pnpm --filter @qflo/web e2e:seed
 
       - name: Run smoke E2E
         if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}
-        run: pnpm --filter @queueflow/web test:e2e:smoke
+        run: pnpm --filter @qflo/web test:e2e:smoke
 
       - name: Upload Playwright report
         if: ${{ always() && env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' && env.QUEUEFLOW_E2E_EMAIL != '' && env.QUEUEFLOW_E2E_PASSWORD != '' }}

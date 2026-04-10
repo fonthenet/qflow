@@ -1,5 +1,5 @@
 {
-  "name": "@queueflow/expo",
+  "name": "@qflo/expo",
   "version": "1.0.0",
   "private": true,
   "main": "expo-router/entry",
@@ -13,7 +13,7 @@
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
-    "@queueflow/shared": "workspace:*",
+    "@qflo/shared": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.0.0",
     "@react-navigation/native": "^7.0.0",

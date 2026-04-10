@@ -3,7 +3,7 @@
 import { CheckCircle2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-const SANDBOX_RESET_KEY = 'queueflow:sandbox-reset-feedback';
+const SANDBOX_RESET_KEY = 'qflo:sandbox-reset-feedback';
 
 export function setSandboxResetFeedback() {
   if (typeof window === 'undefined') return;

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { ADMIN_LIKE_ROLES, STAFF_ROLES } from '@queueflow/shared';
+import { ADMIN_LIKE_ROLES, STAFF_ROLES } from '@qflo/shared';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { DeskPanel } from '@/components/desk/desk-panel';

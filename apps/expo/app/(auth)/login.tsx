@@ -105,7 +105,7 @@ export default function LoginScreen() {
     }
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'queueflow://reset-password',
+        redirectTo: 'qflo://reset-password',
       });
       if (error) {
         Alert.alert(t('common.error'), error.message);

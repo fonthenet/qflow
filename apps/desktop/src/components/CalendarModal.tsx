@@ -25,7 +25,7 @@ import {
   type CalendarDayInfo,
   type MonthDayInfo,
   type CalendarAppointment,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 
 // ── Schedule types ────────────────────────────────────────────────
 

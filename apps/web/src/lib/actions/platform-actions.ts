@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { type TemplateSectionKey, type TrialTemplateStructure } from '@queueflow/shared';
+import { type TemplateSectionKey, type TrialTemplateStructure } from '@qflo/shared';
 import { logAuditEvent } from '@/lib/audit';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import {

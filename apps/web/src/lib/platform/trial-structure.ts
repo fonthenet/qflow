@@ -5,7 +5,7 @@ import {
   type TrialTemplateDeskDraft,
   type TrialTemplateDisplayDraft,
   type TrialTemplateStructure,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)

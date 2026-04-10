@@ -117,9 +117,9 @@ async function updateSchemeURL(ticketURL) {
 
 function printUsage() {
   console.log(`Usage:
-  pnpm --filter @queueflow/web ios:push-test create
-  pnpm --filter @queueflow/web ios:push-test send
-  pnpm --filter @queueflow/web ios:push-test call
+  pnpm --filter @qflo/web ios:push-test create
+  pnpm --filter @qflo/web ios:push-test send
+  pnpm --filter @qflo/web ios:push-test call
 
 Optional flags:
   --department "Client Services"

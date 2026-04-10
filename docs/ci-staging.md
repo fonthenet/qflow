@@ -5,8 +5,8 @@
 - `Web CI`
   - runs on pull requests and pushes to `main`
   - installs dependencies
-  - runs `pnpm --filter @queueflow/web test:platform`
-  - runs `pnpm --filter @queueflow/web build`
+  - runs `pnpm --filter @qflo/web test:platform`
+  - runs `pnpm --filter @qflo/web build`
   - optionally seeds the E2E tenant and runs smoke browser coverage when Supabase and E2E secrets are configured
 
 - `Staging Validation`
@@ -38,7 +38,7 @@ The workflows seed a reusable tenant with:
 
 ```env
 QUEUEFLOW_E2E_ORG_NAME=QueueFlow E2E
-QUEUEFLOW_E2E_ORG_SLUG=queueflow-e2e
+QFLO_E2E_ORG_SLUG=qflo-e2e
 QUEUEFLOW_E2E_OFFICE_NAME=E2E Main Branch
 QUEUEFLOW_E2E_BRANCH_TYPE=branch_office
 QUEUEFLOW_E2E_OPERATING_MODEL=service_routing

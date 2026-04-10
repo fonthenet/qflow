@@ -9,7 +9,7 @@ import type {
   TemplateMigration,
   TemplateSectionKey,
   WorkflowProfile,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 import { resolvePlatformConfig } from './config';
 
 type UnknownRecord = Record<string, unknown>;

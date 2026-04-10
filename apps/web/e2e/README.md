@@ -25,12 +25,12 @@ QUEUEFLOW_E2E_ALLOW_MUTATIONS=true
 
 Commands:
 ```bash
-pnpm --filter @queueflow/web e2e:seed
-pnpm --filter @queueflow/web e2e:reset
-pnpm --filter @queueflow/web test:e2e:list
-pnpm --filter @queueflow/web test:e2e:smoke
-pnpm --filter @queueflow/web test:e2e:mutations
-pnpm --filter @queueflow/web test:e2e
+pnpm --filter @qflo/web e2e:seed
+pnpm --filter @qflo/web e2e:reset
+pnpm --filter @qflo/web test:e2e:list
+pnpm --filter @qflo/web test:e2e:smoke
+pnpm --filter @qflo/web test:e2e:mutations
+pnpm --filter @qflo/web test:e2e
 ```
 
 Seeding environment:

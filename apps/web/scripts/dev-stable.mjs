@@ -13,7 +13,7 @@ if (majorNodeVersion >= 24) {
   console.error(
     [
       `Node ${process.versions.node} is too new for a stable Next.js dev experience in this project.`,
-      'Use Node 22 LTS, then run `pnpm install` and `pnpm --filter @queueflow/web dev` again.',
+      'Use Node 22 LTS, then run `pnpm install` and `pnpm --filter @qflo/web dev` again.',
     ].join('\n')
   );
   process.exit(1);

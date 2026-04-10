@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PublicJoinProfile, TemplateVocabulary } from '@queueflow/shared';
+import type { PublicJoinProfile, TemplateVocabulary } from '@qflo/shared';
 import { createClient } from '@/lib/supabase/client';
 import { useI18n } from '@/components/providers/locale-provider';
 import {

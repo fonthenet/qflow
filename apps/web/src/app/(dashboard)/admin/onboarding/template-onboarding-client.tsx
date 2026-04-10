@@ -8,7 +8,7 @@ import type {
   TemplateLifecycleState,
   TrialTemplateDepartmentDraft,
   TrialTemplateStructure,
-} from '@queueflow/shared';
+} from '@qflo/shared';
 import { CalendarDays, CheckCircle2, LayoutTemplate, Lock, Monitor, Plus, Save, Settings2, Store } from 'lucide-react';
 import {
   clearIndustryTemplateTrial,

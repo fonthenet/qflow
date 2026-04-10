@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   // Requires admin/developer mode on Windows for symlinks
   ...(process.env.BUILD_STANDALONE === 'true' ? { output: 'standalone' as const } : {}),
   outputFileTracingRoot: path.resolve(__dirname, '..', '..'),
-  transpilePackages: ['@queueflow/shared', '@queueflow/ui'],
+  transpilePackages: ['@qflo/shared', '@qflo/ui'],
   // Allow access from Cloudflare tunnel and local network
   allowedDevOrigins: [
     '*.trycloudflare.com',
