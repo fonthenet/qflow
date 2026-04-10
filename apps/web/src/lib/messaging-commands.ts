@@ -3439,6 +3439,29 @@ async function startBookingFlow(
     .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
     .eq('channel', channel);
 
+  // ── WhatsApp Flows: native form UI (WhatsApp only) ──
+  // When WHATSAPP_FLOW_ID is set and the channel is WhatsApp, send a native
+  // booking form instead of the multi-step text conversation. Falls back to
+  // text-based flow on failure or for Messenger.
+  if (channel === 'whatsapp' && process.env.WHATSAPP_FLOW_ID && services && services.length > 0) {
+    try {
+      const { fetchBookingSlots, sendBookingFlowMessage } = await import('@/lib/whatsapp-flow');
+      const flowServices = services.map((s: any) => ({
+        id: s.id, name: s.name, department_id: s.department_id,
+      }));
+      const slots = await fetchBookingSlots(officeId, flowServices, locale);
+      if (slots.length > 0) {
+        const result = await sendBookingFlowMessage(
+          identifier, { id: org.id, name: org.name }, officeId, slots, locale,
+        );
+        if (result.ok) return; // Flow sent successfully — no session needed
+        console.warn('[booking] Flow send failed, falling back to text:', result.error);
+      }
+    } catch (flowErr) {
+      console.warn('[booking] Flow error, falling back to text:', flowErr);
+    }
+  }
+
   if (!services || services.length === 0) {
     // No services configured — create session with just office and first department
     const deptId = departments?.[0]?.id;
