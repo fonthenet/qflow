@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { NextConfig } from 'next';
+import { withSentryConfig } from '@sentry/nextjs';
 
 const nextConfig: NextConfig = {
   // Enable standalone output for Electron desktop bundling
@@ -56,4 +57,19 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Upload source maps for readable stack traces
+  org: 'qflo',
+  project: 'javascript-nextjs',
+
+  // Suppress source map upload logs
+  silent: !process.env.CI,
+
+  // Automatically tree-shake Sentry logger in production
+  disableLogger: true,
+
+  // Upload source maps but don't expose them to clients
+  sourcemaps: {
+    deleteSourcemapsAfterUpload: true,
+  },
+});

@@ -28,6 +28,7 @@
   "dependencies": {
     "@queueflow/shared": "workspace:*",
     "@queueflow/ui": "workspace:*",
+    "@sentry/nextjs": "^10.48.0",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",
     "@vercel/analytics": "^2.0.1",
