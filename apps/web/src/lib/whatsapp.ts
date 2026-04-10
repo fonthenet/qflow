@@ -299,6 +299,81 @@ async function sendViaTwilio(
   return { ok: true, provider: 'twilio', to: toE164, sid: data?.sid };
 }
 
+// ── Send CTA URL button (Meta only) ─────────────────────────────
+/**
+ * Send an interactive CTA URL button message via Meta Cloud API.
+ * Opens the URL inside WhatsApp's in-app browser.
+ */
+export async function sendWhatsAppCTAButton({
+  to,
+  body,
+  buttonText,
+  url,
+  header,
+  footer,
+}: {
+  to: string;
+  body: string;
+  buttonText: string;
+  url: string;
+  header?: string;
+  footer?: string;
+}): Promise<WhatsAppSendResult> {
+  const config = getMetaWhatsAppConfig();
+  if (!config) {
+    return { ok: false, provider: 'meta', error: 'Meta WhatsApp not configured' };
+  }
+
+  const normalizedTo = normalizePhone(to);
+  if (!normalizedTo) {
+    return { ok: false, provider: 'meta', error: 'Phone number is not valid' };
+  }
+
+  const interactive: Record<string, any> = {
+    type: 'cta_url',
+    body: { text: body },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonText,
+        url,
+      },
+    },
+  };
+  if (header) interactive.header = { type: 'text', text: header };
+  if (footer) interactive.footer = { text: footer };
+
+  const response = await fetch(
+    `https://graph.facebook.com/v22.0/${config.phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: normalizedTo,
+        type: 'interactive',
+        interactive,
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMsg = data?.error?.message ?? `Meta API failed with status ${response.status}`;
+    console.error('[whatsapp:meta] CTA button send failed:', errorMsg, data);
+    return { ok: false, provider: 'meta', to: normalizedTo, error: errorMsg };
+  }
+
+  const messageId = data?.messages?.[0]?.id;
+  return { ok: true, provider: 'meta', to: normalizedTo, sid: messageId };
+}
+
 // ── Main send function (tries Meta first, falls back to Twilio) ─
 export async function sendWhatsAppMessage({
   to,

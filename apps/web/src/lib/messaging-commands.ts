@@ -3439,44 +3439,36 @@ async function startBookingFlow(
     .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
     .eq('channel', channel);
 
-  // ── Fast booking: native form (WhatsApp) or webview button (Messenger) ──
+  // ── Fast booking: CTA button (WhatsApp) or webview button (Messenger) ──
   if (services && services.length > 0) {
-    // WhatsApp: use native Flow form when configured
-    if (channel === 'whatsapp' && process.env.WHATSAPP_FLOW_ID) {
-      try {
-        const { fetchBookingSlots, sendBookingFlowMessage } = await import('@/lib/whatsapp-flow');
-        const flowServices = services.map((s: any) => ({
-          id: s.id, name: s.name, department_id: s.department_id,
-        }));
-        const slots = await fetchBookingSlots(officeId, flowServices, locale);
-        if (slots.length > 0) {
-          const result = await sendBookingFlowMessage(
-            identifier, { id: org.id, name: org.name }, officeId, slots, locale,
-          );
-          if (result.ok) return;
-          console.warn('[booking] Flow send failed, falling back to text:', result.error);
-        }
-      } catch (flowErr) {
-        console.warn('[booking] Flow error, falling back to text:', flowErr);
-      }
-    }
+    try {
+      const { getOfficePublicSlug } = await import('@/lib/office-links');
+      const { data: officeRow } = await supabase.from('offices').select('name, settings').eq('id', officeId).single();
+      if (officeRow) {
+        const slug = getOfficePublicSlug({ name: officeRow.name, id: officeId, settings: officeRow.settings });
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net';
+        const bookingUrl = `${appUrl}/book/${slug}`;
+        const btnText = locale === 'ar'
+          ? `📅 احجز موعدك في *${org.name}*`
+          : locale === 'en'
+          ? `📅 Book your appointment at *${org.name}*`
+          : `📅 Réservez votre rendez-vous chez *${org.name}*`;
+        const btnTitle = locale === 'ar' ? 'احجز الآن' : locale === 'en' ? 'Book Now' : 'Réserver';
 
-    // Messenger: send a "Book Now" webview button linking to the booking page
-    if (channel === 'messenger') {
-      try {
-        const { getOfficePublicSlug } = await import('@/lib/office-links');
-        const { data: officeRow } = await supabase.from('offices').select('name, settings').eq('id', officeId).single();
-        if (officeRow) {
-          const slug = getOfficePublicSlug({ name: officeRow.name, id: officeId, settings: officeRow.settings });
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net';
-          const bookingUrl = `${appUrl}/book/${slug}`;
+        if (channel === 'whatsapp') {
+          const { sendWhatsAppCTAButton } = await import('@/lib/whatsapp');
+          const result = await sendWhatsAppCTAButton({
+            to: identifier,
+            body: btnText,
+            buttonText: btnTitle,
+            url: bookingUrl,
+          });
+          if (result.ok) return;
+          console.warn('[booking] WhatsApp CTA button failed, falling back to text:', result.error);
+        }
+
+        if (channel === 'messenger') {
           const { sendMessengerBookingButton } = await import('@/lib/messenger');
-          const btnText = locale === 'ar'
-            ? `📅 احجز موعدك في *${org.name}*`
-            : locale === 'en'
-            ? `📅 Book your appointment at *${org.name}*`
-            : `📅 Réservez votre rendez-vous chez *${org.name}*`;
-          const btnTitle = locale === 'ar' ? 'احجز الآن' : locale === 'en' ? 'Book Now' : 'Réserver';
           const result = await sendMessengerBookingButton({
             recipientId: identifier,
             text: btnText,
@@ -3486,9 +3478,9 @@ async function startBookingFlow(
           if (result.ok) return;
           console.warn('[booking] Messenger button failed, falling back to text:', result.error);
         }
-      } catch (messengerErr) {
-        console.warn('[booking] Messenger button error, falling back to text:', messengerErr);
       }
+    } catch (btnErr) {
+      console.warn('[booking] Booking button error, falling back to text:', btnErr);
     }
   }
 
