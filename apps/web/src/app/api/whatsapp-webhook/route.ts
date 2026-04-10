@@ -89,24 +89,6 @@ export async function POST(request: NextRequest) {
         messageBody = message.text?.body ?? '';
         profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
         bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
-
-        // ── WhatsApp Flow completion (nfm_reply) ──
-        // When a user completes a Flow form, Meta sends an interactive message
-        // with type "nfm_reply" containing the form data in response_json.
-        // Handle it here before the messageBody empty check below.
-        if (message.type === 'interactive' && message.interactive?.type === 'nfm_reply') {
-          const responseJson = message.interactive.nfm_reply?.response_json;
-          const nfmFrom = fromPhone || '';
-          if (responseJson && nfmFrom) {
-            const { normalizePhone: normPhone } = await import('@/lib/messaging-commands');
-            const normalizedFrom = normPhone(nfmFrom);
-            const redacted = normalizedFrom ? `***${normalizedFrom.slice(-4)}` : 'unknown';
-            console.log(`[whatsapp-webhook] Flow nfm_reply from ${redacted}`);
-            const { handleFlowBookingReply } = await import('@/lib/whatsapp-flow');
-            await handleFlowBookingReply(responseJson, normalizedFrom, bsuid);
-          }
-          return NextResponse.json({ ok: true });
-        }
       } else {
         // No app secret configured — fail closed (reject unverified payloads)
         console.error('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — rejecting unverified webhook. Set the env var to enable webhook processing.');

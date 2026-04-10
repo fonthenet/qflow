@@ -3439,51 +3439,6 @@ async function startBookingFlow(
     .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
     .eq('channel', channel);
 
-  // ── Fast booking: CTA button (WhatsApp) or webview button (Messenger) ──
-  if (services && services.length > 0) {
-    try {
-      const { getOfficePublicSlug } = await import('@/lib/office-links');
-      const { data: officeRow } = await supabase.from('offices').select('name, settings').eq('id', officeId).single();
-      if (officeRow) {
-        const slug = getOfficePublicSlug({ name: officeRow.name, id: officeId, settings: officeRow.settings });
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net';
-        const bookingUrl = `${appUrl}/book/${slug}`;
-        const btnText = locale === 'ar'
-          ? `📅 احجز موعدك في *${org.name}*`
-          : locale === 'en'
-          ? `📅 Book your appointment at *${org.name}*`
-          : `📅 Réservez votre rendez-vous chez *${org.name}*`;
-        const btnTitle = locale === 'ar' ? 'احجز الآن' : locale === 'en' ? 'Book Now' : 'Réserver';
-
-        if (channel === 'whatsapp') {
-          const { sendWhatsAppCTAButton } = await import('@/lib/whatsapp');
-          const result = await sendWhatsAppCTAButton({
-            to: identifier,
-            body: btnText,
-            buttonText: btnTitle,
-            url: bookingUrl,
-          });
-          if (result.ok) return;
-          console.warn('[booking] WhatsApp CTA button failed, falling back to text:', result.error);
-        }
-
-        if (channel === 'messenger') {
-          const { sendMessengerBookingButton } = await import('@/lib/messenger');
-          const result = await sendMessengerBookingButton({
-            recipientId: identifier,
-            text: btnText,
-            buttonTitle: btnTitle,
-            bookingUrl,
-          });
-          if (result.ok) return;
-          console.warn('[booking] Messenger button failed, falling back to text:', result.error);
-        }
-      }
-    } catch (btnErr) {
-      console.warn('[booking] Booking button error, falling back to text:', btnErr);
-    }
-  }
-
   if (!services || services.length === 0) {
     // No services configured — create session with just office and first department
     const deptId = departments?.[0]?.id;
