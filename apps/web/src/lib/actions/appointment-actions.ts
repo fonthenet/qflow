@@ -10,6 +10,9 @@ import {
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
+import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
+import { sendMessengerMessage } from '@/lib/messenger';
+import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -322,6 +325,9 @@ export async function cancelAppointment(appointmentId: string) {
   // Notify waitlist entries for the freed slot
   await notifyWaitlistOnCancellation(appointmentId);
 
+  // Notify the customer about the cancellation via their original channel
+  await notifyAppointmentCancelled(supabase, appointment);
+
   revalidatePath('/desk');
   return { data: appointment };
 }
@@ -355,7 +361,7 @@ export async function cancelRecurringSeries(appointmentId: string) {
     .or(`id.eq.${parentId},recurrence_parent_id.eq.${parentId}`)
     .gte('scheduled_at', nowIso)
     .neq('status', 'cancelled')
-    .select('id, ticket_id');
+    .select('id, ticket_id, office_id, customer_phone, customer_name, locale');
 
   if (cancelErr) {
     return { error: cancelErr.message };
@@ -384,9 +390,10 @@ export async function cancelRecurringSeries(appointmentId: string) {
       .in('status', ['waiting', 'called', 'issued']);
   }
 
-  // Notify waitlist for each freed slot
+  // Notify waitlist for each freed slot + notify customers
   for (const a of cancelled ?? []) {
     await notifyWaitlistOnCancellation(a.id);
+    await notifyAppointmentCancelled(supabase, a);
   }
 
   revalidatePath('/admin/bookings');
@@ -671,6 +678,74 @@ export async function joinSlotWaitlist(data: JoinSlotWaitlistData) {
   }
 
   return { data: entry };
+}
+
+/**
+ * Notify the customer that their appointment was cancelled.
+ * Resolves the notification channel (WhatsApp/Messenger) from the most recent
+ * session and sends a branded cancellation message.
+ */
+async function notifyAppointmentCancelled(supabase: any, appointment: any) {
+  try {
+    if (!appointment?.customer_phone) return;
+
+    // Fetch org name for branded message
+    const { data: office } = await supabase
+      .from('offices')
+      .select('organization_id, organization:organizations(id, name)')
+      .eq('id', appointment.office_id)
+      .single();
+    const orgName: string = (office?.organization as any)?.name ?? '';
+    const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
+
+    // Resolve locale from appointment or session
+    let locale: Locale = (appointment.locale === 'ar' || appointment.locale === 'en' || appointment.locale === 'fr')
+      ? appointment.locale : 'fr';
+    const haveStoredLocale = appointment.locale === 'ar' || appointment.locale === 'en' || appointment.locale === 'fr';
+
+    // Resolve notification channel from most recent session
+    let channel: 'whatsapp' | 'messenger' | null = null;
+    let toPhone: string | null = appointment.customer_phone || null;
+    let toPsid: string | null = null;
+
+    if (appointment.customer_phone && orgId) {
+      const raw = appointment.customer_phone.trim();
+      const digits = raw.replace(/\D/g, '');
+      const phoneVariants = Array.from(new Set([raw, digits, `+${digits}`].filter(Boolean)));
+      const orFilter = phoneVariants
+        .flatMap((v: string) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
+        .join(',');
+
+      const { data: sessionRows } = await supabase
+        .from('whatsapp_sessions')
+        .select('id, channel, whatsapp_phone, messenger_psid, locale')
+        .eq('organization_id', orgId)
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const session = sessionRows?.[0];
+      if (session) {
+        channel = session.channel as 'whatsapp' | 'messenger';
+        if (session.whatsapp_phone) toPhone = session.whatsapp_phone;
+        if (session.messenger_psid) toPsid = session.messenger_psid;
+        if (!haveStoredLocale && session.locale) locale = session.locale as Locale;
+      }
+    }
+
+    // Default to WhatsApp if we have a phone but no session
+    if (!channel && toPhone) channel = 'whatsapp';
+
+    const msgBody = tMsg('appointment_cancelled', locale, { name: orgName, reason: '' });
+
+    if (channel === 'whatsapp' && toPhone) {
+      await sendWhatsAppMessage({ to: toPhone, body: msgBody });
+    } else if (channel === 'messenger' && toPsid) {
+      await sendMessengerMessage({ recipientId: toPsid, text: msgBody });
+    }
+  } catch (err) {
+    console.error('[cancelAppointment] notification failed:', err);
+  }
 }
 
 export async function notifyWaitlistOnCancellation(appointmentId: string) {
