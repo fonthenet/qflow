@@ -101,7 +101,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [activeSection, setActiveSection] = useState('ticketing');
   const orgIdRef = useRef<string>('');
   const originalRef = useRef<SettingsShape>({});
 
@@ -289,6 +289,19 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     },
   ], [locale]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Side nav items: sections + schedule
+  const navItems = useMemo(() => {
+    const items: { id: string; icon: string; title: string }[] = [];
+    for (const sec of sections) {
+      items.push({ id: sec.id, icon: sec.icon, title: sec.title });
+      // Insert schedule after business
+      if (sec.id === 'business') {
+        items.push({ id: 'schedule', icon: '🕐', title: t('sm.section.schedule') });
+      }
+    }
+    return items;
+  }, [sections]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const allFieldKeys = useMemo(() => {
     const keys: string[] = [];
     sections.forEach(s => s.fields.forEach(f => keys.push(f.key)));
@@ -387,12 +400,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
   useEffect(() => { load(); }, [load]);
 
-  // Open first section by default after load
+  // After load, ensure activeSection is valid
   useEffect(() => {
-    if (!loading && !error && Object.keys(openSections).length === 0) {
-      setOpenSections({ [sections[0].id]: true });
+    if (!loading && !error && sections.length > 0 && !sections.find(s => s.id === activeSection) && activeSection !== 'schedule') {
+      setActiveSection(sections[0].id);
     }
-  }, [loading, error, sections, openSections]);
+  }, [loading, error, sections, activeSection]);
 
   // ─── Dirty tracking ───────────────────────────────────────────────
   const dirty = useMemo(() => {
@@ -538,13 +551,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   }, [dirty, saving, loading, hasErrors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Styles ───────────────────────────────────────────────────────
-  const cardStyle: React.CSSProperties = {
-    background: 'var(--bg, #0f172a)',
-    border: '1px solid var(--border, #475569)',
-    borderRadius: 10,
-    overflow: 'hidden',
-    flexShrink: 0,
-  };
   const labelStyle: React.CSSProperties = {
     fontSize: 12,
     color: 'var(--text2, #94a3b8)',
@@ -601,9 +607,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
     if (f.type === 'bool') {
       return (
-        <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0' }}>
+        <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '6px 0' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{f.label}</div>
+            <div style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{f.label}</div>
             {f.help && <div style={helpStyle}>{f.help}</div>}
           </div>
           <Toggle on={!!v} onChange={setV} />
@@ -612,13 +618,13 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }
     if (f.type === 'textarea') {
       return (
-        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
+        <div key={f.key} style={{ padding: '5px 0', gridColumn: '1 / -1' }}>
           <label style={labelStyle}>{f.label}</label>
           <textarea
             value={v ?? ''}
             onChange={(e) => setV(e.target.value)}
-            rows={3}
-            style={{ ...inputStyle, resize: 'vertical', minHeight: 64 }}
+            rows={2}
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 48 }}
             placeholder={placeholder}
           />
           {f.help && <div style={helpStyle}>{f.help}</div>}
@@ -628,7 +634,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }
     if (f.type === 'enum') {
       return (
-        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
+        <div key={f.key} style={{ padding: '5px 0' }}>
           <label style={labelStyle}>{f.label}</label>
           <select value={v ?? f.default} onChange={(e) => setV(e.target.value)} style={inputStyle}>
             {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -640,7 +646,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     if (f.type === 'multi') {
       const arr: string[] = Array.isArray(v) ? v : [];
       return (
-        <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
+        <div key={f.key} style={{ padding: '5px 0', gridColumn: '1 / -1' }}>
           <label style={labelStyle}>{f.label}</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {f.options?.map(o => {
@@ -671,7 +677,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }
     if (f.type === 'num') {
       return (
-        <div key={f.key} style={{ padding: '8px 0' }}>
+        <div key={f.key} style={{ padding: '5px 0' }}>
           <label style={labelStyle}>{f.label}</label>
           <input
             type="number"
@@ -693,9 +699,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         </div>
       );
     }
-    // text — full width by default since they're usually long values
+    // text — single column by default
     return (
-      <div key={f.key} style={{ padding: '8px 0', gridColumn: '1 / -1' }}>
+      <div key={f.key} style={{ padding: '5px 0' }}>
         <label style={labelStyle}>{f.label}</label>
         <input
           type="text"
@@ -721,16 +727,146 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     }).filter(sec => sec.fields.length > 0);
   }, [sections, q]);
 
-  // Auto-open sections on search
-  useEffect(() => {
-    if (q) {
-      const next: Record<string, boolean> = {};
-      filteredSections.forEach(s => { next[s.id] = true; });
-      setOpenSections(next);
-    }
+  // Whether schedule section matches search
+  const scheduleMatchesSearch = useMemo(() => {
+    if (!q) return true;
+    const scheduleTerms = ['work schedule', 'timezone', 'hours', 'schedule', t('sm.section.schedule').toLowerCase()];
+    return scheduleTerms.some(term => term.includes(q));
   }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
+  // Auto-switch to first matching section on search
+  useEffect(() => {
+    if (q) {
+      // Determine first matching section id
+      if (scheduleMatchesSearch && filteredSections.length === 0) {
+        setActiveSection('schedule');
+      } else if (filteredSections.length > 0) {
+        setActiveSection(filteredSections[0].id);
+      }
+    }
+  }, [q, filteredSections, scheduleMatchesSearch]);
+
+  // ─── Render schedule content ──────────────────────────────────────
+  function renderScheduleContent() {
+    return (
+      <div>
+        {/* Timezone */}
+        <div style={{ padding: '5px 0' }}>
+          <label style={labelStyle}>{t('sm.field.timezone')}</label>
+          <select
+            value={officeTimezone}
+            onChange={(e) => setOfficeTimezone(e.target.value)}
+            style={inputStyle}
+          >
+            {TIMEZONES.map(tz => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Always Open toggle — wired to visit_intake_override_mode org setting */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '6px 0' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{t('sm.field.always_open')}</div>
+            <div style={helpStyle}>{t('sm.help.always_open')}</div>
+          </div>
+          <Toggle
+            on={values.visit_intake_override_mode === 'always_open'}
+            onChange={(on) => setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }))}
+          />
+        </div>
+
+        {/* Weekly schedule — hidden when always open */}
+        {values.visit_intake_override_mode !== 'always_open' && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {WEEK_DAYS.map(day => {
+              const d = schedule[day.key];
+              return (
+                <div key={day.key} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', borderRadius: 8,
+                  background: d.closed ? 'transparent' : 'rgba(34,197,94,0.06)',
+                  border: `1px solid ${d.closed ? 'var(--border, #475569)' : '#22c55e33'}`,
+                }}>
+                  <span style={{ width: 80, flexShrink: 0, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
+                    {t(`sm.day.${day.key}`)}
+                  </span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', flexShrink: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={d.closed}
+                      onChange={() => setSchedule(prev => ({
+                        ...prev,
+                        [day.key]: { ...prev[day.key], closed: !prev[day.key].closed },
+                      }))}
+                    />
+                    {t('sm.closed')}
+                  </label>
+                  {!d.closed && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                      <input
+                        type="time"
+                        value={d.open}
+                        onChange={(e) => setSchedule(prev => ({
+                          ...prev,
+                          [day.key]: { ...prev[day.key], open: e.target.value },
+                        }))}
+                        style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>→</span>
+                      <input
+                        type="time"
+                        value={d.close}
+                        onChange={(e) => setSchedule(prev => ({
+                          ...prev,
+                          [day.key]: { ...prev[day.key], close: e.target.value },
+                        }))}
+                        style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Render section content ───────────────────────────────────────
+  function renderSectionContent(sec: SectionDef) {
+    return (
+      <div>
+        {/* Org name at top of business section */}
+        {sec.id === 'business' && (
+          <div style={{ padding: '5px 0', marginBottom: 4 }}>
+            <label style={labelStyle}>{t('sm.field.org_name')}</label>
+            <input
+              type="text"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+              style={inputStyle}
+            />
+            {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
+          </div>
+        )}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          columnGap: 20,
+          rowGap: 0,
+        }}>
+          {sec.fields.map(renderField)}
+        </div>
+      </div>
+    );
+  }
+
+  // Find the active section object (for content rendering)
+  const activeSec = sections.find(s => s.id === activeSection);
+  // In search mode, find the filtered version of active section
+  const activeFilteredSec = q ? filteredSections.find(s => s.id === activeSection) : activeSec;
 
   // ─── Render ───────────────────────────────────────────────────────
   return (
@@ -781,12 +917,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           >×</button>
         </div>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Body: 2-panel layout */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {loading ? (
-            <p style={{ textAlign: 'center', color: 'var(--text2, #94a3b8)', padding: 40 }}>{t('Loading...')}</p>
+            <p style={{ textAlign: 'center', color: 'var(--text2, #94a3b8)', padding: 40, width: '100%' }}>{t('Loading...')}</p>
           ) : error ? (
-            <div style={{ textAlign: 'center', padding: 40 }}>
+            <div style={{ textAlign: 'center', padding: 40, width: '100%' }}>
               <p style={{ color: 'var(--danger, #ef4444)', marginBottom: 12 }}>{error}</p>
               <button onClick={load} style={{
                 background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
@@ -795,170 +931,64 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             </div>
           ) : (
             <>
-              {/* Org name card — always visible */}
-              <div style={{ ...cardStyle, padding: '12px 16px' }}>
-                <label style={labelStyle}>{t('sm.field.org_name')}</label>
-                <input
-                  type="text"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  style={inputStyle}
-                />
-                {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
-              </div>
-
-              {/* Work Schedule & Timezone section */}
-              {(!q || 'work schedule timezone hours'.includes(q)) && (
-                <div style={cardStyle}>
-                  <button
-                    type="button"
-                    onClick={() => toggleSection('schedule')}
-                    style={{
-                      width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
-                      padding: '14px 16px', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      color: 'var(--text, #f1f5f9)',
-                    }}
-                  >
-                    <span style={{ fontSize: 18 }}>🕐</span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>{t('sm.section.schedule')}</span>
-                    <span style={{ fontSize: 16, color: 'var(--text2, #94a3b8)', transform: openSections['schedule'] ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
-                  </button>
-                  {openSections['schedule'] && (
-                    <div style={{ padding: '0 16px 14px', borderTop: '1px solid var(--border, #475569)' }}>
-                      {/* Timezone */}
-                      <div style={{ padding: '10px 0' }}>
-                        <label style={labelStyle}>{t('sm.field.timezone')}</label>
-                        <select
-                          value={officeTimezone}
-                          onChange={(e) => setOfficeTimezone(e.target.value)}
-                          style={inputStyle}
-                        >
-                          {TIMEZONES.map(tz => (
-                            <option key={tz.value} value={tz.value}>{tz.label}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Always Open toggle — wired to visit_intake_override_mode org setting */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{t('sm.field.always_open')}</div>
-                          <div style={helpStyle}>{t('sm.help.always_open')}</div>
-                        </div>
-                        <Toggle
-                          on={values.visit_intake_override_mode === 'always_open'}
-                          onChange={(on) => setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }))}
-                        />
-                      </div>
-
-                      {/* Weekly schedule — hidden when always open */}
-                      {values.visit_intake_override_mode !== 'always_open' && (
-                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {WEEK_DAYS.map(day => {
-                            const d = schedule[day.key];
-                            return (
-                              <div key={day.key} style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                padding: '6px 10px', borderRadius: 8,
-                                background: d.closed ? 'transparent' : 'rgba(34,197,94,0.06)',
-                                border: `1px solid ${d.closed ? 'var(--border, #475569)' : '#22c55e33'}`,
-                              }}>
-                                <span style={{ width: 80, flexShrink: 0, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
-                                  {t(`sm.day.${day.key}`)}
-                                </span>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', flexShrink: 0 }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={d.closed}
-                                    onChange={() => setSchedule(prev => ({
-                                      ...prev,
-                                      [day.key]: { ...prev[day.key], closed: !prev[day.key].closed },
-                                    }))}
-                                  />
-                                  {t('sm.closed')}
-                                </label>
-                                {!d.closed && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                                    <input
-                                      type="time"
-                                      value={d.open}
-                                      onChange={(e) => setSchedule(prev => ({
-                                        ...prev,
-                                        [day.key]: { ...prev[day.key], open: e.target.value },
-                                      }))}
-                                      style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
-                                    />
-                                    <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>→</span>
-                                    <input
-                                      type="time"
-                                      value={d.close}
-                                      onChange={(e) => setSchedule(prev => ({
-                                        ...prev,
-                                        [day.key]: { ...prev[day.key], close: e.target.value },
-                                      }))}
-                                      style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {filteredSections.map(sec => {
-                const open = !!openSections[sec.id];
-                return (
-                  <div key={sec.id} style={cardStyle}>
+              {/* LEFT: Side navigation */}
+              <div style={{
+                width: 180, flexShrink: 0,
+                borderRight: '1px solid var(--border, #475569)',
+                overflowY: 'auto',
+                padding: '8px 0',
+                background: 'var(--bg, #0f172a)',
+              }}>
+                {navItems.map(item => {
+                  const isActive = activeSection === item.id;
+                  // In search mode, dim non-matching sections
+                  const isMatchingInSearch = !q || (
+                    item.id === 'schedule'
+                      ? scheduleMatchesSearch
+                      : filteredSections.some(s => s.id === item.id)
+                  );
+                  return (
                     <button
+                      key={item.id}
                       type="button"
-                      onClick={() => toggleSection(sec.id)}
+                      onClick={() => setActiveSection(item.id)}
                       style={{
-                        width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
-                        padding: '14px 16px', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        color: 'var(--text, #f1f5f9)',
+                        width: '100%', textAlign: 'left', border: 'none',
+                        padding: '8px 14px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: isActive ? 'rgba(59,130,246,0.15)' : 'transparent',
+                        color: isActive ? 'var(--primary, #3b82f6)' : 'var(--text, #f1f5f9)',
+                        borderLeft: isActive ? '3px solid var(--primary, #3b82f6)' : '3px solid transparent',
+                        fontSize: 13, fontWeight: isActive ? 700 : 500,
+                        opacity: isMatchingInSearch ? 1 : 0.35,
+                        transition: 'background 0.1s, opacity 0.1s',
                       }}
                     >
-                      <span style={{ fontSize: 18 }}>{sec.icon}</span>
-                      <span style={{ flex: 1, fontSize: 14, fontWeight: 700 }}>{sec.title}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
-                        {sec.fields.length} {t('sm.fields')}
-                      </span>
-                      <span style={{ fontSize: 16, color: 'var(--text2, #94a3b8)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+                      <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
                     </button>
-                    {open && (
-                      <div style={{ padding: '0 16px 14px', borderTop: '1px solid var(--border, #475569)' }}>
-                        {sec.id === 'business' && (
-                          <div style={helpStyle}>{t('sm.hours_note')}</div>
-                        )}
-                        {/* 2-column grid: short fields (num/bool) pair up,
-                            long fields (text/textarea/enum/multi) span both
-                            columns via gridColumn '1 / -1' set in renderField. */}
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                          columnGap: 20,
-                          rowGap: 0,
-                        }}>
-                          {sec.fields.map(renderField)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
 
-              {filteredSections.length === 0 && q && (
-                <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>
-                  {t('sm.no_results')}
-                </p>
-              )}
+              {/* RIGHT: Content panel */}
+              <div style={{
+                flex: 1, overflowY: 'auto', padding: '16px 22px',
+              }}>
+                {activeSection === 'schedule' ? (
+                  scheduleMatchesSearch ? renderScheduleContent() : (
+                    <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>
+                      {t('sm.no_results')}
+                    </p>
+                  )
+                ) : activeFilteredSec ? (
+                  renderSectionContent(activeFilteredSec)
+                ) : q ? (
+                  <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>
+                    {t('sm.no_results')}
+                  </p>
+                ) : null}
+              </div>
             </>
           )}
         </div>
