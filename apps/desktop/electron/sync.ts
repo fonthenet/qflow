@@ -677,7 +677,7 @@ export class SyncEngine {
         this.rapidRetryInFlight.delete(syncQueueId);
         console.log(`[sync:pushImmediate] ✓ Pushed ${item.operation} on ${item.table_name}/${item.record_id}`);
 
-        // ── Gap 2: Rewrite L- prefix after successful INSERT push ──
+        // Rewrite L- prefix after successful INSERT push
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
           this.rewriteOfflineTicket(item.record_id, item.payload);
           this.createWhatsAppSessionForTicket(item.record_id, item.payload);
@@ -1005,7 +1005,7 @@ export class SyncEngine {
         successCount++;
         this.recordPushSuccess();
 
-        // Rewrite L- prefix after successful INSERT push
+        // Rewrite offline ticket number after successful INSERT push
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
           this.rewriteOfflineTicket(item.record_id, item.payload);
           this.createWhatsAppSessionForTicket(item.record_id, item.payload);
@@ -1048,16 +1048,16 @@ export class SyncEngine {
     this.db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < ?").run(cutoff);
 
     // ── Auto-discard rules ──
-    // CRITICAL invariant: terminal-status mutations (cancelled / served / no_show)
-    // are IMMORTAL. They retry forever until the cloud accepts them. Losing a
-    // cancel silently leaves a customer in the queue who isn't actually there.
+    // CRITICAL invariant: critical-status mutations (called, serving, cancelled,
+    // served, no_show) are IMMORTAL. They retry forever until the cloud accepts
+    // them. Losing a call/cancel silently breaks the queue state.
     //
     // INSERTs are also immortal (never discard a ticket creation).
     //
-    // Only NON-INSERT, NON-TERMINAL items (e.g. recall_count++, desk_id reassign,
+    // Only NON-INSERT, NON-CRITICAL items (e.g. recall_count++, desk_id reassign,
     // notes update) are eligible for auto-discard after 3 attempts or 4h age.
-    const isTerminalSql = `(
-      json_extract(payload, '$.status') IN ('cancelled','served','no_show')
+    const isCriticalSql = `(
+      json_extract(payload, '$.status') IN ('called','serving','cancelled','served','no_show')
     )`;
 
     const discarded = this.db.prepare(
@@ -1065,7 +1065,7 @@ export class SyncEngine {
         WHERE synced_at IS NULL
           AND attempts >= 3
           AND operation != 'INSERT'
-          AND NOT ${isTerminalSql}`
+          AND NOT ${isCriticalSql}`
     ).run();
     if (discarded.changes > 0) {
       console.warn(`[sync] Auto-discarded ${discarded.changes} non-terminal sync items after 3 failed attempts`);
@@ -1080,7 +1080,7 @@ export class SyncEngine {
        WHERE synced_at IS NULL
          AND table_name = 'tickets'
          AND operation != 'INSERT'
-         AND NOT ${isTerminalSql}
+         AND NOT ${isCriticalSql}
          AND record_id NOT IN (SELECT id FROM tickets)
     `).run();
     if (orphanDiscarded.changes > 0) {
@@ -1095,7 +1095,7 @@ export class SyncEngine {
         WHERE synced_at IS NULL
           AND operation != 'INSERT'
           AND created_at < ?
-          AND NOT ${isTerminalSql}`
+          AND NOT ${isCriticalSql}`
     ).run(fourHoursAgo);
     if (staleDiscarded.changes > 0) {
       console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale non-terminal sync items older than 4 hours`);
@@ -1105,7 +1105,7 @@ export class SyncEngine {
     // Surface stuck terminal items (they will keep retrying forever)
     const stuckTerminal = this.db.prepare(
       `SELECT COUNT(*) as c FROM sync_queue
-        WHERE synced_at IS NULL AND attempts >= 5 AND ${isTerminalSql}`
+        WHERE synced_at IS NULL AND attempts >= 5 AND ${isCriticalSql}`
     ).get() as any;
     if (stuckTerminal?.c > 0) {
       console.warn(`[sync] ${stuckTerminal.c} TERMINAL status mutation(s) stuck after 5+ attempts — will keep retrying forever`);
@@ -1195,9 +1195,9 @@ export class SyncEngine {
             // PATCH returned 0 rows — RLS blocked or row changed remotely.
             // For terminal status changes (cancelled, served, no_show), this is critical —
             // treat as failure so the sync retries and the DB trigger can fire notifications.
-            const isTerminal = ['cancelled', 'served', 'no_show'].includes(payload.status);
-            if (isTerminal) {
-              console.warn(`[sync:replay] PATCH returned 0 rows for TERMINAL ${payload.status} on ${item.record_id} — will retry`);
+            const isCritical = ['called', 'serving', 'cancelled', 'served', 'no_show'].includes(payload.status);
+            if (isCritical) {
+              console.warn(`[sync:replay] PATCH returned 0 rows for CRITICAL ${payload.status} on ${item.record_id} — will retry`);
               throw new Error(`PATCH 0 rows for ${payload.status} — needs retry`);
             }
             console.warn(`[sync:replay] PATCH returned 0 rows for ${item.operation} on ${item.record_id} — row was likely changed/deleted remotely`);

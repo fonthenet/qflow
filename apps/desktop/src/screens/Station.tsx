@@ -1821,11 +1821,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const moderatePendingAppointment = useCallback(async (apptId: string, action: 'approve' | 'decline', reason?: string) => {
     setRdvBusyId(apptId);
     try {
+      const token = await ensureAuth(storedAuth);
       const payload: any = { appointmentId: apptId, action };
       if (reason) payload.reason = reason;
       const res = await fetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -1854,7 +1855,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } finally {
       setRdvBusyId(null);
     }
-  }, [locale, showToast]);
+  }, [locale, showToast, storedAuth]);
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
@@ -1890,8 +1891,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {svcName && <span>{svcName}</span>}
               {deptName && <span>· {deptName}</span>}
-              {a.wilaya && <span>· 📍 {a.wilaya}</span>}
-              {a.notes && <span style={{ fontStyle: 'italic' }}>· {a.notes}</span>}
+              {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {a.wilaya}</span></span>}
+              {a.notes && <span style={{ fontStyle: 'italic' }}>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
             </div>
           )}
         </div>
@@ -2260,9 +2261,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   // ── Appointment check-in helper (shared by RDV tab + AppointmentsModal) ──
-  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string }): Promise<boolean> => {
+  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status?: string }): Promise<boolean> => {
     if (!appt.department_id) {
       showToast(translate(locale, 'Missing department'), 'error');
+      return false;
+    }
+    // Prevent check-in for non-confirmed appointments
+    if (appt.status && appt.status !== 'confirmed') {
+      showToast(translate(locale, 'Appointment already checked in or cancelled'), 'error');
       return false;
     }
     const offsetMin = Math.round((Date.now() - new Date(appt.scheduled_at).getTime()) / 60000);
@@ -2955,7 +2961,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 {queuePaused ? `▶ ${t('Resume')}` : `⏸ ${t('Pause')}`}
                 {queuePaused && pauseElapsed > 0 && <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8 }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</span>}
-                {!queuePaused && waiting.length > 0 && <span style={{ background: 'rgba(0,0,0,0.12)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>{waiting.length}</span>}
+
                 <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
               </button>
             )}
@@ -3291,47 +3297,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               <div
                 key={a.id}
                 style={{
-                  padding: '8px 10px',
+                  padding: '4px 8px',
                   background: isSoon ? 'rgba(34,197,94,0.10)' : 'var(--bg, #0f172a)',
                   border: `1px solid ${isSoon ? '#22c55e55' : 'var(--border, #334155)'}`,
                   borderLeft: `3px solid ${color}`,
-                  borderRadius: 8,
+                  borderRadius: 6,
                   opacity: isPast || busy ? 0.55 : 1,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums', minWidth: 36 }}>
                     {timeStr}
                   </div>
-                  {isToday && (
-                    <div style={{ fontSize: 10, fontWeight: 700, color: isSoon ? '#22c55e' : 'var(--text3, #94a3b8)' }}>
-                      {mins > 0 ? t('in {n}m', { n: mins }) : mins < 0 ? t('{n}m ago', { n: -mins }) : t('now')}
-                    </div>
+                  <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                    <span dir="auto" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2, #cbd5e1)', unicodeBidi: 'isolate' }}>
+                      {a.customer_name || t('(no name)')}
+                    </span>
+                    {a.wilaya && <span dir="auto" style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', unicodeBidi: 'isolate' }}>📍 {a.wilaya}</span>}
+                  </div>
+                  {isToday && mins !== 0 && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: isSoon ? '#22c55e' : 'var(--text3, #94a3b8)', whiteSpace: 'nowrap' }}>
+                      {mins > 0 ? t('in {n}m', { n: mins }) : t('{n}m ago', { n: -mins })}
+                    </span>
                   )}
                   <span style={{
-                    padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 800,
-                    textTransform: 'uppercase', letterSpacing: 0.4,
+                    padding: '1px 6px', borderRadius: 8, fontSize: 8, fontWeight: 800,
+                    textTransform: 'uppercase', letterSpacing: 0.3,
                     background: `${color}22`, color, whiteSpace: 'nowrap',
                   }}>
                     {t(a.status)}
                   </span>
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2, #cbd5e1)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {a.customer_name || t('(no name)')}
-                </div>
-                {(svcName || deptName || a.wilaya) && (
-                  <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {svcName && <span>{svcName}</span>}
-                    {deptName && <span>· {deptName}</span>}
-                    {a.wilaya && <span>· 📍 {a.wilaya}</span>}
+                {(svcName || deptName || a.notes) && (
+                  <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr', unicodeBidi: 'isolate' }}>
+                    {[svcName, deptName].filter(Boolean).map((s, i) => <span key={i}>{i > 0 ? ' · ' : ''}{s}</span>)}
+                    {a.notes && <span>{(svcName || deptName) ? ' · ' : ''}<span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
                   </div>
                 )}
-                {a.notes && (
-                  <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {a.notes}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
                   {isToday && (
                     <button
                       disabled={busy}
@@ -3345,6 +3348,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                             customer_name: a.customer_name,
                             customer_phone: a.customer_phone,
                             scheduled_at: a.scheduled_at,
+                            status: a.status,
                           });
                           setQueueTab('queue');
                         } finally {
@@ -3352,9 +3356,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         }
                       }}
                       style={{
-                        flex: '1 1 auto', padding: '5px 8px', borderRadius: 6, border: '1px solid #22c55e60',
+                        flex: '1 1 auto', padding: '3px 6px', borderRadius: 4, border: '1px solid #22c55e60',
                         background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-                        fontSize: 11, fontWeight: 700,
+                        fontSize: 10, fontWeight: 700,
                       }}
                     >
                       → {t('Register')}
@@ -3367,9 +3371,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       if (reason === null) return;
                       setRdvBusyId(a.id);
                       try {
+                        const cancelToken = await ensureAuth(storedAuth);
                         const res = await fetch('https://qflo.net/api/moderate-appointment', {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: { 'Content-Type': 'application/json', ...(cancelToken ? { Authorization: `Bearer ${cancelToken}` } : {}) },
                           body: JSON.stringify({ appointmentId: a.id, action: 'cancel', reason: reason.trim() || undefined }),
                         });
                         if (!res.ok) {
@@ -3394,9 +3399,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     }}
                     title={t('Cancel')}
                     style={{
-                      padding: '5px 10px', borderRadius: 6, border: '1px solid #ef444460',
+                      padding: '3px 7px', borderRadius: 4, border: '1px solid #ef444460',
                       background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-                      fontSize: 11, fontWeight: 700,
+                      fontSize: 10, fontWeight: 700,
                     }}
                   >
                     ✕
@@ -3404,9 +3409,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <button
                     onClick={() => setShowAppointmentsModal(true)}
                     style={{
-                      padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border, #334155)',
+                      padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
                       background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',
-                      fontSize: 11, fontWeight: 600,
+                      fontSize: 10, fontWeight: 600,
                     }}
                   >
                     {t('Details')}
@@ -3424,7 +3429,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               {confirmedAppointments.length === 0 ? (
                 <div className="queue-empty" style={{ marginBottom: 12 }}>{t('No appointments today')}</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
                   {confirmedAppointments.map((a) => renderApptCard(a, true))}
                 </div>
               )}
@@ -3456,7 +3461,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           </span>
                         </button>
                         {isExpanded && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                             {appts.map((a) => renderApptCard(a, false))}
                           </div>
                         )}
@@ -3646,7 +3651,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="queue-item-pos" aria-hidden="true">#{officePosition}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
-                  <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
+                  <span dir="auto" style={{ display: 'block', fontSize: 11, color: 'var(--text3)', unicodeBidi: 'isolate' }}>
                     {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')}
                   </span>
                   {getTicketCustomerPhone(ticket.customer_data) && (
@@ -3658,11 +3663,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
-                  {(ticket.appointment_id || ticket.source === 'appointment') && (() => {
-                    let slotLabel = '';
-                    try { const cd = typeof ticket.customer_data === 'string' ? JSON.parse(ticket.customer_data) : ticket.customer_data; slotLabel = cd?.slot_label || ''; } catch {}
-                    return <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {slotLabel ? `${translate(locale, 'Booked')} ${slotLabel}` : translate(locale, 'Booked')}</span>;
-                  })()}
+                  {(ticket.appointment_id || ticket.source === 'appointment') && <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {translate(locale, 'Booked')}</span>}
                   {ticket.source === 'whatsapp' && <span className="badge whatsapp">{translate(locale, 'WhatsApp')}</span>}
                   {ticket.source === 'messenger' && <span className="badge messenger">{translate(locale, 'Messenger')}</span>}
                   {ticket.source === 'qr_code' && <span className="badge qr-code">{translate(locale, 'QR Code')}</span>}
@@ -3750,7 +3751,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     {ticket.status === 'called' ? translate(locale, 'Called at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') }) : translate(locale, 'Serving at {desk}', { desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}
                   </span>
                   {getTicketCustomerName(ticket.customer_data) || getTicketCustomerPhone(ticket.customer_data) ? (
-                    <span className="queue-item-meta">
+                    <span className="queue-item-meta" dir="auto" style={{ unicodeBidi: 'isolate' }}>
                       {[getTicketCustomerName(ticket.customer_data), getTicketCustomerPhone(ticket.customer_data)].filter(Boolean).join(' · ')}
                     </span>
                   ) : null}

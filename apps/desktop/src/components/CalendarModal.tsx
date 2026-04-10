@@ -223,9 +223,10 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleApprove = async (appt: CalendarAppointment) => {
     setActionBusy(true);
     try {
+      const token = await ensureAuth(storedAuth);
       const resp = await fetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ appointmentId: appt.id, action: 'approve' }),
       });
       if (resp.ok) { setSelectedAppt(null); load(); }
@@ -236,9 +237,10 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleDecline = async (appt: CalendarAppointment) => {
     setActionBusy(true);
     try {
+      const token = await ensureAuth(storedAuth);
       const resp = await fetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ appointmentId: appt.id, action: 'decline' }),
       });
       if (resp.ok) { setSelectedAppt(null); load(); }
@@ -751,10 +753,10 @@ function DesktopWeekView({
                         ? '1px solid var(--border, #334155)'
                         : '1px solid var(--border, #1e293b)',
                       background: dayClosed
-                        ? 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(100,116,139,0.06) 4px, rgba(100,116,139,0.06) 8px)'
+                        ? 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(239,68,68,0.03) 4px, rgba(239,68,68,0.03) 8px)'
                         : isOutsideHours
                           ? 'rgba(100,116,139,0.06)'
-                          : 'transparent',
+                          : 'rgba(59,130,246,0.02)',
                     }} />
                   );
                 })}
@@ -877,8 +879,8 @@ function DesktopMonthView({
                   style={{
                     borderRight: '1px solid var(--border, #334155)', padding: 4, minHeight: 70,
                     cursor: 'pointer',
-                    opacity: day.isCurrentMonth ? (closed ? 0.5 : 1) : 0.35,
-                    background: day.isToday ? 'rgba(59,130,246,0.08)' : closed ? 'rgba(100,116,139,0.04)' : 'transparent',
+                    opacity: day.isCurrentMonth ? (closed ? 0.6 : 1) : 0.35,
+                    background: day.isToday ? 'rgba(59,130,246,0.12)' : closed ? 'rgba(239,68,68,0.04)' : 'rgba(59,130,246,0.03)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -1045,7 +1047,7 @@ function DesktopApptDetail({
         <div style={rowStyle}>👤 {a.customer_name}</div>
         {a.customer_phone && <div style={rowStyle}>📞 {a.customer_phone}</div>}
         {a.customer_email && <div style={rowStyle}>✉ {a.customer_email}</div>}
-        {(a as any).wilaya && <div style={rowStyle}>📍 {(a as any).wilaya}</div>}
+        {(a as any).wilaya && <div style={rowStyle}><span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {(a as any).wilaya}</span></div>}
 
         {/* Service & Department */}
         <div style={{ ...labelStyle, marginTop: 14 }}>{t('Service')}</div>

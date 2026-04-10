@@ -86,20 +86,9 @@ export async function POST(request: NextRequest) {
         profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
         bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
       } else {
-        // No app secret configured — parse without verification (log warning)
-        console.warn('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — signature verification disabled');
-        const json = await request.json();
-        const entry = json?.entry?.[0];
-        const change = entry?.changes?.[0];
-        const message = change?.value?.messages?.[0];
-        if (!message) {
-          return NextResponse.json({ ok: true });
-        }
-        fromPhone = message.from ?? '';
-        toPhone = change?.value?.metadata?.display_phone_number ?? '';
-        messageBody = message.text?.body ?? '';
-        profileName = change?.value?.contacts?.[0]?.profile?.name || undefined;
-        bsuid = message.user_id || change?.value?.contacts?.[0]?.user_id || undefined;
+        // No app secret configured — fail closed (reject unverified payloads)
+        console.error('[whatsapp-webhook] WHATSAPP_APP_SECRET/MESSENGER_APP_SECRET not set — rejecting unverified webhook. Set the env var to enable webhook processing.');
+        return NextResponse.json({ error: 'Webhook signature verification not configured' }, { status: 403 });
       }
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       // Twilio sends form-encoded data

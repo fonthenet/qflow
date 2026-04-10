@@ -200,6 +200,9 @@ export function initDB() {
   try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
 
+  // Prevent duplicate tickets for the same appointment (partial unique index)
+  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_appointment_unique ON tickets (appointment_id) WHERE appointment_id IS NOT NULL AND status NOT IN ('cancelled', 'no_show')`); } catch { /* already exists */ }
+
   // ── Monotonic offline counter (no daily reset) ──
   // Replaces the per-day ticket_counter for L- prefix generation. Seeded
   // from the highest known sequence so offline tickets never reuse a number.
@@ -389,10 +392,11 @@ export function stopAutoBackup() {
   }
 }
 
-// Generate offline ticket number: L-{DEPT_CODE}-{COUNTER}
+// Generate offline ticket number: L-{formatted}-{COUNTER}
 // Monotonic per (office, dept_code) — never resets. Numbers always
 // increase, even across days. Mirrors the cloud's monotonic strategy
 // so offline and online numbers stay coherent.
+// Respects org-level ticket_number_prefix + ticket_number_format settings.
 export function generateOfflineTicketNumber(officeId: string, deptCode: string, dbInstance?: Database.Database): string {
   const d = dbInstance ?? db;
 
@@ -405,7 +409,37 @@ export function generateOfflineTicketNumber(officeId: string, deptCode: string, 
   `).get(officeId, deptCode) as any;
 
   const num = String(row.counter).padStart(5, '0');
-  return `L-${deptCode}-${num}`;
+
+  // Read org settings for prefix/format from local cache
+  let prefix = '';
+  let format = 'dept_numeric';
+  try {
+    const orgRow = d.prepare(`
+      SELECT o.settings FROM organizations o
+      JOIN offices off ON off.organization_id = o.id
+      WHERE off.id = ? LIMIT 1
+    `).get(officeId) as any;
+    if (orgRow?.settings) {
+      const s = typeof orgRow.settings === 'string' ? JSON.parse(orgRow.settings) : orgRow.settings;
+      prefix = s?.ticket_number_prefix ?? '';
+      format = s?.ticket_number_format ?? 'dept_numeric';
+    }
+  } catch { /* non-critical — fall through to default */ }
+
+  let formatted: string;
+  switch (format) {
+    case 'prefix_numeric':
+      formatted = `${prefix}${num}`;
+      break;
+    case 'prefix_dept_numeric':
+      formatted = `${prefix}${deptCode}-${num}`;
+      break;
+    default: // dept_numeric
+      formatted = `${deptCode}-${num}`;
+      break;
+  }
+
+  return `L-${formatted}`;
 }
 
 // ── Unified ticket number reservation ─────────────────────────────
@@ -426,8 +460,10 @@ export async function reserveTicketNumber(
   deptCode: string,
   isCloudReachable: boolean,
   dbInstance?: Database.Database,
+  authToken?: string,
 ): Promise<ReservedTicketNumber> {
   const d = dbInstance ?? db;
+  const bearerToken = authToken || supabaseKey;
 
   // ── Try cloud first (atomic, no race conditions) ──
   if (isCloudReachable) {
@@ -437,10 +473,10 @@ export async function reserveTicketNumber(
         headers: {
           'Content-Type': 'application/json',
           apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
+          Authorization: `Bearer ${bearerToken}`,
         },
         body: JSON.stringify({ p_department_id: departmentId }),
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(6000),
       });
       if (res.ok) {
         const rows = await res.json();
@@ -452,11 +488,16 @@ export async function reserveTicketNumber(
             isOffline: false,
           };
         }
+        console.warn('[reserveTicketNumber] RPC returned OK but no ticket_num/seq:', JSON.stringify(rows));
+      } else {
+        const body = await res.text().catch(() => '');
+        console.warn(`[reserveTicketNumber] RPC failed (${res.status}): ${body}`);
       }
-      // Non-OK response — fall through to offline
-    } catch {
-      // Timeout or network error — fall through to offline
+    } catch (err: any) {
+      console.warn('[reserveTicketNumber] RPC error:', err?.message);
     }
+  } else {
+    console.log('[reserveTicketNumber] Cloud not reachable, using offline fallback');
   }
 
   // ── Offline fallback: atomic local counter ──

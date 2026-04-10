@@ -4,7 +4,7 @@ import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
-import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, type SSEEvent } from './kiosk-server';
+import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
@@ -56,10 +56,10 @@ function loadLocale(): DesktopLocale {
   try {
     const db = getDB();
     const row = db.prepare("SELECT value FROM session WHERE key = 'locale'").get() as { value?: string } | undefined;
-    return normalizeLocale(row?.value);
-  } catch {
-    return 'en';
-  }
+    if (row?.value) return normalizeLocale(row.value);
+  } catch {}
+  // First launch: auto-detect from Windows system language
+  return normalizeLocale(app.getLocale());
 }
 
 function applyLocale(locale: DesktopLocale) {
@@ -476,14 +476,29 @@ function setupIPC() {
   });
 
   ipcMain.handle('db:create-ticket', async (_e, ticket: any) => {
+    // Prevent duplicate tickets for the same appointment
+    if (ticket.appointment_id) {
+      const existing = db.prepare(
+        "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
+      ).get(ticket.appointment_id) as any;
+      if (existing) {
+        console.warn(`[ipc] Duplicate check-in blocked: appointment ${ticket.appointment_id} already has ticket ${existing.ticket_number}`);
+        return { id: existing.id, ticket_number: existing.ticket_number, duplicate: true };
+      }
+    }
+
     // Auto-generate ticket number if not provided (for in-house bookings)
     if (!ticket.ticket_number) {
       const dept = db.prepare('SELECT code FROM departments WHERE id = ?').get(ticket.department_id) as any;
       const deptCode = dept?.code || 'G';
       const isOnline = syncEngine?.isOnline ?? false;
+      // Use a fresh JWT for the RPC call (anon key gets rejected by RLS)
+      let authToken: string | undefined;
+      try { authToken = await syncEngine?.ensureFreshToken(); } catch { /* use anon key fallback */ }
       const reserved = await reserveTicketNumber(
         CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY,
         ticket.office_id, ticket.department_id, deptCode, isOnline, db,
+        authToken,
       );
       ticket.ticket_number = reserved.ticketNumber;
       ticket.daily_sequence = reserved.dailySequence;
@@ -1237,13 +1252,14 @@ function setupIPC() {
       if (!office?.organization_id) return { orgName: null, logoUrl: null };
 
       const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url,settings`, { headers, signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,name_ar,logo_url,settings`, { headers, signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const orgs = await res.json();
         const org = orgs[0];
         const settings = org?.settings ?? {};
         return {
           orgName: org?.name ?? null,
+          orgNameAr: org?.name_ar ?? null,
           logoUrl: org?.logo_url ?? null,
           brandColor: settings?.brand_color ?? null,
           messengerPageId: settings?.messenger_enabled && settings?.messenger_page_id
@@ -1319,7 +1335,7 @@ function setupIPC() {
         // their original WhatsApp/Messenger session.
         await fetch(`${CONFIG.CLOUD_URL}/api/moderate-appointment`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ appointmentId: appt.id, action: 'no_show' }),
         }).catch(() => {});
       }
@@ -1753,6 +1769,10 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('tickets:changed');
       notifyStationClients({ type: 'tickets_changed' });
       syncEngine?.pushImmediate(syncQueueId);
+    });
+    // Expose auth token getter so kiosk-server can use JWT for RPC calls
+    setAuthTokenGetter(async () => {
+      try { return await syncEngine?.ensureFreshToken(); } catch { return undefined; }
     });
     // Expose real sync status to kiosk-server HTTP endpoints
     setSyncStatusGetter(() => ({

@@ -230,6 +230,9 @@ let isCloudReachable = false;
 let onTicketCreated: ((syncQueueId: string) => void) | null = null;
 export function setOnTicketCreated(cb: (syncQueueId: string) => void) { onTicketCreated = cb; }
 
+let getAuthToken: (() => Promise<string | undefined>) | null = null;
+export function setAuthTokenGetter(getter: () => Promise<string | undefined>) { getAuthToken = getter; }
+
 // Sync status getter — set from main.ts so kiosk-server can report real sync state
 let getSyncStatus: (() => { isOnline: boolean; pendingCount: number; lastSyncAt: string | null }) | null = null;
 export function setSyncStatusGetter(getter: () => { isOnline: boolean; pendingCount: number; lastSyncAt: string | null }) {
@@ -671,18 +674,27 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   // Try to get org name + logo from Supabase
   let logoUrl: string | null = null;
   let orgName: string | null = null;
+  let orgNameAr: string | null = null;
   let organizationSettings: Record<string, any> = {};
   if (isCloudReachable && office.organization_id) {
     try {
       const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,logo_url,settings`, { headers, signal: AbortSignal.timeout(3000) });
+      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,name_ar,logo_url,settings`, { headers, signal: AbortSignal.timeout(3000) });
       if (orgRes.ok) {
         const orgs = await orgRes.json();
         orgName = orgs[0]?.name ?? null;
+        orgNameAr = orgs[0]?.name_ar ?? null;
         logoUrl = orgs[0]?.logo_url ?? orgs[0]?.settings?.logo_url ?? null;
         organizationSettings = parseSettings(orgs[0]?.settings);
       }
     } catch { /* ignore */ }
+  }
+
+  // ── Kiosk enabled check ────────────────────────────────────────
+  if (organizationSettings.kiosk_enabled === false) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Kiosk is disabled' }));
+    return;
   }
 
   // ── Business hours check ──────────────────────────────────────
@@ -742,10 +754,12 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     locale: loadStoredLocale(),
     logo_url: logoUrl,
     org_name: orgName,
+    org_name_ar: orgNameAr,
     is_open: businessStatus.isOpen,
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
     kiosk_config: kioskConfig,
+    default_check_in_mode: organizationSettings.default_check_in_mode || 'manual',
     whatsapp_phone: whatsappPhone,
     messenger_page_id: messengerPageId,
   }));
@@ -837,6 +851,39 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         }
       }
 
+      // ── Manual check-in mode enforcement ──
+      // When default_check_in_mode is 'manual', reject kiosk self-service tickets
+      // (appointments check-in is still allowed — they pass appointment_id)
+      if (!safeAppointmentId) {
+        try {
+          const orgRow = db.prepare(`
+            SELECT o.settings FROM organizations o
+            JOIN offices off ON off.organization_id = o.id
+            WHERE off.id = ? LIMIT 1
+          `).get(officeId) as any;
+          const _orgSettings = orgRow?.settings ? (typeof orgRow.settings === 'string' ? JSON.parse(orgRow.settings) : orgRow.settings) : {};
+          if (_orgSettings.default_check_in_mode === 'manual') {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Self-service ticket creation is disabled. Please check in at the front desk.' }));
+            return;
+          }
+        } catch { /* non-critical — allow ticket creation if org settings unreadable */ }
+      }
+
+      // Prevent duplicate tickets for the same appointment
+      if (safeAppointmentId) {
+        const existing = db.prepare(
+          "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
+        ).get(safeAppointmentId) as any;
+        if (existing) {
+          console.warn(`[kiosk] Duplicate check-in blocked: appointment ${safeAppointmentId} already has ticket ${existing.ticket_number}`);
+          const pos = (db.prepare("SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting'").get(officeId) as any)?.c ?? 0;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ticket: { id: existing.id, ticket_number: existing.ticket_number, status: 'waiting', position: pos, duplicate: true } }));
+          return;
+        }
+      }
+
       const deptCode = dept?.code ?? 'Q';
       const ticketId = randomUUID();
       const now = new Date().toISOString();
@@ -845,8 +892,11 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // ── Generate ticket number (single source of truth) ──────────
       // Online: Supabase RPC atomically reserves next sequence (no duplicates)
       // Offline: local SQLite atomic counter with L-prefix
+      let authToken: string | undefined;
+      try { authToken = await getAuthToken?.(); } catch { /* use anon key fallback */ }
       const reserved = await reserveTicketNumber(
         SUPABASE_URL, SUPABASE_KEY, officeId, departmentId, deptCode, isCloudReachable, db,
+        authToken,
       );
       const { ticketNumber, dailySequence, isOffline } = reserved;
 
@@ -2240,9 +2290,9 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
         var officeData = await officeRes.json();
         if (officeData.error) return;
         if (officeData.office) {
-          var orgName = officeData.org_name || officeData.office.name;
+          var orgNameDisplay = (currentLang === 'ar' && officeData.org_name_ar) ? officeData.org_name_ar : (officeData.org_name || officeData.office.name);
           var branchName = officeData.org_name ? officeData.office.name : '';
-          updateText('office-name', orgName);
+          updateText('office-name', orgNameDisplay);
           updateText('branch-name', branchName);
           (officeData.departments || []).forEach(function(d) { departments[d.id] = d.name; });
           if (officeData.logo_url) {

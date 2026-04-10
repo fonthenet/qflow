@@ -20,6 +20,8 @@ export default async function ShortKioskPage({ params }: ShortKioskPageProps) {
   const office = offices?.find((entry) => matchesOfficePublicToken(entry, officeToken));
 
   if (!office) notFound();
+  const _orgSettings = (office.organization as any)?.settings ?? {};
+  if (_orgSettings.kiosk_enabled === false) notFound();
   const platformConfig = resolvePlatformConfig({
     organizationSettings: (office.organization as any)?.settings ?? {},
     officeSettings: office.settings ?? {},

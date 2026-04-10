@@ -42,15 +42,19 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
 
-  // Check if office requires ticket approval
+  // Check if office requires ticket approval + virtual queue enabled
   const { data: officeRow } = await supabase
     .from('offices')
     .select('settings, organization:organizations(settings)')
     .eq('id', officeId)
     .single();
+  const _vqOrgSettings = (((officeRow as any)?.organization?.settings) ?? {}) as Record<string, any>;
+  if (_vqOrgSettings.virtual_queue_enabled === false) {
+    return NextResponse.json({ error: 'Virtual queue is disabled for this business' }, { status: 403 });
+  }
   const requireApproval = Boolean(
     (officeRow?.settings as any)?.require_ticket_approval ??
-      ((officeRow as any)?.organization?.settings?.require_ticket_approval)
+      _vqOrgSettings.require_ticket_approval
   );
   const initialStatus = requireApproval ? 'pending_approval' : 'waiting';
 

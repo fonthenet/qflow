@@ -38,6 +38,17 @@ export async function POST(request: NextRequest) {
   const dateStr = scheduledAt.split('T')[0];
   const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
 
+  // Check web booking is enabled
+  const { data: _bookOrg } = await supabase
+    .from('offices')
+    .select('organization:organizations(settings)')
+    .eq('id', officeId)
+    .single();
+  const _bookOrgSettings = ((_bookOrg as any)?.organization?.settings ?? {}) as Record<string, any>;
+  if (_bookOrgSettings.web_enabled === false) {
+    return NextResponse.json({ error: 'Web booking is disabled for this business' }, { status: 403 });
+  }
+
   // Use centralized slot generator to validate availability
   const availability = await getAvailableSlots({
     officeId,

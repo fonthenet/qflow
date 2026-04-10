@@ -3,6 +3,19 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { timingSafeEqual } from 'crypto';
+
+function safeCompare(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  try {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 let _supabase: SupabaseClient | null = null;
 function getSupabase(): SupabaseClient {
@@ -19,6 +32,8 @@ function getSupabase(): SupabaseClient {
  * POST /api/moderate-appointment
  * Body: { appointmentId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show', reason?: string }
  *
+ * Authentication: Bearer token (Supabase JWT for staff, or service role key / INTERNAL_WEBHOOK_SECRET).
+ *
  * - approve  : pending → confirmed (customer notified: approval_approved)
  * - decline  : pending → cancelled (customer notified: approval_declined)
  * - cancel   : confirmed/pending → cancelled (customer notified: appointment_cancelled)
@@ -29,7 +44,38 @@ function getSupabase(): SupabaseClient {
  */
 type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show';
 
+async function authenticateRequest(request: NextRequest): Promise<boolean> {
+  const authHeader = request.headers.get('authorization') ?? '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!bearerToken) return false;
+
+  // Check service role key or internal webhook secret (server-to-server)
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+  const webhookSecret = process.env.INTERNAL_WEBHOOK_SECRET ?? '';
+  if (serviceKey && safeCompare(bearerToken, serviceKey)) return true;
+  if (webhookSecret && safeCompare(bearerToken, webhookSecret)) return true;
+
+  // Check if it's a valid Supabase JWT (staff user)
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+    const { data: { user }, error } = await supabase.auth.getUser(bearerToken);
+    if (error || !user) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
+  // Authenticate — require a valid Bearer token
+  const isAuthenticated = await authenticateRequest(request);
+  if (!isAuthenticated) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   let body: { appointmentId?: string; action?: ModerateAction; reason?: string };
   try {
     body = await request.json();

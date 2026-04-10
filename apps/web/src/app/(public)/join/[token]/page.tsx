@@ -62,6 +62,8 @@ export default async function RemoteJoinPage({ params }: PageProps) {
     .single();
 
   if (!organization) notFound();
+  const _joinOrgSettings = (organization.settings ?? {}) as Record<string, any>;
+  if (_joinOrgSettings.virtual_queue_enabled === false) notFound();
 
   const { data: offices } = await supabase
     .from('offices')

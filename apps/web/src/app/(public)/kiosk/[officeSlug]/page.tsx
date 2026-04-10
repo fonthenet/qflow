@@ -21,6 +21,8 @@ export default async function KioskPage({ params }: KioskPageProps) {
   const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
 
   if (!office) notFound();
+  const _orgSettings = (office.organization as any)?.settings ?? {};
+  if (_orgSettings.kiosk_enabled === false) notFound();
   const platformConfig = resolvePlatformConfig({
     organizationSettings: (office.organization as any)?.settings ?? {},
     officeSettings: office.settings ?? {},

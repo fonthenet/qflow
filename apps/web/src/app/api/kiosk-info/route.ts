@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
 
   // Build kiosk settings from office and organization settings
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
+  if (orgSettings.kiosk_enabled === false) {
+    return NextResponse.json({ error: 'Kiosk is disabled' }, { status: 403 });
+  }
   const officeSettings = (office.settings as Record<string, any> | null) ?? {};
   const platformConfig = resolvePlatformConfig({
     organizationSettings: orgSettings,
@@ -86,6 +89,7 @@ export async function GET(request: NextRequest) {
       orgSettings.kiosk_hidden_departments ?? officeSettings.kiosk_hidden_departments ?? [],
     kiosk_hidden_services:
       orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
+    default_check_in_mode: orgSettings.default_check_in_mode ?? 'manual',
     booking_mode: orgSettings.booking_mode ?? 'simple',
     booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 7),
     visit_intake_override_mode:

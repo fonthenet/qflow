@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 interface ScreenSettings {
   announcement_sound?: boolean;
   announcement_duration?: number;
+  voice_announcements?: boolean;
 }
 
 interface DisplayBoardProps {
@@ -84,6 +85,7 @@ export function DisplayBoard({
   const settings: ScreenSettings = displayScreen.settings ?? {};
   const announcementSound = settings.announcement_sound ?? true;
   const announcementDuration = (settings.announcement_duration ?? 8) * 1000;
+  const voiceAnnouncements = settings.voice_announcements ?? false;
 
   const updateCalledAnchors = useMemo(
     () => (tickets: any[]) => {
@@ -137,6 +139,22 @@ export function DisplayBoard({
             try {
               const audio = new Audio('/sounds/chime.mp3');
               audio.play().catch(() => {});
+            } catch {}
+          }
+          // Voice TTS: read ticket number aloud after chime
+          if ((nextScreen.settings?.voice_announcements ?? voiceAnnouncements) === true && typeof window.speechSynthesis !== 'undefined') {
+            try {
+              const ticketNum = ticket.ticket_number ?? '';
+              const deskName = ticket.desk?.display_name || ticket.desk?.name || '';
+              // Spell out the ticket number character by character for clarity
+              const spelled = ticketNum.split('').map((ch: string) => /\d/.test(ch) ? ch : ch.toUpperCase()).join(' ');
+              const utterance = new SpeechSynthesisUtterance(
+                deskName ? `${spelled}, ${deskName}` : spelled
+              );
+              utterance.rate = 0.85;
+              utterance.volume = 1;
+              // Delay slightly so chime finishes first
+              window.setTimeout(() => window.speechSynthesis.speak(utterance), 1200);
             } catch {}
           }
           window.setTimeout(

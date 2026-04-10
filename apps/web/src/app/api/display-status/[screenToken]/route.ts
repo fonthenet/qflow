@@ -102,6 +102,12 @@ export async function GET(
     platformConfig.experienceProfile.display
   );
 
+  // Inject org-level voice_announcements into screen settings
+  const orgSettings = (office.organization as any)?.settings ?? {};
+  if (orgSettings.voice_announcements === true) {
+    (mergedScreen.settings as Record<string, unknown>).voice_announcements = true;
+  }
+
   const sanitizedActiveTickets = privacySafe
     ? (activeTickets ?? []).map((ticket: any) => ({
         ...ticket,

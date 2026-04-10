@@ -251,6 +251,10 @@ export async function checkInAppointment(appointmentId: string) {
     .single();
 
   if (ticketError) {
+    // Unique index violation = duplicate check-in race condition
+    if (ticketError.code === '23505' && ticketError.message?.includes('appointment')) {
+      return { error: 'Appointment is already checked in' };
+    }
     return { error: ticketError.message };
   }
 

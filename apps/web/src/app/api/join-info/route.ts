@@ -40,12 +40,16 @@ export async function GET(request: NextRequest) {
   // Fetch organization
   const { data: organization } = await supabase
     .from('organizations')
-    .select('id, name, logo_url')
+    .select('id, name, logo_url, settings')
     .eq('id', virtualCode.organization_id)
     .single();
 
   if (!organization) {
     return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+  }
+  const _jiOrgSettings = ((organization.settings ?? {}) as Record<string, any>);
+  if (_jiOrgSettings.virtual_queue_enabled === false) {
+    return NextResponse.json({ error: 'Virtual queue is disabled' }, { status: 403 });
   }
 
   // Fetch offices

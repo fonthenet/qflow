@@ -41,15 +41,22 @@ export async function POST(request: NextRequest) {
 
   const supabase = getSupabase();
 
-  // Check if office requires ticket approval
+  // Check if office requires ticket approval + kiosk enabled
   const { data: officeRow } = await supabase
     .from('offices')
     .select('settings, organization:organizations(settings)')
     .eq('id', officeId)
     .single();
+  const orgSettings = ((officeRow as any)?.organization?.settings ?? {}) as Record<string, any>;
+  if (orgSettings.kiosk_enabled === false) {
+    return NextResponse.json({ error: 'Kiosk is disabled for this business' }, { status: 403 });
+  }
+  if (orgSettings.default_check_in_mode === 'manual') {
+    return NextResponse.json({ error: 'Self-service ticket creation is disabled. Please check in at the front desk.' }, { status: 403 });
+  }
   const requireApproval = Boolean(
     (officeRow?.settings as any)?.require_ticket_approval ??
-      ((officeRow as any)?.organization?.settings?.require_ticket_approval)
+      orgSettings.require_ticket_approval
   );
   const initialStatus = requireApproval ? 'pending_approval' : 'waiting';
 

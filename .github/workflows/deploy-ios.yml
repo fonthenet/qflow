@@ -1,12 +1,13 @@
 name: Deploy iOS to TestFlight
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/expo/**'
-      - 'packages/**'
-      - '.github/workflows/deploy-ios.yml'
+  # TEMPORARILY DISABLED — automatic Expo/TestFlight deploys paused
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'apps/expo/**'
+  #     - 'packages/**'
+  #     - '.github/workflows/deploy-ios.yml'
   workflow_dispatch:
     inputs:
       profile:

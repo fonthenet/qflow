@@ -127,7 +127,8 @@
       'Time': 'Heure',
       'Service': 'Service',
       'Estimated wait: ~{minutes} minutes': 'Attente estim\u00e9e : ~{minutes} minutes',
-      'Phone Number': 'Num\u00e9ro de t\u00e9l\u00e9phone'
+      'Phone Number': 'Num\u00e9ro de t\u00e9l\u00e9phone',
+      'Please check in at the front desk or use your appointment': 'Veuillez vous enregistrer au comptoir ou utiliser votre rendez-vous'
     },
     ar: {
       'Take a Ticket': 'احصل على تذكرة',
@@ -217,7 +218,8 @@
       'Time': 'الوقت',
       'Service': 'الخدمة',
       'Estimated wait: ~{minutes} minutes': 'الانتظار المتوقع: ~{minutes} دقيقة',
-      'Phone Number': 'رقم الهاتف'
+      'Phone Number': 'رقم الهاتف',
+      'Please check in at the front desk or use your appointment': 'يرجى التسجيل في مكتب الاستقبال أو استخدام موعدك'
     }
   };
 
@@ -354,6 +356,7 @@
       S.services = data.services;
       S.businessHours = data.business_hours || null;
       S.kioskConfig = data.kiosk_config || null;
+      S.checkInMode = data.default_check_in_mode || 'manual';
       S.whatsappPhone = data.whatsapp_phone || '';
       S.messengerPageId = data.messenger_page_id || '';
       S.priorities = data.priorities || null;
@@ -991,16 +994,29 @@
         '\uD83D\uDCC5 ' + tr('I Have an Appointment') +
         '</button></div>';
 
-      app.innerHTML = renderHeader() + renderHoursPanel() +
-        '<div class="kiosk-body"><div class="kiosk-content">' +
-        langPicker +
-        renderSteps() +
-        '<div class="queue-stats fade-up"><div class="stat-pill"><div class="stat-num">' + totalWaiting + '</div><div class="stat-label">' + tr('In Queue') + '</div></div>' +
-        '<div class="stat-pill"><div class="stat-num">' + S.departments.length + '</div><div class="stat-label">' + tr('Departments') + '</div></div></div>' +
-        '<div class="section-title">' + tr('Select Department') + '</div><div class="section-subtitle">' + tr('Choose the service area you need') + '</div>' +
-        '<div class="card-list">' + cards + '</div>' +
-        appointmentBtn +
-        '</div></div>';
+      // When check-in mode is "manual", only show appointment check-in (no walk-in tickets)
+      if (S.checkInMode === 'manual') {
+        app.innerHTML = renderHeader() + renderHoursPanel() +
+          '<div class="kiosk-body"><div class="kiosk-content">' +
+          langPicker +
+          '<div class="queue-stats fade-up"><div class="stat-pill"><div class="stat-num">' + totalWaiting + '</div><div class="stat-label">' + tr('In Queue') + '</div></div></div>' +
+          '<div style="text-align:center;margin-top:32px" class="fade-up">' +
+          '<div style="font-size:16px;color:var(--text2);margin-bottom:24px">' + tr('Please check in at the front desk or use your appointment') + '</div>' +
+          '</div>' +
+          appointmentBtn +
+          '</div></div>';
+      } else {
+        app.innerHTML = renderHeader() + renderHoursPanel() +
+          '<div class="kiosk-body"><div class="kiosk-content">' +
+          langPicker +
+          renderSteps() +
+          '<div class="queue-stats fade-up"><div class="stat-pill"><div class="stat-num">' + totalWaiting + '</div><div class="stat-label">' + tr('In Queue') + '</div></div>' +
+          '<div class="stat-pill"><div class="stat-num">' + S.departments.length + '</div><div class="stat-label">' + tr('Departments') + '</div></div></div>' +
+          '<div class="section-title">' + tr('Select Department') + '</div><div class="section-subtitle">' + tr('Choose the service area you need') + '</div>' +
+          '<div class="card-list">' + cards + '</div>' +
+          appointmentBtn +
+          '</div></div>';
+      }
 
     } else if (S.step === 'service') {
       var svcs = S.services.filter(function (s) { return s.department_id === S.selectedDept.id; });

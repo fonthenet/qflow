@@ -108,16 +108,26 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // Org-level non-settings fields
   const [orgName, setOrgName] = useState<string>('');
   const [originalOrgName, setOriginalOrgName] = useState<string>('');
+  const [orgNameAr, setOrgNameAr] = useState<string>('');
+  const [originalOrgNameAr, setOriginalOrgNameAr] = useState<string>('');
 
   // Office-level: timezone + operating hours
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   const [originalTimezone, setOriginalTimezone] = useState<string>('Africa/Algiers');
-  type DaySchedule = { open: string; close: string; closed: boolean };
+  type DaySchedule = { open: string; close: string; closed: boolean; break_start?: string; break_end?: string };
   const defaultSchedule: Record<string, DaySchedule> = Object.fromEntries(
     WEEK_DAYS.map(d => [d.key, { open: '08:00', close: '17:00', closed: d.key === 'friday' || d.key === 'saturday' }]),
   );
   const [schedule, setSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
   const [originalSchedule, setOriginalSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
+
+  // Holidays
+  type Holiday = { id?: string; holiday_date: string; name: string; is_full_day: boolean; open_time?: string; close_time?: string };
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [originalHolidays, setOriginalHolidays] = useState<Holiday[]>([]);
+  const [newHolidayDate, setNewHolidayDate] = useState('');
+  const [newHolidayName, setNewHolidayName] = useState('');
+  const [copyFromDay, setCopyFromDay] = useState<string | null>(null);
 
   // All settings values stored in a single map (string->any)
   const [values, setValues] = useState<Record<string, any>>({});
@@ -157,19 +167,13 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '📅',
       title: t('sm.section.booking'),
       fields: [
-        // booking_mode is a bool-like (enabled/disabled) — handled specially
         { key: 'booking_mode', label: t('sm.field.booking_enabled'), type: 'bool', default: false },
         { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'num', default: 30, min: 5, step: 5 },
         { key: 'slots_per_interval', label: t('sm.field.slots_per_interval'), type: 'num', default: 1, min: 1 },
         { key: 'daily_ticket_limit', label: t('sm.field.daily_limit'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
         { key: 'booking_horizon_days', label: t('sm.field.horizon_days'), type: 'num', default: 7, min: 1 },
         { key: 'min_booking_lead_hours', label: t('sm.field.lead_hours'), type: 'num', default: 1, min: 0 },
-        { key: 'max_advance_hours', label: t('sm.field.max_advance_hours'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
-        { key: 'booking_buffer_minutes', label: t('sm.field.buffer_minutes'), type: 'num', default: 0, min: 0 },
         { key: 'allow_cancellation', label: t('sm.field.allow_cancel'), type: 'bool', default: true },
-        { key: 'cancellation_window_hours', label: t('sm.field.cancel_window'), type: 'num', default: 2, min: 0 },
-        { key: 'require_customer_phone', label: t('sm.field.require_phone'), type: 'bool', default: true },
-        { key: 'require_customer_email', label: t('sm.field.require_email'), type: 'bool', default: false },
         { key: 'require_appointment_approval', label: t('sm.field.require_appointment_approval'), type: 'bool', default: true, help: t('sm.help.require_appointment_approval') },
       ],
     },
@@ -178,21 +182,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '🎫',
       title: t('sm.section.ticketing'),
       fields: [
-        { key: 'ticket_number_prefix', label: t('sm.field.ticket_prefix'), type: 'text', default: '', placeholder: 'A' },
-        { key: 'ticket_number_format', label: t('sm.field.ticket_format'), type: 'enum', default: 'numeric', options: [
-          { value: 'numeric', label: t('sm.fmt.numeric') },
+        { key: 'ticket_number_prefix', label: t('sm.field.ticket_prefix'), type: 'text', default: '', placeholder: 'TK-', help: t('sm.help.ticket_prefix') },
+        { key: 'ticket_number_format', label: t('sm.field.ticket_format'), type: 'enum', default: 'dept_numeric', options: [
+          { value: 'dept_numeric', label: t('sm.fmt.dept_numeric') },
           { value: 'prefix_numeric', label: t('sm.fmt.prefix_numeric') },
-          { value: 'date_numeric', label: t('sm.fmt.date_numeric') },
+          { value: 'prefix_dept_numeric', label: t('sm.fmt.prefix_dept_numeric') },
         ]},
-        { key: 'max_queue_size', label: t('sm.field.max_queue_size'), type: 'num', default: 50, min: 0, unlimitedWhenZero: true },
-        { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 10, min: 0, help: t('sm.help.auto_no_show') },
         { key: 'default_check_in_mode', label: t('sm.field.check_in_mode'), type: 'enum', default: 'manual', options: [
           { value: 'manual', label: t('sm.checkin.manual') },
           { value: 'auto', label: t('sm.checkin.auto') },
-          { value: 'qr', label: t('sm.checkin.qr') },
-        ]},
-        { key: 'show_estimated_wait', label: t('sm.field.show_estimated_wait'), type: 'bool', default: true },
-        { key: 'display_wait_time', label: t('sm.field.display_wait_time'), type: 'bool', default: true },
+        ], help: t('sm.help.check_in_mode') },
+        { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 10, min: 0, help: t('sm.help.auto_no_show') },
         { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
       ],
     },
@@ -200,28 +200,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       id: 'channels',
       icon: '📱',
       title: t('sm.section.channels'),
-      fields: [
-        { key: 'whatsapp_enabled', label: t('sm.field.whatsapp'), type: 'bool', default: false },
-        { key: 'messenger_enabled', label: t('sm.field.messenger'), type: 'bool', default: false },
-        { key: 'web_enabled', label: t('sm.field.web_booking'), type: 'bool', default: true },
-        { key: 'kiosk_enabled', label: t('sm.field.kiosk'), type: 'bool', default: false },
-        { key: 'qr_code_enabled', label: t('sm.field.qr_code'), type: 'bool', default: true },
-        { key: 'virtual_queue_enabled', label: t('sm.field.virtual_queue'), type: 'bool', default: false },
-      ],
+      fields: [], // Custom-rendered section
     },
     {
       id: 'notifications',
       icon: '🔔',
       title: t('sm.section.notifications'),
       fields: [
-        { key: 'sms_reminders_enabled', label: t('sm.field.sms_reminders'), type: 'bool', default: false },
-        { key: 'whatsapp_reminders_enabled', label: t('sm.field.wa_reminders'), type: 'bool', default: false },
-        { key: 'reminder_lead_minutes', label: t('sm.field.reminder_lead'), type: 'num', default: 30, min: 0 },
-        { key: 'priority_alerts_sms_enabled', label: t('sm.field.priority_alerts'), type: 'bool', default: false },
+        { key: 'priority_alerts_sms_enabled', label: t('sm.field.priority_alerts'), type: 'bool', default: false, help: t('sm.help.priority_alerts') },
         { key: 'priority_alerts_sms_on_call', label: t('sm.field.alert_on_call'), type: 'bool', default: true },
         { key: 'priority_alerts_sms_on_recall', label: t('sm.field.alert_on_recall'), type: 'bool', default: true },
         { key: 'priority_alerts_sms_on_buzz', label: t('sm.field.alert_on_buzz'), type: 'bool', default: true },
-        { key: 'staff_notifications_enabled', label: t('sm.field.staff_notifications'), type: 'bool', default: true },
       ],
     },
     {
@@ -229,25 +218,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '🖥',
       title: t('sm.section.display'),
       fields: [
-        { key: 'default_display_layout', label: t('sm.field.display_layout'), type: 'enum', default: 'list', options: [
-          { value: 'list', label: t('sm.layout.list') },
-          { value: 'grid', label: t('sm.layout.grid') },
-          { value: 'split', label: t('sm.layout.split') },
-          { value: 'counter', label: t('sm.layout.counter') },
-        ]},
-        { key: 'display_refresh_interval', label: t('sm.field.refresh_interval'), type: 'num', default: 5, min: 1 },
         { key: 'announcement_sound_enabled', label: t('sm.field.announcement_sound'), type: 'bool', default: true },
-        { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false },
-        { key: 'show_ads', label: t('sm.field.show_ads'), type: 'bool', default: false },
+        { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
         { key: 'kiosk_welcome_message', label: t('sm.field.kiosk_welcome'), type: 'text', default: '' },
         { key: 'kiosk_header_text', label: t('sm.field.kiosk_header'), type: 'text', default: '' },
         { key: 'kiosk_button_label', label: t('sm.field.kiosk_button'), type: 'text', default: '' },
         { key: 'kiosk_theme_color', label: t('sm.field.kiosk_theme'), type: 'text', default: '', placeholder: '#3b82f6' },
-        { key: 'kiosk_language', label: t('sm.field.kiosk_language'), type: 'enum', default: 'en', options: [
-          { value: 'en', label: t('sm.lang.en') },
-          { value: 'fr', label: t('sm.lang.fr') },
-          { value: 'ar', label: t('sm.lang.ar') },
-        ]},
         { key: 'kiosk_idle_timeout', label: t('sm.field.kiosk_idle'), type: 'num', default: 60, min: 10 },
         { key: 'kiosk_show_estimated_time', label: t('sm.field.kiosk_show_eta'), type: 'bool', default: true },
         { key: 'kiosk_show_priorities', label: t('sm.field.kiosk_show_priorities'), type: 'bool', default: false },
@@ -258,21 +234,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '🌐',
       title: t('sm.section.languages'),
       fields: [], // Station language handled as custom section below
-    },
-    {
-      id: 'advanced',
-      icon: '⚙',
-      title: t('sm.section.advanced'),
-      fields: [
-        { key: 'ticket_ttl_minutes', label: t('sm.field.ticket_ttl'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
-        { key: 'auto_recall_count', label: t('sm.field.auto_recall'), type: 'num', default: 0, min: 0 },
-        { key: 'max_no_show_allowed', label: t('sm.field.max_no_show'), type: 'num', default: 3, min: 0 },
-        { key: 'visit_intake_override_mode', label: t('sm.field.intake_override'), type: 'enum', default: 'business_hours', options: [
-          { value: 'business_hours', label: t('sm.intake.hours') },
-          { value: 'always_open', label: t('sm.intake.always') },
-          { value: 'always_closed', label: t('sm.intake.never') },
-        ]},
-      ],
     },
   ], [locale]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -289,9 +250,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     return items;
   }, [sections]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keys managed by custom-rendered sections (not in fields arrays)
+  const CUSTOM_KEYS = ['whatsapp_enabled','whatsapp_code','arabic_code',
+    'messenger_enabled','messenger_code','messenger_page_id',
+    'web_enabled','kiosk_enabled','qr_code_enabled','virtual_queue_enabled',
+    'visit_intake_override_mode'];
+
   const allFieldKeys = useMemo(() => {
     const keys: string[] = [];
     sections.forEach(s => s.fields.forEach(f => keys.push(f.key)));
+    // Channel keys are custom-rendered (not in fields array) but must be tracked
+    keys.push(...CUSTOM_KEYS);
     return keys;
   }, [sections]);
 
@@ -325,11 +294,14 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     try {
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
-      const [{ data, error: err }, officeResult] = await Promise.all([
-        sb.from('organizations').select('name, settings').eq('id', orgId).single(),
+      const [{ data, error: err }, officeResult, holidayResult] = await Promise.all([
+        sb.from('organizations').select('name, name_ar, settings').eq('id', orgId).single(),
         officeId
           ? sb.from('offices').select('timezone, operating_hours, settings').eq('id', officeId).single()
           : Promise.resolve({ data: null, error: null }),
+        officeId
+          ? sb.from('office_holidays').select('*').eq('office_id', officeId).order('holiday_date', { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (err) { setError(err.message); return; }
       const s: SettingsShape = ((data as any)?.settings ?? {}) as SettingsShape;
@@ -337,6 +309,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const name = ((data as any)?.name ?? '') as string;
       setOrgName(name);
       setOriginalOrgName(name);
+      const nameAr = ((data as any)?.name_ar ?? '') as string;
+      setOrgNameAr(nameAr);
+      setOriginalOrgNameAr(nameAr);
 
       // Load office timezone + operating hours
       if (officeResult?.data) {
@@ -344,18 +319,32 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         const tz = ofc.timezone || 'Africa/Algiers';
         setOfficeTimezone(tz);
         setOriginalTimezone(tz);
-        const oh = ofc.operating_hours as Record<string, { open: string; close: string } | null> | null;
+        const oh = ofc.operating_hours as Record<string, { open: string; close: string; break_start?: string; break_end?: string } | null> | null;
         const sched: Record<string, DaySchedule> = {};
         for (const d of WEEK_DAYS) {
           const h = oh?.[d.key];
           if (!h || (h.open === '00:00' && h.close === '00:00')) {
             sched[d.key] = { open: '08:00', close: '17:00', closed: true };
           } else {
-            sched[d.key] = { open: h.open, close: h.close, closed: false };
+            sched[d.key] = { open: h.open, close: h.close, closed: false, break_start: h.break_start || '', break_end: h.break_end || '' };
           }
         }
         setSchedule(sched);
         setOriginalSchedule(JSON.parse(JSON.stringify(sched)));
+      }
+
+      // Load holidays
+      if (holidayResult?.data) {
+        const hols: Holiday[] = (holidayResult.data as any[]).map((h: any) => ({
+          id: h.id,
+          holiday_date: h.holiday_date,
+          name: h.name || '',
+          is_full_day: h.is_full_day !== false,
+          open_time: h.open_time || '',
+          close_time: h.close_time || '',
+        }));
+        setHolidays(hols);
+        setOriginalHolidays(JSON.parse(JSON.stringify(hols)));
       }
 
       // Initialize values per field
@@ -377,6 +366,18 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           }
         });
       });
+      // Custom-rendered fields (not in fields arrays)
+      const channelKeys = CUSTOM_KEYS;
+      for (const ck of channelKeys) {
+        if (ck.endsWith('_enabled')) {
+          init[ck] = coerceBool(s[ck], ck === 'web_enabled' ? true : false);
+        } else if (ck === 'visit_intake_override_mode') {
+          init[ck] = coerceStr(s[ck], 'business_hours');
+        } else {
+          init[ck] = coerceStr(s[ck], '');
+        }
+      }
+
       setValues(init);
     } catch (e: any) {
       setError(e?.message ?? t('Failed to load settings'));
@@ -397,8 +398,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // ─── Dirty tracking ───────────────────────────────────────────────
   const dirty = useMemo(() => {
     if (orgName !== originalOrgName) return true;
+    if (orgNameAr !== originalOrgNameAr) return true;
     if (officeTimezone !== originalTimezone) return true;
     if (JSON.stringify(schedule) !== JSON.stringify(originalSchedule)) return true;
+    if (JSON.stringify(holidays) !== JSON.stringify(originalHolidays)) return true;
     const o = originalRef.current;
     for (const key of allFieldKeys) {
       const cur = values[key];
@@ -420,7 +423,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (cur !== orig) return true;
     }
     return false;
-  }, [values, allFieldKeys, orgName, originalOrgName]);
+  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr]);
 
   // ─── Validation ───────────────────────────────────────────────────
   const errors = useMemo(() => {
@@ -470,9 +473,15 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         }
         partial[f.key] = v;
       }));
+      // Channel keys (custom-rendered, not in fields array)
+      const channelKeys = CUSTOM_KEYS;
+      for (const ck of channelKeys) { partial[ck] = values[ck]; }
+      // Messenger code always mirrors WhatsApp code
+      partial.messenger_code = partial.whatsapp_code || '';
       const merged = { ...current, ...partial };
       const updatePayload: any = { settings: merged };
       if (orgName !== originalOrgName) updatePayload.name = orgName;
+      if (orgNameAr !== originalOrgNameAr) updatePayload.name_ar = orgNameAr || null;
       const { error: updErr } = await sb
         .from('organizations')
         .update(updatePayload)
@@ -481,12 +490,19 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
       // Save office-level fields (timezone + operating hours)
       if (officeId) {
-        const operatingHours: Record<string, { open: string; close: string }> = {};
+        const operatingHours: Record<string, any> = {};
         for (const d of WEEK_DAYS) {
           const day = schedule[d.key];
-          operatingHours[d.key] = day.closed
-            ? { open: '00:00', close: '00:00' }
-            : { open: day.open, close: day.close };
+          if (day.closed) {
+            operatingHours[d.key] = { open: '00:00', close: '00:00' };
+          } else {
+            const entry: any = { open: day.open, close: day.close };
+            if (day.break_start && day.break_end) {
+              entry.break_start = day.break_start;
+              entry.break_end = day.break_end;
+            }
+            operatingHours[d.key] = entry;
+          }
         }
         const officeUpdate: any = {
           timezone: officeTimezone,
@@ -494,6 +510,29 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         };
         const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
         if (ofcErr) throw ofcErr;
+
+        // Save holidays — diff against original
+        const origIds = new Set(originalHolidays.map(h => h.id).filter(Boolean));
+        const curIds = new Set(holidays.map(h => h.id).filter(Boolean));
+        // Delete removed
+        for (const oid of origIds) {
+          if (!curIds.has(oid)) {
+            await sb.from('office_holidays').delete().eq('id', oid);
+          }
+        }
+        // Insert new (no id)
+        for (const h of holidays) {
+          if (!h.id) {
+            await sb.from('office_holidays').insert({
+              office_id: officeId,
+              holiday_date: h.holiday_date,
+              name: h.name || null,
+              is_full_day: h.is_full_day,
+              open_time: h.is_full_day ? null : (h.open_time || null),
+              close_time: h.is_full_day ? null : (h.close_time || null),
+            });
+          }
+        }
       }
 
       // Sync visit_intake_override_mode to ALL offices (match web behavior)
@@ -734,7 +773,23 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   }, [q, filteredSections, scheduleMatchesSearch]);
 
   // ─── Render schedule content ──────────────────────────────────────
+  function applyToOtherDays(srcKey: string, targetKeys: string[]) {
+    const src = schedule[srcKey];
+    setSchedule(prev => {
+      const next = { ...prev };
+      for (const k of targetKeys) {
+        next[k] = { ...src };
+      }
+      return next;
+    });
+    setCopyFromDay(null);
+  }
+
   function renderScheduleContent() {
+    const weekdayKeys = WEEK_DAYS.slice(0, 5).map(d => d.key);
+    const weekendKeys = WEEK_DAYS.slice(5).map(d => d.key);
+    const allKeys = WEEK_DAYS.map(d => d.key);
+
     return (
       <div>
         {/* Timezone */}
@@ -751,7 +806,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           </select>
         </div>
 
-        {/* Always Open toggle — wired to visit_intake_override_mode org setting */}
+        {/* Always Open toggle */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '6px 0' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', fontWeight: 500 }}>{t('sm.field.always_open')}</div>
@@ -763,52 +818,128 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           />
         </div>
 
-        {/* Weekly schedule — hidden when always open */}
+        {/* Weekly schedule */}
         {values.visit_intake_override_mode !== 'always_open' && (
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
             {WEEK_DAYS.map(day => {
               const d = schedule[day.key];
+              const hasBreak = !!(d.break_start && d.break_end);
               return (
                 <div key={day.key} style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px', borderRadius: 8,
+                  padding: '5px 10px', borderRadius: 8,
                   background: d.closed ? 'transparent' : 'rgba(34,197,94,0.06)',
                   border: `1px solid ${d.closed ? 'var(--border, #475569)' : '#22c55e33'}`,
                 }}>
-                  <span style={{ width: 80, flexShrink: 0, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
-                    {t(`sm.day.${day.key}`)}
-                  </span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text3, #64748b)', cursor: 'pointer', flexShrink: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={d.closed}
-                      onChange={() => setSchedule(prev => ({
-                        ...prev,
-                        [day.key]: { ...prev[day.key], closed: !prev[day.key].closed },
-                      }))}
-                    />
-                    {t('sm.closed')}
-                  </label>
-                  {!d.closed && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 75, flexShrink: 0, fontSize: 11, fontWeight: 700, color: d.closed ? 'var(--text3, #64748b)' : 'var(--text, #f1f5f9)' }}>
+                      {t(`sm.day.${day.key}`)}
+                    </span>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text3, #64748b)', cursor: 'pointer', flexShrink: 0 }}>
                       <input
-                        type="time"
-                        value={d.open}
-                        onChange={(e) => setSchedule(prev => ({
+                        type="checkbox"
+                        checked={d.closed}
+                        onChange={() => setSchedule(prev => ({
                           ...prev,
-                          [day.key]: { ...prev[day.key], open: e.target.value },
+                          [day.key]: { ...prev[day.key], closed: !prev[day.key].closed },
                         }))}
-                        style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                        style={{ width: 13, height: 13 }}
                       />
-                      <span style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>→</span>
+                      {t('sm.closed')}
+                    </label>
+                    {!d.closed && (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                          <input
+                            type="time"
+                            value={d.open}
+                            onChange={(e) => setSchedule(prev => ({
+                              ...prev,
+                              [day.key]: { ...prev[day.key], open: e.target.value },
+                            }))}
+                            style={{ ...inputStyle, width: 95, padding: '3px 5px', fontSize: 11 }}
+                          />
+                          <span style={{ fontSize: 10, color: 'var(--text3, #64748b)' }}>→</span>
+                          <input
+                            type="time"
+                            value={d.close}
+                            onChange={(e) => setSchedule(prev => ({
+                              ...prev,
+                              [day.key]: { ...prev[day.key], close: e.target.value },
+                            }))}
+                            style={{ ...inputStyle, width: 95, padding: '3px 5px', fontSize: 11 }}
+                          />
+                        </div>
+                        {/* Break toggle */}
+                        <button
+                          onClick={() => {
+                            if (hasBreak) {
+                              setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_start: '', break_end: '' } }));
+                            } else {
+                              setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_start: '12:00', break_end: '13:00' } }));
+                            }
+                          }}
+                          title={hasBreak ? t('sm.remove_break') : t('sm.add_break')}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: '0 2px',
+                            color: hasBreak ? '#f59e0b' : 'var(--text3, #64748b)', opacity: hasBreak ? 1 : 0.6,
+                          }}
+                        >☕</button>
+                        {/* Copy to... */}
+                        <div style={{ position: 'relative' }} data-copy-menu>
+                          <button
+                            onClick={() => setCopyFromDay(copyFromDay === day.key ? null : day.key)}
+                            title={t('sm.copy_hours')}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: '0 2px',
+                              color: 'var(--text3, #64748b)', opacity: 0.6,
+                            }}
+                          >📋</button>
+                          {copyFromDay === day.key && (
+                            <div style={{
+                              position: 'absolute', right: 0, top: '100%', zIndex: 50,
+                              background: 'var(--bg2, #1e293b)', border: '1px solid var(--border, #475569)',
+                              borderRadius: 8, padding: 6, minWidth: 150, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                            }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3, #64748b)', marginBottom: 4, padding: '0 4px' }}>
+                                {t('sm.apply_to')}
+                              </div>
+                              <button onClick={() => applyToOtherDays(day.key, allKeys.filter(k => k !== day.key))} style={copyBtnStyle}>
+                                {t('sm.all_days')}
+                              </button>
+                              <button onClick={() => applyToOtherDays(day.key, weekdayKeys.filter(k => k !== day.key))} style={copyBtnStyle}>
+                                {t('sm.weekdays')}
+                              </button>
+                              <button onClick={() => applyToOtherDays(day.key, weekendKeys.filter(k => k !== day.key))} style={copyBtnStyle}>
+                                {t('sm.weekends')}
+                              </button>
+                              <div style={{ borderTop: '1px solid var(--border, #475569)', margin: '4px 0' }} />
+                              {WEEK_DAYS.filter(wd => wd.key !== day.key).map(wd => (
+                                <button key={wd.key} onClick={() => applyToOtherDays(day.key, [wd.key])} style={copyBtnStyle}>
+                                  {t(`sm.day.${wd.key}`)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {/* Break time row */}
+                  {!d.closed && hasBreak && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 75 }}>
+                      <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>☕ {t('sm.break')}</span>
                       <input
                         type="time"
-                        value={d.close}
-                        onChange={(e) => setSchedule(prev => ({
-                          ...prev,
-                          [day.key]: { ...prev[day.key], close: e.target.value },
-                        }))}
-                        style={{ ...inputStyle, width: 100, padding: '4px 6px', fontSize: 12 }}
+                        value={d.break_start || '12:00'}
+                        onChange={(e) => setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_start: e.target.value } }))}
+                        style={{ ...inputStyle, width: 95, padding: '2px 5px', fontSize: 11 }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--text3, #64748b)' }}>→</span>
+                      <input
+                        type="time"
+                        value={d.break_end || '13:00'}
+                        onChange={(e) => setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_end: e.target.value } }))}
+                        style={{ ...inputStyle, width: 95, padding: '2px 5px', fontSize: 11 }}
                       />
                     </div>
                   )}
@@ -817,12 +948,213 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             })}
           </div>
         )}
+
+        {/* ── Holidays ─────────────────────────────────────────────── */}
+        <div style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <label style={{ ...labelStyle, margin: 0 }}>{t('sm.holidays')}</label>
+            <span style={{ fontSize: 10, color: 'var(--text3, #64748b)' }}>{holidays.length} {holidays.length === 1 ? t('sm.holiday_count_one') : t('sm.holiday_count')}</span>
+          </div>
+
+          {/* Holiday list */}
+          {holidays.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 8 }}>
+              {holidays.map((h, i) => {
+                const isPast = h.holiday_date < new Date().toISOString().slice(0, 10);
+                return (
+                  <div key={h.id || `new-${i}`} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 6,
+                    background: isPast ? 'transparent' : 'rgba(239,68,68,0.06)',
+                    border: `1px solid ${isPast ? 'var(--border, #475569)' : 'rgba(239,68,68,0.2)'}`,
+                    opacity: isPast ? 0.5 : 1,
+                  }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text, #f1f5f9)', minWidth: 85 }}>
+                      {h.holiday_date}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text2, #94a3b8)', flex: 1 }}>
+                      {h.name || t('sm.holiday_unnamed')}
+                    </span>
+                    {!h.is_full_day && (
+                      <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 500 }}>
+                        {h.open_time} → {h.close_time}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 9, color: h.is_full_day ? '#ef4444' : '#f59e0b', fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: h.is_full_day ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)' }}>
+                      {h.is_full_day ? t('sm.full_day_off') : t('sm.reduced_hours')}
+                    </span>
+                    <button
+                      onClick={() => setHolidays(prev => prev.filter((_, j) => j !== i))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 14, padding: '0 2px', opacity: 0.7 }}
+                      title={t('sm.remove')}
+                    >×</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add holiday form */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
+            background: 'rgba(59,130,246,0.04)', border: '1px dashed rgba(59,130,246,0.2)',
+          }}>
+            <input
+              type="date"
+              value={newHolidayDate}
+              onChange={(e) => setNewHolidayDate(e.target.value)}
+              style={{ ...inputStyle, width: 130, padding: '3px 5px', fontSize: 11 }}
+              min={new Date().toISOString().slice(0, 10)}
+            />
+            <input
+              type="text"
+              value={newHolidayName}
+              onChange={(e) => setNewHolidayName(e.target.value)}
+              placeholder={t('sm.holiday_name_placeholder')}
+              style={{ ...inputStyle, flex: 1, padding: '3px 8px', fontSize: 11 }}
+            />
+            <button
+              onClick={() => {
+                if (!newHolidayDate) return;
+                setHolidays(prev => [...prev, {
+                  holiday_date: newHolidayDate,
+                  name: newHolidayName,
+                  is_full_day: true,
+                }].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date)));
+                setNewHolidayDate('');
+                setNewHolidayName('');
+              }}
+              disabled={!newHolidayDate}
+              style={{
+                background: newHolidayDate ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)',
+                color: '#fff', border: 'none', borderRadius: 6, padding: '4px 12px', fontSize: 11,
+                fontWeight: 600, cursor: newHolidayDate ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap',
+              }}
+            >+ {t('sm.add_holiday')}</button>
+          </div>
+        </div>
       </div>
     );
   }
 
+  const copyBtnStyle: React.CSSProperties = {
+    display: 'block', width: '100%', textAlign: 'left' as const,
+    background: 'none', border: 'none', cursor: 'pointer', padding: '5px 8px',
+    fontSize: 11, color: 'var(--text, #f1f5f9)', borderRadius: 4,
+  };
+
+  // Close copy dropdown on outside click
+  useEffect(() => {
+    if (!copyFromDay) return;
+    const handler = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest('[data-copy-menu]');
+      if (!el) setCopyFromDay(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [copyFromDay]);
+
   // ─── Render section content ───────────────────────────────────────
   function renderSectionContent(sec: SectionDef) {
+    // Channels section — custom grouped layout
+    if (sec.id === 'channels') {
+      const channelGroupStyle: React.CSSProperties = {
+        padding: '10px 12px', borderRadius: 10, marginBottom: 10,
+        border: '1px solid var(--border, #475569)',
+        background: 'rgba(255,255,255,0.02)',
+      };
+      const channelHeaderStyle: React.CSSProperties = {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+        marginBottom: 8,
+      };
+      const channelTitleStyle: React.CSSProperties = {
+        fontSize: 13, fontWeight: 700, color: 'var(--text, #f1f5f9)',
+        display: 'flex', alignItems: 'center', gap: 6,
+      };
+      const fieldRowStyle: React.CSSProperties = {
+        display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        columnGap: 14, rowGap: 0,
+      };
+      const miniLabel: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 };
+      const miniHelp: React.CSSProperties = { fontSize: 10, color: 'var(--text3, #64748b)', marginTop: 1, marginBottom: 4 };
+      const miniInput: React.CSSProperties = { ...inputStyle, padding: '4px 8px', fontSize: 12 };
+
+      return (
+        <div>
+          {/* ── WhatsApp ─────────────────── */}
+          <div style={{
+            ...channelGroupStyle,
+            borderColor: values.whatsapp_enabled ? '#22c55e44' : 'var(--border, #475569)',
+            background: values.whatsapp_enabled ? 'rgba(34,197,94,0.04)' : 'rgba(255,255,255,0.02)',
+          }}>
+            <div style={channelHeaderStyle}>
+              <div style={channelTitleStyle}>
+                <span style={{ fontSize: 16 }}>💬</span> WhatsApp
+              </div>
+              <Toggle on={!!values.whatsapp_enabled} onChange={(on) => setValues(p => ({ ...p, whatsapp_enabled: on }))} />
+            </div>
+            {values.whatsapp_enabled && (
+              <div style={fieldRowStyle}>
+                <div>
+                  <div style={miniLabel}>{t('sm.field.whatsapp_code')}</div>
+                  <input value={values.whatsapp_code || ''} onChange={e => setValues(p => ({...p, whatsapp_code: e.target.value}))} placeholder="MYBUSINESS" style={miniInput} />
+                  <div style={miniHelp}>{t('sm.help.whatsapp_code')}</div>
+                </div>
+                <div />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={miniLabel}>{t('sm.field.arabic_code')}</div>
+                  <input value={values.arabic_code || ''} onChange={e => setValues(p => ({...p, arabic_code: e.target.value}))} placeholder="اسم_النشاط" style={{ ...miniInput, direction: 'rtl', textAlign: 'right', maxWidth: 220 }} />
+                  <div style={miniHelp}>{t('sm.help.arabic_code')}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Messenger ────────────────── */}
+          <div style={{
+            ...channelGroupStyle,
+            borderColor: values.messenger_enabled ? '#3b82f644' : 'var(--border, #475569)',
+            background: values.messenger_enabled ? 'rgba(59,130,246,0.04)' : 'rgba(255,255,255,0.02)',
+          }}>
+            <div style={channelHeaderStyle}>
+              <div style={channelTitleStyle}>
+                <span style={{ fontSize: 16 }}>📘</span> Messenger
+              </div>
+              <Toggle on={!!values.messenger_enabled} onChange={(on) => setValues(p => ({ ...p, messenger_enabled: on }))} />
+            </div>
+            {false && values.messenger_enabled && (
+              <div />
+            )}
+          </div>
+
+          {/* ── Other channels ────────────── */}
+          <div style={channelGroupStyle}>
+            <div style={{ ...channelTitleStyle, marginBottom: 8 }}>
+              <span style={{ fontSize: 16 }}>🌐</span> {t('sm.other_channels')}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {([
+                { key: 'web_enabled', label: t('sm.field.web_booking'), icon: '🔗' },
+                { key: 'kiosk_enabled', label: t('sm.field.kiosk'), icon: '🖥' },
+                { key: 'qr_code_enabled', label: t('sm.field.qr_code'), icon: '📱' },
+                { key: 'virtual_queue_enabled', label: t('sm.field.virtual_queue'), icon: '📋' },
+              ] as const).map(ch => (
+                <div key={ch.key} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '5px 8px', borderRadius: 6,
+                  background: values[ch.key] ? 'rgba(34,197,94,0.04)' : 'transparent',
+                }}>
+                  <span style={{ fontSize: 12, color: 'var(--text, #f1f5f9)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 14 }}>{ch.icon}</span> {ch.label}
+                  </span>
+                  <Toggle on={!!values[ch.key]} onChange={(on) => setValues(p => ({ ...p, [ch.key]: on }))} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Languages section — custom: controls Station locale (local setting, not org)
     if (sec.id === 'languages') {
       const langs: { value: string; label: string; flag: string }[] = [
@@ -866,15 +1198,27 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       <div>
         {/* Org name at top of business section */}
         {sec.id === 'business' && (
-          <div style={{ padding: '5px 0', marginBottom: 4 }}>
-            <label style={labelStyle}>{t('sm.field.org_name')}</label>
-            <input
-              type="text"
-              value={orgName}
-              onChange={(e) => setOrgName(e.target.value)}
-              style={inputStyle}
-            />
-            {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 20, rowGap: 0, marginBottom: 4 }}>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('sm.field.org_name')}</label>
+              <input
+                type="text"
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                style={inputStyle}
+              />
+              {errors['__org_name'] && <div style={errStyle}>{errors['__org_name']}</div>}
+            </div>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('sm.field.org_name_ar')}</label>
+              <input
+                type="text"
+                value={orgNameAr}
+                onChange={(e) => setOrgNameAr(e.target.value)}
+                style={{ ...inputStyle, direction: 'rtl', textAlign: 'right' }}
+                placeholder="الاسم بالعربية"
+              />
+            </div>
           </div>
         )}
         <div style={{

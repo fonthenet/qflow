@@ -70,7 +70,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Signature verification failed' }, { status: 403 });
       }
     } else {
-      console.warn('[messenger-webhook] MESSENGER_APP_SECRET not set — signature verification disabled');
+      // No app secret configured — fail closed (reject unverified payloads)
+      console.error('[messenger-webhook] MESSENGER_APP_SECRET not set — rejecting unverified webhook. Set the env var to enable webhook processing.');
+      return NextResponse.json({ error: 'Webhook signature verification not configured' }, { status: 403 });
     }
 
     const json = JSON.parse(rawBody);

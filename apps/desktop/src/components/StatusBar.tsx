@@ -33,6 +33,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
   const [loading, setLoading] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgNameAr, setOrgNameAr] = useState<string | null>(null);
   const [liveDeskName, setLiveDeskName] = useState<string | null>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
 
@@ -40,6 +41,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
     if (!session) {
       setLogoUrl(null);
       setOrgName(null);
+      setOrgNameAr(null);
       setLiveDeskName(null);
       document.documentElement.style.removeProperty('--primary');
       document.documentElement.style.removeProperty('--called');
@@ -47,9 +49,10 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
     }
 
     window.qf.org?.getBranding?.()
-      .then((b: { orgName: string | null; logoUrl: string | null; brandColor: string | null }) => {
+      .then((b: { orgName: string | null; orgNameAr: string | null; logoUrl: string | null; brandColor: string | null }) => {
         setLogoUrl(b?.logoUrl ?? null);
         setOrgName(b?.orgName ?? null);
+        setOrgNameAr(b?.orgNameAr ?? null);
         // Apply org brand color as CSS variable for white-label
         if (b?.brandColor) {
           document.documentElement.style.setProperty('--primary', b.brandColor);
@@ -236,7 +239,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
           ) : (
             <span className="app-logo">Q</span>
           )}
-          <span className="app-name">{orgName ?? session?.office_name ?? t('Qflo Station')}</span>
+          <span className="app-name">{(locale === 'ar' && orgNameAr) ? orgNameAr : (orgName ?? session?.office_name ?? t('Qflo Station'))}</span>
           {orgName && session?.office_name && orgName !== session.office_name && (
             <span className="operator-role" style={{ marginLeft: 0 }}>{session.office_name}</span>
           )}

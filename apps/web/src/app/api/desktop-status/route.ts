@@ -84,9 +84,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'organizationId required' }, { status: 400 });
   }
 
+  // Exclude rustdesk_password from response — it should never leave the server
   const { data, error } = await supabase
     .from('desktop_connections')
-    .select('*')
+    .select('id, machine_id, machine_name, is_online, last_ping, ip_address, office_id, organization_id, app_version, os_info, pending_syncs, last_sync_at, rustdesk_id, support_started_at, created_at')
     .eq('organization_id', orgId)
     .order('last_ping', { ascending: false });
 

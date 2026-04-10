@@ -55,6 +55,7 @@ export default async function ScanJoinPage({ params }: PageProps) {
   if (!org) notFound();
 
   const settings = (org.settings ?? {}) as Record<string, any>;
+  if (settings.qr_code_enabled === false) notFound();
   const whatsappEnabled = Boolean(settings.whatsapp_enabled);
   const messengerEnabled = Boolean(settings.messenger_enabled);
   const messengerPageId = (settings.messenger_page_id as string) ?? '';

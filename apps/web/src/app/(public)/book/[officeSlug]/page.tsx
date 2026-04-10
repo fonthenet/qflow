@@ -24,11 +24,15 @@ export default async function BookingPage({ params, searchParams }: BookingPageP
 
   if (!office) notFound();
 
+  // Check web booking is enabled at org level
   const { data: organization } = await supabase
     .from('organizations')
     .select('*')
     .eq('id', office.organization_id)
     .single();
+
+  const _bookingOrgSettings = (organization?.settings ?? {}) as Record<string, any>;
+  if (_bookingOrgSettings.web_enabled === false) notFound();
 
   // Get departments with services
   const { data: departments } = await supabase
