@@ -187,7 +187,7 @@ describe('TemplateGovernanceClient', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Capabilities Adopt Defaults' }));
-    await user.click(screen.getByRole('button', { name: /Apply Organization Upgrade/i }));
+    await user.click(screen.getByRole('button', { name: /Save choices/i }));
 
     await waitFor(() => {
       expect(upgradeIndustryTemplateSettingsMock).toHaveBeenCalledWith({
@@ -247,7 +247,7 @@ describe('TemplateGovernanceClient', () => {
       });
     });
 
-    expect(screen.getByText('Rolled template changes to 1 office.')).toBeTruthy();
+    expect(screen.getByText('Rolled template changes to 1 office(s).')).toBeTruthy();
     expect(refreshMock).toHaveBeenCalled();
   });
 });

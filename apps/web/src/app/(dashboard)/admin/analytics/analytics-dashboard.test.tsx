@@ -342,7 +342,7 @@ describe('AnalyticsDashboard', () => {
 
     await user.selectOptions(screen.getByLabelText('Date Range'), 'last7');
     await user.selectOptions(screen.getByLabelText('Office Filter'), 'office-1');
-    await user.click(screen.getByRole('button', { name: 'Refresh analytics' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Filters' }));
 
     await waitFor(() => {
       expect(getAnalyticsSummaryMock).toHaveBeenCalledWith('office-1', 'last7');
