@@ -257,20 +257,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       id: 'languages',
       icon: '🌐',
       title: t('sm.section.languages'),
-      fields: [
-        { key: 'default_language', label: t('sm.field.default_language'), type: 'enum', default: 'en', options: [
-          { value: 'en', label: t('sm.lang.en') },
-          { value: 'fr', label: t('sm.lang.fr') },
-          { value: 'ar', label: t('sm.lang.ar') },
-          { value: 'es', label: t('sm.lang.es') },
-        ]},
-        { key: 'supported_languages', label: t('sm.field.supported_languages'), type: 'multi', default: ['en'], options: [
-          { value: 'en', label: t('sm.lang.en') },
-          { value: 'fr', label: t('sm.lang.fr') },
-          { value: 'ar', label: t('sm.lang.ar') },
-          { value: 'es', label: t('sm.lang.es') },
-        ]},
-      ],
+      fields: [], // Station language handled as custom section below
     },
     {
       id: 'advanced',
@@ -836,6 +823,45 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
   // ─── Render section content ───────────────────────────────────────
   function renderSectionContent(sec: SectionDef) {
+    // Languages section — custom: controls Station locale (local setting, not org)
+    if (sec.id === 'languages') {
+      const langs: { value: string; label: string; flag: string }[] = [
+        { value: 'fr', label: 'Français', flag: '🇫🇷' },
+        { value: 'ar', label: 'العربية', flag: '🇩🇿' },
+        { value: 'en', label: 'English', flag: '🇬🇧' },
+      ];
+      return (
+        <div>
+          <div style={{ ...labelStyle, marginBottom: 10 }}>{t('sm.field.station_language')}</div>
+          <div style={helpStyle}>{t('sm.help.station_language')}</div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            {langs.map(l => {
+              const active = locale === l.value;
+              return (
+                <button
+                  key={l.value}
+                  onClick={() => {
+                    (window as any).qf?.settings?.setLocale?.(l.value);
+                  }}
+                  style={{
+                    flex: 1, padding: '14px 12px', borderRadius: 10, cursor: 'pointer',
+                    border: active ? '2px solid var(--primary, #3b82f6)' : '1px solid var(--border, #475569)',
+                    background: active ? 'rgba(59,130,246,0.1)' : 'var(--surface, #1e293b)',
+                    color: active ? 'var(--primary, #3b82f6)' : 'var(--text, #f1f5f9)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                    fontWeight: active ? 700 : 500, fontSize: 14,
+                  }}
+                >
+                  <span style={{ fontSize: 24 }}>{l.flag}</span>
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div>
         {/* Org name at top of business section */}
