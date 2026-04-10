@@ -6,26 +6,39 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 
-const { confirmIndustryTemplateSetupMock, refreshMock, pushMock } = vi.hoisted(() => ({
-  confirmIndustryTemplateSetupMock: vi.fn(),
-  refreshMock: vi.fn(),
-  pushMock: vi.fn(),
+const { saveIndustryTemplateTrialMock, confirmIndustryTemplateSetupMock, clearIndustryTemplateTrialMock } =
+  vi.hoisted(() => ({
+    saveIndustryTemplateTrialMock: vi.fn(),
+    confirmIndustryTemplateSetupMock: vi.fn(),
+    clearIndustryTemplateTrialMock: vi.fn(),
+  }));
+
+vi.mock('@/lib/actions/platform-actions', () => ({
+  saveIndustryTemplateTrial: saveIndustryTemplateTrialMock,
+  confirmIndustryTemplateSetup: confirmIndustryTemplateSetupMock,
+  clearIndustryTemplateTrial: clearIndustryTemplateTrialMock,
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    refresh: refreshMock,
-    push: pushMock,
+    refresh: vi.fn(),
+    push: vi.fn(),
   }),
 }));
 
-vi.mock('@/lib/actions/platform-actions', () => ({
-  confirmIndustryTemplateSetup: confirmIndustryTemplateSetupMock,
-  saveIndustryTemplateTrial: vi.fn(),
-  clearIndustryTemplateTrial: vi.fn(),
-}));
-
 import { TemplateOnboardingClient } from './template-onboarding-client';
+
+const publicServiceTemplate = {
+  id: 'public-service',
+  title: 'Public Service Branch',
+  vertical: 'public_service',
+  version: '1.1.0',
+  dashboardMode: 'public_service',
+  operatingModel: 'department_first',
+  branchType: 'service_center',
+  enabledModules: ['kiosk'],
+  recommendedRoles: ['admin'],
+};
 
 describe('TemplateOnboardingClient', () => {
   beforeEach(() => {
@@ -35,141 +48,84 @@ describe('TemplateOnboardingClient', () => {
   it('prefills the first office name for new organizations', () => {
     render(
       <LocaleProvider locale="en">
-      <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
-        existingOfficeCount={0}
-        currentTemplate={{
-          id: 'public-service',
-          title: 'Public Service Branch',
-          vertical: 'public_service',
-          version: '1.1.0',
-          dashboardMode: 'public_service',
-          operatingModel: 'department_first',
-          branchType: 'service_center',
-          enabledModules: ['kiosk'],
-          recommendedRoles: ['admin'],
-        }}
-      />
+        <TemplateOnboardingClient
+          organization={{ id: 'org-1', name: 'QueueFlow' }}
+          existingOfficeCount={0}
+          currentTemplate={publicServiceTemplate}
+        />
       </LocaleProvider>
     );
 
     expect(screen.getByDisplayValue('QueueFlow Main Location')).toBeTruthy();
   });
 
-  it('updates dependent settings when the template changes', async () => {
+  it('updates operating model when the template changes', async () => {
     const user = userEvent.setup();
 
     render(
       <LocaleProvider locale="en">
-      <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
-        existingOfficeCount={2}
-        currentTemplate={{
-          id: 'public-service',
-          title: 'Public Service Branch',
-          vertical: 'public_service',
-          version: '1.1.0',
-          dashboardMode: 'public_service',
-          operatingModel: 'department_first',
-          branchType: 'service_center',
-          enabledModules: ['kiosk'],
-          recommendedRoles: ['admin'],
-        }}
-      />
+        <TemplateOnboardingClient
+          organization={{ id: 'org-1', name: 'QueueFlow' }}
+          existingOfficeCount={0}
+          currentTemplate={publicServiceTemplate}
+        />
       </LocaleProvider>
     );
+
+    expect(screen.getByDisplayValue('Customers choose an area first')).toBeTruthy();
 
     await user.click(screen.getByText('Restaurant Waitlist'));
 
     expect(screen.getByDisplayValue('Simple waitlist')).toBeTruthy();
-    expect(screen.getByDisplayValue('Restaurant Floor')).toBeTruthy();
-    expect((screen.getByLabelText('Create starter display screens') as HTMLInputElement).checked).toBe(
-      false
-    );
-    expect(screen.queryByLabelText('Include priority options')).toBeNull();
-    expect(screen.getByText('Your table is almost ready')).toBeTruthy();
-    expect(screen.getByDisplayValue(/Party of 1-2/)).toBeTruthy();
   });
 
-  it('submits the onboarding action and shows a success message', async () => {
+  it('saves a draft and shows a success message', async () => {
     const user = userEvent.setup();
-    confirmIndustryTemplateSetupMock.mockResolvedValue({
-      success: true,
-      data: {
-        departmentsCreated: 3,
-        servicesCreated: 9,
-        desksCreated: 2,
-      },
-    });
+    saveIndustryTemplateTrialMock.mockResolvedValue({ success: true });
 
     render(
       <LocaleProvider locale="en">
-      <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
-        existingOfficeCount={1}
-        currentTemplate={{
-          id: 'clinic',
-          title: 'Clinic',
-          vertical: 'clinic',
-          version: '1.1.0',
-          dashboardMode: 'clinic',
-          operatingModel: 'appointments_first',
-          branchType: 'community_clinic',
-          enabledModules: ['appointments'],
-          recommendedRoles: ['admin'],
-        }}
-      />
+        <TemplateOnboardingClient
+          organization={{ id: 'org-1', name: 'QueueFlow' }}
+          existingOfficeCount={0}
+          currentTemplate={publicServiceTemplate}
+        />
       </LocaleProvider>
     );
 
-    const officeInput = screen.getByDisplayValue('QueueFlow Main Location');
-    await user.clear(officeInput);
-    await user.type(officeInput, 'Neighborhood Clinic');
-    await user.click(screen.getByRole('button', { name: 'Use this setup' }));
+    await user.click(screen.getByText('Save draft'));
 
     await waitFor(() => {
-      expect(confirmIndustryTemplateSetupMock).toHaveBeenCalledWith(
+      expect(saveIndustryTemplateTrialMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          templateId: 'clinic',
-          operatingModel: 'appointments_first',
-          branchType: 'community_clinic',
-          officeName: 'Neighborhood Clinic',
+          templateId: 'public-service',
+          operatingModel: 'department_first',
+          branchType: 'service_center',
+          officeName: 'QueueFlow Main Location',
         })
       );
     });
 
-    expect(
-      screen.getByText('Setup confirmed. Created 3 areas, 9 services, and 2 counters.')
-    ).toBeTruthy();
+    expect(screen.getByText('Draft saved. Nothing live was created yet.')).toBeTruthy();
   });
 
-  it('shows the returned error message when onboarding fails', async () => {
+  it('shows the returned error message when saving fails', async () => {
     const user = userEvent.setup();
-    confirmIndustryTemplateSetupMock.mockResolvedValue({
+    saveIndustryTemplateTrialMock.mockResolvedValue({
       error: 'Failed to create starter office',
     });
 
     render(
       <LocaleProvider locale="en">
-      <TemplateOnboardingClient
-        organization={{ id: 'org-1', name: 'QueueFlow' }}
-        existingOfficeCount={1}
-        currentTemplate={{
-          id: 'bank-branch',
-          title: 'Bank Branch',
-          vertical: 'bank',
-          version: '1.1.0',
-          dashboardMode: 'bank',
-          operatingModel: 'service_routing',
-          branchType: 'branch_office',
-          enabledModules: ['appointments'],
-          recommendedRoles: ['admin'],
-        }}
-      />
+        <TemplateOnboardingClient
+          organization={{ id: 'org-1', name: 'QueueFlow' }}
+          existingOfficeCount={0}
+          currentTemplate={publicServiceTemplate}
+        />
       </LocaleProvider>
     );
 
-    await user.click(screen.getByRole('button', { name: 'Use this setup' }));
+    await user.click(screen.getByText('Save draft'));
 
     expect(await screen.findByText('Failed to create starter office')).toBeTruthy();
   });
