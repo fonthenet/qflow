@@ -238,6 +238,8 @@ export async function sendBookingFlowMessage(
               },
               flow_message_version: '3',
               flow_token: ctx,
+              // Use draft mode if WHATSAPP_FLOW_DRAFT=true (for unverified businesses)
+              ...(process.env.WHATSAPP_FLOW_DRAFT === 'true' ? { mode: 'draft' } : {}),
             },
           },
         },
