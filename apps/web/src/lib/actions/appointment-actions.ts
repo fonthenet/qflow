@@ -685,12 +685,16 @@ export async function joinSlotWaitlist(data: JoinSlotWaitlistData) {
  * Resolves the notification channel (WhatsApp/Messenger) from the most recent
  * session and sends a branded cancellation message.
  */
-async function notifyAppointmentCancelled(supabase: any, appointment: any) {
+async function notifyAppointmentCancelled(_supabase: any, appointment: any) {
   try {
     if (!appointment?.customer_phone) return;
 
+    // Always use admin client for notification lookups — the caller may have a
+    // user-scoped client that can't read whatsapp_sessions due to RLS.
+    const adminSb = createAdminClient() as any;
+
     // Fetch org name for branded message
-    const { data: office } = await supabase
+    const { data: office } = await adminSb
       .from('offices')
       .select('organization_id, organization:organizations(id, name)')
       .eq('id', appointment.office_id)
@@ -716,7 +720,7 @@ async function notifyAppointmentCancelled(supabase: any, appointment: any) {
         .flatMap((v: string) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
         .join(',');
 
-      const { data: sessionRows } = await supabase
+      const { data: sessionRows } = await adminSb
         .from('whatsapp_sessions')
         .select('id, channel, whatsapp_phone, messenger_psid, locale')
         .eq('organization_id', orgId)
