@@ -1,0 +1,65 @@
+config:
+  target: "https://qflo.net"
+  phases:
+    # Light load: 3 users/sec for 60 seconds
+    - duration: 60
+      arrivalRate: 3
+      name: "Smoke test"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+  plugins:
+    expect: {}
+
+scenarios:
+  - name: "Health check"
+    weight: 40
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+
+  - name: "Display screen poll"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/display-status/10603e58ae824e3b"
+          expect:
+            - statusCode: 200
+
+  - name: "Kiosk take ticket"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/kiosk-ticket"
+          json:
+            officeId: "14e521c1-30b7-4e9d-b814-78ddec16f3d5"
+            departmentId: "0df95e9f-4599-477d-97ec-068978849e42"
+            serviceId: "d863a22f-3751-4262-99c5-b44e45ca1c9d"
+          expect:
+            - statusCode:
+                - 200
+                - 201
+                - 403
+                - 429
+
+  - name: "Book appointment"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/book-appointment"
+          json:
+            officeId: "14e521c1-30b7-4e9d-b814-78ddec16f3d5"
+            departmentId: "0df95e9f-4599-477d-97ec-068978849e42"
+            serviceId: "d863a22f-3751-4262-99c5-b44e45ca1c9d"
+            customerName: "Smoke Test"
+            customerPhone: "+213555000001"
+            scheduledAt: "2026-04-15T10:00:00Z"
+          expect:
+            - statusCode:
+                - 201
+                - 400
+                - 403
+                - 409
+                - 429

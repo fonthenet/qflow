@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { BookingForm } from '@/components/appointments/booking-form';
 import { matchesOfficePublicSlug } from '@/lib/office-links';
 import { resolvePlatformConfig } from '@/lib/platform/config';
+import { ServiceUnavailable } from '@/components/service-unavailable';
 
 export async function generateMetadata({ params }: { params: Promise<{ officeSlug: string }> }): Promise<Metadata> {
   const { officeSlug } = await params;
@@ -29,51 +30,62 @@ interface BookingPageProps {
 export default async function BookingPage({ params, searchParams }: BookingPageProps) {
   const { officeSlug } = await params;
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const supabase = createAdminClient();
 
-  // Find office by slug (slugify office name and match)
-  const { data: offices } = await supabase
-    .from('offices')
-    .select('*')
-    .eq('is_active', true);
+  try {
+    const supabase = createAdminClient();
 
-  const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
+    // Find office by slug (slugify office name and match)
+    const { data: offices } = await supabase
+      .from('offices')
+      .select('*')
+      .eq('is_active', true);
 
-  if (!office) notFound();
+    const office = offices?.find((entry) => matchesOfficePublicSlug(entry, officeSlug));
 
-  // Check web booking is enabled at org level
-  const { data: organization } = await supabase
-    .from('organizations')
-    .select('*')
-    .eq('id', office.organization_id)
-    .single();
+    if (!office) notFound();
 
-  const _bookingOrgSettings = (organization?.settings ?? {}) as Record<string, any>;
-  if (_bookingOrgSettings.web_enabled === false) notFound();
+    // Check web booking is enabled at org level
+    const { data: organization } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', office.organization_id)
+      .single();
 
-  // Get departments with services
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('*, services(*)')
-    .eq('office_id', office.id)
-    .eq('is_active', true)
-    .order('sort_order');
-  const platformConfig = resolvePlatformConfig({
-    organizationSettings: organization?.settings ?? {},
-    officeSettings: office.settings ?? {},
-  });
+    const _bookingOrgSettings = (organization?.settings ?? {}) as Record<string, any>;
+    if (_bookingOrgSettings.web_enabled === false) notFound();
 
-  return (
-    <BookingForm
-      office={office}
-      organization={organization}
-      departments={departments || []}
-      initialDepartmentId={resolvedSearchParams?.departmentId}
-      initialServiceId={resolvedSearchParams?.serviceId}
-      platformContext={{
-        vertical: platformConfig.template.vertical,
-        vocabulary: platformConfig.experienceProfile.vocabulary,
-      }}
-    />
-  );
+    // Get departments with services
+    const { data: departments } = await supabase
+      .from('departments')
+      .select('*, services(*)')
+      .eq('office_id', office.id)
+      .eq('is_active', true)
+      .order('sort_order');
+    const platformConfig = resolvePlatformConfig({
+      organizationSettings: organization?.settings ?? {},
+      officeSettings: office.settings ?? {},
+    });
+
+    return (
+      <BookingForm
+        office={office}
+        organization={organization}
+        departments={departments || []}
+        initialDepartmentId={resolvedSearchParams?.departmentId}
+        initialServiceId={resolvedSearchParams?.serviceId}
+        platformContext={{
+          vertical: platformConfig.template.vertical,
+          vocabulary: platformConfig.experienceProfile.vocabulary,
+        }}
+      />
+    );
+  } catch (error) {
+    console.error('[booking-page] Database error:', error);
+    return (
+      <ServiceUnavailable
+        title="Booking temporarily unavailable"
+        message="We're unable to load the booking page right now. Please try again in a few minutes or contact the office directly to schedule your appointment."
+      />
+    );
+  }
 }

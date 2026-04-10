@@ -9,6 +9,8 @@
     "clean": "turbo clean"
   },
   "devDependencies": {
+    "artillery": "^2.0.30",
+    "k6": "^0.0.0",
     "turbo": "^2"
   },
   "packageManager": "pnpm@9.15.0"

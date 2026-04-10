@@ -1,0 +1,99 @@
+config:
+  target: "https://qflo.net"
+  phases:
+    # Warm up: 5 users/sec for 30 seconds
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+    # Ramp up: 5 → 50 users/sec over 60 seconds
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 50
+      name: "Ramp up"
+    # Sustained load: 50 users/sec for 120 seconds
+    - duration: 120
+      arrivalRate: 50
+      name: "Sustained load"
+    # Spike: 100 users/sec for 30 seconds
+    - duration: 30
+      arrivalRate: 100
+      name: "Spike test"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+  plugins:
+    expect: {}
+
+scenarios:
+  # ─── Health Check (lightweight, high frequency) ────────────────
+  - name: "Health check"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+            - hasProperty: "status"
+
+  # ─── Display Screen Poll (simulates TV displays refreshing) ───
+  - name: "Display screen poll"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/display-status/10603e58ae824e3b"
+          expect:
+            - statusCode: 200
+            - hasProperty: "activeTickets"
+            - hasProperty: "waitingTickets"
+
+  # ─── Kiosk Take Ticket (simulates customers at kiosk) ────────
+  - name: "Kiosk take ticket"
+    weight: 20
+    flow:
+      - post:
+          url: "/api/kiosk-ticket"
+          json:
+            officeId: "14e521c1-30b7-4e9d-b814-78ddec16f3d5"
+            departmentId: "0df95e9f-4599-477d-97ec-068978849e42"
+            serviceId: "d863a22f-3751-4262-99c5-b44e45ca1c9d"
+          expect:
+            - statusCode:
+                - 200
+                - 201
+                - 403
+                - 429
+
+  # ─── Book Appointment (simulates online booking) ──────────────
+  - name: "Book appointment"
+    weight: 15
+    flow:
+      - post:
+          url: "/api/book-appointment"
+          json:
+            officeId: "14e521c1-30b7-4e9d-b814-78ddec16f3d5"
+            departmentId: "0df95e9f-4599-477d-97ec-068978849e42"
+            serviceId: "d863a22f-3751-4262-99c5-b44e45ca1c9d"
+            customerName: "Load Test User"
+            customerPhone: "+213555{{ $randomNumber(100000, 999999) }}"
+            scheduledAt: "2026-04-15T{{ $randomNumber(8, 16) }}:{{ $randomNumber(0, 3) }}0:00Z"
+          expect:
+            - statusCode:
+                - 201
+                - 400
+                - 403
+                - 409
+                - 429
+
+  # ─── Ticket Update (simulates customer editing their info) ────
+  - name: "Ticket update with invalid token"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/ticket-update"
+          json:
+            token: "nonexistent_token_{{ $randomNumber(1000, 9999) }}"
+            name: "Updated Name"
+          expect:
+            - statusCode:
+                - 404
+                - 429
