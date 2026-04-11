@@ -545,24 +545,24 @@ const messages: Record<string, Record<Locale, string>> = {
 
 export const notificationMessages: Record<string, Record<Locale, string>> = {
   called: {
-    fr: '🔔 C\'est votre tour ! Ticket *{ticket}* — veuillez vous rendre au *{desk}*.\n\nSuivi : {url}',
-    ar: 'حان دورك! التذكرة *{ticket}* — يرجى التوجه إلى *{desk}* 🔔\n\nتتبع: {url}',
-    en: '🔔 It\'s your turn! Ticket *{ticket}* — please go to *{desk}*.\n\nTrack: {url}',
+    fr: '🔔 C\'est votre tour ! Ticket *{ticket}* — veuillez vous rendre au {desk}.\n\nSuivi : {url}',
+    ar: 'حان دورك! التذكرة *{ticket}* — يرجى التوجه إلى {desk} 🔔\n\nتتبع: {url}',
+    en: '🔔 It\'s your turn! Ticket *{ticket}* — please go to {desk}.\n\nTrack: {url}',
   },
   recall: {
-    fr: '⏰ *Rappel :* Le ticket *{ticket}* vous attend toujours au *{desk}*.\n\nSuivi : {url}',
-    ar: '*تذكير:* التذكرة *{ticket}* لا تزال بانتظارك في *{desk}* ⏰\n\nتتبع: {url}',
-    en: '⏰ *Reminder:* Ticket *{ticket}* is still waiting for you at *{desk}*.\n\nTrack: {url}',
+    fr: '⏰ Rappel : Le ticket *{ticket}* vous attend toujours au {desk}.\n\nSuivi : {url}',
+    ar: 'تذكير: التذكرة *{ticket}* لا تزال بانتظارك في {desk} ⏰\n\nتتبع: {url}',
+    en: '⏰ Reminder: Ticket *{ticket}* is still waiting for you at {desk}.\n\nTrack: {url}',
   },
   buzz: {
-    fr: '📢 *Appel :* Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au *{desk}*.\n\nSuivi : {url}',
-    ar: '*تنبيه:* يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى *{desk}* 📢\n\nتتبع: {url}',
-    en: '📢 *Buzz:* Staff is trying to reach you (ticket *{ticket}*). Please go to *{desk}*.\n\nTrack: {url}',
+    fr: '📢 Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au {desk}.\n\nSuivi : {url}',
+    ar: 'يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى {desk} 📢\n\nتتبع: {url}',
+    en: '📢 Staff is trying to reach you (ticket *{ticket}*). Please go to {desk}.\n\nTrack: {url}',
   },
   no_show: {
-    fr: '❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.',
-    ar: 'التذكرة *{ticket}* في *{name}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.',
-    en: '❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.',
+    fr: '❌ Le ticket *{ticket}* chez *{name}* a été marqué absent. Vous avez manqué votre tour.\n\nEnvoyez REJOINDRE <code> pour rejoindre à nouveau.',
+    ar: 'التذكرة *{ticket}* في *{name}* تم تسجيلها كـ غائب. لقد فاتك دورك ❌\n\nأرسل انضم <الرمز> للانضمام مجددًا.',
+    en: '❌ Ticket *{ticket}* at *{name}* was marked as no show. You missed your turn.\n\nSend JOIN <code> to rejoin.',
   },
   served: {
     fr: '✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite.',
@@ -570,9 +570,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: '✅ Ticket *{ticket}* at *{name}* is complete. Thank you for your visit.',
   },
   next_in_line: {
-    fr: '⏳ *Vous êtes le prochain !* Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
-    ar: '*أنت التالي!* التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}',
-    en: '⏳ *You\'re next!* Ticket *{ticket}* — get ready, it\'s almost your turn.\n\nTrack: {url}',
+    fr: '⏳ Vous êtes le prochain ! Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
+    ar: 'أنت التالي! التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}',
+    en: '⏳ You\'re next! Ticket *{ticket}* — get ready, it\'s almost your turn.\n\nTrack: {url}',
   },
   cancelled_notify: {
     fr: '🚫 Le ticket *{ticket}* a été annulé.',
