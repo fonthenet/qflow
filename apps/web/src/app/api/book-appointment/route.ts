@@ -19,8 +19,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale } =
+  const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource } =
     body as Record<string, string | undefined>;
+  const isInHouse = bodySource === 'in_house';
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {
     return NextResponse.json(
@@ -50,18 +51,39 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // Extract date and time for validation
-  const scheduledDate = new Date(scheduledAt);
-  const dateStr = scheduledAt.split('T')[0];
-  const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
-
-  // Check web booking is enabled
+  // Fetch office timezone + org settings in one query
   const { data: _bookOrg } = await supabase
     .from('offices')
-    .select('organization:organizations(settings)')
+    .select('timezone, organization:organizations(settings)')
     .eq('id', officeId)
     .single();
+  const officeTz: string = (_bookOrg as any)?.timezone || 'Africa/Algiers';
   const _bookOrgSettings = ((_bookOrg as any)?.organization?.settings ?? {}) as Record<string, any>;
+
+  // Normalize scheduledAt to office timezone.
+  // If client sends a naive datetime (no offset, e.g. "2026-04-13T10:30:00"),
+  // interpret it in the office's timezone — not UTC.
+  let resolvedScheduledAt = scheduledAt;
+  const hasOffset = /[+-]\d{2}:\d{2}$/.test(scheduledAt) || scheduledAt.endsWith('Z');
+  if (!hasOffset && scheduledAt.includes('T')) {
+    // Compute the UTC offset for the office timezone on this date
+    const naive = new Date(scheduledAt + 'Z'); // parse as UTC to get consistent date parts
+    const utcFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(naive);
+    const tzFmt = new Intl.DateTimeFormat('en-US', { timeZone: officeTz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(naive);
+    const utcMs = new Date(utcFmt).getTime();
+    const tzMs = new Date(tzFmt).getTime();
+    const diffMs = tzMs - utcMs;
+    const sign = diffMs >= 0 ? '+' : '-';
+    const absMs = Math.abs(diffMs);
+    const h = String(Math.floor(absMs / 3600000)).padStart(2, '0');
+    const m = String(Math.floor((absMs % 3600000) / 60000)).padStart(2, '0');
+    resolvedScheduledAt = `${scheduledAt}${sign}${h}:${m}`;
+  }
+
+  // Extract date and time for validation (use the raw input time, which is in office local)
+  const dateStr = scheduledAt.split('T')[0];
+  const timePart = scheduledAt.split('T')[1] || '00:00';
+  const timeStr = timePart.substring(0, 5); // "HH:MM"
   if (_bookOrgSettings.web_enabled === false) {
     return NextResponse.json({ error: 'Web booking is disabled for this business' }, { status: 403 });
   }
@@ -108,7 +130,8 @@ export async function POST(request: NextRequest) {
     .select('settings, organization:organizations(settings)')
     .eq('id', officeId)
     .single();
-  const requireApproval = Boolean(
+  // In-house bookings are always auto-confirmed — the staff is booking on behalf of the customer
+  const requireApproval = isInHouse ? false : Boolean(
     (officeForApproval?.settings as any)?.require_appointment_approval ??
       ((officeForApproval as any)?.organization?.settings?.require_appointment_approval) ??
       true,
@@ -124,13 +147,13 @@ export async function POST(request: NextRequest) {
       customer_name: cleanCustomerName,
       customer_phone: cleanCustomerPhone || null,
       customer_email: cleanCustomerEmail || null,
-      scheduled_at: scheduledAt,
+      scheduled_at: resolvedScheduledAt,
       status: initialStatus,
       calendar_token: calendarToken,
       notes: cleanNotes || null,
       wilaya: cleanWilaya || null,
       locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
-      source: 'web',
+      source: isInHouse ? 'in_house' : 'web',
       ...(staffId ? { staff_id: staffId } : {}),
     })
     .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')
