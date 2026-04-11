@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:get-tickets', officeId, statuses),
     createTicket: (ticket: any) =>
       ipcRenderer.invoke('db:create-ticket', ticket),
+    insertCloudTicket: (ticket: any) =>
+      ipcRenderer.invoke('db:insert-cloud-ticket', ticket),
     updateTicket: (ticketId: string, updates: any) =>
       ipcRenderer.invoke('db:update-ticket', ticketId, updates),
     callNext: (officeId: string, deskId: string, staffId: string) =>

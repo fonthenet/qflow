@@ -6,6 +6,7 @@
 import { connect } from 'node:http2';
 import { SignJWT, importPKCS8 } from 'jose';
 import { createClient } from '@supabase/supabase-js';
+import { APP_BASE_URL } from '@/lib/config';
 
 const APNS_HOST_PRODUCTION = 'https://api.push.apple.com';
 const APNS_HOST_SANDBOX = 'https://api.development.push.apple.com';
@@ -134,11 +135,7 @@ function buildInvocationURL(urlPath?: string): string | undefined {
     return urlPath;
   }
 
-  const baseURL = (
-    process.env.APP_CLIP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflo.net'
-  ).replace(/\/+$/, '');
+  const baseURL = APP_BASE_URL;
 
   const normalizedPath = urlPath.startsWith('/') ? urlPath : `/${urlPath}`;
   return `${baseURL}${normalizedPath}`;

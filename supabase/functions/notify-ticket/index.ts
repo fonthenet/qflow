@@ -131,8 +131,51 @@ async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>):
   }
 }
 
-async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
+// Timezone → country calling code (same mapping as desktop/web)
+const TZ_DIAL: Record<string, string> = {
+  "Africa/Algiers": "213", "Africa/Tunis": "216", "Africa/Casablanca": "212",
+  "Africa/Cairo": "20", "Africa/Lagos": "234", "Africa/Nairobi": "254",
+  "Africa/Johannesburg": "27", "Europe/Paris": "33", "Europe/London": "44",
+  "Europe/Berlin": "49", "Europe/Madrid": "34", "Europe/Rome": "39",
+  "Europe/Brussels": "32", "Europe/Amsterdam": "31", "Europe/Zurich": "41",
+  "Europe/Istanbul": "90", "Asia/Riyadh": "966", "Asia/Dubai": "971",
+  "Asia/Qatar": "974", "Asia/Kuwait": "965", "Asia/Bahrain": "973",
+  "Asia/Muscat": "968", "Asia/Amman": "962", "Asia/Beirut": "961",
+  "Asia/Baghdad": "964", "America/New_York": "1", "America/Chicago": "1",
+  "America/Denver": "1", "America/Los_Angeles": "1", "America/Toronto": "1",
+  "America/Sao_Paulo": "55", "America/Mexico_City": "52",
+  "Asia/Kolkata": "91", "Asia/Shanghai": "86", "Asia/Tokyo": "81",
+  "Australia/Sydney": "61",
+};
+
+/**
+ * Normalize phone to international digits (no + prefix).
+ * Handles 10-digit US/CA numbers, 9-digit Algerian/French numbers,
+ * and local format with leading 0.
+ */
+function normalizePhoneForMeta(phone: string, countryDialCode?: string): string {
   const digits = phone.replace(/[^\d]/g, "");
+  // Local format: leading 0 → strip and prepend country code
+  if (digits.startsWith("0") && countryDialCode) {
+    return countryDialCode + digits.slice(1);
+  }
+  // US/Canada: 10-digit number → prepend 1
+  if (digits.length === 10 && !digits.startsWith("0")) {
+    return "1" + digits;
+  }
+  // Algeria: 9-digit subscriber number
+  if (digits.length === 9 && (countryDialCode === "213" || (!countryDialCode && /^[567]/.test(digits)))) {
+    return "213" + digits;
+  }
+  // France: 9-digit subscriber number
+  if (digits.length === 9 && countryDialCode === "33") {
+    return "33" + digits;
+  }
+  return digits;
+}
+
+async function sendWhatsApp(phone: string, body: string): Promise<boolean> {
+  const digits = normalizePhoneForMeta(phone);
   if (digits.length < 7) return false;
 
   // Try free-form text first (works if customer messaged us within 24h)
@@ -229,7 +272,7 @@ async function sendPush(payload: Record<string, unknown>): Promise<void> {
 
 // ── Main handler ─────────────────────────────────────────────────────
 
-const VERSION = "18";
+const VERSION = "19";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -273,19 +316,7 @@ Deno.serve(async (req) => {
       if (!phone) {
         return Response.json({ sent: false, reason: "no phone for joined event" });
       }
-      let normalizedPhone = phone.replace(/[^\d]/g, "");
-      // Normalize local numbers: if starts with 0 and we have a country dial code, replace leading 0
-      if (normalizedPhone.startsWith("0") && countryDialCode) {
-        normalizedPhone = countryDialCode + normalizedPhone.slice(1);
-      }
-      // North American numbers: 10 digits starting with 2-9 → prepend 1
-      if (normalizedPhone.length === 10 && /^[2-9]/.test(normalizedPhone)) {
-        normalizedPhone = "1" + normalizedPhone;
-      }
-      // Algeria: 9-digit subscriber without leading 0
-      if (normalizedPhone.length === 9 && countryDialCode === "213") {
-        normalizedPhone = "213" + normalizedPhone;
-      }
+      const normalizedPhone = normalizePhoneForMeta(phone, countryDialCode);
       if (normalizedPhone.length < 7) {
         return Response.json({ sent: false, error: "Invalid phone number" });
       }
@@ -321,10 +352,10 @@ Deno.serve(async (req) => {
     // Fire push notification in parallel (non-blocking)
     const pushPromise = pushPayload ? sendPush(pushPayload) : Promise.resolve();
 
-    // Look up ticket
+    // Look up ticket + office timezone for phone normalization
     const { data: ticket } = await supabase
       .from("tickets")
-      .select("id, ticket_number, qr_token, status, locale")
+      .select("id, ticket_number, qr_token, status, locale, office_id")
       .eq("id", ticketId)
       .single();
 
@@ -405,13 +436,27 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "duplicate suppressed", version: VERSION });
     }
 
+    // Look up office timezone to derive country dial code for phone normalization
+    let countryDialCode: string | undefined;
+    if ((ticket as any)?.office_id) {
+      const { data: office } = await supabase
+        .from("offices")
+        .select("timezone")
+        .eq("id", (ticket as any).office_id)
+        .single();
+      const tz = office?.timezone;
+      if (tz && TZ_DIAL[tz]) countryDialCode = TZ_DIAL[tz];
+    }
+
     const isTerminal = ["no_show", "served", "cancelled"].includes(event);
     let sent = false;
 
     if (session.channel === "messenger" && session.messenger_psid) {
       sent = await sendMessenger(session.messenger_psid, message);
     } else if (session.whatsapp_phone) {
-      sent = await sendWhatsApp(session.whatsapp_phone, message);
+      const normalizedPhone = normalizePhoneForMeta(session.whatsapp_phone, countryDialCode);
+      console.log(`[notify-ticket v${VERSION}] Normalized phone: ***${normalizedPhone.slice(-4)} (raw: ***${session.whatsapp_phone.slice(-4)}, dial: ${countryDialCode ?? 'none'})`);
+      sent = await sendWhatsApp(normalizedPhone, message);
     } else if (session.whatsapp_bsuid) {
       // Username adopter without phone — BSUID sending available May 2026
       console.warn(`[notify-ticket v${VERSION}] No phone for session, bsuid=***${(session.whatsapp_bsuid ?? "").slice(-4)} — cannot send yet`);

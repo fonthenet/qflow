@@ -12,8 +12,10 @@ const mockSupabase: any = {
   rpc: vi.fn(),
 };
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => mockSupabase),
+vi.mock('server-only', () => ({}));
+
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => mockSupabase),
 }));
 
 vi.mock('nanoid', () => ({

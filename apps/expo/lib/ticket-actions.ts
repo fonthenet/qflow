@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import i18next from 'i18next';
+import { API_BASE_URL } from '@/lib/config';
 
 // ── Phone normalization for WhatsApp ────────────────────────────
 const TIMEZONE_DIAL: Record<string, string> = {
@@ -233,7 +234,7 @@ export async function createInHouseTicket(params: {
           const { data: officeInfo } = await supabase.from('offices').select('name').eq('id', params.officeId).single();
           const { count: posCount } = await supabase.from('tickets').select('id', { count: 'exact', head: true })
             .eq('office_id', params.officeId).eq('department_id', params.departmentId).eq('status', 'waiting').is('parked_at', null);
-          const trackUrl = `https://qflo.net/q/${data.qr_token}`;
+          const trackUrl = `${API_BASE_URL}/q/${data.qr_token}`;
 
           const edgeUrl = `${supabase.supabaseUrl}/functions/v1/notify-ticket`;
           const res = await fetch(edgeUrl, {
@@ -397,17 +398,19 @@ export async function cancelTicket(ticketId: string) {
 }
 
 /** Fire-and-forget call to lifecycle API so appointment stays in sync */
-async function syncTicketTerminal(ticketId: string, terminalStatus: string) {
+async function syncTicketTerminal(ticketId: string, terminalStatus: string, newTicketId?: string) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    fetch('https://qflo.net/api/lifecycle/on-ticket-terminal', {
+    const payload: Record<string, string> = { ticketId, terminalStatus };
+    if (newTicketId) payload.newTicketId = newTicketId;
+    fetch(`${API_BASE_URL}/api/lifecycle/on-ticket-terminal`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ ticketId, terminalStatus }),
+      body: JSON.stringify(payload),
     }).catch(() => {});
   } catch { /* non-critical */ }
 }
@@ -527,8 +530,8 @@ export async function transferTicket(
   });
   if (rpcErr) throw new Error(rpcErr.message);
 
-  // Create transferred ticket
-  const { error: insertErr } = await supabase.from('tickets').insert({
+  // Create transferred ticket — carry over appointment link and qr_token
+  const { data: newTicket, error: insertErr } = await supabase.from('tickets').insert({
     office_id: original.office_id,
     department_id: targetDepartmentId,
     service_id: targetServiceId,
@@ -540,18 +543,31 @@ export async function transferTicket(
     customer_id: original.customer_id,
     is_remote: original.is_remote,
     transferred_from_ticket_id: ticketId,
+    appointment_id: original.appointment_id,
     qr_token: original.qr_token,
     checked_in_at: new Date().toISOString(),
-  });
+  }).select('id, ticket_number').single();
   if (insertErr) throw new Error(insertErr.message);
 
-  // Mark original as transferred
+  // Mark original as transferred (not 'served' — matches web behavior)
   const { error: updateErr } = await supabase.from('tickets').update({
-    status: 'served',
+    status: 'transferred',
     completed_at: new Date().toISOString(),
-    notes: `Transferred to department`,
   }).eq('id', ticketId);
   if (updateErr) throw new Error(updateErr.message);
+
+  // Transfer WhatsApp session to new ticket so customer keeps getting notifications
+  await (supabase as any)
+    .from('whatsapp_sessions')
+    .update({ ticket_id: newTicket.id, department_id: targetDepartmentId, service_id: targetServiceId })
+    .eq('ticket_id', ticketId)
+    .eq('state', 'active')
+    .then(() => {}).catch(() => {});
+
+  // Sync appointment: re-link to new ticket via lifecycle API
+  syncTicketTerminal(ticketId, 'transferred', newTicket.id).catch(() => {});
+
+  return newTicket;
 }
 
 // ── CRUD: Staff ───────────────────────────────────────────────────
@@ -773,81 +789,32 @@ export async function fetchAppointments(officeIds: string[], status?: string) {
   return data ?? [];
 }
 
-export async function checkInAppointment(appointmentId: string, officeId: string, departmentId: string, serviceId: string) {
-  // Get appointment
-  const { data: appt, error: apptErr } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq('id', appointmentId)
-    .single();
-
-  if (apptErr || !appt) throw new Error('Appointment not found');
-
-  // Ban check
-  const { data: office } = await supabase.from('offices').select('organization_id').eq('id', officeId).single();
-  if (office?.organization_id) {
-    const { data: banned } = await supabase.rpc('is_customer_banned', {
-      p_org_id: office.organization_id,
-      p_phone: appt.customer_phone || null,
-      p_email: appt.customer_email || null,
-      p_psid: null,
-    });
-    if (banned) throw new Error('This customer has been blocked');
-  }
-
-  // Generate ticket number
-  const { data: ticketNumber, error: rpcErr } = await supabase.rpc('generate_daily_ticket_number', {
-    p_department_id: departmentId,
-  });
-  if (rpcErr) throw new Error(rpcErr.message);
-
-  // Create ticket from appointment
-  const { data: ticket, error: ticketErr } = await supabase.from('tickets').insert({
-    office_id: officeId,
-    department_id: departmentId,
-    service_id: serviceId,
-    ticket_number: ticketNumber,
-    status: 'waiting',
-    customer_data: {
-      name: appt.customer_name,
-      phone: appt.customer_phone,
-      email: appt.customer_email,
+export async function checkInAppointment(appointmentId: string, _officeId?: string, _departmentId?: string, _serviceId?: string) {
+  // Route through the unified API so ticket creation, ban checks,
+  // WhatsApp notifications, and session creation all happen server-side.
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    appointment_id: appointmentId,
-    checked_in_at: new Date().toISOString(),
-  }).select('id').single();
-  if (ticketErr) throw new Error(ticketErr.message);
-
-  // Update appointment status
-  await supabase.from('appointments').update({
-    status: 'checked_in',
-    ticket_id: ticket.id,
-  }).eq('id', appointmentId);
-
-  // Auto-create notification session if customer has a phone number
-  const phone = appt.customer_phone?.trim();
-  if (phone && office?.organization_id) {
-    await supabase.from('whatsapp_sessions' as any).insert({
-      organization_id: office.organization_id,
-      ticket_id: ticket.id,
-      office_id: officeId,
-      department_id: departmentId,
-      service_id: serviceId,
-      whatsapp_phone: phone,
-      channel: 'whatsapp',
-      state: 'active',
-      locale: 'fr', // appointment check-in uses default; no office settings context available here
-    } as any).then(() => {}).catch(() => {});
+    body: JSON.stringify({ appointmentId, action: 'check_in' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Check-in failed (HTTP ${res.status})`);
   }
-
-  return ticket;
+  const result = await res.json();
+  return result.ticket ?? { id: appointmentId };
 }
 
 export async function cancelAppointment(appointmentId: string) {
   // Route through lifecycle API so ticket sync + notifications happen
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
-  const res = await fetch('https://qflo.net/api/moderate-appointment', {
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

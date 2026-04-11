@@ -22,7 +22,6 @@ DECLARE
   v_office_id uuid;
   v_org_id    uuid;
   v_tz        text;
-  v_local_date date;
   v_prefix    text;
   v_format    text;
 BEGIN
@@ -42,7 +41,6 @@ BEGIN
    WHERE o.id = v_office_id;
 
   v_tz := COALESCE(v_tz, 'UTC');
-  v_local_date := (now() AT TIME ZONE v_tz)::date;
 
   -- Get org settings for prefix + format
   SELECT
@@ -55,11 +53,12 @@ BEGIN
   v_prefix := COALESCE(v_prefix, '');
   v_format := COALESCE(v_format, 'dept_numeric');
 
-  -- Atomic sequence increment
-  INSERT INTO ticket_sequences (department_id, seq_date, last_sequence)
-  VALUES (p_department_id, v_local_date, 1)
-  ON CONFLICT (department_id, seq_date)
-  DO UPDATE SET last_sequence = ticket_sequences.last_sequence + 1
+  -- Atomic sequence increment (PK is department_id only, no date)
+  INSERT INTO ticket_sequences (department_id, last_sequence)
+  VALUES (p_department_id, 1)
+  ON CONFLICT (department_id)
+  DO UPDATE SET last_sequence = ticket_sequences.last_sequence + 1,
+                updated_at = now()
   RETURNING last_sequence INTO v_seq;
 
   -- Format ticket number based on setting
@@ -79,3 +78,6 @@ BEGIN
   RETURN NEXT;
 END;
 $$;
+
+-- Ensure all roles can call this SECURITY DEFINER function (anon key needs it for offline-first kiosk path)
+GRANT EXECUTE ON FUNCTION public.generate_daily_ticket_number(uuid) TO anon, authenticated, service_role;

@@ -9,6 +9,7 @@ import { resolvePlatformConfig } from '@/lib/platform/config';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 import { getQueuePosition } from '@/lib/queue-position';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { trackUrl as buildTrackUrl } from '@/lib/config';
 
 
 const DAYS_OF_WEEK = [
@@ -344,7 +345,6 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     const normalizedPhone = normalizePhone(rawPhone, office.timezone, officeCC);
     if (normalizedPhone) {
       try {
-        const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
         // Prefer the locale stored on the ticket itself (set at creation
         // from the chat session). Fall back to 'fr' if missing.
         let locale: Locale = ((ticket as any)?.locale as Locale) || 'fr';
@@ -359,7 +359,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
             orgName = orgRow?.name ?? '';
           }
         } catch {}
-        const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+        const trackUrl = buildTrackUrl(ticket.qr_token);
         const body = tMsg('joined', locale, {
           name: orgName,
           ticket: ticket.ticket_number,

@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -41,7 +34,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = getSupabase();
+  const supabase = createAdminClient();
 
   // Verify caller is an admin/manager in this org
   const { data: callerStaff } = await supabase

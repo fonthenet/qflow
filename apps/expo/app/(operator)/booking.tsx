@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 import { useOperatorStore } from '@/lib/operator-store';
 import * as Actions from '@/lib/data-adapter';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { API_BASE_URL } from '@/lib/config';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,7 +81,7 @@ function SuccessView({
 }) {
   const { t } = useTranslation();
 
-  const trackUrl = ticket.qr_token ? `https://qflo.net/q/${ticket.qr_token}` : '';
+  const trackUrl = ticket.qr_token ? `${API_BASE_URL}/q/${ticket.qr_token}` : '';
   const qrImageUrl = ticket.qr_data_url
     ? ticket.qr_data_url
     : trackUrl

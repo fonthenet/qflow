@@ -66,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm --filter @qflo/web lint
+
       - name: TypeScript check
         run: pnpm --filter @qflo/web exec tsc --noEmit
 

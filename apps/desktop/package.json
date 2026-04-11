@@ -1,6 +1,6 @@
 {
   "name": "qflo-station",
-  "version": "1.5.55",
+  "version": "1.5.60",
   "description": "Qflo Operator Station — offline-first queue management",
   "main": "dist-electron/main.js",
   "author": "Qflo",
@@ -37,6 +37,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.2",
+    "@vitest/coverage-v8": "^3.2.4",
     "electron": "^35.2.1",
     "electron-builder": "^26.0.12",
     "typescript": "^5.8.3",

@@ -6,7 +6,8 @@
     "dev:turbo": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "test": "pnpm --filter qflo-station test && pnpm --filter @qflo/web exec vitest run"
   },
   "devDependencies": {
     "artillery": "^2.0.30",

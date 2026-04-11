@@ -16,6 +16,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
+import { APP_BASE_URL, trackUrl } from '@/lib/config';
 import { sendPushToTicket, notifyWaitingTickets } from '@/lib/send-push';
 import { sendAPNsToTicket, sendLiveActivityUpdateForTicket } from '@/lib/apns';
 import {
@@ -105,13 +106,7 @@ function buildPriorityAlertMessage(params: {
 }
 
 function buildAbsoluteTicketUrl(qrToken: string): string {
-  const baseUrl = (
-    process.env.APP_CLIP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflo.net'
-  ).replace(/\/+$/, '');
-
-  return `${baseUrl}/q/${qrToken}`;
+  return `${APP_BASE_URL}/q/${qrToken}`;
 }
 
 async function maybeSendPriorityAlertSms(
@@ -352,7 +347,7 @@ export async function createTicket(
 
         // Send "joined" notification directly and capture result for operator feedback
         try {
-          const waResult = await sendWhatsAppMessage({ to: normalizedPhone, body: `✅ You're in the queue! Ticket: ${ticket.ticket_number}\n\n📍 Track: ${(process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '')}/q/${ticket.qr_token}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.` });
+          const waResult = await sendWhatsAppMessage({ to: normalizedPhone, body: `✅ You're in the queue! Ticket: ${ticket.ticket_number}\n\n📍 Track: ${trackUrl(ticket.qr_token)}\n\n💬 Reply *YES* for live alerts or *NO* to opt out.` });
           whatsappStatus = { sent: waResult.ok, error: waResult.ok ? undefined : (waResult.error ?? 'Unknown error') };
         } catch (err: any) {
           whatsappStatus = { sent: false, error: err?.message ?? 'Send failed' };

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { dateKeyInTz, formatTimeInTz, getStatusColor } from '@qflo/shared';
 
 interface Appointment {
   id: string;
@@ -29,7 +30,7 @@ interface Props {
    *  regardless of where the Station machine itself is located. */
   officeTimezone?: string;
   onClose: () => void;
-  onCheckIn?: (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string }) => Promise<boolean>;
+  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete', opts?: { reason?: string }) => Promise<boolean>;
 }
 
 function formatPhoneDisplay(phone: string | null): string {
@@ -40,25 +41,12 @@ function formatPhoneDisplay(phone: string | null): string {
   return phone;
 }
 
-// Returns "YYYY-MM-DD" for the given Date as observed in `tz`. Used as a
-// stable, sortable group key so two appointments scheduled on the same
-// calendar day in the office's timezone always group together.
-function dayKeyInTz(d: Date, tz: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(d);
-  const y = parts.find(p => p.type === 'year')?.value ?? '0000';
-  const m = parts.find(p => p.type === 'month')?.value ?? '01';
-  const day = parts.find(p => p.type === 'day')?.value ?? '01';
-  return `${y}-${m}-${day}`;
-}
-
 function formatDayLabel(iso: string, t: (k: string, v?: any) => string, tz: string, locale: DesktopLocale) {
   const now = new Date();
-  const todayKey = dayKeyInTz(now, tz);
+  const todayKey = dateKeyInTz(now, tz);
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowKey = dayKeyInTz(tomorrow, tz);
-  const dKey = dayKeyInTz(new Date(iso), tz);
+  const tomorrowKey = dateKeyInTz(tomorrow, tz);
+  const dKey = dateKeyInTz(new Date(iso), tz);
   if (dKey === todayKey) return t('Today');
   if (dKey === tomorrowKey) return t('Tomorrow');
   const tag = locale === 'ar' ? 'ar' : locale === 'en' ? 'en-US' : 'fr-FR';
@@ -67,18 +55,12 @@ function formatDayLabel(iso: string, t: (k: string, v?: any) => string, tz: stri
   }).format(new Date(iso));
 }
 
-function formatTime(iso: string, tz: string) {
-  return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
-  }).format(new Date(iso));
-}
-
 // Returns the UTC instant corresponding to the given calendar date at 00:00
 // in `tz`. Used to compute the start/end of "today" and "today + 7 days"
 // windows in the office's local time, so the Station shows exactly the
 // appointments the customer would see for "today" in their own timezone.
 function startOfDayInTz(d: Date, tz: string): Date {
-  const key = dayKeyInTz(d, tz); // "YYYY-MM-DD" in office tz
+  const key = dateKeyInTz(d, tz); // "YYYY-MM-DD" in office tz
   // We need the UTC instant for "key 00:00 in tz". Use a probe and the
   // observed offset at that instant — DST-safe enough for one-day windows.
   const probe = new Date(`${key}T00:00:00Z`);
@@ -93,17 +75,7 @@ function startOfDayInTz(d: Date, tz: string): Date {
   return new Date(probe.getTime() - offsetMs);
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#f59e0b',
-  confirmed: '#3b82f6',
-  checked_in: '#8b5cf6',
-  serving: '#06b6d4',
-  completed: '#22c55e',
-  cancelled: '#ef4444',
-  no_show: '#64748b',
-};
-
-export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onCheckIn }: Props) {
+export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate }: Props) {
   const tz = (officeTimezone && officeTimezone.trim()) || 'UTC';
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -114,95 +86,31 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Pending → confirmed/cancelled goes through the moderate-appointment route
-  // so the customer is notified through their original chat channel and the
-  // org-level approval rules are applied consistently. Other transitions
-  // (checked_in, completed, staff cancel of an already-confirmed booking)
-  // remain direct Supabase updates.
-  const moderateAppointment = useCallback(async (id: string, action: 'approve' | 'decline') => {
+  // All appointment actions go through the parent's unified moderateAppointment
+  const handleAction = useCallback(async (id: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete', opts?: { reason?: string }) => {
     setBusyId(id);
     try {
-      const token = await ensureAuth(storedAuth);
-      const res = await fetch('https://qflo.net/api/moderate-appointment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ appointmentId: id, action }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || `HTTP ${res.status}`);
+      if (onModerate) {
+        const ok = await onModerate(id, action, opts);
+        if (!ok) throw new Error('Action failed');
       }
-      const nextStatus: string = json.status; // 'confirmed' | 'cancelled'
-      setAppointments((prev) =>
-        nextStatus === 'cancelled'
-          ? prev.filter((a) => a.id !== id)
-          : prev.map((a) => (a.id === id ? { ...a, status: nextStatus } : a))
-      );
-      // Surface notification status to the operator.
-      if (json.notified) {
-        setError(null);
-      } else if (json.channel) {
-        setError(action === 'approve'
-          ? t('Appointment approved — customer not reachable on chat')
-          : t('Appointment declined — customer not reachable on chat'));
+      // Update local list
+      const removeActions = new Set(['cancel', 'decline', 'no_show']);
+      if (removeActions.has(action)) {
+        setAppointments((prev) => prev.filter((a) => a.id !== id));
+      } else {
+        const statusMap: Record<string, string> = { approve: 'confirmed', check_in: 'checked_in', complete: 'completed' };
+        const newStatus = statusMap[action];
+        if (newStatus) {
+          setAppointments((prev) => prev.map((a) => a.id === id ? { ...a, status: newStatus } : a));
+        }
       }
     } catch (e: any) {
-      setError(e?.message || 'Moderation failed');
+      setError(e?.message || 'Action failed');
     } finally {
       setBusyId(null);
     }
-  }, [t, storedAuth]);
-
-  const updateStatus = useCallback(async (id: string, nextStatus: string) => {
-    setBusyId(id);
-    try {
-      // On check-in: also create a waiting ticket in the local queue
-      if (nextStatus === 'checked_in' && onCheckIn) {
-        const appt = appointments.find((a) => a.id === id);
-        if (appt) {
-          const ok = await onCheckIn(appt);
-          if (!ok) throw new Error('Check-in failed');
-        }
-      }
-
-      // ALL status changes go through moderate-appointment API
-      const actionMap: Record<string, string> = {
-        confirmed: 'approve',
-        cancelled: 'cancel',
-        declined: 'decline',
-        no_show: 'no_show',
-      };
-      const action = actionMap[nextStatus];
-      if (action) {
-        const token = await ensureAuth(storedAuth);
-        const res = await fetch('https://qflo.net/api/moderate-appointment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ appointmentId: id, action }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `HTTP ${res.status}`);
-        }
-      } else if (nextStatus !== 'checked_in') {
-        // Fallback for any other status (checked_in is handled by onCheckIn above)
-        await ensureAuth(storedAuth);
-        const sb = await getSupabase();
-        const { error: uErr } = await sb.from('appointments').update({ status: nextStatus }).eq('id', id);
-        if (uErr) throw uErr;
-      }
-
-      setAppointments((prev) =>
-        nextStatus === 'cancelled' || nextStatus === 'declined'
-          ? prev.filter((a) => a.id !== id)
-          : prev.map((a) => (a.id === id ? { ...a, status: nextStatus } : a))
-      );
-    } catch (e: any) {
-      setError(e?.message || 'Update failed');
-    } finally {
-      setBusyId(null);
-    }
-  }, [storedAuth, appointments, onCheckIn]);
+  }, [onModerate]);
 
   const deleteAppointment = useCallback(async (id: string) => {
     if (!confirm(t('Delete this appointment?'))) return;
@@ -297,7 +205,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   const grouped = useMemo(() => {
     const map = new Map<string, Appointment[]>();
     for (const a of filtered) {
-      const key = dayKeyInTz(new Date(a.scheduled_at), tz);
+      const key = dateKeyInTz(new Date(a.scheduled_at), tz);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(a);
     }
@@ -437,7 +345,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                 {formatDayLabel(g.sampleIso, t, tz, locale)} · {g.items.length}
               </div>
               {g.items.map((a) => {
-                const color = STATUS_COLORS[a.status] || '#64748b';
+                const color = getStatusColor(a.status);
                 const deptName = (a.department_id && departments?.[a.department_id]) || '';
                 const svcName = (a.service_id && services?.[a.service_id]) || '';
                 const busy = busyId === a.id;
@@ -470,7 +378,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       minWidth: 56, fontSize: 16, fontWeight: 700,
                       color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {formatTime(a.scheduled_at, tz)}
+                      {formatTimeInTz(a.scheduled_at, tz)}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -515,7 +423,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         <>
                           <button
                             disabled={busy}
-                            onClick={() => moderateAppointment(a.id, 'approve')}
+                            onClick={() => handleAction(a.id, 'approve')}
                             title={t('Approve')}
                             style={{
                               padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e40',
@@ -529,7 +437,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                             disabled={busy}
                             onClick={() => {
                               if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
-                              moderateAppointment(a.id, 'decline');
+                              handleAction(a.id, 'decline');
                             }}
                             title={t('Decline')}
                             style={{
@@ -545,7 +453,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       {canCheckIn && (
                         <button
                           disabled={busy}
-                          onClick={() => updateStatus(a.id, 'checked_in')}
+                          onClick={() => handleAction(a.id, 'check_in')}
                           title={t('Check in')}
                           style={{
                             padding: '6px 10px', borderRadius: 6, border: '1px solid #8b5cf640',
@@ -559,7 +467,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       {canComplete && (
                         <button
                           disabled={busy}
-                          onClick={() => updateStatus(a.id, 'completed')}
+                          onClick={() => handleAction(a.id, 'complete')}
                           title={t('Complete')}
                           style={{
                             padding: '6px 10px', borderRadius: 6, border: '1px solid #22c55e40',
@@ -573,7 +481,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       {canCancel && (
                         <button
                           disabled={busy}
-                          onClick={() => updateStatus(a.id, 'cancelled')}
+                          onClick={() => handleAction(a.id, 'cancel')}
                           title={t('Cancel')}
                           style={{
                             padding: '6px 10px', borderRadius: 6, border: '1px solid #ef444440',

@@ -1,20 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { getQueuePosition } from '@/lib/queue-position';
 import { formatPosition, formatNowServing, t as tMsg, type Locale } from '@/lib/messaging-commands';
-
-let _supabase: SupabaseClient | null = null;
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-  }
-  return _supabase;
-}
+import { APP_BASE_URL } from '@/lib/config';
 
 /**
  * POST /api/moderate-ticket
@@ -38,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'ticketId and action (approve|decline) are required' }, { status: 400 });
   }
 
-  const supabase = getSupabase() as any;
+  const supabase = createAdminClient() as any;
 
   // Fetch ticket (must still be pending_approval to be moderated)
   const { data: ticket, error: fetchErr } = await supabase
@@ -116,8 +106,7 @@ export async function POST(request: NextRequest) {
     let notified = false;
     let notifyError: string | null = null;
     try {
-      const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
-      const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+      const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
       const pos = await getQueuePosition(ticket.id);
       // One combined message: "approved" header + full ticket details.
       // Ticket already exists (JOIN flow), so use the sameday template

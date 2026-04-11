@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createMockRequest,
-  createMockSupabase,
   TEST_IDS,
   SERVICE_ROLE_KEY,
   WEBHOOK_SECRET,
@@ -9,32 +8,40 @@ import {
 
 // ── Hoisted mocks ───────────────────────────────────────────────────
 
-const mockSupabase: any = createMockSupabase();
-const mockAnonSupabase: any = createMockSupabase();
+const mockAnonSupabase: any = {
+  auth: {
+    getUser: vi.fn().mockResolvedValue({
+      data: { user: null },
+      error: { message: 'invalid' },
+    }),
+  },
+};
 
-const { sendWhatsAppMessageMock, sendMessengerMessageMock } = vi.hoisted(() => ({
-  sendWhatsAppMessageMock: vi.fn().mockResolvedValue({ ok: true }),
-  sendMessengerMessageMock: vi.fn().mockResolvedValue(undefined),
+const mockAdminSupabase: any = {
+  from: vi.fn(),
+};
+
+const { transitionAppointmentMock, checkInAppointmentMock } = vi.hoisted(() => ({
+  transitionAppointmentMock: vi.fn(),
+  checkInAppointmentMock: vi.fn(),
 }));
+
+vi.mock('server-only', () => ({}));
 
 vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn((url: string, key: string) => {
-    // The route creates two clients: service-role and anon (for auth check)
-    if (key === SERVICE_ROLE_KEY) return mockSupabase;
-    return mockAnonSupabase;
-  }),
+  createClient: vi.fn(() => mockAnonSupabase),
 }));
 
-vi.mock('@/lib/whatsapp', () => ({
-  sendWhatsAppMessage: sendWhatsAppMessageMock,
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => mockAdminSupabase),
 }));
 
-vi.mock('@/lib/messenger', () => ({
-  sendMessengerMessage: sendMessengerMessageMock,
+vi.mock('@/lib/lifecycle', () => ({
+  transitionAppointment: transitionAppointmentMock,
 }));
 
-vi.mock('@/lib/messaging-commands', () => ({
-  t: vi.fn((_key: string, _locale: string, _vars: any) => 'Mocked message'),
+vi.mock('@/lib/actions/appointment-actions', () => ({
+  checkInAppointment: checkInAppointmentMock,
 }));
 
 vi.mock('@/lib/crypto-utils', () => ({
@@ -52,27 +59,6 @@ function authedRequest(body: unknown) {
     authorization: `Bearer ${SERVICE_ROLE_KEY}`,
   });
 }
-
-const PENDING_APPT = {
-  id: TEST_IDS.appointmentId,
-  office_id: TEST_IDS.officeId,
-  status: 'pending',
-  customer_phone: '+213555000000',
-  customer_name: 'Test Customer',
-  scheduled_at: '2026-04-15T10:00:00Z',
-  service_id: TEST_IDS.serviceId,
-  department_id: TEST_IDS.departmentId,
-  locale: 'fr',
-};
-
-const CONFIRMED_APPT = { ...PENDING_APPT, status: 'confirmed' };
-
-const OFFICE_ROW = {
-  id: TEST_IDS.officeId,
-  organization_id: TEST_IDS.organizationId,
-  timezone: 'Africa/Algiers',
-  organization: { id: TEST_IDS.organizationId, name: 'Test Clinic' },
-};
 
 // ── Setup ───────────────────────────────────────────────────────────
 
@@ -106,7 +92,6 @@ describe('POST /api/moderate-appointment', () => {
       { appointmentId: TEST_IDS.appointmentId, action: 'approve' },
       { authorization: 'Bearer bad-token' },
     );
-    // Mock the anon supabase auth.getUser to reject
     mockAnonSupabase.auth.getUser.mockResolvedValue({
       data: { user: null },
       error: { message: 'invalid' },
@@ -136,7 +121,6 @@ describe('POST /api/moderate-appointment', () => {
     const req = createMockRequest('POST', undefined, {
       authorization: `Bearer ${SERVICE_ROLE_KEY}`,
     });
-    // Override json to throw
     (req as any).json = vi.fn().mockRejectedValue(new Error('Unexpected token'));
 
     const res = await POST(req as any);
@@ -145,62 +129,13 @@ describe('POST /api/moderate-appointment', () => {
     expect(json.error).toBe('Invalid request body');
   });
 
-  it('returns 404 when appointment does not exist', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        const chain: any = {};
-        chain.select = vi.fn().mockReturnValue(chain);
-        chain.eq = vi.fn().mockReturnValue(chain);
-        chain.single = vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } });
-        return chain;
-      }
-      return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: null, error: null }) };
-    });
-
-    const req = authedRequest({ appointmentId: 'nonexistent', action: 'approve' });
-    const res = await POST(req as any);
-    expect(res.status).toBe(404);
-  });
-
   it('approve: returns 200 and sets status to confirmed for a pending appointment', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { ...PENDING_APPT }, error: null }),
-            }),
-          }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'offices') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: OFFICE_ROW, error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'whatsapp_sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              or: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+    transitionAppointmentMock.mockResolvedValue({
+      ok: true,
+      status: 'confirmed',
+      notified: true,
+      channel: 'whatsapp',
+      notifyError: null,
     });
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'approve' });
@@ -209,47 +144,20 @@ describe('POST /api/moderate-appointment', () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.status).toBe('confirmed');
+    expect(transitionAppointmentMock).toHaveBeenCalledWith(
+      TEST_IDS.appointmentId,
+      'confirmed',
+      { reason: undefined },
+    );
   });
 
   it('decline: returns 200 and sets status to cancelled with reason for a pending appointment', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { ...PENDING_APPT }, error: null }),
-            }),
-          }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'offices') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: OFFICE_ROW, error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'whatsapp_sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              or: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+    transitionAppointmentMock.mockResolvedValue({
+      ok: true,
+      status: 'cancelled',
+      notified: true,
+      channel: 'whatsapp',
+      notifyError: null,
     });
 
     const req = authedRequest({
@@ -262,66 +170,36 @@ describe('POST /api/moderate-appointment', () => {
     const json = await res.json();
     expect(json.ok).toBe(true);
     expect(json.status).toBe('cancelled');
+    expect(transitionAppointmentMock).toHaveBeenCalledWith(
+      TEST_IDS.appointmentId,
+      'cancelled',
+      { reason: 'Fully booked' },
+    );
   });
 
-  it('approve: returns 409 when appointment is not pending', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { ...CONFIRMED_APPT }, error: null }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+  it('approve: returns 409 when appointment is not in valid state', async () => {
+    transitionAppointmentMock.mockResolvedValue({
+      ok: false,
+      status: 'confirmed',
+      notified: false,
+      channel: null,
+      notifyError: 'Already in terminal state: confirmed',
     });
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'approve' });
     const res = await POST(req as any);
     expect(res.status).toBe(409);
     const json = await res.json();
-    expect(json.error).toContain('not pending');
+    expect(json.error).toContain('terminal state');
   });
 
   it('cancel: returns 200 and sets status to cancelled for a confirmed appointment', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { ...CONFIRMED_APPT }, error: null }),
-            }),
-          }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ error: null }),
-          }),
-        };
-      }
-      if (table === 'offices') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: OFFICE_ROW, error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'whatsapp_sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              or: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+    transitionAppointmentMock.mockResolvedValue({
+      ok: true,
+      status: 'cancelled',
+      notified: false,
+      channel: null,
+      notifyError: null,
     });
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'cancel' });
@@ -333,42 +211,12 @@ describe('POST /api/moderate-appointment', () => {
   });
 
   it('no_show: returns 200 and sets status to no_show for a confirmed appointment', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: { ...CONFIRMED_APPT }, error: null }),
-            }),
-          }),
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ error: null }),
-          }),
-        };
-      }
-      if (table === 'offices') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ data: OFFICE_ROW, error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'whatsapp_sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              or: vi.fn().mockReturnValue({
-                order: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+    transitionAppointmentMock.mockResolvedValue({
+      ok: true,
+      status: 'no_show',
+      notified: true,
+      channel: 'whatsapp',
+      notifyError: null,
     });
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'no_show' });
@@ -380,20 +228,12 @@ describe('POST /api/moderate-appointment', () => {
   });
 
   it('cancel: returns 409 for an already-cancelled appointment', async () => {
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'appointments') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: { ...PENDING_APPT, status: 'cancelled' },
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-      return { select: vi.fn().mockReturnThis() };
+    transitionAppointmentMock.mockResolvedValue({
+      ok: false,
+      status: 'cancelled',
+      notified: false,
+      channel: null,
+      notifyError: 'Already in terminal state: cancelled',
     });
 
     const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'cancel' });
@@ -401,5 +241,67 @@ describe('POST /api/moderate-appointment', () => {
     expect(res.status).toBe(409);
     const json = await res.json();
     expect(json.error).toContain('terminal state');
+  });
+
+  it('check_in: returns 200 with ticket data on success', async () => {
+    checkInAppointmentMock.mockResolvedValue({
+      data: { ticket: { id: TEST_IDS.ticketId, ticket_number: 'A-001' } },
+      error: null,
+    });
+
+    const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'check_in' });
+    const res = await POST(req as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.status).toBe('checked_in');
+    expect(json.ticket.id).toBe(TEST_IDS.ticketId);
+  });
+
+  it('check_in: returns 409 when check-in fails', async () => {
+    checkInAppointmentMock.mockResolvedValue({
+      data: null,
+      error: 'Already checked in',
+    });
+
+    const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'check_in' });
+    const res = await POST(req as any);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.error).toBe('Already checked in');
+  });
+
+  it('complete: returns 200 and marks appointment completed', async () => {
+    const updateChain: any = {};
+    updateChain.eq = vi.fn().mockReturnValue(updateChain);
+    updateChain.in = vi.fn().mockResolvedValue({ error: null });
+    updateChain.then = (fn: any) => Promise.resolve({ error: null }).then(fn);
+
+    mockAdminSupabase.from.mockImplementation((table: string) => ({
+      update: vi.fn().mockReturnValue(updateChain),
+    }));
+
+    const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'complete' });
+    const res = await POST(req as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.status).toBe('completed');
+  });
+
+  it('returns 409 when transition not found (appointment does not exist)', async () => {
+    transitionAppointmentMock.mockResolvedValue({
+      ok: false,
+      status: 'unknown',
+      notified: false,
+      channel: null,
+      notifyError: 'Not found',
+    });
+
+    const req = authedRequest({ appointmentId: TEST_IDS.appointmentId, action: 'approve' });
+    const res = await POST(req as any);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.error).toBe('Not found');
   });
 });

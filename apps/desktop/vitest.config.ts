@@ -7,6 +7,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
+      include: ['electron/**/*.ts'],
+      exclude: ['electron/**/*.test.*', 'electron/**/__tests__/**'],
       thresholds: { lines: 50 },
     },
   },

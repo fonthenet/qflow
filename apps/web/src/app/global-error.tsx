@@ -12,26 +12,22 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     Sentry.captureException(error);
+    console.error('[global-error-boundary]', error);
   }, [error]);
+
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif',
-          background: '#f8fafc', color: '#1e293b', padding: '2rem',
-        }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Something went wrong</h1>
-          <p style={{ color: '#64748b', marginTop: '0.5rem' }}>An unexpected error occurred.</p>
+      <body className="min-h-screen font-sans antialiased">
+        <div className="flex min-h-screen flex-col items-center justify-center px-4">
+          <h1 className="text-4xl font-bold text-gray-900">Something went wrong</h1>
+          <p className="mt-4 text-sm text-gray-500">
+            An unexpected error occurred. Please try again.
+          </p>
           <button
             onClick={reset}
-            style={{
-              marginTop: '2rem', padding: '0.75rem 2rem', background: '#3b82f6', color: 'white',
-              borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: 500,
-            }}
+            className="mt-8 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
-            Try Again
+            Try again
           </button>
         </div>
       </body>

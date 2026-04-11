@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { nanoid } from 'nanoid';
 import { getAvailableSlots } from '@/lib/slot-generator';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
+import { isValidUUID, sanitizeString, isValidDate } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
   const blocked = await checkRateLimit(request, publicLimiter);
@@ -35,7 +29,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = getSupabase();
+  // ── Input validation ──────────────────────────────────────────
+  if (!isValidUUID(officeId) || !isValidUUID(departmentId) || !isValidUUID(serviceId)) {
+    return NextResponse.json({ error: 'officeId, departmentId, and serviceId must be valid UUIDs' }, { status: 400 });
+  }
+  if (staffId && !isValidUUID(staffId)) {
+    return NextResponse.json({ error: 'staffId must be a valid UUID' }, { status: 400 });
+  }
+  if (!isValidDate(scheduledAt.split('T')[0])) {
+    return NextResponse.json({ error: 'scheduledAt must contain a valid date (YYYY-MM-DD)' }, { status: 400 });
+  }
+  const cleanCustomerName = sanitizeString(customerName, 200);
+  if (!cleanCustomerName) {
+    return NextResponse.json({ error: 'customerName must be a non-empty string (max 200 chars)' }, { status: 400 });
+  }
+  const cleanCustomerPhone = customerPhone ? sanitizeString(customerPhone, 30) : undefined;
+  const cleanCustomerEmail = customerEmail ? sanitizeString(customerEmail, 254) : undefined;
+  const cleanNotes = notes ? sanitizeString(notes as string, 500) : undefined;
+  const cleanWilaya = wilaya ? sanitizeString(wilaya as string, 100) : undefined;
+
+  const supabase = createAdminClient();
 
   // Extract date and time for validation
   const scheduledDate = new Date(scheduledAt);
@@ -108,14 +121,14 @@ export async function POST(request: NextRequest) {
       office_id: officeId,
       department_id: departmentId,
       service_id: serviceId,
-      customer_name: customerName.trim(),
-      customer_phone: customerPhone?.trim() || null,
-      customer_email: customerEmail?.trim() || null,
+      customer_name: cleanCustomerName,
+      customer_phone: cleanCustomerPhone || null,
+      customer_email: cleanCustomerEmail || null,
       scheduled_at: scheduledAt,
       status: initialStatus,
       calendar_token: calendarToken,
-      notes: (notes as string)?.trim() || null,
-      wilaya: (wilaya as string)?.trim() || null,
+      notes: cleanNotes || null,
+      wilaya: cleanWilaya || null,
       locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
       source: 'web',
       ...(staffId ? { staff_id: staffId } : {}),
@@ -158,9 +171,9 @@ export async function POST(request: NextRequest) {
     if (orgId) {
       await upsertCustomerFromBooking(supabase, {
         organizationId: orgId,
-        name: customerName,
-        phone: customerPhone,
-        email: customerEmail,
+        name: cleanCustomerName,
+        phone: cleanCustomerPhone,
+        email: cleanCustomerEmail,
         source: 'booking',
       });
     }
@@ -173,7 +186,7 @@ export async function POST(request: NextRequest) {
   // send a confirmation/pending message via WhatsApp when a phone is present.
   // Messenger users always book via chat, so they get the message there.
   try {
-    if (customerPhone && customerPhone.trim()) {
+    if (cleanCustomerPhone) {
       const { data: officeRow } = await supabase
         .from('offices')
         .select('organization:organizations(name)')
@@ -189,9 +202,9 @@ export async function POST(request: NextRequest) {
         name: orgName,
         date: dateLabel,
         time: timeLabel,
-        customer: customerName,
+        customer: cleanCustomerName,
       });
-      await sendWhatsAppMessage({ to: customerPhone.trim(), body: messageBody });
+      await sendWhatsAppMessage({ to: cleanCustomerPhone, body: messageBody });
     }
   } catch (e) {
     console.warn('[book-appointment] whatsapp notify failed:', (e as any)?.message ?? e);

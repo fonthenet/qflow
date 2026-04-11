@@ -704,6 +704,23 @@ export class SyncEngine {
             return;
           }
         }
+        // Auth refresh failed — try anon key as last resort (RLS allows public ticket updates)
+        if (item.table_name === 'tickets') {
+          console.log(`[sync:pushImmediate] Auth failed — trying anon key for ticket ${item.record_id}`);
+          const anonRetry = await this.replayMutation(item, this.supabaseKey);
+          if (anonRetry.status === 0) {
+            this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+              .run(new Date().toISOString(), item.id);
+            this.updatePendingCount();
+            this.rapidRetryInFlight.delete(syncQueueId);
+            console.log(`[sync:pushImmediate] ✓ Pushed ticket with anon key`);
+            if (item.operation === 'INSERT') {
+              this.rewriteOfflineTicket(item.record_id, item.payload);
+              this.createWhatsAppSessionForTicket(item.record_id, item.payload);
+            }
+            return;
+          }
+        }
       }
 
       // Non-auth failure — schedule rapid retry
@@ -927,8 +944,19 @@ export class SyncEngine {
     if (!this.checkCircuitBreaker()) return; // circuit breaker open — skip
 
     const now = new Date().toISOString();
+    // Critical items (called/serving/cancelled/served/no_show) and INSERTs are IMMORTAL —
+    // they must retry forever regardless of attempt count. Only non-critical UPDATEs
+    // respect the attempts < 10 cap.
     const pending = this.db.prepare(
-      "SELECT * FROM sync_queue WHERE synced_at IS NULL AND attempts < 10 AND (next_retry_at IS NULL OR next_retry_at <= ?) ORDER BY created_at ASC LIMIT 50"
+      `SELECT * FROM sync_queue
+       WHERE synced_at IS NULL
+         AND (next_retry_at IS NULL OR next_retry_at <= ?)
+         AND (
+           operation = 'INSERT'
+           OR json_extract(payload, '$.status') IN ('called','serving','cancelled','served','no_show')
+           OR attempts < 10
+         )
+       ORDER BY created_at ASC LIMIT 50`
     ).all(now) as any[];
 
     if (pending.length === 0) return;
@@ -973,20 +1001,41 @@ export class SyncEngine {
                 continue;
               }
             }
-            // Auth refresh failed. Do NOT discard anything — flag every pending
-            // item with AUTH_EXPIRED so the operator can re-login. Terminal status
-            // mutations (cancels/serves) MUST survive a login expiry.
+            // Auth refresh failed — try anon key for ticket items (RLS allows public updates)
+            let anonSaved = false;
+            for (const pendingItem of pending) {
+              if (pendingItem.table_name !== 'tickets') continue;
+              if ((this.db.prepare("SELECT synced_at FROM sync_queue WHERE id = ?").get(pendingItem.id) as any)?.synced_at) continue;
+              try {
+                const anonResult = await this.replayMutation(pendingItem, this.supabaseKey);
+                if (anonResult.status === 0) {
+                  this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+                    .run(new Date().toISOString(), pendingItem.id);
+                  successCount++;
+                  anonSaved = true;
+                  if (pendingItem.operation === 'INSERT' && pendingItem.table_name === 'tickets') {
+                    this.rewriteOfflineTicket(pendingItem.record_id, pendingItem.payload);
+                    this.createWhatsAppSessionForTicket(pendingItem.record_id, pendingItem.payload);
+                  }
+                }
+              } catch { /* anon key also failed — will be flagged AUTH_EXPIRED below */ }
+            }
+            if (anonSaved) {
+              console.log(`[sync] Pushed ${successCount} ticket(s) with anon key despite auth failure`);
+            }
+
+            // Flag remaining unsynced items with AUTH_EXPIRED
             this.db.prepare(
               "UPDATE sync_queue SET last_error = ? WHERE synced_at IS NULL"
             ).run('AUTH_EXPIRED: re-login required');
-            console.warn('[sync] Auth expired — all pending items kept for retry after re-login');
+            console.warn('[sync] Auth expired — remaining pending items kept for retry after re-login');
             this.updatePendingCount();
 
             // Fire auth error so UI can prompt re-login (but only if not suppressed)
             if (Date.now() > this.authErrorSuppressedUntil) {
               this.onAuthError();
             }
-            // Skip remaining items — they'll all 401 too
+            // Done with this cycle
             break;
           } else {
             // Already tried refresh once this cycle — skip remaining
@@ -1618,6 +1667,24 @@ export class SyncEngine {
     if (recovered.changes > 0) {
       console.log(`[sync:recover] Reset ${recovered.changes} stuck item(s) for retry`);
     }
+
+    // Critical items (called/serving/cancelled/served/no_show) and INSERTs that have
+    // been stuck for > 30 min with ANY error get their next_retry_at cleared so they
+    // are immediately eligible for the next syncNow() cycle.
+    const criticalRecovered = this.db.prepare(`
+      UPDATE sync_queue
+      SET next_retry_at = NULL
+      WHERE synced_at IS NULL
+        AND attempts >= 10
+        AND created_at < ?
+        AND (
+          operation = 'INSERT'
+          OR json_extract(payload, '$.status') IN ('called','serving','cancelled','served','no_show')
+        )
+    `).run(thirtyMinAgo);
+    if (criticalRecovered.changes > 0) {
+      console.log(`[sync:recover] Unblocked ${criticalRecovered.changes} critical item(s) stuck at 10+ attempts`);
+    }
   }
 
   /**
@@ -1652,12 +1719,12 @@ export class SyncEngine {
         reason: 'called_30min_no_action',
       });
 
-      logTicketEvent(t.id, 'requeued', {
+      logTicketEvent(t.id, 'stale_called_auto_revert', {
         ticketNumber: t.ticket_number,
         fromStatus: 'called',
         toStatus: 'waiting',
-        source: 'auto_stale_revert',
-        details: { reason: 'called_30min_no_action', previousDesk: t.desk_id },
+        source: 'station',
+        details: { reason: 'stale_called_auto_revert', previousDesk: t.desk_id, calledAt: t.called_at },
       });
 
       // Queue sync so cloud also gets the revert

@@ -284,8 +284,12 @@ export function countByDate(
 
 // ── Color helpers ──────────────────────────────────────────────────
 
+const EXTRA_STATUS_COLORS: Record<string, string> = {
+  serving: '#06b6d4',
+};
+
 export function getStatusColor(status: string): string {
-  return STATUS_COLORS[status as AppointmentStatus] ?? '#64748b';
+  return STATUS_COLORS[status as AppointmentStatus] ?? EXTRA_STATUS_COLORS[status] ?? '#64748b';
 }
 
 export function getServiceColor(service?: { color?: string | null } | null): string {

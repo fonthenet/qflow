@@ -6,12 +6,25 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 
-const { applyIndustryTemplateSetupMock } = vi.hoisted(() => ({
-  applyIndustryTemplateSetupMock: vi.fn(),
+const { confirmIndustryTemplateSetupMock, saveIndustryTemplateTrialMock, clearIndustryTemplateTrialMock, refreshMock, pushMock } = vi.hoisted(() => ({
+  confirmIndustryTemplateSetupMock: vi.fn(),
+  saveIndustryTemplateTrialMock: vi.fn(),
+  clearIndustryTemplateTrialMock: vi.fn(),
+  refreshMock: vi.fn(),
+  pushMock: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    refresh: refreshMock,
+    push: pushMock,
+  }),
 }));
 
 vi.mock('@/lib/actions/platform-actions', () => ({
-  applyIndustryTemplateSetup: applyIndustryTemplateSetupMock,
+  confirmIndustryTemplateSetup: confirmIndustryTemplateSetupMock,
+  saveIndustryTemplateTrial: saveIndustryTemplateTrialMock,
+  clearIndustryTemplateTrial: clearIndustryTemplateTrialMock,
 }));
 
 import { TemplateOnboardingClient } from './template-onboarding-client';
@@ -42,7 +55,7 @@ describe('TemplateOnboardingClient', () => {
       </LocaleProvider>
     );
 
-    expect((screen.getByLabelText('Starter Office Name') as HTMLInputElement).value).toBe(
+    expect((screen.getByDisplayValue('QueueFlow Main Location') as HTMLInputElement).value).toBe(
       'QueueFlow Main Location'
     );
   });
@@ -70,29 +83,31 @@ describe('TemplateOnboardingClient', () => {
       </LocaleProvider>
     );
 
-    await user.selectOptions(screen.getByLabelText('Industry Template'), 'restaurant-waitlist');
+    await user.click(screen.getByRole('button', { name: /Restaurant Waitlist/i }));
 
-    expect((screen.getByLabelText('Operating Model') as HTMLSelectElement).value).toBe('waitlist');
-    expect((screen.getByLabelText('Branch Type') as HTMLSelectElement).value).toBe(
-      'restaurant_floor'
-    );
-    expect((screen.getByLabelText('Create starter display screen') as HTMLInputElement).checked).toBe(
+    // Operating model select should show 'Simple waitlist' (value='waitlist')
+    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const operatingModelSelect = selects.find((s) => s.value === 'waitlist');
+    expect(operatingModelSelect).toBeTruthy();
+    // Branch type select should show restaurant_floor
+    const branchTypeSelect = selects.find((s) => s.value === 'restaurant_floor');
+    expect(branchTypeSelect).toBeTruthy();
+    // Display screens checkbox should be unchecked (restaurant displayBoard = false)
+    expect((screen.getByRole('checkbox', { name: 'Create starter display screens' }) as HTMLInputElement).checked).toBe(
       false
     );
-    expect((screen.getByLabelText('Seed starter priorities') as HTMLInputElement).checked).toBe(
-      false
-    );
-    expect(screen.getByText('Set up a guest waitlist')).toBeTruthy();
-    expect(screen.getByText(/Table for 1-2/)).toBeTruthy();
+    // Seed priorities checkbox should not be rendered (restaurant has no starterPriorities)
+    expect(screen.queryByRole('checkbox', { name: 'Include priority options' })).toBeNull();
   });
 
   it('submits the onboarding action and shows a success message', async () => {
     const user = userEvent.setup();
-    applyIndustryTemplateSetupMock.mockResolvedValue({
+    confirmIndustryTemplateSetupMock.mockResolvedValue({
       success: true,
       data: {
         departmentsCreated: 3,
         servicesCreated: 9,
+        desksCreated: 2,
       },
     });
 
@@ -116,12 +131,13 @@ describe('TemplateOnboardingClient', () => {
       </LocaleProvider>
     );
 
-    await user.clear(screen.getByLabelText('Starter Office Name'));
-    await user.type(screen.getByLabelText('Starter Office Name'), 'Neighborhood Clinic');
-    await user.click(screen.getByLabelText('Apply Template'));
+    const officeNameInput = screen.getByDisplayValue('QueueFlow Main Location');
+    await user.clear(officeNameInput);
+    await user.type(officeNameInput, 'Neighborhood Clinic');
+    await user.click(screen.getByRole('button', { name: 'Use this setup' }));
 
     await waitFor(() => {
-      expect(applyIndustryTemplateSetupMock).toHaveBeenCalledWith(
+      expect(confirmIndustryTemplateSetupMock).toHaveBeenCalledWith(
         expect.objectContaining({
           templateId: 'clinic',
           operatingModel: 'appointments_first',
@@ -132,13 +148,13 @@ describe('TemplateOnboardingClient', () => {
     });
 
     expect(
-      screen.getByText('Template applied. Created 3 departments and 9 services.')
+      screen.getByText('Setup confirmed. Created 3 areas, 9 services, and 2 counters.')
     ).toBeTruthy();
   });
 
   it('shows the returned error message when onboarding fails', async () => {
     const user = userEvent.setup();
-    applyIndustryTemplateSetupMock.mockResolvedValue({
+    confirmIndustryTemplateSetupMock.mockResolvedValue({
       error: 'Failed to create starter office',
     });
 
@@ -162,7 +178,7 @@ describe('TemplateOnboardingClient', () => {
       </LocaleProvider>
     );
 
-    await user.click(screen.getByLabelText('Apply Template'));
+    await user.click(screen.getByRole('button', { name: 'Use this setup' }));
 
     expect(await screen.findByText('Failed to create starter office')).toBeTruthy();
   });

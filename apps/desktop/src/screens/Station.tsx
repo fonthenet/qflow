@@ -1817,13 +1817,17 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const pendingTotalCount = pendingTickets.length + pendingAppointmentsAll.length;
 
-  // Moderate a pending appointment via the web API (approve or decline)
-  const moderatePendingAppointment = useCallback(async (apptId: string, action: 'approve' | 'decline', reason?: string) => {
+  // ── Unified appointment action: ALL appointment operations go through the API ──
+  const moderateAppointment = useCallback(async (
+    apptId: string,
+    action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete',
+    opts?: { reason?: string },
+  ): Promise<boolean> => {
     setRdvBusyId(apptId);
     try {
       const token = await ensureAuth(storedAuth);
       const payload: any = { appointmentId: apptId, action };
-      if (reason) payload.reason = reason;
+      if (opts?.reason) payload.reason = opts.reason;
       const res = await fetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -1834,28 +1838,56 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const result = await res.json().catch(() => ({} as any));
-      // Update local state: remove from pending list; if approved & today, also bump RDV.
-      setPendingAppointmentsAll((prev) => prev.filter((a) => a.id !== apptId));
-      if (action === 'approve') {
-        setTodayAppointments((prev) => {
-          const existing = prev.find((a) => a.id === apptId);
-          if (existing) return prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a);
-          return prev;
-        });
-      } else {
-        setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+
+      // ── Update local state based on action ──
+      const removeFromPending = () => setPendingAppointmentsAll((prev) => prev.filter((a) => a.id !== apptId));
+      switch (action) {
+        case 'approve':
+          removeFromPending();
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a));
+          break;
+        case 'decline':
+          removeFromPending();
+          setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          break;
+        case 'cancel':
+        case 'no_show':
+          setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          setUpcomingAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          break;
+        case 'check_in':
+          // Insert cloud-returned ticket into local SQLite for immediate queue display
+          if (result.ticket) {
+            await window.qf.db.insertCloudTicket(result.ticket);
+            fetchTickets();
+          }
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'checked_in' } : a));
+          break;
+        case 'complete':
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'completed' } : a));
+          fetchTickets(); // refresh queue since linked ticket was marked served
+          break;
       }
+
+      // ── Toast feedback ──
       const notified = result?.notified === true;
-      const baseKey = action === 'approve'
-        ? (notified ? 'Appointment approved — customer notified' : 'Appointment approved — customer not reachable on chat')
-        : (notified ? 'Appointment declined — customer notified' : 'Appointment declined — customer not reachable on chat');
-      showToast(translate(locale, baseKey), notified ? 'success' : 'info');
+      const toastMap: Record<string, string> = {
+        approve: notified ? 'Appointment approved — customer notified' : 'Appointment approved — customer not reachable on chat',
+        decline: notified ? 'Appointment declined — customer notified' : 'Appointment declined — customer not reachable on chat',
+        cancel: 'Appointment cancelled',
+        no_show: 'Appointment marked no-show',
+        check_in: result.ticket ? `Checked in — ${result.ticket.ticket_number}` : 'Checked in',
+        complete: 'Appointment completed',
+      };
+      showToast(translate(locale, toastMap[action] || 'Done'), notified ? 'success' : 'info');
+      return true;
     } catch (e: any) {
       showToast(e?.message || 'Failed', 'error');
+      return false;
     } finally {
       setRdvBusyId(null);
     }
-  }, [locale, showToast, storedAuth]);
+  }, [locale, showToast, storedAuth, fetchTickets]);
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
@@ -1899,7 +1931,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         <div style={{ display: 'flex', gap: 3 }}>
           <button
             disabled={busy}
-            onClick={() => moderatePendingAppointment(a.id, 'approve')}
+            onClick={() => moderateAppointment(a.id, 'approve')}
             title={t('Approve')}
             style={{
               padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
@@ -1912,7 +1944,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             onClick={() => {
               const reason = window.prompt(t('Decline this appointment? The customer will be notified.\n\nReason (optional):'), '');
               if (reason === null) return;
-              moderatePendingAppointment(a.id, 'decline', reason.trim() || undefined);
+              moderateAppointment(a.id, 'decline', { reason: reason.trim() || undefined });
             }}
             title={t('Decline')}
             style={{
@@ -1924,7 +1956,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         </div>
       </div>
     );
-  }, [officeTimezone, locale, names.services, names.departments, rdvBusyId, moderatePendingAppointment, t]);
+  }, [officeTimezone, locale, names.services, names.departments, rdvBusyId, moderateAppointment, t]);
 
   // Moderate a pending ticket via the web API (approve or decline)
   const moderatePendingTicket = useCallback(async (ticketId: string, action: 'approve' | 'decline', reason?: string) => {
@@ -2260,65 +2292,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
-  // ── Appointment check-in helper (shared by RDV tab + AppointmentsModal) ──
-  const checkInAppointment = useCallback(async (appt: { id: string; department_id: string | null; service_id: string | null; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status?: string; source?: string | null }): Promise<boolean> => {
-    if (!appt.department_id) {
-      showToast(translate(locale, 'Missing department'), 'error');
-      return false;
-    }
-    // Prevent check-in for non-confirmed appointments
-    if (appt.status && appt.status !== 'confirmed') {
-      showToast(translate(locale, 'Appointment already checked in or cancelled'), 'error');
-      return false;
-    }
-    const offsetMin = Math.round((Date.now() - new Date(appt.scheduled_at).getTime()) / 60000);
-    let priority = 0;
-    let reason = '';
-    if (offsetMin >= -15 && offsetMin <= 30) {
-      priority = 2;
-      reason = offsetMin < 0
-        ? translate(locale, 'On time — priority placement')
-        : translate(locale, 'In slot window — priority placement');
-    } else if (offsetMin < -15 && offsetMin >= -60) {
-      priority = 1;
-      reason = translate(locale, 'Early — slight priority');
-    } else if (offsetMin < -60) {
-      priority = 0;
-      reason = translate(locale, 'Very early — placed as walk-in');
-    } else {
-      priority = 1;
-      reason = translate(locale, 'Late — courtesy placement');
-    }
-    const slotTime = new Date(appt.scheduled_at);
-    const slotLabel = `${String(slotTime.getHours()).padStart(2, '0')}:${String(slotTime.getMinutes()).padStart(2, '0')}`;
-    const res = await bookInHouse({
-      department_id: appt.department_id,
-      service_id: appt.service_id ?? undefined,
-      customer_data: {
-        name: appt.customer_name || undefined,
-        phone: appt.customer_phone || undefined,
-        scheduled_at: appt.scheduled_at,
-        slot_label: slotLabel,
-      } as any,
-      priority,
-      source: appt.source || 'appointment',
-      appointment_id: appt.id,
-    });
-    if (res) {
-      showToast(`${slotLabel} · ${reason}`, 'info');
-      // Update appointment status in Supabase + local state
-      try {
-        await ensureAuth(storedAuth);
-        const sb = await getSupabase();
-        await sb.from('appointments').update({ status: 'checked_in' }).eq('id', appt.id);
-        setTodayAppointments((prev) => prev.map((a) => a.id === appt.id ? { ...a, status: 'checked_in' } : a));
-      } catch (e) {
-        console.warn('[Station] failed to update appointment status', e);
-      }
-    }
-    return !!res;
-  }, [locale, storedAuth]);
-
+  // ── Appointment check-in helper (thin wrapper for backward compat with modals) ──
   // ── Broadcast functions ────────────────────────────────────────
   const CLOUD_URL = 'https://qflo.net';
 
@@ -3124,7 +3098,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
             officeTimezone={officeTimezone}
             onClose={() => setShowAppointmentsModal(false)}
-            onCheckIn={checkInAppointment}
+            onModerate={moderateAppointment}
           />
         )}
 
@@ -3139,7 +3113,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             services={allServices}
             officeTimezone={officeTimezone}
             onClose={() => setShowCalendarModal(false)}
-            onCheckIn={checkInAppointment}
+            onModerate={moderateAppointment}
           />
         )}
 
@@ -3339,22 +3313,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <button
                       disabled={busy}
                       onClick={async () => {
-                        setRdvBusyId(a.id);
-                        try {
-                          await checkInAppointment({
-                            id: a.id,
-                            department_id: a.department_id,
-                            service_id: a.service_id,
-                            customer_name: a.customer_name,
-                            customer_phone: a.customer_phone,
-                            scheduled_at: a.scheduled_at,
-                            status: a.status,
-                            source: a.source,
-                          });
-                          setQueueTab('queue');
-                        } finally {
-                          setRdvBusyId(null);
-                        }
+                        await moderateAppointment(a.id, 'check_in');
+                        setQueueTab('queue');
                       }}
                       style={{
                         flex: '1 1 auto', padding: '3px 6px', borderRadius: 4, border: '1px solid #22c55e60',
@@ -3370,33 +3330,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     onClick={async () => {
                       const reason = window.prompt(t('Cancel this appointment? The customer will be notified.\n\nReason (optional):'), '');
                       if (reason === null) return;
-                      setRdvBusyId(a.id);
-                      try {
-                        const cancelToken = await ensureAuth(storedAuth);
-                        const res = await fetch('https://qflo.net/api/moderate-appointment', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json', ...(cancelToken ? { Authorization: `Bearer ${cancelToken}` } : {}) },
-                          body: JSON.stringify({ appointmentId: a.id, action: 'cancel', reason: reason.trim() || undefined }),
-                        });
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => ({}));
-                          throw new Error(err.error || `HTTP ${res.status}`);
-                        }
-                        const result = await res.json().catch(() => ({} as any));
-                        if (isToday) {
-                          setTodayAppointments((prev) => prev.filter((x) => x.id !== a.id));
-                        } else {
-                          setUpcomingAppointments((prev) => prev.filter((x) => x.id !== a.id));
-                        }
-                        showToast(
-                          translate(locale, result?.notified
-                            ? 'Appointment cancelled — customer notified'
-                            : 'Appointment cancelled — customer not reachable on chat'),
-                          result?.notified ? 'success' : 'info',
-                        );
-                      } catch (e: any) {
-                        showToast(e?.message || 'Failed', 'error');
-                      } finally { setRdvBusyId(null); }
+                      await moderateAppointment(a.id, 'cancel', { reason: reason.trim() || undefined });
                     }}
                     title={t('Cancel')}
                     style={{

@@ -9,6 +9,7 @@ import {
   verifyMessengerSignature,
 } from '@/lib/messenger';
 import { getQueuePosition } from '@/lib/queue-position';
+import { APP_BASE_URL } from '@/lib/config';
 
 /**
  * GET — Webhook verification (required by Meta Messenger Platform).
@@ -301,8 +302,7 @@ async function handleMessengerReferral(psid: string, qrToken: string) {
     if (profile?.firstName) profileName = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
   } catch { /* non-critical */ }
 
-  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
-  const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
+  const trackUrl = `${APP_BASE_URL}/q/${ticket.qr_token}`;
   const orgName = org?.name ?? '';
   const pos = await getQueuePosition(ticket.id);
   const positionText = formatPosition(pos, locale);

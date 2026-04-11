@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 import { getQueuePosition } from '@/lib/queue-position';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
-
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-  }
-  return _supabase;
-}
+import { createAdminClient } from '@/lib/supabase/admin';
+import { isValidUUID, sanitizeString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
   const blocked = await checkRateLimit(request, publicLimiter);
@@ -26,6 +15,8 @@ export async function POST(request: NextRequest) {
     serviceId?: string;
     priorityCategoryId?: string | null;
     priority?: number;
+    customerName?: string;
+    customerPhone?: string;
   };
 
   try {
@@ -34,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, priorityCategoryId, priority } = body;
+  const { officeId, departmentId, serviceId, priorityCategoryId, priority, customerName, customerPhone } = body;
 
   if (!officeId || !departmentId || !serviceId) {
     return NextResponse.json(
@@ -43,7 +34,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = getSupabase();
+  // ── Input validation ──────────────────────────────────────────
+  if (!isValidUUID(officeId) || !isValidUUID(departmentId) || !isValidUUID(serviceId)) {
+    return NextResponse.json({ error: 'officeId, departmentId, and serviceId must be valid UUIDs' }, { status: 400 });
+  }
+  if (priorityCategoryId && !isValidUUID(priorityCategoryId)) {
+    return NextResponse.json({ error: 'priorityCategoryId must be a valid UUID' }, { status: 400 });
+  }
+  const cleanCustomerName = customerName ? sanitizeString(customerName, 200) : undefined;
+  const cleanCustomerPhone = customerPhone ? sanitizeString(customerPhone, 30) : undefined;
+
+  const supabase = createAdminClient();
 
   // Check if office requires ticket approval + kiosk enabled
   const { data: officeRow } = await supabase

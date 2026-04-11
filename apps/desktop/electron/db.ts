@@ -32,7 +32,7 @@ export function initDB() {
       department_id TEXT,
       service_id TEXT,
       desk_id TEXT,
-      status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred')),
+      status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred','parked')),
       priority INTEGER DEFAULT 0,
       customer_data TEXT DEFAULT '{}',
       created_at TEXT NOT NULL,
@@ -204,7 +204,7 @@ export function initDB() {
 
   // ── CHECK constraint enforcement via triggers (for existing DBs without inline CHECKs) ──
   // SQLite cannot ALTER TABLE to add CHECK constraints, so we use BEFORE triggers.
-  const VALID_TICKET_STATUSES = `('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred')`;
+  const VALID_TICKET_STATUSES = `('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred','parked')`;
   const VALID_DESK_STATUSES = `('open','closed','paused','break')`;
   try {
     db.exec(`
@@ -526,34 +526,48 @@ export async function reserveTicketNumber(
 
   // ── Try cloud first (atomic, no race conditions) ──
   if (isCloudReachable) {
-    try {
-      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/generate_daily_ticket_number`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseKey,
-          Authorization: `Bearer ${bearerToken}`,
-        },
-        body: JSON.stringify({ p_department_id: departmentId }),
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        const rows = await res.json();
-        const row = Array.isArray(rows) ? rows[0] : rows;
-        if (row?.ticket_num && row?.seq) {
-          return {
-            ticketNumber: row.ticket_num,
-            dailySequence: row.seq,
-            isOffline: false,
-          };
+    // Try up to 2 times: first with auth token, then with anon key
+    const tokensToTry = bearerToken !== supabaseKey
+      ? [bearerToken, supabaseKey]  // auth token first, anon key fallback
+      : [supabaseKey];              // only anon key available
+
+    for (const token of tokensToTry) {
+      try {
+        const res = await fetch(`${supabaseUrl}/rest/v1/rpc/generate_daily_ticket_number`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: supabaseKey,
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ p_department_id: departmentId }),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.ok) {
+          const rows = await res.json();
+          const row = Array.isArray(rows) ? rows[0] : rows;
+          if (row?.ticket_num && row?.seq) {
+            return {
+              ticketNumber: row.ticket_num,
+              dailySequence: row.seq,
+              isOffline: false,
+            };
+          }
+          console.warn('[reserveTicketNumber] RPC returned OK but no ticket_num/seq:', JSON.stringify(rows));
+        } else {
+          const body = await res.text().catch(() => '');
+          console.warn(`[reserveTicketNumber] RPC failed (${res.status}) with ${token === supabaseKey ? 'anon' : 'auth'} key: ${body}`);
+          // If auth token got 401/403, retry with anon key
+          if ((res.status === 401 || res.status === 403) && token !== supabaseKey) {
+            console.log('[reserveTicketNumber] Auth token rejected — retrying with anon key...');
+            continue;
+          }
         }
-        console.warn('[reserveTicketNumber] RPC returned OK but no ticket_num/seq:', JSON.stringify(rows));
-      } else {
-        const body = await res.text().catch(() => '');
-        console.warn(`[reserveTicketNumber] RPC failed (${res.status}): ${body}`);
+        break; // success or non-auth error — don't retry
+      } catch (err: any) {
+        console.warn('[reserveTicketNumber] RPC error:', err?.message);
+        break; // network error — don't retry with different token
       }
-    } catch (err: any) {
-      console.warn('[reserveTicketNumber] RPC error:', err?.message);
     }
   } else {
     console.log('[reserveTicketNumber] Cloud not reachable, using offline fallback');

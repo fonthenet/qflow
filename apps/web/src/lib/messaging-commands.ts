@@ -6,6 +6,7 @@ import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 import { resolveWilaya, formatWilaya } from '@/lib/wilayas';
+import { APP_BASE_URL } from '@/lib/config';
 
 // ── Phone normalization ──────────────────────────────────────────────
 // Single source of truth for WhatsApp phone identifiers. Stores E.164
@@ -1084,7 +1085,7 @@ async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ t
       : locale === 'ar' ? `\n👨‍⚕️ الخدمة: *${serviceName}*`
       : `\n👨‍⚕️ Service: *${serviceName}*`)
     : '';
-  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const baseUrl = APP_BASE_URL;
   const url = t?.qr_token ? `${baseUrl}/q/${t.qr_token}` : '';
   return { ticket: ticketNum, service: serviceLine, joined, url };
 }
@@ -2049,7 +2050,7 @@ async function handleTrackLink(
   }
 
   // Build and send rich "joined" message
-  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const baseUrl = APP_BASE_URL;
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
   const pos = await getQueuePosition(ticket.id);
   const positionText = formatPosition(pos, locale);
@@ -2180,7 +2181,7 @@ async function tryLinkKioskTicket(
   const orgName = org?.name || office.name || '';
 
   // Send confirmation
-  const baseUrl = (process.env.APP_CLIP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://qflo.net').replace(/\/+$/, '');
+  const baseUrl = APP_BASE_URL;
   const confirmMsg = t('joined', locale, {
     name: orgName,
     ticket: ticket.ticket_number,
@@ -2674,11 +2675,7 @@ async function handleJoin(
     console.error(`[${channel}:join] Session insert error:`, JSON.stringify(sessionError));
   }
 
-  const baseUrl = (
-    process.env.APP_CLIP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflo.net'
-  ).replace(/\/+$/, '');
+  const baseUrl = APP_BASE_URL;
   const trackUrl = `${baseUrl}/q/${ticket.qr_token}`;
 
   // If the office requires provider approval, the ticket is in `pending_approval`.

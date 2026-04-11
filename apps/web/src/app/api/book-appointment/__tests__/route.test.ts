@@ -18,8 +18,10 @@ const { getAvailableSlotsMock, upsertCustomerMock, sendWhatsAppMessageMock } = v
   sendWhatsAppMessageMock: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => mockSupabase),
+vi.mock('server-only', () => ({}));
+
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: vi.fn(() => mockSupabase),
 }));
 
 vi.mock('nanoid', () => ({

@@ -99,13 +99,13 @@ export function createMockSupabase() {
 // ── Constants ───────────────────────────────────────────────────────
 
 export const TEST_IDS = {
-  officeId: 'office-test-001',
-  departmentId: 'dept-test-001',
-  serviceId: 'svc-test-001',
-  organizationId: 'org-test-001',
-  appointmentId: 'appt-test-001',
-  ticketId: 'ticket-test-001',
-  staffId: 'staff-test-001',
+  officeId: '00000000-0000-4000-8000-000000000001',
+  departmentId: '00000000-0000-4000-8000-000000000002',
+  serviceId: '00000000-0000-4000-8000-000000000003',
+  organizationId: '00000000-0000-4000-8000-000000000004',
+  appointmentId: '00000000-0000-4000-8000-000000000005',
+  ticketId: '00000000-0000-4000-8000-000000000006',
+  staffId: '00000000-0000-4000-8000-000000000007',
 } as const;
 
 export const SERVICE_ROLE_KEY = 'test-service-role-key-xxx';

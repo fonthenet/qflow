@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useOrg } from '@/lib/use-org';
 import * as Actions from '@/lib/ticket-actions';
 import { supabase } from '@/lib/supabase';
+import { API_BASE_URL } from '@/lib/config';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 // ── Constants ─────────────────────────────────────────────────────────
@@ -1001,7 +1002,21 @@ export default function ManageScreen() {
             {
               text: t('bookings.checkIn'),
               onPress: async () => {
-                await supabase.from('appointments').update({ status: 'checked_in' }).eq('id', id);
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const token = session?.access_token;
+                  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({ appointmentId: id, action: 'check_in' }),
+                  });
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    Alert.alert(t('common.error'), err.error || `HTTP ${res.status}`);
+                  }
+                } catch (e: any) {
+                  Alert.alert(t('common.error'), e.message ?? t('bookings.checkIn'));
+                }
                 loadTab();
               },
             },
@@ -1018,12 +1033,18 @@ export default function ManageScreen() {
                 try {
                   const { data: { session } } = await supabase.auth.getSession();
                   const token = session?.access_token;
-                  await fetch('https://qflo.net/api/moderate-appointment', {
+                  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                     body: JSON.stringify({ appointmentId: id, action: 'cancel' }),
                   });
-                } catch { /* fallback: raw update */ await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id); }
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    Alert.alert(t('common.error'), err.error || `HTTP ${res.status}`);
+                  }
+                } catch (e: any) {
+                  Alert.alert(t('common.error'), e.message ?? t('bookings.cancelBooking'));
+                }
                 loadTab();
               },
             },

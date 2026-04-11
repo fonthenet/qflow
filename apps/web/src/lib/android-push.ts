@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@supabase/supabase-js';
 import { SignJWT, importPKCS8 } from 'jose';
+import { APP_BASE_URL } from '@/lib/config';
 
 type AndroidPushType =
   | 'position_update'
@@ -189,13 +190,7 @@ async function getGoogleAccessToken(): Promise<string> {
 }
 
 function buildAbsoluteQueueUrl(qrToken: string): string {
-  const baseUrl = (
-    process.env.APP_CLIP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'https://qflo.net'
-  ).replace(/\/+$/, '');
-
-  return `${baseUrl}/q/${qrToken}`;
+  return `${APP_BASE_URL}/q/${qrToken}`;
 }
 
 function buildCollapseKey(payload: AndroidPushPayload): string | undefined {

@@ -100,7 +100,7 @@ interface Props {
   services: { id: string; name: string; department_id: string; color?: string | null; estimated_service_time?: number }[];
   officeTimezone?: string;
   onClose: () => void;
-  onCheckIn?: (appt: any) => Promise<boolean>;
+  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete', opts?: { reason?: string }) => Promise<boolean>;
 }
 
 type ViewMode = 'week' | 'month';
@@ -122,7 +122,7 @@ const APPT_SELECT = `
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onCheckIn }: Props) {
+export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const tz = officeTimezone || 'Africa/Algiers';
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
@@ -337,58 +337,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Actions on appointment ─────────────────────────────────────
 
-  const handleCancel = async (appt: CalendarAppointment) => {
+  const handleAction = async (appt: CalendarAppointment, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete') => {
+    if (!onModerate) return;
     setActionBusy(true);
     try {
-      const token = await ensureAuth(storedAuth);
-      const res = await fetch('https://qflo.net/api/moderate-appointment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ appointmentId: appt.id, action: 'cancel' }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      setSelectedAppt(null);
-      load();
-    } catch (e) { console.error('[CalendarModal] cancel failed:', e); }
-    setActionBusy(false);
-  };
-
-  const handleCheckIn = async (appt: CalendarAppointment) => {
-    if (!onCheckIn) return;
-    setActionBusy(true);
-    const ok = await onCheckIn(appt);
-    if (ok) { setSelectedAppt(null); load(); }
-    setActionBusy(false);
-  };
-
-  const handleApprove = async (appt: CalendarAppointment) => {
-    setActionBusy(true);
-    try {
-      const token = await ensureAuth(storedAuth);
-      const resp = await fetch('https://qflo.net/api/moderate-appointment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ appointmentId: appt.id, action: 'approve' }),
-      });
-      if (resp.ok) { setSelectedAppt(null); load(); }
-    } catch { /* ignore */ }
-    setActionBusy(false);
-  };
-
-  const handleDecline = async (appt: CalendarAppointment) => {
-    setActionBusy(true);
-    try {
-      const token = await ensureAuth(storedAuth);
-      const resp = await fetch('https://qflo.net/api/moderate-appointment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ appointmentId: appt.id, action: 'decline' }),
-      });
-      if (resp.ok) { setSelectedAppt(null); load(); }
-    } catch { /* ignore */ }
+      const ok = await onModerate(appt.id, action);
+      if (ok) { setSelectedAppt(null); load(); }
+    } catch (e) { console.error(`[CalendarModal] ${action} failed:`, e); }
     setActionBusy(false);
   };
 
@@ -609,10 +564,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               intlLocale={intlLocale}
               actionBusy={actionBusy}
               onClose={() => setSelectedAppt(null)}
-              onCancel={() => handleCancel(selectedAppt)}
-              onCheckIn={() => handleCheckIn(selectedAppt)}
-              onApprove={() => handleApprove(selectedAppt)}
-              onDecline={() => handleDecline(selectedAppt)}
+              onAction={(action) => handleAction(selectedAppt, action)}
             />
           )}
         </div>
@@ -1046,7 +998,7 @@ function DesktopMonthView({
 
 function DesktopApptDetail({
   appointment: a, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
-  onClose, onCancel, onCheckIn, onApprove, onDecline,
+  onClose, onAction,
 }: {
   appointment: CalendarAppointment;
   timezone: string;
@@ -1056,10 +1008,7 @@ function DesktopApptDetail({
   intlLocale: string;
   actionBusy: boolean;
   onClose: () => void;
-  onCancel: () => void;
-  onCheckIn: () => void;
-  onApprove: () => void;
-  onDecline: () => void;
+  onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete') => void;
 }) {
   const t = (k: string) => translate(locale, k);
   const svc = serviceMap.get(a.service_id);
@@ -1199,20 +1148,25 @@ function DesktopApptDetail({
           <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {a.status === 'pending' && (
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={onApprove} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
+                <button onClick={() => onAction('approve')} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
                   ✓ {t('Approve')}
                 </button>
-                <button onClick={onDecline} disabled={actionBusy} style={actionBtn('#ef4444', '#fff')}>
+                <button onClick={() => onAction('decline')} disabled={actionBusy} style={actionBtn('#ef4444', '#fff')}>
                   ✗ {t('Decline')}
                 </button>
               </div>
             )}
             {a.status === 'confirmed' && (
-              <button onClick={onCheckIn} disabled={actionBusy} style={actionBtn('#8b5cf6', '#fff')}>
+              <button onClick={() => onAction('check_in')} disabled={actionBusy} style={actionBtn('#8b5cf6', '#fff')}>
                 {t('Check In')}
               </button>
             )}
-            <button onClick={onCancel} disabled={actionBusy} style={actionBtn('rgba(239,68,68,0.15)', '#ef4444')}>
+            {(a.status === 'checked_in' || (a.status as string) === 'serving') && (
+              <button onClick={() => onAction('complete')} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
+                ✓ {t('Complete')}
+              </button>
+            )}
+            <button onClick={() => onAction('cancel')} disabled={actionBusy} style={actionBtn('rgba(239,68,68,0.15)', '#ef4444')}>
               {t('Cancel Appointment')}
             </button>
           </div>

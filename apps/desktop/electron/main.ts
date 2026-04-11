@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, ses
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { randomUUID } from 'node:crypto';
+import { initSentry } from './sentry';
+import { logger } from './logger';
 import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
@@ -10,15 +12,18 @@ import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPe
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
 import { isValidTransition } from './ticket-transitions';
 
+// ── Initialize Sentry as early as possible ──────────────────────────
+initSentry();
+
 // ── Force French (Algeria) locale for native inputs (date pickers, etc.) ─
 app.commandLine.appendSwitch('lang', 'fr-FR');
 
 // ── Crash handlers — log and keep running ─────────────────────────────
 process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught exception:', err);
+  logger.error('process', 'Uncaught exception', { error: err?.message, stack: err?.stack });
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled rejection:', reason);
+  logger.error('process', 'Unhandled rejection', { reason: String(reason) });
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -483,7 +488,7 @@ function setupIPC() {
         "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
       ).get(ticket.appointment_id) as any;
       if (existing) {
-        console.warn(`[ipc] Duplicate check-in blocked: appointment ${ticket.appointment_id} already has ticket ${existing.ticket_number}`);
+        logger.warn('ipc', `Duplicate check-in blocked: appointment ${ticket.appointment_id} already has ticket ${existing.ticket_number}`);
         return { id: existing.id, ticket_number: existing.ticket_number, duplicate: true };
       }
     }
@@ -695,6 +700,38 @@ function setupIPC() {
     }
 
     return { ...ticket, qr_token: ticket.qr_token, whatsappStatus };
+  });
+
+  // Insert a ticket returned by the cloud API into local SQLite.
+  // No sync_queue entry — the ticket already exists in the cloud.
+  ipcMain.handle('db:insert-cloud-ticket', (_e, ticket: any) => {
+    if (!ticket?.id || !ticket?.ticket_number) return null;
+    try {
+      // Skip if already exists locally
+      const existing = db.prepare('SELECT id FROM tickets WHERE id = ?').get(ticket.id);
+      if (existing) return { id: ticket.id, ticket_number: ticket.ticket_number, duplicate: true };
+
+      const now = ticket.created_at ?? new Date().toISOString();
+      db.prepare(`
+        INSERT OR IGNORE INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id, locale, qr_token, checked_in_at, estimated_wait_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id,
+        ticket.service_id ?? null, ticket.status ?? 'waiting', ticket.priority ?? 0,
+        JSON.stringify(ticket.customer_data ?? {}), now,
+        ticket.source ?? 'appointment', ticket.daily_sequence ?? 0,
+        ticket.appointment_id ?? null, ticket.locale ?? null,
+        ticket.qr_token ?? null, ticket.checked_in_at ?? null,
+        ticket.estimated_wait_minutes ?? null
+      );
+      notifyDisplays({ type: 'ticket_created', ticket_number: ticket.ticket_number, timestamp: new Date().toISOString() });
+      mainWindow?.webContents.send('tickets:changed');
+      notifyStationClients({ type: 'tickets_changed' });
+      return { id: ticket.id, ticket_number: ticket.ticket_number };
+    } catch (err: any) {
+      logger.error('ipc', 'insert-cloud-ticket error', { error: err?.message });
+      return null;
+    }
   });
 
   ipcMain.handle('db:update-ticket', (_e, ticketId: string, updates: any) => {
@@ -1720,6 +1757,9 @@ let cleanupSupport: (() => void) | null = null;
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Init structured logger (purges logs older than 14 days)
+  logger.init({ minLevel: app.isPackaged ? 'info' : 'debug' });
+
   // Init SQLite
   initDB();
 
@@ -1767,7 +1807,7 @@ app.whenReady().then(async () => {
     const kiosk = await startKioskServer(CONFIG.KIOSK_PORT);
     kioskUrl = kiosk.url + '/kiosk';
     kioskPort = kiosk.port;
-    console.log(`Kiosk available at: ${kioskUrl}`);
+    logger.info('kiosk', `Kiosk available at: ${kioskUrl}`);
     if (kiosk.port !== CONFIG.KIOSK_PORT) {
       console.warn(`[Station] Default port ${CONFIG.KIOSK_PORT} was in use — running on port ${kiosk.port}`);
       // Notify the Station UI so the operator knows
@@ -1800,7 +1840,7 @@ app.whenReady().then(async () => {
       await syncEngine?.pullLatest();
     });
   } catch (err) {
-    console.error('Failed to start kiosk server:', err);
+    logger.error('kiosk', 'Failed to start kiosk server', { error: (err as Error)?.message });
   }
 
   // Auto-update check — prompt user before install, backup DB first
@@ -1936,4 +1976,5 @@ app.on('before-quit', async (e) => {
 app.on('will-quit', () => {
   cleanupSupport?.();
   shutdownDesktopRuntime();
+  logger.close();
 });

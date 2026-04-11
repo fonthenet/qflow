@@ -1,6 +1,11 @@
 -- Auto-created session must inherit the ticket's locale (set at booking time)
 -- so subsequent lifecycle notifications (called/served/etc.) speak the
 -- customer's actual language. Previously hardcoded to 'fr'.
+--
+-- Fix: for WhatsApp/Messenger-sourced tickets, only skip session creation
+-- if a session already exists for this ticket. Previously, ALL WhatsApp-sourced
+-- tickets were skipped, which broke appointment check-in flow (appointment
+-- source='whatsapp' → ticket source='whatsapp' → trigger skipped → no session).
 
 CREATE OR REPLACE FUNCTION auto_create_notification_session()
 RETURNS trigger
@@ -16,8 +21,11 @@ DECLARE
   v_normalized text;
   v_locale text;
 BEGIN
+  -- For WhatsApp/Messenger-sourced tickets, only skip if a session already exists
   IF NEW.source IN ('whatsapp', 'messenger') THEN
-    RETURN NEW;
+    IF EXISTS(SELECT 1 FROM whatsapp_sessions WHERE ticket_id = NEW.id) THEN
+      RETURN NEW;
+    END IF;
   END IF;
 
   v_phone := trim(COALESCE(NEW.customer_data->>'phone', ''));

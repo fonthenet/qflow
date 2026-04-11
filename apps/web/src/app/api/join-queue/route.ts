@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 import { getQueuePosition } from '@/lib/queue-position';
-
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-  }
-  return _supabase;
-}
+import { createAdminClient } from '@/lib/supabase/admin';
+import { isValidUUID, sanitizeString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -40,7 +29,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const supabase = getSupabase();
+  // ── Input validation ──────────────────────────────────────────
+  if (!isValidUUID(officeId) || !isValidUUID(departmentId) || !isValidUUID(serviceId)) {
+    return NextResponse.json({ error: 'officeId, departmentId, and serviceId must be valid UUIDs' }, { status: 400 });
+  }
+  const cleanCustomerName = customerName ? sanitizeString(customerName, 200) : undefined;
+  const cleanCustomerPhone = customerPhone ? sanitizeString(customerPhone, 30) : undefined;
+  const cleanReason = reason ? sanitizeString(reason, 500) : undefined;
+
+  const supabase = createAdminClient();
 
   // Check if office requires ticket approval + virtual queue enabled
   const { data: officeRow } = await supabase
@@ -88,9 +85,9 @@ export async function POST(request: NextRequest) {
 
   // Build customer data
   const customerData: Record<string, string> = {};
-  if (customerName?.trim()) customerData.name = customerName.trim();
-  if (customerPhone?.trim()) customerData.phone = customerPhone.trim();
-  if (reason?.trim()) customerData.reason = reason.trim();
+  if (cleanCustomerName) customerData.name = cleanCustomerName;
+  if (cleanCustomerPhone) customerData.phone = cleanCustomerPhone;
+  if (cleanReason) customerData.reason = cleanReason;
 
   // Create ticket
   const { data: ticket, error } = await supabase

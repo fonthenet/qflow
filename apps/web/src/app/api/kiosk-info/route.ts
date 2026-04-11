@@ -1,19 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { matchesOfficePublicSlug } from '@/lib/office-links';
 import { resolvePlatformConfig } from '@/lib/platform/config';
-
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-  }
-  return _supabase;
-}
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get('slug')?.trim();
@@ -22,7 +10,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing slug parameter' }, { status: 400 });
   }
 
-  const supabase = getSupabase();
+  const supabase = createAdminClient();
 
   // Find office by slug – query all active offices then match slug
   const { data: offices, error: officesError } = await supabase

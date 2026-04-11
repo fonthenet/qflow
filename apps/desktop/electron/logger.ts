@@ -73,6 +73,13 @@ function writeLog(level: LogLevel, component: string, message: string, data?: un
     entry.data = data;
   }
 
+  // Also log to console in development
+  if (!app.isPackaged) {
+    const prefix = `[${level.toUpperCase()}] [${component}]`;
+    const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+    consoleFn(prefix, message, data !== undefined ? data : '');
+  }
+
   try {
     const line = JSON.stringify(entry) + '\n';
     getStream().write(line);

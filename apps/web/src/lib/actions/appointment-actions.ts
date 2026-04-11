@@ -11,6 +11,7 @@ import { nanoid } from 'nanoid';
 import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
 import { transitionAppointment } from '@/lib/lifecycle';
+import { trackUrl } from '@/lib/config';
 
 interface CreateAppointmentData {
   officeId: string;
@@ -239,6 +240,8 @@ export async function checkInAppointment(appointmentId: string) {
       qr_token: qrToken,
       status: 'waiting',
       priority: 5,
+      source: 'appointment',
+      locale: (appointment as any).locale ?? null,
       appointment_id: appointmentId,
       checked_in_at: new Date().toISOString(),
       customer_data: {
@@ -281,6 +284,67 @@ export async function checkInAppointment(appointmentId: string) {
       .eq('id', ticket.priority_category_id)
       .single();
     priorityCategory = data ?? null;
+  }
+
+  // ── Send "joined" WhatsApp notification (same as desktop/kiosk path) ──
+  if (appointment.customer_phone) {
+    try {
+      const { data: office } = await supabase
+        .from('offices')
+        .select('name, timezone')
+        .eq('id', appointment.office_id)
+        .single();
+
+      const TZ_DIAL: Record<string, string> = {
+        'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
+        'Africa/Cairo': '20', 'Africa/Lagos': '234', 'Africa/Nairobi': '254',
+        'Africa/Johannesburg': '27', 'Europe/Paris': '33', 'Europe/London': '44',
+        'Europe/Berlin': '49', 'Europe/Madrid': '34', 'Europe/Rome': '39',
+        'Europe/Brussels': '32', 'Europe/Amsterdam': '31', 'Europe/Zurich': '41',
+        'Europe/Istanbul': '90', 'Asia/Riyadh': '966', 'Asia/Dubai': '971',
+        'Asia/Qatar': '974', 'Asia/Kuwait': '965', 'Asia/Bahrain': '973',
+        'Asia/Muscat': '968', 'Asia/Amman': '962', 'Asia/Beirut': '961',
+        'Asia/Baghdad': '964', 'America/New_York': '1', 'America/Chicago': '1',
+        'America/Denver': '1', 'America/Los_Angeles': '1', 'America/Toronto': '1',
+      };
+      const countryDialCode = office?.timezone ? TZ_DIAL[office.timezone] : undefined;
+
+      // Count waiting tickets ahead for queue position
+      const { count: aheadCount } = await supabase
+        .from('tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('department_id', appointment.department_id)
+        .eq('status', 'waiting')
+        .lt('created_at', ticket.created_at);
+      const position = (aheadCount ?? 0) + 1;
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && serviceKey) {
+        const tUrl = trackUrl(qrToken);
+        await fetch(`${supabaseUrl}/functions/v1/notify-ticket`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            ticketId: ticket.id,
+            event: 'joined',
+            phone: appointment.customer_phone,
+            ticketNumber: ticket_num,
+            officeName: office?.name ?? '',
+            position,
+            trackUrl: tUrl,
+            waitMinutes: waitMinutes ?? 10,
+            countryDialCode,
+            locale: (appointment as any).locale ?? 'fr',
+          }),
+        });
+      }
+    } catch (err) {
+      console.error('[checkInAppointment] Failed to send joined notification:', err);
+    }
   }
 
   revalidatePath('/desk');

@@ -1,6 +1,5 @@
 'use client';
 
-import * as Sentry from '@sentry/nextjs';
 import { useEffect } from 'react';
 
 export default function Error({
@@ -11,36 +10,21 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
     console.error('[error-boundary]', error);
   }, [error]);
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif',
-      background: '#f8fafc', color: '#1e293b', padding: '2rem',
-    }}>
-      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Something went wrong</h1>
-      <p style={{ color: '#64748b', marginTop: '0.5rem', textAlign: 'center', maxWidth: '400px' }}>
+    <div className="flex min-h-screen flex-col items-center justify-center px-4">
+      <h1 className="text-4xl font-bold text-gray-900">Something went wrong</h1>
+      <p className="mt-4 text-sm text-gray-500">
         An unexpected error occurred. Please try again.
       </p>
       <button
         onClick={reset}
-        style={{
-          marginTop: '2rem', padding: '0.75rem 2rem', background: '#3b82f6', color: 'white',
-          borderRadius: '0.5rem', border: 'none', cursor: 'pointer', fontWeight: 500, fontSize: '0.95rem',
-        }}
+        className="mt-8 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700"
       >
-        Try Again
+        Try again
       </button>
-      {error.digest && (
-        <p style={{ marginTop: '1rem', fontSize: '0.75rem', color: '#94a3b8' }}>
-          Error ID: {error.digest}
-        </p>
-      )}
-      <p style={{ marginTop: '3rem', fontSize: '0.8rem', color: '#94a3b8' }}>Qflo — Smart Queue Management</p>
     </div>
   );
 }
