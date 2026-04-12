@@ -3870,11 +3870,9 @@ async function confirmBooking(
   }
 
   // Auto-add this customer to the customers table (non-fatal on error)
-  // Extract wilaya code: try numeric prefix first (e.g. "18 - جيجل" → "18"),
-  // fall back to the full string (user may type just "جيجل" or "Jijel").
-  const wilayaCode = wilaya
-    ? (wilaya.match(/^\d+/) ?? [])[0] || wilaya.trim()
-    : null;
+  // Pass the full wilaya string as-is to the customer profile (e.g. "18 - جيجل").
+  // The field is wilaya_code but stores the canonical display string.
+  const wilayaCode = wilaya ? wilaya.trim() : null;
   console.log('[booking] customer upsert — phone:', identifier, 'wilaya raw:', wilaya, 'wilayaCode:', wilayaCode);
   await upsertCustomerFromBooking(supabase, {
     organizationId: session.organization_id,
