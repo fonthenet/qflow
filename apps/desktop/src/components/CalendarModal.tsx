@@ -110,7 +110,7 @@ interface Props {
 type ViewMode = 'week' | 'month' | 'list';
 
 const SLOT_HEIGHT = 28;
-const HOUR_HEIGHT = SLOT_HEIGHT * 2;
+const PIXELS_PER_HOUR = 56; // fixed: 1 hour = 56px regardless of slot duration
 const DEFAULT_START_HOUR = 6;
 const DEFAULT_END_HOUR = 22;
 
@@ -162,6 +162,8 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [actionBusy, setActionBusy] = useState(false);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
+  const [slotDuration, setSlotDuration] = useState(30); // org slot_duration_minutes
+  const slotHeightPx = (slotDuration / 60) * PIXELS_PER_HOUR; // dynamic slot row height
   const { startHour: START_HOUR, endHour: END_HOUR } = useMemo(
     () => getVisibleHourRange(alwaysOpen ? null : operatingHours),
     [operatingHours, alwaysOpen],
@@ -203,9 +205,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         if (office?.operating_hours) setOperatingHours(office.operating_hours as OperatingHours);
         // Resolve override mode from org (source of truth) — ignore stale office copies
         const { data: org } = await sb.from('organizations').select('settings').eq('id', organizationId).single();
-        const orgMode = (org?.settings as any)?.visit_intake_override_mode;
+        const orgSettings = (org?.settings ?? {}) as Record<string, any>;
+        const orgMode = orgSettings.visit_intake_override_mode;
         // Only 'always_open' explicitly set at org level triggers always-open
         setAlwaysOpen(orgMode === 'always_open');
+        // Read slot duration for calendar grid
+        const dur = Number(orgSettings.slot_duration_minutes);
+        if (dur && dur >= 5 && dur <= 120) setSlotDuration(dur);
         // Clean up stale office setting if it disagrees with org
         const officeMode = (office?.settings as any)?.visit_intake_override_mode;
         const resolvedMode = typeof orgMode === 'string' ? orgMode : 'business_hours';
@@ -1332,14 +1338,15 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                   {/* Time gutter — stays fixed, scrolls vertically only */}
                   <div style={{ width: 52, flexShrink: 0, zIndex: 2, borderRight: '1px solid var(--border, #334155)', background: 'var(--bg, #0f172a)' }}>
                     <div style={{ height: 40, borderBottom: '1px solid var(--border, #475569)' }} />
-                    {Array.from({ length: (END_HOUR - START_HOUR) * 2 }, (_, si) => {
-                      const h = START_HOUR + Math.floor(si / 2);
-                      const m = (si % 2) * 30;
-                      const label = `${String(h).padStart(2, '0')}:${m === 0 ? '00' : '30'}`;
+                    {Array.from({ length: Math.ceil((END_HOUR - START_HOUR) * 60 / slotDuration) }, (_, si) => {
+                      const totalMin = START_HOUR * 60 + si * slotDuration;
+                      const h = Math.floor(totalMin / 60);
+                      const m = totalMin % 60;
+                      const label = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
                       const isHighlighted = selectedSlotIdx === si;
                       return (
                         <div key={label} style={{
-                          height: SLOT_HEIGHT,
+                          height: slotHeightPx,
                           display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
                           paddingRight: 8,
                           fontSize: m === 0 ? 10 : 9,
@@ -1388,6 +1395,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                           startHour={START_HOUR}
                           endHour={END_HOUR}
                           onWeekNavigate={navigateWeek}
+                          slotDuration={slotDuration}
                         />
                       </div>
                     ))}
@@ -1862,7 +1870,7 @@ function DesktopWeekView({
   days, appointmentsByDate, timezone, serviceMap, intlLocale, locale, selectedApptId, operatingHours, onSelect, hideGutter, onCellSelect,
   holidaysByDate, selectedDates, onDayContext, onDayHeaderClick, onSlotDoubleClick, clearSelection,
   startHour: START_HOUR = DEFAULT_START_HOUR, endHour: END_HOUR = DEFAULT_END_HOUR,
-  onWeekNavigate,
+  onWeekNavigate, slotDuration = 30,
 }: {
   days: CalendarDayInfo[];
   appointmentsByDate: Map<string, CalendarAppointment[]>;
@@ -1885,7 +1893,9 @@ function DesktopWeekView({
   endHour?: number;
   /** Navigate to prev (-1) or next (1) week when arrow keys go past the edge */
   onWeekNavigate?: (direction: -1 | 1) => void;
+  slotDuration?: number;
 }) {
+  const slotHeightPx = (slotDuration / 60) * PIXELS_PER_HOUR;
   const [selectedCell, setSelectedCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
   const [activeColIdx, setActiveColIdx] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -1907,7 +1917,7 @@ function DesktopWeekView({
     switch (e.key) {
       case 'ArrowRight': newDay = Math.min(dayIdx + 1, days.length - 1); break;
       case 'ArrowLeft': newDay = Math.max(dayIdx - 1, 0); break;
-      case 'ArrowDown': newSlot = Math.min(slotIdx + 1, (END_HOUR - START_HOUR) * 2 - 1); break;
+      case 'ArrowDown': newSlot = Math.min(slotIdx + 1, Math.ceil((END_HOUR - START_HOUR) * 60 / slotDuration) - 1); break;
       case 'ArrowUp': newSlot = Math.max(slotIdx - 1, 0); break;
       case 'Escape': setSelectedCell(null); e.preventDefault(); return;
       default: return;
@@ -1918,9 +1928,10 @@ function DesktopWeekView({
   }, [selectedCell, days.length]);
 
   const slots: { hour: number; minute: number; label: string }[] = [];
-  for (let h = START_HOUR; h < END_HOUR; h++) {
-    slots.push({ hour: h, minute: 0, label: `${String(h).padStart(2, '0')}:00` });
-    slots.push({ hour: h, minute: 30, label: `${String(h).padStart(2, '0')}:30` });
+  for (let totalMin = START_HOUR * 60; totalMin < END_HOUR * 60; totalMin += slotDuration) {
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    slots.push({ hour: h, minute: m, label: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` });
   }
 
   return (
@@ -1940,7 +1951,7 @@ function DesktopWeekView({
             const isHighlightedRow = selectedCell !== null && selectedCell.slotIdx === si;
             return (
               <div key={s.label} style={{
-                height: SLOT_HEIGHT,
+                height: slotHeightPx,
                 display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
                 paddingRight: 8,
                 fontSize: s.minute === 0 ? 10 : 9,
@@ -2060,7 +2071,7 @@ function DesktopWeekView({
                         onDayHeaderClick?.({ stopPropagation() {}, preventDefault() {} } as any, day.dateKey);
                       }}
                       style={{
-                        height: SLOT_HEIGHT,
+                        height: slotHeightPx,
                         cursor: 'pointer',
                         borderBottom: s.minute === 0
                           ? '1px solid var(--border, #334155)'
@@ -2112,9 +2123,9 @@ function DesktopWeekView({
                       if (hour < START_HOUR || hour >= END_HOUR) return null;
                       const svc = serviceMap.get(appt.service_id);
                       const duration = svc?.estimated_service_time ?? 30;
-                      const topPx = (hour - START_HOUR) * HOUR_HEIGHT + (minute / 60) * HOUR_HEIGHT;
-                      const height = Math.max((duration / 60) * HOUR_HEIGHT, 22);
-                      const clippedHeight = Math.min(height, (END_HOUR - hour) * HOUR_HEIGHT - (minute / 60) * HOUR_HEIGHT);
+                      const topPx = (hour - START_HOUR) * PIXELS_PER_HOUR + (minute / 60) * PIXELS_PER_HOUR;
+                      const height = Math.max((duration / 60) * PIXELS_PER_HOUR, 22);
+                      const clippedHeight = Math.min(height, (END_HOUR - hour) * PIXELS_PER_HOUR - (minute / 60) * PIXELS_PER_HOUR);
                       return { appt, svc, hour, minute, topPx, clippedHeight };
                     })
                     .filter(Boolean) as { appt: CalendarAppointment; svc: any; hour: number; minute: number; topPx: number; clippedHeight: number }[];
@@ -2212,7 +2223,7 @@ function DesktopTimeIndicator({ timezone, startHour = DEFAULT_START_HOUR, endHou
   const h = getHourInTz(now, timezone);
   const m = getMinuteInTz(now, timezone);
   if (h < startHour || h >= endHour) return null;
-  const top = (h - startHour) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+  const top = (h - startHour) * PIXELS_PER_HOUR + (m / 60) * PIXELS_PER_HOUR;
   return (
     <div style={{ position: 'absolute', left: 0, right: 0, top, zIndex: 20, pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
       <div style={{ width: 8, height: 8, borderRadius: 4, background: '#ef4444', marginLeft: -4 }} />
