@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { dateKeyInTz, formatTimeInTz, getStatusColor } from '@qflo/shared';
+import { normalizeWilayaDisplay } from '../lib/wilayas';
 
 interface Appointment {
   id: string;
@@ -396,7 +397,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text3, #94a3b8)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {a.customer_phone && <span>{formatPhoneDisplay(a.customer_phone)}</span>}
-                        {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {a.wilaya}</span></span>}
+                        {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span></span>}
                         {svcName && <span>· {svcName}</span>}
                         {deptName && <span>· {deptName}</span>}
                       </div>
@@ -517,7 +518,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Name')}: </span>{a.customer_name || '—'}</div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Phone')}: </span>{formatPhoneDisplay(a.customer_phone) || '—'}</div>
                         {a.customer_email && <div><span style={{ color: 'var(--text3, #94a3b8)' }}>Email: </span>{a.customer_email}</div>}
-                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Wilaya:')} </span><span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.wilaya || '—'}</span></div>
+                        <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Wilaya:')} </span><span dir="auto" style={{ unicodeBidi: 'isolate' }}>{normalizeWilayaDisplay(a.wilaya) || '—'}</span></div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Service')}: </span>{svcName || '—'}</div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Department')}: </span>{deptName || '—'}</div>
                         <div><span style={{ color: 'var(--text3, #94a3b8)' }}>{t('Status')}: </span>{t(a.status)}</div>

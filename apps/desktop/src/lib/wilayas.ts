@@ -69,3 +69,26 @@ export const WILAYAS: Wilaya[] = [
 export function formatWilayaLabel(w: Wilaya, ar = false): string {
   return `${w.code} - ${ar ? w.name_ar : w.name}`;
 }
+
+/** Resolve any wilaya input (code, name, partial) to a Wilaya object */
+export function resolveWilaya(input: string | null | undefined): Wilaya | null {
+  if (!input) return null;
+  const raw = String(input).trim();
+  const numMatch = raw.match(/^(\d{1,2})/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10);
+    const hit = WILAYAS.find(w => w.code === n);
+    if (hit) return hit;
+  }
+  const norm = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[''`]/g, '').replace(/\s+/g, ' ').trim();
+  const n = norm(raw);
+  return WILAYAS.find(w => norm(w.name) === n) || WILAYAS.find(w => w.name_ar.trim() === raw.trim()) || null;
+}
+
+/** Normalize any wilaya input to "18 - Jijel" format */
+export function normalizeWilayaDisplay(input: string | null | undefined, ar = false): string | null {
+  if (!input) return null;
+  const w = resolveWilaya(input);
+  return w ? formatWilayaLabel(w, ar) : input.trim();
+}

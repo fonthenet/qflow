@@ -8,6 +8,7 @@ import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 import { isValidUUID, sanitizeString, isValidDate } from '@/lib/validation';
 import { toTimezoneAware } from '@/lib/timezone';
+import { normalizeWilayaDisplay } from '@/lib/wilayas';
 
 export async function POST(request: NextRequest) {
   const blocked = await checkRateLimit(request, publicLimiter);
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
   const cleanCustomerPhone = customerPhone ? sanitizeString(customerPhone, 30) : undefined;
   const cleanCustomerEmail = customerEmail ? sanitizeString(customerEmail, 254) : undefined;
   const cleanNotes = notes ? sanitizeString(notes as string, 500) : undefined;
-  const cleanWilaya = wilaya ? sanitizeString(wilaya as string, 100) : undefined;
+  const cleanWilaya = wilaya ? normalizeWilayaDisplay(sanitizeString(wilaya as string, 100)) ?? undefined : undefined;
 
   const supabase = createAdminClient();
 

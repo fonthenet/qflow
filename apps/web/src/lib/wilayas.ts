@@ -113,3 +113,14 @@ export function toWilayaCode(input: string | null | undefined): string | null {
   const resolved = resolveWilaya(input);
   return resolved ? String(resolved.code) : null;
 }
+
+/**
+ * Normalize any wilaya input to canonical display format "18 - Jijel".
+ * Accepts: "18", "Jijel", "جيجل", "18 - Jijel", etc.
+ * Returns canonical format or the original input if unrecognized.
+ */
+export function normalizeWilayaDisplay(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const resolved = resolveWilaya(input);
+  return resolved ? formatWilaya(resolved) : input.trim();
+}

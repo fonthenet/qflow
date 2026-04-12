@@ -26,6 +26,7 @@ import {
   type MonthDayInfo,
   type CalendarAppointment,
 } from '@qflo/shared';
+import { normalizeWilayaDisplay } from '../lib/wilayas';
 
 // ── Schedule types ────────────────────────────────────────────────
 
@@ -2508,7 +2509,7 @@ function DesktopListView({
                               </span>
                             )}
                             {deptName && <span>· {deptName}</span>}
-                            {a.wilaya && <span dir="auto" style={{ unicodeBidi: 'isolate' }}>· 📍 {a.wilaya}</span>}
+                            {a.wilaya && <span dir="auto" style={{ unicodeBidi: 'isolate' }}>· 📍 {normalizeWilayaDisplay(a.wilaya) || a.wilaya}</span>}
                             {a.source && (
                               <span style={{
                                 fontSize: 9, fontWeight: 600, padding: '0 4px', borderRadius: 4,
@@ -3237,7 +3238,7 @@ function DesktopApptDetail({
           </div>
         )}
         {a.customer_email && <div style={rowStyle}>✉ {a.customer_email}</div>}
-        {(a as any).wilaya && <div style={rowStyle}><span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {(a as any).wilaya}</span></div>}
+        {(a as any).wilaya && <div style={rowStyle}><span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay((a as any).wilaya) || (a as any).wilaya}</span></div>}
 
         {/* Service & Department */}
         <div style={{ ...labelStyle, marginTop: 14 }}>{t('Service')}</div>

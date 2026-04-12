@@ -8,6 +8,7 @@ import {
   setBookingEmailOtpCookie,
 } from '@/lib/booking-email-otp';
 import { nanoid } from 'nanoid';
+import { normalizeWilayaDisplay } from '@/lib/wilayas';
 import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
 import { transitionAppointment } from '@/lib/lifecycle';
@@ -115,7 +116,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     locale: (data.locale === 'ar' || data.locale === 'en' || data.locale === 'fr') ? data.locale : null,
     source: 'portal',
     notes: data.notes || null,
-    wilaya: data.wilaya || null,
+    wilaya: normalizeWilayaDisplay(data.wilaya) || null,
     ...(data.staffId ? { staff_id: data.staffId } : {}),
   };
 

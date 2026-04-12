@@ -49,6 +49,7 @@ import {
   type CalendarAppointment,
 } from '@qflo/shared';
 import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment } from '@/lib/actions/appointment-actions';
+import { normalizeWilayaDisplay } from '@/lib/wilayas';
 import { useI18n } from '@/components/providers/locale-provider';
 
 const LOCALE_MAP: Record<string, string> = { fr: 'fr-FR', ar: 'ar-SA', en: 'en-US', es: 'es-ES' };
@@ -781,7 +782,7 @@ function AppointmentDetail({
               <InfoRow icon={<User size={13} />} value={a.customer_name} />
               {a.customer_phone && <InfoRow icon={<Phone size={13} />} value={a.customer_phone} />}
               {a.customer_email && <InfoRow icon={<Mail size={13} />} value={a.customer_email} />}
-              {(a as any).wilaya && <InfoRow icon={<MapPin size={13} />} value={(a as any).wilaya} />}
+              {(a as any).wilaya && <InfoRow icon={<MapPin size={13} />} value={normalizeWilayaDisplay((a as any).wilaya) || (a as any).wilaya} />}
             </div>
           </div>
 

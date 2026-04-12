@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNod
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
-import { WILAYAS, formatWilayaLabel } from '../lib/wilayas';
+import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
@@ -1977,7 +1977,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {svcName && <span>{svcName}</span>}
               {deptName && <span>· {deptName}</span>}
-              {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {a.wilaya}</span></span>}
+              {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span></span>}
               {a.notes && <span style={{ fontStyle: 'italic' }}>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
             </div>
           )}
@@ -2747,7 +2747,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 )}
                 {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
-                    <strong>{t('Wilaya:')}</strong> {(activeTicket.customer_data as any).wilaya}
+                    <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
@@ -2851,7 +2851,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 )}
                 {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
-                    <strong>{t('Wilaya:')}</strong> {(activeTicket.customer_data as any).wilaya}
+                    <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
                 {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
@@ -3420,7 +3420,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <span dir="auto" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2, #cbd5e1)', unicodeBidi: 'isolate' }}>
                       {a.customer_name || t('(no name)')}
                     </span>
-                    {a.wilaya && <span dir="auto" style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', unicodeBidi: 'isolate' }}>📍 {a.wilaya}</span>}
+                    {a.wilaya && <span dir="auto" style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span>}
                   </div>
                   {isToday && mins !== 0 && (
                     <span style={{ fontSize: 9, fontWeight: 700, color: isSoon ? '#22c55e' : 'var(--text3, #94a3b8)', whiteSpace: 'nowrap' }}>
@@ -3593,7 +3593,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           <span style={{ color: '#f59e0b', fontWeight: 700 }}>{waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}</span>
                           {sourceLabel && <span>· {sourceLabel}</span>}
                           {svcName && <span>· {svcName}</span>}
-                          {cd.wilaya && <span>· 📍 {cd.wilaya}</span>}
+                          {cd.wilaya && <span>· 📍 {normalizeWilayaDisplay(cd.wilaya)}</span>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 3 }}>
