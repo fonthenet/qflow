@@ -1355,10 +1355,8 @@ export async function handleInboundMessage(
 
       if (!isNewBookCmd) {
         const bookLocale = (bookSession.locale as Locale) || detectedLocale;
-        // "0" means "previous page" when on page > 0 of date selection — don't treat as cancel
-        const isPageBack = cleaned === '0' && bookSession.state === 'booking_select_date'
-          && bookSession.booking_date?.startsWith('page:') && Number(bookSession.booking_date.split(':')[1]) > 0;
-        const isCancel = !isPageBack && /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء|0)$/i.test(cleaned);
+        // "0" means "go back one step" in booking flow — let it reach handleBookingState
+        const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
 
         if (isCancel && bookSession.state !== 'booking_confirm') {
           await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
@@ -3623,8 +3621,8 @@ async function handleBookingDateChoice(
   // Current page stored as "page:N" in booking_date while in date selection
   const currentPage = session.booking_date?.startsWith('page:') ? Number(session.booking_date.split(':')[1]) : 0;
 
-  // Pagination: # = next page, 0 = prev page (on page > 0), cancel (on page 0)
-  if (cleaned === '#' || (cleaned === '0' && currentPage > 0)) {
+  // Pagination: # = next page, * = prev page
+  if (cleaned === '#' || (cleaned === '*' && currentPage > 0)) {
     const newPage = cleaned === '#' ? currentPage + 1 : Math.max(0, currentPage - 1);
     await supabase.from('whatsapp_sessions').update({ booking_date: `page:${newPage}` }).eq('id', session.id);
     const orgName = await getOrgName(session.organization_id);
@@ -4044,7 +4042,7 @@ async function showAvailableDates(
       ? (locale === 'ar' ? '➡️ أرسل *#* للصفحة التالية' : locale === 'fr' ? '➡️ Envoyez *#* pour la page suivante' : '➡️ Send *#* for next page')
       : '';
     const prevHint = safePage > 0
-      ? (locale === 'ar' ? '⬅️ أرسل *0* للعودة' : locale === 'fr' ? '⬅️ Envoyez *0* pour revenir' : '⬅️ Send *0* to go back')
+      ? (locale === 'ar' ? '⬅️ للصفحة السابقة أرسل  *' : locale === 'fr' ? '⬅️ Page précédente : envoyez  *' : '⬅️ Previous page: send  *')
       : '';
     pagination = [pageInfo, nextHint, prevHint].filter(Boolean).join('\n') + '\n\n';
   }
