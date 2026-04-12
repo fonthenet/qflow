@@ -2692,6 +2692,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
   type CustHit = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; wilaya_code: string | null; visit_count: number };
   const [custHits, setCustHits] = useState<CustHit[]>([]);
   const [showCustHits, setShowCustHits] = useState(false);
+  const [custHitSource, setCustHitSource] = useState<'name' | 'phone'>('name');
   const custSeq = useRef(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2729,11 +2730,13 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
       if (conds.length) req = req.or(conds.join(','));
       const { data } = await req;
       if (seq !== custSeq.current) return;
-      // Dedupe
-      const seen = new Set<string>();
-      const unique = ((data ?? []) as CustHit[]).filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
+      // Dedupe by id (Supabase OR conditions can match same row via multiple clauses)
+      const deduped = new Map<string, CustHit>();
+      for (const c of (data ?? []) as CustHit[]) {
+        if (!deduped.has(c.id)) deduped.set(c.id, c);
+      }
       const tokens = safe.split(/\s+/).map(t => t.toLowerCase());
-      const scored = unique.map(c => {
+      const scored = [...deduped.values()].map(c => {
         const hay = `${(c.name ?? '').toLowerCase()} ${(c.email ?? '').toLowerCase()} ${(c.phone ?? '')}`;
         const allMatch = tokens.every(tok => hay.includes(tok));
         const phoneMatch = digits.length >= 2 && (c.phone ?? '').replace(/\D/g, '').includes(digits.startsWith('0') ? digits.slice(1) : digits);
@@ -2746,6 +2749,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
 
   const handleNameChange = (v: string) => {
     setName(v);
+    setCustHitSource('name');
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!v.trim()) { setCustHits([]); setShowCustHits(false); return; }
     searchTimer.current = setTimeout(() => searchCustomers(v), 220);
@@ -2753,6 +2757,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
 
   const handlePhoneChange = (v: string) => {
     setPhone(v);
+    setCustHitSource('phone');
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!v.trim()) { setCustHits([]); setShowCustHits(false); return; }
     searchTimer.current = setTimeout(() => searchCustomers(v), 220);
@@ -2961,7 +2966,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
             onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); if (e.key === 'Escape') setShowCustHits(false); }}
             placeholder={t('Search or type name')} style={inputStyle} autoFocus autoComplete="off"
           />
-          {showCustHits && custHits.length > 0 && (
+          {showCustHits && custHitSource === 'name' && custHits.length > 0 && (
             <div style={{
               position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
               marginTop: 4, maxHeight: 200, overflowY: 'auto',
@@ -2998,12 +3003,12 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
           <label style={labelStyle}>{t('Phone')}</label>
           <input
             type="tel" value={phone} onChange={e => handlePhoneChange(e.target.value)}
-            onFocus={() => { if (custHits.length) setShowCustHits(true); }}
+            onFocus={() => { if (custHits.length) { setCustHitSource('phone'); setShowCustHits(true); } }}
             onBlur={() => setTimeout(() => setShowCustHits(false), 180)}
             onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); if (e.key === 'Escape') setShowCustHits(false); }}
             placeholder={t('Search or type phone')} style={inputStyle} autoComplete="off"
           />
-          {showCustHits && custHits.length > 0 && (
+          {showCustHits && custHitSource === 'phone' && custHits.length > 0 && (
             <div style={{
               position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
               marginTop: 4, maxHeight: 200, overflowY: 'auto',

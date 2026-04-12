@@ -196,17 +196,15 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       const { data } = await req;
       if (mySeq !== custSearchSeq.current) return;
 
-      // Dedupe (PostgREST OR can occasionally yield duplicates)
-      const seen = new Set<string>();
-      const unique = ((data ?? []) as CustSuggestion[]).filter(c => {
-        if (seen.has(c.id)) return false;
-        seen.add(c.id);
-        return true;
-      });
+      // Dedupe by id (Supabase OR conditions can match same row via multiple clauses)
+      const deduped = new Map<string, CustSuggestion>();
+      for (const c of (data ?? []) as CustSuggestion[]) {
+        if (!deduped.has(c.id)) deduped.set(c.id, c);
+      }
 
       // Client-side rank: multi-token AND-match on name, then by visit_count
       const lowerTokens = tokens.map((t) => t.toLowerCase());
-      const scored = unique
+      const scored = [...deduped.values()]
         .map((c) => {
           const hay = `${(c.name ?? '').toLowerCase()} ${(c.email ?? '').toLowerCase()} ${(c.phone ?? '')}`;
           const allMatch = lowerTokens.every((tok) => hay.includes(tok));
