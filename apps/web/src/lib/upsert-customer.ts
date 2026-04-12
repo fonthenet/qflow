@@ -16,6 +16,7 @@ export async function upsertCustomerFromBooking(
     phone?: string | null;
     email?: string | null;
     notes?: string | null;
+    wilayaCode?: string | null;
     source?: string; // e.g. 'whatsapp', 'web', 'station', 'messenger'
     incrementVisit?: boolean; // default true
   },
@@ -28,13 +29,14 @@ export async function upsertCustomerFromBooking(
     const name = (input.name ?? '').trim() || null;
     const email = (input.email ?? '').trim() || null;
     const notes = (input.notes ?? '').trim() || null;
+    const wilayaCode = (input.wilayaCode ?? '').trim() || null;
     const nowIso = new Date().toISOString();
     const incrementVisit = input.incrementVisit !== false;
 
     // Check existing
     const { data: existing } = await supabase
       .from('customers')
-      .select('id, name, email, notes, visit_count')
+      .select('id, name, email, notes, visit_count, wilaya_code')
       .eq('organization_id', orgId)
       .eq('phone', phone)
       .limit(1)
@@ -47,6 +49,7 @@ export async function upsertCustomerFromBooking(
       if (name && !existing.name) updates.name = name;
       if (email && !existing.email) updates.email = email;
       if (notes && !existing.notes) updates.notes = notes;
+      if (wilayaCode && !existing.wilaya_code) updates.wilaya_code = wilayaCode;
       await supabase.from('customers').update(updates).eq('id', existing.id);
       return;
     }
@@ -58,6 +61,7 @@ export async function upsertCustomerFromBooking(
       phone,
       email,
       notes,
+      wilaya_code: wilayaCode,
       visit_count: incrementVisit ? 1 : 0,
       last_visit_at: nowIso,
       source: input.source ?? 'booking',

@@ -223,6 +223,12 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}{now_serving}\n\nتتبع موقعك: {url} 📍\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
     en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
   },
+  // Same as joined but without the header line — used after approval_approved_sameday
+  joined_details: {
+    fr: '🎫 Ticket : *{ticket}*\n{position}{now_serving}\n\n📍 Suivez votre position : {url}\n\nRépondez *STATUT* pour les mises à jour ou *ANNULER* pour quitter.',
+    ar: 'التذكرة: *{ticket}* 🎫\n{position}{now_serving}\n\nتتبع موقعك: {url} 📍\n\nأرسل *حالة* للتحديثات أو *إلغاء* للمغادرة.',
+    en: '🎫 Ticket: *{ticket}*\n{position}{now_serving}\n\n📍 Track your position: {url}\n\nReply *STATUS* for updates or *CANCEL* to leave.',
+  },
   your_turn: {
     fr: '🔔 C\'est votre tour ! Veuillez vous diriger vers le point de service.',
     ar: 'حان دورك! يرجى التوجه إلى نقطة الخدمة 🔔',
@@ -354,9 +360,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '✅ Your appointment at *{name}* has been *approved*.\n\n🎫 A ticket will be issued when you check in at the location.',
   },
   approval_approved_sameday: {
-    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.',
-    ar: '✅ تم *قبول* موعدك في *{name}*.',
-    en: '✅ Your appointment at *{name}* has been *approved*.',
+    fr: '✅ Votre rendez-vous a été *approuvé* par *{name}*. Vous êtes maintenant dans la file !\n',
+    ar: '✅ تم *قبول* موعدك من *{name}*. أنت الآن في الطابور!\n',
+    en: '✅ Your appointment has been *approved* by *{name}*. You are now in the queue!\n',
   },
   approval_declined: {
     fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\nMotif : {reason}',
@@ -3868,6 +3874,7 @@ async function confirmBooking(
     organizationId: session.organization_id,
     name: session.booking_customer_name,
     phone: identifier,
+    wilayaCode: wilaya || null,
     source: channel === 'messenger' ? 'messenger' : 'whatsapp',
   });
 

@@ -184,6 +184,7 @@ export async function POST(request: NextRequest) {
         name: cleanCustomerName,
         phone: cleanCustomerPhone,
         email: cleanCustomerEmail,
+        wilayaCode: cleanWilaya || null,
         source: 'booking',
       });
     }

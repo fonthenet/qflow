@@ -112,8 +112,7 @@ export async function POST(request: NextRequest) {
       // Ticket already exists (JOIN flow), so use the sameday template
       // which doesn't say "you'll receive a ticket when you arrive".
       const approvedHeader = tMsg('approval_approved_sameday', locale, { name: orgName });
-      const joinedBody = approvedHeader + tMsg('joined', locale, {
-        name: orgName,
+      const joinedBody = approvedHeader + tMsg('joined_details', locale, {
         ticket: ticket.ticket_number,
         position: formatPosition(pos, locale),
         now_serving: formatNowServing(pos, locale),
