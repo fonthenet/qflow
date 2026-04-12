@@ -1414,6 +1414,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // showAppointmentsModal removed — unified into CalendarModal
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   const [callTimeoutSeconds, setCallTimeoutSeconds] = useState(DEFAULT_CALL_TIMEOUT);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
@@ -1460,7 +1461,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsVersion, setSettingsVersion] = useState(0);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   // Listen for native File > Settings menu click
