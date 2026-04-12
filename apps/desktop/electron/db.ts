@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { logger } from './logger';
 
 let db: Database.Database;
 
@@ -242,7 +243,7 @@ export function initDB() {
       END
     `);
   } catch (err) {
-    console.error('[db] Failed to create status check triggers:', err);
+    logger.error('db', 'Failed to create status check triggers', { err });
   }
 
   // Prevent duplicate tickets for the same appointment (partial unique index)
@@ -304,17 +305,17 @@ export function initDB() {
   try {
     const integrity = db.pragma('integrity_check') as any[];
     if (integrity?.[0]?.integrity_check !== 'ok') {
-      console.error('[db] INTEGRITY CHECK FAILED:', integrity);
+      logger.error('db', 'INTEGRITY CHECK FAILED', { integrity });
     }
   } catch (err) {
-    console.error('[db] Could not run integrity check:', err);
+    logger.error('db', 'Could not run integrity check', { err });
   }
 
   // Cleanup old audit log entries (keep 90 days)
   try {
     const deleted = db.prepare("DELETE FROM ticket_audit_log WHERE created_at < datetime('now', '-90 days')").run();
     if (deleted.changes > 0) {
-      console.log(`[db] Cleaned up ${deleted.changes} audit log entries older than 90 days`);
+      logger.info('db', 'Cleaned up audit log entries older than 90 days', { count: deleted.changes });
     }
   } catch { /* table may not exist in some versions */ }
 
@@ -322,7 +323,7 @@ export function initDB() {
   try {
     const deleted = db.prepare("DELETE FROM sync_queue WHERE synced_at IS NOT NULL AND synced_at < datetime('now', '-30 days')").run();
     if (deleted.changes > 0) {
-      console.log(`[db] Cleaned up ${deleted.changes} old sync_queue entries`);
+      logger.info('db', 'Cleaned up old sync_queue entries', { count: deleted.changes });
     }
   } catch { /* ignore */ }
 
@@ -337,7 +338,7 @@ export function initDB() {
     )
   `).run();
   if (lCleanup.changes > 0) {
-    console.log(`[db] Cleaned up ${lCleanup.changes} L-prefixed duplicate ticket rows`);
+    logger.info('db', 'Cleaned up L-prefixed duplicate ticket rows', { count: lCleanup.changes });
   }
 
   return db;
@@ -376,7 +377,7 @@ export function logTicketEvent(
       new Date().toISOString()
     );
   } catch (err) {
-    console.error('[audit] Failed to log ticket event:', err);
+    logger.error('audit', 'Failed to log ticket event', { err });
   }
 }
 
@@ -415,7 +416,7 @@ export function backupDatabase(): { path: string; size: number } | null {
     db.backup(backupPath);
 
     const stats = fs.statSync(backupPath);
-    console.log(`[db:backup] ✓ Backup created: ${backupPath} (${(stats.size / 1024).toFixed(1)}KB)`);
+    logger.info('db:backup', 'Backup created', { backupPath, sizeKB: (stats.size / 1024).toFixed(1) });
 
     // Cleanup: keep only the last 7 backups
     const backups = fs.readdirSync(backupDir)
@@ -426,13 +427,13 @@ export function backupDatabase(): { path: string; size: number } | null {
     for (const old of backups.slice(7)) {
       try {
         fs.unlinkSync(path.join(backupDir, old));
-        console.log(`[db:backup] Cleaned up old backup: ${old}`);
+        logger.info('db:backup', 'Cleaned up old backup', { file: old });
       } catch {}
     }
 
     return { path: backupPath, size: stats.size };
   } catch (err: any) {
-    console.error('[db:backup] Backup failed:', err.message);
+    logger.error('db:backup', 'Backup failed', { error: err.message });
     return null;
   }
 }
@@ -555,24 +556,24 @@ export async function reserveTicketNumber(
               isOffline: false,
             };
           }
-          console.warn('[reserveTicketNumber] RPC returned OK but no ticket_num/seq:', JSON.stringify(rows));
+          logger.warn('reserveTicketNumber', 'RPC returned OK but no ticket_num/seq', { rows });
         } else {
           const body = await res.text().catch(() => '');
-          console.warn(`[reserveTicketNumber] RPC failed (${res.status}) with ${token === supabaseKey ? 'anon' : 'auth'} key: ${body}`);
+          logger.warn('reserveTicketNumber', 'RPC failed', { status: res.status, keyType: token === supabaseKey ? 'anon' : 'auth', body });
           // If auth token got 401/403, retry with anon key
           if ((res.status === 401 || res.status === 403) && token !== supabaseKey) {
-            console.log('[reserveTicketNumber] Auth token rejected — retrying with anon key...');
+            logger.info('reserveTicketNumber', 'Auth token rejected — retrying with anon key');
             continue;
           }
         }
         break; // success or non-auth error — don't retry
       } catch (err: any) {
-        console.warn('[reserveTicketNumber] RPC error:', err?.message);
+        logger.warn('reserveTicketNumber', 'RPC error', { error: err?.message });
         break; // network error — don't retry with different token
       }
     }
   } else {
-    console.log('[reserveTicketNumber] Cloud not reachable, using offline fallback');
+    logger.info('reserveTicketNumber', 'Cloud not reachable, using offline fallback');
   }
 
   // ── Offline fallback: atomic local counter ──

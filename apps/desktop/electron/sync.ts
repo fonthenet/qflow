@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { safeStorage } from 'electron';
 import { CONFIG } from './config';
 import { logTicketEvent } from './db';
+import { logger } from './logger';
 
 type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') => void;
 type ProgressCallback = (pendingCount: number) => void;
@@ -91,7 +92,7 @@ export class SyncEngine {
     if (this.circuitOpen) return;
     this.circuitOpen = true;
     this.circuitOpenedAt = Date.now();
-    console.error(`[sync:circuit-breaker] OPEN after ${this.consecutivePushFailures} consecutive failures. Pausing sync for ${SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s`);
+    logger.error('sync.circuit-breaker', 'Circuit breaker OPEN — pausing sync', { consecutiveFailures: this.consecutivePushFailures, cooldownSeconds: SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS / 1000 });
     this.onTicketError({
       message: `Sync paused: ${this.consecutivePushFailures} consecutive failures. Last error: ${lastError}. Will auto-retry in ${SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s.`,
       type: 'circuit_breaker_open',
@@ -103,7 +104,7 @@ export class SyncEngine {
     const elapsed = Date.now() - this.circuitOpenedAt;
     if (elapsed >= SyncEngine.CIRCUIT_BREAKER_COOLDOWN_MS) {
       // Half-open: allow one attempt to see if the service recovered
-      console.log('[sync:circuit-breaker] Cooldown elapsed — half-open, attempting sync...');
+      logger.info('sync.circuit-breaker', 'Cooldown elapsed — half-open, attempting sync...');
       this.circuitOpen = false;
       this.consecutivePushFailures = 0;
       return true;
@@ -113,7 +114,7 @@ export class SyncEngine {
 
   private recordPushSuccess() {
     if (this.consecutivePushFailures > 0) {
-      console.log(`[sync:circuit-breaker] Push succeeded — resetting failure count (was ${this.consecutivePushFailures})`);
+      logger.info('sync.circuit-breaker', 'Push succeeded — resetting failure count', { previousFailures: this.consecutivePushFailures });
     }
     this.consecutivePushFailures = 0;
     this.circuitOpen = false;
@@ -136,7 +137,7 @@ export class SyncEngine {
       WHERE synced_at IS NULL AND next_retry_at IS NOT NULL
     `).run();
     if (recovered.changes > 0) {
-      console.log(`[sync:startup] Recovered ${recovered.changes} sync item(s) stuck from previous session`);
+      logger.info('sync.startup', 'Recovered sync items stuck from previous session', { count: recovered.changes });
     }
     this.updatePendingCount();
 
@@ -175,19 +176,19 @@ export class SyncEngine {
       const session = this.getSessionFromDB();
       if (!session?.refresh_token) return;
 
-      console.log('[sync:startup] Proactively refreshing access token...');
+      logger.info('sync.startup', 'Proactively refreshing access token...');
       this.cachedAccessToken = null; // force fresh
       const token = await this.refreshAccessToken();
       if (token) {
-        console.log('[sync:startup] ✓ Token refreshed — station is ready');
+        logger.info('sync.startup', 'Token refreshed — station is ready');
         // Immediately sync pending items with fresh token
         this.syncNow();
         this.pullLatest();
       } else {
-        console.warn('[sync:startup] Token refresh failed — user may need to re-login');
+        logger.warn('sync.startup', 'Token refresh failed — user may need to re-login');
       }
     } catch (err: any) {
-      console.warn('[sync:startup] Startup refresh error:', err?.message);
+      logger.warn('sync.startup', 'Startup refresh error', { error: err?.message });
     }
   }
 
@@ -204,7 +205,7 @@ export class SyncEngine {
     this.disconnectRealtime();
 
     if (!this.isOnline) {
-      console.log('[sync:shutdown] Offline — skipping flush');
+      logger.info('sync.shutdown', 'Offline — skipping flush');
       return;
     }
 
@@ -212,11 +213,11 @@ export class SyncEngine {
       "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL"
     ).get() as any;
     if (!pending?.c) {
-      console.log('[sync:shutdown] No pending items — clean shutdown');
+      logger.info('sync.shutdown', 'No pending items — clean shutdown');
       return;
     }
 
-    console.log(`[sync:shutdown] Flushing ${pending.c} pending item(s) before quit...`);
+    logger.info('sync.shutdown', 'Flushing pending items before quit...', { count: pending.c });
     try {
       // Race: sync vs timeout — whichever finishes first
       await Promise.race([
@@ -227,12 +228,12 @@ export class SyncEngine {
         "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL"
       ).get() as any;
       if (remaining?.c > 0) {
-        console.warn(`[sync:shutdown] ${remaining.c} item(s) still pending — will retry on next launch`);
+        logger.warn('sync.shutdown', 'Items still pending — will retry on next launch', { count: remaining.c });
       } else {
-        console.log('[sync:shutdown] All items flushed successfully');
+        logger.info('sync.shutdown', 'All items flushed successfully');
       }
     } catch (err: any) {
-      console.warn('[sync:shutdown] Flush failed:', err?.message);
+      logger.warn('sync.shutdown', 'Flush failed', { error: err?.message });
     }
   }
 
@@ -269,7 +270,7 @@ export class SyncEngine {
       let pullDebounce: ReturnType<typeof setTimeout> | null = null;
 
       ws.onopen = () => {
-        console.log('[realtime] ✓ Connected to Supabase Realtime');
+        logger.info('realtime', 'Connected to Supabase Realtime');
         // Authenticate with access token for RLS
         ws.send(JSON.stringify({
           topic: 'realtime:auth',
@@ -309,7 +310,7 @@ export class SyncEngine {
             msg.payload?.data?.type === 'INSERT' || msg.payload?.data?.type === 'UPDATE' || msg.payload?.data?.type === 'DELETE';
 
           if (isChange) {
-            console.log(`[realtime] Ticket change detected — pulling immediately`);
+            logger.info('realtime', 'Ticket change detected — pulling immediately');
             // Debounce: batch rapid-fire changes into one pull
             if (pullDebounce) clearTimeout(pullDebounce);
             pullDebounce = setTimeout(() => {
@@ -321,7 +322,7 @@ export class SyncEngine {
       };
 
       ws.onclose = () => {
-        console.log('[realtime] Disconnected, will retry in 5s');
+        logger.info('realtime', 'Disconnected, will retry in 5s');
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         this.realtimeWs = null;
         this.realtimeRetryTimer = setTimeout(() => {
@@ -335,7 +336,7 @@ export class SyncEngine {
 
       this.realtimeWs = ws;
     } catch (err: any) {
-      console.warn('[realtime] Failed to connect:', err?.message);
+      logger.warn('realtime', 'Failed to connect', { error: err?.message });
     }
   }
 
@@ -372,7 +373,7 @@ export class SyncEngine {
           this.consecutiveSlowChecks++;
           if (this.consecutiveSlowChecks >= SyncEngine.FLAKY_THRESHOLD) {
             if (this.connectionQuality !== 'flaky') {
-              console.warn(`[sync:health] Connection is FLAKY — ${this.consecutiveSlowChecks} consecutive slow responses (${this.healthLatencyMs}ms)`);
+              logger.warn('sync.health', 'Connection is FLAKY', { consecutiveSlowChecks: this.consecutiveSlowChecks, latencyMs: this.healthLatencyMs });
               this.onTicketError({
                 message: `Slow connection detected (${this.healthLatencyMs}ms latency). Sync may be delayed.`,
                 type: 'connection_flaky',
@@ -384,7 +385,7 @@ export class SyncEngine {
           }
         } else {
           if (this.connectionQuality === 'flaky' && this.consecutiveSlowChecks > 0) {
-            console.log(`[sync:health] Connection recovered — latency back to ${this.healthLatencyMs}ms`);
+            logger.info('sync.health', 'Connection recovered', { latencyMs: this.healthLatencyMs });
           }
           this.consecutiveSlowChecks = 0;
           this.connectionQuality = 'good';
@@ -446,7 +447,7 @@ export class SyncEngine {
     if (this.pendingCount >= SyncEngine.QUEUE_WARNING_THRESHOLD &&
         Date.now() - this.lastQueueWarningAt > SyncEngine.QUEUE_WARNING_COOLDOWN_MS) {
       this.lastQueueWarningAt = Date.now();
-      console.warn(`[sync:queue] WARNING: ${this.pendingCount} pending sync items — check connection`);
+      logger.warn('sync.queue', 'Pending sync items piling up — check connection', { pendingCount: this.pendingCount });
       this.onTicketError({
         message: `${this.pendingCount} changes waiting to sync. Check your internet connection.`,
         type: 'sync_queue_warning',
@@ -479,12 +480,12 @@ export class SyncEngine {
   private async refreshAccessToken(): Promise<string | null> {
     const session = this.getSessionFromDB();
     if (!session?.refresh_token) {
-      console.warn('[sync:token] No refresh_token — attempting silent re-auth');
+      logger.warn('sync.token', 'No refresh_token — attempting silent re-auth');
       return this.silentReAuth();
     }
 
     try {
-      console.log('[sync:token] Refreshing access token...');
+      logger.info('sync.token', 'Refreshing access token...');
       const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: {
@@ -497,16 +498,16 @@ export class SyncEngine {
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        console.warn(`[sync:token] Refresh failed (${res.status}): ${body.slice(0, 200)}`);
+        logger.warn('sync.token', 'Refresh failed', { status: res.status, body: body.slice(0, 200) });
         // If refresh_token itself is expired/revoked — try silent re-auth
         if (res.status === 400 || res.status === 401 || res.status === 403) {
-          console.log('[sync:token] Refresh token is dead — attempting silent re-auth with stored credentials');
+          logger.info('sync.token', 'Refresh token is dead — attempting silent re-auth with stored credentials');
           const reAuthResult = await this.silentReAuth();
           if (reAuthResult) return reAuthResult;
 
           this.consecutiveRefreshFailures++;
           if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-            console.error('[sync:token] All auth methods exhausted — prompting re-login');
+            logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
             this.onAuthError();
           }
         }
@@ -529,10 +530,10 @@ export class SyncEngine {
       this.lastTokenRefreshAt = Date.now();
       this.consecutiveRefreshFailures = 0;
 
-      console.log('[sync:token] ✓ Access token refreshed successfully');
+      logger.info('sync.token', 'Access token refreshed successfully');
       return data.access_token;
     } catch (err: any) {
-      console.warn('[sync:token] Token refresh network error:', err?.message ?? err);
+      logger.warn('sync.token', 'Token refresh network error', { error: err?.message ?? err });
       return null;
     }
   }
@@ -545,13 +546,13 @@ export class SyncEngine {
   private async silentReAuth(): Promise<string | null> {
     try {
       if (!safeStorage.isEncryptionAvailable()) {
-        console.warn('[sync:reAuth] OS encryption not available — cannot decrypt stored credentials');
+        logger.warn('sync.reAuth', 'OS encryption not available — cannot decrypt stored credentials');
         return null;
       }
 
       const credRow = this.db.prepare("SELECT value FROM session WHERE key = 'auth_cred'").get() as any;
       if (!credRow) {
-        console.warn('[sync:reAuth] No stored credentials found — user must sign in manually');
+        logger.warn('sync.reAuth', 'No stored credentials found — user must sign in manually');
         return null;
       }
 
@@ -561,7 +562,7 @@ export class SyncEngine {
       // Decrypt password using OS credential store (Windows DPAPI / macOS Keychain)
       const password = safeStorage.decryptString(Buffer.from(cred.enc, 'base64'));
 
-      console.log(`[sync:reAuth] Attempting silent re-auth for ${cred.email}...`);
+      logger.info('sync.reAuth', 'Attempting silent re-auth', { email: cred.email });
       const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: 'POST',
         headers: {
@@ -574,11 +575,11 @@ export class SyncEngine {
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        console.warn(`[sync:reAuth] Re-auth failed (${res.status}): ${body.slice(0, 200)}`);
+        logger.warn('sync.reAuth', 'Re-auth failed', { status: res.status, body: body.slice(0, 200) });
         // If password was changed, credentials are stale — clear them
         if (res.status === 400 || res.status === 401) {
           this.db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
-          console.warn('[sync:reAuth] Stored credentials invalidated — user must sign in manually');
+          logger.warn('sync.reAuth', 'Stored credentials invalidated — user must sign in manually');
         }
         return null;
       }
@@ -600,7 +601,7 @@ export class SyncEngine {
       this.lastTokenRefreshAt = Date.now();
       this.consecutiveRefreshFailures = 0;
 
-      console.log('[sync:reAuth] ✓ Silent re-auth succeeded — station is back online');
+      logger.info('sync.reAuth', 'Silent re-auth succeeded — station is back online');
 
       // Auto-retry all stuck AUTH_EXPIRED items
       this.db.prepare(
@@ -610,7 +611,7 @@ export class SyncEngine {
 
       return data.access_token;
     } catch (err: any) {
-      console.warn('[sync:reAuth] Silent re-auth error:', err?.message ?? err);
+      logger.warn('sync.reAuth', 'Silent re-auth error', { error: err?.message ?? err });
       return null;
     }
   }
@@ -646,7 +647,7 @@ export class SyncEngine {
     }
 
     // 4. Refresh failed — return whatever we have (will 401, handled by caller)
-    console.warn('[sync:token] Could not get fresh token — sync will likely fail');
+    logger.warn('sync.token', 'Could not get fresh token — sync will likely fail');
     return dbToken ?? this.supabaseKey;
   }
 
@@ -675,7 +676,7 @@ export class SyncEngine {
           .run(new Date().toISOString(), item.id);
         this.updatePendingCount();
         this.rapidRetryInFlight.delete(syncQueueId);
-        console.log(`[sync:pushImmediate] ✓ Pushed ${item.operation} on ${item.table_name}/${item.record_id}`);
+        logger.info('sync.pushImmediate', 'Pushed successfully', { operation: item.operation, table: item.table_name, recordId: item.record_id });
 
         // Rewrite L- prefix after successful INSERT push
         if (item.operation === 'INSERT' && item.table_name === 'tickets') {
@@ -696,7 +697,7 @@ export class SyncEngine {
               .run(new Date().toISOString(), item.id);
             this.updatePendingCount();
             this.rapidRetryInFlight.delete(syncQueueId);
-            console.log(`[sync:pushImmediate] ✓ Pushed after token refresh`);
+            logger.info('sync.pushImmediate', 'Pushed after token refresh');
             if (item.operation === 'INSERT' && item.table_name === 'tickets') {
               this.rewriteOfflineTicket(item.record_id, item.payload);
               this.createWhatsAppSessionForTicket(item.record_id, item.payload);
@@ -706,14 +707,14 @@ export class SyncEngine {
         }
         // Auth refresh failed — try anon key as last resort (RLS allows public ticket updates)
         if (item.table_name === 'tickets') {
-          console.log(`[sync:pushImmediate] Auth failed — trying anon key for ticket ${item.record_id}`);
+          logger.info('sync.pushImmediate', 'Auth failed — trying anon key for ticket', { recordId: item.record_id });
           const anonRetry = await this.replayMutation(item, this.supabaseKey);
           if (anonRetry.status === 0) {
             this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
               .run(new Date().toISOString(), item.id);
             this.updatePendingCount();
             this.rapidRetryInFlight.delete(syncQueueId);
-            console.log(`[sync:pushImmediate] ✓ Pushed ticket with anon key`);
+            logger.info('sync.pushImmediate', 'Pushed ticket with anon key');
             if (item.operation === 'INSERT') {
               this.rewriteOfflineTicket(item.record_id, item.payload);
               this.createWhatsAppSessionForTicket(item.record_id, item.payload);
@@ -727,13 +728,13 @@ export class SyncEngine {
       this.scheduleRapidRetry(syncQueueId, _retryAttempt);
     } catch (err: any) {
       const errMsg = err?.message ?? String(err);
-      console.log(`[sync:pushImmediate] Attempt ${_retryAttempt + 1} failed: ${errMsg}`);
+      logger.info('sync.pushImmediate', 'Attempt failed', { attempt: _retryAttempt + 1, error: errMsg });
 
       // PATCH 0 rows on critical status = likely RLS/auth issue.
       // Try anon key before giving up (RLS has a public update policy for tickets).
       if (item.table_name === 'tickets' && errMsg.includes('PATCH 0 rows')) {
         try {
-          console.log(`[sync:pushImmediate] 0-row PATCH — trying anon key for ${item.record_id}`);
+          logger.info('sync.pushImmediate', '0-row PATCH — trying anon key', { recordId: item.record_id });
           // Force fresh login first
           this.cachedAccessToken = null;
           const freshToken = await this.refreshAccessToken();
@@ -744,11 +745,11 @@ export class SyncEngine {
               .run(new Date().toISOString(), item.id);
             this.updatePendingCount();
             this.rapidRetryInFlight.delete(syncQueueId);
-            console.log(`[sync:pushImmediate] ✓ Pushed ticket after fresh login/anon fallback`);
+            logger.info('sync.pushImmediate', 'Pushed ticket after fresh login/anon fallback');
             return;
           }
         } catch (retryErr: any) {
-          console.warn(`[sync:pushImmediate] Anon/fresh fallback also failed: ${retryErr?.message}`);
+          logger.warn('sync.pushImmediate', 'Anon/fresh fallback also failed', { error: retryErr?.message });
         }
       }
 
@@ -760,7 +761,7 @@ export class SyncEngine {
   private scheduleRapidRetry(syncQueueId: string, currentAttempt: number) {
     if (currentAttempt >= SyncEngine.RAPID_RETRY_DELAYS.length) {
       this.rapidRetryInFlight.delete(syncQueueId);
-      console.log(`[sync:pushImmediate] Rapid retries exhausted for ${syncQueueId} — syncNow will handle it`);
+      logger.info('sync.pushImmediate', 'Rapid retries exhausted — syncNow will handle it', { syncQueueId });
 
       // Notify renderer about critical sync failures so the operator sees a warning
       try {
@@ -772,7 +773,7 @@ export class SyncEngine {
             // Try to find the ticket number for the error message
             const ticketRow = this.db.prepare("SELECT ticket_number FROM tickets WHERE id = ?").get(item.record_id) as any;
             const ticketNum = ticketRow?.ticket_number ?? item.record_id;
-            console.error(`[sync:CRITICAL] Failed to sync ${payload.status} for ticket ${ticketNum} after all retries`);
+            logger.error('sync.pushImmediate', 'CRITICAL: Failed to sync after all retries', { status: payload.status, ticketNumber: ticketNum });
             this.onTicketError({
               message: `WhatsApp notification may not have been sent for ticket ${ticketNum}. The "called" status did not sync to cloud. Try clicking "Force Sync" in the status bar.`,
               ticketNumber: ticketNum,
@@ -787,7 +788,7 @@ export class SyncEngine {
     this.rapidRetryInFlight.add(syncQueueId);
 
     const delay = SyncEngine.RAPID_RETRY_DELAYS[currentAttempt];
-    console.log(`[sync:pushImmediate] Scheduling retry ${currentAttempt + 1}/3 in ${delay}ms`);
+    logger.info('sync.pushImmediate', 'Scheduling retry', { attempt: currentAttempt + 1, maxAttempts: 3, delayMs: delay });
     setTimeout(() => this.pushImmediate(syncQueueId, currentAttempt + 1), delay);
   }
 
@@ -845,7 +846,7 @@ export class SyncEngine {
       // working). Better to show L-G-005 than to risk overwriting with a wrong
       // number. The next sync cycle will retry naturally.
       if (!properNumber || !properSequence) {
-        console.warn(`[sync:rewrite] RPC unavailable, leaving ${oldNumber} as-is`);
+        logger.warn('sync.rewrite', 'RPC unavailable, leaving ticket as-is', { ticketNumber: oldNumber });
         return;
       }
 
@@ -873,14 +874,14 @@ export class SyncEngine {
       );
 
       if (!patchRes.ok) {
-        console.warn(`[sync:rewrite] PATCH failed (${patchRes.status}) — leaving ${oldNumber} as-is`);
+        logger.warn('sync.rewrite', 'PATCH failed — leaving ticket as-is', { status: patchRes.status, ticketNumber: oldNumber });
         return;
       }
 
       // Verify the PATCH actually matched a row (compare-and-swap could miss)
       const updated = await patchRes.json().catch(() => []);
       if (!Array.isArray(updated) || updated.length === 0) {
-        console.warn(`[sync:rewrite] CAS missed for ${recordId} — cloud row no longer ${oldNumber}`);
+        logger.warn('sync.rewrite', 'CAS missed — cloud row changed', { recordId, ticketNumber: oldNumber });
         return;
       }
 
@@ -888,10 +889,10 @@ export class SyncEngine {
       this.db.prepare("UPDATE tickets SET ticket_number = ?, daily_sequence = ?, is_offline = 0 WHERE id = ? AND ticket_number = ?")
         .run(properNumber, properSequence, recordId, oldNumber);
 
-      console.log(`[sync:rewrite] ✓ ${oldNumber} → ${properNumber} (seq=${properSequence}, is_offline cleared)`);
+      logger.info('sync.rewrite', 'Ticket number rewritten', { from: oldNumber, to: properNumber, sequence: properSequence });
       this.onDataPulled(); // refresh UI with proper number
     } catch (err: any) {
-      console.warn(`[sync:rewrite] Failed to rewrite ticket ${recordId}: ${err?.message}`);
+      logger.warn('sync.rewrite', 'Failed to rewrite ticket', { recordId, error: err?.message });
       // Non-critical — ticket still works with L- prefix, just cosmetic
     }
   }
@@ -961,9 +962,9 @@ export class SyncEngine {
         }),
         signal: AbortSignal.timeout(5000),
       });
-      console.log(`[sync:wa-session] ✓ Created session for ticket ${recordId} → ***${normalized.slice(-4)}`);
+      logger.info('sync.wa-session', 'Created WhatsApp session for ticket', { recordId, phoneLast4: normalized.slice(-4) });
     } catch (err: any) {
-      console.warn(`[sync:wa-session] Failed for ${recordId}: ${err?.message}`);
+      logger.warn('sync.wa-session', 'Failed to create WhatsApp session', { recordId, error: err?.message });
     }
   }
 
@@ -1002,7 +1003,7 @@ export class SyncEngine {
     let tokenIsVerified = !this.isTokenExpired(authToken);
 
     if (!tokenIsVerified) {
-      console.warn('[sync:syncNow] Token is expired and refresh failed — will attempt mutations anyway');
+      logger.warn('sync.syncNow', 'Token is expired and refresh failed — will attempt mutations anyway');
     }
 
     let had401 = false;
@@ -1016,7 +1017,7 @@ export class SyncEngine {
           // ── 401: Token died mid-sync — refresh once and retry this item ──
           if (!had401) {
             had401 = true;
-            console.log('[sync:syncNow] Got 401 — forcing token refresh and retrying...');
+            logger.info('sync.syncNow', 'Got 401 — forcing token refresh and retrying...');
             // Force refresh (bypass cache)
             this.cachedAccessToken = null;
             const newToken = await this.refreshAccessToken();
@@ -1055,14 +1056,14 @@ export class SyncEngine {
               } catch { /* anon key also failed — will be flagged AUTH_EXPIRED below */ }
             }
             if (anonSaved) {
-              console.log(`[sync] Pushed ${successCount} ticket(s) with anon key despite auth failure`);
+              logger.info('sync', 'Pushed tickets with anon key despite auth failure', { count: successCount });
             }
 
             // Flag remaining unsynced items with AUTH_EXPIRED
             this.db.prepare(
               "UPDATE sync_queue SET last_error = ? WHERE synced_at IS NULL"
             ).run('AUTH_EXPIRED: re-login required');
-            console.warn('[sync] Auth expired — remaining pending items kept for retry after re-login');
+            logger.warn('sync', 'Auth expired — remaining pending items kept for retry after re-login');
             this.updatePendingCount();
 
             // Fire auth error so UI can prompt re-login (but only if not suppressed)
@@ -1119,7 +1120,7 @@ export class SyncEngine {
     }
 
     if (successCount > 0) {
-      console.log(`[sync:syncNow] ✓ Successfully synced ${successCount}/${pending.length} items`);
+      logger.info('sync.syncNow', 'Successfully synced items', { successCount, totalCount: pending.length });
     }
 
     this.lastSyncAt = new Date().toISOString();
@@ -1151,7 +1152,7 @@ export class SyncEngine {
           AND NOT ${isCriticalSql}`
     ).run();
     if (discarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${discarded.changes} non-terminal sync items after 3 failed attempts`);
+      logger.warn('sync', 'Auto-discarded non-terminal sync items after 3 failed attempts', { count: discarded.changes });
       this.updatePendingCount();
     }
 
@@ -1167,7 +1168,7 @@ export class SyncEngine {
          AND record_id NOT IN (SELECT id FROM tickets)
     `).run();
     if (orphanDiscarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${orphanDiscarded.changes} sync items for deleted tickets`);
+      logger.warn('sync', 'Auto-discarded sync items for deleted tickets', { count: orphanDiscarded.changes });
       this.updatePendingCount();
     }
 
@@ -1181,7 +1182,7 @@ export class SyncEngine {
           AND NOT ${isCriticalSql}`
     ).run(fourHoursAgo);
     if (staleDiscarded.changes > 0) {
-      console.warn(`[sync] Auto-discarded ${staleDiscarded.changes} stale non-terminal sync items older than 4 hours`);
+      logger.warn('sync', 'Auto-discarded stale non-terminal sync items older than 4 hours', { count: staleDiscarded.changes });
       this.updatePendingCount();
     }
 
@@ -1191,7 +1192,7 @@ export class SyncEngine {
         WHERE synced_at IS NULL AND attempts >= 5 AND ${isCriticalSql}`
     ).get() as any;
     if (stuckTerminal?.c > 0) {
-      console.warn(`[sync] ${stuckTerminal.c} TERMINAL status mutation(s) stuck after 5+ attempts — will keep retrying forever`);
+      logger.warn('sync', 'TERMINAL status mutations stuck after 5+ attempts — will keep retrying forever', { count: stuckTerminal.c });
     }
 
     // Warn about stuck INSERT items
@@ -1199,7 +1200,7 @@ export class SyncEngine {
       "SELECT COUNT(*) as c FROM sync_queue WHERE synced_at IS NULL AND attempts >= 5 AND operation = 'INSERT'"
     ).get() as any;
     if (stuckInserts?.c > 0) {
-      console.warn(`[sync] ${stuckInserts.c} ticket INSERT(s) stuck after 5+ attempts — will keep retrying`);
+      logger.warn('sync', 'Ticket INSERTs stuck after 5+ attempts — will keep retrying', { count: stuckInserts.c });
     }
   }
 
@@ -1237,7 +1238,7 @@ export class SyncEngine {
         // 400 on ticket INSERT likely means qr_token collision — regenerate and retry once
         if (res.status === 400 && item.table_name === 'tickets' && payload.qr_token) {
           const errBody = await res.text().catch(() => '');
-          console.warn(`[sync:replay] INSERT 400 for ticket ${item.record_id}: ${errBody.substring(0, 200)}`);
+          logger.warn('sync.replay', 'INSERT 400 for ticket', { recordId: item.record_id, body: errBody.substring(0, 200) });
           if (errBody.includes('qr_token') || errBody.includes('duplicate') || errBody.includes('unique')) {
             const { randomUUID } = require('crypto');
             payload.qr_token = randomUUID().replace(/-/g, '').slice(0, 12);
@@ -1247,7 +1248,7 @@ export class SyncEngine {
             // Also update local SQLite ticket
             this.db.prepare("UPDATE tickets SET qr_token = ? WHERE id = ?")
               .run(payload.qr_token, item.record_id);
-            console.log(`[sync:replay] Regenerated qr_token for ${item.record_id}, retrying...`);
+            logger.info('sync.replay', 'Regenerated qr_token, retrying...', { recordId: item.record_id });
             const retryRes = await fetch(baseUrl, {
               method: 'POST',
               headers,
@@ -1280,10 +1281,10 @@ export class SyncEngine {
             // treat as failure so the sync retries and the DB trigger can fire notifications.
             const isCritical = ['called', 'serving', 'cancelled', 'served', 'no_show'].includes(payload.status);
             if (isCritical) {
-              console.warn(`[sync:replay] PATCH returned 0 rows for CRITICAL ${payload.status} on ${item.record_id} — will retry`);
+              logger.warn('sync.replay', 'PATCH returned 0 rows for CRITICAL status — will retry', { status: payload.status, recordId: item.record_id });
               throw new Error(`PATCH 0 rows for ${payload.status} — needs retry`);
             }
-            console.warn(`[sync:replay] PATCH returned 0 rows for ${item.operation} on ${item.record_id} — row was likely changed/deleted remotely`);
+            logger.warn('sync.replay', 'PATCH returned 0 rows — row was likely changed/deleted remotely', { operation: item.operation, recordId: item.record_id });
             // Still mark as synced to avoid infinite retries on a conflict
             return { status: 0 };
           }
@@ -1307,10 +1308,10 @@ export class SyncEngine {
     ).get() as any;
     const session = sessionRow ? JSON.parse(sessionRow.value) : null;
     if (!session?.office_ids?.length) {
-      console.log('[sync:pullLatest] No session or office_ids, skipping pull');
+      logger.info('sync.pullLatest', 'No session or office_ids, skipping pull');
       return;
     }
-    console.log('[sync:pullLatest] Pulling for offices:', session.office_ids);
+    logger.info('sync.pullLatest', 'Pulling for offices', { officeIds: session.office_ids });
 
     // Get a verified-fresh token (will refresh if expired)
     const freshToken = await this.ensureFreshToken();
@@ -1440,11 +1441,11 @@ export class SyncEngine {
               // in that case the cloud hasn't seen our mutation yet and a pull-downgrade
               // would clobber a legitimate local operator action. Otherwise, cloud wins.
               if (hasPendingSync) {
-                console.log(`[sync:pull] Skipping downgrade for ${t.ticket_number}: local=${local.status}(${localRank}) > cloud=${t.status}(${cloudRank}), pending sync exists`);
+                logger.info('sync.pull', 'Skipping downgrade — pending sync exists', { ticketNumber: t.ticket_number, localStatus: local.status, localRank, cloudStatus: t.status, cloudRank });
                 continue;
               }
 
-              console.log(`[sync:pull] Cloud overrides local for ${t.ticket_number}: local=${local.status} → cloud=${t.status} (no pending sync)`);
+              logger.info('sync.pull', 'Cloud overrides local — no pending sync', { ticketNumber: t.ticket_number, localStatus: local.status, cloudStatus: t.status });
               if (local.status === 'cancelled' && ['waiting', 'called', 'serving'].includes(t.status)) {
                 logTicketEvent(t.id, 'restored_from_cloud', {
                   ticketNumber: t.ticket_number,
@@ -1517,7 +1518,7 @@ export class SyncEngine {
           const r = await fetch(url, { headers: hdrs, signal: AbortSignal.timeout(15000) });
           if (!r.ok) {
             const body = await r.text().catch(() => '');
-            console.warn(`[sync:pullLatest] Ticket fetch failed (${r.status}) for office ${officeId}: ${body.slice(0, 200)}`);
+            logger.warn('sync.pullLatest', 'Ticket fetch failed', { status: r.status, officeId, body: body.slice(0, 200) });
             return null;
           }
           return r.json() as Promise<any[]>;
@@ -1529,28 +1530,28 @@ export class SyncEngine {
         let activeTickets = await fetchTickets(headers, activeUrl);
         if (activeTickets === null) {
           // Token expired — force refresh (bypass cache) and retry once
-          console.log('[sync:pullLatest] Token expired, forcing refresh...');
+          logger.info('sync.pullLatest', 'Token expired, forcing refresh...');
           this.cachedAccessToken = null;
           const newToken = await this.refreshAccessToken();
           if (newToken) {
             headers.Authorization = `Bearer ${newToken}`;
-            console.log('[sync:pullLatest] Token refreshed, retrying...');
+            logger.info('sync.pullLatest', 'Token refreshed, retrying...');
             activeTickets = await fetchTickets(headers, activeUrl);
           }
           // If still null, try anon key as last resort (read-only but better than nothing)
           if (activeTickets === null) {
-            console.log('[sync:pullLatest] Trying anon key as fallback...');
+            logger.info('sync.pullLatest', 'Trying anon key as fallback...');
             const anonHeaders = { apikey: this.supabaseKey, Authorization: `Bearer ${this.supabaseKey}` };
             activeTickets = await fetchTickets(anonHeaders, activeUrl);
           }
         }
 
         if (activeTickets !== null) {
-          console.log(`[sync:pullLatest] Upserting ${activeTickets.length} active tickets. locallyModified: ${locallyModifiedIds.size}, tickets: ${activeTickets.map((t:any) => `${t.ticket_number}(${t.status})`).join(', ')}`);
+          logger.info('sync.pullLatest', 'Upserting active tickets', { count: activeTickets.length, locallyModifiedCount: locallyModifiedIds.size, tickets: activeTickets.map((t:any) => `${t.ticket_number}(${t.status})`).join(', ') });
           upsertBatch(activeTickets);
-          console.log(`[sync:pullLatest] Active tickets for office ${officeId}: ${activeTickets.length} (${activeTickets.filter((t: any) => t.status === 'waiting').length} waiting)`);
+          logger.info('sync.pullLatest', 'Active tickets pulled for office', { officeId, total: activeTickets.length, waiting: activeTickets.filter((t: any) => t.status === 'waiting').length });
         } else {
-          console.warn(`[sync:pullLatest] Could not fetch active tickets for office ${officeId}`);
+          logger.warn('sync.pullLatest', 'Could not fetch active tickets for office', { officeId });
           continue; // skip this office, try the next one
         }
 
@@ -1592,7 +1593,7 @@ export class SyncEngine {
             if (local.created_at) {
               const ageMs = Date.now() - new Date(local.created_at).getTime();
               if (ageMs < 120_000) {
-                console.log(`[sync:mirror] Skipping ${local.ticket_number} — too recent (${Math.round(ageMs / 1000)}s)`);
+                logger.info('sync.mirror', 'Skipping ticket — too recent', { ticketNumber: local.ticket_number, ageSeconds: Math.round(ageMs / 1000) });
                 continue;
               }
             }
@@ -1608,7 +1609,7 @@ export class SyncEngine {
             // Station's count and position list mirror cloud exactly. We do NOT mark
             // it 'cancelled' — that would leave a ghost row the upsert path could not
             // cleanly distinguish from an operator cancel on next pull.
-            console.log(`[sync:mirror] Removing ${local.ticket_number}: absent from cloud (local=${local.status})`);
+            logger.info('sync.mirror', 'Removing ticket absent from cloud', { ticketNumber: local.ticket_number, localStatus: local.status });
             logTicketEvent(local.id, 'mirror_removed', {
               ticketNumber: local.ticket_number,
               fromStatus: local.status,
@@ -1636,7 +1637,7 @@ export class SyncEngine {
           ).get(t.id) as any;
           if (localL) {
             // Cloud now has this ticket with a real number — delete the L- local copy
-            console.log(`[sync:cleanup] Removing local ${localL.ticket_number}, cloud has ${t.ticket_number}`);
+            logger.info('sync.cleanup', 'Removing local L-prefix ticket — cloud has real number', { localNumber: localL.ticket_number, cloudNumber: t.ticket_number });
             this.db.prepare("DELETE FROM tickets WHERE id = ? AND ticket_number LIKE 'L-%'").run(t.id);
           }
         }
@@ -1658,7 +1659,7 @@ export class SyncEngine {
         this.onDataPulled();
       }
     } catch (err: any) {
-      console.error('[sync:pullLatest] Error:', err?.message ?? err);
+      logger.error('sync.pullLatest', 'Pull error', { error: err?.message ?? err });
     }
   }
 
@@ -1674,12 +1675,12 @@ export class SyncEngine {
       ).all() as any[];
       if (orphans.length === 0) return;
 
-      console.log(`[sync:reconcile] Found ${orphans.length} ticket(s) with L- prefix after sync — fixing...`);
+      logger.info('sync.reconcile', 'Found tickets with L- prefix after sync — fixing...', { count: orphans.length });
       for (const ticket of orphans) {
         await this.rewriteOfflineTicket(ticket.id);
       }
     } catch (err: any) {
-      console.warn('[sync:reconcile] L-prefix reconciliation error:', err?.message);
+      logger.warn('sync.reconcile', 'L-prefix reconciliation error', { error: err?.message });
     }
   }
 
@@ -1699,7 +1700,7 @@ export class SyncEngine {
         AND (last_error LIKE '%timeout%' OR last_error LIKE '%fetch%' OR last_error LIKE '%5___%' OR last_error LIKE '%network%')
     `).run(thirtyMinAgo);
     if (recovered.changes > 0) {
-      console.log(`[sync:recover] Reset ${recovered.changes} stuck item(s) for retry`);
+      logger.info('sync.recover', 'Reset stuck items for retry', { count: recovered.changes });
     }
 
     // Critical items (called/serving/cancelled/served/no_show) and INSERTs that have
@@ -1717,7 +1718,7 @@ export class SyncEngine {
         )
     `).run(thirtyMinAgo);
     if (criticalRecovered.changes > 0) {
-      console.log(`[sync:recover] Unblocked ${criticalRecovered.changes} critical item(s) stuck at 10+ attempts`);
+      logger.info('sync.recover', 'Unblocked critical items stuck at 10+ attempts', { count: criticalRecovered.changes });
     }
   }
 
@@ -1743,7 +1744,7 @@ export class SyncEngine {
     for (const t of stale) {
       revert.run(t.id);
 
-      console.warn('[sync:staleCalled] AUTO-REVERT stale called ticket', {
+      logger.warn('sync.staleCalled', 'AUTO-REVERT stale called ticket', {
         ticketId: t.id,
         ticketNumber: t.ticket_number,
         previousDesk: t.desk_id,
@@ -1769,7 +1770,7 @@ export class SyncEngine {
       `).run(syncId, t.id, JSON.stringify({ status: 'waiting', desk_id: null, called_at: null, called_by_staff_id: null }), now);
     }
 
-    console.warn(`[sync:staleCalled] Reverted ${stale.length} ticket(s) called 30+ min ago back to waiting`);
+    logger.warn('sync.staleCalled', 'Reverted tickets called 30+ min ago back to waiting', { count: stale.length });
     this.onTicketError({
       message: `${stale.length} ticket(s) returned to queue — called 30+ min ago with no action`,
       type: 'stale_called_reverted',
@@ -1798,14 +1799,14 @@ export class SyncEngine {
           (result.cancelled_waiting ?? 0) + (result.completed_serving ?? 0) +
           (result.cancelled_yesterday ?? 0) + (result.completed_yesterday ?? 0);
         if (total > 0) {
-          console.log(`[sync:autoResolve] Resolved ${total} stale tickets:`, result);
+          logger.info('sync.autoResolve', 'Resolved stale tickets', { total, ...result });
           // Pull fresh data since tickets changed
           await this.pullLatest();
         }
       }
     } catch (err: any) {
       // Non-critical — cron on Supabase handles this too
-      console.log('[sync:autoResolve] Skipped:', err?.message ?? err);
+      logger.info('sync.autoResolve', 'Skipped', { error: err?.message ?? err });
     }
   }
 }

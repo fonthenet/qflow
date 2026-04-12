@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { safeCompare } from '@/lib/crypto-utils';
 import { notifyCustomer, type NotifyEvent } from '@/lib/notify';
 import { APP_BASE_URL } from '@/lib/config';
+import { isValidTransition } from '@qflo/shared';
 
 /**
  * POST /api/ticket-transition
@@ -94,6 +95,14 @@ export async function POST(request: NextRequest) {
 
   if (fetchErr || !ticket) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+  }
+
+  // ── Validate transition ────────────────────────────────────────────
+  if (!isValidTransition(ticket.status, status)) {
+    return NextResponse.json(
+      { error: `Invalid transition: ${ticket.status} → ${status}` },
+      { status: 409 },
+    );
   }
 
   // ── Update ticket status ──────────────────────────────────────────

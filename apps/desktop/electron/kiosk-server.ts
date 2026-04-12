@@ -7,7 +7,8 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
 import { normalizeLocale } from '../src/lib/i18n';
-import { isValidTransition } from './ticket-transitions';
+import { isValidTransition } from '@qflo/shared';
+import { logger } from './logger';
 
 // ── Static kiosk assets (loaded once at startup, served from memory) ──
 const KIOSK_DIR = join(__dirname, 'kiosk');
@@ -84,7 +85,7 @@ function checkBusinessHours(
       const next = findNextOpenDay(operatingHours, dayIndex);
       return { ...base, isOpen: false, reason: 'holiday', todayHours: null, holidayName, nextOpen: next };
     }
-  } catch { /* table may not exist yet */ }
+  } catch (e: any) { logger.warn('kiosk', 'Holiday check failed (table may not exist yet)', { error: e?.message }); }
 
   const todayHours = operatingHours[day];
   if (!todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00')) {
@@ -219,7 +220,7 @@ async function refreshOfficeRuntimeConfig(officeId: string) {
           const orgs = await orgRes.json();
           if (orgs[0]?.timezone) orgTimezone = orgs[0].timezone;
         }
-      } catch { /* fallback to office timezone */ }
+      } catch (e: any) { logger.warn('kiosk', 'Failed to fetch org timezone, falling back to office timezone', { error: e?.message }); }
     }
 
     db.prepare(`
@@ -386,7 +387,7 @@ function authenticateStationRequest(req: http.IncomingMessage, res: http.ServerR
     try {
       const reqUrl = new URL(req.url ?? '/', `http://localhost:${localPort}`);
       token = reqUrl.searchParams.get('token') ?? undefined;
-    } catch { /* ignore parse errors */ }
+    } catch (e: any) { logger.warn('kiosk', 'Failed to parse token from query params', { error: e?.message }); }
   }
   if (!token) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -534,18 +535,18 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       const ip = getLocalIP();
       const url = `http://${ip}:${port}`;
       if (port !== originalPort) {
-        console.warn(`[kiosk] Port ${originalPort} was in use — started on port ${port} instead`);
+        logger.warn('kiosk', `Port ${originalPort} was in use — started on port ${port} instead`);
       }
-      console.log(`Kiosk server running at ${url}/kiosk`);
+      logger.info('kiosk', `Kiosk server running at ${url}/kiosk`);
       resolve({ url, port });
     });
 
     server.on('error', (err: NodeJS.ErrnoException) => {
       if (port < 9000) {
-        console.warn(`[kiosk] Port ${port} unavailable (${err.code ?? err.message}) — trying ${port + 1}`);
+        logger.warn('kiosk', `Port ${port} unavailable — trying ${port + 1}`, { error: err.code ?? err.message });
         startKioskServer(port + 1, originalPort).then(resolve).catch(reject);
       } else {
-        console.error(`[kiosk] All ports ${originalPort}-9000 exhausted. Cannot start server.`);
+        logger.error('kiosk', `All ports ${originalPort}-9000 exhausted. Cannot start server.`);
         reject(new Error(`Could not find an available port (tried ${originalPort}-9000). Close other applications using these ports and restart.`));
       }
     });
@@ -612,20 +613,20 @@ export function startDiscoveryBroadcast(httpPort: number) {
     });
 
     discoveryServer.on('error', (err: NodeJS.ErrnoException) => {
-      console.warn(`[discovery] Port ${DISCOVERY_PORT} unavailable:`, err.message);
+      logger.warn('discovery', `Port ${DISCOVERY_PORT} unavailable`, { error: err.message });
     });
 
     discoveryServer.listen(DISCOVERY_PORT, '0.0.0.0', () => {
-      console.log(`[discovery] Listening on :${DISCOVERY_PORT} → main API :${httpPort}`);
+      logger.info('discovery', `Listening on :${DISCOVERY_PORT} → main API :${httpPort}`);
     });
   } catch (err: any) {
-    console.warn('[discovery] Failed to start (non-fatal):', err?.message);
+    logger.warn('discovery', 'Failed to start (non-fatal)', { error: err?.message });
   }
 }
 
 export function stopDiscoveryBroadcast() {
   if (discoveryServer) {
-    try { discoveryServer.close(); } catch { /* ignore */ }
+    try { discoveryServer.close(); } catch (e: any) { logger.warn('discovery', 'Failed to close discovery server', { error: e?.message }); }
     discoveryServer = null;
   }
 }
@@ -712,7 +713,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     priorities = db.prepare(
       "SELECT id, name, icon, color, weight FROM priority_categories WHERE organization_id = ? AND is_active = 1 ORDER BY weight DESC"
     ).all(office.organization_id) as any[];
-  } catch { /* table may not exist yet */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to fetch priority categories (table may not exist yet)', { error: e?.message }); }
 
   // Per-service queue counts
   let serviceQueueCounts: any[] = [];
@@ -726,7 +727,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
       WHERE s.department_id IN (SELECT id FROM departments WHERE office_id = ?)
       GROUP BY s.id, s.name, s.department_id
     `).all(office.id, office.id) as any[];
-  } catch { /* ignore */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to fetch service queue counts', { error: e?.message }); }
 
   // Try to get org name + logo from Supabase
   let logoUrl: string | null = null;
@@ -746,7 +747,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
         // Store org timezone as single source of truth
         if (orgs[0]?.timezone) organizationSettings._orgTimezone = orgs[0].timezone;
       }
-    } catch { /* ignore */ }
+    } catch (e: any) { logger.warn('kiosk', 'Failed to fetch org branding info', { error: e?.message }); }
   }
 
   // ── Kiosk enabled check ────────────────────────────────────────
@@ -927,7 +928,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             res.end(JSON.stringify({ error: 'Self-service ticket creation is disabled. Please check in at the front desk.' }));
             return;
           }
-        } catch { /* non-critical — allow ticket creation if org settings unreadable */ }
+        } catch (e: any) { logger.warn('kiosk', 'Failed to read org settings for check-in mode (non-critical)', { error: e?.message }); }
       }
 
       const deptCode = dept?.code ?? 'Q';
@@ -939,7 +940,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       // Online: Supabase RPC atomically reserves next sequence (no duplicates)
       // Offline: local SQLite atomic counter with L-prefix
       let authToken: string | undefined;
-      try { authToken = await getAuthToken?.(); } catch { /* use anon key fallback */ }
+      try { authToken = await getAuthToken?.(); } catch (e: any) { logger.warn('kiosk', 'Failed to get auth token, using anon key fallback', { error: e?.message }); }
       const reserved = await reserveTicketNumber(
         SUPABASE_URL, SUPABASE_KEY, officeId, departmentId, deptCode, isCloudReachable, db,
         authToken,
@@ -1010,13 +1011,13 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
                 JSON.stringify({ status: 'checked_in' }),
                 now
               );
-            } catch { /* appointments table may not exist */ }
+            } catch (e: any) { logger.warn('kiosk', 'Failed to update appointment status (table may not exist)', { error: e?.message }); }
           }
         })();
       } catch (txErr: any) {
         // Handle duplicate detected inside transaction (sentinel throw)
         if (txErr?.__duplicate) {
-          console.warn(`[kiosk] Duplicate check-in blocked (in-txn): appointment ${safeAppointmentId} already has ticket ${txErr.ticket_number}`);
+          logger.warn('kiosk', `Duplicate check-in blocked (in-txn): appointment ${safeAppointmentId} already has ticket ${txErr.ticket_number}`);
           const pos = (db.prepare("SELECT COUNT(*) as c FROM tickets WHERE office_id = ? AND status = 'waiting'").get(officeId) as any)?.c ?? 0;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ticket: { id: txErr.id, ticket_number: txErr.ticket_number, status: 'waiting', position: pos, duplicate: true } }));
@@ -1024,7 +1025,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         }
         // Handle SQLITE_CONSTRAINT from the unique partial index (concurrent race that bypassed the SELECT check)
         if (txErr?.code === 'SQLITE_CONSTRAINT' || txErr?.code === 'SQLITE_CONSTRAINT_UNIQUE' || (txErr?.message && txErr.message.includes('UNIQUE constraint failed'))) {
-          console.warn(`[kiosk] Duplicate check-in blocked (constraint): appointment ${safeAppointmentId}`);
+          logger.warn('kiosk', `Duplicate check-in blocked (constraint): appointment ${safeAppointmentId}`);
           if (safeAppointmentId) {
             const existing = db.prepare(
               "SELECT id, ticket_number FROM tickets WHERE appointment_id = ? AND status NOT IN ('cancelled', 'no_show') LIMIT 1"
@@ -1074,7 +1075,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
           color: { dark: '#000000', light: '#ffffff' },
         });
       } catch (qrErr) {
-        console.error('[kiosk] QR generation error:', qrErr);
+        logger.error('kiosk', 'QR generation error', { error: (qrErr as any)?.message });
       }
 
       // Estimate wait: position * avg service time for this service
@@ -1091,7 +1092,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         // Compute country dial code for phone normalization
         const { resolveDialCode } = require('@qflo/shared');
         let officeCC2: string | null = null;
-        try { const s = typeof officeRow?.settings === 'string' ? JSON.parse(officeRow.settings) : (officeRow?.settings || {}); officeCC2 = s.country_code || null; } catch { /* empty */ }
+        try { const s = typeof officeRow?.settings === 'string' ? JSON.parse(officeRow.settings) : (officeRow?.settings || {}); officeCC2 = s.country_code || null; } catch (e: any) { logger.warn('kiosk', 'Failed to parse office settings for country code', { error: e?.message }); }
         const countryDialCode = resolveDialCode(officeRow?.timezone, officeCC2);
 
         try {
@@ -1115,12 +1116,12 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
             signal: AbortSignal.timeout(8000),
           });
           const waBody = await waRes.json().catch(() => ({}));
-          console.log('[kiosk] WhatsApp notify response:', waRes.status, JSON.stringify(waBody));
+          logger.info('kiosk', 'WhatsApp notify response', { status: waRes.status, body: waBody });
           whatsappStatus = waRes.ok && waBody.sent !== false
             ? { sent: true }
             : { sent: false, error: waBody.error || `HTTP ${waRes.status}` };
         } catch (waErr: any) {
-          console.warn('[kiosk] WhatsApp notify failed:', waErr?.message);
+          logger.warn('kiosk', 'WhatsApp notify failed', { error: waErr?.message });
           whatsappStatus = { sent: false, error: waErr?.message || 'Network error' };
         }
       }
@@ -1141,7 +1142,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
         whatsappStatus,
       }));
     } catch (err: any) {
-      console.error('[kiosk] Ticket creation error:', err?.message, err?.stack);
+      logger.error('kiosk', 'Ticket creation error', { error: err?.message, stack: err?.stack });
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: `Failed to create ticket: ${err?.message || 'Unknown error'}. Please try again.` }));
     }
@@ -1249,7 +1250,7 @@ function handleQueueStatus(url: URL, res: http.ServerResponse) {
       WHERE s.department_id IN (SELECT id FROM departments WHERE office_id = ?)
       GROUP BY s.id, s.name, s.department_id
     `).all(officeId, todayISO, officeId) as any[];
-  } catch { /* ignore */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to fetch per-service queue counts', { error: e?.message }); }
 
   const services = serviceCounts.map(s => ({
     id: s.id,
@@ -1429,7 +1430,7 @@ async function handleDisplayData(url: URL, res: http.ServerResponse) {
     for (const r of avgRows) {
       deptAvgTimes[r.id] = r.avg_time ?? 10;
     }
-  } catch { /* ignore */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to compute per-department avg service times', { error: e?.message }); }
 
   // Track per-department position counters for 1-based queue position
   const deptPositionCounters: Record<string, number> = {};
@@ -1530,7 +1531,7 @@ function handleCheckAppointment(req: http.IncomingMessage, res: http.ServerRespo
             appointment = rows[0];
           }
         }
-      } catch { /* cloud unreachable — fall through with null */ }
+      } catch (e: any) { logger.warn('kiosk', 'Cloud unreachable for appointment lookup', { error: e?.message }); }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ appointment }));
@@ -1572,7 +1573,7 @@ function handleCustomerLookup(url: URL, res: http.ServerResponse) {
       WHERE organization_id = ? AND phone = ?
       LIMIT 1
     `).get(orgId, safePhone) as any;
-  } catch { /* customers table may not exist */ }
+  } catch (e: any) { logger.warn('kiosk', 'Customer lookup failed (table may not exist)', { error: e?.message }); }
 
   if (!customer) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1592,7 +1593,7 @@ function handleCustomerLookup(url: URL, res: http.ServerResponse) {
       ORDER BY t.created_at DESC
       LIMIT 5
     `).all(`%${safePhone}%`) as any[];
-  } catch { /* ignore */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to fetch recent tickets for customer', { error: e?.message }); }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -2634,7 +2635,7 @@ function serveStationIndex(res: http.ServerResponse) {
       const db = getDB();
       const row = db.prepare("SELECT station_token FROM session WHERE key = 'current'").get() as any;
       stationToken = row?.station_token ?? '';
-    } catch { /* no session yet */ }
+    } catch (e: any) { logger.warn('kiosk', 'Failed to read station token from session (no session yet)', { error: e?.message }); }
 
     // Inject the HTTP shim BEFORE the app script — this creates window.qf
     // using fetch() instead of ipcRenderer
@@ -2947,7 +2948,7 @@ function handleStationSyncStatus(res: http.ServerResponse) {
     const db = getDB();
     const row = db.prepare("SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL").get() as any;
     status.pendingCount = row?.count ?? status.pendingCount;
-  } catch { /* use engine value */ }
+  } catch (e: any) { logger.warn('kiosk', 'Failed to query sync_queue count, using engine value', { error: e?.message }); }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(status));
@@ -2980,7 +2981,7 @@ async function handleStationSyncForce(res: http.ServerResponse) {
       const db = getDB();
       const row = db.prepare("SELECT COUNT(*) as count FROM sync_queue WHERE synced_at IS NULL").get() as any;
       status.pendingCount = row?.count ?? status.pendingCount;
-    } catch { /* ignore */ }
+    } catch (e: any) { logger.warn('kiosk', 'Failed to query sync_queue count after force sync', { error: e?.message }); }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, ...status }));
   } catch (err: any) {
@@ -3016,8 +3017,8 @@ function handleStationSessionClear(res: http.ServerResponse) {
   try {
     db.prepare("DELETE FROM session WHERE key = 'current'").run();
     db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
-  } catch {
-    // ignore
+  } catch (e: any) {
+    logger.warn('kiosk', 'Failed to clear session', { error: e?.message });
   }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
@@ -3153,7 +3154,7 @@ function handleStationBody(req: http.IncomingMessage, res: http.ServerResponse, 
     try { parsed = JSON.parse(body); }
     catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Invalid JSON' })); return; }
     try { handler(parsed, res); }
-    catch (e: any) { console.error('[KioskServer] handler error:', e); if (!res.writableEnded) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message ?? 'Internal error' })); } }
+    catch (e: any) { logger.error('KioskServer', 'Handler error', { error: e?.message }); if (!res.writableEnded) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message ?? 'Internal error' })); } }
   });
 }
 
@@ -3173,7 +3174,7 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
 
   // Validate status transition
   if (safe.status && prev && !isValidTransition(prev.status, safe.status)) {
-    console.warn(`[KioskServer] Invalid transition: ${prev.status} → ${safe.status} for ticket ${ticketId}`);
+    logger.warn('KioskServer', `Invalid transition: ${prev.status} → ${safe.status} for ticket ${ticketId}`);
     res.writeHead(409, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: `Invalid status transition: ${prev.status} → ${safe.status}` }));
     return;

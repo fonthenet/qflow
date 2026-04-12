@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidTransition, isTerminalStatus, VALID_TRANSITIONS } from '../ticket-transitions';
+import { isValidTransition, isTerminalStatus, VALID_TRANSITIONS } from '../constants/ticket-transitions';
 
 describe('isValidTransition', () => {
   // ── Valid transitions ──────────────────────────────────────────────

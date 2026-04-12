@@ -10,7 +10,7 @@ import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP,
 import { CONFIG } from './config';
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
-import { isValidTransition } from './ticket-transitions';
+import { isValidTransition } from '@qflo/shared';
 
 // ── Initialize Sentry as early as possible ──────────────────────────
 initSentry();
@@ -549,7 +549,7 @@ function setupIPC() {
           }
         }
       } catch (e) {
-        console.warn('[ipc] failed to fetch appointment locale:', (e as any)?.message);
+        logger.warn('ipc', 'Failed to fetch appointment locale', { error: (e as any)?.message });
       }
     }
     ticket.locale = resolvedLocale;
@@ -687,12 +687,12 @@ function setupIPC() {
               signal: AbortSignal.timeout(8000),
             });
             const waBody = await waRes.json().catch(() => ({}));
-            console.log('[ipc] WhatsApp notify response:', waRes.status, JSON.stringify(waBody));
+            logger.info('ipc', 'WhatsApp notify response', { status: waRes.status, body: waBody });
             whatsappStatus = waRes.ok && waBody.sent !== false
               ? { sent: true }
               : { sent: false, error: waBody.error || `HTTP ${waRes.status}` };
           } catch (waErr: any) {
-            console.warn('[ipc] WhatsApp notify failed:', waErr?.message);
+            logger.warn('ipc', 'WhatsApp notify failed', { error: waErr?.message });
             whatsappStatus = { sent: false, error: waErr?.message || 'Network error' };
           }
         }
@@ -762,7 +762,7 @@ function setupIPC() {
 
     // ── Validate status transition ──
     if (safeUpdates.status && prevTicket && !isValidTransition(prevTicket.status, safeUpdates.status)) {
-      console.warn(`[ipc] Invalid transition: ${prevTicket.status} → ${safeUpdates.status} for ticket ${ticketId}`);
+      logger.warn('ipc', 'Invalid transition', { from: prevTicket.status, to: safeUpdates.status, ticketId });
       return null;
     }
 
@@ -858,7 +858,7 @@ function setupIPC() {
             }
           })
           .catch((err: any) => {
-            console.warn('[ticket-transition] Direct API call failed, sync will handle:', err?.message);
+            logger.warn('ticket-transition', 'Direct API call failed, sync will handle', { error: err?.message });
             mainWindow?.webContents.send('notify:result', { ticketId, sent: false, error: 'network_error' });
           });
       }).catch(() => {
@@ -1003,7 +1003,7 @@ function setupIPC() {
     })();
 
     if (skippedCount > 0) {
-      console.log(`[call-next] Skipped ${skippedCount} ticket(s) cancelled remotely`);
+      logger.info('call-next', 'Skipped ticket(s) cancelled remotely', { skippedCount });
     }
 
     if (!ticket) return null;
@@ -1046,7 +1046,7 @@ function setupIPC() {
             }
           })
           .catch((err: any) => {
-            console.warn('[call-next] Direct API call failed, sync will handle:', err?.message);
+            logger.warn('call-next', 'Direct API call failed, sync will handle', { error: err?.message });
             mainWindow?.webContents.send('notify:result', { ticketId: ticket.id, sent: false, error: 'network_error' });
           });
       }).catch(() => {});
@@ -1163,7 +1163,7 @@ function setupIPC() {
       const encrypted = safeStorage.encryptString(pwd).toString('base64');
       db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('auth_cred', ?)")
         .run(JSON.stringify({ email: session.email, enc: encrypted }));
-      console.log('[auth] Credentials encrypted and stored for silent re-auth');
+      logger.info('auth', 'Credentials encrypted and stored for silent re-auth');
     }
 
     // Generate a station_token for authenticating HTTP station endpoints
@@ -1401,7 +1401,7 @@ function setupIPC() {
       req.on('error', () => {});
       req.end(payload);
     } catch (e: any) {
-      console.warn('[heartbeat] Error:', e?.message);
+      logger.warn('heartbeat', 'Error', { error: e?.message });
     }
   }
   const heartbeatInterval = setInterval(sendHeartbeat, 30000);
@@ -1440,9 +1440,9 @@ function setupIPC() {
           body: JSON.stringify({ appointmentId: appt.id, action: 'no_show' }),
         }).catch(() => {});
       }
-      console.log(`[no-show-sweep] marked ${stale.length} appointment(s) as no_show`);
+      logger.info('no-show-sweep', 'Marked appointment(s) as no_show', { count: stale.length });
     } catch (e: any) {
-      console.warn('[no-show-sweep] error:', e?.message);
+      logger.warn('no-show-sweep', 'Error', { error: e?.message });
     }
   }
   const noShowInterval = setInterval(sweepNoShows, 5 * 60 * 1000);
@@ -1456,7 +1456,7 @@ function setupIPC() {
       require('child_process').exec('tasklist /FI "IMAGENAME eq rustdesk.exe" /NH', { timeout: 5000 }, (err: any, stdout: string) => {
         if (err || !stdout.toLowerCase().includes('rustdesk.exe')) {
           // RustDesk is no longer running — clear session
-          console.log('[Support] RustDesk process no longer detected — clearing session');
+          logger.info('Support', 'RustDesk process no longer detected — clearing session');
           rustdeskProcess = null;
 
           reportSupportStatus(null, null, false);
@@ -1493,7 +1493,7 @@ function setupIPC() {
         supportActive: active,
       });
       const url = new URL(`${CONFIG.CLOUD_URL}/api/desktop-status`);
-      console.log('[Support] Reporting to cloud:', url.href, active ? 'START' : 'STOP');
+      logger.info('Support', 'Reporting to cloud', { url: url.href, action: active ? 'START' : 'STOP' });
       const req = https.request({
         hostname: url.hostname,
         port: url.port || 443,
@@ -1503,11 +1503,11 @@ function setupIPC() {
       }, (res: any) => {
         let body = '';
         res.on('data', (c: string) => { body += c; });
-        res.on('end', () => { console.log(`[Support] Cloud response: ${res.statusCode}`, body); });
+        res.on('end', () => { logger.info('Support', 'Cloud response', { statusCode: res.statusCode, body }); });
       });
-      req.on('error', (err: any) => { console.error('[Support] Cloud report error:', err.message); });
+      req.on('error', (err: any) => { logger.error('Support', 'Cloud report error', { error: err.message }); });
       req.end(payload);
-    } catch (err: any) { console.error('[Support] reportSupportStatus error:', err.message); }
+    } catch (err: any) { logger.error('Support', 'reportSupportStatus error', { error: err.message }); }
   }
 
   function getRustDeskDir(): string {
@@ -1540,10 +1540,10 @@ function setupIPC() {
 
   function installRustDesk(portableExe: string): Promise<boolean> {
     return new Promise((resolve) => {
-      console.log('[Support] Installing RustDesk system-wide...');
+      logger.info('Support', 'Installing RustDesk system-wide...');
       require('child_process').exec(`"${portableExe}" --silent-install`, { timeout: 30000 }, (err: any) => {
-        if (err) console.error('[Support] RustDesk install error:', err.message);
-        else console.log('[Support] RustDesk installed successfully');
+        if (err) logger.error('Support', 'RustDesk install error', { error: err.message });
+        else logger.info('Support', 'RustDesk installed successfully');
         resolve(!err);
       });
     });
@@ -1858,7 +1858,7 @@ app.whenReady().then(async () => {
     kioskPort = kiosk.port;
     logger.info('kiosk', `Kiosk available at: ${kioskUrl}`);
     if (kiosk.port !== CONFIG.KIOSK_PORT) {
-      console.warn(`[Station] Default port ${CONFIG.KIOSK_PORT} was in use — running on port ${kiosk.port}`);
+      logger.warn('Station', 'Default port was in use', { defaultPort: CONFIG.KIOSK_PORT, actualPort: kiosk.port });
       // Notify the Station UI so the operator knows
       mainWindow?.webContents.send('port-changed', {
         requested: CONFIG.KIOSK_PORT,
@@ -1941,9 +1941,9 @@ app.whenReady().then(async () => {
     // Backup the database before prompting to install
     const backup = backupDatabase();
     if (backup) {
-      console.log(`[update] Pre-update DB backup: ${backup.path} (${(backup.size / 1024).toFixed(1)}KB)`);
+      logger.info('update', 'Pre-update DB backup', { path: backup.path, sizeKB: (backup.size / 1024).toFixed(1) });
     } else {
-      console.warn('[update] Pre-update DB backup failed — proceeding anyway');
+      logger.warn('update', 'Pre-update DB backup failed — proceeding anyway');
     }
 
     // Ask user to confirm the update
