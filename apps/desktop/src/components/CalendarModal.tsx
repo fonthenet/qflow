@@ -158,6 +158,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [selectedSlotIdx, setSelectedSlotIdx] = useState<number | null>(null);
   const [bookingSlot, setBookingSlot] = useState<{ date: string; time: string } | null>(null);
   const [listDateFilter, setListDateFilter] = useState<string | null>(initialViewMode === 'list' ? dateKeyInTz(new Date(), officeTimezone || 'Africa/Algiers') : null);
+  const [globalSearch, setGlobalSearch] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
@@ -1054,8 +1055,19 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Computed data ─────────────────────────────────────────────
 
-  const apptsByDate = useMemo(() => groupByDate(appointments, tz), [appointments, tz]);
-  const apptCounts = useMemo(() => countByDate(appointments, tz), [appointments, tz]);
+  const displayAppointments = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return appointments;
+    return appointments.filter(a => {
+      const nm = (a.customer_name || '').toLowerCase();
+      const ph = (a.customer_phone || '').toLowerCase();
+      const nt = (a.notes || '').toLowerCase();
+      return nm.includes(q) || ph.includes(q) || nt.includes(q);
+    });
+  }, [appointments, globalSearch]);
+
+  const apptsByDate = useMemo(() => groupByDate(displayAppointments, tz), [displayAppointments, tz]);
+  const apptCounts = useMemo(() => countByDate(displayAppointments, tz), [displayAppointments, tz]);
 
   const headerLabel = viewMode === 'week' && weekDays.length
     ? formatWeekRange(weekDays[0].date, weekDays[6].date, intlLocale)
@@ -1135,6 +1147,29 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
           <div style={{ flex: 1 }} />
 
+          <div style={{ position: 'relative' }}>
+            <input
+              type="text"
+              value={globalSearch}
+              onChange={e => setGlobalSearch(e.target.value)}
+              onKeyDown={e => e.stopPropagation()}
+              placeholder={`🔍 ${t('Search name, phone...')}`}
+              style={{
+                padding: '5px 10px', paddingRight: globalSearch ? 26 : 10,
+                borderRadius: 6, border: '1px solid var(--border, #475569)',
+                background: 'var(--surface2, #0f172a)', color: 'var(--text, #f1f5f9)',
+                fontSize: 12, width: 180, outline: 'none',
+              }}
+            />
+            {globalSearch && (
+              <button onClick={() => setGlobalSearch('')} style={{
+                position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', color: '#64748b', cursor: 'pointer',
+                fontSize: 14, padding: 2, lineHeight: 1,
+              }}>✕</button>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 2, border: '1px solid var(--border, #475569)', borderRadius: 8, overflow: 'hidden' }}>
             <button onClick={() => {
               resetPanelsTo(currentDate);
@@ -1190,27 +1225,36 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0,
             }}>
               <div style={{
-                fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-                letterSpacing: 0.6, marginBottom: 8, paddingLeft: 2,
+                fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase',
+                letterSpacing: 0.8, marginBottom: 8, paddingLeft: 4,
                 display: 'flex', alignItems: 'center', gap: 6,
               }}>
                 <span style={{
-                  width: 6, height: 6, borderRadius: '50%', background: '#22c55e',
+                  width: 7, height: 7, borderRadius: '50%', background: '#22c55e',
+                  boxShadow: '0 0 6px rgba(34,197,94,0.5)',
                   animation: 'pulse 2s ease-in-out infinite',
                 }} />
                 {t('Activity')}
+                {activityLog.length > 0 && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, color: '#3b82f6',
+                    background: 'rgba(59,130,246,0.12)', borderRadius: 8,
+                    padding: '1px 5px', marginLeft: 2,
+                  }}>{activityLog.length}</span>
+                )}
               </div>
               <div style={{
                 flex: 1, overflow: 'auto', minHeight: 0,
-                display: 'flex', flexDirection: 'column', gap: 2,
+                display: 'flex', flexDirection: 'column', gap: 4,
               }}>
                 <div ref={activityEndRef} />
                 {activityLog.length === 0 && (
                   <div style={{
-                    fontSize: 10, color: '#475569', textAlign: 'center',
-                    padding: '24px 8px', lineHeight: 1.5,
+                    fontSize: 11, color: '#475569', textAlign: 'center',
+                    padding: '32px 12px', lineHeight: 1.6,
                   }}>
-                    Waiting for changes...<br />All booking activity will appear here in real-time.
+                    <div style={{ fontSize: 24, marginBottom: 6, opacity: 0.5 }}>📋</div>
+                    {t('Waiting for changes...')}
                   </div>
                 )}
                 {[...activityLog].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).map(entry => {
@@ -1219,28 +1263,43 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                   const dateStr = entry.scheduledAt
                     ? new Date(entry.scheduledAt).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', timeZone: tz })
                     : '';
+                  const isSelected = selectedAppt?.id === entry.appointmentId;
                   return (
                     <div key={entry.id} onClick={() => handleActivityClick(entry)} style={{
-                      padding: '6px 6px', borderRadius: 6,
+                      padding: '8px 8px', borderRadius: 8,
                       cursor: 'pointer',
-                      background: selectedAppt?.id === entry.appointmentId ? 'rgba(59,130,246,0.12)' : 'rgba(100,116,139,0.06)',
+                      background: isSelected ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.04)',
+                      border: isSelected ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
                       borderLeft: `3px solid ${meta.color}`,
                       fontSize: 10, lineHeight: 1.4,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                        <span style={{ fontSize: 11 }}>{meta.icon}</span>
-                        <span style={{ fontWeight: 700, color: meta.color, fontSize: 9, textTransform: 'uppercase' }}>
-                          {t(meta.labelKey)}
+                      transition: 'background 0.15s, border 0.15s',
+                    }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(100,116,139,0.1)'; }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(100,116,139,0.04)'; }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                        <span style={{
+                          fontWeight: 800, color: meta.color, fontSize: 10, textTransform: 'uppercase',
+                          letterSpacing: 0.3,
+                        }}>
+                          {meta.icon} {t(meta.labelKey)}
                         </span>
-                        <span style={{ marginLeft: 'auto', color: '#475569', fontSize: 9 }}>{timeStr}</span>
+                        <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: 9, fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
                       </div>
-                      <div style={{ color: 'var(--text, #f1f5f9)', fontWeight: 600, paddingLeft: 2 }}>
+                      <div dir="auto" style={{ color: 'var(--text, #f1f5f9)', fontWeight: 600, fontSize: 12, paddingLeft: 1, unicodeBidi: 'isolate' }}>
                         {entry.customerName}
                       </div>
-                      <div style={{ display: 'flex', gap: 6, paddingLeft: 2, color: '#64748b', fontSize: 9, marginTop: 1 }}>
+                      <div style={{ display: 'flex', gap: 4, paddingLeft: 1, color: '#64748b', fontSize: 9, marginTop: 2, flexWrap: 'wrap' }}>
                         {entry.serviceName && <span>{entry.serviceName}</span>}
-                        {dateStr && <span>{dateStr}</span>}
-                        {entry.source && <span style={{ opacity: 0.7 }}>via {entry.source}</span>}
+                        {dateStr && <span>· {dateStr}</span>}
+                        {entry.source && (
+                          <span style={{
+                            background: 'rgba(100,116,139,0.12)', borderRadius: 4,
+                            padding: '0 4px', fontSize: 8,
+                          }}>
+                            {entry.source.replace('_', ' ')}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -2932,13 +2991,45 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
         </div>
 
         {/* Phone */}
-        <div>
+        <div style={{ position: 'relative' }}>
           <label style={labelStyle}>{t('Phone')}</label>
           <input
             type="tel" value={phone} onChange={e => handlePhoneChange(e.target.value)}
-            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
-            placeholder={t('Phone number')} style={inputStyle}
+            onFocus={() => { if (custHits.length) setShowCustHits(true); }}
+            onBlur={() => setTimeout(() => setShowCustHits(false), 180)}
+            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); if (e.key === 'Escape') setShowCustHits(false); }}
+            placeholder={t('Search or type phone')} style={inputStyle} autoComplete="off"
           />
+          {showCustHits && custHits.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+              marginTop: 4, maxHeight: 200, overflowY: 'auto',
+              background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+              borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+            }}>
+              {custHits.map(c => (
+                <div key={c.id} onMouseDown={e => { e.preventDefault(); pickCust(c); }}
+                  style={{ padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.name || t('Unknown')}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                      {formatPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                    </div>
+                  </div>
+                  {(c.visit_count ?? 0) > 0 && (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 8, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                      {c.visit_count}×
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Wilaya */}
