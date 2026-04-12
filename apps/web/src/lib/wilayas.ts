@@ -102,3 +102,14 @@ export function formatWilaya(w: Wilaya, locale: 'fr' | 'ar' | 'en' = 'fr'): stri
   const name = locale === 'ar' ? w.name_ar : w.name;
   return `${w.code} - ${name}`;
 }
+
+/**
+ * Normalize any wilaya input to a canonical code string ("1"–"58").
+ * Accepts: "18", "18 - جيجل", "18 - Jijel", "جيجل", "Jijel", etc.
+ * Returns the numeric code as a string, or null if unrecognized.
+ */
+export function toWilayaCode(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const resolved = resolveWilaya(input);
+  return resolved ? String(resolved.code) : null;
+}

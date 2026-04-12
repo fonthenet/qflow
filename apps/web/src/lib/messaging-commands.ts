@@ -2650,6 +2650,17 @@ async function handleJoin(
     return;
   }
 
+  // Auto-upsert customer profile from queue join (non-fatal)
+  try {
+    await upsertCustomerFromBooking(supabase, {
+      organizationId: org.id,
+      name: profileName || undefined,
+      phone: identifier,
+      wilayaCode: intake?.wilaya || undefined,
+      source: channel === 'messenger' ? 'messenger' : channel,
+    });
+  } catch (e) { console.warn('[join] customer upsert failed:', (e as any)?.message ?? e); }
+
   // Create session
   const sessionData: Record<string, any> = {
     organization_id: org.id,
@@ -3870,10 +3881,8 @@ async function confirmBooking(
   }
 
   // Auto-add this customer to the customers table (non-fatal on error)
-  // Pass the full wilaya string as-is to the customer profile (e.g. "18 - جيجل").
-  // The field is wilaya_code but stores the canonical display string.
+  // Pass raw wilaya — upsertCustomerFromBooking normalizes to code via toWilayaCode()
   const wilayaCode = wilaya ? wilaya.trim() : null;
-  console.log('[booking] customer upsert — phone:', identifier, 'wilaya raw:', wilaya, 'wilayaCode:', wilayaCode);
   await upsertCustomerFromBooking(supabase, {
     organizationId: session.organization_id,
     name: session.booking_customer_name,

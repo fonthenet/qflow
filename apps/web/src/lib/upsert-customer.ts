@@ -1,3 +1,5 @@
+import { toWilayaCode } from '@/lib/wilayas';
+
 /**
  * Auto-upsert a customer record from any booking flow (web form, WhatsApp,
  * Messenger, Station in-house, etc.). Bumps visit_count and refreshes
@@ -29,7 +31,7 @@ export async function upsertCustomerFromBooking(
     const name = (input.name ?? '').trim() || null;
     const email = (input.email ?? '').trim() || null;
     const notes = (input.notes ?? '').trim() || null;
-    const wilayaCode = (input.wilayaCode ?? '').trim() || null;
+    const wilayaCode = toWilayaCode(input.wilayaCode) || (input.wilayaCode ?? '').trim() || null;
     const nowIso = new Date().toISOString();
     const incrementVisit = input.incrementVisit !== false;
 
