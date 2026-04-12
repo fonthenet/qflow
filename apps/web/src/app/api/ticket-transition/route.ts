@@ -137,6 +137,20 @@ export async function POST(request: NextRequest) {
     skipNotification: skipNotification ?? false,
   });
 
+  // ── Log notification failures for monitoring ──────────────────────
+  if (!notifyResult.sent && notifyResult.error && notifyResult.error !== 'no_session' && notifyResult.error !== 'skipped') {
+    try {
+      await supabase.from('notification_failures').insert({
+        ticket_id: ticketId,
+        event,
+        channel: notifyResult.channel,
+        error: notifyResult.error,
+      });
+    } catch (e: any) {
+      console.warn('[ticket-transition] Failed to log notification failure:', e?.message);
+    }
+  }
+
   // ── Position reminders for next-in-line ───────────────────────────
   if (['called', 'served', 'no_show', 'cancelled'].includes(status)) {
     try {

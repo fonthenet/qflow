@@ -129,12 +129,8 @@ export function normalizePhone(
     return digits;
   }
 
-  // Detect if the number already starts with ANY known country code
-  for (const code of ALL_DIAL_CODES) {
-    if (digits.startsWith(code) && digits.length >= code.length + 7) {
-      return digits;
-    }
-  }
+  // Country-specific short-number rules (checked BEFORE generic detection
+  // to avoid false matches, e.g. Algerian 551234567 matching Brazil's "55")
 
   // US/Canada: 10-digit number → prepend 1
   if (digits.length === 10 && !digits.startsWith('0')) {
@@ -154,6 +150,13 @@ export function normalizePhone(
   // Generic: short local number → prepend office dial code
   if (dialCode && digits.length <= 9 && !digits.startsWith(dialCode)) {
     return dialCode + digits;
+  }
+
+  // Detect if the number already starts with ANY known country code
+  for (const code of ALL_DIAL_CODES) {
+    if (digits.startsWith(code) && digits.length >= code.length + 7) {
+      return digits;
+    }
   }
 
   return digits;
