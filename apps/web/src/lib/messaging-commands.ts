@@ -1363,7 +1363,20 @@ export async function handleInboundMessage(
       const bookCmdParsed = parseBookingCode(cleaned);
       const bookCmdValid = bookCmdParsed && !bookCmdParsed.code.includes(' ');
       const bookAlone = /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
-      const isExplicitCmd = alwaysCmd || !!bookCmdValid || bookAlone;
+
+      // In free-text states, if the code is Arabic text, verify it's a real org
+      // before breaking out — "حجز موعد" is a reason, not a command
+      let isExplicitCmd = alwaysCmd || bookAlone;
+      if (!isExplicitCmd && bookCmdValid) {
+        const hasArabicCode = /[\u0600-\u06FF]/.test(bookCmdParsed!.code);
+        if (hasArabicCode && isFreeTextState) {
+          // Only treat as command if it matches a real org
+          const matchedOrg = await findOrgByCode(bookCmdParsed!.code, channel);
+          isExplicitCmd = !!matchedOrg;
+        } else {
+          isExplicitCmd = true;
+        }
+      }
 
       // In free-text states, only exit if it's an explicit command
       if (isFreeTextState && isExplicitCmd) {
