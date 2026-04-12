@@ -968,31 +968,9 @@ export class SyncEngine {
   }
 
   private normalizePhoneForWA(phone: string, tz?: string, cc?: string): string | null {
-    const trimmed = phone.trim();
-    const hasPlus = trimmed.startsWith('+');
-    const digits = trimmed.replace(/[^\d]/g, '');
-    if (digits.length < 7) return null;
-    if (hasPlus) return digits;
-    const TZ_DIAL: Record<string, string> = {
-      'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
-      'Africa/Cairo': '20', 'Europe/Paris': '33', 'Europe/London': '44',
-      'America/New_York': '1', 'America/Chicago': '1', 'America/Denver': '1',
-      'America/Los_Angeles': '1', 'America/Toronto': '1',
-    };
-    const CC_DIAL: Record<string, string> = {
-      DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44',
-      US: '1', CA: '1', SA: '966', AE: '971',
-    };
-    const ALL = [...new Set(Object.values(CC_DIAL))].sort((a, b) => b.length - a.length);
-    const dialCode = (cc && CC_DIAL[cc.toUpperCase()]) || (tz && TZ_DIAL[tz]) || null;
-    if (digits.startsWith('0') && dialCode) return dialCode + digits.slice(1);
-    if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) return digits;
-    for (const code of ALL) { if (digits.startsWith(code) && digits.length >= code.length + 7) return digits; }
-    if (digits.length === 10 && !digits.startsWith('0')) return '1' + digits;
-    if (digits.length === 9 && dialCode === '213') return '213' + digits;
-    if (digits.length === 9 && dialCode === '33') return '33' + digits;
-    if (dialCode && digits.length <= 9) return dialCode + digits;
-    return digits;
+    // Delegate to shared normalizePhone (single source of truth)
+    const { normalizePhone } = require('@qflo/shared');
+    return normalizePhone(phone, tz, cc);
   }
 
   async syncNow() {

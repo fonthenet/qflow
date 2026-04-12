@@ -1089,21 +1089,10 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       let whatsappStatus: { sent: boolean; error?: string } | undefined;
       if (safePhone && isCloudReachable) {
         // Compute country dial code for phone normalization
-        const TZ_DIAL: Record<string, string> = {
-          'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
-          'Africa/Cairo': '20', 'Europe/Paris': '33', 'Europe/London': '44',
-          'America/New_York': '1', 'America/Chicago': '1', 'America/Denver': '1',
-          'America/Los_Angeles': '1', 'America/Toronto': '1',
-          'Asia/Riyadh': '966', 'Asia/Dubai': '971', 'Asia/Beirut': '961',
-        };
-        const ISO_DIAL: Record<string, string> = {
-          DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44',
-          US: '1', CA: '1', SA: '966', AE: '971', LB: '961',
-          TR: '90', DE: '49', ES: '34', IT: '39', BE: '32', NL: '31',
-        };
+        const { resolveDialCode } = require('@qflo/shared');
         let officeCC2: string | null = null;
         try { const s = typeof officeRow?.settings === 'string' ? JSON.parse(officeRow.settings) : (officeRow?.settings || {}); officeCC2 = s.country_code || null; } catch { /* empty */ }
-        const countryDialCode = (officeCC2 && ISO_DIAL[officeCC2.toUpperCase()]) || (officeRow?.timezone && TZ_DIAL[officeRow.timezone]) || null;
+        const countryDialCode = resolveDialCode(officeRow?.timezone, officeCC2);
 
         try {
           const waRes = await fetch(`${SUPABASE_URL}/functions/v1/notify-ticket`, {

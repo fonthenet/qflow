@@ -297,19 +297,8 @@ export async function checkInAppointment(appointmentId: string) {
 
       // Use org-level timezone as single source of truth
       const checkinOrgTz: string = (office as any)?.organization?.timezone || 'Africa/Algiers';
-      const TZ_DIAL: Record<string, string> = {
-        'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
-        'Africa/Cairo': '20', 'Africa/Lagos': '234', 'Africa/Nairobi': '254',
-        'Africa/Johannesburg': '27', 'Europe/Paris': '33', 'Europe/London': '44',
-        'Europe/Berlin': '49', 'Europe/Madrid': '34', 'Europe/Rome': '39',
-        'Europe/Brussels': '32', 'Europe/Amsterdam': '31', 'Europe/Zurich': '41',
-        'Europe/Istanbul': '90', 'Asia/Riyadh': '966', 'Asia/Dubai': '971',
-        'Asia/Qatar': '974', 'Asia/Kuwait': '965', 'Asia/Bahrain': '973',
-        'Asia/Muscat': '968', 'Asia/Amman': '962', 'Asia/Beirut': '961',
-        'Asia/Baghdad': '964', 'America/New_York': '1', 'America/Chicago': '1',
-        'America/Denver': '1', 'America/Los_Angeles': '1', 'America/Toronto': '1',
-      };
-      const countryDialCode = checkinOrgTz ? TZ_DIAL[checkinOrgTz] : undefined;
+      const { resolveDialCode } = await import('@qflo/shared');
+      const countryDialCode = resolveDialCode(checkinOrgTz) ?? undefined;
 
       // Count waiting tickets ahead for queue position
       const { count: aheadCount } = await supabase

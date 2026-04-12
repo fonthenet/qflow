@@ -541,60 +541,9 @@ const messages: Record<string, Record<Locale, string>> = {
   },
 };
 
-// ── Notification messages (used by /api/notification-send) ───────────
-
-export const notificationMessages: Record<string, Record<Locale, string>> = {
-  called: {
-    fr: '🔔 C\'est votre tour ! Ticket *{ticket}* — veuillez vous rendre au {desk}.\n\nSuivi : {url}',
-    ar: 'حان دورك! التذكرة *{ticket}* — يرجى التوجه إلى {desk} 🔔\n\nتتبع: {url}',
-    en: '🔔 It\'s your turn! Ticket *{ticket}* — please go to {desk}.\n\nTrack: {url}',
-  },
-  recall: {
-    fr: '⏰ Rappel : Le ticket *{ticket}* vous attend toujours au {desk}.\n\nSuivi : {url}',
-    ar: 'تذكير: التذكرة *{ticket}* لا تزال بانتظارك في {desk} ⏰\n\nتتبع: {url}',
-    en: '⏰ Reminder: Ticket *{ticket}* is still waiting for you at {desk}.\n\nTrack: {url}',
-  },
-  buzz: {
-    fr: '📢 Le personnel essaie de vous joindre (ticket *{ticket}*). Rendez-vous au {desk}.\n\nSuivi : {url}',
-    ar: 'يحاول الموظفون الوصول إليك (التذكرة *{ticket}*). توجه إلى {desk} 📢\n\nتتبع: {url}',
-    en: '📢 Staff is trying to reach you (ticket *{ticket}*). Please go to {desk}.\n\nTrack: {url}',
-  },
-  no_show: {
-    fr: '❌ Le ticket *{ticket}* chez *{name}* a été marqué absent. Vous avez manqué votre tour.\n\nEnvoyez REJOINDRE <code> pour rejoindre à nouveau.',
-    ar: 'التذكرة *{ticket}* في *{name}* تم تسجيلها كـ غائب. لقد فاتك دورك ❌\n\nأرسل انضم <الرمز> للانضمام مجددًا.',
-    en: '❌ Ticket *{ticket}* at *{name}* was marked as no show. You missed your turn.\n\nSend JOIN <code> to rejoin.',
-  },
-  served: {
-    fr: '✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite.',
-    ar: 'التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم. ✅',
-    en: '✅ Ticket *{ticket}* at *{name}* is complete. Thank you for your visit.',
-  },
-  next_in_line: {
-    fr: '⏳ Vous êtes le prochain ! Ticket *{ticket}* — préparez-vous, c\'est bientôt votre tour.\n\nSuivi : {url}',
-    ar: 'أنت التالي! التذكرة *{ticket}* — استعد، دورك قريبًا ⏳\n\nتتبع: {url}',
-    en: '⏳ You\'re next! Ticket *{ticket}* — get ready, it\'s almost your turn.\n\nTrack: {url}',
-  },
-  cancelled_notify: {
-    fr: '🚫 Le ticket *{ticket}* a été annulé.',
-    ar: 'تم إلغاء التذكرة *{ticket}* 🚫',
-    en: '🚫 Ticket *{ticket}* has been cancelled.',
-  },
-  joined: {
-    fr: '✅ Vous êtes dans la file chez *{name}* !\n\n🎫 Ticket : *{ticket}*\n{position}\n\n📍 Suivez votre position : {url}',
-    ar: 'أنت في الطابور في *{name}*! ✅\n\nالتذكرة: *{ticket}* 🎫\n{position}\n\n📍 تتبع موقعك: {url}',
-    en: '✅ You\'re in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n{position}\n\n📍 Track your position: {url}',
-  },
-  position_update: {
-    fr: '📍 *{name}* — Mise à jour\n\nVous êtes maintenant *#{position}* dans la file.\n⏱ Attente estimée : ~*{wait} min*\n\nSuivi : {url}',
-    ar: '📍 *{name}* — تحديث\n\nأنت الآن *#{position}* في الطابور.\n⏱ الانتظار المتوقع: ~*{wait} دقيقة*\n\nتتبع: {url}',
-    en: '📍 *{name}* — Update\n\nYou\'re now *#{position}* in line.\n⏱ Est. wait: ~*{wait} min*\n\nTrack: {url}',
-  },
-  default: {
-    fr: '📋 Mise à jour du ticket *{ticket}* : {url}',
-    ar: 'تحديث التذكرة *{ticket}*: {url} 📋',
-    en: '📋 Update for ticket *{ticket}*: {url}',
-  },
-};
+// ── Notification messages — imported from @qflo/shared (single source of truth) ──
+import { notificationMessages, renderNotification } from '@qflo/shared';
+export { notificationMessages, renderNotification };
 
 // ── Locale detection ─────────────────────────────────────────────────
 
@@ -693,12 +642,7 @@ export function t(key: string, locale: Locale, vars?: Record<string, string | nu
 }
 
 export function tNotification(key: string, locale: Locale, vars?: Record<string, string | number | null | undefined>): string {
-  let msg = notificationMessages[key]?.[locale] ?? notificationMessages[key]?.['fr'] ?? key;
-  if (vars) {
-    for (const [k, v] of Object.entries(vars)) {
-      msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? '?'));
-    }
-  }
+  const msg = renderNotification(key, locale, vars);
   return locale === 'ar' ? ensureRTL(msg) : msg;
 }
 

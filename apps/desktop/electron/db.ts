@@ -116,7 +116,8 @@ export function initDB() {
       created_at TEXT NOT NULL,
       attempts INTEGER DEFAULT 0,
       last_error TEXT,
-      synced_at TEXT
+      synced_at TEXT,
+      already_notified INTEGER DEFAULT 0
     );
 
     -- Session storage
@@ -188,6 +189,7 @@ export function initDB() {
   try { db.exec(`ALTER TABLE offices ADD COLUMN timezone TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE offices ADD COLUMN operating_hours TEXT DEFAULT '{}'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE sync_queue ADD COLUMN already_notified INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN is_offline INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN parked_at TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN recall_count INTEGER DEFAULT 0`); } catch { /* already exists */ }

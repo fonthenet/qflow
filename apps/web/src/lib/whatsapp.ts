@@ -1,5 +1,9 @@
 import 'server-only';
 
+// Re-export normalizePhone from shared package (single source of truth)
+import { normalizePhone } from '@qflo/shared';
+export { normalizePhone };
+
 export interface WhatsAppSendResult {
   ok: boolean;
   provider: 'meta' | 'twilio' | 'none';
@@ -45,127 +49,6 @@ function getTwilioWhatsAppConfig(): TwilioWhatsAppConfig | null {
 
 export function isWhatsAppConfigured(): boolean {
   return getMetaWhatsAppConfig() !== null || getTwilioWhatsAppConfig() !== null;
-}
-
-// ── Timezone → country calling code mapping ─────────────────────
-const TIMEZONE_COUNTRY_CODE: Record<string, string> = {
-  'Africa/Algiers': '213',
-  'Africa/Tunis': '216',
-  'Africa/Casablanca': '212',
-  'Africa/Cairo': '20',
-  'Africa/Lagos': '234',
-  'Africa/Nairobi': '254',
-  'Africa/Johannesburg': '27',
-  'Europe/Paris': '33',
-  'Europe/London': '44',
-  'Europe/Berlin': '49',
-  'Europe/Madrid': '34',
-  'Europe/Rome': '39',
-  'Europe/Brussels': '32',
-  'Europe/Amsterdam': '31',
-  'Europe/Zurich': '41',
-  'Europe/Istanbul': '90',
-  'Asia/Riyadh': '966',
-  'Asia/Dubai': '971',
-  'Asia/Qatar': '974',
-  'Asia/Kuwait': '965',
-  'Asia/Bahrain': '973',
-  'Asia/Muscat': '968',
-  'Asia/Amman': '962',
-  'Asia/Beirut': '961',
-  'Asia/Baghdad': '964',
-  'America/New_York': '1',
-  'America/Chicago': '1',
-  'America/Denver': '1',
-  'America/Los_Angeles': '1',
-  'America/Toronto': '1',
-  'America/Sao_Paulo': '55',
-  'America/Mexico_City': '52',
-  'Asia/Kolkata': '91',
-  'Asia/Shanghai': '86',
-  'Asia/Tokyo': '81',
-  'Australia/Sydney': '61',
-};
-
-// ── ISO country code → calling code mapping ─────────────────────
-const ISO_COUNTRY_DIAL: Record<string, string> = {
-  DZ: '213', TN: '216', MA: '212', EG: '20', NG: '234', KE: '254', ZA: '27',
-  FR: '33', GB: '44', DE: '49', ES: '34', IT: '39', BE: '32', NL: '31',
-  CH: '41', TR: '90', SA: '966', AE: '971', QA: '974', KW: '965',
-  BH: '973', OM: '968', JO: '962', LB: '961', IQ: '964',
-  US: '1', CA: '1', MX: '52', BR: '55',
-  IN: '91', CN: '86', JP: '81', AU: '61',
-};
-
-/**
- * Normalize phone to digits-only with country code (no + prefix for Meta API).
- * If the phone starts with 0 (local format), the leading 0 is replaced
- * with the country calling code derived from countryCode or timezone.
- */
-/**
- * Known country dial codes sorted longest-first so we match 3-digit codes before 1-digit.
- * Used to detect if a number already starts with a valid international prefix.
- */
-const ALL_DIAL_CODES = Object.values(ISO_COUNTRY_DIAL)
-  .filter((v, i, a) => a.indexOf(v) === i) // unique
-  .sort((a, b) => b.length - a.length);     // longest first
-
-export function normalizePhone(phone: string, timezone?: string | null, countryCode?: string | null): string | null {
-  // Strip everything except digits and leading +
-  const trimmed = phone.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/[^\d]/g, '');
-  if (digits.length < 7) return null;
-
-  // Already international with + prefix → use as-is (strip the +, Meta API wants digits only)
-  if (hasPlus) return digits;
-
-  const dialCode = (countryCode && ISO_COUNTRY_DIAL[countryCode.toUpperCase()])
-    || (timezone && TIMEZONE_COUNTRY_CODE[timezone])
-    || null;
-
-  // Local format: starts with 0 → strip it and prepend country dial code
-  // (common in Algeria, France, UK, etc.)
-  if (digits.startsWith('0') && dialCode) {
-    return dialCode + digits.slice(1);
-  }
-
-  // Already starts with the office's own dial code → use as-is
-  if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) {
-    return digits;
-  }
-
-  // Detect if the number already starts with ANY known country code.
-  // e.g. 16612346622 starts with "1" (US), 213551234567 starts with "213" (Algeria)
-  // This handles cross-country numbers entered without "+"
-  for (const code of ALL_DIAL_CODES) {
-    if (digits.startsWith(code) && digits.length >= code.length + 7) {
-      return digits; // already has a valid international prefix
-    }
-  }
-
-  // US/Canada: 10-digit number → prepend 1
-  // Works regardless of office country (US numbers are always 10 digits)
-  if (digits.length === 10 && !digits.startsWith('0')) {
-    return '1' + digits;
-  }
-
-  // Algeria: 9-digit subscriber number without leading 0 (e.g. 551234567)
-  if (digits.length === 9 && dialCode === '213') {
-    return '213' + digits;
-  }
-
-  // France: 9-digit subscriber number without leading 0 (e.g. 612345678)
-  if (digits.length === 9 && dialCode === '33') {
-    return '33' + digits;
-  }
-
-  // Generic: short local number → prepend office dial code
-  if (dialCode && digits.length <= 9 && !digits.startsWith(dialCode)) {
-    return dialCode + digits;
-  }
-
-  return digits;
 }
 
 // ── Send via Meta Cloud API ─────────────────────────────────────

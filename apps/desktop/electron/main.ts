@@ -827,27 +827,43 @@ function setupIPC() {
     mainWindow?.webContents.send('tickets:changed');
     notifyStationClients({ type: 'tickets_changed' });
 
-    // ── Propagate terminal ticket status to linked appointment via lifecycle API ──
-    // Uses the centralized lifecycle endpoint so ticket→appointment sync,
-    // customer notifications, and waitlist updates are all handled consistently.
-    if (safeUpdates.status === 'served' || safeUpdates.status === 'cancelled' || safeUpdates.status === 'no_show') {
-      try {
-        if (syncEngine?.isOnline) {
-          syncEngine.ensureFreshToken().then((token: string) => {
-            fetch(`https://qflo.net/api/lifecycle/on-ticket-terminal`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                ticketId,
-                terminalStatus: safeUpdates.status === 'served' ? 'served' : safeUpdates.status,
-              }),
-            }).catch(() => {});
-          }).catch(() => {});
-        }
-      } catch { /* ignore */ }
+    // ── Direct API call for instant notification (3-hop path) ──
+    // Fire-and-forget: calls /api/ticket-transition which handles
+    // WhatsApp/Messenger notification, position reminders, and session cleanup.
+    // The sync queue remains as fallback for offline scenarios.
+    if (safeUpdates.status && ['called', 'serving', 'served', 'no_show', 'cancelled'].includes(safeUpdates.status) && syncEngine?.isOnline) {
+      const dsk = safeUpdates.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any : null;
+      syncEngine.ensureFreshToken().then((token: string) => {
+        fetch(`${CONFIG.CLOUD_URL}/api/ticket-transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            ticketId,
+            status: safeUpdates.status,
+            deskId: safeUpdates.desk_id,
+            deskName: dsk?.name,
+            staffId: safeUpdates.called_by_staff_id,
+            skipNotification: false,
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+          .then(async (res) => {
+            const result = await res.json().catch(() => ({}));
+            if (result.notified) {
+              mainWindow?.webContents.send('notify:result', { ticketId, sent: true, channel: result.channel });
+              // Mark sync item so trigger doesn't double-notify
+              db.prepare("UPDATE sync_queue SET already_notified = 1 WHERE id = ?").run(syncId);
+            } else {
+              mainWindow?.webContents.send('notify:result', { ticketId, sent: false, error: result.notifyError || 'not_notified' });
+            }
+          })
+          .catch((err: any) => {
+            console.warn('[ticket-transition] Direct API call failed, sync will handle:', err?.message);
+            mainWindow?.webContents.send('notify:result', { ticketId, sent: false, error: 'network_error' });
+          });
+      }).catch(() => {
+        mainWindow?.webContents.send('notify:result', { ticketId, sent: false, error: 'token_error' });
+      });
     }
 
     return { id: ticketId, ...safeUpdates };
@@ -1003,6 +1019,39 @@ function setupIPC() {
       desk_name: desk?.name ?? deskId,
       timestamp: now,
     });
+
+    // ── Direct API call for instant notification (3-hop path) ──
+    if (syncEngine?.isOnline) {
+      syncEngine.ensureFreshToken().then((token: string) => {
+        fetch(`${CONFIG.CLOUD_URL}/api/ticket-transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            ticketId: ticket.id,
+            status: 'called',
+            deskId,
+            deskName: desk?.name,
+            staffId,
+            skipNotification: false,
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+          .then(async (res) => {
+            const result = await res.json().catch(() => ({}));
+            if (result.notified) {
+              mainWindow?.webContents.send('notify:result', { ticketId: ticket.id, sent: true, channel: result.channel });
+              db.prepare("UPDATE sync_queue SET already_notified = 1 WHERE id = ?").run(syncId);
+            } else {
+              mainWindow?.webContents.send('notify:result', { ticketId: ticket.id, sent: false, error: result.notifyError || 'not_notified' });
+            }
+          })
+          .catch((err: any) => {
+            console.warn('[call-next] Direct API call failed, sync will handle:', err?.message);
+            mainWindow?.webContents.send('notify:result', { ticketId: ticket.id, sent: false, error: 'network_error' });
+          });
+      }).catch(() => {});
+    }
+
     return ticket;
   });
 

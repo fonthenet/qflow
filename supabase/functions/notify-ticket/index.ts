@@ -33,6 +33,9 @@ interface Session {
 }
 
 // ── i18n ─────────────────────────────────────────────────────────────
+// NOTE: Source of truth is packages/shared/src/messages.ts
+// Deno edge functions can't use workspace packages, so this is a copy.
+// Keep in sync with @qflo/shared/messages.ts when adding new templates.
 
 const messages: Record<string, Record<Locale, string>> = {
   called: {
@@ -131,7 +134,9 @@ async function sendWhatsAppRaw(phone: string, payload: Record<string, unknown>):
   }
 }
 
-// Timezone → country calling code (same mapping as desktop/web)
+// Timezone → country calling code
+// NOTE: Source of truth is packages/shared/src/phone.ts (TZ_DIAL)
+// Deno can't use workspace packages — keep in sync manually.
 const TZ_DIAL: Record<string, string> = {
   "Africa/Algiers": "213", "Africa/Tunis": "216", "Africa/Casablanca": "212",
   "Africa/Cairo": "20", "Africa/Lagos": "234", "Africa/Nairobi": "254",

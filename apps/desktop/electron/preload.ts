@@ -119,6 +119,15 @@ contextBridge.exposeInMainWorld('qf', {
     },
   },
 
+  // Notification result events (from direct /api/ticket-transition call)
+  notify: {
+    onResult: (callback: (result: { ticketId: string; sent: boolean; channel?: string; error?: string }) => void) => {
+      const handler = (_: any, result: any) => callback(result);
+      ipcRenderer.on('notify:result', handler);
+      return () => ipcRenderer.removeListener('notify:result', handler);
+    },
+  },
+
   // Port change notification (default port was in use)
   onPortChanged: (callback: (info: { requested: number; actual: number }) => void) => {
     const handler = (_: any, info: any) => callback(info);

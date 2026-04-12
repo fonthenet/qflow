@@ -1581,6 +1581,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     return () => { unsub?.(); };
   }, [showToast]);
 
+  // ── Notification result feedback (from direct /api/ticket-transition) ──
+  useEffect(() => {
+    const unsub = window.qf.notify?.onResult?.((result: { ticketId: string; sent: boolean; channel?: string; error?: string }) => {
+      if (result.sent) {
+        showToast(translate(locale, 'Customer notified via {channel}', { channel: result.channel || 'message' }), 'success');
+      } else if (result.error === 'no_session') {
+        // No WhatsApp session — customer walked in without scanning QR, this is normal
+      } else if (result.error === 'network_error' || result.error === 'token_error') {
+        showToast(translate(locale, 'Notification delayed — will retry via sync'), 'info');
+      }
+    });
+    return () => { unsub?.(); };
+  }, [showToast, locale]);
+
   // ── Sync staff status + queue pause → desk status in Supabase ──
   useEffect(() => {
     if (!session.desk_id) return;
