@@ -1342,7 +1342,7 @@ export async function handleInboundMessage(
       .eq(identColBook, identifier)
       .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
       .eq('channel', channel)
-      .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL for booking flow
+      .gte('last_message_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL since last interaction
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -3457,6 +3457,9 @@ async function handleBookingState(
   sendMessage: SendFn,
 ): Promise<boolean> {
   const supabase = createAdminClient() as any;
+
+  // Refresh TTL on every interaction so multi-step flows don't expire
+  await supabase.from('whatsapp_sessions').update({ last_message_at: new Date().toISOString() }).eq('id', session.id);
 
   switch (session.state) {
     case 'booking_select_service':
