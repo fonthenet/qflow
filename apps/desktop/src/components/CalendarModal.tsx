@@ -1407,6 +1407,8 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               date={bookingSlot.date}
               time={bookingSlot.time}
               officeId={officeId}
+              organizationId={organizationId}
+              storedAuth={storedAuth}
               departments={departments}
               services={services}
               locale={locale}
@@ -2605,10 +2607,12 @@ function DesktopMonthView({
 
 // ── Quick Book Panel (inside calendar) ───────────────────────────
 
-function QuickBookPanel({ date, time, officeId, departments, services, locale, timezone, onClose, onBooked }: {
+function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, departments, services, locale, timezone, onClose, onBooked }: {
   date: string;
   time: string;
   officeId: string;
+  organizationId: string;
+  storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   departments: Record<string, string>;
   services: { id: string; name: string; department_id: string; color?: string | null; estimated_service_time?: number }[];
   locale: DesktopLocale;
@@ -2622,7 +2626,85 @@ function QuickBookPanel({ date, time, officeId, departments, services, locale, t
   const [service, setService] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [wilaya, setWilaya] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Customer search / autocomplete
+  type CustHit = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; wilaya_code: string | null; visit_count: number };
+  const [custHits, setCustHits] = useState<CustHit[]>([]);
+  const [showCustHits, setShowCustHits] = useState(false);
+  const custSeq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const formatPhoneLocal = (p: string | null) => {
+    if (!p) return '';
+    const d = p.replace(/[^\d+]/g, '');
+    if (d.startsWith('+213')) return '0' + d.slice(4);
+    if (d.startsWith('213') && d.length >= 12) return '0' + d.slice(3);
+    return p;
+  };
+
+  const searchCustomers = useCallback(async (q: string) => {
+    const raw = q.trim();
+    if (raw.length < 1) { setCustHits([]); setShowCustHits(false); return; }
+    const seq = ++custSeq.current;
+    try {
+      await ensureAuth(storedAuth);
+      const sb = await getSupabase();
+      const safe = raw.replace(/[%,()]/g, ' ').trim();
+      const digits = raw.replace(/\D/g, '');
+      const conds: string[] = [];
+      if (safe) { conds.push(`name.ilike.%${safe}%`); conds.push(`email.ilike.%${safe}%`); }
+      for (const tok of safe.split(/\s+/).filter(Boolean)) {
+        if (tok.length >= 1) { conds.push(`name.ilike.${tok}%`); conds.push(`name.ilike.% ${tok}%`); }
+      }
+      if (digits.length >= 2) {
+        const tail = digits.startsWith('0') ? digits.slice(1) : digits;
+        conds.push(`phone.ilike.%${digits}%`);
+        if (tail !== digits) conds.push(`phone.ilike.%${tail}%`);
+      }
+      let req = sb.from('customers').select('id, name, phone, email, notes, wilaya_code, visit_count')
+        .eq('organization_id', organizationId)
+        .order('last_visit_at', { ascending: false, nullsFirst: false })
+        .limit(10);
+      if (conds.length) req = req.or(conds.join(','));
+      const { data } = await req;
+      if (seq !== custSeq.current) return;
+      const tokens = safe.split(/\s+/).map(t => t.toLowerCase());
+      const scored = ((data ?? []) as CustHit[]).map(c => {
+        const hay = `${(c.name ?? '').toLowerCase()} ${(c.email ?? '').toLowerCase()} ${(c.phone ?? '')}`;
+        const allMatch = tokens.every(tok => hay.includes(tok));
+        const phoneMatch = digits.length >= 2 && (c.phone ?? '').replace(/\D/g, '').includes(digits.startsWith('0') ? digits.slice(1) : digits);
+        return { c, score: (allMatch ? 10 : 0) + (phoneMatch ? 5 : 0) + Math.min((c.visit_count ?? 0), 20) / 20 };
+      }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 8).map(x => x.c);
+      setCustHits(scored);
+      setShowCustHits(scored.length > 0);
+    } catch (e) { console.warn('[cal-customer-search]', e); }
+  }, [organizationId, storedAuth]);
+
+  const handleNameChange = (v: string) => {
+    setName(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!v.trim()) { setCustHits([]); setShowCustHits(false); return; }
+    searchTimer.current = setTimeout(() => searchCustomers(v), 220);
+  };
+
+  const handlePhoneChange = (v: string) => {
+    setPhone(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!v.trim()) { setCustHits([]); setShowCustHits(false); return; }
+    searchTimer.current = setTimeout(() => searchCustomers(v), 220);
+  };
+
+  const pickCust = (c: CustHit) => {
+    setName(c.name ?? '');
+    setPhone(formatPhoneLocal(c.phone));
+    if (c.notes && !notes) setNotes(c.notes);
+    if (c.wilaya_code && !wilaya) setWilaya(c.wilaya_code);
+    setShowCustHits(false);
+    setCustHits([]);
+  };
+
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; error?: string } | null>(null);
   const [slots, setSlots] = useState<string[]>([]);
@@ -2705,6 +2787,7 @@ function QuickBookPanel({ date, time, officeId, departments, services, locale, t
           customerPhone: phone.trim() || undefined,
           scheduledAt: `${date}T${selectedTime}:00`,
           notes: notes.trim() || undefined,
+          wilaya: wilaya.trim() || undefined,
           source: 'in_house',
         }),
       });
@@ -2807,22 +2890,64 @@ function QuickBookPanel({ date, time, officeId, departments, services, locale, t
         </div>
 
         {/* Name */}
-        <div>
+        <div style={{ position: 'relative' }}>
           <label style={labelStyle}>{t('Name')} *</label>
           <input
-            type="text" value={name} onChange={e => setName(e.target.value)}
-            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
-            placeholder={t('Customer name')} style={inputStyle} autoFocus
+            type="text" value={name} onChange={e => handleNameChange(e.target.value)}
+            onFocus={() => { if (custHits.length) setShowCustHits(true); }}
+            onBlur={() => setTimeout(() => setShowCustHits(false), 180)}
+            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); if (e.key === 'Escape') setShowCustHits(false); }}
+            placeholder={t('Search or type name')} style={inputStyle} autoFocus autoComplete="off"
           />
+          {showCustHits && custHits.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+              marginTop: 4, maxHeight: 200, overflowY: 'auto',
+              background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+              borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+            }}>
+              {custHits.map(c => (
+                <div key={c.id} onMouseDown={e => { e.preventDefault(); pickCust(c); }}
+                  style={{ padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.name || t('Unknown')}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                      {formatPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                    </div>
+                  </div>
+                  {(c.visit_count ?? 0) > 0 && (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 8, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                      {c.visit_count}×
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Phone */}
         <div>
           <label style={labelStyle}>{t('Phone')}</label>
           <input
-            type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+            type="tel" value={phone} onChange={e => handlePhoneChange(e.target.value)}
             onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
             placeholder={t('Phone number')} style={inputStyle}
+          />
+        </div>
+
+        {/* Wilaya */}
+        <div>
+          <label style={labelStyle}>{t('Wilaya')}</label>
+          <input
+            type="text" value={wilaya} onChange={e => setWilaya(e.target.value)}
+            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
+            placeholder={t('Wilaya')} style={inputStyle}
           />
         </div>
 

@@ -23,6 +23,8 @@ interface CreateAppointmentData {
   scheduledAt: string; // ISO string
   staffId?: string;
   locale?: string;
+  notes?: string;
+  wilaya?: string;
 }
 
 interface CreateRecurringAppointmentsData extends CreateAppointmentData {
@@ -112,6 +114,8 @@ export async function createAppointment(data: CreateAppointmentData) {
     calendar_token: calendarToken,
     locale: (data.locale === 'ar' || data.locale === 'en' || data.locale === 'fr') ? data.locale : null,
     source: 'portal',
+    notes: data.notes || null,
+    wilaya: data.wilaya || null,
     ...(data.staffId ? { staff_id: data.staffId } : {}),
   };
 
