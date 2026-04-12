@@ -73,23 +73,6 @@ const EVENT_META: Record<ActivityEntry['eventType'], { icon: string; color: stri
   deleted:    { icon: '🗑️', color: '#dc2626', labelKey: 'Deleted' },
 };
 
-function detectEventType(eventType: string, newRow: any, oldRow: any): ActivityEntry['eventType'] {
-  if (eventType === 'INSERT') return 'booked';
-  if (eventType === 'DELETE') return 'deleted';
-  // UPDATE — check status change
-  const newStatus = newRow?.status;
-  const oldStatus = oldRow?.status;
-  if (newStatus !== oldStatus) {
-    if (newStatus === 'cancelled') return 'cancelled';
-    if (newStatus === 'declined') return 'declined';
-    if (newStatus === 'confirmed' || newStatus === 'approved') return 'approved';
-    if (newStatus === 'checked_in') return 'checked_in';
-    if (newStatus === 'no_show') return 'no_show';
-    if (newStatus === 'served') return 'served';
-  }
-  return 'modified';
-}
-
 // ── Props ──────────────────────────────────────────────────────────
 
 interface Props {
@@ -315,19 +298,17 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       const entries: ActivityEntry[] = data.map((appt: any) => {
         const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
         const updatedAt = appt.updated_at || appt.created_at;
-        const createdAt = appt.created_at;
-        // Determine event type from current status
-        // If updated_at ≈ created_at (within 2s), it's a new booking; otherwise it's a status change
-        const isNew = Math.abs(new Date(updatedAt).getTime() - new Date(createdAt).getTime()) < 2000;
-        let evtType: ActivityEntry['eventType'] = 'booked';
-        if (isNew && (appt.status === 'pending' || appt.status === 'confirmed')) {
-          evtType = 'booked';
-        } else if (appt.status === 'cancelled') evtType = 'cancelled';
-        else if (appt.status === 'declined') evtType = 'declined';
-        else if (appt.status === 'checked_in') evtType = 'checked_in';
-        else if (appt.status === 'no_show') evtType = 'no_show';
-        else if (appt.status === 'completed') evtType = 'served';
-        else if (appt.status === 'confirmed') evtType = 'approved';
+        // Map current status directly to event type
+        const STATUS_TO_EVENT: Record<string, ActivityEntry['eventType']> = {
+          pending: 'booked',
+          confirmed: 'approved',
+          checked_in: 'checked_in',
+          completed: 'served',
+          cancelled: 'cancelled',
+          declined: 'declined',
+          no_show: 'no_show',
+        };
+        const evtType = STATUS_TO_EVENT[appt.status] ?? 'booked';
 
         return {
           id: appt.id,
@@ -1237,7 +1218,10 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 )}
                 {[...activityLog].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).map(entry => {
                   const meta = EVENT_META[entry.eventType];
-                  const timeStr = entry.timestamp.toLocaleTimeString(intlLocale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                  const isToday = entry.timestamp.toDateString() === new Date().toDateString();
+                  const timeStr = isToday
+                    ? entry.timestamp.toLocaleTimeString(intlLocale, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : entry.timestamp.toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                   const dateStr = entry.scheduledAt
                     ? new Date(entry.scheduledAt).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', timeZone: tz })
                     : '';
