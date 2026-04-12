@@ -1469,6 +1469,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
+  const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
   // Listen for native File > Settings menu click
   useEffect(() => {
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
@@ -3214,7 +3215,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* Calendar Modal */}
         {showCalendarModal && (
           <CalendarModal
-            key={calendarInitialView}
+            key={`${calendarInitialView}-${calendarInitialApptId || ''}`}
             organizationId={session.organization_id}
             officeId={session.office_id}
             locale={locale}
@@ -3222,7 +3223,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             departments={names.departments}
             services={allServices}
             officeTimezone={officeTimezone}
-            onClose={() => setShowCalendarModal(false)}
+            onClose={() => { setShowCalendarModal(false); setCalendarInitialApptId(null); }}
             onModerate={moderateAppointment}
             onOpenCustomer={(phone) => {
               setCustomerPhoneToOpen(phone);
@@ -3232,6 +3233,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               // Handled inside CalendarModal's QuickBookPanel now
             }}
             initialViewMode={calendarInitialView}
+            initialAppointmentId={calendarInitialApptId}
           />
         )}
 
@@ -3465,7 +3467,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     ✕
                   </button>
                   <button
-                    onClick={() => { setCalendarInitialView('list'); setShowCalendarModal(true); }}
+                    onClick={() => { setCalendarInitialApptId(a.id); setCalendarInitialView('week'); setShowCalendarModal(true); }}
                     style={{
                       padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
                       background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',

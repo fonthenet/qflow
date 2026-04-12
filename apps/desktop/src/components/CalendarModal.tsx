@@ -88,6 +88,7 @@ interface Props {
   onOpenCustomer?: (phone: string) => void;
   onSlotBook?: (date: string, time: string) => void;
   initialViewMode?: ViewMode;
+  initialAppointmentId?: string | null;
 }
 
 type ViewMode = 'week' | 'month' | 'list';
@@ -128,7 +129,7 @@ const APPT_SELECT = `
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, initialViewMode }: Props) {
+export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, initialViewMode, initialAppointmentId }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const tz = officeTimezone || 'Africa/Algiers';
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
@@ -345,6 +346,37 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // Load activity log on mount and whenever serviceMap changes
   useEffect(() => { loadActivity(); }, [loadActivity]);
+
+  // Auto-navigate to a specific appointment when opened with initialAppointmentId
+  const initialApptHandled = useRef(false);
+  useEffect(() => {
+    if (!initialAppointmentId || initialApptHandled.current || loading) return;
+    // Try to find in loaded appointments first
+    const appt = appointments.find(a => a.id === initialAppointmentId);
+    if (appt) {
+      initialApptHandled.current = true;
+      const d = new Date(appt.scheduled_at);
+      setCurrentDate(d);
+      setViewMode('week');
+      setSelectedAppt(appt);
+      return;
+    }
+    // If not in current range, fetch it directly
+    (async () => {
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const { data } = await sb.from('appointments').select(APPT_SELECT).eq('id', initialAppointmentId).single();
+        if (data) {
+          initialApptHandled.current = true;
+          const d = new Date(data.scheduled_at);
+          setCurrentDate(d);
+          setViewMode('week');
+          setSelectedAppt(data as CalendarAppointment);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [initialAppointmentId, appointments, loading, storedAuth]);
 
   // ── Realtime + polling fallback ────────────────────────────────
   // Realtime gives instant updates; polling every 30s is a safety net
