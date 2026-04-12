@@ -62,13 +62,13 @@ interface ActivityEntry {
 }
 
 const EVENT_META: Record<ActivityEntry['eventType'], { icon: string; color: string; labelKey: string }> = {
-  booked:     { icon: '📅', color: '#22c55e', labelKey: 'Booked' },
-  approved:   { icon: '✅', color: '#3b82f6', labelKey: 'confirmed' },
+  booked:     { icon: '📅', color: '#3b82f6', labelKey: 'Booked' },
+  approved:   { icon: '✅', color: '#22c55e', labelKey: 'confirmed' },
   cancelled:  { icon: '❌', color: '#ef4444', labelKey: 'Cancelled' },
   declined:   { icon: '🚫', color: '#f97316', labelKey: 'Declined' },
-  checked_in: { icon: '📋', color: '#8b5cf6', labelKey: 'checked_in' },
+  checked_in: { icon: '📋', color: '#06b6d4', labelKey: 'checked_in' },
   no_show:    { icon: '👻', color: '#64748b', labelKey: 'no_show' },
-  served:     { icon: '✔️', color: '#10b981', labelKey: 'served' },
+  served:     { icon: '✔️', color: '#8b5cf6', labelKey: 'served' },
   modified:   { icon: '✏️', color: '#eab308', labelKey: 'Modified' },
   deleted:    { icon: '🗑️', color: '#dc2626', labelKey: 'Deleted' },
 };

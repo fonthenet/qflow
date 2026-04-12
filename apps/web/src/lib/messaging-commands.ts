@@ -3870,11 +3870,16 @@ async function confirmBooking(
   }
 
   // Auto-add this customer to the customers table (non-fatal on error)
+  // Extract wilaya code: try numeric prefix first (e.g. "18 - جيجل" → "18"),
+  // fall back to the full string (user may type just "جيجل" or "Jijel").
+  const wilayaCode = wilaya
+    ? (wilaya.match(/^\d+/) ?? [])[0] || wilaya.trim()
+    : null;
   await upsertCustomerFromBooking(supabase, {
     organizationId: session.organization_id,
     name: session.booking_customer_name,
     phone: identifier,
-    wilayaCode: wilaya || null,
+    wilayaCode,
     source: channel === 'messenger' ? 'messenger' : 'whatsapp',
   });
 
