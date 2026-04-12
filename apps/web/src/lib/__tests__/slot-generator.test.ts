@@ -27,9 +27,10 @@ function createMockSupabase() {
   // Each table has a queue of results; successive .from('table') calls
   // shift from the front. This handles the slot-generator querying
   // 'appointments' twice (service-scoped + all-services for daily limit).
-  const callIndexes: Record<string, number> = {};
+  let callIndexes: Record<string, number> = {};
 
   return {
+    resetCallIndexes() { callIndexes = {}; },
     from: vi.fn((table: string) => {
       const idx = callIndexes[table] ?? 0;
       callIndexes[table] = idx + 1;
@@ -87,6 +88,7 @@ function defaultOffice(overrides: Record<string, any> = {}, forDate?: string) {
 
 function defaultOrg(settingsOverrides: Record<string, any> = {}) {
   return {
+    timezone: 'UTC',
     settings: {
       booking_mode: 'simple',
       booking_horizon_days: 14,
@@ -187,6 +189,7 @@ describe('getAvailableSlots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryResults = {};
+    mockSupabase.resetCallIndexes();
   });
 
   it('returns slots with correct remaining capacity for a valid office/service/date', async () => {
@@ -205,9 +208,8 @@ describe('getAvailableSlots', () => {
 
   it('reduces remaining count based on existing appointments', async () => {
     const date = futureDateStr(3);
-    // Build scheduled_at as a local-time string so getHours() returns 08
-    // (the source code uses new Date(a.scheduled_at).getHours() which is local)
-    const scheduledAt = `${date}T08:00:00`;
+    // Use explicit UTC format — the source uses timeInTz(new Date(...), orgTimezone)
+    const scheduledAt = `${date}T08:00:00Z`;
     const appointments = [{ scheduled_at: scheduledAt }];
 
     setupStandard({ appointments });
@@ -222,7 +224,7 @@ describe('getAvailableSlots', () => {
 
   it('removes fully booked slots from the result', async () => {
     const date = futureDateStr(3);
-    const scheduledAt = `${date}T08:00:00`;
+    const scheduledAt = `${date}T08:00:00Z`;
     // Two bookings fill up the slot (slots_per_interval=2)
     const appointments = [
       { scheduled_at: scheduledAt },
