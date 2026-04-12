@@ -1400,7 +1400,7 @@ export async function handleInboundMessage(
           /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
 
         if (!isNewBookCmd) {
-          const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+          const isCancel = /^(0|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
 
           if (isCancel && bookSession.state !== 'booking_confirm') {
             await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
@@ -3530,9 +3530,21 @@ async function handleBookingState(
       return await handleBookingTimeChoice(session, cleaned, identifier, locale, channel, sendMessage);
 
     case 'booking_enter_name':
+      // Cancel booking if user sends 0
+      if (cleaned === '0') {
+        await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
+        return true;
+      }
       return await handleBookingNameInput(session, cleaned, identifier, locale, channel, sendMessage);
 
     case 'booking_enter_wilaya': {
+      // Cancel booking if user sends 0
+      if (cleaned === '0') {
+        await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
+        return true;
+      }
       const resolved = resolveWilaya(cleaned);
       if (!resolved) {
         await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', locale) });
@@ -3548,6 +3560,12 @@ async function handleBookingState(
     }
 
     case 'booking_enter_reason': {
+      // Cancel booking if user sends 0
+      if (cleaned === '0') {
+        await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
+        return true;
+      }
       const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
       const reason = isSkip ? '' : cleaned.trim();
       if (reason.length > 200) {
@@ -3575,6 +3593,12 @@ async function handleBookingState(
     }
 
     case 'booking_enter_phone': {
+      // Cancel booking if user sends 0
+      if (cleaned === '0') {
+        await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+        await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
+        return true;
+      }
       const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
       const phone = isSkip ? identifier : cleaned.trim();
       // Save phone and go to confirm
