@@ -1350,26 +1350,46 @@ export async function handleInboundMessage(
     if (bookSession) {
       const bookLocale = (bookSession.locale as Locale) || detectedLocale;
 
-      // Free-text input states: always route to handler, never reinterpret as commands
+      // Free-text input states (name/wilaya/reason/phone/confirm): route to handler
+      // UNLESS the message is a clear explicit command that should exit the booking flow
       const isFreeTextState = ['booking_enter_name', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_enter_phone', 'booking_confirm'].includes(bookSession.state);
 
-      // For selection states (service/date/time), allow new BOOK commands to restart the flow
-      const isNewBookCmd = !isFreeTextState && (!!parseBookingCode(cleaned) ||
-        /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned));
+      // Explicit commands that should always break out of any booking flow.
+      // JOIN/STATUS/CANCEL/HELP/LIST are always commands (nobody types "join" as a reason).
+      // BOOK/RDV/موعد only breaks out if alone or followed by a Latin code (not Arabic free text).
+      const alwaysCmd = /^(JOIN|REJOINDRE|انضم)\s/i.test(command) ||
+        /^(STATUS|STATUT|حالة|HELP|AIDE|مساعدة|LIST|LISTE|القائمة|CANCEL|ANNULER|الغاء|إلغاء|MY BOOKINGS|MES RDV|مواعيدي|حجوزاتي)$/i.test(command) ||
+        /^(CANCEL\s+BOOKING|ANNULER\s+RDV)/i.test(command);
+      const bookCmdParsed = parseBookingCode(cleaned);
+      const bookCmdValid = bookCmdParsed && !bookCmdParsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(bookCmdParsed.code);
+      const bookAlone = /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
+      const isExplicitCmd = alwaysCmd || !!bookCmdValid || bookAlone;
 
-      if (!isNewBookCmd) {
-        // "0" means "go back one step" in booking flow — let it reach handleBookingState
-        // Cancel only via explicit words (not in free-text states where input could match)
-        const isCancel = !isFreeTextState && /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
-
-        if (isCancel && bookSession.state !== 'booking_confirm') {
-          await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
-          await sendMessage({ to: identifier, body: t('booking_cancelled', bookLocale) });
-          return;
-        }
-
+      // In free-text states, only exit if it's an explicit command
+      if (isFreeTextState && isExplicitCmd) {
+        // Delete booking session and let the command be processed normally below
+        await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
+      } else if (isFreeTextState) {
+        // Not a command — treat as free-text input
         const handled = await handleBookingState(bookSession, cleaned, identifier, bookLocale, channel, sendMessage);
         if (handled) return;
+      } else {
+        // Selection states (service/date/time)
+        const isNewBookCmd = !!parseBookingCode(cleaned) ||
+          /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
+
+        if (!isNewBookCmd) {
+          const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+
+          if (isCancel && bookSession.state !== 'booking_confirm') {
+            await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
+            await sendMessage({ to: identifier, body: t('booking_cancelled', bookLocale) });
+            return;
+          }
+
+          const handled = await handleBookingState(bookSession, cleaned, identifier, bookLocale, channel, sendMessage);
+          if (handled) return;
+        }
       }
     }
   }
@@ -1669,8 +1689,7 @@ export async function handleInboundMessage(
 
   // ── JOIN with code ──
   const parsed = parseBusinessCode(cleaned);
-  // Only treat as code if it looks like one: no spaces, no Arabic (business codes are Latin/numeric)
-  if (parsed && !parsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(parsed.code)) {
+  if (parsed) {
     // Check if the code is a category-business number (e.g. "5-1", "3-2")
     const dirMatch = parsed.code.match(/^(\d{1,2})-(\d{1,2})$/);
     if (dirMatch) {
