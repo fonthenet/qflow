@@ -19,6 +19,7 @@ export default async function AnalyticsPage() {
   const officeOrgMap: Record<string, string> = {};
   (allOffices ?? []).forEach((o: any) => { officeOrgMap[o.id] = o.organization_id; });
 
+  // Super-admin spans all orgs, so use UTC consistently for cross-org aggregation
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Tickets per org + per day
@@ -51,7 +52,7 @@ export default async function AnalyticsPage() {
 
     // Hourly distribution for today
     if (t.created_at?.startsWith(todayStr)) {
-      const hour = new Date(t.created_at).getHours();
+      const hour = new Date(t.created_at).getUTCHours();
       hourlyTickets[hour] = (hourlyTickets[hour] || 0) + 1;
     }
 

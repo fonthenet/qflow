@@ -3862,11 +3862,15 @@ async function handleMyBookings(
   const officeIds = Array.from(new Set(appts.map((a: any) => a.office_id).filter(Boolean)));
   const svcIds = Array.from(new Set(appts.map((a: any) => a.service_id).filter(Boolean)));
   const [officesRes, svcsRes] = await Promise.all([
-    officeIds.length ? supabase.from('offices').select('id, organization_id, organizations(name)').in('id', officeIds) : Promise.resolve({ data: [] }),
+    officeIds.length ? supabase.from('offices').select('id, organization_id, organizations(name, timezone)').in('id', officeIds) : Promise.resolve({ data: [] }),
     svcIds.length ? supabase.from('services').select('id, name').in('id', svcIds) : Promise.resolve({ data: [] }),
   ]);
   const officeOrgMap = new Map<string, string>(
     (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.name ?? ''])
+  );
+  // Org timezone map — single source of truth per office
+  const officeTzMap = new Map<string, string>(
+    (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.timezone || 'Africa/Algiers'])
   );
   const svcMap = new Map<string, string>((svcsRes.data ?? []).map((s: any) => [s.id, s.name]));
 
@@ -3878,8 +3882,10 @@ async function handleMyBookings(
 
   const list = appts.map((a: any, i: number) => {
     const d = new Date(a.scheduled_at);
-    const dateStr = d.toISOString().split('T')[0];
-    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const tz = officeTzMap.get(a.office_id) || 'Africa/Algiers';
+    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+    const tp = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(d);
+    const timeStr = `${tp.find(p => p.type === 'hour')?.value ?? '00'}:${tp.find(p => p.type === 'minute')?.value ?? '00'}`;
     const dateFormatted = formatDateForLocale(dateStr, locale);
     const org = officeOrgMap.get(a.office_id) ?? '';
     const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
@@ -3926,18 +3932,23 @@ async function handleCancelBooking(
     const officeIds = Array.from(new Set(appointments.map((a: any) => a.office_id).filter(Boolean)));
     const svcIds = Array.from(new Set(appointments.map((a: any) => a.service_id).filter(Boolean)));
     const [officesRes, svcsRes] = await Promise.all([
-      officeIds.length ? supabase.from('offices').select('id, organizations(name)').in('id', officeIds) : Promise.resolve({ data: [] }),
+      officeIds.length ? supabase.from('offices').select('id, organizations(name, timezone)').in('id', officeIds) : Promise.resolve({ data: [] }),
       svcIds.length ? supabase.from('services').select('id, name').in('id', svcIds) : Promise.resolve({ data: [] }),
     ]);
     const officeOrgMap = new Map<string, string>(
       (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.name ?? ''])
     );
+    const officeTzMap2 = new Map<string, string>(
+      (officesRes.data ?? []).map((o: any) => [o.id, o.organizations?.timezone || 'Africa/Algiers'])
+    );
     const svcMap = new Map<string, string>((svcsRes.data ?? []).map((s: any) => [s.id, s.name]));
 
     const list = appointments.map((a: any, i: number) => {
       const d = new Date(a.scheduled_at);
-      const dateStr = d.toISOString().split('T')[0];
-      const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const tz2 = officeTzMap2.get(a.office_id) || 'Africa/Algiers';
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz2 }).format(d);
+      const tp2 = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz2 }).formatToParts(d);
+      const timeStr = `${tp2.find(p => p.type === 'hour')?.value ?? '00'}:${tp2.find(p => p.type === 'minute')?.value ?? '00'}`;
       const dateFormatted = formatDateForLocale(dateStr, locale);
       const org = officeOrgMap.get(a.office_id) ?? '';
       const svc = a.service_id ? (svcMap.get(a.service_id) ?? '') : '';
@@ -3957,9 +3968,13 @@ async function handleCancelBooking(
   }
 
   const appt = appointments[resolvedIdx - 1];
+  // Fetch org timezone for this appointment's office
+  const { data: cancelOfficeRow } = await supabase.from('offices').select('organizations(timezone)').eq('id', appt.office_id).maybeSingle();
+  const cancelTz: string = (cancelOfficeRow as any)?.organizations?.timezone || 'Africa/Algiers';
   const scheduledDate = new Date(appt.scheduled_at);
-  const dateStr = scheduledDate.toISOString().split('T')[0];
-  const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+  const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: cancelTz }).format(scheduledDate);
+  const cancelTp = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: cancelTz }).formatToParts(scheduledDate);
+  const timeStr = `${cancelTp.find(p => p.type === 'hour')?.value ?? '00'}:${cancelTp.find(p => p.type === 'minute')?.value ?? '00'}`;
 
   await supabase
     .from('appointments')

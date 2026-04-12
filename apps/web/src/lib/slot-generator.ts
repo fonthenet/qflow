@@ -7,6 +7,27 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getDateStartIso, getDateEndIso } from '@/lib/office-day';
 
+/** Get current date string (YYYY-MM-DD) in a specific timezone */
+function todayInTz(tz: string): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(new Date());
+}
+
+/** Get HH:MM from a Date in a specific timezone */
+function timeInTz(d: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(d);
+  return `${parts.find(p => p.type === 'hour')?.value ?? '00'}:${parts.find(p => p.type === 'minute')?.value ?? '00'}`;
+}
+
+/** Get "now" truncated to the current minute in a specific timezone, as epoch ms */
+function nowTruncatedInTz(tz: string): number {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(now);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '0';
+  // Build an ISO string in the target timezone, then parse it as if local
+  // We just need the epoch ms for comparison with slot times on the same date
+  return new Date(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:00`).getTime();
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface SlotGeneratorParams {
@@ -170,8 +191,8 @@ export async function getAvailableSlots(
 
   const isAlwaysOpen = visitIntakeOverrideMode === 'always_open';
 
-  // ── Check date is within horizon ──
-  const todayStr = new Date().toISOString().split('T')[0];
+  // ── Check date is within horizon (in office timezone, not server UTC) ──
+  const todayStr = todayInTz(orgTimezone);
   const maxD = new Date(todayStr + 'T12:00:00');
   maxD.setDate(maxD.getDate() + bookingHorizonDays);
   const maxDateStr = maxD.toISOString().split('T')[0];
@@ -282,12 +303,11 @@ export async function getAvailableSlots(
     .gte('scheduled_at', startOfDay)
     .lte('scheduled_at', endOfDay);
 
-  // Count bookings per slot
+  // Count bookings per slot (using office timezone, not server UTC)
   const slotBookingCounts = new Map<string, number>();
   let totalDayBookings = 0;
   for (const a of existingAppointments ?? []) {
-    const d = new Date(a.scheduled_at);
-    const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const t = timeInTz(new Date(a.scheduled_at), orgTimezone);
     slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
     totalDayBookings++;
   }
@@ -310,10 +330,9 @@ export async function getAvailableSlots(
   const dailyLimitReached = dailyTicketLimit > 0 && totalDayAllServices >= dailyTicketLimit;
 
   // ── 8. Filter slots ──
-  // Truncate now to the start of the current minute so a slot at 09:30
-  // remains bookable until 09:31:00 (not rejected at 09:30:01).
-  const nowRaw = new Date();
-  const now = new Date(nowRaw.getFullYear(), nowRaw.getMonth(), nowRaw.getDate(), nowRaw.getHours(), nowRaw.getMinutes(), 0, 0);
+  // Truncate now to the start of the current minute in the OFFICE timezone
+  // so a slot at 09:30 remains bookable until 09:31 (not rejected at 09:30:01).
+  const nowMs = nowTruncatedInTz(orgTimezone);
   const isToday = date === todayStr;
   const minLeadMs = minLeadHours * 60 * 60 * 1000;
 
@@ -325,8 +344,8 @@ export async function getAvailableSlots(
 
     // Skip past slots (with lead time buffer)
     if (isToday) {
-      const slotDate = new Date(`${date}T${slot}:00`);
-      if (slotDate.getTime() <= now.getTime() + minLeadMs) continue;
+      const slotMs = new Date(`${date}T${slot}:00`).getTime();
+      if (slotMs <= nowMs + minLeadMs) continue;
     }
 
     // Skip if daily limit reached

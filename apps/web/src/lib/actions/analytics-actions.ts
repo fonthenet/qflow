@@ -201,14 +201,35 @@ export interface TemplatePerformanceAnalyticsData {
 // ─── Timezone helper ──────────────────────────────────────────────────────
 
 async function resolveTimezone(context: StaffContext, officeId?: string): Promise<string | undefined> {
+  // Use org-level timezone as single source of truth — never per-office timezone
   const targetOfficeId = officeId || context.accessibleOfficeIds[0];
   if (!targetOfficeId) return undefined;
   const { data } = await context.supabase
     .from('offices')
-    .select('timezone')
+    .select('organization:organizations(timezone)')
     .eq('id', targetOfficeId)
     .single();
-  return data?.timezone ?? undefined;
+  return (data as any)?.organization?.timezone ?? undefined;
+}
+
+/** Convert a UTC date to hour-of-day in the given timezone */
+function getHourInTz(dateStr: string, tz?: string): number {
+  if (!tz) return new Date(dateStr).getUTCHours();
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: tz }).formatToParts(new Date(dateStr));
+    return Number(parts.find(p => p.type === 'hour')?.value ?? 0);
+  } catch { return new Date(dateStr).getUTCHours(); }
+}
+
+/** Convert a UTC date to day-of-week (0=Sunday) in the given timezone */
+function getDayInTz(dateStr: string, tz?: string): number {
+  if (!tz) return new Date(dateStr).getUTCDay();
+  try {
+    const d = new Date(dateStr);
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: tz }).format(d);
+    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return map[weekday] ?? d.getUTCDay();
+  } catch { return new Date(dateStr).getUTCDay(); }
 }
 
 // ─── Date range helpers ────────────────────────────────────────────────────
@@ -524,7 +545,7 @@ export async function getTicketsByHour(
   }));
 
   (tickets ?? []).forEach((t: { created_at: string }) => {
-    const hour = new Date(t.created_at).getHours();
+    const hour = getHourInTz(t.created_at, tz);
     hourCounts[hour].count++;
   });
 
@@ -1271,9 +1292,8 @@ export async function getHourlyHeatmap(
     .lte('created_at', end);
 
   (tickets ?? []).forEach((t: { created_at: string }) => {
-    const d = new Date(t.created_at);
-    const dow = d.getDay(); // 0=Sunday
-    const hour = d.getHours();
+    const dow = getDayInTz(t.created_at, tz); // 0=Sunday, in org timezone
+    const hour = getHourInTz(t.created_at, tz);
     const cell = grid.find((c) => c.dayOfWeek === dow && c.hour === hour);
     if (cell) cell.count++;
   });

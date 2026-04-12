@@ -56,8 +56,9 @@ function getBusinessHoursStatus(
     const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
     time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   } catch {
-    day = DAYS_OF_WEEK[now.getDay()];
-    time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // Fallback: use UTC — still safer than server-local time
+    day = DAYS_OF_WEEK[now.getUTCDay()];
+    time = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
   }
 
   if (!operatingHours || Object.keys(operatingHours).length === 0) {

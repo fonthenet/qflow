@@ -215,13 +215,16 @@ export async function POST(request: NextRequest) {
     if (cleanCustomerPhone) {
       const { data: officeRow } = await supabase
         .from('offices')
-        .select('organization:organizations(name)')
+        .select('organization:organizations(name, timezone)')
         .eq('id', officeId)
         .single();
       const orgName: string = (officeRow as any)?.organization?.name ?? '';
+      // Use org-level timezone as single source of truth
+      const orgTz: string = (officeRow as any)?.organization?.timezone || 'Africa/Algiers';
       const dt = new Date(scheduledAt);
-      const dateLabel = dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const timeLabel = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+      const dateLabel = dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: orgTz });
+      const timeParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: orgTz }).formatToParts(dt);
+      const timeLabel = `${timeParts.find(p => p.type === 'hour')?.value ?? '00'}:${timeParts.find(p => p.type === 'minute')?.value ?? '00'}`;
       const locale: Locale = (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : 'fr';
       const templateKey = requireApproval ? 'booking_pending_approval' : 'booking_confirmed';
       const messageBody = tMsg(templateKey, locale, {

@@ -740,6 +740,21 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     setTimeout(() => { anyPanel.removeEventListener('transitionend', handler); onDone(); }, 300);
   }, []);
 
+  // ── Global keyboard navigation (arrow keys for weeks) ──────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip if already handled by the grid's cell navigation
+      if (e.defaultPrevented) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (viewMode !== 'week') return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); navigateWeek(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateWeek(1); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [viewMode, navigateWeek]);
+
   // ── Wheel-as-drag: scroll physically moves panels, then snaps ──
   const wheelDragRef = useRef({ offset: 0, settling: false, timer: null as ReturnType<typeof setTimeout> | null });
   const onWheelSwipe = useCallback((e: React.WheelEvent) => {
@@ -1313,6 +1328,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                           clearSelection={!bookingSlot}
                           startHour={START_HOUR}
                           endHour={END_HOUR}
+                          onWeekNavigate={navigateWeek}
                         />
                       </div>
                     ))}
@@ -1785,6 +1801,7 @@ function DesktopWeekView({
   days, appointmentsByDate, timezone, serviceMap, intlLocale, locale, selectedApptId, operatingHours, onSelect, hideGutter, onCellSelect,
   holidaysByDate, selectedDates, onDayContext, onDayHeaderClick, onSlotDoubleClick, clearSelection,
   startHour: START_HOUR = DEFAULT_START_HOUR, endHour: END_HOUR = DEFAULT_END_HOUR,
+  onWeekNavigate,
 }: {
   days: CalendarDayInfo[];
   appointmentsByDate: Map<string, CalendarAppointment[]>;
@@ -1805,6 +1822,8 @@ function DesktopWeekView({
   clearSelection?: boolean;
   startHour?: number;
   endHour?: number;
+  /** Navigate to prev (-1) or next (1) week when arrow keys go past the edge */
+  onWeekNavigate?: (direction: -1 | 1) => void;
 }) {
   const [selectedCell, setSelectedCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
   const [activeColIdx, setActiveColIdx] = useState<number | null>(null);
@@ -1829,10 +1848,11 @@ function DesktopWeekView({
       case 'ArrowLeft': newDay = Math.max(dayIdx - 1, 0); break;
       case 'ArrowDown': newSlot = Math.min(slotIdx + 1, (END_HOUR - START_HOUR) * 2 - 1); break;
       case 'ArrowUp': newSlot = Math.max(slotIdx - 1, 0); break;
-      case 'Escape': setSelectedCell(null); return;
+      case 'Escape': setSelectedCell(null); e.preventDefault(); return;
       default: return;
     }
     e.preventDefault();
+    e.nativeEvent.stopImmediatePropagation(); // Prevent global handler from also navigating weeks
     setSelectedCell({ dayIdx: newDay, slotIdx: newSlot });
   }, [selectedCell, days.length]);
 
@@ -2074,10 +2094,11 @@ function DesktopWeekView({
                     return (
                       <button
                         key={appt.id}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onSelect(appt);
-                          const slotIdx = (hour - START_HOUR) * 2 + (minute >= 30 ? 1 : 0);
-                          setSelectedCell({ dayIdx, slotIdx });
+                          // Clear slot selection so "+" doesn't overlay the card
+                          setSelectedCell(null);
                           onDayHeaderClick?.({ stopPropagation() {}, preventDefault() {} } as any, day.dateKey);
                         }}
                         style={{

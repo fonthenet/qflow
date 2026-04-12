@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -166,12 +166,26 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
   // ── Navigation ─────────────────────────────────────────────────
 
   const goToday = () => setCurrentDate(new Date());
-  const goPrev = () => setCurrentDate((d) => (viewMode === 'week' ? shiftWeek(d, -1) : shiftMonth(d, -1)));
-  const goNext = () => {
-    const next = viewMode === 'week' ? shiftWeek(currentDate, 1) : shiftMonth(currentDate, 1);
-    if (isWithinHorizon(next, 3)) setCurrentDate(next);
-  };
+  const goPrev = useCallback(() => setCurrentDate((d) => (viewMode === 'week' ? shiftWeek(d, -1) : shiftMonth(d, -1))), [viewMode]);
+  const goNext = useCallback(() => {
+    setCurrentDate((d) => {
+      const next = viewMode === 'week' ? shiftWeek(d, 1) : shiftMonth(d, 1);
+      return isWithinHorizon(next, 3) ? next : d;
+    });
+  }, [viewMode]);
   const goToDate = (date: Date) => setCurrentDate(date);
+
+  // Keyboard arrow navigation (← → to move weeks/months)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't capture when typing in inputs/selects
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [goPrev, goNext]);
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -478,7 +492,10 @@ function WeekView({
                   return (
                     <button
                       key={appt.id}
-                      onClick={() => onSelectAppt(appt)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectAppt(appt);
+                      }}
                       className="absolute left-0.5 right-0.5 rounded-md px-1.5 py-0.5 text-left overflow-hidden cursor-pointer hover:brightness-110 transition-all shadow-sm border border-white/20"
                       style={{
                         top,
@@ -669,12 +686,25 @@ function AppointmentDetail({
   onAction: () => void;
 }) {
   const [cancelling, setCancelling] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const svc = a.service ? a.service : serviceMap.get(a.service_id);
   const dept = a.department ? a.department : deptMap.get(a.department_id);
   const staff = a.staff_id ? (a.staff ? a.staff : staffMap.get(a.staff_id)) : null;
   const color = getServiceColor(svc as any);
   const statusColor = getStatusColor(a.status);
   const scheduledDate = new Date(a.scheduled_at);
+
+  // Close panel when clicking outside it (without blocking calendar clicks)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    // Use capture:false so appointment button clicks fire first
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
 
   const handleCancel = async () => {
     if (!confirm('Cancel this appointment?')) return;
@@ -685,11 +715,10 @@ function AppointmentDetail({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end" onClick={onClose}>
-      <div
-        className="w-[420px] max-w-full h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-2xl overflow-y-auto animate-in slide-in-from-right-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div
+      ref={panelRef}
+      className="fixed top-0 right-0 z-50 w-[420px] max-w-full h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 shadow-2xl overflow-y-auto animate-in slide-in-from-right-5"
+    >
         {/* Header */}
         <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center gap-3 z-10">
           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -799,7 +828,6 @@ function AppointmentDetail({
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

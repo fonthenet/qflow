@@ -143,15 +143,19 @@ async function notifyWaitlist(sb: any, appointmentId: string) {
   try {
     const { data: appointment } = await sb
       .from('appointments')
-      .select('office_id, service_id, scheduled_at')
+      .select('office_id, service_id, scheduled_at, offices!inner(organization:organizations(timezone))')
       .eq('id', appointmentId)
       .single();
 
     if (!appointment) return;
 
+    // Use org-level timezone as single source of truth
+    const tz: string = (appointment as any).offices?.organization?.timezone || 'Africa/Algiers';
     const scheduledDate = new Date(appointment.scheduled_at);
-    const date = scheduledDate.toISOString().split('T')[0];
-    const time = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+    // Timezone-aware date & time extraction
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(scheduledDate);
+    const timeParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(scheduledDate);
+    const time = `${timeParts.find(p => p.type === 'hour')?.value ?? '00'}:${timeParts.find(p => p.type === 'minute')?.value ?? '00'}`;
 
     const { data: waitlistEntries } = await sb
       .from('slot_waitlist')
