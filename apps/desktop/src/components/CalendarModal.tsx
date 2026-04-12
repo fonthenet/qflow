@@ -171,6 +171,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const activityEndRef = useRef<HTMLDivElement>(null);
   const prevApptsRef = useRef<Map<string, CalendarAppointment>>(new Map());
+  const prevMonthKeyRef = useRef<string>('');  // track month changes to reset diff
 
   // ── Holidays / day-off management ──────────────────────────────
   interface Holiday { id: string; holiday_date: string; name: string; is_full_day: boolean; }
@@ -305,6 +306,15 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       const allAppts = await loadAll();
 
       // ── Diff for activity log ──
+      // When month/year changes, reset the diff baseline so we don't
+      // misinterpret out-of-range appointments as "deleted".
+      const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+      if (prevMonthKeyRef.current && prevMonthKeyRef.current !== monthKey) {
+        prevApptsRef.current = new Map(); // treat next load as fresh seed
+        setActivityLog([]);               // clear stale entries
+      }
+      prevMonthKeyRef.current = monthKey;
+
       const prev = prevApptsRef.current;
       if (prev.size > 0) {
         // Subsequent loads — detect real-time changes
@@ -361,14 +371,15 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           setActivityLog(log => [...log.slice(-(100 - newEntries.length)), ...newEntries]);
         }
       } else {
-        // First load — seed activity log with recent history (last 24h)
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        // First load — only seed with appointments created/changed very recently
+        // (last 2 hours) so the feed shows meaningful real-time activity, not noise.
+        const cutoff = Date.now() - 2 * 60 * 60 * 1000;
         const seed: ActivityEntry[] = allAppts
           .filter(a => new Date(a.created_at).getTime() > cutoff)
           .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .slice(-20) // cap seed to last 20 entries max
           .map(appt => {
             const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
-            // Determine event type from current status
             let evtType: ActivityEntry['eventType'] = 'booked';
             if (appt.status === 'cancelled') evtType = 'cancelled';
             else if (appt.status === 'declined') evtType = 'declined';
@@ -387,7 +398,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               source: appt.source,
             };
           });
-        if (seed.length > 0) setActivityLog(seed.slice(-100));
+        if (seed.length > 0) setActivityLog(seed);
       }
 
       // Update ref for next diff
