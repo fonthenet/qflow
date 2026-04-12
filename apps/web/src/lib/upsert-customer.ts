@@ -49,7 +49,7 @@ export async function upsertCustomerFromBooking(
       if (name && !existing.name) updates.name = name;
       if (email && !existing.email) updates.email = email;
       if (notes && !existing.notes) updates.notes = notes;
-      if (wilayaCode && !existing.wilaya_code) updates.wilaya_code = wilayaCode;
+      if (wilayaCode) updates.wilaya_code = wilayaCode;
       await supabase.from('customers').update(updates).eq('id', existing.id);
       return;
     }

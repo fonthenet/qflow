@@ -3875,6 +3875,7 @@ async function confirmBooking(
   const wilayaCode = wilaya
     ? (wilaya.match(/^\d+/) ?? [])[0] || wilaya.trim()
     : null;
+  console.log('[booking] customer upsert — phone:', identifier, 'wilaya raw:', wilaya, 'wilayaCode:', wilayaCode);
   await upsertCustomerFromBooking(supabase, {
     organizationId: session.organization_id,
     name: session.booking_customer_name,
