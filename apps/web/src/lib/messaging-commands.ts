@@ -1348,15 +1348,19 @@ export async function handleInboundMessage(
       .maybeSingle();
 
     if (bookSession) {
-      // If the message is a new BOOK command (with or without code), skip session
-      // handler and let it fall through to startBookingFlow which cleans up old sessions
-      const isNewBookCmd = !!parseBookingCode(cleaned) ||
-        /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
+      const bookLocale = (bookSession.locale as Locale) || detectedLocale;
+
+      // Free-text input states: always route to handler, never reinterpret as commands
+      const isFreeTextState = ['booking_enter_name', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_enter_phone', 'booking_confirm'].includes(bookSession.state);
+
+      // For selection states (service/date/time), allow new BOOK commands to restart the flow
+      const isNewBookCmd = !isFreeTextState && (!!parseBookingCode(cleaned) ||
+        /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned));
 
       if (!isNewBookCmd) {
-        const bookLocale = (bookSession.locale as Locale) || detectedLocale;
         // "0" means "go back one step" in booking flow — let it reach handleBookingState
-        const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+        // Cancel only via explicit words (not in free-text states where input could match)
+        const isCancel = !isFreeTextState && /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
 
         if (isCancel && bookSession.state !== 'booking_confirm') {
           await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
@@ -1578,7 +1582,9 @@ export async function handleInboundMessage(
 
   // ── BOOK / RDV / موعد with code ──
   const bookParsed = parseBookingCode(cleaned);
-  if (bookParsed) {
+  // Only treat as a code if it looks like one: no spaces, no Arabic text
+  // e.g. "موعد HADABI" ✓  "موعد طبي" ✗ (that's free text, not a business code)
+  if (bookParsed && !bookParsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(bookParsed.code)) {
     const org = await findOrgByCode(bookParsed.code, channel);
     if (org) {
       await startBookingFlow(identifier, org, bookParsed.locale, channel, sendMessage);
@@ -1663,7 +1669,8 @@ export async function handleInboundMessage(
 
   // ── JOIN with code ──
   const parsed = parseBusinessCode(cleaned);
-  if (parsed) {
+  // Only treat as code if it looks like one: no spaces, no Arabic (business codes are Latin/numeric)
+  if (parsed && !parsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(parsed.code)) {
     // Check if the code is a category-business number (e.g. "5-1", "3-2")
     const dirMatch = parsed.code.match(/^(\d{1,2})-(\d{1,2})$/);
     if (dirMatch) {
