@@ -469,16 +469,24 @@ export default function MoreScreen() {
                 </SettingRow>
 
                 <SettingRow label={t('adminMore.slotDuration')} icon="time-outline">
-                  <View style={styles.chipRow}>
-                    {[15, 20, 30, 45, 60].map((d) => (
-                      <TouchableOpacity
-                        key={d}
-                        style={[styles.chip, settings.slot_duration_minutes === d && styles.chipActive]}
-                        onPress={() => updateSettingsJson('slot_duration_minutes', d)}
-                      >
-                        <Text style={[styles.chipText, settings.slot_duration_minutes === d && styles.chipTextActive]}>{d}</Text>
-                      </TouchableOpacity>
-                    ))}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <TouchableOpacity
+                      onPress={() => updateSettingsJson('slot_duration_minutes', Math.max(5, (settings.slot_duration_minutes || 30) - 5))}
+                      disabled={(settings.slot_duration_minutes || 30) <= 5}
+                      style={[styles.chip, { width: 36, opacity: (settings.slot_duration_minutes || 30) <= 5 ? 0.35 : 1 }]}
+                    >
+                      <Text style={[styles.chipText, { fontSize: 18, fontWeight: '700' }]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#e2e8f0', minWidth: 55, textAlign: 'center' }}>
+                      {settings.slot_duration_minutes || 30} min
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => updateSettingsJson('slot_duration_minutes', Math.min(120, (settings.slot_duration_minutes || 30) + 5))}
+                      disabled={(settings.slot_duration_minutes || 30) >= 120}
+                      style={[styles.chip, { width: 36, opacity: (settings.slot_duration_minutes || 30) >= 120 ? 0.35 : 1 }]}
+                    >
+                      <Text style={[styles.chipText, { fontSize: 18, fontWeight: '700' }]}>+</Text>
+                    </TouchableOpacity>
                   </View>
                 </SettingRow>
 

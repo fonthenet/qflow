@@ -47,7 +47,7 @@ const TIMEZONES = [
 
 type SettingsShape = Record<string, any>;
 
-type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon';
+type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon' | 'stepper';
 
 interface FieldDef {
   key: string;
@@ -168,7 +168,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       title: t('sm.section.booking'),
       fields: [
         { key: 'booking_mode', label: t('sm.field.booking_enabled'), type: 'bool', default: false },
-        { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'num', default: 30, min: 5, step: 5 },
+        { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'stepper', default: 30, min: 5, max: 120, step: 5 },
         { key: 'slots_per_interval', label: t('sm.field.slots_per_interval'), type: 'num', default: 1, min: 1 },
         { key: 'daily_ticket_limit', label: t('sm.field.daily_limit'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
         { key: 'booking_horizon_days', label: t('sm.field.horizon_days'), type: 'horizon', default: 90, min: 1, max: 365, presets: [7, 15, 30, 60, 90] },
@@ -433,7 +433,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     const errs: Record<string, string> = {};
     sections.forEach(sec => sec.fields.forEach(f => {
       const v = values[f.key];
-      if (f.type === 'num' || f.type === 'horizon') {
+      if (f.type === 'num' || f.type === 'horizon' || f.type === 'stepper') {
         if (typeof v === 'number') {
           if (f.min != null && v < f.min) errs[f.key] = t('sm.err.min', { n: f.min });
           if (f.max != null && v > f.max) errs[f.key] = t('sm.err.max', { n: f.max });
@@ -748,6 +748,43 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             />
             <span style={{ fontSize: 13, color: '#6b7280' }}>{t('sm.unit.days')}</span>
           </div>
+          {err && <div style={errStyle}>{err}</div>}
+        </div>
+      );
+    }
+    if (f.type === 'stepper') {
+      const stepSize = f.step ?? 5;
+      const minVal = f.min ?? 5;
+      const maxVal = f.max ?? 120;
+      const numV = typeof v === 'number' ? v : (f.default ?? 30);
+      const btnStyle: React.CSSProperties = {
+        width: 32, height: 32, borderRadius: 8,
+        border: '1px solid var(--border, #334155)',
+        background: 'var(--bg2, #1e293b)',
+        color: 'var(--text, #e2e8f0)',
+        fontSize: 18, fontWeight: 700,
+        cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      };
+      return (
+        <div key={f.key} style={{ padding: '5px 0' }}>
+          <label style={labelStyle}>{f.label}</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              style={{ ...btnStyle, opacity: numV <= minVal ? 0.35 : 1 }}
+              disabled={numV <= minVal}
+              onClick={() => setV(Math.max(minVal, numV - stepSize))}
+            >−</button>
+            <span style={{ minWidth: 60, textAlign: 'center', fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {numV} min
+            </span>
+            <button
+              style={{ ...btnStyle, opacity: numV >= maxVal ? 0.35 : 1 }}
+              disabled={numV >= maxVal}
+              onClick={() => setV(Math.min(maxVal, numV + stepSize))}
+            >+</button>
+          </div>
+          {f.help && <div style={helpStyle}>{f.help}</div>}
           {err && <div style={errStyle}>{err}</div>}
         </div>
       );

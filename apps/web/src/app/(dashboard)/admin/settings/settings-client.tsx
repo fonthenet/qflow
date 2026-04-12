@@ -1165,19 +1165,27 @@ export function SettingsClient({
               <label className="block text-sm font-medium text-foreground mb-1">
                 {t('Slot Duration')}
               </label>
-              <select
-                value={slotDurationMinutes}
-                onChange={(e) => setSlotDurationMinutes(Number(e.target.value))}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
-              >
-                <option value={10}>10 {t('minutes')}</option>
-                <option value={15}>15 {t('minutes')}</option>
-                <option value={20}>20 {t('minutes')}</option>
-                <option value={30}>30 {t('minutes')}</option>
-                <option value={45}>45 {t('minutes')}</option>
-                <option value={60}>60 {t('minutes')}</option>
-                <option value={90}>90 {t('minutes')}</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSlotDurationMinutes(Math.max(5, slotDurationMinutes - 5))}
+                  disabled={slotDurationMinutes <= 5}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                >
+                  −
+                </button>
+                <span className="min-w-[4.5rem] text-center text-sm font-semibold text-foreground tabular-nums">
+                  {slotDurationMinutes} {t('min')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSlotDurationMinutes(Math.min(120, slotDurationMinutes + 5))}
+                  disabled={slotDurationMinutes >= 120}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                >
+                  +
+                </button>
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">{t('Duration of each appointment slot')}</p>
             </div>
 
