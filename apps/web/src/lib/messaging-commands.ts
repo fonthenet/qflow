@@ -390,9 +390,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '⏳ You have an appointment *pending confirmation* at *{name}*\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nYou\'ll be notified once it\'s confirmed.',
   },
   ask_wilaya: {
-    fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *ANNULER* pour annuler.',
-    ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *إلغاء* للإلغاء.',
-    en: '📍 Which *wilaya* (province) are you from?\n\nSend the *number* (1–58) or the *name* (e.g. *16* or *Alger*).\nSend *CANCEL* to abort.',
+    fr: '📍 Quelle est votre *wilaya* ?\nPar exemple *Jijel* ou *18*.\n\nEnvoyez *0* pour annuler.',
+    ar: '📍 ما هي *ولايتك*؟\nمثال: *جيجل* أو *18*.\n\nأرسل *0* للإلغاء.',
+    en: '📍 What is your *wilaya*?\nFor example *Jijel* or *18*.\n\nSend *0* to cancel.',
   },
   ask_reason: {
     fr: '📝 Quel est le *motif* de votre visite ? (en quelques mots)\n\nEnvoyez *SKIP* pour passer ou *0* pour annuler.',
@@ -400,9 +400,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📝 What is the *reason* for your visit? (briefly)\n\nSend *SKIP* to skip or *0* to cancel.',
   },
   intake_invalid_wilaya: {
-    fr: '⚠️ Wilaya introuvable. Envoyez un numéro entre *1* et *58*, ou le nom exact (ex: *16* ou *Alger*).',
-    ar: '⚠️ لم يتم العثور على الولاية. أرسل رقمًا بين *1* و *58*، أو الاسم الصحيح (مثال: *16* أو *الجزائر*).',
-    en: '⚠️ Wilaya not found. Send a number between *1* and *58*, or the exact name (e.g. *16* or *Alger*).',
+    fr: '❌ Wilaya introuvable. Essayez le nom (*Jijel*) ou le numéro (*18*).',
+    ar: '❌ الولاية غير موجودة. جرّب الاسم (*جيجل*) أو الرقم (*18*).',
+    en: '❌ Wilaya not found. Try the name (*Jijel*) or the number (*18*).',
   },
   intake_invalid_reason: {
     fr: '⚠️ Motif trop long. Veuillez le résumer en quelques mots (max 200 caractères).',
@@ -461,9 +461,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📱 Enter your *phone number* (or send *SKIP* to skip).\nSend *0* to cancel.',
   },
   booking_enter_wilaya: {
-    fr: '📍 Quelle est votre *wilaya* ?\n\nEnvoyez le *numéro* (1–58) ou le *nom* (ex: *16* ou *Alger*).\nEnvoyez *0* pour annuler.',
-    ar: '📍 ما هي *ولايتك*؟\n\nأرسل *الرقم* (1–58) أو *الاسم* (مثال: *16* أو *الجزائر*).\nأرسل *0* للإلغاء.',
-    en: '📍 Which *wilaya* (province) are you from?\n\nSend the *number* (1–58) or the *name* (e.g. *16* or *Alger*).\nSend *0* to cancel.',
+    fr: '📍 Quelle est votre *wilaya* ?\nPar exemple *Jijel* ou *18*.\n\nEnvoyez *0* pour annuler.',
+    ar: '📍 ما هي *ولايتك*؟\nمثال: *جيجل* أو *18*.\n\nأرسل *0* للإلغاء.',
+    en: '📍 What is your *wilaya*?\nFor example *Jijel* or *18*.\n\nSend *0* to cancel.',
   },
   booking_enter_reason: {
     fr: '📝 Quel est le *motif* de votre rendez-vous ? (en quelques mots)\n\nEnvoyez *SKIP* pour passer ou *0* pour annuler.',
@@ -4110,17 +4110,26 @@ async function showAvailableDates(
     return `*${pageStart + i + 1}* — ${formatted} (${slotsLabel})`;
   }).join('\n');
 
-  // Pagination hints
+  // Pagination hints — clear, visible navigation for more dates
   let pagination = '';
   if (totalPages > 1) {
-    const pageInfo = locale === 'ar' ? `📄 ${safePage + 1}/${totalPages}` : `📄 ${safePage + 1}/${totalPages}`;
-    const nextHint = safePage < totalPages - 1
-      ? (locale === 'ar' ? '➡️ أرسل *#* للصفحة التالية' : locale === 'fr' ? '➡️ Envoyez *#* pour la page suivante' : '➡️ Send *#* for next page')
-      : '';
-    const prevHint = safePage > 0
-      ? (locale === 'ar' ? '⬅️ للصفحة السابقة أرسل  *' : locale === 'fr' ? '⬅️ Page précédente : envoyez  *' : '⬅️ Previous page: send  *')
-      : '';
-    pagination = [pageInfo, nextHint, prevHint].filter(Boolean).join('\n') + '\n\n';
+    const remaining = allDates.length - (pageStart + pageDates.length);
+    const parts: string[] = [];
+
+    if (locale === 'ar') {
+      parts.push(`📄 صفحة ${safePage + 1} من ${totalPages}`);
+      if (safePage < totalPages - 1) parts.push(`⬇️ *${remaining} تواريخ إضافية متاحة!*\n📲 أرسل *#* لعرض المزيد من التواريخ`);
+      if (safePage > 0) parts.push(`⬆️ أرسل *\\** للعودة للتواريخ السابقة`);
+    } else if (locale === 'fr') {
+      parts.push(`📄 Page ${safePage + 1}/${totalPages}`);
+      if (safePage < totalPages - 1) parts.push(`⬇️ *${remaining} dates supplémentaires disponibles !*\n📲 Envoyez *#* pour voir plus de dates`);
+      if (safePage > 0) parts.push(`⬆️ Envoyez *\\** pour revenir aux dates précédentes`);
+    } else {
+      parts.push(`📄 Page ${safePage + 1} of ${totalPages}`);
+      if (safePage < totalPages - 1) parts.push(`⬇️ *${remaining} more dates available!*\n📲 Send *#* to see more dates`);
+      if (safePage > 0) parts.push(`⬆️ Send *\\** to go back to previous dates`);
+    }
+    pagination = parts.join('\n') + '\n\n';
   }
 
   await sendMessage({ to: identifier, body: t('booking_choose_date', locale, { list, pagination }) });

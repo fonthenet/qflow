@@ -26,7 +26,7 @@ import {
   type MonthDayInfo,
   type CalendarAppointment,
 } from '@qflo/shared';
-import { normalizeWilayaDisplay } from '../lib/wilayas';
+import { normalizeWilayaDisplay, WILAYAS, formatWilayaLabel } from '../lib/wilayas';
 
 // ── Schedule types ────────────────────────────────────────────────
 
@@ -3043,11 +3043,18 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
         {/* Wilaya */}
         <div>
           <label style={labelStyle}>{t('Wilaya')}</label>
-          <input
-            type="text" value={wilaya} onChange={e => setWilaya(e.target.value)}
+          <select
+            value={wilaya} onChange={e => setWilaya(e.target.value)}
             onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
-            placeholder={t('Wilaya')} style={inputStyle}
-          />
+            style={inputStyle}
+          >
+            <option value="">{t('Wilaya (province)')}</option>
+            {WILAYAS.map(w => (
+              <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
+                {formatWilayaLabel(w, locale === 'ar')}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Notes */}
