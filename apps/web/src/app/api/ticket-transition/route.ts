@@ -4,9 +4,6 @@ import { safeCompare } from '@/lib/crypto-utils';
 import { notifyCustomer, type NotifyEvent } from '@/lib/notify';
 import { APP_BASE_URL } from '@/lib/config';
 import { isValidTransition } from '@qflo/shared';
-import { sendPushToTicket } from '@/lib/send-push';
-import { sendAPNsToTicket } from '@/lib/apns';
-import { sendAndroidToTicket } from '@/lib/android-push';
 
 /**
  * POST /api/ticket-transition
@@ -202,14 +199,14 @@ export async function POST(request: NextRequest) {
       deskName: pushDeskName,
       status: ticket.status,
     };
-    // Fire-and-forget — don't delay the response
-    sendPushToTicket(ticketId, pushPayload as any).catch(() => {});
-    sendAPNsToTicket(ticketId, {
+    // Fire-and-forget with lazy imports — don't delay the response
+    import('@/lib/send-push').then(m => m.sendPushToTicket(ticketId, pushPayload as any)).catch(() => {});
+    import('@/lib/apns').then(m => m.sendAPNsToTicket(ticketId, {
       title: pushInfo.title,
       body: pushInfo.body,
       url: `/q/${ticket.qr_token}`,
-    }).catch(() => {});
-    sendAndroidToTicket(ticketId, pushPayload as any).catch(() => {});
+    })).catch(() => {});
+    import('@/lib/android-push').then(m => m.sendAndroidToTicket(ticketId, pushPayload as any)).catch(() => {});
   }
 
   // ── Log notification failures for monitoring ──────────────────────
