@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
+import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { initSentry } from './sentry';
 import { logger } from './logger';
@@ -8,6 +9,27 @@ import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTic
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
+
+// ── Auto-update state (module-level for access from menu/IPC/update handlers) ──
+let isManualCheck = false;
+let dismissedVersion: string | null = null;
+const updateStateFile = path.join(app.getPath('userData'), 'update-state.json');
+try {
+  const raw = fs.readFileSync(updateStateFile, 'utf-8');
+  const state = JSON.parse(raw);
+  dismissedVersion = state.dismissedVersion || null;
+  if (state.dismissedAt && Date.now() - state.dismissedAt > 24 * 60 * 60 * 1000) {
+    dismissedVersion = null;
+  }
+} catch { /* no state file yet */ }
+function dismissVersion(version: string) {
+  dismissedVersion = version;
+  try { fs.writeFileSync(updateStateFile, JSON.stringify({ dismissedVersion: version, dismissedAt: Date.now() })); } catch { /* ignore */ }
+}
+function clearDismissed() {
+  dismissedVersion = null;
+  try { fs.unlinkSync(updateStateFile); } catch { /* ignore */ }
+}
 import { getMachineId, verifyLicense, getStoredLicense, storeLicense, registerPendingDevice, checkApproval } from './license';
 import { normalizeLocale, t as translate, type DesktopLocale } from '../src/lib/i18n';
 import { isValidTransition } from '@qflo/shared';
@@ -178,7 +200,7 @@ function buildApplicationMenu() {
         { type: 'separator' },
         {
           label: translate(currentLocale, 'Check for Updates'),
-          click: () => autoUpdater.checkForUpdates(),
+          click: () => { isManualCheck = true; clearDismissed(); autoUpdater.checkForUpdates(); },
         },
         {
           label: translate(currentLocale, 'Open Station'),
@@ -363,7 +385,7 @@ function updateTrayMenu(status: 'online' | 'offline' | 'syncing' | 'connecting')
     { label: statusLabels[status], enabled: false },
     { type: 'separator' },
     { label: translate(currentLocale, 'Open Station'), click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-    { label: translate(currentLocale, 'Check for Updates'), click: () => autoUpdater.checkForUpdates() },
+    { label: translate(currentLocale, 'Check for Updates'), click: () => { isManualCheck = true; clearDismissed(); autoUpdater.checkForUpdates(); } },
     { type: 'separator' },
     { label: translate(currentLocale, 'Quit'), click: () => { mainWindow?.destroy(); app.quit(); } },
   ]);
@@ -1326,6 +1348,8 @@ function setupIPC() {
         message: translate(currentLocale, 'Checking for updates...'),
         progress: null,
       });
+      isManualCheck = true; // bypass dismissal — user explicitly wants to update
+      clearDismissed();
       await autoUpdater.checkForUpdates();
       return { ok: true };
     } catch (error: any) {
@@ -1918,6 +1942,17 @@ app.whenReady().then(async () => {
     });
   });
   autoUpdater.on('update-available', (info) => {
+    // Skip download if user already dismissed this version (unless manual check)
+    if (!isManualCheck && dismissedVersion === info.version) {
+      logger.info('update', 'Skipping dismissed version', { version: info.version });
+      setUpdateStatus({
+        status: 'no_update',
+        version: CONFIG.APP_VERSION,
+        progress: null,
+        message: translate(currentLocale, 'Update {version} available — install from settings.', { version: info.version }),
+      });
+      return;
+    }
     setUpdateStatus({
       status: 'available',
       version: info.version,
@@ -1952,6 +1987,12 @@ app.whenReady().then(async () => {
       message: translate(currentLocale, 'Restart to apply the update.'),
     });
 
+    // If this version was previously dismissed and this isn't a manual check, don't prompt
+    if (!isManualCheck && dismissedVersion === info.version) {
+      logger.info('update', 'Update downloaded but version was dismissed', { version: info.version });
+      return;
+    }
+
     // Backup the database before prompting to install
     const backup = backupDatabase();
     if (backup) {
@@ -1977,12 +2018,12 @@ app.whenReady().then(async () => {
     });
 
     if (response === 0) {
+      clearDismissed();
       autoUpdater.quitAndInstall(false, true);
     } else {
-      new Notification({
-        title: translate(currentLocale, 'Qflo Update Ready'),
-        body: translate(currentLocale, 'Restart to apply the update.'),
-      }).show();
+      // User chose "Later" — dismiss this version to prevent re-prompting
+      dismissVersion(info.version);
+      logger.info('update', 'User deferred update', { version: info.version });
     }
   });
   autoUpdater.on('error', (error) => {
@@ -1994,6 +2035,7 @@ app.whenReady().then(async () => {
   });
 
   try {
+    isManualCheck = false;
     await autoUpdater.checkForUpdates();
   } catch {
     setUpdateStatus({
@@ -2006,6 +2048,7 @@ app.whenReady().then(async () => {
   // Re-check every 4 hours for stations that run for days
   setInterval(async () => {
     try {
+      isManualCheck = false;
       await autoUpdater.checkForUpdates();
     } catch { /* silent */ }
   }, 4 * 60 * 60 * 1000);
