@@ -1898,13 +1898,46 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // ── Update local state based on action ──
       const removeFromPending = () => setPendingAppointmentsAll((prev) => prev.filter((a) => a.id !== apptId));
       switch (action) {
-        case 'approve':
+        case 'approve': {
+          // Find the appointment in pending list BEFORE removing it, so we can add it to the correct list
+          const approvedAppt = pendingAppointmentsAll.find((a) => a.id === apptId);
           removeFromPending();
-          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a));
+          // Update today list if already present
+          setTodayAppointments((prev) => {
+            const existing = prev.find((a) => a.id === apptId);
+            if (existing) return prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a);
+            // If NOT in today's list, check if the approved date falls today — add it
+            if (approvedAppt) {
+              const apptDate = new Date(approvedAppt.scheduled_at).toDateString();
+              const todayDate = new Date().toDateString();
+              if (apptDate === todayDate) {
+                return [...prev, { ...approvedAppt, status: 'confirmed', source: null }].sort(
+                  (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+                );
+              }
+            }
+            return prev;
+          });
+          // Also add to upcoming if it's a future appointment
+          if (approvedAppt) {
+            const apptDate = new Date(approvedAppt.scheduled_at).toDateString();
+            const todayDate = new Date().toDateString();
+            if (apptDate !== todayDate) {
+              setUpcomingAppointments((prev) => {
+                const existing = prev.find((a) => a.id === apptId);
+                if (existing) return prev.map((a) => a.id === apptId ? { ...a, status: 'confirmed' } : a);
+                return [...prev, { ...approvedAppt, status: 'confirmed', source: null }].sort(
+                  (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+                );
+              });
+            }
+          }
           break;
+        }
         case 'decline':
           removeFromPending();
           setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          setUpcomingAppointments((prev) => prev.filter((a) => a.id !== apptId));
           break;
         case 'cancel':
         case 'no_show':
@@ -1943,7 +1976,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } finally {
       setRdvBusyId(null);
     }
-  }, [locale, showToast, storedAuth, fetchTickets]);
+  }, [locale, showToast, storedAuth, fetchTickets, pendingAppointmentsAll]);
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
@@ -2040,13 +2073,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         action === 'approve' ? 'success' : 'info',
       );
       // Refresh local queue so approved tickets appear immediately
-      try { (window as any).qf?.tickets?.fetch?.(); } catch {}
+      if (action === 'approve') fetchTickets();
     } catch (e: any) {
       showToast(e?.message || 'Moderation failed', 'error');
     } finally {
       setPendingBusyId(null);
     }
-  }, [locale]);
+  }, [locale, fetchTickets]);
 
   // ── Pause timer ────────────────────────────────────────────────
   useEffect(() => {
