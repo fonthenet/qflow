@@ -295,9 +295,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
       const [{ data, error: err }, officeResult, holidayResult] = await Promise.all([
-        sb.from('organizations').select('name, name_ar, settings').eq('id', orgId).single(),
+        sb.from('organizations').select('name, name_ar, settings, timezone').eq('id', orgId).single(),
         officeId
-          ? sb.from('offices').select('timezone, operating_hours, settings').eq('id', officeId).single()
+          ? sb.from('offices').select('operating_hours, settings').eq('id', officeId).single()
           : Promise.resolve({ data: null, error: null }),
         officeId
           ? sb.from('office_holidays').select('*').eq('office_id', officeId).order('holiday_date', { ascending: true })
@@ -313,12 +313,14 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       setOrgNameAr(nameAr);
       setOriginalOrgNameAr(nameAr);
 
-      // Load office timezone + operating hours
+      // Load org-level timezone (single source of truth for the business)
+      const orgTz = (data as any)?.timezone || 'Africa/Algiers';
+      setOfficeTimezone(orgTz);
+      setOriginalTimezone(orgTz);
+
+      // Load office operating hours
       if (officeResult?.data) {
         const ofc = officeResult.data as any;
-        const tz = ofc.timezone || 'Africa/Algiers';
-        setOfficeTimezone(tz);
-        setOriginalTimezone(tz);
         const oh = ofc.operating_hours as Record<string, { open: string; close: string; break_start?: string; break_end?: string } | null> | null;
         const sched: Record<string, DaySchedule> = {};
         for (const d of WEEK_DAYS) {
@@ -505,11 +507,16 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           }
         }
         const officeUpdate: any = {
-          timezone: officeTimezone,
           operating_hours: operatingHours,
         };
         const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
         if (ofcErr) throw ofcErr;
+
+        // Save timezone to org level (single source of truth)
+        if (officeTimezone !== originalTimezone) {
+          const { error: tzErr } = await sb.from('organizations').update({ timezone: officeTimezone }).eq('id', orgId);
+          if (tzErr) throw tzErr;
+        }
 
         // Save holidays — diff against original
         const origIds = new Set(originalHolidays.map(h => h.id).filter(Boolean));

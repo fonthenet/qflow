@@ -87,7 +87,7 @@ export default function BookAppointmentScreen() {
   const [appointmentId, setAppointmentId] = useState('');
   const [confirmedAt, setConfirmedAt] = useState('');
 
-  const horizonDays = info?.settings?.booking_horizon_days ?? 7;
+  const horizonDays = info?.settings?.booking_horizon_days ?? 90;
   const availableDates = nextNDays(horizonDays);
 
   const loadInfo = useCallback(async () => {

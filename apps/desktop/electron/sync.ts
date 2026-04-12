@@ -868,10 +868,10 @@ export class SyncEngine {
       const officeId = payload?.office_id;
       if (!officeId) return;
 
-      // Get office timezone + country code for phone normalization
+      // Get org timezone + country code for phone normalization
       const token = await this.ensureFreshToken();
       const officeRes = await fetch(
-        `${this.supabaseUrl}/rest/v1/offices?id=eq.${officeId}&select=organization_id,timezone,settings`,
+        `${this.supabaseUrl}/rest/v1/offices?id=eq.${officeId}&select=organization_id,settings`,
         { headers: { apikey: this.supabaseKey, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) }
       );
       if (!officeRes.ok) return;
@@ -879,7 +879,18 @@ export class SyncEngine {
       const office = offices[0];
       if (!office?.organization_id) return;
 
-      const tz = office.timezone;
+      // Fetch org-level timezone (single source of truth)
+      let tz = 'Africa/Algiers';
+      try {
+        const orgRes = await fetch(
+          `${this.supabaseUrl}/rest/v1/organizations?id=eq.${office.organization_id}&select=timezone`,
+          { headers: { apikey: this.supabaseKey, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) }
+        );
+        if (orgRes.ok) {
+          const orgs = await orgRes.json();
+          if (orgs[0]?.timezone) tz = orgs[0].timezone;
+        }
+      } catch { /* fallback */ }
       const cc = office.settings?.country_code;
       const normalized = this.normalizePhoneForWA(rawPhone, tz, cc);
       if (!normalized) return;

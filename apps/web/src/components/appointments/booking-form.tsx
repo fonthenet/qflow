@@ -127,10 +127,11 @@ export function BookingForm({
   // Same-day RESERVE is not allowed — customers wanting to be seen today must
   // use the live JOIN flow. Compute "tomorrow" in the office timezone so the
   // earliest selectable date matches what getAvailableDates() returns.
+  // Use org-level timezone as single source of truth
   const _officeTz =
-    (organization?.settings as any)?.timezone ||
+    (organization as any)?.timezone ||
     (office as any)?.timezone ||
-    'UTC';
+    'Africa/Algiers';
   const _todayParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: _officeTz,
     year: 'numeric',

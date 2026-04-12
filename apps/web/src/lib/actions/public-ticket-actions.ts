@@ -160,7 +160,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
 
   const { data: office, error: officeError } = await supabase
     .from('offices')
-    .select('id, organization_id, settings, operating_hours, timezone, organization:organizations(settings)')
+    .select('id, organization_id, settings, operating_hours, timezone, organization:organizations(settings, timezone)')
     .eq('id', input.officeId)
     .single();
 
@@ -168,6 +168,8 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
     return { error: officeError?.message ?? 'Office not found' };
   }
 
+  // Use org-level timezone as single source of truth
+  const orgTz = (office.organization as any)?.timezone || office.timezone || 'Africa/Algiers';
   const organizationSettings =
     ((office.organization as { settings?: Record<string, unknown> | null } | null)?.settings as
       | Record<string, unknown>
@@ -191,7 +193,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
   if (visitIntakeOverrideMode === 'business_hours') {
     const operatingHours =
       (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
-    const businessHoursStatus = getBusinessHoursStatus(operatingHours, office.timezone);
+    const businessHoursStatus = getBusinessHoursStatus(operatingHours, orgTz);
 
     if (!businessHoursStatus.isOpen) {
       if (businessHoursStatus.reason === 'before_hours') {
@@ -342,7 +344,7 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
   const rawPhone = typeof input.customerData?.phone === 'string' ? (input.customerData.phone as string).trim() : null;
   if (ticket && rawPhone && !isMessagingSource) {
     const officeCC = (office.settings as Record<string, unknown> | null)?.country_code as string | undefined;
-    const normalizedPhone = normalizePhone(rawPhone, office.timezone, officeCC);
+    const normalizedPhone = normalizePhone(rawPhone, orgTz, officeCC);
     if (normalizedPhone) {
       try {
         // Prefer the locale stored on the ticket itself (set at creation

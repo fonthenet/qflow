@@ -76,7 +76,7 @@ function startOfDayInTz(d: Date, tz: string): Date {
 }
 
 export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate }: Props) {
-  const tz = (officeTimezone && officeTimezone.trim()) || 'UTC';
+  const tz = (officeTimezone && officeTimezone.trim()) || 'Africa/Algiers';
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -375,10 +375,20 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                     }}
                   >
                     <div style={{
-                      minWidth: 56, fontSize: 16, fontWeight: 700,
-                      color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center',
+                      minWidth: 56, fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {formatTimeInTz(a.scheduled_at, tz)}
+                      <span style={{
+                        padding: '1px 6px', borderRadius: 8, fontSize: 8, fontWeight: 800,
+                        textTransform: 'uppercase', letterSpacing: 0.3,
+                        background: `${color}22`, color, whiteSpace: 'nowrap',
+                        marginBottom: 2,
+                      }}>
+                        {t(a.status)}
+                      </span>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>
+                        {formatTimeInTz(a.scheduled_at, tz)}
+                      </span>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -396,14 +406,6 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                         </div>
                       )}
                     </div>
-                    <span style={{
-                      padding: '3px 10px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-                      textTransform: 'uppercase', letterSpacing: 0.4,
-                      background: `${color}22`, color,
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {t(a.status)}
-                    </span>
                     {overbookedIds.has(a.id) && (
                       <span
                         title={t('Multiple appointments share this time slot')}

@@ -42,6 +42,7 @@ interface Props {
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   onClose: () => void;
   onBookCustomer?: (customer: { name: string; phone: string; notes?: string }) => void;
+  initialPhone?: string;
 }
 
 function initials(name: string | null, phone: string | null) {
@@ -93,7 +94,7 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer }: Props) {
+export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -407,6 +408,21 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   }
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
+
+  // Auto-open customer profile when initialPhone is provided
+  const initialPhoneHandled = useRef(false);
+  useEffect(() => {
+    if (!initialPhone || initialPhoneHandled.current || loading || customers.length === 0) return;
+    initialPhoneHandled.current = true;
+    const normalizedInput = initialPhone.replace(/\D/g, '');
+    const match = customers.find(c => {
+      const normalizedCustomer = (c.phone ?? '').replace(/\D/g, '');
+      return normalizedCustomer === normalizedInput
+        || normalizedCustomer.endsWith(normalizedInput)
+        || normalizedInput.endsWith(normalizedCustomer);
+    });
+    if (match) openDetail(match);
+  }, [initialPhone, loading, customers]);
 
   async function handleImportRows(rows: ParsedCustomerRow[]) {
     setImportBusy(true);

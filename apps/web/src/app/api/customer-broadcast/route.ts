@@ -54,14 +54,13 @@ export async function POST(request: NextRequest) {
 
     const orgId = (staff as any).organization_id as string;
 
-    // Fetch an office timezone for phone normalization (local-format numbers like "0551234567")
-    const { data: officeRow } = await (supabase as any)
-      .from('offices')
+    // Fetch org timezone for phone normalization (org-level is single source of truth)
+    const { data: orgRow } = await (supabase as any)
+      .from('organizations')
       .select('timezone')
-      .eq('organization_id', orgId)
-      .limit(1)
-      .maybeSingle();
-    const orgTimezone = (officeRow as any)?.timezone ?? 'Africa/Algiers';
+      .eq('id', orgId)
+      .single();
+    const orgTimezone = orgRow?.timezone ?? 'Africa/Algiers';
     const orgCountry: string | null = null;
 
     // ── Body ──

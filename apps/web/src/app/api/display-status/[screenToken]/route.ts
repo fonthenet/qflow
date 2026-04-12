@@ -108,7 +108,9 @@ export async function GET(
       .eq('office_id', screen.office_id)
       .eq('status', 'waiting');
 
-    const officeDayStartIso = getOfficeDayStartIso(office.timezone);
+    // Use org-level timezone as single source of truth
+    const orgTz: string = office.organization?.timezone || office.timezone || 'Africa/Algiers';
+    const officeDayStartIso = getOfficeDayStartIso(orgTz);
     const { count: servedTodayCount } = await supabase
       .from('tickets')
       .select('id', { count: 'exact' })

@@ -376,19 +376,48 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   #qf-bottom-bar { bottom: 6px; }
 }
 
-/* ── Station Action Pills (Pause, In-House Booking, Status) ──── */
+/* ── Station Action Pills (Toolbar) ──── */
 .station-action-pills {
-  position: absolute;
-  top: 16px;
-  right: 16px;
   display: flex;
   gap: 8px;
   align-items: center;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   z-index: 10;
+  width: calc(100% + 80px);
+  margin: -40px -40px 0 -40px;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  margin: 0;
+  padding: 8px 20px;
 }
-html[dir="rtl"] .station-action-pills {
-  right: auto;
-  left: 16px;
+.station-action-pills .pills-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.station-action-pills .pills-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+html[dir="rtl"] .station-action-pills .pills-right {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* Pause toggle switch */
+.pause-toggle {
+  position: relative;
+}
+.pause-toggle:hover {
+  opacity: 0.85;
 }
 
 
@@ -450,13 +479,8 @@ html[dir="rtl"] .station-action-pills {
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 12px; }
 
   .station-action-pills {
-    right: auto;
-    left: 12px;
-    top: 8px;
-  }
-  html[dir="rtl"] .station-action-pills {
-    left: auto;
-    right: 12px;
+    padding: 4px 12px;
+    flex-wrap: wrap;
   }
 
   .sidebar-toggle-badge {
@@ -514,17 +538,12 @@ html[dir="rtl"] .station-action-pills {
   html[dir="rtl"] .sidebar-toggle { right: auto; left: 10px; }
 
   .station-action-pills {
-    left: 10px;
-    top: 6px;
+    padding: 4px 10px;
     gap: 6px;
   }
   .station-action-pills button {
     font-size: 11px !important;
     padding: 4px 10px !important;
-  }
-  html[dir="rtl"] .station-action-pills {
-    left: auto;
-    right: 10px;
   }
 
   .idle-panel h2 { font-size: 22px; }

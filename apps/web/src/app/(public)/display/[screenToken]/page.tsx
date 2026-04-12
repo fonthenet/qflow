@@ -101,7 +101,9 @@ export default async function DisplayPage({ params }: DisplayPageProps) {
       .eq('status', 'waiting')
       .order('created_at');
 
-    const officeDayStartIso = getOfficeDayStartIso(office.timezone);
+    // Use org-level timezone as single source of truth
+    const orgTz: string = office.organization?.timezone || office.timezone || 'Africa/Algiers';
+    const officeDayStartIso = getOfficeDayStartIso(orgTz);
     const { count: servedTodayCount } = await supabase
       .from('tickets')
       .select('id', { count: 'exact' })

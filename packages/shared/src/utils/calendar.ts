@@ -133,9 +133,32 @@ export interface CalendarDayInfo {
   isToday: boolean;
 }
 
-/** Get 7 days (Mon–Sun) for the week containing the given date, in the office timezone */
-export function getWeekDays(anchorDate: Date, timezone: string): CalendarDayInfo[] {
+/**
+ * Get 7 days for the week containing the given date, in the office timezone.
+ * When `startFromToday` is true and anchorDate is within the current week,
+ * the view starts from today and shows 7 consecutive days instead of Mon–Sun.
+ */
+export function getWeekDays(anchorDate: Date, timezone: string, startFromToday = false): CalendarDayInfo[] {
   const todayKey = dateKeyInTz(new Date(), timezone);
+
+  if (startFromToday) {
+    const anchorKey = dateKeyInTz(anchorDate, timezone);
+    // If anchor is today (i.e. user is viewing the current week), start from today
+    if (anchorKey === todayKey) {
+      const start = new Date(anchorDate);
+      start.setHours(0, 0, 0, 0);
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        const dateKey = dateKeyInTz(d, timezone);
+        const jsDow = d.getDay(); // 0=Sun
+        const dayName = CALENDAR_DAYS[(jsDow + 6) % 7]; // convert to Mon-based
+        return { date: d, dateKey, dayName, isToday: dateKey === todayKey };
+      });
+    }
+  }
+
+  // Default: Mon–Sun week
   const dow = getDayOfWeekInTz(anchorDate, timezone);
   const monday = new Date(anchorDate);
   monday.setDate(monday.getDate() - dow);
@@ -149,9 +172,9 @@ export function getWeekDays(anchorDate: Date, timezone: string): CalendarDayInfo
   });
 }
 
-/** Get UTC ISO range for a full week (Mon 00:00 → Sun 23:59:59) */
-export function getWeekRange(anchorDate: Date, timezone: string): { start: string; end: string } {
-  const days = getWeekDays(anchorDate, timezone);
+/** Get UTC ISO range for a full week */
+export function getWeekRange(anchorDate: Date, timezone: string, startFromToday = false): { start: string; end: string } {
+  const days = getWeekDays(anchorDate, timezone, startFromToday);
   return {
     start: dateStartIso(days[0].dateKey, timezone),
     end: dateEndIso(days[6].dateKey, timezone),

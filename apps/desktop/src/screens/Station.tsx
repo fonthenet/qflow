@@ -91,7 +91,7 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth, timezone = 'Africa/Algiers' }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
@@ -101,8 +101,9 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   whatsappPhone?: string | null;
   onCollapse: () => void;
   session: any;
-  prefill?: { name?: string; phone?: string; notes?: string } | null;
+  prefill?: { name?: string; phone?: string; notes?: string; futureDate?: string; futureTime?: string } | null;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
+  timezone?: string;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
@@ -263,11 +264,20 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       setFutService(deptServices[0].id);
     }
   }, [futDept, services, futService]);
-  const [futDate, setFutDate] = useState('');
-  const [futTime, setFutTime] = useState('');
+  const [futDate, setFutDate] = useState(prefill?.futureDate ?? '');
+  const [futTime, setFutTime] = useState(prefill?.futureTime ?? '');
   const [futName, setFutName] = useState(prefill?.name ?? '');
   const [futPhone, setFutPhone] = useState(prefill?.phone ?? '');
   const [futNotes, setFutNotes] = useState(prefill?.notes ?? '');
+
+  // Switch to future tab when prefill includes a date
+  useEffect(() => {
+    if (prefill?.futureDate) {
+      setBookingTab('future');
+      setFutDate(prefill.futureDate);
+      if (prefill.futureTime) setFutTime(prefill.futureTime);
+    }
+  }, [prefill?.futureDate, prefill?.futureTime]);
   const [futWilaya, setFutWilaya] = useState('');
   const [futSlots, setFutSlots] = useState<string[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
@@ -310,6 +320,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           scheduledAt: `${futDate}T${futTime}:00`,
           notes: futNotes.trim() || undefined,
           wilaya: futWilaya.trim() || undefined,
+          source: 'in_house',
         }),
       });
       const data = await res.json();
@@ -1059,7 +1070,8 @@ const DAYS_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'fri
 
 function normalizeOfficeTimezone(timezone: string | null | undefined) {
   const value = (timezone ?? '').trim();
-  if (!value) return 'UTC';
+  if (!value) return '';
+  if (value === 'UTC') return ''; // Don't accept UTC as a valid office timezone
   if (value === 'Europe/Algiers') return 'Africa/Algiers';
   return value;
 }
@@ -1399,20 +1411,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
+  const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
   const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
-  const [officeTimezone, setOfficeTimezone] = useState<string>('UTC');
+  const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
     (async () => {
       try {
-        const rows: any[] = (await window.qf?.db?.query?.('offices', [session.office_id])) ?? [];
-        const tz = normalizeOfficeTimezone(rows?.[0]?.timezone);
+        // Fetch org-level timezone (single source of truth for the business)
+        let tz = '';
+        try {
+          const { ensureAuth } = await import('../lib/supabase');
+          const { getSupabase } = await import('../lib/supabase');
+          await ensureAuth({ access_token: session.access_token, refresh_token: session.refresh_token, email: session.email, password: session._pwd });
+          const sb = await getSupabase();
+          // Get org timezone via the organization_id
+          const { data: orgData } = await sb.from('organizations').select('timezone').eq('id', session.organization_id).single();
+          if (orgData?.timezone) tz = normalizeOfficeTimezone(orgData.timezone);
+        } catch {}
+        // Fallback: try local SQLite office timezone
+        if (!tz) {
+          const rows: any[] = (await window.qf?.db?.query?.('offices', [session.office_id])) ?? [];
+          tz = normalizeOfficeTimezone(rows?.[0]?.timezone);
+        }
         if (!cancelled && tz) setOfficeTimezone(tz);
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [session.office_id]);
+  }, [session.organization_id]);
   const storedAuth = useMemo(() => ({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
@@ -1430,12 +1457,13 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   // Listen for native File > Settings menu click
   useEffect(() => {
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
     return () => { if (typeof off === 'function') off(); };
   }, []);
-  const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string } | null>(null);
+  const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string; futureDate?: string; futureTime?: string } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
   const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
@@ -1617,7 +1645,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         // Anchor "today" to the OFFICE's local day, not the Station machine's
         // local day. Otherwise an operator running the Station from a different
         // timezone sees zero RDVs for "today" while the customer has them.
-        const tz = officeTimezone || 'UTC';
+        const tz = officeTimezone;
         const partsNow = new Intl.DateTimeFormat('en-CA', {
           timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
         }).formatToParts(new Date());
@@ -1715,7 +1743,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   );
   const upcomingByDate = useMemo(() => {
     const groups: Record<string, typeof confirmedUpcoming> = {};
-    const tz = officeTimezone || 'UTC';
+    const tz = officeTimezone;
     for (const a of confirmedUpcoming) {
       const dateLabel = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-US' : 'fr-FR', {
         timeZone: tz, weekday: 'short', month: 'short', day: 'numeric',
@@ -1786,7 +1814,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // Split pending appointments by today vs upcoming using office timezone
   const { pendingApptsToday, pendingApptsUpcoming } = useMemo(() => {
-    const tz = officeTimezone || 'UTC';
+    const tz = officeTimezone;
     const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
     const todayKey = fmt.format(new Date());
     const today: PendingAppt[] = [];
@@ -1800,7 +1828,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // Group upcoming by date label for layout
   const pendingApptsUpcomingGrouped = useMemo(() => {
-    const tz = officeTimezone || 'UTC';
+    const tz = officeTimezone;
     const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
     const dayLabel = new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', {
       timeZone: tz, weekday: 'long', day: 'numeric', month: 'short',
@@ -1891,7 +1919,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
-    const tz = officeTimezone || 'UTC';
+    const tz = officeTimezone;
     const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).format(new Date(a.scheduled_at));
     const dateStr = opts?.showDate
       ? new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: 'short', timeZone: tz }).format(new Date(a.scheduled_at))
@@ -2661,11 +2689,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
                   {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
                 </div>
-                <div className="active-customer">
-                  {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
-                </div>
+                {getTicketCustomerPhone(activeTicket.customer_data) ? (
+                  <div
+                    className="active-customer"
+                    onClick={() => {
+                      const phone = getTicketCustomerPhone(activeTicket.customer_data);
+                      if (phone) { setCustomerPhoneToOpen(phone); setShowCustomersModal(true); }
+                    }}
+                    style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 4 }}
+                    title={t('View customer profile')}
+                  >
+                    {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
+                  </div>
+                ) : (
+                  <div className="active-customer">
+                    {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
+                  </div>
+                )}
                 {getTicketCustomerPhone(activeTicket.customer_data) && (
-                  <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
+                  <div
+                    className="active-phone"
+                    onClick={() => {
+                      const phone = getTicketCustomerPhone(activeTicket.customer_data);
+                      if (phone) { setCustomerPhoneToOpen(phone); setShowCustomersModal(true); }
+                    }}
+                    style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}
+                    title={t('View customer profile')}
+                  >
+                    {getTicketCustomerPhone(activeTicket.customer_data)}
+                  </div>
                 )}
                 {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
@@ -2741,11 +2793,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   {activeTicket.source === 'in_house' && <span className="badge in-house">{t('In-House')}</span>}
                   {activeTicket.priority > 1 && <span className="badge priority">P{activeTicket.priority}</span>}
                 </div>
-                <div className="active-customer">
-                  {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
-                </div>
+                {getTicketCustomerPhone(activeTicket.customer_data) ? (
+                  <div
+                    className="active-customer"
+                    onClick={() => {
+                      const phone = getTicketCustomerPhone(activeTicket.customer_data);
+                      if (phone) { setCustomerPhoneToOpen(phone); setShowCustomersModal(true); }
+                    }}
+                    style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 4 }}
+                    title={t('View customer profile')}
+                  >
+                    {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
+                  </div>
+                ) : (
+                  <div className="active-customer">
+                    {getTicketCustomerName(activeTicket.customer_data) ?? t('Walk-in Customer')}
+                  </div>
+                )}
                 {getTicketCustomerPhone(activeTicket.customer_data) && (
-                  <div className="active-phone">{getTicketCustomerPhone(activeTicket.customer_data)}</div>
+                  <div
+                    className="active-phone"
+                    onClick={() => {
+                      const phone = getTicketCustomerPhone(activeTicket.customer_data);
+                      if (phone) { setCustomerPhoneToOpen(phone); setShowCustomersModal(true); }
+                    }}
+                    style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}
+                    title={t('View customer profile')}
+                  >
+                    {getTicketCustomerPhone(activeTicket.customer_data)}
+                  </div>
                 )}
                 {(activeTicket.customer_data as any)?.wilaya && (
                   <div className="active-notes">
@@ -2913,140 +2989,177 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           </div>
         ) : (
           <>
-          {/* Status + Pause pills — top-right of main area */}
+          {/* Toolbar */}
           <div className="station-action-pills">
-            {/* Pause toggle — only show when available */}
-            {staffStatus === 'available' && (
-              <button
-                onClick={() => {
-                  onQueuePausedChange(!queuePaused);
-                  showToast(queuePaused ? t('Queue resumed') : t('Queue paused - no new calls'), queuePaused ? 'success' : 'info');
-                }}
-                title="F7 — Toggle pause"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: queuePaused ? '1.5px solid #f59e0b40' : '1.5px solid #f97316',
-                  background: queuePaused ? 'rgba(245,158,11,0.12)' : 'rgba(249,115,22,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: queuePaused ? '#f59e0b' : '#f97316',
-                }}
-                aria-label={queuePaused ? t('Resume') : t('Pause')}
-              >
-                {queuePaused ? `▶ ${t('Resume')}` : `⏸ ${t('Pause')}`}
-                {queuePaused && pauseElapsed > 0 && <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8 }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</span>}
+            <div className="pills-left">
+              {/* Pause toggle switch — only when available */}
+              {staffStatus === 'available' && (
+                <button
+                  onClick={() => {
+                    onQueuePausedChange(!queuePaused);
+                    showToast(queuePaused ? t('Queue resumed') : t('Queue paused - no new calls'), queuePaused ? 'success' : 'info');
+                  }}
+                  title="F7 — Toggle pause"
+                  className="pause-toggle"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '5px 12px 5px 6px',
+                    borderRadius: 20,
+                    border: queuePaused ? '1.5px solid rgba(249,115,22,0.4)' : '1.5px solid var(--border)',
+                    background: queuePaused ? 'rgba(249,115,22,0.15)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: queuePaused ? '#f97316' : 'var(--text2)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  aria-label={queuePaused ? t('Resume') : t('Pause')}
+                >
+                  {/* Toggle track */}
+                  <span style={{
+                    position: 'relative',
+                    width: 40, height: 22, borderRadius: 11,
+                    background: queuePaused ? '#f97316' : 'var(--surface2)',
+                    display: 'inline-block',
+                    transition: 'background 0.2s ease',
+                    flexShrink: 0,
+                  }}>
+                    {/* Toggle knob */}
+                    <span style={{
+                      position: 'absolute',
+                      top: 2, left: queuePaused ? 20 : 2,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.2s ease',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }}>
+                      {queuePaused ? '⏸' : ''}
+                    </span>
+                  </span>
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    {queuePaused ? t('Paused') : t('Pause')}
+                  </span>
+                  {queuePaused && pauseElapsed > 0 && (
+                    <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8, fontSize: 11 }}>
+                      {`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}
+                    </span>
+                  )}
+                  <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.5, background: 'rgba(0,0,0,0.15)' }}>F7</span>
+                </button>
+              )}
 
-                <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F7</span>
-              </button>
-            )}
-            {/* In-House Booking pill */}
-            <button
-              onClick={() => setShowBookingModal(true)}
-              title="F6"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(139,92,246,0.4)',
-                background: 'rgba(139,92,246,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#8b5cf6',
-              }}
-            >
-              + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
-            </button>
-            {/* Customers pill */}
-            <button
-              onClick={() => setShowCustomersModal(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(59,130,246,0.4)',
-                background: 'rgba(59,130,246,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#3b82f6',
-              }}
-            >
-              👥 {t('Customers')}
-            </button>
-            {/* Appointments pill */}
-            <button
-              onClick={() => setShowAppointmentsModal(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(34,197,94,0.4)',
-                background: 'rgba(34,197,94,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#22c55e',
-              }}
-            >
-              📅 {t('Appointments')}
-            </button>
-            {/* Calendar pill */}
-            <button
-              onClick={() => setShowCalendarModal(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 14px', borderRadius: 20,
-                border: '1.5px solid rgba(99,102,241,0.4)',
-                background: 'rgba(99,102,241,0.12)',
-                cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                color: '#818cf8',
-              }}
-            >
-              🗓 {t('Calendar')}
-            </button>
-            {/* Staff status dropdown — only show when not available */}
-            {staffStatus !== 'available' && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowStatusMenu((v) => !v)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: `1.5px solid ${statusLabels[staffStatus].color}40`,
-                  background: `${statusLabels[staffStatus].color}12`,
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: statusLabels[staffStatus].color,
-                }}
-                aria-label={t('Status: {label}', { label: statusLabels[staffStatus].label })}
-              >
-                <span>{statusLabels[staffStatus].icon}</span>
-                <span>{statusLabels[staffStatus].label}</span>
-                <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
-              </button>
-              {showStatusMenu && (
-                <div style={{
-                  position: 'absolute', top: '100%', right: 0,
-                  marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-                }}>
-                  {(Object.entries(statusLabels) as [StaffStatus, typeof statusLabels[StaffStatus]][]).map(([key, val]) => (
-                    <button
-                      key={key}
-                      onClick={() => {
-                        onStaffStatusChange(key);
-                        setShowStatusMenu(false);
-                        if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
-                        if (key === 'available' && queuePaused) onQueuePausedChange(false);
-                        showToast(t('Status: {label}', { label: val.label }), 'info');
-                      }}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                        padding: '10px 16px', border: 'none', cursor: 'pointer',
-                        background: key === staffStatus ? 'var(--surface2)' : 'transparent',
-                        color: 'var(--text)', fontSize: 13, fontWeight: 600,
-                      }}
-                    >
-                      <span style={{ color: val.color }}>{val.icon}</span>
-                      {val.label}
-                    </button>
-                  ))}
+              {/* Staff status — only show when not available */}
+              {staffStatus !== 'available' && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowStatusMenu((v) => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '5px 14px', borderRadius: 20,
+                      border: `1.5px solid ${statusLabels[staffStatus].color}40`,
+                      background: `${statusLabels[staffStatus].color}12`,
+                      cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      color: statusLabels[staffStatus].color,
+                    }}
+                    aria-label={t('Status: {label}', { label: statusLabels[staffStatus].label })}
+                  >
+                    <span>{statusLabels[staffStatus].icon}</span>
+                    <span>{statusLabels[staffStatus].label}</span>
+                    <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {showStatusMenu && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0,
+                      marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                    }}>
+                      {(Object.entries(statusLabels) as [StaffStatus, typeof statusLabels[StaffStatus]][]).map(([key, val]) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            onStaffStatusChange(key);
+                            setShowStatusMenu(false);
+                            if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
+                            if (key === 'available' && queuePaused) onQueuePausedChange(false);
+                            showToast(t('Status: {label}', { label: val.label }), 'info');
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                            padding: '10px 16px', border: 'none', cursor: 'pointer',
+                            background: key === staffStatus ? 'var(--surface2)' : 'transparent',
+                            color: 'var(--text)', fontSize: 13, fontWeight: 600,
+                          }}
+                        >
+                          <span style={{ color: val.color }}>{val.icon}</span>
+                          {val.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-            )}
+
+            <div className="pills-right">
+              {/* In-House Booking */}
+              <button
+                onClick={() => setShowBookingModal(true)}
+                title="F6"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: '1.5px solid rgba(139,92,246,0.4)',
+                  background: 'rgba(139,92,246,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#8b5cf6',
+                }}
+              >
+                + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
+              </button>
+              {/* Customers */}
+              <button
+                onClick={() => setShowCustomersModal(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: '1.5px solid rgba(59,130,246,0.4)',
+                  background: 'rgba(59,130,246,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#3b82f6',
+                }}
+              >
+                👥 {t('Customers')}
+              </button>
+              {/* Appointments — opens calendar in list view */}
+              <button
+                onClick={() => { setCalendarInitialView('list'); setShowCalendarModal(true); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: '1.5px solid rgba(34,197,94,0.4)',
+                  background: 'rgba(34,197,94,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#22c55e',
+                }}
+              >
+                📅 {t('Appointments')}
+              </button>
+              {/* Calendar */}
+              <button
+                onClick={() => { setCalendarInitialView('week'); setShowCalendarModal(true); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 14px', borderRadius: 20,
+                  border: '1.5px solid rgba(99,102,241,0.4)',
+                  background: 'rgba(99,102,241,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  color: '#818cf8',
+                }}
+              >
+                🗓 {t('Calendar')}
+              </button>
+            </div>
           </div>
 
           <div className="idle-panel">
@@ -3105,6 +3218,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* Calendar Modal */}
         {showCalendarModal && (
           <CalendarModal
+            key={calendarInitialView}
             organizationId={session.organization_id}
             officeId={session.office_id}
             locale={locale}
@@ -3114,6 +3228,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             officeTimezone={officeTimezone}
             onClose={() => setShowCalendarModal(false)}
             onModerate={moderateAppointment}
+            onOpenCustomer={(phone) => {
+              setCustomerPhoneToOpen(phone);
+              setShowCustomersModal(true);
+            }}
+            onSlotBook={(date, time) => {
+              // Handled inside CalendarModal's QuickBookPanel now
+            }}
+            initialViewMode={calendarInitialView}
           />
         )}
 
@@ -3135,12 +3257,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             organizationId={session.organization_id}
             locale={locale}
             storedAuth={storedAuth}
-            onClose={() => setShowCustomersModal(false)}
+            onClose={() => { setShowCustomersModal(false); setCustomerPhoneToOpen(undefined); }}
             onBookCustomer={(c) => {
               setBookingPrefill(c);
               setShowCustomersModal(false);
+              setCustomerPhoneToOpen(undefined);
               setShowBookingModal(true);
             }}
+            initialPhone={customerPhoneToOpen}
           />
         )}
 
@@ -3158,6 +3282,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             session={session}
             prefill={bookingPrefill}
             storedAuth={storedAuth}
+            timezone={officeTimezone}
           />
         )}
       </div>
@@ -3262,7 +3387,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             const mins = minutesUntil(a.scheduled_at);
             const isPast = isToday && mins < -5;
             const isSoon = isToday && mins >= -5 && mins <= 15;
-            const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: officeTimezone || 'UTC' }).format(new Date(a.scheduled_at));
+            const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: officeTimezone }).format(new Date(a.scheduled_at));
             const color = STATION_RDV_STATUS_COLORS[a.status] || '#64748b';
             const svcName = (a.service_id && names.services?.[a.service_id]) || '';
             const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
@@ -3280,8 +3405,17 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums', minWidth: 36 }}>
-                    {timeStr}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 36, gap: 1 }}>
+                    <span style={{
+                      padding: '0px 5px', borderRadius: 6, fontSize: 7, fontWeight: 800,
+                      textTransform: 'uppercase', letterSpacing: 0.3,
+                      background: `${color}22`, color, whiteSpace: 'nowrap', lineHeight: '14px',
+                    }}>
+                      {t(a.status)}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+                      {timeStr}
+                    </span>
                   </div>
                   <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: 4 }}>
                     <span dir="auto" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2, #cbd5e1)', unicodeBidi: 'isolate' }}>
@@ -3294,13 +3428,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       {mins > 0 ? t('in {n}m', { n: mins }) : t('{n}m ago', { n: -mins })}
                     </span>
                   )}
-                  <span style={{
-                    padding: '1px 6px', borderRadius: 8, fontSize: 8, fontWeight: 800,
-                    textTransform: 'uppercase', letterSpacing: 0.3,
-                    background: `${color}22`, color, whiteSpace: 'nowrap',
-                  }}>
-                    {t(a.status)}
-                  </span>
                 </div>
                 {(svcName || deptName || a.notes) && (
                   <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr', unicodeBidi: 'isolate' }}>
@@ -3328,9 +3455,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <button
                     disabled={busy}
                     onClick={async () => {
-                      const reason = window.prompt(t('Cancel this appointment? The customer will be notified.\n\nReason (optional):'), '');
-                      if (reason === null) return;
-                      await moderateAppointment(a.id, 'cancel', { reason: reason.trim() || undefined });
+                      if (!window.confirm(t('Cancel this appointment? The customer will be notified.'))) return;
+                      await moderateAppointment(a.id, 'cancel');
                     }}
                     title={t('Cancel')}
                     style={{
@@ -3342,7 +3468,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     ✕
                   </button>
                   <button
-                    onClick={() => setShowAppointmentsModal(true)}
+                    onClick={() => { setCalendarInitialView('list'); setShowCalendarModal(true); }}
                     style={{
                       padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
                       background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',

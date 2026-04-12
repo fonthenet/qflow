@@ -263,14 +263,15 @@ Deno.serve(async (req) => {
           .single(),
         supabase
           .from("offices")
-          .select("name, timezone")
+          .select("name, organization:organizations(timezone)")
           .eq("id", appointment.office_id)
           .single(),
       ]);
 
       const serviceName = serviceRes.data?.name ?? "your service";
       const officeName = officeRes.data?.name ?? "";
-      const timezone = officeRes.data?.timezone ?? "UTC";
+      // Use org-level timezone as single source of truth
+      const timezone = (officeRes.data as any)?.organization?.timezone ?? "Africa/Algiers";
       const customerName = appointment.customer_name || "there";
       const phone = appointment.customer_phone || payload.customer_phone;
       const formattedTime = formatTime(appointment.scheduled_at, timezone);

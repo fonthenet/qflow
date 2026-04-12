@@ -327,9 +327,9 @@ describe('getAvailableSlots', () => {
   });
 
   it('returns empty result when date is outside booking horizon', async () => {
-    // Default horizon is 14 days, use date 30 days ahead
+    // Default horizon is 90 days, use date 120 days ahead
     const d = new Date();
-    d.setDate(d.getDate() + 30);
+    d.setDate(d.getDate() + 120);
     const farDate = d.toISOString().split('T')[0];
 
     setupStandard();

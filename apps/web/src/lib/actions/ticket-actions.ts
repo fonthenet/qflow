@@ -327,11 +327,13 @@ export async function createTicket(
     if (rawPhone) {
       const { data: officeRow } = await supabase
         .from('offices')
-        .select('organization_id, timezone, settings')
+        .select('organization_id, settings, organization:organizations(timezone)')
         .eq('id', officeId)
         .single();
       const officeCC = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
-      const normalizedPhone = normalizePhone(rawPhone, officeRow?.timezone, officeCC);
+      // Use org-level timezone as single source of truth
+      const ticketOrgTz = (officeRow as any)?.organization?.timezone || 'Africa/Algiers';
+      const normalizedPhone = normalizePhone(rawPhone, ticketOrgTz, officeCC);
       if (normalizedPhone && officeRow?.organization_id) {
         await (supabase as any).from('whatsapp_sessions').insert({
           organization_id: officeRow.organization_id,

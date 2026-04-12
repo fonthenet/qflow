@@ -51,13 +51,16 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // Fetch office timezone + org settings in one query
+  // Fetch org timezone + org settings in one query
   const { data: _bookOrg } = await supabase
     .from('offices')
-    .select('timezone, organization:organizations(settings)')
+    .select('timezone, organization:organizations(settings, timezone)')
     .eq('id', officeId)
     .single();
-  const officeTz: string = (_bookOrg as any)?.timezone || 'Africa/Algiers';
+  // Use org-level timezone as single source of truth, fallback to office timezone
+  const orgTz: string = (_bookOrg as any)?.organization?.timezone;
+  const officeTzRaw: string = (_bookOrg as any)?.timezone;
+  const officeTz: string = orgTz || officeTzRaw || 'Africa/Algiers';
   const _bookOrgSettings = ((_bookOrg as any)?.organization?.settings ?? {}) as Record<string, any>;
 
   // Normalize scheduledAt to office timezone.

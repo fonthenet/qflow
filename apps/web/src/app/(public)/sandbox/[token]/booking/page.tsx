@@ -40,6 +40,7 @@ export default async function SandboxBookingPage({
           id: preview.organization.id,
           name: preview.organization.name,
           logo_url: preview.organization.logoUrl,
+          timezone: preview.office.timezone,
           settings: {
             booking_email_otp_enabled: false,
           },

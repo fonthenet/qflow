@@ -290,13 +290,22 @@ export async function POST(req: NextRequest) {
           ticketNumber = seq.ticket_num;
         }
 
-        // Fetch office timezone for correct day boundary
+        // Fetch org timezone for correct day boundary (org-level is single source of truth)
         const { data: officeRow } = await supabase
           .from('offices')
-          .select('timezone')
+          .select('organization_id')
           .eq('id', body.officeId)
           .single();
-        const todayStartIso = getOfficeDayStartIso(officeRow?.timezone);
+        let stationTz = 'Africa/Algiers';
+        if (officeRow?.organization_id) {
+          const { data: orgRow } = await supabase
+            .from('organizations')
+            .select('timezone')
+            .eq('id', officeRow.organization_id)
+            .single();
+          stationTz = orgRow?.timezone || 'Africa/Algiers';
+        }
+        const todayStartIso = getOfficeDayStartIso(stationTz);
 
         // Insert with retry (up to 5 attempts on duplicate key)
         let data = null;

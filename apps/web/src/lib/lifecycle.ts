@@ -261,13 +261,14 @@ export async function transitionAppointment(
   // 6. Resolve notification channel
   const { data: office } = await sb
     .from('offices')
-    .select('organization_id, timezone, organization:organizations(id, name)')
+    .select('organization_id, organization:organizations(id, name, timezone)')
     .eq('id', appt.office_id)
     .single();
 
   const orgName: string = (office?.organization as any)?.name ?? '';
   const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
-  const officeTz: string = opts.officeTz ?? office?.timezone ?? 'Africa/Algiers';
+  // Use org-level timezone as single source of truth
+  const officeTz: string = opts.officeTz ?? (office?.organization as any)?.timezone ?? 'Africa/Algiers';
 
   if (opts.skipNotify) {
     return { ok: true, status: newStatus, notified: false, channel: null, notifyError: null };

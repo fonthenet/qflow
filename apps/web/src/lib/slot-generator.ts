@@ -121,13 +121,15 @@ export async function getAvailableSlots(
 
   const { data: org } = await supabase
     .from('organizations')
-    .select('settings')
+    .select('settings, timezone')
     .eq('id', office.organization_id)
     .single();
 
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
+  // Use org-level timezone as single source of truth
+  const orgTimezone: string = org?.timezone || 'Africa/Algiers';
   const bookingMode = orgSettings.booking_mode ?? 'simple';
-  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 7);
+  const bookingHorizonDays = Number(orgSettings.booking_horizon_days ?? 90);
   const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
   const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
   const dailyTicketLimit = Number(orgSettings.daily_ticket_limit ?? 0);
@@ -266,9 +268,8 @@ export async function getAvailableSlots(
   }
 
   // ── 7. Fetch existing appointments for date ──
-  const tz = (office as any).timezone ?? undefined;
-  const startOfDay = getDateStartIso(date, tz);
-  const endOfDay = getDateEndIso(date, tz);
+  const startOfDay = getDateStartIso(date, orgTimezone);
+  const endOfDay = getDateEndIso(date, orgTimezone);
 
   const { data: existingAppointments } = await supabase
     .from('appointments')
@@ -309,7 +310,10 @@ export async function getAvailableSlots(
   const dailyLimitReached = dailyTicketLimit > 0 && totalDayAllServices >= dailyTicketLimit;
 
   // ── 8. Filter slots ──
-  const now = new Date();
+  // Truncate now to the start of the current minute so a slot at 09:30
+  // remains bookable until 09:31:00 (not rejected at 09:30:01).
+  const nowRaw = new Date();
+  const now = new Date(nowRaw.getFullYear(), nowRaw.getMonth(), nowRaw.getDate(), nowRaw.getHours(), nowRaw.getMinutes(), 0, 0);
   const isToday = date === todayStr;
   const minLeadMs = minLeadHours * 60 * 60 * 1000;
 
@@ -362,34 +366,34 @@ export async function getAvailableDates(
   officeId: string,
   serviceId: string,
   staffId?: string,
-  maxDates: number = 7,
+  maxDates: number = 14,
 ): Promise<{ date: string; slotCount: number }[]> {
   const supabase: any = createAdminClient();
 
-  // Get booking horizon AND office timezone. We must compute "today" in the
-  // OFFICE's local day, not in UTC — otherwise a customer in Algeria booking
+  // Get booking horizon AND org timezone. We must compute "today" in the
+  // business's local day, not in UTC — otherwise a customer in Algeria booking
   // shortly after midnight local time could still see "yesterday" listed
   // because the UTC date hasn't rolled over yet (or vice versa).
   const { data: office } = await supabase
     .from('offices')
-    .select('organization_id, timezone')
+    .select('organization_id')
     .eq('id', officeId)
     .single();
 
   if (!office) return [];
 
-  const tz: string = (office.timezone && String(office.timezone)) || 'UTC';
-
   const { data: org } = await supabase
     .from('organizations')
-    .select('settings')
+    .select('settings, timezone')
     .eq('id', office.organization_id)
     .single();
 
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
-  const horizonDays = Number(orgSettings.booking_horizon_days ?? 7);
+  const horizonDays = Number(orgSettings.booking_horizon_days ?? 90);
+  // Use org-level timezone as single source of truth
+  const tz: string = org?.timezone || 'Africa/Algiers';
 
-  // Office-local "today" as YYYY-MM-DD.
+  // Business-local "today" as YYYY-MM-DD.
   const todayParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(new Date());

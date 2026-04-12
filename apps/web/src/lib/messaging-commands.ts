@@ -1064,12 +1064,13 @@ async function fetchTicketContext(ticketId: string, locale: Locale): Promise<{ t
   const supabase = createAdminClient() as any;
   const { data: t } = await supabase
     .from('tickets')
-    .select('ticket_number, created_at, qr_token, services(name), offices(timezone)')
+    .select('ticket_number, created_at, qr_token, services(name), offices(organization:organizations(timezone))')
     .eq('id', ticketId)
     .maybeSingle();
   const ticketNum = t?.ticket_number ? String(t.ticket_number) : '—';
   const serviceName: string = t?.services?.name || '';
-  const tz: string = t?.offices?.timezone || 'Africa/Algiers';
+  // Use org-level timezone as single source of truth
+  const tz: string = (t?.offices as any)?.organization?.timezone || 'Africa/Algiers';
   let joined = '';
   if (t?.created_at) {
     try {

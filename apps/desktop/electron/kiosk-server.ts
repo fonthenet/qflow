@@ -207,6 +207,21 @@ async function refreshOfficeRuntimeConfig(officeId: string) {
       return localOffice;
     }
 
+    // Fetch org-level timezone (single source of truth for the business)
+    let orgTimezone = freshOffice.timezone;
+    if (freshOffice.organization_id) {
+      try {
+        const orgRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/organizations?id=eq.${freshOffice.organization_id}&select=timezone`,
+          { headers, signal: AbortSignal.timeout(3000) }
+        );
+        if (orgRes.ok) {
+          const orgs = await orgRes.json();
+          if (orgs[0]?.timezone) orgTimezone = orgs[0].timezone;
+        }
+      } catch { /* fallback to office timezone */ }
+    }
+
     db.prepare(`
       INSERT OR REPLACE INTO offices (id, name, address, organization_id, settings, operating_hours, timezone, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -217,7 +232,7 @@ async function refreshOfficeRuntimeConfig(officeId: string) {
       freshOffice.organization_id ?? null,
       JSON.stringify(freshOffice.settings ?? {}),
       JSON.stringify(freshOffice.operating_hours ?? {}),
-      freshOffice.timezone ?? null,
+      orgTimezone ?? null,
       new Date().toISOString(),
     );
 
@@ -721,13 +736,15 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   if (isCloudReachable && office.organization_id) {
     try {
       const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,name_ar,logo_url,settings`, { headers, signal: AbortSignal.timeout(3000) });
+      const orgRes = await fetch(`${SUPABASE_URL}/rest/v1/organizations?id=eq.${office.organization_id}&select=name,name_ar,logo_url,settings,timezone`, { headers, signal: AbortSignal.timeout(3000) });
       if (orgRes.ok) {
         const orgs = await orgRes.json();
         orgName = orgs[0]?.name ?? null;
         orgNameAr = orgs[0]?.name_ar ?? null;
         logoUrl = orgs[0]?.logo_url ?? orgs[0]?.settings?.logo_url ?? null;
         organizationSettings = parseSettings(orgs[0]?.settings);
+        // Store org timezone as single source of truth
+        if (orgs[0]?.timezone) organizationSettings._orgTimezone = orgs[0].timezone;
       }
     } catch { /* ignore */ }
   }
@@ -741,7 +758,8 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
 
   // ── Business hours check ──────────────────────────────────────
   const operatingHours = office.operating_hours ? (typeof office.operating_hours === 'string' ? JSON.parse(office.operating_hours) : office.operating_hours) : null;
-  const timezone = normalizeOfficeTimezone(office.timezone);
+  // Use org-level timezone as single source of truth
+  const timezone = normalizeOfficeTimezone(organizationSettings._orgTimezone || office.timezone);
   const visitIntakeOverrideMode = resolveVisitIntakeOverrideMode(
     organizationSettings,
     office.settings

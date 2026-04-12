@@ -291,10 +291,12 @@ export async function checkInAppointment(appointmentId: string) {
     try {
       const { data: office } = await supabase
         .from('offices')
-        .select('name, timezone')
+        .select('name, organization:organizations(timezone)')
         .eq('id', appointment.office_id)
         .single();
 
+      // Use org-level timezone as single source of truth
+      const checkinOrgTz: string = (office as any)?.organization?.timezone || 'Africa/Algiers';
       const TZ_DIAL: Record<string, string> = {
         'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
         'Africa/Cairo': '20', 'Africa/Lagos': '234', 'Africa/Nairobi': '254',
@@ -307,7 +309,7 @@ export async function checkInAppointment(appointmentId: string) {
         'Asia/Baghdad': '964', 'America/New_York': '1', 'America/Chicago': '1',
         'America/Denver': '1', 'America/Los_Angeles': '1', 'America/Toronto': '1',
       };
-      const countryDialCode = office?.timezone ? TZ_DIAL[office.timezone] : undefined;
+      const countryDialCode = checkinOrgTz ? TZ_DIAL[checkinOrgTz] : undefined;
 
       // Count waiting tickets ahead for queue position
       const { count: aheadCount } = await supabase

@@ -268,7 +268,7 @@ export function SettingsClient({
     settings.slot_duration_minutes ?? 30
   );
   const [bookingHorizonDays, setBookingHorizonDays] = useState<number>(
-    settings.booking_horizon_days ?? 7
+    settings.booking_horizon_days ?? 90
   );
   const [slotsPerInterval, setSlotsPerInterval] = useState<number>(
     settings.slots_per_interval ?? 1

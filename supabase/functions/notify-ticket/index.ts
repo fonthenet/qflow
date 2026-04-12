@@ -436,15 +436,16 @@ Deno.serve(async (req) => {
       return Response.json({ sent: false, reason: "duplicate suppressed", version: VERSION });
     }
 
-    // Look up office timezone to derive country dial code for phone normalization
+    // Look up org timezone to derive country dial code for phone normalization
     let countryDialCode: string | undefined;
     if ((ticket as any)?.office_id) {
       const { data: office } = await supabase
         .from("offices")
-        .select("timezone")
+        .select("organization:organizations(timezone)")
         .eq("id", (ticket as any).office_id)
         .single();
-      const tz = office?.timezone;
+      // Use org-level timezone as single source of truth
+      const tz = (office as any)?.organization?.timezone;
       if (tz && TZ_DIAL[tz]) countryDialCode = TZ_DIAL[tz];
     }
 

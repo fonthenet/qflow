@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       orgSettings.kiosk_hidden_services ?? officeSettings.kiosk_hidden_services ?? [],
     default_check_in_mode: orgSettings.default_check_in_mode ?? 'manual',
     booking_mode: orgSettings.booking_mode ?? 'simple',
-    booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 7),
+    booking_horizon_days: Number(orgSettings.booking_horizon_days ?? 90),
     visit_intake_override_mode:
       orgSettings.visit_intake_override_mode ??
       officeSettings.visit_intake_override_mode ??

@@ -139,6 +139,14 @@ export async function POST(request: NextRequest) {
 
   // decline
   const declineReason = (reason ?? '').trim();
+
+  // Sync cancellation to linked appointment BEFORE updating ticket status.
+  // This ensures the appointment is already in terminal state when the DB
+  // trigger fires on the ticket update, so it can detect the appointment-
+  // driven cancellation and skip the duplicate basic notification.
+  const { onTicketTerminal } = await import('@/lib/lifecycle');
+  await onTicketTerminal(ticket.id, 'cancelled');
+
   const { error: updErr } = await supabase
     .from('tickets')
     .update({ status: 'cancelled', completed_at: new Date().toISOString() })
@@ -147,10 +155,6 @@ export async function POST(request: NextRequest) {
   if (updErr) {
     return NextResponse.json({ error: updErr.message }, { status: 500 });
   }
-
-  // Sync cancellation to linked appointment via lifecycle
-  const { onTicketTerminal } = await import('@/lib/lifecycle');
-  await onTicketTerminal(ticket.id, 'cancelled');
   await supabase.from('ticket_events').insert({
     ticket_id: ticket.id,
     event_type: 'cancelled',
