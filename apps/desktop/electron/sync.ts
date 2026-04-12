@@ -726,7 +726,32 @@ export class SyncEngine {
       // Non-auth failure — schedule rapid retry
       this.scheduleRapidRetry(syncQueueId, _retryAttempt);
     } catch (err: any) {
-      console.log(`[sync:pushImmediate] Attempt ${_retryAttempt + 1} failed: ${err?.message ?? err}`);
+      const errMsg = err?.message ?? String(err);
+      console.log(`[sync:pushImmediate] Attempt ${_retryAttempt + 1} failed: ${errMsg}`);
+
+      // PATCH 0 rows on critical status = likely RLS/auth issue.
+      // Try anon key before giving up (RLS has a public update policy for tickets).
+      if (item.table_name === 'tickets' && errMsg.includes('PATCH 0 rows')) {
+        try {
+          console.log(`[sync:pushImmediate] 0-row PATCH — trying anon key for ${item.record_id}`);
+          // Force fresh login first
+          this.cachedAccessToken = null;
+          const freshToken = await this.refreshAccessToken();
+          const tokenToUse = freshToken || this.supabaseKey;
+          const anonRetry = await this.replayMutation(item, tokenToUse);
+          if (anonRetry.status === 0) {
+            this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+              .run(new Date().toISOString(), item.id);
+            this.updatePendingCount();
+            this.rapidRetryInFlight.delete(syncQueueId);
+            console.log(`[sync:pushImmediate] ✓ Pushed ticket after fresh login/anon fallback`);
+            return;
+          }
+        } catch (retryErr: any) {
+          console.warn(`[sync:pushImmediate] Anon/fresh fallback also failed: ${retryErr?.message}`);
+        }
+      }
+
       this.scheduleRapidRetry(syncQueueId, _retryAttempt);
     }
   }
@@ -736,6 +761,26 @@ export class SyncEngine {
     if (currentAttempt >= SyncEngine.RAPID_RETRY_DELAYS.length) {
       this.rapidRetryInFlight.delete(syncQueueId);
       console.log(`[sync:pushImmediate] Rapid retries exhausted for ${syncQueueId} — syncNow will handle it`);
+
+      // Notify renderer about critical sync failures so the operator sees a warning
+      try {
+        const item = this.db.prepare("SELECT * FROM sync_queue WHERE id = ? AND synced_at IS NULL").get(syncQueueId) as any;
+        if (item) {
+          const payload = JSON.parse(item.payload || '{}');
+          const isCritical = item.table_name === 'tickets' && ['called', 'serving'].includes(payload.status);
+          if (isCritical) {
+            // Try to find the ticket number for the error message
+            const ticketRow = this.db.prepare("SELECT ticket_number FROM tickets WHERE id = ?").get(item.record_id) as any;
+            const ticketNum = ticketRow?.ticket_number ?? item.record_id;
+            console.error(`[sync:CRITICAL] Failed to sync ${payload.status} for ticket ${ticketNum} after all retries`);
+            this.onTicketError({
+              message: `WhatsApp notification may not have been sent for ticket ${ticketNum}. The "called" status did not sync to cloud. Try clicking "Force Sync" in the status bar.`,
+              ticketNumber: ticketNum,
+              type: 'sync_critical_failure',
+            });
+          }
+        }
+      } catch { /* ignore parse errors */ }
       return;
     }
     if (this.rapidRetryInFlight.has(syncQueueId) && currentAttempt > 0) return; // already scheduled

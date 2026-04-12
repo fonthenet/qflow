@@ -5,7 +5,6 @@ import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale 
 import { WILAYAS, formatWilayaLabel } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
-import { AppointmentsModal } from '../components/AppointmentsModal';
 import { CalendarModal } from '../components/CalendarModal';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
@@ -1412,7 +1411,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCustomersModal, setShowCustomersModal] = useState(false);
   const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
-  const [showAppointmentsModal, setShowAppointmentsModal] = useState(false);
+  // showAppointmentsModal removed — unified into CalendarModal
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   useEffect(() => {
     if (!session.office_id) return;
@@ -3131,21 +3130,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 👥 {t('Customers')}
               </button>
-              {/* Appointments — opens calendar in list view */}
-              <button
-                onClick={() => { setCalendarInitialView('list'); setShowCalendarModal(true); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: '1.5px solid rgba(34,197,94,0.4)',
-                  background: 'rgba(34,197,94,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: '#22c55e',
-                }}
-              >
-                📅 {t('Appointments')}
-              </button>
-              {/* Calendar */}
+              {/* Calendar / Appointments — single button */}
               <button
                 onClick={() => { setCalendarInitialView('week'); setShowCalendarModal(true); }}
                 style={{
@@ -3157,7 +3142,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   color: '#818cf8',
                 }}
               >
-                🗓 {t('Calendar')}
+                📅 {t('Calendar / Appointments')}
               </button>
             </div>
           </div>
@@ -3198,21 +3183,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             )}
           </div>
           </>
-        )}
-
-        {/* Appointments Modal */}
-        {showAppointmentsModal && (
-          <AppointmentsModal
-            organizationId={session.organization_id}
-            officeId={session.office_id}
-            locale={locale}
-            storedAuth={storedAuth}
-            departments={names.departments}
-            services={Object.fromEntries(allServices.map((s: any) => [s.id, s.name]))}
-            officeTimezone={officeTimezone}
-            onClose={() => setShowAppointmentsModal(false)}
-            onModerate={moderateAppointment}
-          />
         )}
 
         {/* Calendar Modal */}
