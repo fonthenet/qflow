@@ -1443,7 +1443,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [session.organization_id]);
+  }, [session.organization_id, settingsVersion]);
   const storedAuth = useMemo(() => ({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
@@ -1460,6 +1460,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   // Listen for native File > Settings menu click
@@ -3236,7 +3237,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             locale={locale}
             storedAuth={storedAuth}
             officeName={session.office_name}
-            onClose={() => setShowSettingsModal(false)}
+            onClose={() => { setShowSettingsModal(false); setSettingsVersion(v => v + 1); }}
           />
         )}
 

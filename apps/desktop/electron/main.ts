@@ -835,12 +835,16 @@ function setupIPC() {
     const isRecall = !safeUpdates.status && safeUpdates.recall_count !== undefined;
 
     if ((isStatusTransition || isRecall) && syncEngine?.isOnline) {
-      const dsk = (safeUpdates.desk_id || isRecall)
-        ? db.prepare('SELECT desk_id, name FROM tickets t LEFT JOIN desks d ON d.id = t.desk_id WHERE t.id = ?').get(ticketId) as any
-        : null;
-      const dskName = safeUpdates.desk_id
-        ? (db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any)?.name
-        : dsk?.name;
+      // Always resolve desk name — either from the update payload or from the ticket's current desk
+      let dskName: string | undefined;
+      if (safeUpdates.desk_id) {
+        dskName = (db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any)?.name;
+      }
+      if (!dskName) {
+        // Fallback: look up the desk already assigned to this ticket (e.g. during 'serving' transition)
+        const tkDesk = db.prepare('SELECT d.name FROM tickets t JOIN desks d ON d.id = t.desk_id WHERE t.id = ?').get(ticketId) as any;
+        dskName = tkDesk?.name;
+      }
 
       syncEngine.ensureFreshToken().then((token: string) => {
         fetch(`${CONFIG.CLOUD_URL}/api/ticket-transition`, {
