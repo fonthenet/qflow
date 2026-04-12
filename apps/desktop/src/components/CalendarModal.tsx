@@ -2729,8 +2729,11 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
       if (conds.length) req = req.or(conds.join(','));
       const { data } = await req;
       if (seq !== custSeq.current) return;
+      // Dedupe
+      const seen = new Set<string>();
+      const unique = ((data ?? []) as CustHit[]).filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true; });
       const tokens = safe.split(/\s+/).map(t => t.toLowerCase());
-      const scored = ((data ?? []) as CustHit[]).map(c => {
+      const scored = unique.map(c => {
         const hay = `${(c.name ?? '').toLowerCase()} ${(c.email ?? '').toLowerCase()} ${(c.phone ?? '')}`;
         const allMatch = tokens.every(tok => hay.includes(tok));
         const phoneMatch = digits.length >= 2 && (c.phone ?? '').replace(/\D/g, '').includes(digits.startsWith('0') ? digits.slice(1) : digits);
