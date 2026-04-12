@@ -33,6 +33,7 @@ import { isSmsProviderConfigured, sendSmsMessage } from '@/lib/sms';
 import { sendWhatsAppMessage, normalizePhone } from '@/lib/whatsapp';
 import { getQueuePosition } from '@/lib/queue-position';
 import { onTicketTerminal } from '@/lib/lifecycle';
+import { notifyCustomer } from '@/lib/notify';
 
 const LIVE_ACTIVITY_FOLLOWUP_DELAY_MS = 2500;
 
@@ -194,13 +195,9 @@ async function maybeSendPriorityAlertSms(
   return { sent: true };
 }
 
-// STUB: WhatsApp/Messenger turn notifications are NOT sent from the Next.js app.
-// They are handled entirely by Postgres triggers (e.g. `notify_ticket_called`) which
-// invoke a Supabase Edge Function. These stubs exist only to satisfy call-site
-// signatures; the `sent: false` return is expected and does not indicate a failure.
 async function maybeSendWhatsAppTurnNotification(
   _supabase: Awaited<ReturnType<typeof createClient>>,
-  _params: {
+  params: {
     ticket: {
       id: string;
       office_id: string;
@@ -213,19 +210,38 @@ async function maybeSendWhatsAppTurnNotification(
     deskName: string;
   }
 ): Promise<{ sent: boolean; reason?: string }> {
-  return { sent: false, reason: 'handled by trigger' };
+  const result = await notifyCustomer(params.ticket.id, params.event as any, {
+    deskName: params.deskName,
+  });
+  return { sent: result.sent, reason: result.error };
 }
 
-// STUB: "Next in line" WhatsApp notifications are handled by Postgres triggers,
-// not by the Next.js app. See `notify_ticket_called` trigger for details.
 async function notifyNextInLineViaWhatsApp(
-  _supabase: Awaited<ReturnType<typeof createClient>>,
-  _departmentId: string,
-  _officeId: string,
-  _excludeTicketId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  departmentId: string,
+  officeId: string,
+  excludeTicketId: string,
   _deskName: string,
 ): Promise<void> {
-  // No-op — Postgres trigger → Edge Function handles this
+  try {
+    const { data: nextTickets } = await supabase
+      .from('tickets')
+      .select('id')
+      .eq('department_id', departmentId)
+      .eq('office_id', officeId)
+      .eq('status', 'waiting')
+      .is('parked_at', null)
+      .neq('id', excludeTicketId)
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
+    const next = nextTickets?.[0];
+    if (next) {
+      await notifyCustomer(next.id, 'next_in_line');
+    }
+  } catch (e: any) {
+    console.warn('[notifyNextInLine] WhatsApp next-in-line failed:', e?.message);
+  }
 }
 
 async function getDeskOperationContext(deskId: string) {
@@ -745,6 +761,11 @@ export async function startServing(ticketId: string) {
       silent: true,
     }).catch((err) => console.error('[StartServing] Android push error:', err));
 
+    // WhatsApp/Messenger — "being served" notification
+    notifyCustomer(ticketId, 'serving', { deskName }).catch((err) =>
+      console.error('[StartServing] WhatsApp error:', err)
+    );
+
     await logAuditEvent(context, {
       actionType: 'ticket_serving_started',
       entityType: 'ticket',
@@ -826,6 +847,11 @@ export async function markServed(ticketId: string) {
       recallCount: ticket.recall_count ?? 0,
       silent: true,
     }).catch((err) => console.error('[MarkServed] Android push error:', err));
+
+    // WhatsApp/Messenger — "served" notification
+    notifyCustomer(ticketId, 'served').catch((err) =>
+      console.error('[MarkServed] WhatsApp error:', err)
+    );
 
     await logAuditEvent(context, {
       actionType: 'ticket_served',
@@ -914,6 +940,11 @@ export async function markNoShow(ticketId: string) {
       recallCount: ticket.recall_count ?? 0,
       silent: true,
     }).catch((err) => console.error('[MarkNoShow] Android push error:', err));
+
+    // WhatsApp/Messenger — "no show" notification
+    notifyCustomer(ticketId, 'no_show').catch((err) =>
+      console.error('[MarkNoShow] WhatsApp error:', err)
+    );
 
     await logAuditEvent(context, {
       actionType: 'ticket_no_show',

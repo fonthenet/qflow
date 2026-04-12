@@ -1,40 +1,22 @@
 import { supabase } from './supabase';
 import i18next from 'i18next';
 import { API_BASE_URL } from '@/lib/config';
+import { normalizePhone } from '@qflo/shared';
 
-// ── Phone normalization for WhatsApp ────────────────────────────
-const TIMEZONE_DIAL: Record<string, string> = {
-  'Africa/Algiers': '213', 'Africa/Tunis': '216', 'Africa/Casablanca': '212',
-  'Africa/Cairo': '20', 'Africa/Lagos': '234', 'Europe/Paris': '33',
-  'Europe/London': '44', 'Europe/Berlin': '49', 'Asia/Riyadh': '966',
-  'Asia/Dubai': '971', 'America/New_York': '1', 'America/Chicago': '1',
-  'America/Denver': '1', 'America/Los_Angeles': '1', 'America/Toronto': '1',
-};
-const ISO_DIAL: Record<string, string> = {
-  DZ: '213', TN: '216', MA: '212', EG: '20', FR: '33', GB: '44', DE: '49',
-  US: '1', CA: '1', SA: '966', AE: '971', QA: '974',
-};
-const ALL_CODES = [...new Set(Object.values(ISO_DIAL))].sort((a, b) => b.length - a.length);
-
-function normalizePhoneForWhatsApp(phone: string, tz?: string | null, cc?: string | null): string | null {
-  const trimmed = phone.trim();
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/[^\d]/g, '');
-  if (digits.length < 7) return null;
-  if (hasPlus) return digits;
-
-  const dialCode = (cc && ISO_DIAL[cc.toUpperCase()]) || (tz && TIMEZONE_DIAL[tz]) || null;
-
-  if (digits.startsWith('0') && dialCode) return dialCode + digits.slice(1);
-  if (dialCode && digits.startsWith(dialCode) && digits.length > dialCode.length + 6) return digits;
-  for (const code of ALL_CODES) {
-    if (digits.startsWith(code) && digits.length >= code.length + 7) return digits;
-  }
-  if (digits.length === 10 && !digits.startsWith('0')) return '1' + digits;
-  if (digits.length === 9 && dialCode === '213') return '213' + digits;
-  if (digits.length === 9 && dialCode === '33') return '33' + digits;
-  if (dialCode && digits.length <= 9) return dialCode + digits;
-  return digits;
+/** Fire-and-forget: trigger WhatsApp/Messenger notification via unified API */
+async function triggerNotification(ticketId: string, status: string, deskName?: string) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    fetch(`${API_BASE_URL}/api/ticket-transition`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ ticketId, status, deskName, skipStatusUpdate: true }),
+    }).catch(() => {});
+  } catch { /* non-critical */ }
 }
 
 // ── Call Next Ticket (with overflow + round-robin) ──────────────
@@ -44,7 +26,10 @@ export async function callNextTicket(deskId: string, staffId: string) {
     p_desk_id: deskId,
     p_staff_id: staffId,
   });
-  if (!rrError && rrData) return rrData;
+  if (!rrError && rrData) {
+    triggerNotification(rrData, 'called').catch(() => {});
+    return rrData;
+  }
 
   // Fallback: overflow — pull from any service in dept, then any in office
   const { data, error } = await supabase.rpc('call_next_ticket_with_overflow', {
@@ -52,6 +37,7 @@ export async function callNextTicket(deskId: string, staffId: string) {
     p_staff_id: staffId,
   });
   if (error) throw new Error(error.message);
+  if (data) triggerNotification(data, 'called').catch(() => {});
   return data;
 }
 
@@ -214,7 +200,7 @@ export async function createInHouseTicket(params: {
         .eq('id', params.officeId)
         .single();
       const officeCC = (officeRow?.settings as Record<string, unknown> | null)?.country_code as string | undefined;
-      const normalizedPhone = normalizePhoneForWhatsApp(customerData.phone, officeRow?.timezone, officeCC);
+      const normalizedPhone = normalizePhone(customerData.phone, officeRow?.timezone, officeCC);
       if (normalizedPhone && officeRow?.organization_id) {
         await supabase.from('whatsapp_sessions').insert({
           organization_id: officeRow.organization_id,
@@ -340,6 +326,7 @@ export async function callSpecificTicket(ticketId: string, deskId: string, staff
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'called').catch(() => {});
 }
 
 // ── Start Serving ─────────────────────────────────────────────────
@@ -352,6 +339,7 @@ export async function startServing(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'serving').catch(() => {});
 }
 
 // ── Mark Served ───────────────────────────────────────────────────
@@ -364,6 +352,7 @@ export async function markServed(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'served').catch(() => {});
   // Sync appointment via lifecycle API
   await syncTicketTerminal(ticketId, 'served');
 }
@@ -378,6 +367,7 @@ export async function markNoShow(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'no_show').catch(() => {});
   // Sync appointment via lifecycle API
   await syncTicketTerminal(ticketId, 'no_show');
 }
@@ -393,6 +383,7 @@ export async function cancelTicket(ticketId: string) {
     .eq('id', ticketId)
     .in('status', ['waiting', 'issued', 'called']);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'cancelled').catch(() => {});
   // Sync appointment via lifecycle API
   await syncTicketTerminal(ticketId, 'cancelled');
 }
@@ -431,6 +422,7 @@ export async function recallTicket(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
+  triggerNotification(ticketId, 'called').catch(() => {});
 }
 
 // ── Reset to Queue (send back to waiting) ─────────────────────────

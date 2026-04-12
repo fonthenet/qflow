@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
     deskName?: string;
     staffId?: string;
     skipNotification?: boolean;
+    skipStatusUpdate?: boolean;
   };
   try {
     body = await request.json();
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { ticketId, status, deskId, deskName, staffId, skipNotification } = body;
+  const { ticketId, status, deskId, deskName, staffId, skipNotification, skipStatusUpdate } = body;
   if (!ticketId || !status || !VALID_STATUSES.includes(status)) {
     return NextResponse.json(
       { error: `ticketId and status (${VALID_STATUSES.join('|')}) are required` },
@@ -97,45 +98,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   }
 
-  // ── Validate transition ────────────────────────────────────────────
-  if (!isValidTransition(ticket.status, status)) {
-    return NextResponse.json(
-      { error: `Invalid transition: ${ticket.status} → ${status}` },
-      { status: 409 },
-    );
-  }
+  // ── Validate transition & update ────────────────────────────────
+  const alreadyInState = ticket.status === status;
 
-  // ── Update ticket status ──────────────────────────────────────────
-  const now = new Date().toISOString();
-  const updatePayload: Record<string, any> = { status };
+  if (!alreadyInState && !skipStatusUpdate) {
+    if (!isValidTransition(ticket.status, status)) {
+      return NextResponse.json(
+        { error: `Invalid transition: ${ticket.status} → ${status}` },
+        { status: 409 },
+      );
+    }
 
-  if (status === 'called') {
-    updatePayload.called_at = now;
-    if (deskId) updatePayload.desk_id = deskId;
-    if (staffId) updatePayload.called_by_staff_id = staffId;
-  } else if (status === 'serving') {
-    updatePayload.serving_at = now;
-    if (deskId) updatePayload.desk_id = deskId;
-  } else if (status === 'served' || status === 'cancelled' || status === 'no_show') {
-    updatePayload.completed_at = now;
-  }
+    // ── Update ticket status ──────────────────────────────────────
+    const now = new Date().toISOString();
+    const updatePayload: Record<string, any> = { status };
 
-  const { error: updateErr } = await supabase
-    .from('tickets')
-    .update(updatePayload)
-    .eq('id', ticketId);
+    if (status === 'called') {
+      updatePayload.called_at = now;
+      if (deskId) updatePayload.desk_id = deskId;
+      if (staffId) updatePayload.called_by_staff_id = staffId;
+    } else if (status === 'serving') {
+      updatePayload.serving_at = now;
+      if (deskId) updatePayload.desk_id = deskId;
+    } else if (status === 'served' || status === 'cancelled' || status === 'no_show') {
+      updatePayload.completed_at = now;
+    }
 
-  if (updateErr) {
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    const { error: updateErr } = await supabase
+      .from('tickets')
+      .update(updatePayload)
+      .eq('id', ticketId);
+
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
   }
 
   // ── Sync linked appointment status ────────────────────────────────
-  if (status === 'served' || status === 'cancelled' || status === 'no_show') {
-    try {
-      const { onTicketTerminal } = await import('@/lib/lifecycle');
-      await onTicketTerminal(ticketId, status);
-    } catch (e: any) {
-      console.warn('[ticket-transition] lifecycle sync failed:', e?.message);
+  if (!alreadyInState && !skipStatusUpdate) {
+    if (status === 'served' || status === 'cancelled' || status === 'no_show') {
+      try {
+        const { onTicketTerminal } = await import('@/lib/lifecycle');
+        await onTicketTerminal(ticketId, status);
+      } catch (e: any) {
+        console.warn('[ticket-transition] lifecycle sync failed:', e?.message);
+      }
     }
   }
 
