@@ -145,6 +145,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const [listDateFilter, setListDateFilter] = useState<string | null>(initialViewMode === 'list' ? dateKeyInTz(new Date(), officeTimezone || 'Africa/Algiers') : null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
+  const [dropFeedback, setDropFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [operatingHours, setOperatingHours] = useState<OperatingHours>(null);
   const [alwaysOpen, setAlwaysOpen] = useState(false);
   const [slotDuration, setSlotDuration] = useState(30); // org slot_duration_minutes
@@ -1075,12 +1076,30 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     try {
       await ensureAuth(storedAuth);
       const sb = await getSupabase();
-
-      const newScheduledAt = localTimeToUTC(newDateKey, newTime, tz);
-
-      // Check for slot conflicts: any other appointment at same office, service, date+time
       const appt = appointments.find(a => a.id === appointmentId);
-      if (appt) {
+      if (!appt) return false;
+
+      // ── 1. Server-side slot availability check ──
+      // This checks ALL bookings (WhatsApp, web, kiosk, etc.) — single source of truth
+      try {
+        const slotsUrl = `https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(appt.service_id)}&date=${newDateKey}`;
+        const slotsResp = await fetch(slotsUrl);
+        if (slotsResp.ok) {
+          const slotsData = await slotsResp.json();
+          const availableSlots: string[] = slotsData.slots ?? [];
+          // The target time must be in the available list, OR the appointment itself currently
+          // occupies that slot (moving within same slot = ok)
+          const currentTime = formatTimeInTz(appt.scheduled_at, tz);
+          const currentDate = dateKeyInTz(new Date(appt.scheduled_at), tz);
+          const isSameSlot = currentDate === newDateKey && currentTime === newTime;
+          if (!isSameSlot && !availableSlots.includes(newTime)) {
+            console.warn('[Calendar] slot not available server-side:', newTime, 'available:', availableSlots);
+            return false;
+          }
+        }
+      } catch (e) {
+        // If server check fails (e.g. offline), fall back to local check
+        console.warn('[Calendar] server slot check failed, using local check:', e);
         const conflict = appointments.find(a =>
           a.id !== appointmentId
           && a.service_id === appt.service_id
@@ -1088,11 +1107,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           && dateKeyInTz(new Date(a.scheduled_at), tz) === newDateKey
           && formatTimeInTz(a.scheduled_at, tz) === newTime
         );
-        if (conflict) {
-          return false; // Slot taken
-        }
+        if (conflict) return false;
       }
 
+      // ── 2. Compute new UTC timestamp ──
+      const newScheduledAt = localTimeToUTC(newDateKey, newTime, tz);
+
+      // ── 3. Update database ──
       const { error } = await sb
         .from('appointments')
         .update({ scheduled_at: newScheduledAt })
@@ -1103,7 +1124,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         return false;
       }
 
-      // Refresh local state
+      // ── 4. Refresh local state ──
       const refreshed = await loadAll();
       if (refreshed) {
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
@@ -1116,7 +1137,17 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       console.error('[Calendar] reschedule failed:', e);
       return false;
     }
-  }, [storedAuth, tz, appointments, loadAll, localTimeToUTC]);
+  }, [storedAuth, tz, officeId, appointments, loadAll, localTimeToUTC]);
+
+  const handleApptDrop = useCallback(async (apptId: string, dateKey: string, time: string) => {
+    const ok = await handleReschedule(apptId, dateKey, time);
+    if (ok) {
+      setDropFeedback({ type: 'success', message: translate(locale, 'Appointment rescheduled') });
+    } else {
+      setDropFeedback({ type: 'error', message: translate(locale, 'This time slot is not available') });
+    }
+    setTimeout(() => setDropFeedback(null), 3000);
+  }, [handleReschedule, locale]);
 
   // ── Save notes ─────────────────────────────────────────────────
 
@@ -1473,13 +1504,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                           endHour={END_HOUR}
                           onWeekNavigate={navigateWeek}
                           slotDuration={slotDuration}
-                          onApptDrop={async (apptId, dateKey, time) => {
-                            const ok = await handleReschedule(apptId, dateKey, time);
-                            if (!ok) {
-                              // Show a small alert for now — the slot is taken
-                              alert(translate(locale, 'This time slot is not available. Please choose another.'));
-                            }
-                          }}
+                          onApptDrop={handleApptDrop}
                         />
                       </div>
                     ))}
@@ -1550,6 +1575,24 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               onOpenCustomer={onOpenCustomer}
               onReschedule={handleReschedule}
             />
+          )}
+
+          {/* Drop feedback toast */}
+          {dropFeedback && (
+            <div style={{
+              position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+              padding: '10px 20px', borderRadius: 10,
+              background: dropFeedback.type === 'success'
+                ? 'linear-gradient(135deg, rgba(34,197,94,0.95), rgba(21,128,61,0.95))'
+                : 'linear-gradient(135deg, rgba(239,68,68,0.95), rgba(185,28,28,0.95))',
+              color: '#fff', fontSize: 13, fontWeight: 600, zIndex: 100,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              animation: 'toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+              display: 'flex', alignItems: 'center', gap: 8,
+              pointerEvents: 'none',
+            }}>
+              {dropFeedback.type === 'success' ? '✓' : '✕'} {dropFeedback.message}
+            </div>
           )}
 
           {/* Quick Booking panel */}
@@ -1987,16 +2030,20 @@ function DesktopWeekView({
   const [activeColIdx, setActiveColIdx] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // ── Pointer-based drag state (replaces HTML5 DnD for Electron reliability) ──
+  // ── Pointer-based drag system ──────────────────────────────────
   const dragRef = useRef<{
     apptId: string;
     ghostEl: HTMLDivElement | null;
     startX: number;
     startY: number;
     didMove: boolean;
+    dropping: boolean; // true while async drop is in progress
   } | null>(null);
+  const dragOverRef = useRef<{ dayIdx: number; slotIdx: number } | null>(null);
   const [dragOverCell, setDragOverCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
-  // Refs for slot cell positions so we can hit-test during pointermove
+  const rafRef = useRef<number | null>(null);
+
+  // Slot cell positions for hit-testing
   const slotCellRefs = useRef<Map<string, { el: HTMLDivElement; dayIdx: number; slotIdx: number; dateKey: string; time: string }>>(new Map());
 
   const registerSlotCell = useCallback((key: string, el: HTMLDivElement | null, dayIdx: number, slotIdx: number, dateKey: string, time: string) => {
@@ -2007,7 +2054,7 @@ function DesktopWeekView({
     }
   }, []);
 
-  // Find which slot cell the pointer is over
+  // Find which slot cell the pointer is over — used inside rAF
   const hitTestSlot = useCallback((clientX: number, clientY: number) => {
     for (const [, info] of slotCellRefs.current) {
       const rect = info.el.getBoundingClientRect();
@@ -2018,65 +2065,98 @@ function DesktopWeekView({
     return null;
   }, []);
 
+  // Full cleanup function — called on drop and on cancel
+  const cleanupDrag = useCallback(() => {
+    const drag = dragRef.current;
+    if (drag?.ghostEl) {
+      try { document.body.removeChild(drag.ghostEl); } catch {}
+      drag.ghostEl = null;
+    }
+    // Restore ALL draggable appointment elements (safety net)
+    document.querySelectorAll('[data-appt-drag]').forEach((el) => {
+      (el as HTMLElement).style.opacity = '1';
+      (el as HTMLElement).style.transform = '';
+    });
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    dragOverRef.current = null;
+    setDragOverCell(null);
+    // Delayed null so onClick can see didMove
+    setTimeout(() => { dragRef.current = null; }, 60);
+  }, []);
+
   // Global pointermove/pointerup during drag
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
-      if (!drag) return;
-      // Only start visual drag after 5px of movement (prevents accidental drags on click)
+      if (!drag || drag.dropping) return;
+
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
-      if (!drag.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      // 8px dead zone before drag activates
+      if (!drag.didMove && (dx * dx + dy * dy) < 64) return;
       drag.didMove = true;
 
-      // Move ghost
-      if (drag.ghostEl) {
-        drag.ghostEl.style.left = `${e.clientX + 12}px`;
-        drag.ghostEl.style.top = `${e.clientY - 16}px`;
-        drag.ghostEl.style.display = 'block';
-      }
-      // Hit-test slots
-      const hit = hitTestSlot(e.clientX, e.clientY);
-      if (hit) {
-        setDragOverCell({ dayIdx: hit.dayIdx, slotIdx: hit.slotIdx });
-      } else {
-        setDragOverCell(null);
-      }
+      // Throttle via rAF for smooth 60fps updates
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        if (!dragRef.current || dragRef.current.dropping) return;
+        // Move ghost smoothly
+        if (dragRef.current.ghostEl) {
+          dragRef.current.ghostEl.style.transform = `translate(${e.clientX + 14}px, ${e.clientY - 18}px)`;
+          dragRef.current.ghostEl.style.display = 'block';
+        }
+        // Hit-test
+        const hit = hitTestSlot(e.clientX, e.clientY);
+        const prev = dragOverRef.current;
+        if (hit) {
+          if (!prev || prev.dayIdx !== hit.dayIdx || prev.slotIdx !== hit.slotIdx) {
+            dragOverRef.current = { dayIdx: hit.dayIdx, slotIdx: hit.slotIdx };
+            setDragOverCell({ dayIdx: hit.dayIdx, slotIdx: hit.slotIdx });
+          }
+        } else if (prev) {
+          dragOverRef.current = null;
+          setDragOverCell(null);
+        }
+      });
     };
 
     const onUp = (e: PointerEvent) => {
       const drag = dragRef.current;
-      if (!drag) return;
-      // Clean up ghost
-      if (drag.ghostEl) {
-        try { document.body.removeChild(drag.ghostEl); } catch {}
-        drag.ghostEl = null;
-      }
-      // Restore source element opacity
-      const srcEl = document.querySelector(`[data-appt-drag="${drag.apptId}"]`) as HTMLElement | null;
-      if (srcEl) {
-        srcEl.style.opacity = '1';
-        srcEl.style.transform = '';
-      }
-      // If we actually moved, perform drop
+      if (!drag || drag.dropping) return;
+
+      // Determine drop target BEFORE cleanup
+      let dropTarget: { dateKey: string; time: string } | null = null;
       if (drag.didMove) {
         const hit = hitTestSlot(e.clientX, e.clientY);
-        if (hit && onApptDrop) {
-          onApptDrop(drag.apptId, hit.dateKey, hit.time);
-        }
+        if (hit) dropTarget = { dateKey: hit.dateKey, time: hit.time };
       }
-      // Keep dragRef set briefly so onClick can detect it just finished
-      setTimeout(() => { dragRef.current = null; }, 50);
-      setDragOverCell(null);
+
+      // Clean up visuals immediately
+      cleanupDrag();
+
+      // Perform async drop
+      if (dropTarget && onApptDrop) {
+        onApptDrop(drag.apptId, dropTarget.dateKey, dropTarget.time);
+      }
     };
 
-    window.addEventListener('pointermove', onMove);
+    // Cancel on Escape
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && dragRef.current) {
+        cleanupDrag();
+      }
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('keydown', onKey);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [hitTestSlot, onApptDrop]);
+  }, [hitTestSlot, onApptDrop, cleanupDrag]);
 
   // Notify parent of selected slot for time gutter highlighting
   useEffect(() => {
@@ -2361,19 +2441,22 @@ function DesktopWeekView({
                         tabIndex={0}
                         data-appt-drag={appt.id}
                         onPointerDown={canDrag ? (e) => {
-                          // Start tracking — actual drag begins after 5px movement
+                          // Don't start new drag while one is in progress
+                          if (dragRef.current) return;
                           e.stopPropagation();
+                          // Create GPU-accelerated ghost (will-change + transform for 60fps)
                           const ghost = document.createElement('div');
                           ghost.textContent = `${appt.customer_name ?? ''} · ${formatTimeInTz(appt.scheduled_at, timezone)}`;
                           Object.assign(ghost.style, {
-                            position: 'fixed', zIndex: '99999', display: 'none',
+                            position: 'fixed', top: '0', left: '0', zIndex: '99999', display: 'none',
                             padding: '8px 16px', borderRadius: '10px',
-                            background: `${color}`, color: '#fff',
+                            background: color, color: '#fff',
                             fontSize: '13px', fontWeight: '700', fontFamily: 'inherit',
                             boxShadow: '0 12px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(255,255,255,0.15)',
                             borderLeft: `4px solid ${statusInfo.color}`,
                             whiteSpace: 'nowrap', pointerEvents: 'none',
-                            backdropFilter: 'blur(8px)',
+                            willChange: 'transform',
+                            transition: 'none',
                           });
                           document.body.appendChild(ghost);
                           dragRef.current = {
@@ -2382,6 +2465,7 @@ function DesktopWeekView({
                             startX: e.clientX,
                             startY: e.clientY,
                             didMove: false,
+                            dropping: false,
                           };
                           // Fade source
                           (e.currentTarget as HTMLElement).style.opacity = '0.3';
