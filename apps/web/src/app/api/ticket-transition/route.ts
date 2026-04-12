@@ -70,6 +70,8 @@ export async function POST(request: NextRequest) {
     staffId?: string;
     skipNotification?: boolean;
     skipStatusUpdate?: boolean;
+    /** Override notification event (e.g. 'recall' instead of default 'called') */
+    notifyEvent?: string;
   };
   try {
     body = await request.json();
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { ticketId, status, deskId, deskName, staffId, skipNotification, skipStatusUpdate } = body;
+  const { ticketId, status, deskId, deskName, staffId, skipNotification, skipStatusUpdate, notifyEvent } = body;
   if (!ticketId || !status || !VALID_STATUSES.includes(status)) {
     return NextResponse.json(
       { error: `ticketId and status (${VALID_STATUSES.join('|')}) are required` },
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Send notification via unified notifyCustomer ──────────────────
-  const event = STATUS_TO_EVENT[status];
+  const event = (notifyEvent as NotifyEvent) || STATUS_TO_EVENT[status];
   const notifyResult = await notifyCustomer(ticketId, event, {
     deskName: deskName || undefined,
     skipNotification: skipNotification ?? false,

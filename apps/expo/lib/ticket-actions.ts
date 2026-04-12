@@ -4,7 +4,7 @@ import { API_BASE_URL } from '@/lib/config';
 import { normalizePhone } from '@qflo/shared';
 
 /** Fire-and-forget: trigger WhatsApp/Messenger notification via unified API */
-async function triggerNotification(ticketId: string, status: string, deskName?: string) {
+async function triggerNotification(ticketId: string, status: string, deskName?: string, notifyEvent?: string) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -14,7 +14,7 @@ async function triggerNotification(ticketId: string, status: string, deskName?: 
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ ticketId, status, deskName, skipStatusUpdate: true }),
+      body: JSON.stringify({ ticketId, status, deskName, skipStatusUpdate: true, ...(notifyEvent ? { notifyEvent } : {}) }),
     }).catch(() => {});
   } catch { /* non-critical */ }
 }
@@ -422,7 +422,7 @@ export async function recallTicket(ticketId: string) {
     })
     .eq('id', ticketId);
   if (error) throw new Error(error.message);
-  triggerNotification(ticketId, 'called').catch(() => {});
+  triggerNotification(ticketId, 'called', undefined, 'recall').catch(() => {});
 }
 
 // ── Reset to Queue (send back to waiting) ─────────────────────────
