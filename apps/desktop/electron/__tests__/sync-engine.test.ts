@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { createTestDB } from './helpers';
 
-// Mock electron safeStorage
+// Mock electron safeStorage + app (used by logger.ts)
 vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: () => '/tmp/qflow-test-logs',
+  },
   safeStorage: {
     isEncryptionAvailable: () => false,
     decryptString: () => '',
