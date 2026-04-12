@@ -1348,17 +1348,24 @@ export async function handleInboundMessage(
       .maybeSingle();
 
     if (bookSession) {
-      const bookLocale = (bookSession.locale as Locale) || detectedLocale;
-      const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء|0)$/i.test(cleaned);
+      // If the message is a new BOOK command (with or without code), skip session
+      // handler and let it fall through to startBookingFlow which cleans up old sessions
+      const isNewBookCmd = !!parseBookingCode(cleaned) ||
+        /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
 
-      if (isCancel && bookSession.state !== 'booking_confirm') {
-        await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
-        await sendMessage({ to: identifier, body: t('booking_cancelled', bookLocale) });
-        return;
+      if (!isNewBookCmd) {
+        const bookLocale = (bookSession.locale as Locale) || detectedLocale;
+        const isCancel = /^(NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء|0)$/i.test(cleaned);
+
+        if (isCancel && bookSession.state !== 'booking_confirm') {
+          await supabaseBook.from('whatsapp_sessions').delete().eq('id', bookSession.id);
+          await sendMessage({ to: identifier, body: t('booking_cancelled', bookLocale) });
+          return;
+        }
+
+        const handled = await handleBookingState(bookSession, cleaned, identifier, bookLocale, channel, sendMessage);
+        if (handled) return;
       }
-
-      const handled = await handleBookingState(bookSession, cleaned, identifier, bookLocale, channel, sendMessage);
-      if (handled) return;
     }
   }
 

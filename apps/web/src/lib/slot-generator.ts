@@ -378,6 +378,10 @@ export async function getAvailableSlots(
  * Get available dates within the booking horizon.
  * Returns dates that have at least one available slot.
  * Useful for WhatsApp booking flow and calendar display.
+ *
+ * OPTIMIZED: fetches all data (office, org, holidays, blocked slots,
+ * appointments) in bulk queries up front, then iterates locally.
+ * This reduces ~400 DB queries to ~6 regardless of horizon length.
  */
 export async function getAvailableDates(
   officeId: string,
@@ -387,28 +391,46 @@ export async function getAvailableDates(
 ): Promise<{ date: string; slotCount: number }[]> {
   const supabase: any = createAdminClient();
 
-  // Get booking horizon AND org timezone. We must compute "today" in the
-  // business's local day, not in UTC — otherwise a customer in Algeria booking
-  // shortly after midnight local time could still see "yesterday" listed
-  // because the UTC date hasn't rolled over yet (or vice versa).
-  const { data: office } = await supabase
-    .from('offices')
-    .select('organization_id')
-    .eq('id', officeId)
-    .single();
+  // ── 1. Fetch office + org in parallel ──
+  const [{ data: office }, { data: org }] = await Promise.all([
+    supabase
+      .from('offices')
+      .select('id, operating_hours, organization_id, settings')
+      .eq('id', officeId)
+      .single() as Promise<any>,
+    // We need org_id first, but offices table has it — fetch org separately
+    // after we have the office. For now fetch office first.
+    { data: null } as any,
+  ]);
 
   if (!office) return [];
 
-  const { data: org } = await supabase
+  const { data: orgData } = await supabase
     .from('organizations')
     .select('settings, timezone')
     .eq('id', office.organization_id)
     .single();
 
-  const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
+  const orgSettings = (orgData?.settings as Record<string, any> | null) ?? {};
   const horizonDays = Number(orgSettings.booking_horizon_days ?? 90);
-  // Use org-level timezone as single source of truth
-  const tz: string = org?.timezone || 'Africa/Algiers';
+  const tz: string = orgData?.timezone || 'Africa/Algiers';
+  const bookingMode = orgSettings.booking_mode ?? 'simple';
+  const slotDurationMinutes = Number(orgSettings.slot_duration_minutes ?? 30);
+  const slotsPerInterval = Number(orgSettings.slots_per_interval ?? 1);
+  const dailyTicketLimit = Number(orgSettings.daily_ticket_limit ?? 0);
+  const minLeadHours = Number(orgSettings.min_booking_lead_hours ?? 1);
+
+  if (bookingMode === 'disabled') return [];
+
+  const officeSettings = ((office.settings as Record<string, any>) ?? {});
+  const visitIntakeOverrideMode =
+    typeof orgSettings.visit_intake_override_mode === 'string'
+      ? orgSettings.visit_intake_override_mode
+      : typeof officeSettings.visit_intake_override_mode === 'string'
+        ? officeSettings.visit_intake_override_mode
+        : 'business_hours';
+  if (visitIntakeOverrideMode === 'always_closed') return [];
+  const isAlwaysOpen = visitIntakeOverrideMode === 'always_open';
 
   // Business-local "today" as YYYY-MM-DD.
   const todayParts = new Intl.DateTimeFormat('en-CA', {
@@ -417,32 +439,171 @@ export async function getAvailableDates(
   const yyyy = todayParts.find(p => p.type === 'year')?.value ?? '1970';
   const mm = todayParts.find(p => p.type === 'month')?.value ?? '01';
   const dd = todayParts.find(p => p.type === 'day')?.value ?? '01';
-  // Anchor the iteration on a noon-UTC date so daylight-savings shifts and
-  // toISOString() rounding can never cross the date boundary.
-  const todayAnchor = new Date(`${yyyy}-${mm}-${dd}T12:00:00Z`);
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+  const todayAnchor = new Date(`${todayStr}T12:00:00Z`);
 
+  // Compute date range
+  const startDate = new Date(todayAnchor);
+  startDate.setUTCDate(startDate.getUTCDate() + 1); // tomorrow
+  const endDate = new Date(todayAnchor);
+  endDate.setUTCDate(endDate.getUTCDate() + horizonDays);
+  const startDateStr = startDate.toISOString().split('T')[0];
+  const endDateStr = endDate.toISOString().split('T')[0];
+
+  // UTC range for appointment queries
+  const rangeStartIso = getDateStartIso(startDateStr, tz);
+  const rangeEndIso = getDateEndIso(endDateStr, tz);
+
+  // ── 2. Batch-fetch holidays, blocked slots, appointments, staff ──
+  const [holidaysRes, blockedRes, apptsRes, allApptsRes, staffRes] = await Promise.all([
+    supabase
+      .from('office_holidays')
+      .select('holiday_date, is_full_day')
+      .eq('office_id', officeId)
+      .gte('holiday_date', startDateStr)
+      .lte('holiday_date', endDateStr)
+      .then((r: any) => r)
+      .catch(() => ({ data: [] })),
+    supabase
+      .from('blocked_slots')
+      .select('blocked_date, start_time, end_time')
+      .eq('office_id', officeId)
+      .gte('blocked_date', startDateStr)
+      .lte('blocked_date', endDateStr)
+      .then((r: any) => r)
+      .catch(() => ({ data: [] })),
+    // Appointments for specific service (capacity check)
+    supabase
+      .from('appointments')
+      .select('scheduled_at')
+      .eq('office_id', officeId)
+      .eq('service_id', serviceId)
+      .not('status', 'in', '(cancelled,no_show,declined)')
+      .gte('scheduled_at', rangeStartIso)
+      .lte('scheduled_at', rangeEndIso),
+    // All appointments for daily limit (only if limit is set)
+    dailyTicketLimit > 0
+      ? supabase
+          .from('appointments')
+          .select('scheduled_at')
+          .eq('office_id', officeId)
+          .not('status', 'in', '(cancelled,no_show,declined)')
+          .gte('scheduled_at', rangeStartIso)
+          .lte('scheduled_at', rangeEndIso)
+      : Promise.resolve({ data: [] }),
+    // Staff schedule (only if staffId provided)
+    staffId
+      ? supabase
+          .from('staff')
+          .select('work_schedule, default_slot_duration_minutes')
+          .eq('id', staffId)
+          .single()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  // ── 3. Index bulk data by date for O(1) lookup ──
+  const fullDayHolidays = new Set<string>();
+  const partialHolidays = new Set<string>();
+  for (const h of holidaysRes.data ?? []) {
+    if (h.is_full_day) fullDayHolidays.add(h.holiday_date);
+    else partialHolidays.add(h.holiday_date);
+  }
+
+  const blockedByDate = new Map<string, { start_time: string; end_time: string }[]>();
+  for (const b of blockedRes.data ?? []) {
+    const arr = blockedByDate.get(b.blocked_date) ?? [];
+    arr.push({ start_time: b.start_time, end_time: b.end_time });
+    blockedByDate.set(b.blocked_date, arr);
+  }
+
+  // Index service appointments by date → slot time
+  const apptsByDateSlot = new Map<string, Map<string, number>>();
+  for (const a of apptsRes.data ?? []) {
+    const d = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(a.scheduled_at));
+    const t = timeInTz(new Date(a.scheduled_at), tz);
+    if (!apptsByDateSlot.has(d)) apptsByDateSlot.set(d, new Map());
+    const slotMap = apptsByDateSlot.get(d)!;
+    slotMap.set(t, (slotMap.get(t) ?? 0) + 1);
+  }
+
+  // Index all appointments by date for daily limit
+  const allApptsByDate = new Map<string, number>();
+  if (dailyTicketLimit > 0) {
+    for (const a of (allApptsRes.data ?? [])) {
+      const d = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(a.scheduled_at));
+      allApptsByDate.set(d, (allApptsByDate.get(d) ?? 0) + 1);
+    }
+  }
+
+  const staff = staffRes?.data;
+  const staffSchedule = staff?.work_schedule as Record<string, { open: string; close: string } | null> | null;
+  const staffDuration = staff?.default_slot_duration_minutes;
+
+  const operatingHours = (office.operating_hours as Record<string, { open: string; close: string } | null> | null) ?? {};
+
+  // For "today" time filtering
+  const nowMs = nowTruncatedInTz(tz);
+  const minLeadMs = minLeadHours * 60 * 60 * 1000;
+
+  // ── 4. Iterate dates locally — no more DB queries ──
   const results: { date: string; slotCount: number }[] = [];
-
-  // POLICY: same-day RESERVE is not allowed. Customers wanting to be seen
-  // today must use the live JOIN flow (live queue ticket). The reservation
-  // day list therefore starts at TOMORROW (i = 1) and walks forward through
-  // the booking horizon. Keeping the iteration count the same ({horizonDays}
-  // bookable days) means the customer still sees a full week ahead.
   const cap = maxDates ?? horizonDays;
+
   for (let i = 1; i <= horizonDays && results.length < cap; i++) {
     const d = new Date(todayAnchor);
     d.setUTCDate(d.getUTCDate() + i);
     const dateStr = d.toISOString().split('T')[0];
 
-    const result = await getAvailableSlots({
-      officeId,
-      serviceId,
-      date: dateStr,
-      staffId,
-    });
+    // Holiday check
+    if (fullDayHolidays.has(dateStr)) continue;
 
-    if (result.slots.length > 0) {
-      results.push({ date: dateStr, slotCount: result.slots.length });
+    // Operating hours
+    const dayOfWeek = getDayOfWeek(dateStr);
+    let dayHours = operatingHours[dayOfWeek];
+
+    if (dayHours === null || (dayHours && dayHours.open === '00:00' && dayHours.close === '00:00')) {
+      if (!isAlwaysOpen) continue;
+      dayHours = { open: '08:00', close: '20:00' };
+    }
+    if (!dayHours) dayHours = { open: '08:00', close: '17:00' };
+
+    // Staff schedule intersection
+    let effectiveOpen = dayHours.open;
+    let effectiveClose = dayHours.close;
+    let effectiveDuration = staffDuration ?? slotDurationMinutes;
+
+    if (staffId && staffSchedule) {
+      const staffDay = staffSchedule[dayOfWeek];
+      if (staffDay === null) continue; // staff off
+      if (staffDay) {
+        effectiveOpen = staffDay.open > effectiveOpen ? staffDay.open : effectiveOpen;
+        effectiveClose = staffDay.close < effectiveClose ? staffDay.close : effectiveClose;
+      }
+    }
+
+    // Generate time slots
+    const allSlots = generateTimeSlots(effectiveOpen, effectiveClose, effectiveDuration);
+    const blocked = blockedByDate.get(dateStr) ?? [];
+    const slotCounts = apptsByDateSlot.get(dateStr) ?? new Map<string, number>();
+    const isToday = dateStr === todayStr;
+    const dailyTotal = dailyTicketLimit > 0 ? (allApptsByDate.get(dateStr) ?? 0) : 0;
+    const dailyLimitReached = dailyTicketLimit > 0 && dailyTotal >= dailyTicketLimit;
+
+    let availCount = 0;
+    for (const slot of allSlots) {
+      if (isSlotBlocked(slot, blocked)) continue;
+      if (isToday) {
+        const slotMs = new Date(`${dateStr}T${slot}:00`).getTime();
+        if (slotMs <= nowMs + minLeadMs) continue;
+      }
+      if (dailyLimitReached) continue;
+      const booked = slotCounts.get(slot) ?? 0;
+      if (slotsPerInterval - booked <= 0) continue;
+      availCount++;
+    }
+
+    if (availCount > 0) {
+      results.push({ date: dateStr, slotCount: availCount });
     }
   }
 
