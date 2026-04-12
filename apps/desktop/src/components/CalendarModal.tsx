@@ -263,7 +263,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   // ── Fetch — always load the FULL MONTH so mini calendar dots are accurate ──
 
   // Fetch ALL appointments (including cancelled/declined) for activity log diffing
-  const loadAll = useCallback(async (): Promise<CalendarAppointment[]> => {
+  const loadAll = useCallback(async (): Promise<CalendarAppointment[] | null> => {
     try {
       await ensureAuth(storedAuth);
       const sb = await getSupabase();
@@ -271,7 +271,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       const monthRange = getMonthRange(currentDate.getFullYear(), currentDate.getMonth(), tz);
       const bufferStart = new Date(new Date(monthRange.start).getTime() - 8 * 24 * 60 * 60 * 1000).toISOString();
       const bufferEnd = new Date(new Date(monthRange.end).getTime() + 8 * 24 * 60 * 60 * 1000).toISOString();
-      const { data } = await sb
+      const { data, error } = await sb
         .from('appointments')
         .select(APPT_SELECT)
         .eq('office_id', officeId)
@@ -279,8 +279,12 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         .lte('scheduled_at', bufferEnd)
         .order('scheduled_at', { ascending: true })
         .limit(2000);
-      return (data ?? []) as CalendarAppointment[];
-    } catch { return []; }
+      if (data === null) {
+        console.warn('[Calendar] loadAll returned null — auth may have expired', error);
+        return null;
+      }
+      return data as CalendarAppointment[];
+    } catch (err) { console.error('[Calendar] loadAll error', err); return null; }
   }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth]);
 
   // ── Activity log — independent fetch of recent business-wide activity ──
@@ -331,6 +335,8 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     if (!silent) setLoading(true);
     try {
       const allAppts = await loadAll();
+      // GUARD: if fetch failed (null), keep existing data instead of wiping the calendar
+      if (allAppts === null) { setLoading(false); return; }
       // Set visible appointments (exclude cancelled/declined for the grid)
       const visible = allAppts.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
       setAppointments(visible);
@@ -846,6 +852,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       const ok = await onModerate(appt.id, action);
       if (ok) {
         const refreshed = await loadAll();
+        if (!refreshed) { setActionBusy(false); return; }
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
         setAppointments(visible);
         loadActivity(); // refresh activity feed

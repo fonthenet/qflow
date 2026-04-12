@@ -1693,16 +1693,21 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         const startIso = start.toISOString();
         const endIso = end.toISOString();
         // Walk-in count: tickets created today via station/whatsapp/etc (exclude appointment check-ins to avoid double count? we'll count all tickets and subtract appointments-from-checkins)
-        const [{ count: ticketCount }, { data: appts }, { data: upcoming }] = await Promise.all([
+        const [ticketRes, apptsRes, upcomingRes] = await Promise.all([
           sb.from('tickets').select('id', { count: 'exact', head: true }).eq('office_id', session.office_id).gte('created_at', startIso).lt('created_at', endIso),
           sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id, source').eq('office_id', session.office_id).gte('scheduled_at', startIso).lt('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
           sb.from('appointments').select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id, source').eq('office_id', session.office_id).gte('scheduled_at', endIso).neq('status', 'cancelled').order('scheduled_at', { ascending: true }).limit(200),
         ]);
         if (cancelled) return;
-        const rdvList = (appts as any[]) || [];
+        // GUARD: if Supabase returned null (auth error / RLS block), do NOT wipe existing state
+        if (apptsRes.data === null || upcomingRes.data === null) {
+          console.warn('[Station] RDV fetch returned null — auth may have expired, keeping existing data');
+          return;
+        }
+        const rdvList = apptsRes.data as any[];
         setTodayAppointments(rdvList);
-        setUpcomingAppointments((upcoming as any[]) || []);
-        setTodayStats({ walkins: Math.max(0, (ticketCount || 0)), rdv: rdvList.length });
+        setUpcomingAppointments(upcomingRes.data as any[]);
+        setTodayStats({ walkins: Math.max(0, (ticketRes.count || 0)), rdv: rdvList.length });
       } catch (e) {
         if (!cancelled) console.warn('[Station] today stats fetch failed', e);
       }
@@ -1721,7 +1726,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       try {
         await ensureAuth(storedAuth);
         const sb = await getSupabase();
-        const { data } = await sb
+        const { data, error } = await sb
           .from('tickets')
           .select('id, ticket_number, source, customer_data, created_at, department_id, service_id')
           .eq('office_id', session.office_id)
@@ -1729,7 +1734,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           .order('created_at', { ascending: true })
           .limit(200);
         if (cancelled) return;
-        const list = (data as any[]) || [];
+        if (data === null) {
+          console.warn('[Station] pending tickets fetch returned null — auth may have expired', error);
+          return;
+        }
+        const list = data as any[];
         // Notify on new pending arrivals
         if (list.length > prevPendingCount.current && prevPendingCount.current > 0) {
           showToast(translate(locale, '{n} new ticket(s) awaiting approval', { n: list.length - prevPendingCount.current }), 'info');
@@ -1810,7 +1819,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         await ensureAuth(storedAuth);
         const sb = await getSupabase();
         const nowIso = new Date().toISOString();
-        const { data } = await sb
+        const { data, error } = await sb
           .from('appointments')
           .select('id, customer_name, customer_phone, scheduled_at, status, wilaya, notes, service_id, department_id')
           .eq('office_id', session.office_id)
@@ -1819,7 +1828,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           .order('scheduled_at', { ascending: true })
           .limit(500);
         if (cancelled) return;
-        setPendingAppointmentsAll((data as PendingAppt[]) || []);
+        if (data === null) {
+          console.warn('[Station] pending appts fetch returned null — auth may have expired', error);
+          return;
+        }
+        setPendingAppointmentsAll(data as PendingAppt[]);
       } catch (e) {
         if (!cancelled) console.warn('[Station] pending appointments fetch failed', e);
       }
