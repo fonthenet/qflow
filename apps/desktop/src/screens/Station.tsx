@@ -1522,9 +1522,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [locale]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ticketId: string; ticketNumber: string } | null>(null);
 
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 5000 : 3500);
   }, []);
 
   // ── Fetch Messenger Page ID from org branding ───────────────────
@@ -2194,8 +2196,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   // ── Sync notes when active ticket changes ──────────────────────
   useEffect(() => {
-    if (activeTicket?.status === 'serving') {
+    if (activeTicket?.status === 'serving' || activeTicket?.status === 'called') {
       setTicketNotes((activeTicket as any).notes ?? '');
+      // Auto-show notes field if there are existing notes (from appointment reason)
       setShowNotesField(!!(activeTicket as any).notes);
     } else {
       setTicketNotes('');
@@ -2806,6 +2809,44 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
+                </div>
+
+                {/* Notes (editable during called state) */}
+                <div style={{ width: '100%', maxWidth: 500, margin: '8px auto' }}>
+                  {!showNotesField ? (
+                    <button
+                      onClick={() => setShowNotesField(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                        border: '1px solid var(--border)', borderRadius: 8, background: 'transparent',
+                        color: 'var(--text2)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      + {t('Add Note')}
+                    </button>
+                  ) : (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', marginBottom: 4 }}>
+                        {t('Notes')}
+                      </label>
+                      <textarea
+                        value={ticketNotes}
+                        onChange={(e) => setTicketNotes(e.target.value)}
+                        onBlur={() => {
+                          if (activeTicket) updateTicketStatus(activeTicket.id, { notes: ticketNotes.trim() || null });
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        placeholder={t('Add a note about this customer...')}
+                        rows={2}
+                        style={{
+                          width: '100%', padding: '8px 10px', border: '1px solid var(--border)',
+                          borderRadius: 8, background: 'var(--surface2)', color: 'var(--text)',
+                          fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Countdown */}

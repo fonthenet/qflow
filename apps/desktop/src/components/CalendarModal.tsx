@@ -1037,6 +1037,87 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     } catch (e) { console.error('[Calendar] clear all holidays error:', e); }
   };
 
+  // ── Reschedule appointment (drag-and-drop or manual time edit) ──
+
+  /**
+   * Convert a date + time in a specific timezone to a UTC ISO string.
+   * E.g. "2026-04-13" + "09:00" in "Africa/Algiers" (UTC+1) → "2026-04-13T08:00:00.000Z"
+   */
+  const localTimeToUTC = useCallback((dateKey: string, time: string, timezone: string): string => {
+    const [h, m] = time.split(':').map(Number);
+    // Step 1: Treat the desired time as if it were UTC (our initial guess)
+    const utcGuess = new Date(`${dateKey}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`);
+
+    // Step 2: See what this UTC instant looks like in the target timezone
+    const fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const parts = fmt.formatToParts(utcGuess);
+    const localH = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0');
+    const localM = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0');
+    const localD = parseInt(parts.find(p => p.type === 'day')?.value ?? '0');
+    const targetD = parseInt(dateKey.split('-')[2]);
+
+    // Step 3: Calculate difference — if 09:00 UTC shows as 10:00 in TZ, offset is +60min
+    let diffMin = (localH - h) * 60 + (localM - m);
+    if (localD !== targetD) {
+      diffMin += (localD > targetD ? 1 : -1) * 24 * 60;
+    }
+
+    // Step 4: Subtract the offset to get the correct UTC time
+    const adjusted = new Date(utcGuess.getTime() - diffMin * 60000);
+    return adjusted.toISOString();
+  }, []);
+
+  const handleReschedule = useCallback(async (appointmentId: string, newDateKey: string, newTime: string): Promise<boolean> => {
+    try {
+      await ensureAuth(storedAuth);
+      const sb = await getSupabase();
+
+      const newScheduledAt = localTimeToUTC(newDateKey, newTime, tz);
+
+      // Check for slot conflicts: any other appointment at same office, service, date+time
+      const appt = appointments.find(a => a.id === appointmentId);
+      if (appt) {
+        const conflict = appointments.find(a =>
+          a.id !== appointmentId
+          && a.service_id === appt.service_id
+          && a.status !== 'cancelled' && a.status !== 'declined' && a.status !== 'no_show'
+          && dateKeyInTz(new Date(a.scheduled_at), tz) === newDateKey
+          && formatTimeInTz(a.scheduled_at, tz) === newTime
+        );
+        if (conflict) {
+          return false; // Slot taken
+        }
+      }
+
+      const { error } = await sb
+        .from('appointments')
+        .update({ scheduled_at: newScheduledAt })
+        .eq('id', appointmentId);
+
+      if (error) {
+        console.error('[Calendar] reschedule error:', error);
+        return false;
+      }
+
+      // Refresh local state
+      const refreshed = await loadAll();
+      if (refreshed) {
+        const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
+        setAppointments(visible);
+        const updated = refreshed.find(a => a.id === appointmentId);
+        if (updated) setSelectedAppt(updated);
+      }
+      return true;
+    } catch (e) {
+      console.error('[Calendar] reschedule failed:', e);
+      return false;
+    }
+  }, [storedAuth, tz, appointments, loadAll, localTimeToUTC]);
+
   // ── Save notes ─────────────────────────────────────────────────
 
   const handleNotesChange = useCallback(async (appointmentId: string, notes: string) => {
@@ -1392,6 +1473,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                           endHour={END_HOUR}
                           onWeekNavigate={navigateWeek}
                           slotDuration={slotDuration}
+                          onApptDrop={async (apptId, dateKey, time) => {
+                            const ok = await handleReschedule(apptId, dateKey, time);
+                            if (!ok) {
+                              // Show a small alert for now — the slot is taken
+                              alert(translate(locale, 'This time slot is not available. Please choose another.'));
+                            }
+                          }}
                         />
                       </div>
                     ))}
@@ -1460,6 +1548,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               onAction={(action) => handleAction(selectedAppt, action)}
               onNotesChange={handleNotesChange}
               onOpenCustomer={onOpenCustomer}
+              onReschedule={handleReschedule}
             />
           )}
 
@@ -1866,7 +1955,7 @@ function DesktopWeekView({
   days, appointmentsByDate, timezone, serviceMap, intlLocale, locale, selectedApptId, operatingHours, onSelect, hideGutter, onCellSelect,
   holidaysByDate, selectedDates, onDayContext, onDayHeaderClick, onSlotDoubleClick, clearSelection,
   startHour: START_HOUR = DEFAULT_START_HOUR, endHour: END_HOUR = DEFAULT_END_HOUR,
-  onWeekNavigate, slotDuration = 30,
+  onWeekNavigate, slotDuration = 30, onApptDrop,
 }: {
   days: CalendarDayInfo[];
   appointmentsByDate: Map<string, CalendarAppointment[]>;
@@ -1890,11 +1979,104 @@ function DesktopWeekView({
   /** Navigate to prev (-1) or next (1) week when arrow keys go past the edge */
   onWeekNavigate?: (direction: -1 | 1) => void;
   slotDuration?: number;
+  /** Called when an appointment is dragged and dropped onto a new slot */
+  onApptDrop?: (appointmentId: string, newDateKey: string, newTime: string) => void;
 }) {
   const slotHeightPx = (slotDuration / 60) * PIXELS_PER_HOUR;
   const [selectedCell, setSelectedCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
   const [activeColIdx, setActiveColIdx] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // ── Pointer-based drag state (replaces HTML5 DnD for Electron reliability) ──
+  const dragRef = useRef<{
+    apptId: string;
+    ghostEl: HTMLDivElement | null;
+    startX: number;
+    startY: number;
+    didMove: boolean;
+  } | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
+  // Refs for slot cell positions so we can hit-test during pointermove
+  const slotCellRefs = useRef<Map<string, { el: HTMLDivElement; dayIdx: number; slotIdx: number; dateKey: string; time: string }>>(new Map());
+
+  const registerSlotCell = useCallback((key: string, el: HTMLDivElement | null, dayIdx: number, slotIdx: number, dateKey: string, time: string) => {
+    if (el) {
+      slotCellRefs.current.set(key, { el, dayIdx, slotIdx, dateKey, time });
+    } else {
+      slotCellRefs.current.delete(key);
+    }
+  }, []);
+
+  // Find which slot cell the pointer is over
+  const hitTestSlot = useCallback((clientX: number, clientY: number) => {
+    for (const [, info] of slotCellRefs.current) {
+      const rect = info.el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        return info;
+      }
+    }
+    return null;
+  }, []);
+
+  // Global pointermove/pointerup during drag
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      // Only start visual drag after 5px of movement (prevents accidental drags on click)
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (!drag.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      drag.didMove = true;
+
+      // Move ghost
+      if (drag.ghostEl) {
+        drag.ghostEl.style.left = `${e.clientX + 12}px`;
+        drag.ghostEl.style.top = `${e.clientY - 16}px`;
+        drag.ghostEl.style.display = 'block';
+      }
+      // Hit-test slots
+      const hit = hitTestSlot(e.clientX, e.clientY);
+      if (hit) {
+        setDragOverCell({ dayIdx: hit.dayIdx, slotIdx: hit.slotIdx });
+      } else {
+        setDragOverCell(null);
+      }
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      // Clean up ghost
+      if (drag.ghostEl) {
+        try { document.body.removeChild(drag.ghostEl); } catch {}
+        drag.ghostEl = null;
+      }
+      // Restore source element opacity
+      const srcEl = document.querySelector(`[data-appt-drag="${drag.apptId}"]`) as HTMLElement | null;
+      if (srcEl) {
+        srcEl.style.opacity = '1';
+        srcEl.style.transform = '';
+      }
+      // If we actually moved, perform drop
+      if (drag.didMove) {
+        const hit = hitTestSlot(e.clientX, e.clientY);
+        if (hit && onApptDrop) {
+          onApptDrop(drag.apptId, hit.dateKey, hit.time);
+        }
+      }
+      // Keep dragRef set briefly so onClick can detect it just finished
+      setTimeout(() => { dragRef.current = null; }, 50);
+      setDragOverCell(null);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [hitTestSlot, onApptDrop]);
 
   // Notify parent of selected slot for time gutter highlighting
   useEffect(() => {
@@ -2056,10 +2238,15 @@ function DesktopWeekView({
                     || activeColIdx === dayIdx;
                   const isExactCell = selectedCell !== null
                     && selectedCell.dayIdx === dayIdx && selectedCell.slotIdx === si;
+                  const isDragTarget = dragOverCell?.dayIdx === dayIdx && dragOverCell?.slotIdx === si;
+                  const cellKey = `${dayIdx}-${si}`;
                   return (
                     <div
                       key={s.label}
+                      ref={(el) => registerSlotCell(cellKey, el as HTMLDivElement | null, dayIdx, si, day.dateKey, s.label)}
                       onClick={() => {
+                        // Don't select cell if we just finished a drag
+                        if (dragRef.current?.didMove) return;
                         setSelectedCell(
                           selectedCell?.dayIdx === dayIdx && selectedCell?.slotIdx === si ? null : { dayIdx, slotIdx: si }
                         );
@@ -2072,17 +2259,22 @@ function DesktopWeekView({
                         borderBottom: s.minute === 0
                           ? '1px solid var(--border, #334155)'
                           : '1px solid var(--border, #1e293b)',
-                        background: isExactCell
-                          ? 'rgba(59,130,246,0.18)'
-                          : isCrossHighlight
-                            ? 'rgba(59,130,246,0.06)'
-                            : dayClosed
-                              ? 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(239,68,68,0.03) 4px, rgba(239,68,68,0.03) 8px)'
-                              : isOutsideHours
-                                ? 'rgba(100,116,139,0.06)'
-                                : 'rgba(59,130,246,0.02)',
-                        transition: 'background 0.15s',
+                        background: isDragTarget
+                          ? 'rgba(34,197,94,0.25)'
+                          : isExactCell
+                            ? 'rgba(59,130,246,0.18)'
+                            : isCrossHighlight
+                              ? 'rgba(59,130,246,0.06)'
+                              : dayClosed
+                                ? 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(239,68,68,0.03) 4px, rgba(239,68,68,0.03) 8px)'
+                                : isOutsideHours
+                                  ? 'rgba(100,116,139,0.06)'
+                                  : 'rgba(59,130,246,0.02)',
+                        transition: 'background 0.12s',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        outline: isDragTarget ? '2px dashed #22c55e' : 'none',
+                        outlineOffset: -2,
+                        borderRadius: isDragTarget ? 4 : 0,
                     }}>
                       {isExactCell && (
                         <button
@@ -2159,13 +2351,50 @@ function DesktopWeekView({
                     const left = col * colWidth;
                     const statusInfo = STATUS_STRIP[appt.status] ?? { color: '#64748b', label: appt.status };
 
+                    // Allow drag for pending/confirmed/checked_in — not completed/served/cancelled
+                    const canDrag = ['pending', 'confirmed', 'checked_in'].includes(appt.status);
+
                     return (
-                      <button
+                      <div
                         key={appt.id}
+                        role="button"
+                        tabIndex={0}
+                        data-appt-drag={appt.id}
+                        onPointerDown={canDrag ? (e) => {
+                          // Start tracking — actual drag begins after 5px movement
+                          e.stopPropagation();
+                          const ghost = document.createElement('div');
+                          ghost.textContent = `${appt.customer_name ?? ''} · ${formatTimeInTz(appt.scheduled_at, timezone)}`;
+                          Object.assign(ghost.style, {
+                            position: 'fixed', zIndex: '99999', display: 'none',
+                            padding: '8px 16px', borderRadius: '10px',
+                            background: `${color}`, color: '#fff',
+                            fontSize: '13px', fontWeight: '700', fontFamily: 'inherit',
+                            boxShadow: '0 12px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(255,255,255,0.15)',
+                            borderLeft: `4px solid ${statusInfo.color}`,
+                            whiteSpace: 'nowrap', pointerEvents: 'none',
+                            backdropFilter: 'blur(8px)',
+                          });
+                          document.body.appendChild(ghost);
+                          dragRef.current = {
+                            apptId: appt.id,
+                            ghostEl: ghost,
+                            startX: e.clientX,
+                            startY: e.clientY,
+                            didMove: false,
+                          };
+                          // Fade source
+                          (e.currentTarget as HTMLElement).style.opacity = '0.3';
+                          (e.currentTarget as HTMLElement).style.transform = 'scale(0.95)';
+                        } : undefined}
                         onClick={(e) => {
                           e.stopPropagation();
+                          // Skip if we just finished a drag
+                          if (dragRef.current?.didMove) {
+                            dragRef.current = null;
+                            return;
+                          }
                           onSelect(appt);
-                          // Clear slot selection so "+" doesn't overlay the card
                           setSelectedCell(null);
                           onDayHeaderClick?.({ stopPropagation() {}, preventDefault() {} } as any, day.dateKey);
                         }}
@@ -2179,14 +2408,17 @@ function DesktopWeekView({
                           color: '#fff',
                           border: isActive ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.15)',
                           borderLeft: isActive ? '2px solid #22c55e' : `4px solid ${statusInfo.color}`,
-                          padding: '2px 5px 2px 4px', textAlign: 'left', cursor: 'pointer',
+                          padding: '2px 5px 2px 4px', textAlign: 'left',
+                          cursor: canDrag ? 'grab' : 'pointer',
                           fontSize: clippedHeight < 28 ? 9 : 11,
                           lineHeight: clippedHeight < 28 ? '11px' : '14px',
                           overflow: 'hidden', zIndex: isActive ? 15 : 10,
                           boxShadow: isActive ? '0 0 0 2px rgba(34,197,94,0.3), 0 2px 8px rgba(0,0,0,0.3)' : 'none',
-                          transition: 'border 0.15s, box-shadow 0.15s, left 0.2s, width 0.2s',
+                          transition: 'border 0.15s, box-shadow 0.15s, left 0.2s, width 0.2s, opacity 0.2s, transform 0.2s',
+                          userSelect: 'none',
+                          touchAction: 'none',
                         }}
-                        title={`${appt.customer_name} - ${svc?.name ?? ''} (${statusInfo.label})`}
+                        title={`${appt.customer_name} - ${svc?.name ?? ''} (${statusInfo.label})${canDrag ? ' — drag to reschedule' : ''}`}
                       >
                         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {appt.customer_name}
@@ -2196,7 +2428,7 @@ function DesktopWeekView({
                             {formatTimeInTz(appt.scheduled_at, timezone)} · {svc?.name ?? ''}
                           </div>
                         )}
-                      </button>
+                      </div>
                     );
                   });
                 })()}
@@ -3097,7 +3329,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
 
 function DesktopApptDetail({
   appointment: a, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
-  onClose, onAction, onNotesChange, onOpenCustomer,
+  onClose, onAction, onNotesChange, onOpenCustomer, onReschedule,
 }: {
   appointment: CalendarAppointment;
   timezone: string;
@@ -3110,15 +3342,21 @@ function DesktopApptDetail({
   onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete') => void;
   onNotesChange: (appointmentId: string, notes: string) => void;
   onOpenCustomer?: (phone: string) => void;
+  onReschedule?: (appointmentId: string, newDateKey: string, newTime: string) => Promise<boolean>;
 }) {
   const t = (k: string) => translate(locale, k);
   const [notesValue, setNotesValue] = useState(a.notes ?? '');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingTime, setEditingTime] = useState(false);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   // Sync when switching appointments
-  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); }, [a.id]);
+  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); setEditingTime(false); setRescheduleError(null); }, [a.id]);
 
   const handleNotesInput = (val: string) => {
     setNotesValue(val);
@@ -3141,6 +3379,7 @@ function DesktopApptDetail({
   const serviceColor = getServiceColor(svc);
   const d = new Date(a.scheduled_at);
   const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
+  const canReschedule = !['cancelled', 'no_show', 'declined'].includes(a.status); // allow reschedule even for completed
 
   const statusLabel: Record<string, string> = {
     pending: t('Pending'), pending_approval: t('Pending'), confirmed: t('Confirmed'), checked_in: t('Checked In'),
@@ -3216,15 +3455,107 @@ function DesktopApptDetail({
 
         {/* Date & time card */}
         <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10, padding: 12, marginBottom: 14 }}>
-          <div style={rowStyle}>
-            <span style={{ fontSize: 14 }}>📅</span>
-            {d.toLocaleDateString(intlLocale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}
-          </div>
-          <div style={rowStyle}>
-            <span style={{ fontSize: 14 }}>🕐</span>
-            {formatTimeInTz(a.scheduled_at, timezone)}
-            {svc && ` · ${formatDuration(svc.estimated_service_time ?? 30)}`}
-          </div>
+          {!editingTime ? (
+            <>
+              <div style={rowStyle}>
+                <span style={{ fontSize: 14 }}>📅</span>
+                {d.toLocaleDateString(intlLocale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}
+              </div>
+              <div style={{ ...rowStyle, justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14 }}>🕐</span>
+                  {formatTimeInTz(a.scheduled_at, timezone)}
+                  {svc && ` · ${formatDuration(svc.estimated_service_time ?? 30)}`}
+                </div>
+                {canReschedule && onReschedule && (
+                  <button
+                    onClick={() => {
+                      const dk = dateKeyInTz(d, timezone);
+                      const tm = formatTimeInTz(a.scheduled_at, timezone);
+                      setEditDate(dk);
+                      setEditTime(tm);
+                      setRescheduleError(null);
+                      setEditingTime(true);
+                    }}
+                    style={{
+                      padding: '3px 8px', borderRadius: 6, border: '1px solid rgba(59,130,246,0.3)',
+                      background: 'rgba(59,130,246,0.1)', color: '#60a5fa', cursor: 'pointer',
+                      fontSize: 10, fontWeight: 600,
+                    }}
+                    title={t('Reschedule')}
+                  >
+                    ✎ {t('Edit')}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>📅</span>
+                <input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => { setEditDate(e.target.value); setRescheduleError(null); }}
+                  style={{
+                    flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)',
+                    background: 'var(--surface2, #334155)', color: 'var(--text, #f1f5f9)',
+                    fontSize: 13, fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>🕐</span>
+                <input
+                  type="time"
+                  value={editTime}
+                  onChange={(e) => { setEditTime(e.target.value); setRescheduleError(null); }}
+                  style={{
+                    flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)',
+                    background: 'var(--surface2, #334155)', color: 'var(--text, #f1f5f9)',
+                    fontSize: 13, fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+              {rescheduleError && (
+                <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>{rescheduleError}</div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  disabled={rescheduling}
+                  onClick={async () => {
+                    if (!editDate || !editTime || !onReschedule) return;
+                    setRescheduling(true);
+                    setRescheduleError(null);
+                    const ok = await onReschedule(a.id, editDate, editTime);
+                    setRescheduling(false);
+                    if (ok) {
+                      setEditingTime(false);
+                    } else {
+                      setRescheduleError(t('This time slot is not available. Please choose another.'));
+                    }
+                  }}
+                  style={{
+                    flex: 1, padding: '7px 12px', borderRadius: 6, border: 'none',
+                    background: '#3b82f6', color: '#fff', cursor: rescheduling ? 'wait' : 'pointer',
+                    fontSize: 12, fontWeight: 600, opacity: rescheduling ? 0.6 : 1,
+                  }}
+                >
+                  {rescheduling ? '...' : `✓ ${t('Save')}`}
+                </button>
+                <button
+                  onClick={() => { setEditingTime(false); setRescheduleError(null); }}
+                  style={{
+                    padding: '7px 12px', borderRadius: 6, border: '1px solid var(--border, #475569)',
+                    background: 'transparent', color: 'var(--text2, #94a3b8)', cursor: 'pointer',
+                    fontSize: 12, fontWeight: 600,
+                  }}
+                >
+                  {t('Cancel')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Customer info */}

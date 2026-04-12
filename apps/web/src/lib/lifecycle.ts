@@ -344,7 +344,7 @@ export async function onTicketTerminal(
 
     const { data: ticket } = await sb
       .from('tickets')
-      .select('appointment_id')
+      .select('appointment_id, notes')
       .eq('id', ticketId)
       .single();
 
@@ -355,10 +355,14 @@ export async function onTicketTerminal(
       terminalStatus === 'transferred' ? 'confirmed' :
       terminalStatus; // cancelled, no_show pass through
 
+    // Sync notes back to appointment + update status
+    const apptUpdate: Record<string, any> = { status: appointmentStatus };
+    if (ticket.notes) apptUpdate.notes = ticket.notes;
+
     // Only update if appointment is in an active state
     await sb
       .from('appointments')
-      .update({ status: appointmentStatus })
+      .update(apptUpdate)
       .eq('id', ticket.appointment_id)
       .in('status', ['pending', 'confirmed', 'checked_in']);
 

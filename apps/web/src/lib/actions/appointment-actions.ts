@@ -262,6 +262,7 @@ export async function checkInAppointment(appointmentId: string) {
       locale: (appointment as any).locale ?? null,
       appointment_id: appointmentId,
       checked_in_at: new Date().toISOString(),
+      notes: (appointment as any).notes || null,
       customer_data: {
         name: appointment.customer_name,
         phone: appointment.customer_phone,
