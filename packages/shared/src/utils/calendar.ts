@@ -10,13 +10,13 @@ export const CALENDAR_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'fri
 export type CalendarDay = (typeof CALENDAR_DAYS)[number];
 
 export const STATUS_COLORS: Record<AppointmentStatus, string> = {
-  pending: '#f59e0b',
-  confirmed: '#3b82f6',
-  checked_in: '#8b5cf6',
-  completed: '#22c55e',
-  cancelled: '#ef4444',
-  no_show: '#64748b',
-  declined: '#991b1b',
+  pending: '#f59e0b',    // amber  — awaiting action
+  confirmed: '#3b82f6',  // blue   — approved & scheduled
+  checked_in: '#06b6d4', // cyan   — present / arrived
+  completed: '#22c55e',  // green  — done
+  cancelled: '#ef4444',  // red    — cancelled
+  no_show: '#64748b',    // slate  — missed
+  declined: '#991b1b',   // dark red — rejected
 };
 
 export const STATUS_LABELS: Record<AppointmentStatus, string> = {
@@ -308,7 +308,7 @@ export function countByDate(
 // ── Color helpers ──────────────────────────────────────────────────
 
 const EXTRA_STATUS_COLORS: Record<string, string> = {
-  serving: '#06b6d4',
+  serving: '#f97316', // orange — in-progress
 };
 
 export function getStatusColor(status: string): string {

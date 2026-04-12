@@ -10,9 +10,11 @@ import { CalendarModal } from '../components/CalendarModal';
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
   confirmed: '#3b82f6',
-  checked_in: '#8b5cf6',
-  serving: '#06b6d4',
+  checked_in: '#06b6d4',
+  serving: '#f97316',
   completed: '#22c55e',
+  cancelled: '#ef4444',
+  declined: '#991b1b',
   no_show: '#64748b',
 };
 

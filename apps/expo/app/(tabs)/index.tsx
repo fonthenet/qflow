@@ -194,11 +194,11 @@ function StarRating({ rating, onRate }: { rating: number; onRate: (n: number) =>
 // ---------------------------------------------------------------------------
 const HISTORY_STATUS_CONFIG: Record<string, { statusKey: string; color: string; icon: string }> = {
   served: { statusKey: 'status.served', color: '#22c55e', icon: 'checkmark-circle' },
-  no_show: { statusKey: 'status.missed', color: '#f59e0b', icon: 'alert-circle' },
+  no_show: { statusKey: 'status.missed', color: '#64748b', icon: 'alert-circle' },
   cancelled: { statusKey: 'status.cancelled', color: '#ef4444', icon: 'close-circle' },
   waiting: { statusKey: 'status.waiting', color: '#3b82f6', icon: 'time' },
   called: { statusKey: 'status.called', color: '#f59e0b', icon: 'megaphone' },
-  serving: { statusKey: 'status.serving', color: '#8b5cf6', icon: 'pulse' },
+  serving: { statusKey: 'status.serving', color: '#f97316', icon: 'pulse' },
 };
 
 function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string }; onPress: () => void; colors?: any }) {

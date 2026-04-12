@@ -459,8 +459,8 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                           onClick={() => handleAction(a.id, 'check_in')}
                           title={t('Check in')}
                           style={{
-                            padding: '6px 10px', borderRadius: 6, border: '1px solid #8b5cf640',
-                            background: '#8b5cf622', color: '#8b5cf6', cursor: busy ? 'wait' : 'pointer',
+                            padding: '6px 10px', borderRadius: 6, border: '1px solid #06b6d440',
+                            background: '#06b6d422', color: '#06b6d4', cursor: busy ? 'wait' : 'pointer',
                             fontSize: 11, fontWeight: 600,
                           }}
                         >

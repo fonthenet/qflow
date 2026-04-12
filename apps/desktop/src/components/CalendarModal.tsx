@@ -64,12 +64,12 @@ interface ActivityEntry {
 
 const EVENT_META: Record<ActivityEntry['eventType'], { icon: string; color: string; labelKey: string }> = {
   booked:     { icon: '📅', color: '#f59e0b', labelKey: 'Booked' },
-  approved:   { icon: '✅', color: '#22c55e', labelKey: 'confirmed' },
+  approved:   { icon: '✅', color: '#3b82f6', labelKey: 'Confirmed' },
   cancelled:  { icon: '❌', color: '#ef4444', labelKey: 'Cancelled' },
   declined:   { icon: '🚫', color: '#991b1b', labelKey: 'Declined' },
-  checked_in: { icon: '📋', color: '#06b6d4', labelKey: 'checked_in' },
-  no_show:    { icon: '👻', color: '#64748b', labelKey: 'no_show' },
-  served:     { icon: '✔️', color: '#8b5cf6', labelKey: 'served' },
+  checked_in: { icon: '📋', color: '#06b6d4', labelKey: 'Checked In' },
+  no_show:    { icon: '👻', color: '#64748b', labelKey: 'No Show' },
+  served:     { icon: '✔️', color: '#22c55e', labelKey: 'Served' },
   modified:   { icon: '✏️', color: '#eab308', labelKey: 'Modified' },
   deleted:    { icon: '🗑️', color: '#dc2626', labelKey: 'Deleted' },
 };
@@ -2137,7 +2137,7 @@ function DesktopWeekView({
                   const STATUS_STRIP: Record<string, { color: string; label: string }> = {
                     pending: { color: '#f59e0b', label: 'Pending' },
                     confirmed: { color: '#3b82f6', label: 'Confirmed' },
-                    checked_in: { color: '#8b5cf6', label: 'Checked In' },
+                    checked_in: { color: '#06b6d4', label: 'Checked In' },
                     serving: { color: '#f97316', label: 'Serving' },
                     completed: { color: '#22c55e', label: 'Completed' },
                     cancelled: { color: '#ef4444', label: 'Cancelled' },
