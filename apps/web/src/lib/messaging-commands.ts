@@ -672,6 +672,8 @@ function parseBookingCode(message: string): { code: string; locale: Locale } | n
   const arMatch = trimmed.match(/^(موعد|حجز|احجز)[\s\-_]+(.+)$/);
   if (arMatch) {
     const raw = arMatch[2].trim();
+    // Reject if the "code" is itself a booking keyword (e.g. "حجز موعد" = not a code)
+    if (/^(موعد|حجز|احجز)$/i.test(raw)) return null;
     const hasArabic = /[\u0600-\u06FF]/.test(raw);
     return { code: hasArabic ? raw : raw.toUpperCase(), locale: 'ar' };
   }
