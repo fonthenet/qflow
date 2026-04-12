@@ -719,6 +719,7 @@ const FR: Messages = {
   'sm.err.min': 'Minimum : {n}',
   'sm.err.max': 'Maximum : {n}',
   'sm.err.fix_errors': 'Veuillez corriger les erreurs avant d\'enregistrer',
+  'sm.unit.days': 'jours',
   // ── Station missing translations ──
   'Close queue': 'Fermer la file',
   'Open queue': 'Ouvrir la file',
@@ -1473,6 +1474,7 @@ const AR: Messages = {
   'sm.err.min': 'الحد الأدنى: {n}',
   'sm.err.max': 'الحد الأقصى: {n}',
   'sm.err.fix_errors': 'يرجى إصلاح الأخطاء قبل الحفظ',
+  'sm.unit.days': 'أيام',
   // ── Station missing translations ──
   'Close queue': 'إغلاق الطابور',
   'Open queue': 'فتح الطابور',
@@ -1678,6 +1680,7 @@ const EN: Messages = {
   'sm.err.min': 'Minimum: {n}',
   'sm.err.max': 'Maximum: {n}',
   'sm.err.fix_errors': 'Please fix the errors before saving',
+  'sm.unit.days': 'days',
 };
 
 const DICTIONARIES: Record<DesktopLocale, Messages> = {

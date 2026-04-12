@@ -1186,18 +1186,33 @@ export function SettingsClient({
               <label className="block text-sm font-medium text-foreground mb-1">
                 {t('Booking Horizon')}
               </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={bookingHorizonDays}
-                  onChange={(e) => setBookingHorizonDays(Number(e.target.value))}
-                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
-                />
-                <span className="text-sm text-muted-foreground">{t('days ahead')}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {[7, 15, 30, 60, 90].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setBookingHorizonDays(d)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${bookingHorizonDays === d ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}`}
+                  >
+                    {d === 7 ? t('1 week') : d === 15 ? t('15 days') : d === 30 ? t('30 days') : d === 60 ? t('60 days') : t('90 days')}
+                  </button>
+                ))}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={bookingHorizonDays}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (v >= 1) setBookingHorizonDays(v);
+                    }}
+                    className="w-20 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-muted-foreground">{t('days')}</span>
+                </div>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t('How far in advance customers can book')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('How far in advance customers can book (WhatsApp, web, kiosk)')}</p>
             </div>
 
             {/* Slots Per Interval */}

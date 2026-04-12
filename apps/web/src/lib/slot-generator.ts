@@ -383,7 +383,7 @@ export async function getAvailableDates(
   officeId: string,
   serviceId: string,
   staffId?: string,
-  maxDates: number = 14,
+  maxDates?: number,
 ): Promise<{ date: string; slotCount: number }[]> {
   const supabase: any = createAdminClient();
 
@@ -428,7 +428,8 @@ export async function getAvailableDates(
   // day list therefore starts at TOMORROW (i = 1) and walks forward through
   // the booking horizon. Keeping the iteration count the same ({horizonDays}
   // bookable days) means the customer still sees a full week ahead.
-  for (let i = 1; i <= horizonDays && results.length < maxDates; i++) {
+  const cap = maxDates ?? horizonDays;
+  for (let i = 1; i <= horizonDays && results.length < cap; i++) {
     const d = new Date(todayAnchor);
     d.setUTCDate(d.getUTCDate() + i);
     const dateStr = d.toISOString().split('T')[0];

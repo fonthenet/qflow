@@ -435,9 +435,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📅 *Booking — {name}*\n\nChoose a service:\n{list}\nReply with the *number*.\nSend *0* to cancel.',
   },
   booking_choose_date: {
-    fr: '📅 *Choisissez une date :*\n\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
-    ar: '📅 *اختر تاريخًا:*\n\n{list}\nأرسل *الرقم*.\nأرسل *0* للعودة.',
-    en: '📅 *Choose a date:*\n\n{list}\nReply with the *number*.\nSend *0* to go back.',
+    fr: '📅 *Choisissez une date :*\n\n{list}\n\n{pagination}Répondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
+    ar: '📅 *اختر تاريخًا:*\n\n{list}\n\n{pagination}أرسل *الرقم*.\nأرسل *0* للعودة.',
+    en: '📅 *Choose a date:*\n\n{list}\n\n{pagination}Reply with the *number*.\nSend *0* to go back.',
   },
   booking_choose_time: {
     fr: '⏰ *Choisissez un créneau pour le {date} :*\n\n{list}\nRépondez avec le *numéro*.\nEnvoyez *0* pour revenir.',
@@ -3609,6 +3609,19 @@ async function handleBookingServiceChoice(
 async function handleBookingDateChoice(
   session: any, cleaned: string, identifier: string, locale: Locale, channel: Channel, sendMessage: SendFn,
 ): Promise<boolean> {
+  const supabase = createAdminClient() as any;
+  // Current page stored as "page:N" in booking_date while in date selection
+  const currentPage = session.booking_date?.startsWith('page:') ? Number(session.booking_date.split(':')[1]) : 0;
+
+  // Pagination: # = next page, * = prev page
+  if (cleaned === '#' || cleaned === '*') {
+    const newPage = cleaned === '#' ? currentPage + 1 : Math.max(0, currentPage - 1);
+    await supabase.from('whatsapp_sessions').update({ booking_date: `page:${newPage}` }).eq('id', session.id);
+    const orgName = await getOrgName(session.organization_id);
+    await showAvailableDates(identifier, orgName, session.office_id, session.service_id || session.department_id, locale, channel, sendMessage, newPage);
+    return true;
+  }
+
   const numMatch = cleaned.match(/^(\d{1,2})$/);
   if (!numMatch) {
     await sendMessage({ to: identifier, body: t('invalid_choice', locale) });
@@ -3618,9 +3631,7 @@ async function handleBookingDateChoice(
   const idx = parseInt(numMatch[1], 10);
   if (idx === 0) {
     // Go back — re-show service list
-    const supabase = createAdminClient() as any;
-    await supabase.from('whatsapp_sessions').update({ state: 'booking_select_service', service_id: null }).eq('id', session.id);
-    // Re-trigger service selection by sending the org name
+    await supabase.from('whatsapp_sessions').update({ state: 'booking_select_service', service_id: null, booking_date: null }).eq('id', session.id);
     const orgName = await getOrgName(session.organization_id);
     const { data: departments } = await supabase.from('departments').select('id').eq('office_id', session.office_id);
     const deptIds = (departments ?? []).map((d: any) => d.id);
@@ -3632,7 +3643,7 @@ async function handleBookingDateChoice(
     return true;
   }
 
-  // Fetch available dates
+  // Fetch all available dates — idx is 1-based across ALL pages
   const { getAvailableDates } = await import('@/lib/slot-generator');
   const dates = await getAvailableDates(session.office_id, session.service_id || session.department_id);
 
@@ -3642,7 +3653,6 @@ async function handleBookingDateChoice(
   }
 
   const chosen = dates[idx - 1];
-  const supabase = createAdminClient() as any;
   await supabase.from('whatsapp_sessions').update({
     state: 'booking_select_time',
     booking_date: chosen.date,
@@ -3990,25 +4000,46 @@ async function handleCancelBooking(
 
 // ── Booking helpers ──
 
+const DATES_PER_PAGE = 7;
+
 async function showAvailableDates(
   identifier: string, orgName: string, officeId: string, serviceId: string,
   locale: Locale, channel: Channel, sendMessage: SendFn,
+  page: number = 0,
 ) {
   const { getAvailableDates } = await import('@/lib/slot-generator');
-  const dates = await getAvailableDates(officeId, serviceId);
+  const allDates = await getAvailableDates(officeId, serviceId);
 
-  if (dates.length === 0) {
+  if (allDates.length === 0) {
     await sendMessage({ to: identifier, body: t('booking_no_dates', locale) });
     return;
   }
 
-  const list = dates.map((d, i) => {
+  const totalPages = Math.ceil(allDates.length / DATES_PER_PAGE);
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const pageStart = safePage * DATES_PER_PAGE;
+  const pageDates = allDates.slice(pageStart, pageStart + DATES_PER_PAGE);
+
+  const list = pageDates.map((d, i) => {
     const formatted = formatDateForLocale(d.date, locale);
     const slotsLabel = locale === 'ar' ? `${d.slotCount} متاح` : locale === 'fr' ? `${d.slotCount} dispo.` : `${d.slotCount} avail.`;
-    return `*${i + 1}* — ${formatted} (${slotsLabel})`;
+    return `*${pageStart + i + 1}* — ${formatted} (${slotsLabel})`;
   }).join('\n');
 
-  await sendMessage({ to: identifier, body: t('booking_choose_date', locale, { list }) });
+  // Pagination hints
+  let pagination = '';
+  if (totalPages > 1) {
+    const pageInfo = locale === 'ar' ? `📄 ${safePage + 1}/${totalPages}` : `📄 ${safePage + 1}/${totalPages}`;
+    const nextHint = safePage < totalPages - 1
+      ? (locale === 'ar' ? '➡️ أرسل *#* للصفحة التالية' : locale === 'fr' ? '➡️ Envoyez *#* pour la page suivante' : '➡️ Send *#* for next page')
+      : '';
+    const prevHint = safePage > 0
+      ? (locale === 'ar' ? '⬅️ أرسل *\\** للصفحة السابقة' : locale === 'fr' ? '⬅️ Envoyez *\\** pour la page précédente' : '⬅️ Send *\\** for previous page')
+      : '';
+    pagination = [pageInfo, nextHint, prevHint].filter(Boolean).join('\n') + '\n\n';
+  }
+
+  await sendMessage({ to: identifier, body: t('booking_choose_date', locale, { list, pagination }) });
 }
 
 async function showAvailableSlots(

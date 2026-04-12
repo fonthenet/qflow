@@ -47,7 +47,7 @@ const TIMEZONES = [
 
 type SettingsShape = Record<string, any>;
 
-type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi';
+type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon';
 
 interface FieldDef {
   key: string;
@@ -171,7 +171,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'num', default: 30, min: 5, step: 5 },
         { key: 'slots_per_interval', label: t('sm.field.slots_per_interval'), type: 'num', default: 1, min: 1 },
         { key: 'daily_ticket_limit', label: t('sm.field.daily_limit'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
-        { key: 'booking_horizon_days', label: t('sm.field.horizon_days'), type: 'num', default: 7, min: 1 },
+        { key: 'booking_horizon_days', label: t('sm.field.horizon_days'), type: 'horizon', default: 90, min: 1, max: 365, presets: [7, 15, 30, 60, 90] },
         { key: 'min_booking_lead_hours', label: t('sm.field.lead_hours'), type: 'num', default: 1, min: 0 },
         { key: 'allow_cancellation', label: t('sm.field.allow_cancel'), type: 'bool', default: true },
         { key: 'require_appointment_approval', label: t('sm.field.require_appointment_approval'), type: 'bool', default: true, help: t('sm.help.require_appointment_approval') },
@@ -360,7 +360,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           const raw = s[f.key];
           switch (f.type) {
             case 'bool': init[f.key] = coerceBool(raw, f.default); break;
-            case 'num': init[f.key] = raw == null ? f.default : coerceNum(raw, f.default); break;
+            case 'num':
+            case 'horizon': init[f.key] = raw == null ? f.default : coerceNum(raw, f.default); break;
             case 'text':
             case 'textarea':
             case 'enum': init[f.key] = coerceStr(raw, f.default); break;
@@ -432,7 +433,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     const errs: Record<string, string> = {};
     sections.forEach(sec => sec.fields.forEach(f => {
       const v = values[f.key];
-      if (f.type === 'num') {
+      if (f.type === 'num' || f.type === 'horizon') {
         if (typeof v === 'number') {
           if (f.min != null && v < f.min) errs[f.key] = t('sm.err.min', { n: f.min });
           if (f.max != null && v > f.max) errs[f.key] = t('sm.err.max', { n: f.max });
@@ -705,6 +706,49 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               );
             })}
           </div>
+        </div>
+      );
+    }
+    if (f.type === 'horizon') {
+      const presets = (f as any).presets ?? [7, 15, 30, 60, 90];
+      const presetLabels: Record<number, string> = { 7: '1 sem.', 15: '15j', 30: '30j', 60: '60j', 90: '90j' };
+      return (
+        <div key={f.key} style={{ padding: '5px 0' }}>
+          <label style={labelStyle}>{f.label}</label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+            {presets.map((p: number) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setV(p)}
+                style={{
+                  padding: '4px 12px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+                  border: v === p ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                  background: v === p ? '#3b82f6' : '#fff',
+                  color: v === p ? '#fff' : '#374151',
+                  fontWeight: v === p ? 600 : 400,
+                }}
+              >
+                {presetLabels[p] ?? `${p}j`}
+              </button>
+            ))}
+            <input
+              type="number"
+              value={v ?? ''}
+              min={f.min}
+              max={f.max}
+              onChange={(e) => {
+                const s = e.target.value;
+                if (s === '') { setV(0); return; }
+                const n = Number(s);
+                if (Number.isFinite(n) && n >= 1) setV(n);
+              }}
+              style={{ ...inputStyle, width: 70 }}
+              placeholder={String(f.default)}
+            />
+            <span style={{ fontSize: 13, color: '#6b7280' }}>{t('sm.unit.days')}</span>
+          </div>
+          {err && <div style={errStyle}>{err}</div>}
         </div>
       );
     }
