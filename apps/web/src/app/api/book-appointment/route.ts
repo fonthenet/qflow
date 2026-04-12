@@ -7,6 +7,7 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 import { isValidUUID, sanitizeString, isValidDate } from '@/lib/validation';
+import { toTimezoneAware } from '@/lib/timezone';
 
 export async function POST(request: NextRequest) {
   const blocked = await checkRateLimit(request, publicLimiter);
@@ -63,25 +64,8 @@ export async function POST(request: NextRequest) {
   const officeTz: string = orgTz || officeTzRaw || 'Africa/Algiers';
   const _bookOrgSettings = ((_bookOrg as any)?.organization?.settings ?? {}) as Record<string, any>;
 
-  // Normalize scheduledAt to office timezone.
-  // If client sends a naive datetime (no offset, e.g. "2026-04-13T10:30:00"),
-  // interpret it in the office's timezone — not UTC.
-  let resolvedScheduledAt = scheduledAt;
-  const hasOffset = /[+-]\d{2}:\d{2}$/.test(scheduledAt) || scheduledAt.endsWith('Z');
-  if (!hasOffset && scheduledAt.includes('T')) {
-    // Compute the UTC offset for the office timezone on this date
-    const naive = new Date(scheduledAt + 'Z'); // parse as UTC to get consistent date parts
-    const utcFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(naive);
-    const tzFmt = new Intl.DateTimeFormat('en-US', { timeZone: officeTz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(naive);
-    const utcMs = new Date(utcFmt).getTime();
-    const tzMs = new Date(tzFmt).getTime();
-    const diffMs = tzMs - utcMs;
-    const sign = diffMs >= 0 ? '+' : '-';
-    const absMs = Math.abs(diffMs);
-    const h = String(Math.floor(absMs / 3600000)).padStart(2, '0');
-    const m = String(Math.floor((absMs % 3600000) / 60000)).padStart(2, '0');
-    resolvedScheduledAt = `${scheduledAt}${sign}${h}:${m}`;
-  }
+  // Normalize scheduledAt to office timezone (converts naive datetime to timezone-aware)
+  const resolvedScheduledAt = toTimezoneAware(scheduledAt, officeTz);
 
   // Extract date and time for validation (use the raw input time, which is in office local)
   const dateStr = scheduledAt.split('T')[0];

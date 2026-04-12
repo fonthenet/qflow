@@ -3790,8 +3790,18 @@ async function confirmBooking(
   const wilaya = fresh?.booking_customer_wilaya || session.booking_customer_wilaya || null;
   const reason = fresh?.intake_reason || session.intake_reason || null;
 
-  // Build scheduled_at from booking_date + booking_time
-  const scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
+  // Build scheduled_at from booking_date + booking_time in the org's timezone
+  let scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
+  try {
+    const { toTimezoneAware } = await import('@/lib/timezone');
+    const { data: orgTzRow } = await supabase
+      .from('organizations')
+      .select('timezone')
+      .eq('id', session.organization_id)
+      .single();
+    const tz = orgTzRow?.timezone || 'Africa/Algiers';
+    scheduledAt = toTimezoneAware(scheduledAt, tz);
+  } catch { /* fallback to naive string */ }
 
   // Create appointment via direct insert (using service role)
   const { nanoid } = await import('nanoid');

@@ -87,6 +87,19 @@ export async function createAppointment(data: CreateAppointmentData) {
   );
   const initialStatus = requireApproval ? 'pending' : 'confirmed';
 
+  // Normalize scheduledAt: if naive (no offset/Z), interpret in the org timezone
+  let resolvedScheduledAt = data.scheduledAt;
+  try {
+    const { toTimezoneAware } = await import('@/lib/timezone');
+    const { data: officeForTz } = await supabase
+      .from('offices')
+      .select('organization:organizations(timezone)')
+      .eq('id', data.officeId)
+      .single();
+    const tz: string = (officeForTz as any)?.organization?.timezone || 'Africa/Algiers';
+    resolvedScheduledAt = toTimezoneAware(data.scheduledAt, tz);
+  } catch { /* fallback to naive */ }
+
   const insertData: any = {
     office_id: data.officeId,
     department_id: data.departmentId,
@@ -94,7 +107,7 @@ export async function createAppointment(data: CreateAppointmentData) {
     customer_name: data.customerName,
     customer_phone: data.customerPhone || null,
     customer_email: data.customerEmail || null,
-    scheduled_at: data.scheduledAt,
+    scheduled_at: resolvedScheduledAt,
     status: initialStatus,
     calendar_token: calendarToken,
     locale: (data.locale === 'ar' || data.locale === 'en' || data.locale === 'fr') ? data.locale : null,
