@@ -5,7 +5,7 @@ import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { initSentry } from './sentry';
 import { logger } from './logger';
-import { initDB, getDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
+import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -398,6 +398,8 @@ function shutdownDesktopRuntime() {
   syncEngine?.stop();
   stopAutoBackup();
   stopKioskServer();
+  // Close DB gracefully — checkpoint WAL so data survives taskkill during updates
+  closeDB();
   if (tray) {
     try {
       tray.destroy();
@@ -1366,8 +1368,10 @@ function setupIPC() {
     if (updateStatus.status !== 'downloaded') {
       return { ok: false, error: 'No update ready to install' };
     }
-    // Backup DB before installing update
+    // Backup and close DB before installing update to prevent data loss
     backupDatabase();
+    closeDB();
+    logger.info('update', 'DB backed up and closed — proceeding with quitAndInstall');
     setImmediate(() => {
       autoUpdater.quitAndInstall(false, true);
     });
@@ -2019,6 +2023,10 @@ app.whenReady().then(async () => {
 
     if (response === 0) {
       clearDismissed();
+      // Close DB before update to prevent data loss from forced taskkill
+      backupDatabase();
+      closeDB();
+      logger.info('update', 'DB backed up and closed — user chose Restart Now');
       autoUpdater.quitAndInstall(false, true);
     } else {
       // User chose "Later" — dismiss this version to prevent re-prompting
@@ -2075,7 +2083,9 @@ app.on('before-quit', async (e) => {
   }
 
   cleanupSupport?.();
-  shutdownDesktopRuntime();
+  // Backup + checkpoint DB before quit — critical for surviving forced updates
+  try { backupDatabase(); } catch { /* non-blocking */ }
+  shutdownDesktopRuntime(); // includes closeDB()
   app.quit(); // re-trigger quit after flush
 });
 

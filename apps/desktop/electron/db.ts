@@ -349,6 +349,27 @@ export function getDB(): Database.Database {
   return db;
 }
 
+// ── Graceful DB shutdown ─────────────────────────────────────────
+// Checkpoint WAL to main DB file, then close the connection.
+// MUST be called during app shutdown to prevent data loss when
+// the NSIS installer force-kills the process during updates.
+export function closeDB() {
+  if (!db) return;
+  try {
+    // Force WAL checkpoint — flushes all pending writes to the main DB file
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    logger.info('db', 'WAL checkpoint completed');
+  } catch (err: any) {
+    logger.error('db', 'WAL checkpoint failed', { error: err?.message });
+  }
+  try {
+    db.close();
+    logger.info('db', 'Database closed gracefully');
+  } catch (err: any) {
+    logger.error('db', 'Database close failed', { error: err?.message });
+  }
+}
+
 // ── Ticket audit log — immutable trail of every ticket lifecycle event ──
 // Never deleted, survives crashes. Used for debugging, compliance, and support.
 export function logTicketEvent(
