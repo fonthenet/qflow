@@ -1249,6 +1249,32 @@ function setupIPC() {
     notifyStationClients({ type: 'session_cleared' });
   });
 
+  // ── Auth token provider (single source of truth) ──────────────
+  // Renderer asks main process for a valid token instead of managing
+  // its own refresh logic. This eliminates the dual-client token drift.
+  ipcMain.handle('auth:get-token', async () => {
+    try {
+      if (syncEngine) {
+        const token = await syncEngine.ensureFreshToken();
+        if (token && token !== CONFIG.SUPABASE_ANON_KEY) {
+          return { token, ok: true };
+        }
+      }
+      // Fallback: read from DB
+      const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      if (row) {
+        const session = JSON.parse(row.value);
+        if (session?.access_token) {
+          return { token: session.access_token, ok: true };
+        }
+      }
+      return { token: '', ok: false, error: 'No valid auth token' };
+    } catch (err: any) {
+      logger.error('auth', 'get-token IPC failed', { error: err?.message });
+      return { token: '', ok: false, error: err?.message };
+    }
+  });
+
   ipcMain.handle('settings:get-locale', () => loadLocale());
   ipcMain.handle('settings:set-locale', (_e, locale: string) => {
     const nextLocale = normalizeLocale(locale);
@@ -1889,6 +1915,11 @@ app.whenReady().then(async () => {
     (error) => {
       // Surface sync/reconciliation errors to the Station UI
       mainWindow?.webContents.send('sync:error', error);
+    },
+    (token) => {
+      // Token was refreshed by sync engine — broadcast to renderer
+      // so its Supabase client gets the new token immediately
+      mainWindow?.webContents.send('auth:token-refreshed', token);
     }
   );
   syncEngine.start();

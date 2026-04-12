@@ -9,6 +9,7 @@ type ProgressCallback = (pendingCount: number) => void;
 type AuthErrorCallback = () => void;
 type DataPulledCallback = () => void;
 type TicketErrorCallback = (error: { message: string; ticketNumber?: string; type: string }) => void;
+type TokenRefreshedCallback = (token: string) => void;
 
 export class SyncEngine {
   private db: Database.Database;
@@ -19,6 +20,7 @@ export class SyncEngine {
   private onAuthError: AuthErrorCallback;
   private onDataPulled: DataPulledCallback;
   private onTicketError: TicketErrorCallback;
+  private onTokenRefreshed: TokenRefreshedCallback;
   private authErrorSuppressedUntil = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
@@ -57,6 +59,7 @@ export class SyncEngine {
     onAuthError: AuthErrorCallback = () => {},
     onDataPulled: DataPulledCallback = () => {},
     onTicketError: TicketErrorCallback = () => {},
+    onTokenRefreshed: TokenRefreshedCallback = () => {},
   ) {
     this.db = db;
     this.supabaseUrl = supabaseUrl;
@@ -66,6 +69,7 @@ export class SyncEngine {
     this.onAuthError = onAuthError;
     this.onDataPulled = onDataPulled;
     this.onTicketError = onTicketError;
+    this.onTokenRefreshed = onTokenRefreshed;
   }
 
   private realtimeWs: WebSocket | null = null;
@@ -531,6 +535,8 @@ export class SyncEngine {
       this.consecutiveRefreshFailures = 0;
 
       logger.info('sync.token', 'Access token refreshed successfully');
+      // Notify renderer so it can update its Supabase client immediately
+      try { this.onTokenRefreshed(data.access_token); } catch {}
       return data.access_token;
     } catch (err: any) {
       logger.warn('sync.token', 'Token refresh network error', { error: err?.message ?? err });
@@ -602,6 +608,8 @@ export class SyncEngine {
       this.consecutiveRefreshFailures = 0;
 
       logger.info('sync.reAuth', 'Silent re-auth succeeded — station is back online');
+      // Notify renderer so it can update its Supabase client immediately
+      try { this.onTokenRefreshed(data.access_token); } catch {}
 
       // Auto-retry all stuck AUTH_EXPIRED items
       this.db.prepare(

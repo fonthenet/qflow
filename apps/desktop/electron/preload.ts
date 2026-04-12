@@ -103,10 +103,17 @@ contextBridge.exposeInMainWorld('qf', {
 
   // Auth events
   auth: {
+    // Get a valid access token from main process (single source of truth)
+    getToken: () => ipcRenderer.invoke('auth:get-token'),
     onSessionExpired: (callback: () => void) => {
       const handler = () => callback();
       ipcRenderer.on('auth:session-expired', handler);
       return () => ipcRenderer.removeListener('auth:session-expired', handler);
+    },
+    onTokenRefreshed: (callback: (token: string) => void) => {
+      const handler = (_: any, token: string) => callback(token);
+      ipcRenderer.on('auth:token-refreshed', handler);
+      return () => ipcRenderer.removeListener('auth:token-refreshed', handler);
     },
   },
 

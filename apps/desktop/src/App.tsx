@@ -3,7 +3,7 @@ import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
 import type { StaffSession, SyncStatus, UpdateStatus } from './lib/types';
-import { getSupabase, restoreSession } from './lib/supabase';
+import { getSupabase, restoreSession, listenForTokenRefresh } from './lib/supabase';
 import { getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
 import './styles.css';
 
@@ -121,6 +121,12 @@ export function App() {
     document.body.dir = getDirection(locale);
     document.title = translate(locale, 'Qflo Station');
   }, [locale]);
+
+  // Listen for token refresh from main process — keeps renderer's Supabase client in sync
+  useEffect(() => {
+    const unsub = listenForTokenRefresh();
+    return () => { unsub(); };
+  }, []);
 
   // Listen for sync status changes
   useEffect(() => {
