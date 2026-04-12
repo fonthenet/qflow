@@ -117,7 +117,9 @@ export function normalizePhone(
   // Already international with + prefix → use as-is
   if (hasPlus) return digits;
 
-  const dialCode = resolveDialCode(timezone, countryCode);
+  // Default to Algeria timezone when no context provided — primary market fallback.
+  // This ensures local numbers (0xx) always get a country code for E.164.
+  const dialCode = resolveDialCode(timezone ?? 'Africa/Algiers', countryCode);
 
   // Local format: starts with 0 → strip it and prepend country dial code
   if (digits.startsWith('0') && dialCode) {

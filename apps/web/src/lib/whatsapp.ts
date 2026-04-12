@@ -55,9 +55,10 @@ export function isWhatsAppConfigured(): boolean {
 async function sendViaMeta(
   config: MetaWhatsAppConfig,
   to: string,
-  body: string
+  body: string,
+  timezone?: string,
 ): Promise<WhatsAppSendResult> {
-  const normalizedTo = normalizePhone(to);
+  const normalizedTo = normalizePhone(to, timezone);
   if (!normalizedTo) {
     return { ok: false, provider: 'meta', error: 'Phone number is not valid' };
   }
@@ -136,9 +137,10 @@ async function sendViaMeta(
 async function sendViaTwilio(
   config: TwilioWhatsAppConfig,
   to: string,
-  body: string
+  body: string,
+  timezone?: string,
 ): Promise<WhatsAppSendResult> {
-  const normalizedTo = normalizePhone(to);
+  const normalizedTo = normalizePhone(to, timezone);
   if (!normalizedTo) {
     return { ok: false, provider: 'twilio', error: 'Phone number is not valid' };
   }
@@ -186,20 +188,22 @@ async function sendViaTwilio(
 export async function sendWhatsAppMessage({
   to,
   body,
+  timezone,
 }: {
   to: string;
   body: string;
+  timezone?: string;
 }): Promise<WhatsAppSendResult> {
   // Try Meta Cloud API first
   const metaConfig = getMetaWhatsAppConfig();
   if (metaConfig) {
-    return sendViaMeta(metaConfig, to, body);
+    return sendViaMeta(metaConfig, to, body, timezone);
   }
 
   // Fallback to Twilio
   const twilioConfig = getTwilioWhatsAppConfig();
   if (twilioConfig) {
-    return sendViaTwilio(twilioConfig, to, body);
+    return sendViaTwilio(twilioConfig, to, body, timezone);
   }
 
   return {

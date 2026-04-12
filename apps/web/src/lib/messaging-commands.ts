@@ -2655,7 +2655,7 @@ async function handleJoin(
     await upsertCustomerFromBooking(supabase, {
       organizationId: org.id,
       name: profileName || undefined,
-      phone: identifier,
+      phone: identifier, // WhatsApp/Messenger identifiers are already E.164 — no timezone needed
       wilayaCode: intake?.wilaya || undefined,
       source: channel === 'messenger' ? 'messenger' : channel,
     });
@@ -3809,6 +3809,7 @@ async function confirmBooking(
 
   // Build scheduled_at from booking_date + booking_time in the org's timezone
   let scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
+  let bookingOrgTz = 'Africa/Algiers';
   try {
     const { toTimezoneAware } = await import('@/lib/timezone');
     const { data: orgTzRow } = await supabase
@@ -3816,8 +3817,8 @@ async function confirmBooking(
       .select('timezone')
       .eq('id', session.organization_id)
       .single();
-    const tz = orgTzRow?.timezone || 'Africa/Algiers';
-    scheduledAt = toTimezoneAware(scheduledAt, tz);
+    bookingOrgTz = orgTzRow?.timezone || 'Africa/Algiers';
+    scheduledAt = toTimezoneAware(scheduledAt, bookingOrgTz);
   } catch { /* fallback to naive string */ }
 
   // Create appointment via direct insert (using service role)
@@ -3889,6 +3890,7 @@ async function confirmBooking(
     phone: identifier,
     wilayaCode,
     source: channel === 'messenger' ? 'messenger' : 'whatsapp',
+    timezone: bookingOrgTz,
   });
 
   // Clean up booking session

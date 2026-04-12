@@ -2,6 +2,44 @@
 
 import { getStaffContext } from '@/lib/authz';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { normalizePhone, resolveDialCode } from '@qflo/shared';
+
+/**
+ * Convert any phone input to local format (no country code).
+ * "213669864728" → "0669864728", "+16612346622" → "6612346622"
+ */
+async function toLocalPhone(phone: string, orgId: string): Promise<string> {
+  const trimmed = phone.trim();
+  if (!trimmed) return trimmed;
+
+  // Fetch org timezone for dial code context
+  const supabase = createAdminClient();
+  const { data: org } = await (supabase as any)
+    .from('organizations')
+    .select('timezone')
+    .eq('id', orgId)
+    .single();
+  const tz = org?.timezone || 'Africa/Algiers';
+
+  // Normalize to E.164 first
+  const e164 = normalizePhone(trimmed, tz, null);
+  if (!e164) return trimmed.replace(/\D/g, '');
+
+  // Convert back to local format
+  const dialCode = resolveDialCode(tz, null);
+  if (dialCode && e164.startsWith(dialCode) && e164.length > dialCode.length + 6) {
+    const subscriber = e164.slice(dialCode.length);
+    return dialCode === '1' ? subscriber : '0' + subscriber;
+  }
+  // Fallback: well-known codes
+  if (e164.startsWith('213') && e164.length === 12) return '0' + e164.slice(3);
+  if (e164.startsWith('1') && e164.length === 11) return e164.slice(1);
+  if (e164.startsWith('33') && e164.length === 11) return '0' + e164.slice(2);
+  if (e164.startsWith('212') && e164.length === 12) return '0' + e164.slice(3);
+  if (e164.startsWith('216') && e164.length === 11) return e164.slice(3);
+
+  return trimmed.replace(/\D/g, '');
+}
 
 // ── CRUD ──────────────────────────────────────────────────────────────
 
@@ -13,13 +51,14 @@ export async function createCustomer(data: {
   const context = await getStaffContext();
   const orgId = context.staff.organization_id;
   const supabase = createAdminClient();
+  const localPhone = await toLocalPhone(data.phone, orgId);
 
   const { data: customer, error } = await (supabase as any)
     .from('customers')
     .insert({
       organization_id: orgId,
       name: data.name.trim(),
-      phone: data.phone.trim(),
+      phone: localPhone,
       email: data.email?.trim() || null,
       visit_count: 0,
       source: 'manual',
@@ -46,7 +85,7 @@ export async function updateCustomer(
 
   const updates: Record<string, unknown> = {};
   if (data.name !== undefined) updates.name = data.name.trim();
-  if (data.phone !== undefined) updates.phone = data.phone.trim();
+  if (data.phone !== undefined) updates.phone = await toLocalPhone(data.phone, orgId);
   if (data.email !== undefined) updates.email = data.email.trim() || null;
 
   const { data: customer, error } = await (supabase as any)
@@ -94,20 +133,43 @@ export async function importCustomers(
   let skipped = 0;
   const errors: string[] = [];
 
+  // Fetch org timezone once for phone normalization
+  const { data: orgRow } = await (supabase as any)
+    .from('organizations')
+    .select('timezone')
+    .eq('id', orgId)
+    .single();
+  const orgTz = orgRow?.timezone || 'Africa/Algiers';
+
   // Process in batches of 100
   const batchSize = 100;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
     const records = batch
       .filter((r) => r.phone?.trim())
-      .map((r) => ({
-        organization_id: orgId,
-        name: r.name?.trim() || null,
-        phone: r.phone.trim(),
-        email: r.email?.trim() || null,
-        visit_count: 0,
-        source: 'import',
-      }));
+      .map((r) => {
+        const rawPhone = r.phone.trim();
+        const e164 = normalizePhone(rawPhone, orgTz, null);
+        let localPhone = rawPhone.replace(/\D/g, '');
+        if (e164) {
+          const dialCode = resolveDialCode(orgTz, null);
+          if (dialCode && e164.startsWith(dialCode) && e164.length > dialCode.length + 6) {
+            localPhone = dialCode === '1' ? e164.slice(dialCode.length) : '0' + e164.slice(dialCode.length);
+          } else if (e164.startsWith('213') && e164.length === 12) { localPhone = '0' + e164.slice(3); }
+          else if (e164.startsWith('1') && e164.length === 11) { localPhone = e164.slice(1); }
+          else if (e164.startsWith('33') && e164.length === 11) { localPhone = '0' + e164.slice(2); }
+          else if (e164.startsWith('212') && e164.length === 12) { localPhone = '0' + e164.slice(3); }
+          else { localPhone = e164; }
+        }
+        return {
+          organization_id: orgId,
+          name: r.name?.trim() || null,
+          phone: localPhone,
+          email: r.email?.trim() || null,
+          visit_count: 0,
+          source: 'import',
+        };
+      });
 
     if (records.length === 0) continue;
 

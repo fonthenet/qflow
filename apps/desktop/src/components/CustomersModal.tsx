@@ -4,6 +4,7 @@ import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilayas';
 import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
 import { GoogleSheetsModal } from './GoogleSheetsModal';
+import { normalizePhone } from '@qflo/shared';
 
 interface Customer {
   id: string;
@@ -43,6 +44,7 @@ interface Props {
   onClose: () => void;
   onBookCustomer?: (customer: { name: string; phone: string; notes?: string }) => void;
   initialPhone?: string;
+  timezone?: string;
 }
 
 function initials(name: string | null, phone: string | null) {
@@ -77,9 +79,30 @@ function formatPhoneDisplay(phone: string | null): string {
   return digits;
 }
 
-/** Normalize phone for storage: just digits, no country code. */
-function normalizePhoneForStorage(input: string): string {
-  return (input ?? '').replace(/\D/g, '');
+/** Normalize phone for storage: always LOCAL format, no country code.
+ *  "0669864728" stays "0669864728", "213669864728" → "0669864728",
+ *  "+16612346622" → "6612346622" */
+function normalizePhoneForStorage(input: string, tz?: string): string {
+  const digits = (input ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+
+  // First normalize to E.164 via shared normalizer
+  const e164 = normalizePhone(input, tz);
+  if (!e164) return digits;
+
+  // Convert E.164 back to local (strip country code)
+  // Algeria (213)
+  if (e164.startsWith('213') && e164.length === 12) return '0' + e164.slice(3);
+  // US/Canada (1)
+  if (e164.startsWith('1') && e164.length === 11) return e164.slice(1);
+  // France (33)
+  if (e164.startsWith('33') && e164.length === 11) return '0' + e164.slice(2);
+  // Morocco (212)
+  if (e164.startsWith('212') && e164.length === 12) return '0' + e164.slice(3);
+  // Tunisia (216)
+  if (e164.startsWith('216') && e164.length === 11) return e164.slice(3);
+
+  return digits; // fallback: just digits
 }
 
 function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
@@ -94,7 +117,7 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone }: Props) {
+export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,7 +180,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
       const f = detailForm;
       const updates: any = {
         name: (f.name ?? '').trim() || null,
-        phone: normalizePhoneForStorage(f.phone ?? ''),
+        phone: normalizePhoneForStorage(f.phone ?? '', timezone),
         email: (f.email ?? '').trim() || null,
         notes: (f.notes ?? '').trim() || null,
         gender: f.gender || null,
@@ -323,7 +346,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         .insert({
           organization_id: orgId,
           name: (f.name ?? '').trim(),
-          phone: normalizePhoneForStorage(f.phone ?? ''),
+          phone: normalizePhoneForStorage(f.phone ?? '', timezone),
           email: (f.email ?? '').trim() || null,
           notes: (f.notes ?? '').trim() || null,
           gender: f.gender || null,
@@ -435,7 +458,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         .map(r => ({
           organization_id: orgId,
           name: (r.name ?? '').trim() || null,
-          phone: r.phone ? normalizePhoneForStorage(r.phone) : null,
+          phone: r.phone ? normalizePhoneForStorage(r.phone, timezone) : null,
           email: r.email || null,
           notes: r.notes || null,
           gender: r.gender === 'male' || r.gender === 'female' ? r.gender : null,

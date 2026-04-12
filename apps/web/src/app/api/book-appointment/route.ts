@@ -186,6 +186,7 @@ export async function POST(request: NextRequest) {
         email: cleanCustomerEmail,
         wilayaCode: cleanWilaya || null,
         source: 'booking',
+        timezone: officeTz,
       });
     }
   } catch (e) {
@@ -218,7 +219,7 @@ export async function POST(request: NextRequest) {
         time: timeLabel,
         customer: cleanCustomerName,
       });
-      await sendWhatsAppMessage({ to: cleanCustomerPhone, body: messageBody });
+      await sendWhatsAppMessage({ to: cleanCustomerPhone, body: messageBody, timezone: orgTz });
     }
   } catch (e) {
     console.warn('[book-appointment] whatsapp notify failed:', (e as any)?.message ?? e);

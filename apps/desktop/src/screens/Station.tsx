@@ -3253,6 +3253,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             organizationId={session.organization_id}
             locale={locale}
             storedAuth={storedAuth}
+            timezone={officeTimezone}
             onClose={() => { setShowCustomersModal(false); setCustomerPhoneToOpen(undefined); }}
             onBookCustomer={(c) => {
               setBookingPrefill(c);
