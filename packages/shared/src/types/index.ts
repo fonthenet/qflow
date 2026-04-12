@@ -180,6 +180,7 @@ export interface Appointment {
   calendar_token: string | null;
   source: string | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 /** Appointment with joined relations for calendar display */

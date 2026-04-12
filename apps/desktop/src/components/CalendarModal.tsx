@@ -140,7 +140,7 @@ const APPT_SELECT = `
   scheduled_at, status, notes, wilaya, ticket_id,
   locale, reminder_sent,
   recurrence_rule, recurrence_parent_id, calendar_token,
-  source, created_at
+  source, created_at, updated_at
 `;
 
 // ── Main Component ────────────────────────────────────────────────
@@ -170,8 +170,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   );
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const prevApptsRef = useRef<Map<string, CalendarAppointment>>(new Map());
-  const prevMonthKeyRef = useRef<string>('');  // track month changes to reset diff
 
   // ── Holidays / day-off management ──────────────────────────────
   interface Holiday { id: string; holiday_date: string; name: string; is_full_day: boolean; }
@@ -300,116 +298,62 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     } catch { return []; }
   }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth]);
 
+  // ── Activity log — independent fetch of recent business-wide activity ──
+  const loadActivity = useCallback(async () => {
+    try {
+      await ensureAuth(storedAuth);
+      const sb = await getSupabase();
+      // Fetch last 50 appointments ordered by most recently changed
+      const { data } = await sb
+        .from('appointments')
+        .select('id, customer_name, service_id, scheduled_at, status, source, created_at, updated_at')
+        .eq('office_id', officeId)
+        .order('updated_at', { ascending: false })
+        .limit(50);
+      if (!data) return;
+
+      const entries: ActivityEntry[] = data.map((appt: any) => {
+        const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
+        const updatedAt = appt.updated_at || appt.created_at;
+        const createdAt = appt.created_at;
+        // Determine event type from current status
+        // If updated_at ≈ created_at (within 2s), it's a new booking; otherwise it's a status change
+        const isNew = Math.abs(new Date(updatedAt).getTime() - new Date(createdAt).getTime()) < 2000;
+        let evtType: ActivityEntry['eventType'] = 'booked';
+        if (isNew && (appt.status === 'pending' || appt.status === 'confirmed')) {
+          evtType = 'booked';
+        } else if (appt.status === 'cancelled') evtType = 'cancelled';
+        else if (appt.status === 'declined') evtType = 'declined';
+        else if (appt.status === 'checked_in') evtType = 'checked_in';
+        else if (appt.status === 'no_show') evtType = 'no_show';
+        else if (appt.status === 'completed') evtType = 'served';
+        else if (appt.status === 'confirmed') evtType = 'approved';
+
+        return {
+          id: appt.id,
+          appointmentId: appt.id,
+          timestamp: new Date(updatedAt),
+          eventType: evtType,
+          customerName: appt.customer_name || '—',
+          serviceName: svc?.name,
+          scheduledAt: appt.scheduled_at,
+          source: appt.source,
+        };
+      });
+      setActivityLog(entries);
+    } catch (err) { console.error('[Calendar] activity load error:', err); }
+  }, [officeId, storedAuth, serviceMap]);
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const allAppts = await loadAll();
-
-      // ── Diff for activity log ──
-      // When month/year changes, reset the diff baseline so we don't
-      // misinterpret out-of-range appointments as "deleted".
-      const monthKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
-      if (prevMonthKeyRef.current && prevMonthKeyRef.current !== monthKey) {
-        prevApptsRef.current = new Map(); // treat next load as fresh seed
-        setActivityLog([]);               // clear stale entries
-      }
-      prevMonthKeyRef.current = monthKey;
-
-      const prev = prevApptsRef.current;
-      if (prev.size > 0) {
-        // Subsequent loads — detect real-time changes
-        const newEntries: ActivityEntry[] = [];
-        const currMap = new Map(allAppts.map(a => [a.id, a]));
-
-        for (const appt of allAppts) {
-          const old = prev.get(appt.id);
-          if (!old) {
-            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
-            newEntries.push({
-              id: `${appt.id}-${Date.now()}`,
-              appointmentId: appt.id,
-              timestamp: new Date(),
-              eventType: 'booked',
-              customerName: appt.customer_name || '—',
-              serviceName: svc?.name,
-              scheduledAt: appt.scheduled_at,
-              source: appt.source,
-            });
-          } else if (old.status !== appt.status) {
-            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
-            const evtType = detectEventType('UPDATE', appt, old);
-            newEntries.push({
-              id: `${appt.id}-${Date.now()}`,
-              appointmentId: appt.id,
-              timestamp: new Date(),
-              eventType: evtType,
-              customerName: appt.customer_name || '—',
-              serviceName: svc?.name,
-              scheduledAt: appt.scheduled_at,
-              source: appt.source,
-            });
-          }
-        }
-
-        for (const [id, old] of prev) {
-          if (!currMap.has(id)) {
-            const svc = old.service_id ? serviceMap.get(old.service_id) : undefined;
-            newEntries.push({
-              id: `${id}-${Date.now()}`,
-              appointmentId: id,
-              timestamp: new Date(),
-              eventType: 'deleted',
-              customerName: old.customer_name || '—',
-              serviceName: svc?.name,
-              scheduledAt: old.scheduled_at,
-              source: old.source,
-            });
-          }
-        }
-
-        if (newEntries.length > 0) {
-          setActivityLog(log => [...log.slice(-(100 - newEntries.length)), ...newEntries]);
-        }
-      } else {
-        // First load — only seed with appointments created/changed very recently
-        // (last 2 hours) so the feed shows meaningful real-time activity, not noise.
-        const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-        const seed: ActivityEntry[] = allAppts
-          .filter(a => new Date(a.created_at).getTime() > cutoff)
-          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-          .slice(-20) // cap seed to last 20 entries max
-          .map(appt => {
-            const svc = appt.service_id ? serviceMap.get(appt.service_id) : undefined;
-            let evtType: ActivityEntry['eventType'] = 'booked';
-            if (appt.status === 'cancelled') evtType = 'cancelled';
-            else if (appt.status === 'declined') evtType = 'declined';
-            else if (appt.status === 'checked_in') evtType = 'checked_in';
-            else if (appt.status === 'no_show') evtType = 'no_show';
-            else if (appt.status === 'completed') evtType = 'served';
-            else if (appt.status === 'confirmed') evtType = 'approved';
-            return {
-              id: `${appt.id}-seed`,
-              appointmentId: appt.id,
-              timestamp: new Date(appt.created_at),
-              eventType: evtType,
-              customerName: appt.customer_name || '—',
-              serviceName: svc?.name,
-              scheduledAt: appt.scheduled_at,
-              source: appt.source,
-            };
-          });
-        if (seed.length > 0) setActivityLog(seed);
-      }
-
-      // Update ref for next diff
-      prevApptsRef.current = new Map(allAppts.map(a => [a.id, a]));
-
       // Set visible appointments (exclude cancelled/declined for the grid)
       const visible = allAppts.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
       setAppointments(visible);
     } catch (err) { console.error('[Calendar] load error:', err); }
     setLoading(false);
-  }, [currentDate.getFullYear(), currentDate.getMonth(), tz, officeId, storedAuth, loadAll, serviceMap]);
+  }, [loadAll]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -417,6 +361,9 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     load(initialLoadDone.current);
     initialLoadDone.current = true;
   }, [load]);
+
+  // Load activity log on mount and whenever serviceMap changes
+  useEffect(() => { loadActivity(); }, [loadActivity]);
 
   // ── Realtime + polling fallback ────────────────────────────────
   // Realtime gives instant updates; polling every 30s is a safety net
@@ -431,18 +378,19 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         sub = sb.channel(`calendar-appts-${officeId}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `office_id=eq.${officeId}` }, () => {
             load(true);
+            loadActivity();
           })
           .subscribe();
       } catch { /* ignore */ }
     })();
     return () => { sub?.unsubscribe?.(); };
-  }, [officeId, load, storedAuth]);
+  }, [officeId, load, loadActivity, storedAuth]);
 
   // Polling fallback — reloads every 30s to catch missed realtime events
   useEffect(() => {
-    const iv = setInterval(() => { load(true); }, 30_000);
+    const iv = setInterval(() => { load(true); loadActivity(); }, 30_000);
     return () => clearInterval(iv);
-  }, [load]);
+  }, [load, loadActivity]);
 
   // ── Auto-scroll activity log ───────────────────────────────────
   useEffect(() => {
@@ -886,7 +834,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         const refreshed = await loadAll();
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
         setAppointments(visible);
-        prevApptsRef.current = new Map(refreshed.map(a => [a.id, a]));
+        loadActivity(); // refresh activity feed
         // Keep panel open with updated data, or close if appointment was removed
         const updated = refreshed.find(a => a.id === appt.id);
         setSelectedAppt(updated ?? null);
@@ -897,13 +845,26 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Navigate to activity entry ─────────────────────────────────
 
-  const handleActivityClick = useCallback((entry: ActivityEntry) => {
-    // Find the appointment in loaded data (includes cancelled/declined via prevApptsRef)
-    const appt = appointments.find(a => a.id === entry.appointmentId)
-      ?? [...prevApptsRef.current.values()].find(a => a.id === entry.appointmentId);
+  const handleActivityClick = useCallback(async (entry: ActivityEntry) => {
+    // First try to find in currently loaded appointments
+    let appt = appointments.find(a => a.id === entry.appointmentId);
+
+    // If not found (different month/range), fetch it directly
+    if (!appt && entry.appointmentId) {
+      try {
+        await ensureAuth(storedAuth);
+        const sb = await getSupabase();
+        const { data } = await sb
+          .from('appointments')
+          .select(APPT_SELECT)
+          .eq('id', entry.appointmentId)
+          .single();
+        if (data) appt = data as CalendarAppointment;
+      } catch { /* ignore */ }
+    }
     if (!appt) return;
 
-    // Only navigate if the appointment isn't already visible in the current week
+    // Navigate to the appointment's date
     const apptDateKey = dateKeyInTz(new Date(appt.scheduled_at), tz);
     const visibleKeys = new Set(weekDays.map(d => d.dateKey));
     if (!visibleKeys.has(apptDateKey) || viewMode !== 'week') {
@@ -913,7 +874,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       setViewMode('week');
     }
     setSelectedAppt(appt);
-  }, [appointments, weekDays, viewMode, tz]);
+  }, [appointments, weekDays, viewMode, tz, storedAuth]);
 
   // ── Holiday / Day-off management ────────────────────────────────
 
