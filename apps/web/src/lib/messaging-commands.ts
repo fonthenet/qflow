@@ -1361,7 +1361,7 @@ export async function handleInboundMessage(
         /^(STATUS|STATUT|حالة|HELP|AIDE|مساعدة|LIST|LISTE|القائمة|CANCEL|ANNULER|الغاء|إلغاء|MY BOOKINGS|MES RDV|مواعيدي|حجوزاتي)$/i.test(command) ||
         /^(CANCEL\s+BOOKING|ANNULER\s+RDV)/i.test(command);
       const bookCmdParsed = parseBookingCode(cleaned);
-      const bookCmdValid = bookCmdParsed && !bookCmdParsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(bookCmdParsed.code);
+      const bookCmdValid = bookCmdParsed && !bookCmdParsed.code.includes(' ');
       const bookAlone = /^(BOOK|BOOKING|RESERVE|RDV|RESERVER|RESERVATION|موعد|حجز|احجز)$/i.test(cleaned);
       const isExplicitCmd = alwaysCmd || !!bookCmdValid || bookAlone;
 
@@ -1602,9 +1602,9 @@ export async function handleInboundMessage(
 
   // ── BOOK / RDV / موعد with code ──
   const bookParsed = parseBookingCode(cleaned);
-  // Only treat as a code if it looks like one: no spaces, no Arabic text
-  // e.g. "موعد HADABI" ✓  "موعد طبي" ✗ (that's free text, not a business code)
-  if (bookParsed && !bookParsed.code.includes(' ') && !/[\u0600-\u06FF]/.test(bookParsed.code)) {
+  // Only treat as a code if it looks like one: single word (no spaces)
+  // The DB lookup (findOrgByCode) determines if it's a valid business code
+  if (bookParsed && !bookParsed.code.includes(' ')) {
     const org = await findOrgByCode(bookParsed.code, channel);
     if (org) {
       await startBookingFlow(identifier, org, bookParsed.locale, channel, sendMessage);
