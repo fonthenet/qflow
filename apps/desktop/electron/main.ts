@@ -831,19 +831,29 @@ function setupIPC() {
     // Fire-and-forget: calls /api/ticket-transition which handles
     // WhatsApp/Messenger notification, position reminders, and session cleanup.
     // The sync queue remains as fallback for offline scenarios.
-    if (safeUpdates.status && ['called', 'serving', 'served', 'no_show', 'cancelled'].includes(safeUpdates.status) && syncEngine?.isOnline) {
-      const dsk = safeUpdates.desk_id ? db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any : null;
+    const isStatusTransition = safeUpdates.status && ['called', 'serving', 'served', 'no_show', 'cancelled'].includes(safeUpdates.status);
+    const isRecall = !safeUpdates.status && safeUpdates.recall_count !== undefined;
+
+    if ((isStatusTransition || isRecall) && syncEngine?.isOnline) {
+      const dsk = (safeUpdates.desk_id || isRecall)
+        ? db.prepare('SELECT desk_id, name FROM tickets t LEFT JOIN desks d ON d.id = t.desk_id WHERE t.id = ?').get(ticketId) as any
+        : null;
+      const dskName = safeUpdates.desk_id
+        ? (db.prepare('SELECT name FROM desks WHERE id = ?').get(safeUpdates.desk_id) as any)?.name
+        : dsk?.name;
+
       syncEngine.ensureFreshToken().then((token: string) => {
         fetch(`${CONFIG.CLOUD_URL}/api/ticket-transition`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             ticketId,
-            status: safeUpdates.status,
+            status: safeUpdates.status || 'called', // recall keeps 'called' status
             deskId: safeUpdates.desk_id,
-            deskName: dsk?.name,
+            deskName: dskName,
             staffId: safeUpdates.called_by_staff_id,
             skipNotification: false,
+            ...(isRecall ? { skipStatusUpdate: true, notifyEvent: 'recall' } : {}),
           }),
           signal: AbortSignal.timeout(10000),
         })

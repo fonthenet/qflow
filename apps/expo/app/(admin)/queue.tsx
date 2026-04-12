@@ -371,6 +371,7 @@ export default function AdminQueueScreen() {
           called_by_staff_id: staffId,
         })
         .eq('id', tk.id);
+      Actions.triggerNotification(tk.id, 'called').catch(() => {});
     });
   };
 

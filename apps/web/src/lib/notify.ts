@@ -112,7 +112,7 @@ export async function notifyCustomer(
       name: orgName,
       ticket: ticket.ticket_number,
       desk: opts.deskName || '?',
-      wait: opts.waitMinutes != null ? String(opts.waitMinutes) : '5',
+      wait: opts.waitMinutes != null ? String(opts.waitMinutes) : '1',
       position: opts.position != null ? String(opts.position) : '',
       url: trackUrl,
     });

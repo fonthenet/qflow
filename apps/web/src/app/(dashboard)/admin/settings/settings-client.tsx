@@ -164,7 +164,7 @@ export function SettingsClient({
     settings.ticket_number_prefix ?? ''
   );
   const [autoNoShowTimeout, setAutoNoShowTimeout] = useState<number>(
-    settings.auto_no_show_timeout ?? 10
+    settings.auto_no_show_timeout ?? 1
   );
   const [maxQueueSize, setMaxQueueSize] = useState<number>(
     settings.max_queue_size ?? 50

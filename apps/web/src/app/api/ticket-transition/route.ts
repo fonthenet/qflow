@@ -4,6 +4,9 @@ import { safeCompare } from '@/lib/crypto-utils';
 import { notifyCustomer, type NotifyEvent } from '@/lib/notify';
 import { APP_BASE_URL } from '@/lib/config';
 import { isValidTransition } from '@qflo/shared';
+import { sendPushToTicket } from '@/lib/send-push';
+import { sendAPNsToTicket } from '@/lib/apns';
+import { sendAndroidToTicket } from '@/lib/android-push';
 
 /**
  * POST /api/ticket-transition
@@ -148,12 +151,66 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ── Resolve wait-minutes from org settings (auto_no_show_timeout) ──
+  let waitMinutes: number | undefined;
+  if (status === 'called' || notifyEvent === 'recall' || notifyEvent === 'buzz') {
+    try {
+      const { data: office } = await supabase
+        .from('offices')
+        .select('organization_id')
+        .eq('id', ticket.office_id)
+        .single();
+      if (office?.organization_id) {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('settings')
+          .eq('id', office.organization_id)
+          .single();
+        const orgSettings = org?.settings ?? {};
+        const timeout = Number(orgSettings.auto_no_show_timeout);
+        if (timeout > 0) waitMinutes = timeout;
+      }
+    } catch { /* non-critical — fallback to default */ }
+  }
+
   // ── Send notification via unified notifyCustomer ──────────────────
   const event = (notifyEvent as NotifyEvent) || STATUS_TO_EVENT[status];
   const notifyResult = await notifyCustomer(ticketId, event, {
     deskName: deskName || undefined,
     skipNotification: skipNotification ?? false,
+    waitMinutes,
   });
+
+  // ── Web Push + APNs + Android push (all channels, fire-and-forget) ──
+  const pushDeskName = deskName || 'your desk';
+  const PUSH_MAP: Record<string, { type: string; title: string; body: string; tag: string }> = {
+    called:           { type: 'called',  title: "🔔 YOUR TURN!",                body: `Ticket ${ticket.ticket_number} — Go to ${pushDeskName}`,                    tag: `called-${ticketId}` },
+    recall:           { type: 'recall',  title: "⚠️ REMINDER — YOUR TURN!",     body: `Ticket ${ticket.ticket_number} — Go to ${pushDeskName} NOW`,                tag: `recall-${ticketId}` },
+    buzz:             { type: 'buzz',    title: "📢 Staff is calling you",       body: `Ticket ${ticket.ticket_number} — Please go to ${pushDeskName}`,              tag: `buzz-${ticketId}` },
+    serving:          { type: 'serving', title: "Being Served",                  body: `Ticket ${ticket.ticket_number} at ${pushDeskName}`,                          tag: `serving-${ticketId}` },
+    served:           { type: 'served',  title: "Visit Complete ✓",              body: "Thank you! Tap to leave feedback.",                                          tag: `served-${ticketId}` },
+    no_show:          { type: 'no_show', title: "Missed Your Turn",              body: `Ticket ${ticket.ticket_number} was marked as no-show.`,                      tag: `noshow-${ticketId}` },
+    cancelled_notify: { type: 'no_show', title: "Ticket Cancelled",              body: `Ticket ${ticket.ticket_number} has been cancelled.`,                         tag: `cancel-${ticketId}` },
+  };
+  const pushInfo = PUSH_MAP[event];
+  if (pushInfo && !(skipNotification ?? false)) {
+    const pushPayload = {
+      ...pushInfo,
+      url: `/q/${ticket.qr_token}`,
+      ticketId,
+      ticketNumber: ticket.ticket_number,
+      deskName: pushDeskName,
+      status: ticket.status,
+    };
+    // Fire-and-forget — don't delay the response
+    sendPushToTicket(ticketId, pushPayload as any).catch(() => {});
+    sendAPNsToTicket(ticketId, {
+      title: pushInfo.title,
+      body: pushInfo.body,
+      url: `/q/${ticket.qr_token}`,
+    }).catch(() => {});
+    sendAndroidToTicket(ticketId, pushPayload as any).catch(() => {});
+  }
 
   // ── Log notification failures for monitoring ──────────────────────
   if (!notifyResult.sent && notifyResult.error && notifyResult.error !== 'no_session' && notifyResult.error !== 'skipped') {

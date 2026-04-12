@@ -4,7 +4,7 @@ import { API_BASE_URL } from '@/lib/config';
 import { normalizePhone } from '@qflo/shared';
 
 /** Fire-and-forget: trigger WhatsApp/Messenger notification via unified API */
-async function triggerNotification(ticketId: string, status: string, deskName?: string, notifyEvent?: string) {
+export async function triggerNotification(ticketId: string, status: string, deskName?: string, notifyEvent?: string) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;

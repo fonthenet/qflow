@@ -192,7 +192,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           { value: 'manual', label: t('sm.checkin.manual') },
           { value: 'auto', label: t('sm.checkin.auto') },
         ], help: t('sm.help.check_in_mode') },
-        { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 10, min: 0, help: t('sm.help.auto_no_show') },
+        { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 1, min: 0, help: t('sm.help.auto_no_show') },
         { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
       ],
     },

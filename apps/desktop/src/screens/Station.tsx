@@ -1053,7 +1053,7 @@ function statusColor(status: string): string {
 }
 
 // ── Constants ────────────────────────────────────────────────────
-const CALL_TIMEOUT = 60;
+const DEFAULT_CALL_TIMEOUT = 60; // 1 minute in seconds (matches org settings default)
 const FALLBACK_POLL_INTERVAL = 10000; // 10s fallback (event-driven is primary)
 const DEVICE_CHECK_INTERVAL = 5000;
 
@@ -1413,21 +1413,26 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
   // showAppointmentsModal removed — unified into CalendarModal
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
+  const [callTimeoutSeconds, setCallTimeoutSeconds] = useState(DEFAULT_CALL_TIMEOUT);
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
     (async () => {
       try {
-        // Fetch org-level timezone (single source of truth for the business)
+        // Fetch org-level timezone + settings (single source of truth for the business)
         let tz = '';
         try {
           const { ensureAuth } = await import('../lib/supabase');
           const { getSupabase } = await import('../lib/supabase');
           await ensureAuth({ access_token: session.access_token, refresh_token: session.refresh_token, email: session.email, password: session._pwd });
           const sb = await getSupabase();
-          // Get org timezone via the organization_id
-          const { data: orgData } = await sb.from('organizations').select('timezone').eq('id', session.organization_id).single();
+          // Get org timezone + settings via the organization_id
+          const { data: orgData } = await sb.from('organizations').select('timezone, settings').eq('id', session.organization_id).single();
           if (orgData?.timezone) tz = normalizeOfficeTimezone(orgData.timezone);
+          // Read auto_no_show_timeout (stored in minutes)
+          const orgSettings = orgData?.settings ?? {};
+          const timeoutMinutes = Number(orgSettings.auto_no_show_timeout);
+          if (!cancelled && timeoutMinutes > 0) setCallTimeoutSeconds(timeoutMinutes * 60);
         } catch {}
         // Fallback: try local SQLite office timezone
         if (!tz) {
@@ -2057,7 +2062,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     // Countdown for called tickets
     if (mine?.status === 'called' && mine.called_at) {
       const elapsed = getSafeElapsedSeconds(mine.called_at);
-      const remaining = Math.max(0, CALL_TIMEOUT - elapsed);
+      const remaining = Math.max(0, callTimeoutSeconds - elapsed);
       setCallCountdown(remaining);
 
       if (countdownRef.current) clearInterval(countdownRef.current);
@@ -2755,7 +2760,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       cx="50" cy="50" r="45" fill="none"
                       stroke={callCountdown > 15 ? '#3b82f6' : callCountdown > 5 ? '#f59e0b' : '#ef4444'}
                       strokeWidth="6"
-                      strokeDasharray={`${(callCountdown / CALL_TIMEOUT) * 283} 283`}
+                      strokeDasharray={`${(callCountdown / callTimeoutSeconds) * 283} 283`}
                       strokeLinecap="round"
                       transform="rotate(-90 50 50)"
                     />

@@ -327,7 +327,7 @@ export async function checkInAppointment(appointmentId: string) {
             officeName: office?.name ?? '',
             position,
             trackUrl: tUrl,
-            waitMinutes: waitMinutes ?? 10,
+            waitMinutes: waitMinutes ?? 1,
             countryDialCode,
             locale: (appointment as any).locale ?? 'fr',
           }),

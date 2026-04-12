@@ -187,7 +187,7 @@ Deno.serve(async (req) => {
         ticket: ticketNumber ?? "—",
         name: officeName ?? "",
         position: String(position ?? 1),
-        wait: String(waitMinutes ?? 10),
+        wait: String(waitMinutes ?? 1),
         url: trackUrl ?? "",
       });
       const sent = await sendWhatsApp(normalizedPhone, message);
