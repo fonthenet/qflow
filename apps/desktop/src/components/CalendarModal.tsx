@@ -1146,7 +1146,16 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         return false;
       }
 
-      // ── 4. Refresh local state ──
+      // ── 4. Notify customer about reschedule (fire-and-forget via web API) ──
+      try {
+        fetch('https://qflo.net/api/notify-reschedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${storedAuth?.access_token ?? ''}` },
+          body: JSON.stringify({ appointmentId, newScheduledAt }),
+        }).catch(err => console.error('[Calendar] reschedule notify error:', err));
+      } catch {}
+
+      // ── 5. Refresh local state ──
       const refreshed = await loadAll();
       if (refreshed) {
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
@@ -2130,8 +2139,15 @@ function DesktopWeekView({
       try { document.body.removeChild(drag.ghostEl); } catch {}
       drag.ghostEl = null;
     }
-    // Clear highlight
+    // Clear highlight on tracked element
     clearHighlight();
+    // Safety: clear ALL slot cells that might still have highlight styles
+    for (const [, info] of slotCellRefs.current) {
+      info.el.style.outline = '';
+      info.el.style.outlineOffset = '';
+      info.el.style.background = '';
+      info.el.style.borderRadius = '';
+    }
     // Restore ALL draggable appointment elements
     document.querySelectorAll('[data-appt-drag]').forEach((el) => {
       (el as HTMLElement).style.opacity = '1';
@@ -2211,6 +2227,8 @@ function DesktopWeekView({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      // Safety: cleanup any lingering drag state on unmount/re-render
+      if (dragRef.current) cleanupDrag();
     };
   }, [hitTestSlot, onApptDrop, cleanupDrag, clearHighlight, applyHighlight]);
 
