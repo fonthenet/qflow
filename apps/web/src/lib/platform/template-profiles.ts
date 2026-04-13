@@ -15,6 +15,7 @@ import type {
   IndustryTemplate,
   StarterDepartmentTemplate,
   IntakeSchema,
+  CapabilityFlags,
 } from '@qflo/shared';
 import { deepMergeRecords } from '@qflo/shared';
 
@@ -43,6 +44,8 @@ export interface TemplateProfile {
     defaultSlas?: IndustryTemplate['defaultSlas'];
     /** Override onboarding copy */
     onboardingCopy?: Partial<IndustryTemplate['onboardingCopy']>;
+    /** Override capability flags */
+    capabilityFlags?: Partial<CapabilityFlags>;
   };
 }
 
@@ -58,6 +61,78 @@ const CLINIC_PROFILES: TemplateProfile[] = [
     description: 'Simple setup — secretary desk upfront, doctor sees patients in the cabinet.',
     icon: '👨‍⚕️',
     overrides: {},  // Uses the clinic defaults (solo doctor office)
+  },
+  {
+    id: 'doctor-premium',
+    parentVertical: 'clinic',
+    title: 'Doctor Premium',
+    description: 'Full-featured doctor\'s office — appointments, WhatsApp notifications, patient history, intake forms, and remote queue.',
+    icon: '⭐',
+    overrides: {
+      capabilityFlags: {
+        appointments: true,
+        kiosk: true,
+        intakeForms: true,
+        customerHistory: true,
+        feedback: true,
+        virtualJoin: true,
+        staffAssignment: true,
+        controllerHost: true,
+      },
+      experienceProfile: {
+        kiosk: {
+          welcomeMessage: 'Bienvenue — enregistrez-vous',
+          headerText: 'Cabinet Médical',
+          themeColor: '#2563eb',
+          buttonLabel: 'S\'enregistrer',
+          showEstimatedTime: true,
+        },
+        publicJoin: {
+          headline: 'Votre rendez-vous',
+          subheadline: 'Suivez votre position et recevez une notification quand le docteur est prêt.',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Consultations', code: 'C', sortOrder: 1,
+          services: [
+            { name: 'Consultation Générale', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
+            { name: 'Contrôle', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Certificat Médical', code: 'CERT', estimatedServiceTime: 10, sortOrder: 3 },
+            { name: 'Urgence', code: 'URGENT', estimatedServiceTime: 15, sortOrder: 4 },
+            { name: 'Consultation Spécialisée', code: 'SPECIAL', estimatedServiceTime: 30, sortOrder: 5 },
+            { name: 'Acte Médical', code: 'ACTE', estimatedServiceTime: 25, sortOrder: 6 },
+          ],
+        },
+      ],
+      intakeSchemas: [
+        {
+          serviceCode: 'CONSULT',
+          title: 'Fiche patient',
+          fields: [
+            { key: 'patient_name', label: 'Nom du patient', type: 'text', required: true, visibility: 'public' },
+            { key: 'phone', label: 'Numéro de téléphone', type: 'phone', required: true, visibility: 'public' },
+            { key: 'date_of_birth', label: 'Date de naissance', type: 'text', required: false, visibility: 'staff_only' },
+            { key: 'motif', label: 'Motif de la visite', type: 'textarea', required: true, visibility: 'staff_only' },
+          ],
+          complianceNotes: [],
+        },
+      ],
+      defaultSlas: [
+        { metric: 'patient_wait', label: 'Attente patient sous', targetMinutes: 15 },
+        { metric: 'check_in', label: 'Enregistrement en moins de', targetMinutes: 3 },
+      ],
+      onboardingCopy: {
+        headline: 'Cabinet médical tout équipé',
+        description: 'Rendez-vous, notifications WhatsApp, historique patient, formulaires d\'accueil et file à distance — tout est inclus.',
+        reviewChecklist: [
+          'Configurer les types de consultation',
+          'Activer les notifications WhatsApp',
+          'Configurer le calendrier des rendez-vous',
+          'Personnaliser le formulaire d\'accueil patient',
+        ],
+      },
+    },
   },
   {
     id: 'multi-doctor',
@@ -1261,6 +1336,11 @@ export function applyProfile(
   // Merge onboarding copy
   if (overrides.onboardingCopy) {
     result.onboardingCopy = { ...result.onboardingCopy, ...overrides.onboardingCopy };
+  }
+
+  // Merge capability flags
+  if (overrides.capabilityFlags) {
+    result.capabilityFlags = { ...result.capabilityFlags, ...overrides.capabilityFlags };
   }
 
   return result;
