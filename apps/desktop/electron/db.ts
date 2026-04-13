@@ -407,18 +407,33 @@ export function logTicketEvent(
   // Also enqueue cloud sync to ticket_events table
   if (opts?.syncToCloud !== false) {
     try {
-      const syncId = `${ticketId}-evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      // Deterministic idempotency key: ensures the same event is never duplicated
+      // even if synced from multiple retries or multiple Stations.
+      const epochMs = new Date(now).getTime();
+      const idempotencyKey = `${ticketId}-${eventType}-${epochMs}`;
+      const syncId = `evt-${idempotencyKey}`;
+
       const cloudPayload: Record<string, unknown> = {
         ticket_id: ticketId,
         event_type: eventType,
         from_status: opts?.fromStatus ?? null,
         to_status: opts?.toStatus ?? null,
+        source: opts?.source ?? 'station',
+        idempotency_key: idempotencyKey,
         created_at: now,
       };
-      // Include staff_id and desk_id from details if available
-      if (opts?.details?.staffId) cloudPayload.staff_id = opts.details.staffId;
-      if (opts?.details?.deskId) cloudPayload.desk_id = opts.details.deskId;
-      if (opts?.details) cloudPayload.metadata = opts.details;
+      // Include staff_id and desk_id if available (must be valid UUIDs or null)
+      if (opts?.details?.staffId && typeof opts.details.staffId === 'string' && opts.details.staffId.length > 30) {
+        cloudPayload.staff_id = opts.details.staffId;
+      }
+      if (opts?.details?.deskId && typeof opts.details.deskId === 'string' && opts.details.deskId.length > 30) {
+        cloudPayload.desk_id = opts.details.deskId;
+      }
+      // Metadata: strip staffId/deskId (already in dedicated columns) to keep payload clean
+      if (opts?.details) {
+        const { staffId, deskId, ...rest } = opts.details;
+        if (Object.keys(rest).length > 0) cloudPayload.metadata = rest;
+      }
 
       db.prepare(`
         INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)

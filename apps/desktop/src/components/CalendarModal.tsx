@@ -3501,44 +3501,51 @@ function DesktopApptDetail({
       events.push({ time: a.created_at, label: t('Appointment created'), icon: '📋', color: '#3b82f6' });
 
       if (a.ticket_id) {
-        // 1) Try local SQLite audit log first (fastest, works offline)
-        let gotLocalEvents = false;
+        // Collect events from all sources, then deduplicate
+        const seen = new Set<string>(); // "eventType-epoch" keys for dedup
+        const addEvent = (time: string, evType: string, info: { label: string; icon: string; color: string }) => {
+          const key = `${evType}-${new Date(time).getTime()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            events.push({ time, label: info.label, icon: info.icon, color: info.color });
+          }
+        };
+
+        // 1) Local SQLite audit log (fastest, works offline)
         try {
           const w = window as any;
           if (w.qf?.ticketTimeline) {
             const { events: localEvents, ticket } = await w.qf.ticketTimeline.get(a.ticket_id);
             if (!cancelled && localEvents && localEvents.length > 0) {
-              gotLocalEvents = true;
               for (const ev of localEvents) {
                 const evType = ev.to_status || ev.event_type;
                 const info = eventLabels[evType] ?? { label: evType, icon: '•', color: '#64748b' };
-                events.push({ time: ev.created_at, label: info.label, icon: info.icon, color: info.color });
+                addEvent(ev.created_at, evType, info);
               }
             }
-            // Supplement with ticket timestamps if audit log is sparse
-            if (!cancelled && ticket && !gotLocalEvents) {
-              if (ticket.created_at) events.push({ time: ticket.created_at, label: t('Joined queue'), icon: '🎫', color: '#8b5cf6' });
-              if (ticket.called_at) events.push({ time: ticket.called_at, label: t('Called to desk'), icon: '📢', color: '#f59e0b' });
-              if (ticket.serving_started_at) events.push({ time: ticket.serving_started_at, label: t('Service started'), icon: '⚡', color: '#06b6d4' });
+            // Supplement with ticket timestamps if audit log had nothing
+            if (!cancelled && ticket && seen.size === 0) {
+              if (ticket.created_at) addEvent(ticket.created_at, 'created', eventLabels.created);
+              if (ticket.called_at) addEvent(ticket.called_at, 'called', eventLabels.called);
+              if (ticket.serving_started_at) addEvent(ticket.serving_started_at, 'serving_started', eventLabels.serving_started);
               if (ticket.completed_at) {
                 const st = ticket.status;
                 const termLabel = st === 'no_show' ? t('No show') : st === 'cancelled' ? t('Cancelled') : t('Completed');
                 const termIcon = st === 'no_show' ? '👻' : st === 'cancelled' ? '✗' : '✓';
                 const termColor = st === 'no_show' || st === 'cancelled' ? '#ef4444' : '#22c55e';
-                events.push({ time: ticket.completed_at, label: termLabel, icon: termIcon, color: termColor });
+                addEvent(ticket.completed_at, st, { label: termLabel, icon: termIcon, color: termColor });
               }
               if (ticket.cancelled_at && ticket.status === 'cancelled' && !ticket.completed_at) {
-                events.push({ time: ticket.cancelled_at, label: t('Cancelled'), icon: '✗', color: '#ef4444' });
+                addEvent(ticket.cancelled_at, 'cancelled', eventLabels.cancelled);
               }
-              if (ticket.parked_at && ticket.status === 'parked') events.push({ time: ticket.parked_at, label: t('Parked'), icon: '⏸', color: '#64748b' });
             }
           }
         } catch (e) {
           console.warn('[DesktopApptDetail] Failed to fetch local ticket events:', e);
         }
 
-        // 2) If no local events, try Supabase ticket_events
-        if (!gotLocalEvents && storedAuth) {
+        // 2) Supabase ticket_events (covers events from other Stations / web)
+        if (!cancelled && storedAuth) {
           try {
             await ensureAuth(storedAuth);
             const sb = await getSupabase();
@@ -3548,10 +3555,10 @@ function DesktopApptDetail({
               .eq('ticket_id', a.ticket_id)
               .order('created_at', { ascending: true });
 
-            if (!cancelled && ticketEvents && ticketEvents.length > 0) {
+            if (!cancelled && ticketEvents) {
               for (const ev of ticketEvents) {
                 const info = eventLabels[ev.event_type] ?? { label: ev.event_type, icon: '•', color: '#64748b' };
-                events.push({ time: ev.created_at!, label: info.label, icon: info.icon, color: info.color });
+                addEvent(ev.created_at!, ev.event_type, info);
               }
             }
           } catch (e) {

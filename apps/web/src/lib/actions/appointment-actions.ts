@@ -726,6 +726,7 @@ export interface TimelineEvent {
   label: string;
   eventType: string;
   color: string;
+  source?: string | null;
 }
 
 export async function getAppointmentTimeline(appointmentId: string): Promise<{ data: TimelineEvent[] }> {
@@ -767,7 +768,7 @@ export async function getAppointmentTimeline(appointmentId: string): Promise<{ d
     const [{ data: ticketEvents }, { data: ticket }] = await Promise.all([
       supabase
         .from('ticket_events')
-        .select('event_type, from_status, to_status, created_at')
+        .select('event_type, from_status, to_status, created_at, source')
         .eq('ticket_id', appt.ticket_id)
         .order('created_at', { ascending: true }),
       supabase
@@ -781,7 +782,7 @@ export async function getAppointmentTimeline(appointmentId: string): Promise<{ d
       // Use event-based log
       for (const ev of ticketEvents) {
         const info = eventLabels[ev.event_type] ?? { label: ev.event_type, color: '#64748b' };
-        events.push({ time: ev.created_at!, eventType: ev.event_type, label: info.label, color: info.color });
+        events.push({ time: ev.created_at!, eventType: ev.event_type, label: info.label, color: info.color, source: ev.source });
       }
     } else if (ticket) {
       // Fallback: reconstruct from ticket timestamp columns
