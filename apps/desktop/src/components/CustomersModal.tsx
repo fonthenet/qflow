@@ -47,6 +47,10 @@ interface Props {
   onBookCustomer?: (customer: { name: string; phone: string; notes?: string }) => void;
   initialPhone?: string;
   timezone?: string;
+  /** When true, renders inline (no overlay/backdrop) filling its parent container */
+  embedded?: boolean;
+  /** Increment to trigger a background data refresh (no loading flash) */
+  refreshKey?: number;
 }
 
 function initials(name: string | null, phone: string | null) {
@@ -119,7 +123,7 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone }: Props) {
+export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone, embedded, refreshKey }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const { confirm: styledConfirm } = useConfirmDialog();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -313,9 +317,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     return orgId;
   }, [organizationId, storedAuth]);
 
-  const loadCustomers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadCustomers = useCallback(async (silent = false) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
@@ -325,10 +328,10 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         .eq('organization_id', orgId)
         .order('last_visit_at', { ascending: false, nullsFirst: false })
         .limit(5000);
-      if (error) setError(error.message);
+      if (error) { if (!silent) setError(error.message); }
       else setCustomers((data ?? []) as Customer[]);
     } catch (e: any) {
-      setError(e?.message ?? String(e));
+      if (!silent) setError(e?.message ?? String(e));
     } finally {
       setLoading(false);
     }
@@ -467,6 +470,15 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   }
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
+
+  // Silent background refresh when parent signals (tab switch)
+  const prevRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey !== prevRefreshKey.current) {
+      prevRefreshKey.current = refreshKey;
+      loadCustomers(true);
+    }
+  }, [refreshKey, loadCustomers]);
 
   // Auto-open customer profile when initialPhone is provided
   const initialPhoneHandled = useRef(false);
@@ -664,41 +676,49 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        position: 'relative', width: '100%', height: '100%',
+        display: 'flex', alignItems: 'stretch', justifyContent: 'stretch',
+      } : {
         position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
         zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
       }}
-      onClick={onClose}
+      onClick={embedded ? undefined : onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
+        onClick={embedded ? undefined : ((e) => e.stopPropagation())}
+        style={embedded ? {
+          background: 'var(--surface, #1e293b)', width: '100%', height: '100%',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        } : {
           background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 920,
           maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
           border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
       >
-        {/* Header */}
-        <div style={{
-          padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
-        }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Customers')}</h2>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
-              {t('Showing {filtered} of {total} customers', { filtered: filtered.length, total: customers.length })}
-            </p>
+        {/* Header — hidden in embedded mode (tab already shows context) */}
+        {!embedded && (
+          <div style={{
+            padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
+          }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>{t('Customers')}</h2>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
+                {t('Showing {filtered} of {total} customers', { filtered: filtered.length, total: customers.length })}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >×</button>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-              width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >×</button>
-        </div>
+        )}
 
         {/* Stat cards */}
         <div style={{ padding: '14px 22px 0', display: 'flex', gap: 10 }}>

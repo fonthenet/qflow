@@ -472,25 +472,15 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     <div
       className="booking-panel"
       style={{
-        borderTop: '1px solid var(--border)',
         background: 'var(--surface)',
-        height: panelHeight, display: 'flex', flexDirection: 'column',
+        flex: 1, display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
-      {/* Resize handle */}
-      <div
-        onPointerDown={onResizeStart}
-        style={{
-          height: 6, cursor: 'ns-resize', flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <div style={{ width: 40, height: 3, borderRadius: 2, background: 'var(--border)' }} />
-      </div>
       {/* Header bar with tabs */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '4px 16px 0', flexShrink: 0,
+        padding: '24px 16px 0', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
@@ -567,8 +557,8 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
       {bookingTab === 'future' ? (
-        /* ── Future Booking Form ── */
-        <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        /* ── Future Booking Form — vertical stack for side panel ── */
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {futResult && (
             <div style={{
               padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
@@ -581,39 +571,42 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               <button onClick={() => setFutResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 14, padding: '0 4px' }}>✕</button>
             </div>
           )}
-          {/* Row 1: Dept + Service + Date + Time */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
-              <label style={labelStyle}>{t('Department')} *</label>
+
+          {/* Department */}
+          <div>
+            <label style={labelStyle}>{t('Department')} *</label>
+            <select
+              value={futDept}
+              onChange={(e) => { setFutDept(e.target.value); setFutService(''); setFutSlots([]); setFutTime(''); }}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="">{t('Select...')}</option>
+              {departments.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Service */}
+          {futDept && futDeptServices.length > 0 && (
+            <div>
+              <label style={labelStyle}>{t('Service')} *</label>
               <select
-                value={futDept}
-                onChange={(e) => { setFutDept(e.target.value); setFutService(''); setFutSlots([]); setFutTime(''); }}
+                value={futService}
+                onChange={(e) => { setFutService(e.target.value); setFutSlots([]); setFutTime(''); }}
                 style={{ ...inputStyle, cursor: 'pointer' }}
               >
                 <option value="">{t('Select...')}</option>
-                {departments.map(([id, name]) => (
-                  <option key={id} value={id}>{name}</option>
+                {futDeptServices.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </div>
+          )}
 
-            {futDept && futDeptServices.length > 0 && (
-              <div style={{ flex: '1 1 130px', minWidth: 110 }}>
-                <label style={labelStyle}>{t('Service')} *</label>
-                <select
-                  value={futService}
-                  onChange={(e) => { setFutService(e.target.value); setFutSlots([]); setFutTime(''); }}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  <option value="">{t('Select...')}</option>
-                  {futDeptServices.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div style={{ flex: '0 0 140px' }}>
+          {/* Date + Time Slot — 2-column row */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Date')} *</label>
               <input
                 type="date"
@@ -624,8 +617,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 style={inputStyle}
               />
             </div>
-
-            <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Time Slot')} *</label>
               {futSlotsLoading ? (
                 <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: 'var(--text3)', fontSize: 11 }}>Loading...</div>
@@ -648,59 +640,60 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           </div>
 
-          {/* Row 2: Name + Phone + Notes + Submit */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 160px', minWidth: 130, position: 'relative' }}>
-              <label style={labelStyle}>{t('Name')} *</label>
-              <input
-                type="text"
-                value={futName}
-                onChange={(e) => { setFutName(e.target.value); setCustSearchQuery(e.target.value); }}
-                onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
-                onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
-                placeholder={t('Search or type name')}
-                style={inputStyle}
-                autoComplete="off"
-              />
-              {bookingTab === 'future' && showCustSuggestions && custSuggestions.length > 0 && (
-                <div style={{
-                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                  marginTop: 4, maxHeight: 240, overflowY: 'auto',
-                  background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
-                  borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-                }}>
-                  {custSuggestions.map((c) => (
-                    <div
-                      key={c.id}
-                      onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
-                      style={{
-                        padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {c.name || t('Unknown')}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
-                          {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
-                        </div>
+          {/* Name with customer search */}
+          <div style={{ position: 'relative' }}>
+            <label style={labelStyle}>{t('Name')} *</label>
+            <input
+              type="text"
+              value={futName}
+              onChange={(e) => { setFutName(e.target.value); setCustSearchQuery(e.target.value); }}
+              onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+              placeholder={t('Search or type name')}
+              style={inputStyle}
+              autoComplete="off"
+            />
+            {bookingTab === 'future' && showCustSuggestions && custSuggestions.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+              }}>
+                {custSuggestions.map((c) => (
+                  <div
+                    key={c.id}
+                    onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.name || t('Unknown')}
                       </div>
-                      {(c.visit_count ?? 0) > 0 && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
-                          {c.visit_count}× {t('Visits')}
-                        </span>
-                      )}
+                      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                        {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    {(c.visit_count ?? 0) > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                        {c.visit_count}× {t('Visits')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+          {/* Phone + Wilaya — 2-column row */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Phone')}</label>
               <input
                 type="tel"
@@ -712,8 +705,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 autoComplete="off"
               />
             </div>
-
-            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Wilaya')}</label>
               <select
                 value={futWilaya}
@@ -729,231 +721,225 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 ))}
               </select>
             </div>
-
-            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
-              <label style={labelStyle}>{t('Notes')}</label>
-              <input
-                type="text"
-                value={futNotes}
-                onChange={(e) => setFutNotes(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-                placeholder={t('Optional notes')}
-                style={inputStyle}
-              />
-            </div>
-
-            <button
-              onClick={handleFutureBook}
-              disabled={!futDept || !futService || !futDate || !futTime || !futName.trim() || futSubmitting}
-              style={{
-                padding: '7px 22px', border: 'none', borderRadius: 6,
-                background: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#8b5cf6' : 'var(--surface2)',
-                color: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#fff' : 'var(--text3)',
-                cursor: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? 'pointer' : 'not-allowed',
-                fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-              }}
-            >
-              {futSubmitting ? '...' : t('Book Appointment')}
-            </button>
           </div>
+
+          {/* Notes */}
+          <div>
+            <label style={labelStyle}>{t('Notes')}</label>
+            <input
+              type="text"
+              value={futNotes}
+              onChange={(e) => setFutNotes(e.target.value)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+              placeholder={t('Optional notes')}
+              style={inputStyle}
+            />
+          </div>
+
+          {/* Submit — full width */}
+          <button
+            onClick={handleFutureBook}
+            disabled={!futDept || !futService || !futDate || !futTime || !futName.trim() || futSubmitting}
+            style={{
+              width: '100%', padding: '8px 0', border: 'none', borderRadius: 6, marginTop: 2,
+              background: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#8b5cf6' : 'var(--surface2)',
+              color: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? '#fff' : 'var(--text3)',
+              cursor: (futDept && futService && futDate && futTime && futName.trim() && !futSubmitting) ? 'pointer' : 'not-allowed',
+              fontSize: 13, fontWeight: 700,
+            }}
+          >
+            {futSubmitting ? '...' : t('Book Appointment')}
+          </button>
         </div>
       ) : createdTicket ? (
-        /* ── Ticket Created Confirmation ── */
-        <div style={{ padding: '8px 16px' }}>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
-            {/* Left: Ticket info */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minWidth: 120 }}>
-              <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>✓ {t('Ticket Created')}</div>
+        /* ── Ticket Created Confirmation — vertical for side panel ── */
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          {/* Ticket info */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>✓ {t('Ticket Created')}</div>
+            <div style={{
+              fontSize: 28, fontWeight: 800, color: '#8b5cf6',
+              background: 'rgba(139,92,246,0.1)', borderRadius: 8,
+              padding: '8px 24px', lineHeight: 1.1,
+            }}>
+              {createdTicket.ticket_number}
+            </div>
+            {customerName.trim() && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{customerName.trim()}</div>}
+            {whatsappStatus && (
               <div style={{
-                fontSize: 24, fontWeight: 800, color: '#8b5cf6',
-                background: 'rgba(139,92,246,0.1)', borderRadius: 8,
-                padding: '8px 18px', lineHeight: 1.1,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 8px', borderRadius: 4, fontSize: 10, marginTop: 6,
+                background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
               }}>
-                {createdTicket.ticket_number}
+                <span style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
+                  {whatsappStatus.sent ? 'WhatsApp ✓' : 'WhatsApp ✗'}
+                </span>
               </div>
-              {customerName.trim() && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>{customerName.trim()}</div>}
-              {whatsappStatus && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '3px 8px', borderRadius: 4, fontSize: 10, marginTop: 6,
-                  background: whatsappStatus.sent ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
-                  border: `1px solid ${whatsappStatus.sent ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
-                }}>
-                  <span style={{ fontWeight: 600, color: whatsappStatus.sent ? '#16a34a' : '#d97706' }}>
-                    {whatsappStatus.sent ? 'WhatsApp ✓' : 'WhatsApp ✗'}
-                  </span>
-                </div>
-              )}
+            )}
+          </div>
+
+          {/* QR codes row */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {/* Track QR */}
+            <div
+              onClick={() => setEnlargedQr({ url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`, label: t('Tracking QR') })}
+              style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(139,92,246,0.08)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              title={t('Click to enlarge')}
+            >
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`}
+                alt="QR" style={{ width: 56, height: 56, borderRadius: 6, border: '1px solid var(--border)' }}
+              />
+              <div style={{ fontSize: 9, fontWeight: 600, color: '#8b5cf6', marginTop: 3 }}>{t('Track')}</div>
             </div>
 
-            {/* Divider */}
-            <div style={{ width: 1, background: 'var(--border)', alignSelf: 'stretch', margin: '4px 0' }} />
-
-            {/* Center: QR codes grid */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flex: 1, justifyContent: 'center' }}>
-              {/* Track QR */}
+            {whatsappPhone && (
               <div
-                onClick={() => setEnlargedQr({ url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`, label: t('Tracking QR') })}
+                onClick={() => setEnlargedQr({
+                  url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`,
+                  label: 'WhatsApp',
+                })}
                 style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(139,92,246,0.08)')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,211,102,0.08)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 title={t('Click to enlarge')}
               >
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(trackUrl)}`}
-                  alt="QR" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
+                  alt="WA" style={{ width: 56, height: 56, borderRadius: 6, border: '1px solid var(--border)' }}
                 />
-                <div style={{ fontSize: 9, fontWeight: 600, color: '#8b5cf6', marginTop: 3 }}>{t('Track')}</div>
-              </div>
-
-              {whatsappPhone && (
-                <div
-                  onClick={() => setEnlargedQr({
-                    url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`,
-                    label: 'WhatsApp',
-                  })}
-                  style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,211,102,0.08)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  title={t('Click to enlarge')}
-                >
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://wa.me/${whatsappPhone.replace(/\D/g, '')}?text=${encodeURIComponent('JOIN_' + createdTicket.qr_token)}`)}`}
-                    alt="WA" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
-                  />
-                  <div style={{ fontSize: 9, fontWeight: 600, color: '#25D366', marginTop: 3 }}>WhatsApp</div>
-                </div>
-              )}
-
-              {messengerPageId && (
-                <div
-                  onClick={() => setEnlargedQr({
-                    url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`,
-                    label: 'Messenger',
-                  })}
-                  style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,132,255,0.08)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  title={t('Click to enlarge')}
-                >
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
-                    alt="Msg" style={{ width: 60, height: 60, borderRadius: 6, border: '1px solid var(--border)' }}
-                  />
-                  <div style={{ fontSize: 9, fontWeight: 600, color: '#0084FF', marginTop: 3 }}>Messenger</div>
-                </div>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div style={{ width: 1, background: 'var(--border)', alignSelf: 'stretch', margin: '4px 0' }} />
-
-            {/* Right: URL + New Ticket */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, minWidth: 110 }}>
-              <div style={{ fontSize: 9, color: 'var(--text3)', textAlign: 'center', wordBreak: 'break-all', maxWidth: 130, lineHeight: 1.3 }}>{trackUrl}</div>
-              <button
-                onClick={handleNewTicket}
-                style={{
-                  padding: '8px 18px', border: 'none', borderRadius: 6,
-                  background: '#8b5cf6', color: '#fff', cursor: 'pointer',
-                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                }}
-              >
-                + {t('New Ticket')}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* ── Booking Form — 2 clear rows ── */
-        <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Row 1: Dept + Service + Name */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 150px', minWidth: 130 }}>
-              <label style={labelStyle}>{t('Department')} *</label>
-              <select
-                value={selectedDept}
-                onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-              >
-                <option value="">{t('Select...')}</option>
-                {departments.map(([id, name]) => (
-                  <option key={id} value={id}>{name}</option>
-                ))}
-              </select>
-            </div>
-
-            {selectedDept && deptServices.length > 0 && (
-              <div style={{ flex: '1 1 140px', minWidth: 120 }}>
-                <label style={labelStyle}>{t('Service')}</label>
-                <select
-                  value={selectedService}
-                  onChange={(e) => setSelectedService(e.target.value)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  <option value="">{t('General')}</option>
-                  {deptServices.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#25D366', marginTop: 3 }}>WhatsApp</div>
               </div>
             )}
 
-            <div style={{ flex: '1 1 160px', minWidth: 130, position: 'relative' }}>
-              <label style={labelStyle}>{t('Name')}</label>
-              <input
-                ref={nameRef}
-                type="text"
-                value={customerName}
-                onChange={(e) => { setCustomerName(e.target.value); setCustSearchQuery(e.target.value); }}
-                onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
-                onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
-                placeholder={t('Search or type name')}
-                style={inputStyle}
-                autoComplete="off"
-              />
-              {bookingTab === 'walkin' && showCustSuggestions && custSuggestions.length > 0 && (
-                <div style={{
-                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                  marginTop: 4, maxHeight: 240, overflowY: 'auto',
-                  background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
-                  borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-                }}>
-                  {custSuggestions.map((c) => (
-                    <div
-                      key={c.id}
-                      onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
-                      style={{
-                        padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {c.name || t('Unknown')}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
-                          {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
-                        </div>
-                      </div>
-                      {(c.visit_count ?? 0) > 0 && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
-                          {c.visit_count}× {t('Visits')}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {messengerPageId && (
+              <div
+                onClick={() => setEnlargedQr({
+                  url: `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`,
+                  label: 'Messenger',
+                })}
+                style={{ textAlign: 'center', cursor: 'pointer', padding: 6, borderRadius: 8, transition: 'background 0.15s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(0,132,255,0.08)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                title={t('Click to enlarge')}
+              >
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`https://m.me/${messengerPageId}?ref=JOIN_${createdTicket.qr_token}`)}`}
+                  alt="Msg" style={{ width: 56, height: 56, borderRadius: 6, border: '1px solid var(--border)' }}
+                />
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#0084FF', marginTop: 3 }}>Messenger</div>
+              </div>
+            )}
           </div>
 
-          {/* Row 2: Phone + Reason + Priority + Submit */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+          {/* URL + New Ticket */}
+          <div style={{ textAlign: 'center', width: '100%' }}>
+            <div style={{ fontSize: 9, color: 'var(--text3)', wordBreak: 'break-all', lineHeight: 1.3, marginBottom: 8 }}>{trackUrl}</div>
+            <button
+              onClick={handleNewTicket}
+              style={{
+                width: '100%', padding: '8px 0', border: 'none', borderRadius: 6,
+                background: '#8b5cf6', color: '#fff', cursor: 'pointer',
+                fontSize: 12, fontWeight: 700,
+              }}
+            >
+              + {t('New Ticket')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* ── Walk-in Booking Form — vertical stack for side panel ── */
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Department */}
+          <div>
+            <label style={labelStyle}>{t('Department')} *</label>
+            <select
+              value={selectedDept}
+              onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="">{t('Select...')}</option>
+              {departments.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Service */}
+          {selectedDept && deptServices.length > 0 && (
+            <div>
+              <label style={labelStyle}>{t('Service')}</label>
+              <select
+                value={selectedService}
+                onChange={(e) => setSelectedService(e.target.value)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="">{t('General')}</option>
+                {deptServices.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Name with customer search */}
+          <div style={{ position: 'relative' }}>
+            <label style={labelStyle}>{t('Name')}</label>
+            <input
+              ref={nameRef}
+              type="text"
+              value={customerName}
+              onChange={(e) => { setCustomerName(e.target.value); setCustSearchQuery(e.target.value); }}
+              onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+              placeholder={t('Search or type name')}
+              style={inputStyle}
+              autoComplete="off"
+            />
+            {bookingTab === 'walkin' && showCustSuggestions && custSuggestions.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+              }}>
+                {custSuggestions.map((c) => (
+                  <div
+                    key={c.id}
+                    onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.name || t('Unknown')}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                        {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                      </div>
+                    </div>
+                    {(c.visit_count ?? 0) > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                        {c.visit_count}× {t('Visits')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Phone + Wilaya — 2-column row */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Phone')}</label>
               <input
                 type="tel"
@@ -965,8 +951,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 autoComplete="off"
               />
             </div>
-
-            <div style={{ flex: '1 1 140px', minWidth: 120 }}>
+            <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Wilaya')}</label>
               <select
                 value={customerWilaya}
@@ -982,44 +967,26 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 ))}
               </select>
             </div>
+          </div>
 
-            <div style={{ flex: '1 1 160px', minWidth: 130 }}>
-              <label style={labelStyle}>{t('Reason')}</label>
-              <input
-                type="text"
-                value={customerReason}
-                onChange={(e) => setCustomerReason(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-                placeholder={t('Reason for visit')}
-                style={inputStyle}
-              />
-            </div>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', paddingBottom: 6 }}>
-              <input type="checkbox" checked={isPriority} onChange={(e) => setIsPriority(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f59e0b' }} />
-              {t('Priority')}
-            </label>
-
-            <button
-              onClick={handleSubmit}
-              disabled={!selectedDept || submitting}
-              style={{
-                padding: '7px 22px', border: 'none', borderRadius: 6,
-                background: (selectedDept && !submitting) ? '#8b5cf6' : 'var(--surface2)',
-                color: (selectedDept && !submitting) ? '#fff' : 'var(--text3)',
-                cursor: (selectedDept && !submitting) ? 'pointer' : 'not-allowed',
-                fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-              }}
-            >
-              {submitting ? '...' : t('Create Ticket')}
-            </button>
+          {/* Reason */}
+          <div>
+            <label style={labelStyle}>{t('Reason')}</label>
+            <input
+              type="text"
+              value={customerReason}
+              onChange={(e) => setCustomerReason(e.target.value)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+              placeholder={t('Reason for visit')}
+              style={inputStyle}
+            />
           </div>
 
           {/* Customer lookup inline */}
           {lookupLoading && <div style={{ fontSize: 10, color: 'var(--text3)' }}>{t('Looking up customer...')}</div>}
           {customerLookup && (
             <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
               padding: '4px 10px', borderRadius: 6,
               background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)',
               fontSize: 11, color: 'var(--text)',
@@ -1030,6 +997,27 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               {customerLookup.notes && <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>{customerLookup.notes}</span>}
             </div>
           )}
+
+          {/* Priority + Submit — full width row */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 2 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={isPriority} onChange={(e) => setIsPriority(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#f59e0b' }} />
+              {t('Priority')}
+            </label>
+            <button
+              onClick={handleSubmit}
+              disabled={!selectedDept || submitting}
+              style={{
+                flex: 1, padding: '8px 0', border: 'none', borderRadius: 6,
+                background: (selectedDept && !submitting) ? '#8b5cf6' : 'var(--surface2)',
+                color: (selectedDept && !submitting) ? '#fff' : 'var(--text3)',
+                cursor: (selectedDept && !submitting) ? 'pointer' : 'not-allowed',
+                fontSize: 13, fontWeight: 700,
+              }}
+            >
+              {submitting ? '...' : t('Create Ticket')}
+            </button>
+          </div>
         </div>
       )}
       </div>
@@ -1384,10 +1372,13 @@ function RemoteSupportSection({ t, locale }: { t: (key: string, values?: Record<
 
 export function Station({ session, locale, isOnline, staffStatus, queuePaused, onStaffStatusChange, onQueuePausedChange }: Props) {
   const SIDEBAR_WIDTH_KEY = 'qflo_station_sidebar_width';
+  const BOOKING_WIDTH_KEY = 'qflo_station_booking_width';
   const SHOW_ACTIVITY_KEY = 'qflo_station_show_activity';
   const SHOW_DEVICES_KEY = 'qflo_station_show_devices';
   const MIN_SIDEBAR_WIDTH = 320;
   const MAX_SIDEBAR_WIDTH = 720;
+  const MIN_BOOKING_WIDTH = 300;
+  const MAX_BOOKING_WIDTH = 600;
   const getDisplayUrlLabel = (url: string) => {
     try {
       const parsed = new URL(url);
@@ -1474,6 +1465,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
+  // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar, 'customers' shows embedded customer list
+  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers'>('queue');
+  // Track which tabs have been visited — mount once, then keep alive (no flash on revisit)
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set(['queue']));
+  // Refresh counters — increment on each tab switch to trigger silent data reload
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
+  const [customersRefreshKey, setCustomersRefreshKey] = useState(0);
+  useEffect(() => {
+    setMountedTabs(prev => prev.has(mainView) ? prev : new Set(prev).add(mainView));
+    if (mainView === 'calendar') setCalendarRefreshKey(k => k + 1);
+    if (mainView === 'customers') setCustomersRefreshKey(k => k + 1);
+  }, [mainView]);
   // Listen for native File > Settings menu click
   useEffect(() => {
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
@@ -2548,6 +2551,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   });
   const [deviceStatuses, setDeviceStatuses] = useState<any[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [bookingWidth, setBookingWidth] = useState(420);
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
@@ -2606,6 +2610,41 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
   }, [sidebarWidth]);
+
+  // Booking panel width persistence
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(BOOKING_WIDTH_KEY);
+      if (!stored) return;
+      const parsed = Number(stored);
+      if (!Number.isFinite(parsed)) return;
+      setBookingWidth(Math.min(MAX_BOOKING_WIDTH, Math.max(MIN_BOOKING_WIDTH, parsed)));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(BOOKING_WIDTH_KEY, String(bookingWidth)); } catch { /* ignore */ }
+  }, [bookingWidth]);
+
+  const startBookingResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = bookingWidth;
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = startX - moveEvent.clientX;
+      setBookingWidth(Math.min(MAX_BOOKING_WIDTH, Math.max(MIN_BOOKING_WIDTH, startWidth + delta)));
+    };
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, [bookingWidth]);
 
   useEffect(() => {
     window.qf.kiosk?.getUrl?.().then((url: string | null) => setKioskUrl(url));
@@ -2769,15 +2808,242 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           )}
         </>
       )}
-      {/* Left panel — active ticket */}
-      <div className="station-main" aria-label={t('Active tickets')}>
+      {/* Left panel — active ticket / calendar */}
+      <div className="station-main" aria-label={t('Active tickets')} style={
+        mainView !== 'queue' && !activeTicket && session.desk_id
+          ? { padding: 0, justifyContent: 'flex-start', alignItems: 'stretch' }
+          : showBookingModal && mainView === 'queue'
+            ? { paddingRight: 0 }
+            : undefined
+      }>
+        {/* Timeline strip removed — Queue/Calendar tab toggle is sufficient */}
         {!session.desk_id ? (
           <div className="no-desk" role="alert">
             <h2>{t('No Desk Assigned')}</h2>
             <p>{t('Ask your admin to assign you to a desk before you can start serving.')}</p>
           </div>
-        ) : activeTicket ? (
-          <div className="active-ticket-panel">
+        ) : (
+          <>
+          {/* Unified toolbar — always visible: pills-left (pause/status, idle only) + pills-right (tab capsule, always) */}
+          <div className="station-action-pills">
+            <div className="pills-left">
+              {/* Pause toggle + status — only when idle (no active ticket) */}
+              {!activeTicket && staffStatus === 'available' && (
+                <button
+                  onClick={() => {
+                    onQueuePausedChange(!queuePaused);
+                    showToast(queuePaused ? t('Queue resumed') : t('Queue paused - no new calls'), queuePaused ? 'success' : 'info');
+                  }}
+                  title="F7 — Toggle pause"
+                  className="pause-toggle"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '5px 12px 5px 6px',
+                    borderRadius: 20,
+                    border: queuePaused ? '1.5px solid rgba(249,115,22,0.4)' : '1.5px solid var(--border)',
+                    background: queuePaused ? 'rgba(249,115,22,0.15)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: queuePaused ? '#f97316' : 'var(--text2)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  aria-label={queuePaused ? t('Resume') : t('Pause')}
+                >
+                  <span style={{
+                    position: 'relative',
+                    width: 40, height: 22, borderRadius: 11,
+                    background: queuePaused ? '#f97316' : 'var(--surface2)',
+                    display: 'inline-block',
+                    transition: 'background 0.2s ease',
+                    flexShrink: 0,
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      top: 2, left: queuePaused ? 20 : 2,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.2s ease',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }}>
+                      {queuePaused ? '⏸' : ''}
+                    </span>
+                  </span>
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    {queuePaused ? t('Paused') : t('Pause')}
+                  </span>
+                  {queuePaused && pauseElapsed > 0 && (
+                    <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8, fontSize: 11 }}>
+                      {`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}
+                    </span>
+                  )}
+                  <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.5, background: 'rgba(0,0,0,0.15)' }}>F7</span>
+                </button>
+              )}
+
+              {/* Staff status — only when idle and not available */}
+              {!activeTicket && staffStatus !== 'available' && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowStatusMenu((v) => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '5px 14px', borderRadius: 20,
+                      border: `1.5px solid ${statusLabels[staffStatus].color}40`,
+                      background: `${statusLabels[staffStatus].color}12`,
+                      cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                      color: statusLabels[staffStatus].color,
+                    }}
+                    aria-label={t('Status: {label}', { label: statusLabels[staffStatus].label })}
+                  >
+                    <span>{statusLabels[staffStatus].icon}</span>
+                    <span>{statusLabels[staffStatus].label}</span>
+                    <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
+                  </button>
+                  {showStatusMenu && (
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0,
+                      marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                    }}>
+                      {(Object.entries(statusLabels) as [StaffStatus, typeof statusLabels[StaffStatus]][]).map(([key, val]) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            onStaffStatusChange(key);
+                            setShowStatusMenu(false);
+                            if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
+                            if (key === 'available' && queuePaused) onQueuePausedChange(false);
+                            showToast(t('Status: {label}', { label: val.label }), 'info');
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                            padding: '10px 16px', border: 'none', cursor: 'pointer',
+                            background: key === staffStatus ? 'var(--surface2)' : 'transparent',
+                            color: 'var(--text)', fontSize: 13, fontWeight: 600,
+                          }}
+                        >
+                          <span style={{ color: val.color }}>{val.icon}</span>
+                          {val.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="pills-right">
+              {/* Unified capsule: In-House Booking + Queue + Calendar + Customers */}
+              <div style={{
+                display: 'flex', gap: 0, border: '1.5px solid var(--border, #334155)', borderRadius: 20, overflow: 'hidden',
+              }}>
+                <button
+                  onClick={() => { setShowBookingModal(prev => !prev); setMainView('queue'); }}
+                  title="F6"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', border: 'none',
+                    background: showBookingModal ? 'rgba(139,92,246,0.2)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: showBookingModal ? '#8b5cf6' : 'var(--text3, #64748b)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  + {t('In-House Booking')} <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>F6</span>
+                </button>
+                <button
+                  onClick={() => setMainView('queue')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
+                    background: mainView === 'queue' ? 'rgba(59,130,246,0.2)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: mainView === 'queue' ? '#3b82f6' : 'var(--text3, #64748b)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  📋 {t('Queue')}
+                </button>
+                <button
+                  onClick={() => { setMainView('calendar'); setCalendarInitialView('week'); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
+                    background: mainView === 'calendar' ? 'rgba(99,102,241,0.2)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: mainView === 'calendar' ? '#818cf8' : 'var(--text3, #64748b)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  📅 {t('Calendar')}
+                </button>
+                <button
+                  onClick={() => setMainView('customers')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
+                    background: mainView === 'customers' ? 'rgba(59,130,246,0.2)' : 'transparent',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    color: mainView === 'customers' ? '#3b82f6' : 'var(--text3, #64748b)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  👥 {t('Customers')}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Embedded Calendar — mount once, keep alive */}
+          {mountedTabs.has('calendar') && (
+            <div style={{ flex: 1, overflow: 'hidden', width: '100%', marginTop: 42, display: mainView === 'calendar' ? 'flex' : 'none' }}>
+              <CalendarModal
+                organizationId={session.organization_id}
+                officeId={session.office_id}
+                locale={locale}
+                storedAuth={storedAuth}
+                departments={names.departments}
+                services={allServices}
+                officeTimezone={officeTimezone}
+                onClose={() => setMainView('queue')}
+                onModerate={moderateAppointment}
+                onOpenCustomer={(phone) => {
+                  setCustomerPhoneToOpen(phone);
+                  setMainView('customers');
+                }}
+                onSlotBook={() => {}}
+                initialViewMode={calendarInitialView}
+                initialAppointmentId={calendarInitialApptId}
+                embedded
+                refreshKey={calendarRefreshKey}
+              />
+            </div>
+          )}
+
+          {/* Embedded Customers — mount once, keep alive */}
+          {mountedTabs.has('customers') && (
+            <div style={{ flex: 1, overflow: 'hidden', width: '100%', marginTop: 42, display: mainView === 'customers' ? 'flex' : 'none' }}>
+              <CustomersModal
+                organizationId={session.organization_id}
+                locale={locale}
+                storedAuth={storedAuth}
+                timezone={officeTimezone}
+                onClose={() => setMainView('queue')}
+                onBookCustomer={(c) => {
+                  setBookingPrefill(c);
+                  setMainView('queue');
+                  setShowBookingModal(true);
+                }}
+                initialPhone={customerPhoneToOpen}
+                embedded
+                refreshKey={customersRefreshKey}
+              />
+            </div>
+          )}
+
+          {activeTicket && (
+          <div className="active-ticket-panel" style={{ display: mainView === 'queue' ? undefined : 'none' }}>
             {activeTicket.status === 'called' ? (
               <>
                 <div className="active-status called">{t('CALLING')}</div>
@@ -3117,209 +3383,88 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </>
             )}
           </div>
-        ) : (
-          <>
-          {/* Toolbar */}
-          <div className="station-action-pills">
-            <div className="pills-left">
-              {/* Pause toggle switch — only when available */}
-              {staffStatus === 'available' && (
-                <button
-                  onClick={() => {
-                    onQueuePausedChange(!queuePaused);
-                    showToast(queuePaused ? t('Queue resumed') : t('Queue paused - no new calls'), queuePaused ? 'success' : 'info');
-                  }}
-                  title="F7 — Toggle pause"
-                  className="pause-toggle"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '5px 12px 5px 6px',
-                    borderRadius: 20,
-                    border: queuePaused ? '1.5px solid rgba(249,115,22,0.4)' : '1.5px solid var(--border)',
-                    background: queuePaused ? 'rgba(249,115,22,0.15)' : 'transparent',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    color: queuePaused ? '#f97316' : 'var(--text2)',
-                    transition: 'all 0.2s ease',
-                  }}
-                  aria-label={queuePaused ? t('Resume') : t('Pause')}
-                >
-                  {/* Toggle track */}
-                  <span style={{
-                    position: 'relative',
-                    width: 40, height: 22, borderRadius: 11,
-                    background: queuePaused ? '#f97316' : 'var(--surface2)',
-                    display: 'inline-block',
-                    transition: 'background 0.2s ease',
-                    flexShrink: 0,
-                  }}>
-                    {/* Toggle knob */}
-                    <span style={{
-                      position: 'absolute',
-                      top: 2, left: queuePaused ? 20 : 2,
-                      width: 18, height: 18, borderRadius: '50%',
-                      background: '#fff',
-                      transition: 'left 0.2s ease',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 9,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                    }}>
-                      {queuePaused ? '⏸' : ''}
-                    </span>
-                  </span>
-                  <span style={{ whiteSpace: 'nowrap' }}>
-                    {queuePaused ? t('Paused') : t('Pause')}
-                  </span>
-                  {queuePaused && pauseElapsed > 0 && (
-                    <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.8, fontSize: 11 }}>
-                      {`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}
-                    </span>
-                  )}
-                  <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.5, background: 'rgba(0,0,0,0.15)' }}>F7</span>
-                </button>
-              )}
+          )}
 
-              {/* Staff status — only show when not available */}
-              {staffStatus !== 'available' && (
-                <div style={{ position: 'relative' }}>
-                  <button
-                    onClick={() => setShowStatusMenu((v) => !v)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '5px 14px', borderRadius: 20,
-                      border: `1.5px solid ${statusLabels[staffStatus].color}40`,
-                      background: `${statusLabels[staffStatus].color}12`,
-                      cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                      color: statusLabels[staffStatus].color,
-                    }}
-                    aria-label={t('Status: {label}', { label: statusLabels[staffStatus].label })}
-                  >
-                    <span>{statusLabels[staffStatus].icon}</span>
-                    <span>{statusLabels[staffStatus].label}</span>
-                    <span style={{ fontSize: 9, opacity: 0.6 }}>▼</span>
-                  </button>
-                  {showStatusMenu && (
-                    <div style={{
-                      position: 'absolute', top: '100%', left: 0,
-                      marginTop: 4, background: 'var(--surface)', border: '1px solid var(--border)',
-                      borderRadius: 8, overflow: 'hidden', zIndex: 10, minWidth: 150,
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-                    }}>
-                      {(Object.entries(statusLabels) as [StaffStatus, typeof statusLabels[StaffStatus]][]).map(([key, val]) => (
-                        <button
-                          key={key}
-                          onClick={() => {
-                            onStaffStatusChange(key);
-                            setShowStatusMenu(false);
-                            if (key !== 'available' && !queuePaused) onQueuePausedChange(true);
-                            if (key === 'available' && queuePaused) onQueuePausedChange(false);
-                            showToast(t('Status: {label}', { label: val.label }), 'info');
-                          }}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                            padding: '10px 16px', border: 'none', cursor: 'pointer',
-                            background: key === staffStatus ? 'var(--surface2)' : 'transparent',
-                            color: 'var(--text)', fontSize: 13, fontWeight: 600,
-                          }}
-                        >
-                          <span style={{ color: val.color }}>{val.icon}</span>
-                          {val.label}
-                        </button>
-                      ))}
+          {/* Queue view: idle panel + optional booking side panel (only when no active ticket) */}
+          {!activeTicket && (
+          <div style={{
+            display: mainView === 'queue' ? 'flex' : 'none',
+            flex: 1, width: '100%', alignItems: 'stretch', overflow: 'hidden',
+          }}>
+            {/* Idle panel — left side (or full width when booking closed) */}
+            <div className="idle-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              {queuePaused || staffStatus !== 'available' ? (
+                <>
+                  {(staffStatus === 'on_break' || staffStatus === 'away') && (
+                    <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444' }}>
+                      {staffStatus === 'on_break' ? '☕' : '🚫'}
                     </div>
                   )}
-                </div>
+                  <h2>{staffStatus === 'on_break' ? t('On Break') : staffStatus === 'away' ? t('Away') : t('Queue Paused')}</h2>
+                  {pauseElapsed > 0 && <p style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', margin: '4px 0' }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</p>}
+                  <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
+                  <button
+                    className="btn-primary btn-xl"
+                    onClick={() => { onQueuePausedChange(false); onStaffStatusChange('available'); showToast(t('Queue resumed'), 'success'); }}
+                    style={{ background: '#22c55e' }}
+                  >
+                    {t('Resume Queue')} <span className="shortcut-hint">F7</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="idle-icon">✓</div>
+                  <h2>{t('Ready for Next Customer')}</h2>
+                  <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
+                  <button
+                    className="btn-primary btn-xl"
+                    onClick={callNext}
+                    disabled={waiting.length === 0}
+                    title="F8 or Ctrl+Enter"
+                  >
+                    {t('Call Next ({count})', { count: waiting.length })} <span className="shortcut-hint">F8</span>
+                  </button>
+                </>
               )}
             </div>
 
-            <div className="pills-right">
-              {/* In-House Booking */}
-              <button
-                onClick={() => setShowBookingModal(true)}
-                title="F6"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: '1.5px solid rgba(139,92,246,0.4)',
-                  background: 'rgba(139,92,246,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: '#8b5cf6',
-                }}
-              >
-                + {t('In-House Booking')} <span className="shortcut-hint" style={{ color: 'inherit', opacity: 0.6, background: 'rgba(0,0,0,0.1)' }}>F6</span>
-              </button>
-              {/* Customers */}
-              <button
-                onClick={() => setShowCustomersModal(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: '1.5px solid rgba(59,130,246,0.4)',
-                  background: 'rgba(59,130,246,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: '#3b82f6',
-                }}
-              >
-                👥 {t('Customers')}
-              </button>
-              {/* Calendar / Appointments — single button */}
-              <button
-                onClick={() => { setCalendarInitialView('week'); setShowCalendarModal(true); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 14px', borderRadius: 20,
-                  border: '1.5px solid rgba(99,102,241,0.4)',
-                  background: 'rgba(99,102,241,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: '#818cf8',
-                }}
-              >
-                📅 {t('Calendar / Appointments')}
-              </button>
-            </div>
-          </div>
-
-          <div className="idle-panel">
-            {queuePaused || staffStatus !== 'available' ? (
-              <>
-                {(staffStatus === 'on_break' || staffStatus === 'away') && (
-                  <div className="idle-icon" style={{ color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444' }}>
-                    {staffStatus === 'on_break' ? '☕' : '🚫'}
-                  </div>
-                )}
-                <h2>{staffStatus === 'on_break' ? t('On Break') : staffStatus === 'away' ? t('Away') : t('Queue Paused')}</h2>
-                {pauseElapsed > 0 && <p style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', margin: '4px 0' }}>{`${Math.floor(pauseElapsed / 60)}:${String(pauseElapsed % 60).padStart(2, '0')}`}</p>}
-                <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
+            {/* In-House Booking — right side panel (resizable) */}
+            {showBookingModal && session.desk_id && (
+              <div style={{
+                width: bookingWidth, flexShrink: 0, position: 'relative',
+                borderLeft: '1px solid var(--border)', background: 'var(--surface)',
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              }}>
                 <button
-                  className="btn-primary btn-xl"
-                  onClick={() => { onQueuePausedChange(false); onStaffStatusChange('available'); showToast(t('Queue resumed'), 'success'); }}
-                  style={{ background: '#22c55e' }}
-                >
-                  {t('Resume Queue')} <span className="shortcut-hint">F7</span>
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="idle-icon">✓</div>
-                <h2>{t('Ready for Next Customer')}</h2>
-                <p>{t('{count} waiting in queue', { count: waiting.length })}</p>
-                <button
-                  className="btn-primary btn-xl"
-                  onClick={callNext}
-                  disabled={waiting.length === 0}
-                  title="F8 or Ctrl+Enter"
-                >
-                  {t('Call Next ({count})', { count: waiting.length })} <span className="shortcut-hint">F8</span>
-                </button>
-              </>
+                  type="button"
+                  className="station-sidebar-resizer"
+                  onPointerDown={startBookingResize}
+                />
+                <InHouseBookingPanel
+                  locale={locale}
+                  departments={Object.entries(names.departments)}
+                  services={allServices}
+                  officeId={session.office_id}
+                  onBook={bookInHouse}
+                  onCollapse={() => { setShowBookingModal(false); setBookingPrefill(null); }}
+                  messengerPageId={messengerPageId}
+                  whatsappPhone="+213551176598"
+                  session={session}
+                  prefill={bookingPrefill}
+                  storedAuth={storedAuth}
+                  timezone={officeTimezone}
+                />
+              </div>
             )}
           </div>
+          )}
           </>
         )}
 
-        {/* Calendar Modal */}
+        {/* Calendar Modal (full-screen overlay — opens via F5 or external triggers) */}
         {showCalendarModal && (
           <CalendarModal
-            key={`${calendarInitialView}-${calendarInitialApptId || ''}`}
+            key={`modal-${calendarInitialView}-${calendarInitialApptId || ''}`}
             organizationId={session.organization_id}
             officeId={session.office_id}
             locale={locale}
@@ -3371,23 +3516,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           />
         )}
 
-        {/* Docked In-House Booking Panel */}
-        {showBookingModal && session.desk_id && (
-          <InHouseBookingPanel
-            locale={locale}
-            departments={Object.entries(names.departments)}
-            services={allServices}
-            officeId={session.office_id}
-            onBook={bookInHouse}
-            onCollapse={() => { setShowBookingModal(false); setBookingPrefill(null); }}
-            messengerPageId={messengerPageId}
-            whatsappPhone="+213551176598"
-            session={session}
-            prefill={bookingPrefill}
-            storedAuth={storedAuth}
-            timezone={officeTimezone}
-          />
-        )}
+        {/* In-House Booking Panel moved to split view inside queue tab */}
       </div>
 
       {/* Right panel — queue overview */}

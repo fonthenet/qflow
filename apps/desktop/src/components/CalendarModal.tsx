@@ -89,6 +89,10 @@ interface Props {
   onSlotBook?: (date: string, time: string) => void;
   initialViewMode?: ViewMode;
   initialAppointmentId?: string | null;
+  /** When true, renders inline (no overlay/backdrop) filling its parent container */
+  embedded?: boolean;
+  /** Increment to trigger a background data refresh (no loading flash) */
+  refreshKey?: number;
 }
 
 type ViewMode = 'week' | 'month' | 'list';
@@ -129,7 +133,7 @@ const APPT_SELECT = `
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, initialViewMode, initialAppointmentId }: Props) {
+export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, initialViewMode, initialAppointmentId, embedded, refreshKey }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const tz = officeTimezone || 'Africa/Algiers';
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
@@ -411,6 +415,16 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     const iv = setInterval(() => { load(true); loadActivity(); }, 30_000);
     return () => clearInterval(iv);
   }, [load, loadActivity]);
+
+  // Silent background refresh when parent signals (tab switch)
+  const prevRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey !== prevRefreshKey.current) {
+      prevRefreshKey.current = refreshKey;
+      load(true);
+      loadActivity();
+    }
+  }, [refreshKey, load, loadActivity]);
 
   // ── Auto-scroll activity log ───────────────────────────────────
   useEffect(() => {
@@ -726,20 +740,29 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     setTimeout(() => { anyPanel.removeEventListener('transitionend', handler); onDone(); }, 300);
   }, []);
 
-  // ── Global keyboard navigation (arrow keys for weeks) ──────────
+  // ── Global keyboard navigation (arrow keys for all views) ──────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Skip if already handled by the grid's cell navigation
-      if (e.defaultPrevented) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (viewMode !== 'week') return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); navigateWeek(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateWeek(1); }
+      // Also skip if a contentEditable element is focused
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (viewMode === 'week') navigateWeek(-1);
+        else goPrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (viewMode === 'week') navigateWeek(1);
+        else goNext();
+      }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [viewMode, navigateWeek]);
+    // Use capture phase to ensure we get the event first
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [viewMode, navigateWeek, goPrev, goNext]);
 
   // ── Wheel-as-drag: scroll physically moves panels, then snaps ──
   const wheelDragRef = useRef({ offset: 0, settling: false, timer: null as ReturnType<typeof setTimeout> | null });
@@ -1209,15 +1232,22 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        position: 'relative', width: '100%', height: '100%',
+        display: 'flex', alignItems: 'stretch', justifyContent: 'stretch',
+      } : {
         position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(4px)',
         zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       }}
-      onClick={onClose}
+      onClick={embedded ? undefined : onClose}
     >
       <div
-        onClick={e => e.stopPropagation()}
-        style={{
+        onClick={embedded ? undefined : (e => e.stopPropagation())}
+        style={embedded ? {
+          background: 'var(--surface, #1e293b)',
+          width: '100%', height: '100%',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        } : {
           background: 'var(--surface, #1e293b)', borderRadius: 14,
           width: '97vw', maxWidth: 1440, height: '92vh',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -1299,11 +1329,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
             <div style={{ width: 16, height: 16, border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
           )}
 
-          <button onClick={onClose} style={{
-            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
-            color: '#ef4444', width: 30, height: 30, borderRadius: 8,
-            fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>×</button>
+          {!embedded && (
+            <button onClick={onClose} style={{
+              background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ef4444', width: 30, height: 30, borderRadius: 8,
+              fontSize: 16, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>×</button>
+          )}
         </div>
 
         {/* ─── Body: sidebar | calendar grid | detail panel ─── */}

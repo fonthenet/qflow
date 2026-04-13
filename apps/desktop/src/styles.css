@@ -108,7 +108,8 @@ select { font-family: inherit; }
 /* ── Station Layout ──────────────────────────────────────────────── */
 .station { display: flex; flex: 1; overflow: hidden; }
 .station-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; padding-bottom: 0; position: relative; overflow: hidden; }
-.station-main > .booking-panel { flex-shrink: 0; width: calc(100% + 80px); margin: auto -40px 0; }
+.station-main > .booking-panel { flex-shrink: 0; }
+/* Legacy bottom-docked booking panel (no longer used) */
 .station-sidebar { width: 380px; min-width: 320px; max-width: 720px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; position: relative; }
 .station-sidebar-resizer {
   position: absolute;
