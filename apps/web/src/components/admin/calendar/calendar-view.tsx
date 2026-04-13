@@ -349,6 +349,10 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             operatingHours={office?.operating_hours ?? null}
             intlLocale={intlLocale}
             onSelectAppt={setSelectedAppt}
+            onReschedule={async (apptId, newIso) => {
+              const result = await rescheduleAppointment(apptId, newIso);
+              if (!result.error) fetchAppointments();
+            }}
           />
         ) : (
           <MonthView
@@ -402,6 +406,7 @@ function WeekView({
   operatingHours,
   intlLocale,
   onSelectAppt,
+  onReschedule,
 }: {
   days: CalendarDayInfo[];
   appointments: CalendarAppointment[];
@@ -410,7 +415,10 @@ function WeekView({
   operatingHours: Record<string, { open: string; close: string }> | null;
   intlLocale: string;
   onSelectAppt: (a: CalendarAppointment) => void;
+  onReschedule?: (apptId: string, newScheduledAt: string) => void;
 }) {
+  const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   // Group by dateKey
   const byDate = useMemo(() => groupByDate(appointments, timezone), [appointments, timezone]);
   // Build 30-min slots: 06:00, 06:30, 07:00, ...
@@ -469,16 +477,32 @@ function WeekView({
 
               {/* Half-hour slots + positioned appointments */}
               <div className="relative">
-                {slots.map((s) => (
-                  <div
-                    key={s.label}
-                    className={s.minute === 0
-                      ? 'border-b border-gray-200 dark:border-gray-700'
-                      : 'border-b border-gray-100 dark:border-gray-800'
-                    }
-                    style={{ height: SLOT_HEIGHT }}
-                  />
-                ))}
+                {slots.map((s) => {
+                  const slotKey = `${day.dateKey}|${s.hour}:${String(s.minute).padStart(2, '0')}`;
+                  return (
+                    <div
+                      key={s.label}
+                      data-slot={slotKey}
+                      className={`relative ${s.minute === 0
+                        ? 'border-b border-gray-200 dark:border-gray-700'
+                        : 'border-b border-gray-100 dark:border-gray-800'
+                      } ${dragOverSlot === slotKey ? 'bg-blue-100 dark:bg-blue-900/40 ring-1 ring-inset ring-blue-400' : ''}`}
+                      style={{ height: SLOT_HEIGHT, transition: 'background-color 0.1s' }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverSlot(slotKey); }}
+                      onDragLeave={() => { if (dragOverSlot === slotKey) setDragOverSlot(null); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOverSlot(null);
+                        const apptId = e.dataTransfer.getData('text/plain');
+                        if (!apptId || !onReschedule) return;
+                        // Build ISO date from the slot's dateKey (YYYY-MM-DD) + time, in the org timezone
+                        const timeStr = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}:00`;
+                        const newIso = new Date(`${day.dateKey}T${timeStr}`).toISOString();
+                        onReschedule(apptId, newIso);
+                      }}
+                    />
+                  );
+                })}
 
                 {/* Appointment blocks positioned absolutely */}
                 {dayAppts.map((appt) => {
@@ -495,11 +519,29 @@ function WeekView({
                   return (
                     <button
                       key={appt.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', appt.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                        setDraggingId(appt.id);
+                        // Custom drag ghost — clone the element with slight scale
+                        const el = e.currentTarget;
+                        const ghost = el.cloneNode(true) as HTMLElement;
+                        ghost.style.width = `${el.offsetWidth}px`;
+                        ghost.style.opacity = '0.85';
+                        ghost.style.transform = 'scale(1.02)';
+                        ghost.style.position = 'absolute';
+                        ghost.style.top = '-9999px';
+                        document.body.appendChild(ghost);
+                        e.dataTransfer.setDragImage(ghost, el.offsetWidth / 2, 10);
+                        requestAnimationFrame(() => document.body.removeChild(ghost));
+                      }}
+                      onDragEnd={() => { setDraggingId(null); setDragOverSlot(null); }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectAppt(appt);
                       }}
-                      className="absolute left-0.5 right-0.5 rounded-md px-1.5 py-0.5 text-left overflow-hidden cursor-pointer hover:brightness-110 transition-all shadow-sm border border-white/20"
+                      className={`absolute left-0.5 right-0.5 rounded-md px-1.5 py-0.5 text-left overflow-hidden cursor-grab active:cursor-grabbing hover:brightness-110 shadow-sm border border-white/20 ${draggingId === appt.id ? 'opacity-40 scale-95' : ''}`}
                       style={{
                         top,
                         height: Math.min(height, (END_HOUR - hour) * HOUR_HEIGHT - (minute / 60) * HOUR_HEIGHT),
@@ -507,7 +549,8 @@ function WeekView({
                         color: '#fff',
                         fontSize: height < 30 ? 9 : 11,
                         lineHeight: height < 30 ? '11px' : '14px',
-                        zIndex: 10,
+                        zIndex: draggingId === appt.id ? 5 : 10,
+                        transition: 'opacity 0.15s, transform 0.15s',
                       }}
                       title={`${appt.customer_name} - ${svc?.name ?? ''} (${formatTimeInTz(appt.scheduled_at, timezone)})`}
                     >
