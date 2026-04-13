@@ -619,6 +619,323 @@ const PUBLIC_SERVICE_PROFILES: TemplateProfile[] = [
   },
 ];
 
+const EDUCATION_PROFILES: TemplateProfile[] = [
+  {
+    id: 'student-services',
+    parentVertical: 'education',
+    title: 'Student Services',
+    description: 'Admissions, advising, and financial aid for campus offices.',
+    icon: '📚',
+    overrides: {},
+  },
+  {
+    id: 'library-helpdesk',
+    parentVertical: 'education',
+    title: 'Library Help Desk',
+    description: 'Research help, equipment checkout, and room reservations.',
+    icon: '📖',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          departmentLabel: 'Service',
+          deskLabel: 'Help Desk',
+          customerLabel: 'Patron',
+        },
+        kiosk: {
+          welcomeMessage: 'Welcome to the Library',
+          headerText: 'Library services',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Library Services', code: 'LIB', sortOrder: 1,
+          services: [
+            { name: 'Research Help', code: 'RESEARCH', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Equipment Checkout', code: 'EQUIP', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'Room Reservation', code: 'ROOM', estimatedServiceTime: 5, sortOrder: 3 },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'it-helpdesk',
+    parentVertical: 'education',
+    title: 'IT Help Desk',
+    description: 'Technical support for students and staff.',
+    icon: '💻',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          departmentLabel: 'Support Area',
+          serviceLabel: 'Issue Type',
+          deskLabel: 'Station',
+        },
+        kiosk: {
+          welcomeMessage: 'IT Support — how can we help?',
+          headerText: 'IT help desk',
+          themeColor: '#059669',
+        },
+        branding: { recommendedPrimaryColor: '#059669' },
+      },
+      starterDepartments: [
+        {
+          name: 'IT Support', code: 'IT', sortOrder: 1,
+          services: [
+            { name: 'Password Reset', code: 'PASS', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Software Install', code: 'SW', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Network Issue', code: 'NET', estimatedServiceTime: 20, sortOrder: 3 },
+            { name: 'Hardware Repair', code: 'HW', estimatedServiceTime: 25, sortOrder: 4 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const TELECOM_PROFILES: TemplateProfile[] = [
+  {
+    id: 'telecom-store',
+    parentVertical: 'telecom',
+    title: 'Telecom Store',
+    description: 'Retail store with sales, support, and account services.',
+    icon: '📱',
+    overrides: {},
+  },
+  {
+    id: 'service-center',
+    parentVertical: 'telecom',
+    title: 'Service Center',
+    description: 'Technical support and repairs only.',
+    icon: '🔧',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Service Center',
+          deskLabel: 'Workbench',
+        },
+        kiosk: {
+          welcomeMessage: 'Welcome to the Service Center',
+          headerText: 'Device support',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Device Support', code: 'DS', sortOrder: 1,
+          services: [
+            { name: 'Screen Repair', code: 'SCREEN', estimatedServiceTime: 30, sortOrder: 1 },
+            { name: 'Battery Replacement', code: 'BATTERY', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'Diagnostics', code: 'DIAG', estimatedServiceTime: 15, sortOrder: 3 },
+            { name: 'Data Transfer', code: 'DATA', estimatedServiceTime: 25, sortOrder: 4 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const INSURANCE_PROFILES: TemplateProfile[] = [
+  {
+    id: 'insurance-agency',
+    parentVertical: 'insurance',
+    title: 'Insurance Agency',
+    description: 'Full-service agency with claims, policies, and advisory.',
+    icon: '🛡️',
+    overrides: {},
+  },
+  {
+    id: 'claims-office',
+    parentVertical: 'insurance',
+    title: 'Claims Office',
+    description: 'Claims-focused office for filing and status checks.',
+    icon: '📋',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Claims Office',
+          serviceLabel: 'Claim Type',
+        },
+        kiosk: {
+          welcomeMessage: 'File or check your claim',
+          headerText: 'Claims check-in',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Claims', code: 'CL', sortOrder: 1,
+          services: [
+            { name: 'New Claim', code: 'NEW', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'Claim Status', code: 'STATUS', estimatedServiceTime: 10, sortOrder: 2 },
+            { name: 'Documentation', code: 'DOCS', estimatedServiceTime: 15, sortOrder: 3 },
+            { name: 'Settlement Review', code: 'SETTLE', estimatedServiceTime: 20, sortOrder: 4 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const AUTOMOTIVE_PROFILES: TemplateProfile[] = [
+  {
+    id: 'auto-service',
+    parentVertical: 'automotive',
+    title: 'Auto Service Center',
+    description: 'Full-service shop with bays and parts counter.',
+    icon: '🔧',
+    overrides: {},
+  },
+  {
+    id: 'auto-dealership',
+    parentVertical: 'automotive',
+    title: 'Dealership Service',
+    description: 'Dealership service department with advisor routing.',
+    icon: '🚗',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Dealership',
+          deskLabel: 'Service Advisor',
+          customerLabel: 'Customer',
+        },
+        kiosk: {
+          welcomeMessage: 'Welcome to our service department',
+          headerText: 'Service check-in',
+          themeColor: '#0f172a',
+        },
+        messagingTone: 'professional',
+        branding: { recommendedPrimaryColor: '#0f172a' },
+      },
+    },
+  },
+  {
+    id: 'quick-lube',
+    parentVertical: 'automotive',
+    title: 'Quick Lube / Express',
+    description: 'Express oil change and maintenance with fast turnover.',
+    icon: '⚡',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Shop',
+          deskLabel: 'Bay',
+        },
+        kiosk: {
+          welcomeMessage: 'Quick service — check in here',
+          headerText: 'Express service',
+          themeColor: '#ea580c',
+        },
+        branding: { recommendedPrimaryColor: '#ea580c' },
+      },
+      starterDepartments: [
+        {
+          name: 'Express Service', code: 'EXP', sortOrder: 1,
+          services: [
+            { name: 'Oil Change', code: 'OIL', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Tire Rotation', code: 'TIRE', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'Fluid Top-Off', code: 'FLUID', estimatedServiceTime: 10, sortOrder: 3 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const LEGAL_PROFILES: TemplateProfile[] = [
+  {
+    id: 'law-firm',
+    parentVertical: 'legal',
+    title: 'Law Office',
+    description: 'Appointment-focused consultations and case reviews.',
+    icon: '⚖️',
+    overrides: {},
+  },
+  {
+    id: 'notary-office',
+    parentVertical: 'legal',
+    title: 'Notary Office',
+    description: 'Document notarization and certification services.',
+    icon: '📜',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Notary Office',
+          serviceLabel: 'Service',
+          deskLabel: 'Window',
+          customerLabel: 'Client',
+        },
+        kiosk: {
+          welcomeMessage: 'Welcome — select your service',
+          headerText: 'Notary services',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Notary Services', code: 'N', sortOrder: 1,
+          services: [
+            { name: 'Document Notarization', code: 'NOTARY', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Certification', code: 'CERT', estimatedServiceTime: 10, sortOrder: 2 },
+            { name: 'Apostille', code: 'APOST', estimatedServiceTime: 20, sortOrder: 3 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const REAL_ESTATE_PROFILES: TemplateProfile[] = [
+  {
+    id: 'real-estate-office',
+    parentVertical: 'real_estate',
+    title: 'Real Estate Office',
+    description: 'Property inquiries, viewings, and contract signings.',
+    icon: '🏠',
+    overrides: {},
+  },
+  {
+    id: 'property-management',
+    parentVertical: 'real_estate',
+    title: 'Property Management',
+    description: 'Tenant services, maintenance requests, and lease management.',
+    icon: '🏢',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Management Office',
+          customerLabel: 'Tenant',
+          serviceLabel: 'Request Type',
+        },
+        kiosk: {
+          welcomeMessage: 'Welcome — how can we help?',
+          headerText: 'Tenant services',
+          themeColor: '#0d9488',
+        },
+        branding: { recommendedPrimaryColor: '#0d9488' },
+      },
+      starterDepartments: [
+        {
+          name: 'Tenant Services', code: 'TS', sortOrder: 1,
+          services: [
+            { name: 'Maintenance Request', code: 'MAINT', estimatedServiceTime: 10, sortOrder: 1 },
+            { name: 'Lease Inquiry', code: 'LEASE', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Payment Issue', code: 'PAY', estimatedServiceTime: 10, sortOrder: 3 },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+const OTHER_PROFILES: TemplateProfile[] = [
+  {
+    id: 'general-service',
+    parentVertical: 'other',
+    title: 'General Service',
+    description: 'Flexible queue for any business type.',
+    icon: '💼',
+    overrides: {},
+  },
+];
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ═══════════════════════════════════════════════════════════════════════════
@@ -630,6 +947,13 @@ const ALL_PROFILES: Record<IndustryVertical, TemplateProfile[]> = {
   clinic: CLINIC_PROFILES,
   restaurant: RESTAURANT_PROFILES,
   barbershop: BARBERSHOP_PROFILES,
+  education: EDUCATION_PROFILES,
+  telecom: TELECOM_PROFILES,
+  insurance: INSURANCE_PROFILES,
+  automotive: AUTOMOTIVE_PROFILES,
+  legal: LEGAL_PROFILES,
+  real_estate: REAL_ESTATE_PROFILES,
+  other: OTHER_PROFILES,
 };
 
 /** Get all available profiles for a given vertical */

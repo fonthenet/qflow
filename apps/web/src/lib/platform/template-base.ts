@@ -178,7 +178,7 @@ const LIGHT_EXPERIENCE: ExperienceProfile = {
 };
 
 const STANDARD_EXPERIENCE: ExperienceProfile = {
-  dashboardMode: 'clinic',
+  dashboardMode: 'standard_service',
   kiosk: {
     welcomeMessage: 'Select a service',
     headerText: 'Check in',

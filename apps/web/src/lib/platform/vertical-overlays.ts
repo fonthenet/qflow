@@ -731,3 +731,530 @@ export function getBarbershopOverlay(): DeepPartial<IndustryTemplate> {
     intakeSchemas: [],
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EDUCATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getEducationOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your campus service desk',
+      description: 'Student services, admissions, and advising with appointment and walk-in support.',
+      reviewChecklist: [
+        'Set up your departments (Admissions, Advising, Financial Aid, etc.)',
+        'Configure appointment slots for advising sessions',
+        'Customize the student-facing check-in flow',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'standard_service',
+      messagingTone: 'friendly',
+      vocabulary: {
+        officeLabel: 'Campus Office',
+        departmentLabel: 'Department',
+        serviceLabel: 'Service',
+        deskLabel: 'Window',
+        customerLabel: 'Student',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome to Student Services',
+        headerText: 'Student check-in',
+        themeColor: '#1d4ed8',
+        buttonLabel: 'Check In',
+      },
+      publicJoin: {
+        headline: 'Your campus visit',
+        subheadline: 'Check in and we\'ll call you when it\'s your turn.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Student name',
+      },
+      branding: { recommendedPrimaryColor: '#1d4ed8' },
+    },
+    starterOffices: [
+      {
+        branchType: 'campus_office',
+        name: 'Student Services Center',
+        timezone: 'America/Los_Angeles',
+        operatingHours: WEEKDAY_SERVICE_HOURS,
+        departments: [
+          {
+            name: 'Admissions', code: 'ADM', sortOrder: 1,
+            services: [
+              { name: 'New Application', code: 'APP', estimatedServiceTime: 20, sortOrder: 1 },
+              { name: 'Status Inquiry', code: 'STATUS', estimatedServiceTime: 10, sortOrder: 2 },
+            ],
+          },
+          {
+            name: 'Advising', code: 'ADV', sortOrder: 2,
+            services: [
+              { name: 'Academic Advising', code: 'ACAD', estimatedServiceTime: 25, sortOrder: 1 },
+              { name: 'Course Registration', code: 'REG', estimatedServiceTime: 15, sortOrder: 2 },
+            ],
+          },
+          {
+            name: 'Financial Aid', code: 'FIN', sortOrder: 3,
+            services: [
+              { name: 'Aid Application', code: 'AID', estimatedServiceTime: 20, sortOrder: 1 },
+              { name: 'Payment Inquiry', code: 'PAY', estimatedServiceTime: 10, sortOrder: 2 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('window-1', 'ADM', ['APP', 'STATUS'], 'Window 1'),
+          starterDesk('window-2', 'ADV', ['ACAD', 'REG'], 'Window 2'),
+          starterDesk('window-3', 'FIN', ['AID', 'PAY'], 'Window 3'),
+        ],
+        displayScreens: [starterDisplay('Lobby Display', 'list')],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TELECOM
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getTelecomOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your telecom store queue',
+      description: 'Walk-in and appointment support for sales, repairs, and account services.',
+      reviewChecklist: [
+        'Set up service areas (Sales, Technical, Account)',
+        'Configure walk-in and appointment flow',
+        'Customize customer-facing kiosk messaging',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'standard_service',
+      messagingTone: 'professional',
+      vocabulary: {
+        officeLabel: 'Store',
+        departmentLabel: 'Service Area',
+        serviceLabel: 'Service',
+        deskLabel: 'Counter',
+        customerLabel: 'Customer',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'How can we help today?',
+        headerText: 'Store check-in',
+        themeColor: '#7c3aed',
+        buttonLabel: 'Get in Line',
+      },
+      publicJoin: {
+        headline: 'Your store visit',
+        subheadline: 'We\'ll call you when a representative is available.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Customer name',
+      },
+      branding: { recommendedPrimaryColor: '#7c3aed' },
+    },
+    starterOffices: [
+      {
+        branchType: 'retail_store',
+        name: 'Main Store',
+        timezone: 'America/Los_Angeles',
+        operatingHours: SHOP_HOURS,
+        departments: [
+          {
+            name: 'Sales', code: 'S', sortOrder: 1,
+            services: [
+              { name: 'New Line', code: 'NEW', estimatedServiceTime: 20, sortOrder: 1 },
+              { name: 'Upgrade', code: 'UPGRADE', estimatedServiceTime: 15, sortOrder: 2 },
+              { name: 'Accessories', code: 'ACC', estimatedServiceTime: 10, sortOrder: 3 },
+            ],
+          },
+          {
+            name: 'Technical Support', code: 'T', sortOrder: 2,
+            services: [
+              { name: 'Device Repair', code: 'REPAIR', estimatedServiceTime: 25, sortOrder: 1 },
+              { name: 'Troubleshooting', code: 'TROUBLE', estimatedServiceTime: 15, sortOrder: 2 },
+            ],
+          },
+          {
+            name: 'Account Services', code: 'A', sortOrder: 3,
+            services: [
+              { name: 'Billing', code: 'BILL', estimatedServiceTime: 10, sortOrder: 1 },
+              { name: 'Plan Change', code: 'PLAN', estimatedServiceTime: 12, sortOrder: 2 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('counter-1', 'S', ['NEW', 'UPGRADE', 'ACC'], 'Counter 1'),
+          starterDesk('counter-2', 'T', ['REPAIR', 'TROUBLE'], 'Counter 2'),
+          starterDesk('counter-3', 'A', ['BILL', 'PLAN'], 'Counter 3'),
+        ],
+        displayScreens: [starterDisplay('Store Display', 'list')],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INSURANCE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getInsuranceOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your insurance office queue',
+      description: 'Claims, policy reviews, and new applications with appointment support.',
+      reviewChecklist: [
+        'Configure service types (Claims, New Policy, Review)',
+        'Set up appointment and walk-in flow',
+        'Customize intake forms for claim details',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'standard_service',
+      messagingTone: 'professional',
+      vocabulary: {
+        officeLabel: 'Agency',
+        departmentLabel: 'Department',
+        serviceLabel: 'Service',
+        deskLabel: 'Office',
+        customerLabel: 'Client',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Client Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome — how can we assist you?',
+        headerText: 'Client check-in',
+        themeColor: '#0369a1',
+        buttonLabel: 'Check In',
+      },
+      publicJoin: {
+        headline: 'Your appointment',
+        subheadline: 'Check in and your agent will be with you shortly.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Client name',
+      },
+      branding: { recommendedPrimaryColor: '#0369a1' },
+    },
+    starterOffices: [
+      {
+        branchType: 'agency_office',
+        name: 'Insurance Agency',
+        timezone: 'America/Los_Angeles',
+        operatingHours: EXTENDED_BRANCH_HOURS,
+        departments: [
+          {
+            name: 'Claims', code: 'CL', sortOrder: 1,
+            services: [
+              { name: 'File a Claim', code: 'FILE', estimatedServiceTime: 25, sortOrder: 1 },
+              { name: 'Claim Status', code: 'STATUS', estimatedServiceTime: 10, sortOrder: 2 },
+            ],
+          },
+          {
+            name: 'Policies', code: 'PO', sortOrder: 2,
+            services: [
+              { name: 'New Policy', code: 'NEW', estimatedServiceTime: 30, sortOrder: 1 },
+              { name: 'Policy Review', code: 'REVIEW', estimatedServiceTime: 20, sortOrder: 2 },
+              { name: 'Renewal', code: 'RENEW', estimatedServiceTime: 15, sortOrder: 3 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('desk-1', 'CL', ['FILE', 'STATUS'], 'Desk 1'),
+          starterDesk('desk-2', 'PO', ['NEW', 'REVIEW', 'RENEW'], 'Desk 2'),
+        ],
+        displayScreens: [starterDisplay('Lobby Display', 'list')],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  AUTOMOTIVE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getAutomotiveOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your automotive service queue',
+      description: 'Service appointments, walk-in repairs, and parts counter with technician routing.',
+      reviewChecklist: [
+        'Set up service bays and parts counter',
+        'Configure appointment and walk-in flow',
+        'Customize the customer-facing check-in',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'standard_service',
+      messagingTone: 'friendly',
+      vocabulary: {
+        officeLabel: 'Shop',
+        departmentLabel: 'Service Area',
+        serviceLabel: 'Service',
+        deskLabel: 'Bay',
+        customerLabel: 'Customer',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Service Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome — check in for service',
+        headerText: 'Service check-in',
+        themeColor: '#b91c1c',
+        buttonLabel: 'Check In',
+      },
+      publicJoin: {
+        headline: 'Your vehicle service',
+        subheadline: 'We\'ll notify you when your vehicle is ready.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Customer name',
+      },
+      branding: { recommendedPrimaryColor: '#b91c1c' },
+    },
+    starterOffices: [
+      {
+        branchType: 'workshop',
+        name: 'Service Center',
+        timezone: 'America/Los_Angeles',
+        operatingHours: SHOP_HOURS,
+        departments: [
+          {
+            name: 'Service', code: 'SVC', sortOrder: 1,
+            services: [
+              { name: 'Oil Change', code: 'OIL', estimatedServiceTime: 30, sortOrder: 1 },
+              { name: 'Tire Service', code: 'TIRE', estimatedServiceTime: 40, sortOrder: 2 },
+              { name: 'Brake Service', code: 'BRAKE', estimatedServiceTime: 60, sortOrder: 3 },
+              { name: 'General Repair', code: 'REPAIR', estimatedServiceTime: 45, sortOrder: 4 },
+            ],
+          },
+          {
+            name: 'Parts Counter', code: 'PRT', sortOrder: 2,
+            services: [
+              { name: 'Parts Pickup', code: 'PICKUP', estimatedServiceTime: 10, sortOrder: 1 },
+              { name: 'Parts Order', code: 'ORDER', estimatedServiceTime: 15, sortOrder: 2 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('bay-1', 'SVC', ['OIL', 'TIRE', 'BRAKE', 'REPAIR'], 'Bay 1'),
+          starterDesk('bay-2', 'SVC', ['OIL', 'TIRE', 'BRAKE', 'REPAIR'], 'Bay 2'),
+          starterDesk('parts-counter', 'PRT', ['PICKUP', 'ORDER'], 'Parts Counter'),
+        ],
+        displayScreens: [starterDisplay('Waiting Room Display', 'list')],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LEGAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getLegalOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your law office queue',
+      description: 'Appointment-focused client management for consultations and case reviews.',
+      reviewChecklist: [
+        'Configure consultation types',
+        'Set up appointment scheduling',
+        'Customize the client intake flow',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'light_service',
+      messagingTone: 'professional',
+      vocabulary: {
+        officeLabel: 'Office',
+        departmentLabel: 'Practice Area',
+        serviceLabel: 'Consultation',
+        deskLabel: 'Office',
+        customerLabel: 'Client',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Client Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome — please check in',
+        headerText: 'Client check-in',
+        themeColor: '#1e3a5f',
+        buttonLabel: 'Check In',
+      },
+      publicJoin: {
+        headline: 'Your consultation',
+        subheadline: 'Your attorney will be with you shortly.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Client name',
+      },
+      branding: { recommendedPrimaryColor: '#1e3a5f' },
+    },
+    starterOffices: [
+      {
+        branchType: 'law_office',
+        name: 'Law Office',
+        timezone: 'America/Los_Angeles',
+        operatingHours: EXTENDED_BRANCH_HOURS,
+        departments: [
+          {
+            name: 'Consultations', code: 'C', sortOrder: 1,
+            services: [
+              { name: 'Initial Consultation', code: 'INITIAL', estimatedServiceTime: 30, sortOrder: 1 },
+              { name: 'Follow-Up', code: 'FOLLOWUP', estimatedServiceTime: 20, sortOrder: 2 },
+              { name: 'Document Review', code: 'DOCS', estimatedServiceTime: 25, sortOrder: 3 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('office-1', 'C', ['INITIAL', 'FOLLOWUP', 'DOCS'], 'Office 1'),
+          starterDesk('office-2', 'C', ['INITIAL', 'FOLLOWUP', 'DOCS'], 'Office 2'),
+        ],
+        displayScreens: [],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REAL ESTATE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getRealEstateOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your real estate office queue',
+      description: 'Walk-in and appointment visits for property viewings, signings, and inquiries.',
+      reviewChecklist: [
+        'Set up service types (Viewing, Inquiry, Signing)',
+        'Configure appointment availability',
+        'Customize the visitor check-in flow',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'light_service',
+      messagingTone: 'professional',
+      vocabulary: {
+        officeLabel: 'Office',
+        departmentLabel: 'Department',
+        serviceLabel: 'Service',
+        deskLabel: 'Office',
+        customerLabel: 'Client',
+        bookingLabel: 'Appointment',
+        queueLabel: 'Client Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome — please check in',
+        headerText: 'Visitor check-in',
+        themeColor: '#15803d',
+        buttonLabel: 'Check In',
+      },
+      publicJoin: {
+        headline: 'Your appointment',
+        subheadline: 'Your agent will be with you shortly.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Client name',
+      },
+      branding: { recommendedPrimaryColor: '#15803d' },
+    },
+    starterOffices: [
+      {
+        branchType: 'property_office',
+        name: 'Real Estate Office',
+        timezone: 'America/Los_Angeles',
+        operatingHours: EXTENDED_BRANCH_HOURS,
+        departments: [
+          {
+            name: 'Client Services', code: 'CS', sortOrder: 1,
+            services: [
+              { name: 'Property Inquiry', code: 'INQUIRY', estimatedServiceTime: 15, sortOrder: 1 },
+              { name: 'Viewing Appointment', code: 'VIEWING', estimatedServiceTime: 30, sortOrder: 2 },
+              { name: 'Contract Signing', code: 'SIGNING', estimatedServiceTime: 40, sortOrder: 3 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('office-1', 'CS', ['INQUIRY', 'VIEWING', 'SIGNING'], 'Office 1'),
+          starterDesk('office-2', 'CS', ['INQUIRY', 'VIEWING', 'SIGNING'], 'Office 2'),
+        ],
+        displayScreens: [],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OTHER / GENERAL SERVICE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getGeneralServiceOverlay(): DeepPartial<IndustryTemplate> {
+  return {
+    onboardingCopy: {
+      headline: 'Launch your service queue',
+      description: 'A simple, flexible queue for any walk-in or appointment-based business.',
+      reviewChecklist: [
+        'Name your services',
+        'Set up your counters or desks',
+        'Customize the customer-facing flow',
+      ],
+    },
+    experienceProfile: {
+      dashboardMode: 'light_service',
+      messagingTone: 'friendly',
+      vocabulary: {
+        officeLabel: 'Location',
+        departmentLabel: 'Service Area',
+        serviceLabel: 'Service',
+        deskLabel: 'Counter',
+        customerLabel: 'Customer',
+        bookingLabel: 'Booking',
+        queueLabel: 'Queue',
+      },
+      kiosk: {
+        welcomeMessage: 'Welcome — get in line',
+        headerText: 'Check-in',
+        themeColor: '#2563eb',
+        buttonLabel: 'Join Queue',
+      },
+      publicJoin: {
+        headline: 'Your visit',
+        subheadline: 'We\'ll call you when it\'s your turn.',
+        requireCustomerName: true,
+        namedPartyLabel: 'Your name',
+      },
+      branding: { recommendedPrimaryColor: '#2563eb' },
+    },
+    starterOffices: [
+      {
+        branchType: 'general_office',
+        name: 'Main Office',
+        timezone: 'America/Los_Angeles',
+        operatingHours: WEEKDAY_SERVICE_HOURS,
+        departments: [
+          {
+            name: 'General', code: 'G', sortOrder: 1,
+            services: [
+              { name: 'General Inquiry', code: 'INQUIRY', estimatedServiceTime: 10, sortOrder: 1 },
+              { name: 'Service Request', code: 'REQUEST', estimatedServiceTime: 15, sortOrder: 2 },
+            ],
+          },
+        ],
+        desks: [
+          starterDesk('counter-1', 'G', ['INQUIRY', 'REQUEST'], 'Counter 1'),
+          starterDesk('counter-2', 'G', ['INQUIRY', 'REQUEST'], 'Counter 2'),
+        ],
+        displayScreens: [],
+        officeSettings: {},
+      },
+    ],
+    intakeSchemas: [],
+  };
+}

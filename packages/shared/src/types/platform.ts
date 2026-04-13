@@ -7,13 +7,21 @@ export type IndustryVertical =
   | 'bank'
   | 'clinic'
   | 'restaurant'
-  | 'barbershop';
+  | 'barbershop'
+  | 'education'
+  | 'telecom'
+  | 'insurance'
+  | 'automotive'
+  | 'legal'
+  | 'real_estate'
+  | 'other';
 
 export type DashboardMode =
   | 'public_service'
   | 'bank'
   | 'clinic'
-  | 'light_service';
+  | 'light_service'
+  | 'standard_service';
 
 export type OperatingModel =
   | 'department_first'
@@ -26,7 +34,14 @@ export type BranchType =
   | 'branch_office'
   | 'community_clinic'
   | 'restaurant_floor'
-  | 'salon_shop';
+  | 'salon_shop'
+  | 'campus_office'
+  | 'retail_store'
+  | 'agency_office'
+  | 'workshop'
+  | 'law_office'
+  | 'property_office'
+  | 'general_office';
 
 export type QueueLifecycleMode = 'ticket' | 'waitlist' | 'hybrid';
 export type AppointmentStrategy = 'walk_in_only' | 'appointment_only' | 'blended';

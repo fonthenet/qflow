@@ -31,7 +31,7 @@ interface KioskSettingsType {
   themeColor: string;
   logoUrl?: string | null;
   showLogo?: boolean;
-  vertical?: 'public_service' | 'bank' | 'clinic' | 'restaurant' | 'barbershop';
+  vertical?: string;
   mode?: 'normal' | 'quick_book';
   showPriorities: boolean;
   showEstimatedTime: boolean;

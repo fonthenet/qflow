@@ -21,6 +21,13 @@ import {
   getClinicOverlay,
   getRestaurantOverlay,
   getBarbershopOverlay,
+  getEducationOverlay,
+  getTelecomOverlay,
+  getInsuranceOverlay,
+  getAutomotiveOverlay,
+  getLegalOverlay,
+  getRealEstateOverlay,
+  getGeneralServiceOverlay,
 } from './vertical-overlays';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -172,6 +179,76 @@ export const industryTemplates: IndustryTemplate[] = [
       },
     ]),
     overlay: getBarbershopOverlay(),
+  }),
+
+  // ── Education (standard tier) ────────────────────────────────────────
+  createTemplate({
+    id: 'education',
+    title: 'Education',
+    vertical: 'education',
+    tier: 'standard',
+    version: versionMetadata('1.0.0', [], 'Campus service desk with appointment and walk-in support.', []),
+    overlay: getEducationOverlay(),
+  }),
+
+  // ── Telecom (standard tier) ──────────────────────────────────────────
+  createTemplate({
+    id: 'telecom',
+    title: 'Telecom Store',
+    vertical: 'telecom',
+    tier: 'standard',
+    version: versionMetadata('1.0.0', [], 'Retail store queue with sales, support, and account services.', []),
+    overlay: getTelecomOverlay(),
+  }),
+
+  // ── Insurance (standard tier) ────────────────────────────────────────
+  createTemplate({
+    id: 'insurance',
+    title: 'Insurance Agency',
+    vertical: 'insurance',
+    tier: 'standard',
+    version: versionMetadata('1.0.0', [], 'Claims, policy reviews, and advisory appointments.', []),
+    overlay: getInsuranceOverlay(),
+  }),
+
+  // ── Automotive (standard tier) ───────────────────────────────────────
+  createTemplate({
+    id: 'automotive',
+    title: 'Automotive Service',
+    vertical: 'automotive',
+    tier: 'standard',
+    version: versionMetadata('1.0.0', [], 'Service bays with appointment and walk-in repair flow.', []),
+    overlay: getAutomotiveOverlay(),
+  }),
+
+  // ── Legal (light tier) ───────────────────────────────────────────────
+  createTemplate({
+    id: 'legal',
+    title: 'Law Office',
+    vertical: 'legal',
+    tier: 'light',
+    version: versionMetadata('1.0.0', [], 'Appointment-focused client consultations and case reviews.', []),
+    overlay: getLegalOverlay(),
+  }),
+
+  // ── Real Estate (light tier) ─────────────────────────────────────────
+  createTemplate({
+    id: 'real-estate',
+    title: 'Real Estate',
+    vertical: 'real_estate',
+    tier: 'light',
+    version: versionMetadata('1.0.0', [], 'Walk-in and appointment visits for property services.', []),
+    overlay: getRealEstateOverlay(),
+  }),
+
+  // ── Other / General Service (light tier) ─────────────────────────────
+  createTemplate({
+    id: 'general-service',
+    title: 'General Service',
+    vertical: 'other',
+    tier: 'light',
+    version: versionMetadata('1.0.0', [], 'Flexible queue for any walk-in or appointment business.', []),
+    overlay: getGeneralServiceOverlay(),
   }),
 ];
 

@@ -68,6 +68,18 @@ function formatBranchTypeLabel(value: string, t: (key: string) => string) {
       return t('Restaurant Floor');
     case 'salon_shop':
       return t('Salon Shop');
+    case 'campus_office':
+      return t('Campus Office');
+    case 'retail_store':
+      return t('Retail Store');
+    case 'agency_office':
+      return t('Agency Office');
+    case 'workshop':
+      return t('Workshop');
+    case 'law_office':
+      return t('Law Office');
+    case 'property_office':
+      return t('Property Office');
     default:
       return formatEnumLabel(value, t);
   }
@@ -389,6 +401,12 @@ export function SettingsClient({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/settings/template-customization"
+              className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+            >
+              {t('Customize')}
+            </Link>
             <Link
               href="/admin/template-governance"
               className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"

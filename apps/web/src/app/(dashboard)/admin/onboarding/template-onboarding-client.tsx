@@ -17,7 +17,7 @@ import {
 } from '@/lib/actions/platform-actions';
 import { buildTrialTemplateStructure, normalizeTrialTemplateStructure } from '@/lib/platform/trial-structure';
 import { industryTemplates } from '@/lib/platform/templates';
-import { getProfilesForVertical, getDefaultProfileId, type TemplateProfile } from '@/lib/platform/template-profiles';
+import { getProfilesForVertical, getDefaultProfileId, getProfileById } from '@/lib/platform/template-profiles';
 import { sandboxSurfaceMeta } from '@/lib/platform/sandbox-surfaces';
 import { useI18n } from '@/components/providers/locale-provider';
 
@@ -84,11 +84,25 @@ function verticalLabel(vertical: string) {
     case 'bank':
       return 'Banking';
     case 'clinic':
-      return 'Clinic';
+      return 'Healthcare';
     case 'restaurant':
       return 'Restaurant';
     case 'barbershop':
-      return 'Salon or barbershop';
+      return 'Beauty & Spa';
+    case 'education':
+      return 'Education';
+    case 'telecom':
+      return 'Telecom';
+    case 'insurance':
+      return 'Insurance';
+    case 'automotive':
+      return 'Automotive';
+    case 'legal':
+      return 'Legal';
+    case 'real_estate':
+      return 'Real Estate';
+    case 'other':
+      return 'General Service';
     default:
       return formatEnum(vertical);
   }
@@ -409,6 +423,19 @@ export function TemplateOnboardingClient({
     }));
   }
 
+  function handleProfileChange(profileId: string) {
+    setSelectedProfileId(profileId);
+    const profile = getProfileById(profileId);
+    if (profile?.overrides.starterDepartments) {
+      // Rebuild the trial structure with the profile's departments
+      const profileOffice = {
+        ...starterOffice,
+        departments: profile.overrides.starterDepartments,
+      };
+      setTrialStructure(buildTrialTemplateStructure(profileOffice, { includeDisplays: createStarterDisplay }));
+    }
+  }
+
   function updateDepartment(
     index: number,
     updater: (department: TrialTemplateDepartmentDraft) => TrialTemplateDepartmentDraft
@@ -631,7 +658,7 @@ export function TemplateOnboardingClient({
               </div>
             ) : null}
           </div>
-          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-4">
             {industryTemplates.map((template) => {
               const active = highlightedTemplateId != null && template.id === highlightedTemplateId;
               const pickTone = getTemplatePickTone(template.vertical);
@@ -758,7 +785,7 @@ export function TemplateOnboardingClient({
                     <button
                       key={profile.id}
                       type="button"
-                      onClick={() => setSelectedProfileId(profile.id)}
+                      onClick={() => handleProfileChange(profile.id)}
                       disabled={setupLocked}
                       className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
                         active

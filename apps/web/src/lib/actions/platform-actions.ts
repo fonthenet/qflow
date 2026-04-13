@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { type TemplateSectionKey, type TrialTemplateStructure } from '@qflo/shared';
+import { type BranchType, type TemplateSectionKey, type TrialTemplateStructure } from '@qflo/shared';
 import { logAuditEvent } from '@/lib/audit';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
 import {
@@ -45,12 +45,7 @@ type TemplateSetupInput = {
   templateId: string;
   profileId?: string;
   operatingModel: 'department_first' | 'service_routing' | 'appointments_first' | 'waitlist';
-  branchType:
-    | 'service_center'
-    | 'branch_office'
-    | 'community_clinic'
-    | 'restaurant_floor'
-    | 'salon_shop';
+  branchType: BranchType;
   officeName: string;
   timezone: string;
   createStarterDisplay: boolean;
