@@ -3505,8 +3505,8 @@ function DesktopApptDetail({
         let gotLocalEvents = false;
         try {
           const w = window as any;
-          if (w.electronAPI?.ticketTimeline) {
-            const { events: localEvents, ticket } = await w.electronAPI.ticketTimeline.get(a.ticket_id);
+          if (w.qf?.ticketTimeline) {
+            const { events: localEvents, ticket } = await w.qf.ticketTimeline.get(a.ticket_id);
             if (!cancelled && localEvents && localEvents.length > 0) {
               gotLocalEvents = true;
               for (const ev of localEvents) {
