@@ -2848,9 +2848,8 @@ async function handleAppointmentStatus(
   supabase: any,
 ): Promise<boolean> {
   // Find upcoming confirmed or pending appointments for this phone in this org.
-  // Phone may be stored in various formats — try digits-only matching.
-  const digits = identifier.replace(/\D/g, '');
-  const variants = Array.from(new Set([identifier, digits, `+${digits}`].filter(Boolean)));
+  // Phone may be stored in various formats — use phoneLookupCandidates for robust matching.
+  const variants = phoneLookupCandidates(identifier);
 
   // Get office IDs for this org
   const { data: offices } = await supabase
@@ -2924,8 +2923,7 @@ async function findAndReplyAppointmentStatus(
   sendMessage: SendFn,
   supabase: any,
 ): Promise<boolean> {
-  const digits = identifier.replace(/\D/g, '');
-  const variants = Array.from(new Set([identifier, digits, `+${digits}`].filter(Boolean)));
+  const variants = phoneLookupCandidates(identifier);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

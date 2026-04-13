@@ -15,7 +15,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
-import { t as tMsg, type Locale } from '@/lib/messaging-commands';
+import { t as tMsg, type Locale, phoneLookupCandidates } from '@/lib/messaging-commands';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,9 +74,7 @@ async function resolveNotificationChannel(
   let toPsid: string | null = null;
 
   if (customerPhone && orgId) {
-    const raw = customerPhone.trim();
-    const digits = raw.replace(/\D/g, '');
-    const phoneVariants = Array.from(new Set([raw, digits, `+${digits}`].filter(Boolean)));
+    const phoneVariants = phoneLookupCandidates(customerPhone);
     const orFilter = phoneVariants
       .flatMap((v) => [`whatsapp_phone.eq.${v}`, `messenger_psid.eq.${v}`])
       .join(',');
