@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { createClient } from '@/lib/supabase/client';
 import {
   Building2,
@@ -93,6 +94,7 @@ type Tab = 'overview' | 'organizations' | 'licenses';
 
 export function PlatformDashboard({ organizations: initialOrgs, licenses: initialLicenses, pendingDevices: initialPending, platformStats }: Props) {
   const supabase = createClient();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [tab, setTab] = useState<Tab>(initialPending.length > 0 ? 'licenses' : 'overview');
   const [organizations, setOrganizations] = useState(initialOrgs);
   const [licenses, setLicenses] = useState(initialLicenses);
@@ -223,19 +225,19 @@ export function PlatformDashboard({ organizations: initialOrgs, licenses: initia
   };
 
   const revokeLicense = async (id: string) => {
-    if (!confirm('Revoke this license? The station will stop working.')) return;
+    if (!await styledConfirm('Revoke this license? The station will stop working.', { variant: 'danger', confirmLabel: 'Revoke' })) return;
     await supabase.from('station_licenses').update({ status: 'revoked' }).eq('id', id);
     refreshLicenses();
   };
 
   const unbindMachine = async (id: string) => {
-    if (!confirm('Unbind from machine? It can be re-activated on a different PC.')) return;
+    if (!await styledConfirm('Unbind from machine? It can be re-activated on a different PC.', { variant: 'danger', confirmLabel: 'Unbind' })) return;
     await supabase.from('station_licenses').update({ machine_id: null, machine_name: null, activated_at: null }).eq('id', id);
     refreshLicenses();
   };
 
   const deleteLicense = async (id: string) => {
-    if (!confirm('Delete this license permanently?')) return;
+    if (!await styledConfirm('Delete this license permanently?', { variant: 'danger', confirmLabel: 'Delete' })) return;
     await supabase.from('station_licenses').delete().eq('id', id);
     refreshLicenses();
   };

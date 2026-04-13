@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface SheetFile { id: string; name: string; modifiedTime: string }
 interface SheetInfo { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number; autoSync: boolean }
@@ -14,6 +15,7 @@ interface Props {
 const API = 'https://qflo.net/api/google/sheets';
 
 export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [status, setStatus] = useState<GStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
   }
 
   async function disconnectGoogle() {
-    if (!confirm(t('Disconnect Google account? Sync will stop.'))) return;
+    if (!await styledConfirm(t('Disconnect Google account? Sync will stop.'), { variant: 'danger', confirmLabel: t('Disconnect') })) return;
     setBusy(true);
     try {
       const orgId = await resolveOrgId();
@@ -124,7 +126,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
   }
 
   async function unlinkSheet() {
-    if (!confirm(t('Unlink this sheet? Auto-sync will stop. Your Google account stays connected.'))) return;
+    if (!await styledConfirm(t('Unlink this sheet? Auto-sync will stop. Your Google account stays connected.'), { variant: 'danger', confirmLabel: t('Unlink') })) return;
     setBusy(true);
     try {
       const orgId = await resolveOrgId();

@@ -5,6 +5,7 @@ import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilaya
 import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
 import { GoogleSheetsModal } from './GoogleSheetsModal';
 import { normalizePhone } from '@qflo/shared';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface Customer {
   id: string;
@@ -119,6 +120,7 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
 
 export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -226,7 +228,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
 
   async function handleDeleteSelected() {
     if (selected.size === 0) return;
-    if (!confirm(t('Delete {n} selected customers? This cannot be undone.', { n: selected.size }))) return;
+    if (!await styledConfirm(t('Delete {n} selected customers? This cannot be undone.', { n: selected.size }), { variant: 'danger', confirmLabel: t('Delete') })) return;
     try {
       const sb = await getSupabase();
       const ids = Array.from(selected);
@@ -241,7 +243,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
 
   async function handleDeleteDetail() {
     if (!detail) return;
-    if (!confirm(t('Delete this customer?'))) return;
+    if (!await styledConfirm(t('Delete this customer?'), { variant: 'danger', confirmLabel: t('Delete') })) return;
     setDetailBusy(true);
     setDetailError(null);
     try {

@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createDesk, updateDesk, deleteDesk } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Desk = {
   id: string;
@@ -46,6 +47,7 @@ export function DesksClient({
 }) {
   const { t } = useI18n();
   const router = useRouter();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Desk | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -77,8 +79,8 @@ export function DesksClient({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm(t('Are you sure you want to delete this desk?'))) return;
+  async function handleDelete(id: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this desk?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteDesk(id);
       if (result?.error) setError(result.error);

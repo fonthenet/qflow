@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { QrPoster } from '@/components/admin/qr-poster';
 import {
   createVirtualCode,
@@ -57,6 +58,7 @@ export function VirtualCodesClient({
 }: VirtualCodesClientProps) {
   const { t } = useI18n();
   const router = useRouter();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [codes, setCodes] = useState(initialCodes);
   const [showModal, setShowModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -234,8 +236,8 @@ export function VirtualCodesClient({
     });
   }
 
-  function handleDelete(codeId: string) {
-    if (!confirm(t('Are you sure you want to delete this virtual code?'))) return;
+  async function handleDelete(codeId: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this virtual code?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteVirtualCode(codeId);
       if (result?.error) {

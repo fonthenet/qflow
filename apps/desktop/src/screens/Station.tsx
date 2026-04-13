@@ -6,6 +6,7 @@ import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilay
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
@@ -1405,6 +1406,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -2251,8 +2253,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     showToast(t('{ticket} completed', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'success');
   };
 
-  const noShow = (id: string) => {
-    if (!window.confirm(t('Mark this ticket as no-show?'))) return;
+  const noShow = async (id: string) => {
+    if (!await styledConfirm(t('Mark this ticket as no-show?'), { variant: 'danger', confirmLabel: t('No Show') })) return;
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString() });
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
@@ -2356,8 +2358,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   };
 
-  const cancel = (id: string) => {
-    if (!window.confirm(t('Cancel this ticket?'))) return;
+  const cancel = async (id: string) => {
+    if (!await styledConfirm(t('Cancel this ticket?'), { variant: 'danger', confirmLabel: t('Cancel Ticket') })) return;
     const ts = new Date().toISOString();
     updateTicketStatus(id, { status: 'cancelled', completed_at: ts });
     const tk = tickets.find((x) => x.id === id);
@@ -2428,7 +2430,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [fetchBroadcastTemplates]);
 
   const deleteBroadcastTemplate = useCallback(async (id: string) => {
-    if (!window.confirm(translate(locale, 'Delete this template?'))) return;
+    if (!await styledConfirm(translate(locale, 'Delete this template?'), { variant: 'danger', confirmLabel: translate(locale, 'Delete') })) return;
     try {
       await window.qf.templates.delete(id);
       setBroadcastTemplates(prev => prev.filter(t => t.id !== id));
@@ -3543,7 +3545,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   <button
                     disabled={busy}
                     onClick={async () => {
-                      if (!window.confirm(t('Cancel this appointment? The customer will be notified.'))) return;
+                      if (!await styledConfirm(t('Cancel this appointment? The customer will be notified.'), { variant: 'danger', confirmLabel: t('Cancel Appointment') })) return;
                       await moderateAppointment(a.id, 'cancel');
                     }}
                     title={t('Cancel')}

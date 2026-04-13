@@ -1018,7 +1018,7 @@ export function TemplateOnboardingClient({
               <div className="mt-5 space-y-3">
                 {trialStructure.desks.map((desk, deskIndex) => (
                   <div key={`${desk.name}-${deskIndex}`} className="rounded-2xl border border-border bg-background p-4">
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                    <div className="grid gap-3 grid-cols-1">
                       <input
                         value={desk.name}
                         onChange={(event) =>
@@ -1029,7 +1029,7 @@ export function TemplateOnboardingClient({
                             ),
                           }))
                         }
-                        className="rounded-xl border border-border px-3 py-2 text-sm font-medium"
+                        className="rounded-xl border border-border px-3 py-2.5 text-sm font-medium w-full"
                         disabled={setupLocked}
                       />
                       <select
@@ -1129,7 +1129,7 @@ export function TemplateOnboardingClient({
                 <div className="mt-5 space-y-3">
                   {trialStructure.displays.map((display, displayIndex) => (
                     <div key={`${display.name}-${displayIndex}`} className="rounded-2xl border border-border bg-background p-4">
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                      <div className="grid gap-3 grid-cols-1">
                         <input
                           value={display.name}
                           onChange={(event) =>
@@ -1140,7 +1140,7 @@ export function TemplateOnboardingClient({
                               ),
                             }))
                           }
-                          className="rounded-xl border border-border px-3 py-2 text-sm font-medium"
+                          className="rounded-xl border border-border px-3 py-2.5 text-sm font-medium w-full"
                           disabled={setupLocked}
                         />
                         <select

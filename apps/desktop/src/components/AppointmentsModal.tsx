@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { dateKeyInTz, formatTimeInTz, getStatusColor } from '@qflo/shared';
 import { normalizeWilayaDisplay } from '../lib/wilayas';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface Appointment {
   id: string;
@@ -79,6 +80,7 @@ function startOfDayInTz(d: Date, tz: string): Date {
 export function AppointmentsModal({ organizationId: _organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate }: Props) {
   const tz = (officeTimezone && officeTimezone.trim()) || 'Africa/Algiers';
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,7 +116,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
   }, [onModerate]);
 
   const deleteAppointment = useCallback(async (id: string) => {
-    if (!confirm(t('Delete this appointment?'))) return;
+    if (!await styledConfirm(t('Delete this appointment?'), { variant: 'danger', confirmLabel: t('Delete') })) return;
     setBusyId(id);
     try {
       await ensureAuth(storedAuth);
@@ -438,8 +440,8 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
                           </button>
                           <button
                             disabled={busy}
-                            onClick={() => {
-                              if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
+                            onClick={async () => {
+                              if (!await styledConfirm(t('Decline this appointment? The customer will be notified.'), { variant: 'danger', confirmLabel: t('Decline') })) return;
                               handleAction(a.id, 'decline');
                             }}
                             title={t('Decline')}

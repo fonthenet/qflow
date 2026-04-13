@@ -38,6 +38,7 @@ import {
   updateDesk,
   deleteDesk,
 } from '@/lib/actions/admin-actions';
+import { getVocabularyExamples } from '@/lib/platform/vocabulary-examples';
 
 /* ══════════════════════════════════════════════════════════════════ */
 /*  Types                                                            */
@@ -109,6 +110,9 @@ interface BusinessMapProps {
   allStaff: StaffMember[];
   vocabulary: Vocabulary;
 }
+
+/** Contextual examples based on vocabulary labels (business type). */
+const getExamples = getVocabularyExamples;
 
 type SlideOverState =
   | null
@@ -185,14 +189,14 @@ function computeSetupSteps(
     {
       key: 'department',
       label: `Add a ${vocabulary.departmentLabel.toLowerCase()}`,
-      description: `${vocabulary.departmentLabel}s are areas within your ${vocabulary.officeLabel.toLowerCase()} — e.g. Reception, Consultation, Cashier.`,
+      description: `${vocabulary.departmentLabel}s are areas within your ${vocabulary.officeLabel.toLowerCase()} — e.g. ${getExamples(vocabulary).departments}.`,
       done: allDepts.length > 0,
       action: firstOffice ? () => actions.addDepartment(firstOffice.id) : undefined,
     },
     {
       key: 'service',
       label: `Define at least one ${vocabulary.serviceLabel.toLowerCase()}`,
-      description: `${vocabulary.serviceLabel}s are what ${vocabulary.customerLabel.toLowerCase()}s come for — e.g. General Visit, Blood Test, Renewal.`,
+      description: `${vocabulary.serviceLabel}s are what ${vocabulary.customerLabel.toLowerCase()}s come for — e.g. ${getExamples(vocabulary).services}.`,
       done: allServices.length > 0,
       action: firstDept ? () => actions.addService(firstDept.id) : undefined,
     },
@@ -1023,11 +1027,11 @@ function SlideOverForm({
         })}
       >
         <FormHint>
-          A {vocabulary.departmentLabel.toLowerCase()} is an area inside <strong>{officeName}</strong> — e.g. Reception, Cashier, Lab.
+          A {vocabulary.departmentLabel.toLowerCase()} is an area inside <strong>{officeName}</strong> — e.g. {getExamples(vocabulary).departments}.
         </FormHint>
         <input type="hidden" name="office_id" value={officeId} />
-        <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder="e.g. Reception" />
-        <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder="e.g. RECEPTION" />
+        <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder={getExamples(vocabulary).placeholderDept} />
+        <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder={getExamples(vocabulary).placeholderDeptCode} />
         <Checkbox name="is_active" defaultChecked={editing?.is_active ?? true} label="Active" />
         {error && <ErrorMsg>{error}</ErrorMsg>}
         <FormActions>
@@ -1064,11 +1068,11 @@ function SlideOverForm({
           ) : (
             ''
           )}{' '}
-          — e.g. General Visit, Blood Test.
+          — e.g. {getExamples(vocabulary).services}.
         </FormHint>
         <input type="hidden" name="department_id" value={departmentId} />
-        <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder="e.g. General Visit" />
-        <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder="e.g. GEN-VISIT" />
+        <FormField label="Name" name="name" defaultValue={editing?.name} required placeholder={getExamples(vocabulary).placeholderService} />
+        <FormField label="Code" name="code" defaultValue={editing?.code} required placeholder={getExamples(vocabulary).placeholderCode} />
         <FormField
           label="Estimated duration (minutes)"
           name="estimated_service_time"

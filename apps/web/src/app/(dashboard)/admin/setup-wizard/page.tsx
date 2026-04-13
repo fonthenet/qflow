@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getStaffContext, requireOrganizationAdmin } from '@/lib/authz';
-import { getPlatformLifecycleState } from '@/lib/platform/config';
+import { getPlatformLifecycleState, resolvePlatformConfig } from '@/lib/platform/config';
 import { SetupWizardClient } from './setup-wizard-client';
 
 export default async function SetupWizardPage() {
@@ -33,6 +33,11 @@ export default async function SetupWizardPage() {
   if (settings.business_setup_wizard_completed_at) {
     redirect('/admin/overview');
   }
+
+  const platformConfig = resolvePlatformConfig({
+    organizationSettings: settings,
+  });
+  const vocabulary = platformConfig.experienceProfile.vocabulary;
 
   // Fetch all data needed for the wizard
   const [
@@ -83,6 +88,7 @@ export default async function SetupWizardPage() {
   return (
     <SetupWizardClient
       organization={{ id: organization.id, name: organization.name }}
+      vocabulary={vocabulary ? { serviceLabel: vocabulary.serviceLabel, departmentLabel: vocabulary.departmentLabel, deskLabel: vocabulary.deskLabel, officeLabel: vocabulary.officeLabel } : undefined}
       offices={(offices ?? []) as any}
       departments={orgDepartments as any}
       services={orgServices as any}

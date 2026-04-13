@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   createCustomer,
   updateCustomer,
@@ -61,6 +62,7 @@ export function CustomersClient({
   customers: Customer[];
 }) {
   const { t } = useI18n();
+  const { confirm: styledConfirm, alert: styledAlert } = useConfirmDialog();
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -188,12 +190,12 @@ export function CustomersClient({
     });
   }
 
-  function handleDelete(c: Customer) {
-    if (!confirm(t('Delete this customer? This cannot be undone.'))) return;
+  async function handleDelete(c: Customer) {
+    if (!await styledConfirm(t('Delete this customer? This cannot be undone.'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteCustomer(c.id);
       if (result.error) {
-        alert(result.error);
+        await styledAlert(result.error);
         return;
       }
       setCustomers((prev) => prev.filter((x) => x.id !== c.id));
@@ -272,7 +274,7 @@ export function CustomersClient({
         setImportPreview(rows);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to parse Excel file';
-        alert(msg);
+        await styledAlert(msg);
       }
       return;
     }

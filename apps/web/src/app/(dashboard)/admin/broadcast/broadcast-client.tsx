@@ -8,6 +8,7 @@ import {
   sendBroadcast,
 } from '@/lib/actions/broadcast-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface BroadcastTemplate {
   id: string;
@@ -41,6 +42,7 @@ export default function BroadcastClient({
 }: BroadcastClientProps) {
   const { t } = useI18n();
   const [isPending, startTransition] = useTransition();
+  const { confirm: styledConfirm } = useConfirmDialog();
 
   // Send Broadcast state
   const [activeLang, setActiveLang] = useState<LangKey>('fr');
@@ -185,8 +187,8 @@ export default function BroadcastClient({
     });
   }
 
-  function handleDeleteTemplate(id: string) {
-    if (!confirm(t('Delete this template? This cannot be undone.'))) return;
+  async function handleDeleteTemplate(id: string) {
+    if (!await styledConfirm(t('Delete this template? This cannot be undone.'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteBroadcastTemplate(id);
       if (result.error) {

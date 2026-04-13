@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -48,7 +49,7 @@ import {
   type MonthDayInfo,
   type CalendarAppointment,
 } from '@qflo/shared';
-import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment } from '@/lib/actions/appointment-actions';
+import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment, getAvailableSlots, getAppointmentTimeline, type TimelineEvent } from '@/lib/actions/appointment-actions';
 import { normalizeWilayaDisplay } from '@/lib/wilayas';
 import { useI18n } from '@/components/providers/locale-provider';
 
@@ -371,6 +372,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
         <AppointmentDetail
           appointment={selectedAppt}
           timezone={tz}
+          officeId={selectedOfficeId}
           serviceMap={serviceMap}
           deptMap={deptMap}
           staffMap={staffMap}
@@ -669,9 +671,28 @@ function MonthView({
 
 // ── Appointment Detail Panel ───────────────────────────────────────
 
+function localTimeToUTC(dateKey: string, time: string, timezone: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const utcGuess = new Date(`${dateKey}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00.000Z`);
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const parts = fmt.formatToParts(utcGuess);
+  const localH = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0');
+  const localM = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0');
+  const localD = parseInt(parts.find(p => p.type === 'day')?.value ?? '0');
+  const targetD = parseInt(dateKey.split('-')[2]);
+  let diffMin = (localH - h) * 60 + (localM - m);
+  if (localD !== targetD) diffMin += (localD > targetD ? 1 : -1) * 24 * 60;
+  const adjusted = new Date(utcGuess.getTime() - diffMin * 60000);
+  return adjusted.toISOString();
+}
+
 function AppointmentDetail({
   appointment: a,
   timezone,
+  officeId,
   serviceMap,
   deptMap,
   staffMap,
@@ -680,6 +701,7 @@ function AppointmentDetail({
 }: {
   appointment: CalendarAppointment;
   timezone: string;
+  officeId: string;
   serviceMap: Map<string, Service>;
   deptMap: Map<string, Department>;
   staffMap: Map<string, StaffMember>;
@@ -687,13 +709,73 @@ function AppointmentDetail({
   onAction: () => void;
 }) {
   const [cancelling, setCancelling] = useState(false);
+  const [editingTime, setEditingTime] = useState(false);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { confirm: styledConfirm } = useConfirmDialog();
+
+  // ── Timeline state ──
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
+  // Reset edit state when appointment changes
+  useEffect(() => { setEditingTime(false); setRescheduleError(null); setAvailableSlots([]); setTimeline([]); }, [a.id]);
+
+  // Fetch timeline events
+  useEffect(() => {
+    let cancelled = false;
+    setTimelineLoading(true);
+    getAppointmentTimeline(a.id).then(({ data }) => {
+      if (!cancelled) {
+        setTimeline(data);
+        setTimelineLoading(false);
+      }
+    }).catch(() => { if (!cancelled) setTimelineLoading(false); });
+    return () => { cancelled = true; };
+  }, [a.id, a.status]);
+
+  // Fetch available slots when date changes in edit mode
+  useEffect(() => {
+    if (!editingTime || !editDate || !a.service_id) return;
+    let cancelled = false;
+    setSlotsLoading(true);
+    setAvailableSlots([]);
+    (async () => {
+      try {
+        const result = await getAvailableSlots(officeId, a.service_id, editDate);
+        if (cancelled) return;
+        const slots = result.data ?? [];
+        // Include current slot (it's this appointment's own slot)
+        const currentDate = dateKeyInTz(new Date(a.scheduled_at), timezone);
+        const currentTime = formatTimeInTz(a.scheduled_at, timezone);
+        if (editDate === currentDate && !slots.includes(currentTime)) {
+          slots.push(currentTime);
+          slots.sort();
+        }
+        setAvailableSlots(slots);
+        if (slots.includes(editTime)) { /* keep */ }
+        else if (slots.length > 0) setEditTime(slots[0]);
+        else setEditTime('');
+      } catch (e) {
+        console.warn('[AppointmentDetail] Failed to fetch slots:', e);
+      } finally {
+        if (!cancelled) setSlotsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingTime, editDate, a.service_id, officeId]);
   const svc = a.service ? a.service : serviceMap.get(a.service_id);
   const dept = a.department ? a.department : deptMap.get(a.department_id);
   const staff = a.staff_id ? (a.staff ? a.staff : staffMap.get(a.staff_id)) : null;
   const color = getServiceColor(svc as any);
   const statusColor = getStatusColor(a.status);
   const scheduledDate = new Date(a.scheduled_at);
+  const canReschedule = !['cancelled', 'no_show', 'declined'].includes(a.status);
 
   // Close panel when clicking outside it (without blocking calendar clicks)
   useEffect(() => {
@@ -708,7 +790,7 @@ function AppointmentDetail({
   }, [onClose]);
 
   const handleCancel = async () => {
-    if (!confirm('Cancel this appointment?')) return;
+    if (!await styledConfirm('Cancel this appointment?', { variant: 'danger', confirmLabel: 'Cancel Appointment' })) return;
     setCancelling(true);
     await cancelAppointment(a.id);
     setCancelling(false);
@@ -758,19 +840,108 @@ function AppointmentDetail({
 
           {/* Date & time */}
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <CalendarIcon size={14} className="text-gray-400" />
-              <span>
-                {scheduledDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <Clock size={14} className="text-gray-400" />
-              <span>
-                {formatTimeInTz(a.scheduled_at, timezone)}
-                {svc && ' · ' + formatDuration((svc as any).estimated_service_time)}
-              </span>
-            </div>
+            {!editingTime ? (
+              <>
+                <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <CalendarIcon size={14} className="text-gray-400" />
+                  <span>
+                    {scheduledDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <Clock size={14} className="text-gray-400" />
+                    <span>
+                      {formatTimeInTz(a.scheduled_at, timezone)}
+                      {svc && ' · ' + formatDuration((svc as any).estimated_service_time)}
+                    </span>
+                  </div>
+                  {canReschedule && (
+                    <button
+                      onClick={() => {
+                        const dk = dateKeyInTz(scheduledDate, timezone);
+                        const tm = formatTimeInTz(a.scheduled_at, timezone);
+                        setEditDate(dk);
+                        setEditTime(tm);
+                        setRescheduleError(null);
+                        setEditingTime(true);
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                    >
+                      <Pencil size={10} /> Reschedule
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <CalendarIcon size={14} className="text-gray-400 flex-shrink-0" />
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => { setEditDate(e.target.value); setEditTime(''); setRescheduleError(null); }}
+                    className="flex-1 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock size={14} className="text-gray-400 flex-shrink-0" />
+                  {slotsLoading ? (
+                    <span className="text-xs text-gray-400">Loading slots...</span>
+                  ) : availableSlots.length === 0 ? (
+                    <span className="text-xs text-amber-500">No available slots</span>
+                  ) : (
+                    <select
+                      value={editTime}
+                      onChange={(e) => { setEditTime(e.target.value); setRescheduleError(null); }}
+                      className="flex-1 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 cursor-pointer"
+                    >
+                      {availableSlots.map(slot => {
+                        const currentDate = dateKeyInTz(scheduledDate, timezone);
+                        const currentTime = formatTimeInTz(a.scheduled_at, timezone);
+                        const isCurrent = editDate === currentDate && slot === currentTime;
+                        return (
+                          <option key={slot} value={slot}>
+                            {slot}{isCurrent ? ' (current)' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
+                {rescheduleError && (
+                  <p className="text-xs text-red-500 font-medium">{rescheduleError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    disabled={rescheduling || slotsLoading || !editTime || availableSlots.length === 0}
+                    onClick={async () => {
+                      if (!editDate || !editTime) return;
+                      setRescheduling(true);
+                      setRescheduleError(null);
+                      const newScheduledAt = localTimeToUTC(editDate, editTime, timezone);
+                      const result = await rescheduleAppointment(a.id, newScheduledAt);
+                      setRescheduling(false);
+                      if (result.error) {
+                        setRescheduleError(result.error);
+                      } else {
+                        setEditingTime(false);
+                        onAction(); // refresh list
+                      }
+                    }}
+                    className="flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {rescheduling ? '...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingTime(false); setRescheduleError(null); }}
+                    className="py-1.5 px-3 rounded-md text-xs font-semibold text-gray-500 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Customer info */}
@@ -822,10 +993,45 @@ function AppointmentDetail({
             </div>
           )}
 
+          {/* ── Activity Timeline ── */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+              <FileText size={12} />
+              Activity Log
+            </h4>
+            {timelineLoading ? (
+              <p className="text-xs text-gray-400">Loading...</p>
+            ) : timeline.length === 0 ? (
+              <p className="text-xs text-gray-400">No activity</p>
+            ) : (
+              <div className="relative pl-5">
+                {/* Vertical line */}
+                <div className="absolute left-[5px] top-1 bottom-1 w-0.5 bg-gradient-to-b from-gray-300 dark:from-gray-600 to-transparent rounded-full" />
+                {timeline.map((ev, i) => (
+                  <div key={i} className="relative mb-3 last:mb-0">
+                    {/* Dot */}
+                    <div
+                      className="absolute -left-5 top-[3px] w-[10px] h-[10px] rounded-full border-2 border-white dark:border-gray-900"
+                      style={{ backgroundColor: ev.color, boxShadow: `0 0 0 1px ${ev.color}40` }}
+                    />
+                    {/* Content */}
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                        {ev.label}
+                      </div>
+                      <div className="text-[10px] text-gray-400 dark:text-gray-500">
+                        {new Date(ev.time).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium', timeZone: timezone })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Meta */}
-          <div className="text-[10px] text-gray-400 dark:text-gray-500 pt-2 space-y-0.5">
-            <div>Created: {new Date(a.created_at).toLocaleString()}</div>
-            <div>ID: {a.id.slice(0, 8)}</div>
+          <div className="text-[10px] text-gray-400 dark:text-gray-500 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-0.5">
+            <div>ID: {a.id.slice(0, 8)}{a.ticket_id ? ` · Ticket: ${a.ticket_id.slice(0, 8)}` : ''}</div>
           </div>
         </div>
       </div>

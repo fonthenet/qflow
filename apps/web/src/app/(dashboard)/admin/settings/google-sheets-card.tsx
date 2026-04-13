@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface SheetFile { id: string; name: string; modifiedTime: string }
 interface SheetInfo { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number; autoSync: boolean }
@@ -9,6 +10,7 @@ interface GStatus { connected: boolean; email: string | null; sheet: SheetInfo |
 const API = '/api/google/sheets';
 
 export function GoogleSheetsCard({ organizationId }: { organizationId: string }) {
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [status, setStatus] = useState<GStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Google account? Sync will stop.')) return;
+    if (!await styledConfirm('Disconnect Google account? Sync will stop.', { variant: 'danger', confirmLabel: 'Disconnect' })) return;
     setBusy(true);
     try {
       await fetch(`${API}/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId }) });
@@ -94,7 +96,7 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
   }
 
   async function unlinkSheet() {
-    if (!confirm('Unlink this sheet? Auto-sync will stop.')) return;
+    if (!await styledConfirm('Unlink this sheet? Auto-sync will stop.', { variant: 'danger', confirmLabel: 'Unlink' })) return;
     setBusy(true);
     try {
       await fetch(`${API}/unlink`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId }) });

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, Component, type ReactNode } from 'rea
 import { Login } from './screens/Login';
 import { Station } from './screens/Station';
 import { StatusBar } from './components/StatusBar';
+import { ConfirmDialogProvider } from './components/ConfirmDialog';
 import type { StaffSession, SyncStatus, UpdateStatus } from './lib/types';
 import { getSupabase, restoreSession, listenForTokenRefresh } from './lib/supabase';
 import { getDirection, normalizeLocale, t as translate, type DesktopLocale } from './lib/i18n';
@@ -215,6 +216,7 @@ export function App() {
 
   return (
     <ErrorBoundary locale={locale}>
+      <ConfirmDialogProvider>
       <div className="app">
         {/* Update progress overlay — visible during download and when ready to install */}
         {(updateStatus.status === 'downloading' || updateStatus.status === 'available') && (
@@ -287,6 +289,7 @@ export function App() {
           <Login onLogin={handleLogin} locale={locale} />
         )}
       </div>
+      </ConfirmDialogProvider>
     </ErrorBoundary>
   );
 }

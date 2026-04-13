@@ -8,6 +8,7 @@ import {
   deletePriorityCategory,
 } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type PriorityCategory = {
   id: string;
@@ -45,6 +46,7 @@ export function PrioritiesClient({
   priorities: PriorityCategory[];
 }) {
   const { t } = useI18n();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<PriorityCategory | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -85,8 +87,8 @@ export function PrioritiesClient({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm(t('Are you sure you want to delete this priority category?'))) return;
+  async function handleDelete(id: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this priority category?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deletePriorityCategory(id);
       if (result?.error) {

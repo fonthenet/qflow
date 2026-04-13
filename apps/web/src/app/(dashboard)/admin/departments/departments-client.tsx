@@ -8,6 +8,7 @@ import {
   deleteDepartment,
 } from '@/lib/actions/admin-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Department = {
   id: string;
@@ -34,6 +35,7 @@ export function DepartmentsClient({
 }) {
   const { t } = useI18n();
   const router = useRouter();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Department | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -65,8 +67,8 @@ export function DepartmentsClient({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm(t('Are you sure you want to delete this department?'))) return;
+  async function handleDelete(id: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this department?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteDepartment(id);
       if (result?.error) setError(result.error);

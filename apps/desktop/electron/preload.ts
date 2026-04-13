@@ -148,6 +148,12 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('activity:get-recent', officeId, limit),
   },
 
+  // Ticket timeline
+  ticketTimeline: {
+    get: (ticketId: string) =>
+      ipcRenderer.invoke('ticket:get-timeline', ticketId),
+  },
+
   // License
   license: {
     getMachineId: () => ipcRenderer.invoke('license:machine-id'),

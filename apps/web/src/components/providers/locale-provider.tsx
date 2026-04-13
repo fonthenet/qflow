@@ -10,6 +10,7 @@ import {
   formatTimeValue,
   getLocaleDirection,
 } from '@/lib/i18n/shared';
+import { ConfirmDialogProvider } from '@/components/ui/confirm-dialog';
 
 interface LocaleContextValue {
   locale: AppLocale;
@@ -42,7 +43,11 @@ export function LocaleProvider({
     formatDateTime: (value, options) => formatDateTimeValue(value, locale, countryCode, options),
   };
 
-  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+  return (
+    <LocaleContext.Provider value={value}>
+      <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
+    </LocaleContext.Provider>
+  );
 }
 
 export function useI18n() {

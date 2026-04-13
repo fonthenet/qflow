@@ -561,6 +561,11 @@ async function seedConfirmedTemplate(
   revalidatePath('/admin/priorities');
   revalidatePath('/admin/settings');
   revalidatePath('/admin/template-governance');
+  revalidatePath('/admin/setup-wizard');
+  revalidatePath('/admin/desks');
+  revalidatePath('/admin/overview');
+  revalidatePath('/admin/calendar');
+  revalidatePath('/admin/bookings');
 
   return {
     success: true,

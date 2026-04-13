@@ -1361,6 +1361,28 @@ function setupIPC() {
     } catch { return []; }
   });
 
+  // ── Ticket timeline for appointment detail ──────────────────────
+
+  ipcMain.handle('ticket:get-timeline', (_e, ticketId: string) => {
+    try {
+      // Get all events from local audit log for this ticket
+      const rows = db.prepare(`
+        SELECT event_type, from_status, to_status, source, details, created_at
+        FROM ticket_audit_log
+        WHERE ticket_id = ?
+        ORDER BY created_at ASC
+      `).all(ticketId) as any[];
+
+      // Also get ticket timestamps as fallback/supplement
+      const ticket = db.prepare(`
+        SELECT created_at, called_at, serving_started_at, completed_at, cancelled_at, parked_at, status
+        FROM tickets WHERE id = ?
+      `).get(ticketId) as any;
+
+      return { events: rows, ticket: ticket ?? null };
+    } catch { return { events: [], ticket: null }; }
+  });
+
   // ── Connection status ─────────────────────────────────────────────
 
   ipcMain.handle('connection:status', () => syncEngine?.isOnline ?? false);

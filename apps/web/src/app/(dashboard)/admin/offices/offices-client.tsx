@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createOffice, updateOffice, deleteOffice } from '@/lib/actions/admin-actions';
 import type { Database } from '@/lib/supabase/database.types';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Office = Database['public']['Tables']['offices']['Row'];
 
@@ -118,6 +119,7 @@ function formatBranchTypeLabel(value: string | undefined, t: (key: string) => st
 
 export function OfficesClient({ offices }: { offices: Office[] }) {
   const { t } = useI18n();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Office | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -154,8 +156,8 @@ export function OfficesClient({ offices }: { offices: Office[] }) {
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm(t('Are you sure you want to delete this office?'))) return;
+  async function handleDelete(id: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this office?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteOffice(id);
       if (result?.error) setError(result.error);

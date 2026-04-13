@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Save,
   CheckCircle2,
@@ -52,6 +53,7 @@ interface DisplaysManagerProps {
 export function DisplaysManager({ screens: initialScreens, offices, departments }: DisplaysManagerProps) {
   const { t } = useI18n();
   const [isPending, startTransition] = useTransition();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [screens, setScreens] = useState(initialScreens);
   const [editingScreen, setEditingScreen] = useState<DisplayScreen | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -83,8 +85,8 @@ export function DisplaysManager({ screens: initialScreens, offices, departments 
     });
   }
 
-  function handleDelete(screenId: string) {
-    if (!confirm(t('Delete this display screen? This cannot be undone.'))) return;
+  async function handleDelete(screenId: string) {
+    if (!await styledConfirm(t('Delete this display screen? This cannot be undone.'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     setErrorMessage(null);
 
     startTransition(async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CalendarClock, Clock3, Ticket, Users, Repeat, X } from 'lucide-react';
 import { buildBookingCheckInPath, buildBookingPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
@@ -88,30 +89,31 @@ export function BookingsHistory({
   const [pending, startTransition] = useTransition();
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [localCancelled, setLocalCancelled] = useState<Set<string>>(new Set());
+  const { confirm: styledConfirm, alert: styledAlert } = useConfirmDialog();
   const activeOffices = offices.filter((office) => office.is_active);
 
-  function handleCancelOne(id: string) {
-    if (!confirm(t('Cancel this appointment?'))) return;
+  async function handleCancelOne(id: string) {
+    if (!await styledConfirm(t('Cancel this appointment?'), { variant: 'danger', confirmLabel: 'Cancel Appointment' })) return;
     setCancellingId(id);
     startTransition(async () => {
       const result = await cancelAppointment(id);
       setCancellingId(null);
       if (result.error) {
-        alert(result.error);
+        await styledAlert(result.error);
       } else {
         setLocalCancelled((prev) => new Set(prev).add(id));
       }
     });
   }
 
-  function handleCancelSeries(id: string) {
-    if (!confirm(t('Cancel the entire recurring series? This will cancel all upcoming appointments in this series.'))) return;
+  async function handleCancelSeries(id: string) {
+    if (!await styledConfirm(t('Cancel the entire recurring series? This will cancel all upcoming appointments in this series.'), { variant: 'danger', confirmLabel: 'Cancel Series' })) return;
     setCancellingId(id);
     startTransition(async () => {
       const result = await cancelRecurringSeries(id);
       setCancellingId(null);
       if (result.error) {
-        alert(result.error);
+        await styledAlert(result.error);
       } else {
         // Mark all in this series as cancelled locally
         const parentId = appointments.find((a) => a.id === id)?.recurrence_parent_id ?? id;
@@ -123,7 +125,7 @@ export function BookingsHistory({
           seriesIds.forEach((sid) => next.add(sid));
           return next;
         });
-        alert(t('{count} appointments cancelled', { count: result.data?.cancelled ?? 0 }));
+        await styledAlert(t('{count} appointments cancelled', { count: result.data?.cancelled ?? 0 }));
       }
     });
   }

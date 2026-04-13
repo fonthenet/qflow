@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/providers/locale-provider';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   createService,
   updateService,
@@ -44,6 +45,7 @@ export function ServicesClient({
 }) {
   const { t } = useI18n();
   const router = useRouter();
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -75,8 +77,8 @@ export function ServicesClient({
     });
   }
 
-  function handleDelete(id: string) {
-    if (!confirm(t('Are you sure you want to delete this service?'))) return;
+  async function handleDelete(id: string) {
+    if (!await styledConfirm(t('Are you sure you want to delete this service?'), { variant: 'danger', confirmLabel: 'Delete' })) return;
     startTransition(async () => {
       const result = await deleteService(id);
       if (result?.error) setError(result.error);

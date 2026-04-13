@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import { useConfirmDialog } from './ConfirmDialog';
 
 declare global {
   interface Window { qf: any; }
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export function StatusBar({ session, syncStatus, updateStatus, stationVersion, onLogout, staffStatus, queuePaused, locale }: Props) {
+  const { confirm: styledConfirm } = useConfirmDialog();
   const [showPanel, setShowPanel] = useState(false);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,7 +132,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
   };
 
   const discardAll = async () => {
-    if (!confirm(t('Discard all pending sync items? This data will not be synced to the cloud.'))) return;
+    if (!await styledConfirm(t('Discard all pending sync items? This data will not be synced to the cloud.'), { variant: 'danger', confirmLabel: t('Discard All') })) return;
     try {
       await window.qf.sync.discardAll();
       setPendingItems([]);

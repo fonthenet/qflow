@@ -718,3 +718,105 @@ export async function getCalendarEvent(calendarToken: string) {
 
   return { data: appointment };
 }
+
+// ── Timeline / Activity Log ──
+
+export interface TimelineEvent {
+  time: string;
+  label: string;
+  eventType: string;
+  color: string;
+}
+
+export async function getAppointmentTimeline(appointmentId: string): Promise<{ data: TimelineEvent[] }> {
+  const supabase = await createClient();
+
+  // Fetch appointment to get ticket_id and created_at
+  const { data: appt } = await supabase
+    .from('appointments')
+    .select('id, ticket_id, status, created_at, updated_at')
+    .eq('id', appointmentId)
+    .single();
+
+  if (!appt) return { data: [] };
+
+  const events: TimelineEvent[] = [];
+
+  // Always add creation event
+  events.push({ time: appt.created_at!, eventType: 'created', label: 'Appointment created', color: '#3b82f6' });
+
+  const eventLabels: Record<string, { label: string; color: string }> = {
+    joined: { label: 'Joined queue', color: '#8b5cf6' },
+    checked_in: { label: 'Checked in', color: '#22c55e' },
+    called: { label: 'Called to desk', color: '#f59e0b' },
+    recalled: { label: 'Recalled', color: '#f59e0b' },
+    serving_started: { label: 'Service started', color: '#06b6d4' },
+    served: { label: 'Served', color: '#22c55e' },
+    completed: { label: 'Completed', color: '#22c55e' },
+    no_show: { label: 'No show', color: '#ef4444' },
+    cancelled: { label: 'Cancelled', color: '#ef4444' },
+    transferred: { label: 'Transferred', color: '#8b5cf6' },
+    buzzed: { label: 'Buzzed', color: '#f59e0b' },
+    returned_to_queue: { label: 'Returned to queue', color: '#64748b' },
+    parked: { label: 'Parked', color: '#64748b' },
+    resumed: { label: 'Resumed', color: '#3b82f6' },
+  };
+
+  // If linked ticket, fetch ticket_events + ticket timestamps
+  if (appt.ticket_id) {
+    const [{ data: ticketEvents }, { data: ticket }] = await Promise.all([
+      supabase
+        .from('ticket_events')
+        .select('event_type, from_status, to_status, created_at')
+        .eq('ticket_id', appt.ticket_id)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('tickets')
+        .select('created_at, called_at, checked_in_at, serving_started_at, completed_at, parked_at, status')
+        .eq('id', appt.ticket_id)
+        .single(),
+    ]);
+
+    if (ticketEvents && ticketEvents.length > 0) {
+      // Use event-based log
+      for (const ev of ticketEvents) {
+        const info = eventLabels[ev.event_type] ?? { label: ev.event_type, color: '#64748b' };
+        events.push({ time: ev.created_at!, eventType: ev.event_type, label: info.label, color: info.color });
+      }
+    } else if (ticket) {
+      // Fallback: reconstruct from ticket timestamp columns
+      if (ticket.created_at) events.push({ time: ticket.created_at, eventType: 'joined', label: 'Joined queue', color: '#8b5cf6' });
+      if (ticket.checked_in_at) events.push({ time: ticket.checked_in_at, eventType: 'checked_in', label: 'Checked in', color: '#22c55e' });
+      if (ticket.called_at) events.push({ time: ticket.called_at, eventType: 'called', label: 'Called to desk', color: '#f59e0b' });
+      if (ticket.serving_started_at) events.push({ time: ticket.serving_started_at, eventType: 'serving_started', label: 'Service started', color: '#06b6d4' });
+      if (ticket.completed_at) {
+        const termLabel = ticket.status === 'no_show' ? 'No show' : ticket.status === 'cancelled' ? 'Cancelled' : 'Completed';
+        const termColor = ticket.status === 'no_show' || ticket.status === 'cancelled' ? '#ef4444' : '#22c55e';
+        events.push({ time: ticket.completed_at, eventType: ticket.status ?? 'completed', label: termLabel, color: termColor });
+      }
+    }
+  } else {
+    // No linked ticket — derive from appointment status
+    if (['confirmed'].includes(appt.status)) {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'confirmed', label: 'Confirmed', color: '#22c55e' });
+    }
+    if (['checked_in', 'serving', 'completed', 'no_show'].includes(appt.status)) {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'checked_in', label: 'Checked in', color: '#22c55e' });
+    }
+    if (appt.status === 'completed') {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'completed', label: 'Completed', color: '#22c55e' });
+    }
+    if (appt.status === 'cancelled') {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'cancelled', label: 'Cancelled', color: '#ef4444' });
+    }
+    if (appt.status === 'no_show') {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'no_show', label: 'No show', color: '#ef4444' });
+    }
+    if (appt.status === 'declined') {
+      events.push({ time: appt.updated_at ?? appt.created_at!, eventType: 'declined', label: 'Declined', color: '#ef4444' });
+    }
+  }
+
+  events.sort((x, y) => new Date(x.time).getTime() - new Date(y.time).getTime());
+  return { data: events };
+}

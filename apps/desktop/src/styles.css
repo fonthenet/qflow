@@ -360,6 +360,16 @@ select { font-family: inherit; }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
+/* ── Confirm dialog animations ─────────────────────────────────── */
+@keyframes confirmOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes confirmDialogIn {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 /* ── Focus indicators (accessibility) ────────────────────────────── */
 button:focus-visible, .btn-sm:focus-visible, .btn-primary:focus-visible, .btn-success:focus-visible, .btn-outline:focus-visible {
   outline: 2px solid var(--primary);

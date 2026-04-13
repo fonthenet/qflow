@@ -30,6 +30,7 @@ import {
 } from '@/lib/actions/admin-actions';
 import { updateDeskServices, completeBusinessSetupWizard } from '@/lib/actions/setup-wizard-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { getVocabularyExamples } from '@/lib/platform/vocabulary-examples';
 
 // ────────────────────────────────────────────────────────────────
 // Types
@@ -96,8 +97,16 @@ type DeskService = {
   service_id: string;
 };
 
+interface WizardVocabulary {
+  serviceLabel: string;
+  departmentLabel: string;
+  deskLabel: string;
+  officeLabel: string;
+}
+
 interface SetupWizardClientProps {
   organization: { id: string; name: string };
+  vocabulary?: WizardVocabulary;
   offices: Office[];
   departments: Department[];
   services: Service[];
@@ -127,6 +136,7 @@ type StepKey = (typeof STEPS)[number]['key'];
 
 export function SetupWizardClient({
   organization,
+  vocabulary: vocabProp,
   offices: initialOffices,
   departments: initialDepartments,
   services: initialServices,
@@ -135,6 +145,8 @@ export function SetupWizardClient({
   deskServices: initialDeskServices,
 }: SetupWizardClientProps) {
   const { t } = useI18n();
+  const vocab = vocabProp ?? { serviceLabel: 'Service', departmentLabel: 'Department', deskLabel: 'Desk', officeLabel: 'Office' };
+  const examples = getVocabularyExamples(vocab);
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<StepKey>('office');
   const [isPending, startTransition] = useTransition();
@@ -252,13 +264,15 @@ export function SetupWizardClient({
       {/* Step content */}
       <div className="min-h-[500px]">
         {currentStep === 'office' && (
-          <OfficeStep offices={initialOffices} onNext={goNext} />
+          <OfficeStep offices={initialOffices} onNext={goNext} vocab={vocab} />
         )}
         {currentStep === 'departments' && (
           <DepartmentsStep
             offices={initialOffices}
             departments={initialDepartments}
             services={initialServices}
+            vocab={vocab}
+            examples={examples}
             onNext={goNext}
             onPrev={goPrev}
           />
@@ -271,6 +285,7 @@ export function SetupWizardClient({
             desks={initialDesks}
             staffList={initialStaff}
             deskServices={initialDeskServices}
+            vocab={vocab}
             onNext={goNext}
             onPrev={goPrev}
           />
@@ -497,7 +512,7 @@ function FormField({ label, name, type = 'text', placeholder, required = false, 
 // Step 1: Office Details
 // ────────────────────────────────────────────────────────────────
 
-function OfficeStep({ offices, onNext }: { offices: Office[]; onNext: () => void }) {
+function OfficeStep({ offices, onNext, vocab }: { offices: Office[]; onNext: () => void; vocab: WizardVocabulary }) {
   const { t } = useI18n();
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
@@ -585,7 +600,7 @@ function OfficeStep({ offices, onNext }: { offices: Office[]; onNext: () => void
               <>
                 <input type="hidden" name="is_active" value="true" />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Office Name" name="name" placeholder="e.g. Main Branch" required />
+                  <FormField label="Office Name" name="name" placeholder={`e.g. Main ${vocab.officeLabel}`} required />
                   <FormField label="Address" name="address" placeholder="123 Main Street" />
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -624,12 +639,16 @@ function DepartmentsStep({
   offices,
   departments,
   services,
+  vocab,
+  examples,
   onNext,
   onPrev,
 }: {
   offices: Office[];
   departments: Department[];
   services: Service[];
+  vocab: WizardVocabulary;
+  examples: ReturnType<typeof getVocabularyExamples>;
   onNext: () => void;
   onPrev: () => void;
 }) {
@@ -688,7 +707,7 @@ function DepartmentsStep({
       />
 
       <Guideline>
-        <strong>{t('Tip:')}</strong> {t('Departments are the areas of your business (e.g. Teller, Customer Service). Each department offers specific services (e.g. Cash Withdrawal, Account Opening). Customers pick a service when joining the queue.')}
+        <strong>{t('Tip:')}</strong> {`${vocab.departmentLabel}s are the areas of your business (e.g. ${examples.departments}). Each ${vocab.departmentLabel.toLowerCase()} offers specific ${vocab.serviceLabel.toLowerCase()}s (e.g. ${examples.services}). Customers pick a ${vocab.serviceLabel.toLowerCase()} when joining the queue.`}
       </Guideline>
 
       {error && (
@@ -776,8 +795,8 @@ function DepartmentsStep({
               <>
                 <input type="hidden" name="is_active" value="true" />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Department Name" name="name" placeholder="e.g. Customer Service" required />
-                  <FormField label="Code" name="code" placeholder="e.g. CS" required />
+                  <FormField label={`${vocab.departmentLabel} Name`} name="name" placeholder={examples.placeholderDept} required />
+                  <FormField label="Code" name="code" placeholder={examples.placeholderDeptCode} required />
                   <FormField label="Office" name="office_id" required>
                     <select
                       name="office_id"
@@ -809,8 +828,8 @@ function DepartmentsStep({
                 <input type="hidden" name="department_id" value={serviceDeptId} />
                 <input type="hidden" name="is_active" value="true" />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Service Name" name="name" placeholder="e.g. Cash Withdrawal" required />
-                  <FormField label="Code" name="code" placeholder="e.g. CW" required />
+                  <FormField label={`${vocab.serviceLabel} Name`} name="name" placeholder={examples.placeholderService} required />
+                  <FormField label="Code" name="code" placeholder={examples.placeholderCode} required />
                   <FormField label="Estimated Time (minutes)" name="estimated_service_time" type="number" placeholder="15" />
                   <FormField label="Description" name="description" placeholder="Optional description" />
                 </div>
@@ -840,6 +859,7 @@ function DesksStep({
   desks,
   staffList,
   deskServices,
+  vocab,
   onNext,
   onPrev,
 }: {
@@ -849,6 +869,7 @@ function DesksStep({
   desks: Desk[];
   staffList: StaffMember[];
   deskServices: DeskService[];
+  vocab: WizardVocabulary;
   onNext: () => void;
   onPrev: () => void;
 }) {
@@ -1026,8 +1047,8 @@ function DesksStep({
                 <input type="hidden" name="is_active" value="true" />
                 <input type="hidden" name="status" value="closed" />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Desk Name" name="name" placeholder="e.g. Counter 1" required />
-                  <FormField label="Display Name" name="display_name" placeholder="e.g. Guichet 1" />
+                  <FormField label={`${vocab.deskLabel} Name`} name="name" placeholder={`e.g. ${vocab.deskLabel} 1`} required />
+                  <FormField label="Display Name" name="display_name" placeholder={`e.g. ${vocab.deskLabel} 1`} />
                   <FormField label="Office" name="office_id" required>
                     <select
                       name="office_id"
