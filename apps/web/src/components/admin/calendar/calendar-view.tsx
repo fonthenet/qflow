@@ -524,17 +524,6 @@ function WeekView({
                         e.dataTransfer.setData('text/plain', appt.id);
                         e.dataTransfer.effectAllowed = 'move';
                         setDraggingId(appt.id);
-                        // Custom drag ghost — clone the element with slight scale
-                        const el = e.currentTarget;
-                        const ghost = el.cloneNode(true) as HTMLElement;
-                        ghost.style.width = `${el.offsetWidth}px`;
-                        ghost.style.opacity = '0.85';
-                        ghost.style.transform = 'scale(1.02)';
-                        ghost.style.position = 'absolute';
-                        ghost.style.top = '-9999px';
-                        document.body.appendChild(ghost);
-                        e.dataTransfer.setDragImage(ghost, el.offsetWidth / 2, 10);
-                        requestAnimationFrame(() => document.body.removeChild(ghost));
                       }}
                       onDragEnd={() => { setDraggingId(null); setDragOverSlot(null); }}
                       onClick={(e) => {
