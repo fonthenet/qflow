@@ -17,6 +17,7 @@ import {
 } from '@/lib/actions/platform-actions';
 import { buildTrialTemplateStructure, normalizeTrialTemplateStructure } from '@/lib/platform/trial-structure';
 import { industryTemplates } from '@/lib/platform/templates';
+import { getProfilesForVertical, getDefaultProfileId, type TemplateProfile } from '@/lib/platform/template-profiles';
 import { sandboxSurfaceMeta } from '@/lib/platform/sandbox-surfaces';
 import { useI18n } from '@/components/providers/locale-provider';
 
@@ -302,6 +303,9 @@ export function TemplateOnboardingClient({
   const [seedPriorities, setSeedPriorities] = useState(
     asBoolean(trialSettings.platform_trial_seed_priorities, true)
   );
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(
+    asString(trialSettings.platform_trial_profile_id, getDefaultProfileId(trialTemplate.vertical as any))
+  );
   const [trialStructure, setTrialStructure] = useState<TrialTemplateStructure>(() =>
     initialStructure({
       templateId: initialTemplateId,
@@ -344,6 +348,7 @@ export function TemplateOnboardingClient({
         }
     : null;
 
+  const availableProfiles = getProfilesForVertical(selectedTemplate.vertical);
   const departmentOptions = trialStructure.departments.map((department) => ({
     code: department.code,
     name: department.name,
@@ -366,6 +371,7 @@ export function TemplateOnboardingClient({
     const nextDisplaySetting = nextTemplate.capabilityFlags.displayBoard;
     setSelectedTemplateId(nextTemplate.id);
     setHighlightedTemplateId(nextTemplate.id);
+    setSelectedProfileId(getDefaultProfileId(nextTemplate.vertical));
     setBranchType(nextBranchType);
     setOperatingModel(
       nextTemplate.vertical === 'bank'
@@ -500,6 +506,7 @@ export function TemplateOnboardingClient({
   function buildPayload() {
     return {
       templateId: selectedTemplate.id,
+      profileId: selectedProfileId,
       operatingModel,
       branchType,
       officeName,
@@ -734,6 +741,42 @@ export function TemplateOnboardingClient({
               ) : null}
             </div>
           </div>
+
+          {availableProfiles.length > 1 ? (
+            <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.card}`}>
+              <div className="flex items-center gap-2">
+                <LayoutTemplate className="h-4 w-4 text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">{t('Business profile')}</h2>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('Pick a more specific profile for your business. This adjusts vocabulary, services, and branding.')}
+              </p>
+              <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {availableProfiles.map((profile) => {
+                  const active = profile.id === selectedProfileId;
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      onClick={() => setSelectedProfileId(profile.id)}
+                      disabled={setupLocked}
+                      className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                        active
+                          ? `${hue.selectedCard} ring-1 ring-primary/20`
+                          : 'border-border bg-background hover:border-primary/40'
+                      } ${setupLocked ? 'cursor-not-allowed opacity-70' : ''}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{profile.icon}</span>
+                        <p className="text-sm font-semibold text-foreground">{profile.title}</p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{profile.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <div className={`rounded-3xl border p-6 shadow-sm transition-colors ${hue.softCard}`}>
             <div className="flex items-center gap-2">

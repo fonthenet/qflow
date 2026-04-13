@@ -43,6 +43,7 @@ function generateSandboxShareToken() {
 
 type TemplateSetupInput = {
   templateId: string;
+  profileId?: string;
   operatingModel: 'department_first' | 'service_routing' | 'appointments_first' | 'waitlist';
   branchType:
     | 'service_center'
@@ -78,6 +79,7 @@ function buildTrialTemplateSettings(currentSettings: Record<string, unknown>, se
     platform_trial_timezone: input.timezone,
     platform_trial_create_starter_display: input.createStarterDisplay,
     platform_trial_seed_priorities: input.seedPriorities,
+    platform_trial_profile_id: input.profileId ?? null,
     platform_trial_structure: input.trialStructure ?? null,
     platform_trial_structure_template_id: template.id,
     platform_trial_structure_branch_type: input.branchType,
@@ -98,6 +100,7 @@ function clearTrialTemplateSettings(settings: Record<string, unknown>) {
     'platform_trial_timezone',
     'platform_trial_create_starter_display',
     'platform_trial_seed_priorities',
+    'platform_trial_profile_id',
     'platform_trial_structure',
     'platform_trial_structure_template_id',
     'platform_trial_structure_branch_type',
@@ -966,4 +969,56 @@ export async function rolloutIndustryTemplateToOffices(input: {
       updatedOffices,
     },
   };
+}
+
+// ── Template customization ──────────────────────────────────────────────────
+
+export async function saveTemplateCustomization(input: {
+  profileId?: string;
+  overrides?: Record<string, unknown>;
+}) {
+  const context = await getStaffContext();
+  await requireOrganizationAdmin(context);
+
+  const { data: organization, error: orgError } = await context.supabase
+    .from('organizations')
+    .select('settings')
+    .eq('id', context.staff.organization_id)
+    .single();
+
+  if (orgError) return { error: orgError.message };
+
+  const currentSettings = (organization?.settings as Record<string, unknown> | null) ?? {};
+  const templateId = typeof currentSettings.platform_template_id === 'string'
+    ? currentSettings.platform_template_id
+    : 'unknown';
+
+  const nextSettings = {
+    ...currentSettings,
+    ...(input.profileId !== undefined ? { platform_profile_id: input.profileId } : {}),
+    ...(input.overrides !== undefined ? { platform_overrides: input.overrides } : {}),
+    platform_customized_at: new Date().toISOString(),
+  };
+
+  const { error: updateError } = await context.supabase
+    .from('organizations')
+    .update({ settings: nextSettings })
+    .eq('id', context.staff.organization_id);
+
+  if (updateError) return { error: updateError.message };
+
+  await logAuditEvent(context, {
+    actionType: 'template_customized',
+    entityType: 'industry_template',
+    entityId: templateId,
+    summary: `Customized template settings${input.profileId ? ` (profile: ${input.profileId})` : ''}`,
+    metadata: {
+      profileId: input.profileId ?? null,
+      hasOverrides: !!input.overrides && Object.keys(input.overrides).length > 0,
+    },
+  });
+
+  revalidatePath('/admin/settings/template-customization');
+  revalidatePath('/admin/settings');
+  return { success: true };
 }
