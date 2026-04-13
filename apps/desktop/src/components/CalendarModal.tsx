@@ -3108,7 +3108,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
     setName(c.name ?? '');
     setPhone(formatPhoneLocal(c.phone));
     if (c.notes && !notes) setNotes(c.notes);
-    if (c.wilaya_code && !wilaya) setWilaya(c.wilaya_code);
+    if (c.wilaya_code) setWilaya(c.wilaya_code);
     setShowCustHits(false);
     setCustHits([]);
   };
@@ -3389,7 +3389,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
             onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') handleBook(); }}
             style={inputStyle}
           >
-            <option value="">{t('Wilaya (province)')}</option>
+            <option value="">{t('Wilaya')}</option>
             {WILAYAS.map(w => (
               <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
                 {formatWilayaLabel(w, locale === 'ar')}

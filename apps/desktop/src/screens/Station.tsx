@@ -721,7 +721,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
                 style={inputStyle}
               >
-                <option value="">{t('Wilaya (province)')}</option>
+                <option value="">{t('Wilaya')}</option>
                 {WILAYAS.map(w => (
                   <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
                     {formatWilayaLabel(w, locale === 'ar')}
@@ -974,7 +974,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
                 onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
                 style={inputStyle}
               >
-                <option value="">{t('Wilaya (province)')}</option>
+                <option value="">{t('Wilaya')}</option>
                 {WILAYAS.map(w => (
                   <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
                     {formatWilayaLabel(w, locale === 'ar')}
