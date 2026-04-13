@@ -21,14 +21,14 @@ export default async function SetupWizardPage() {
 
   if (!organization) redirect('/admin/offices');
 
-  const settings = (organization.settings as Record<string, any>) ?? {};
+  let settings = (organization.settings as Record<string, any>) ?? {};
 
   // If wizard already completed, go to overview
   if (settings.business_setup_wizard_completed_at) {
     redirect('/admin/overview');
   }
 
-  // Check if template is confirmed (offices exist)
+  // Check if offices actually exist
   const { count: officeCount } = await context.supabase
     .from('offices')
     .select('*', { count: 'exact', head: true })
@@ -37,7 +37,39 @@ export default async function SetupWizardPage() {
   const lifecycleState = getPlatformLifecycleState(settings, {
     hasExistingData: (officeCount ?? 0) > 0,
   });
-  const confirmed = lifecycleState === 'template_confirmed';
+
+  // ── Broken state recovery ──────────────────────────────────────
+  // If settings say "confirmed" but no offices exist, the confirm
+  // action ran partially or records were deleted. Reset to trial
+  // state so the user can re-create their business.
+  if (lifecycleState === 'template_confirmed' && (officeCount ?? 0) === 0) {
+    const fixedSettings = { ...settings };
+    // Restore trial keys from permanent keys so the wizard can re-run
+    fixedSettings.platform_template_state = 'template_trial_state';
+    fixedSettings.platform_trial_template_id = settings.platform_template_id ?? settings.platform_trial_template_id;
+    fixedSettings.platform_trial_template_version = settings.platform_template_version ?? settings.platform_trial_template_version;
+    fixedSettings.platform_trial_vertical = settings.platform_vertical ?? settings.platform_trial_vertical;
+    fixedSettings.platform_trial_operating_model = settings.platform_operating_model ?? settings.platform_trial_operating_model;
+    fixedSettings.platform_trial_branch_type = settings.platform_branch_type ?? settings.platform_trial_branch_type;
+    fixedSettings.platform_trial_office_name = settings.platform_trial_office_name ?? organization.name;
+    fixedSettings.platform_trial_timezone = settings.platform_trial_timezone ?? 'Africa/Algiers';
+    fixedSettings.platform_trial_seed_priorities = true;
+    // Clear the confirmed markers
+    delete fixedSettings.platform_template_confirmed_at;
+
+    await context.supabase
+      .from('organizations')
+      .update({ settings: fixedSettings })
+      .eq('id', orgId);
+
+    settings = fixedSettings;
+  }
+
+  // Re-evaluate after potential fix
+  const finalLifecycleState = getPlatformLifecycleState(settings, {
+    hasExistingData: (officeCount ?? 0) > 0,
+  });
+  const confirmed = finalLifecycleState === 'template_confirmed' && (officeCount ?? 0) > 0;
 
   // Resolve vocabulary for labels
   const platformConfig = resolvePlatformConfig({ organizationSettings: settings });

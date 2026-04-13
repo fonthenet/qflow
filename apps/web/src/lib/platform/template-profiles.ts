@@ -52,166 +52,182 @@ export interface TemplateProfile {
 
 const CLINIC_PROFILES: TemplateProfile[] = [
   {
-    id: 'general-clinic',
+    id: 'solo-doctor',
     parentVertical: 'clinic',
-    title: 'General Clinic',
-    description: 'Walk-in and appointment visits with triage, check-in, and consultation departments.',
+    title: 'Solo Doctor Office',
+    description: 'Simple setup — secretary desk upfront, doctor sees patients in the cabinet.',
+    icon: '👨‍⚕️',
+    overrides: {},  // Uses the clinic defaults (solo doctor office)
+  },
+  {
+    id: 'multi-doctor',
+    parentVertical: 'clinic',
+    title: 'Multi-Doctor Practice',
+    description: 'Multiple doctors sharing a practice with 3-4 exam rooms and a shared reception.',
     icon: '🏥',
-    overrides: {},  // Uses the clinic defaults as-is
+    overrides: {
+      starterDepartments: [
+        {
+          name: 'Consultations', code: 'C', sortOrder: 1,
+          services: [
+            { name: 'Consultation Générale', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
+            { name: 'Contrôle', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Certificat Médical', code: 'CERT', estimatedServiceTime: 10, sortOrder: 3 },
+            { name: 'Urgence', code: 'URGENT', estimatedServiceTime: 15, sortOrder: 4 },
+          ],
+        },
+      ],
+      onboardingCopy: {
+        headline: 'Set up your multi-doctor practice',
+        description: 'Shared reception with multiple exam rooms and doctors.',
+      },
+    },
   },
   {
     id: 'dental-practice',
     parentVertical: 'clinic',
     title: 'Dental Practice',
-    description: 'Appointment-focused with dental-specific services and intake forms.',
+    description: 'Dental-specific services — cleanings, fillings, extractions, and emergencies.',
     icon: '🦷',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          serviceLabel: 'Treatment',
-          deskLabel: 'Operatory',
-          customerLabel: 'Patient',
-          bookingLabel: 'Appointment',
+          serviceLabel: 'Soin',
+          deskLabel: 'Fauteuil',
+          bookingLabel: 'Rendez-vous',
         },
         kiosk: {
-          welcomeMessage: 'Check in for your dental appointment',
-          headerText: 'Dental check-in',
+          welcomeMessage: 'Bienvenue — enregistrez-vous',
+          headerText: 'Cabinet dentaire',
           themeColor: '#0891b2',
-          buttonLabel: 'Check In',
+          buttonLabel: 'S\'enregistrer',
         },
         publicJoin: {
-          headline: 'Your dental appointment',
-          subheadline: 'Check in and we\'ll call you when the dentist is ready.',
+          headline: 'Votre rendez-vous dentaire',
+          subheadline: 'Le dentiste vous recevra dès que possible.',
         },
         branding: { recommendedPrimaryColor: '#0891b2' },
       },
       starterDepartments: [
         {
-          name: 'Front Desk', code: 'F', sortOrder: 1,
+          name: 'Soins Dentaires', code: 'D', sortOrder: 1,
           services: [
-            { name: 'Check-In', code: 'CHECKIN', estimatedServiceTime: 5, sortOrder: 1 },
-            { name: 'Insurance Verification', code: 'INSURANCE', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Détartrage', code: 'CLEANING', estimatedServiceTime: 30, sortOrder: 1 },
+            { name: 'Plombage', code: 'FILLING', estimatedServiceTime: 40, sortOrder: 2 },
+            { name: 'Extraction', code: 'EXTRACT', estimatedServiceTime: 30, sortOrder: 3 },
+            { name: 'Consultation', code: 'CONSULT', estimatedServiceTime: 15, sortOrder: 4 },
+            { name: 'Urgence Dentaire', code: 'EMERGENCY', estimatedServiceTime: 25, sortOrder: 5 },
           ],
-        },
-        {
-          name: 'Dental Care', code: 'D', sortOrder: 2,
-          services: [
-            { name: 'Cleaning', code: 'CLEANING', estimatedServiceTime: 30, sortOrder: 1 },
-            { name: 'Filling', code: 'FILLING', estimatedServiceTime: 45, sortOrder: 2 },
-            { name: 'Consultation', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 3 },
-            { name: 'Emergency', code: 'EMERGENCY', estimatedServiceTime: 30, sortOrder: 4 },
-          ],
-        },
-      ],
-      intakeSchemas: [
-        {
-          serviceCode: 'CHECKIN',
-          title: 'Dental patient intake',
-          fields: [
-            { key: 'patient_name', label: 'Patient name', type: 'text', required: true, visibility: 'public' },
-            { key: 'phone', label: 'Mobile number', type: 'phone', required: false, visibility: 'public' },
-            { key: 'concern', label: 'Primary concern', type: 'textarea', required: false, visibility: 'staff_only' },
-          ],
-          complianceNotes: ['Review dental records retention policy.'],
         },
       ],
       defaultSlas: [
-        { metric: 'check_in', label: 'Check-in completed within', targetMinutes: 5 },
-        { metric: 'chair_wait', label: 'Chair wait under', targetMinutes: 10 },
+        { metric: 'patient_wait', label: 'Patient wait under', targetMinutes: 15 },
       ],
     },
   },
   {
-    id: 'urgent-care',
+    id: 'clinique',
     parentVertical: 'clinic',
-    title: 'Urgent Care',
-    description: 'Walk-in focused with fast triage and shorter wait targets.',
-    icon: '🚑',
+    title: 'Clinique',
+    description: 'Multi-department polyclinic — reception, general medicine, specialists, lab, and imaging.',
+    icon: '🏨',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          serviceLabel: 'Visit Type',
-          bookingLabel: 'Walk-In Visit',
+          officeLabel: 'Clinique',
+          departmentLabel: 'Service',
+          serviceLabel: 'Prestation',
+          deskLabel: 'Guichet',
         },
         kiosk: {
-          welcomeMessage: 'Check in for urgent care',
-          headerText: 'Urgent care check-in',
-          themeColor: '#dc2626',
-          buttonLabel: 'Check In Now',
+          welcomeMessage: 'Bienvenue — choisissez votre service',
+          headerText: 'Enregistrement',
+          themeColor: '#1d4ed8',
+          buttonLabel: 'S\'enregistrer',
+          showPriorities: true,
         },
         publicJoin: {
-          headline: 'Your urgent care visit',
-          subheadline: 'We\'ll see you as quickly as possible.',
+          headline: 'Votre visite',
+          subheadline: 'Suivez votre position dans la file depuis votre téléphone.',
         },
-        branding: { recommendedPrimaryColor: '#dc2626' },
+        branding: { recommendedPrimaryColor: '#1d4ed8' },
       },
       starterDepartments: [
         {
-          name: 'Triage', code: 'T', sortOrder: 1,
+          name: 'Accueil', code: 'A', sortOrder: 1,
           services: [
-            { name: 'Walk-In Triage', code: 'TRIAGE', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Enregistrement', code: 'REGISTER', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Vérification Dossier', code: 'VERIFY', estimatedServiceTime: 8, sortOrder: 2 },
           ],
         },
         {
-          name: 'Treatment', code: 'X', sortOrder: 2,
+          name: 'Médecine Générale', code: 'MG', sortOrder: 2,
           services: [
-            { name: 'Minor Illness', code: 'ILLNESS', estimatedServiceTime: 15, sortOrder: 1 },
-            { name: 'Minor Injury', code: 'INJURY', estimatedServiceTime: 20, sortOrder: 2 },
-            { name: 'Lab / X-Ray', code: 'LAB', estimatedServiceTime: 25, sortOrder: 3 },
+            { name: 'Consultation Générale', code: 'CONSULT', estimatedServiceTime: 20, sortOrder: 1 },
+            { name: 'Contrôle', code: 'CONTROL', estimatedServiceTime: 15, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Spécialités', code: 'SP', sortOrder: 3,
+          services: [
+            { name: 'Consultation Spécialiste', code: 'SPECIALIST', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'Avis Spécialisé', code: 'OPINION', estimatedServiceTime: 20, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Laboratoire', code: 'LAB', sortOrder: 4,
+          services: [
+            { name: 'Prise de Sang', code: 'BLOOD', estimatedServiceTime: 10, sortOrder: 1 },
+            { name: 'Résultats', code: 'RESULTS', estimatedServiceTime: 5, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Imagerie', code: 'IMG', sortOrder: 5,
+          services: [
+            { name: 'Radio', code: 'XRAY', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Échographie', code: 'ECHO', estimatedServiceTime: 20, sortOrder: 2 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'triage', label: 'Triage within', targetMinutes: 5 },
-        { metric: 'provider_wait', label: 'Provider wait under', targetMinutes: 20 },
+        { metric: 'check_in', label: 'Enregistrement en moins de', targetMinutes: 5 },
+        { metric: 'patient_wait', label: 'Attente patient sous', targetMinutes: 25 },
       ],
       onboardingCopy: {
-        headline: 'Launch an urgent care flow',
-        description: 'Fast triage for walk-in patients with minimal wait times.',
+        headline: 'Configurez votre clinique',
+        description: 'Polyclinique multi-services — accueil, médecine générale, spécialités, laboratoire et imagerie.',
       },
     },
   },
   {
-    id: 'specialty-office',
+    id: 'specialist-office',
     parentVertical: 'clinic',
-    title: 'Specialty Office',
-    description: 'Appointment-only specialist visits with longer consultation times.',
+    title: 'Specialist Office',
+    description: 'Appointment-focused specialist — longer consultations, fewer walk-ins.',
     icon: '🩺',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          serviceLabel: 'Consultation Type',
-          deskLabel: 'Office',
-          bookingLabel: 'Consultation',
-        },
-        kiosk: {
-          welcomeMessage: 'Check in for your consultation',
-          headerText: 'Specialist check-in',
+          serviceLabel: 'Consultation',
+          deskLabel: 'Cabinet',
         },
         publicJoin: {
-          headline: 'Your specialist appointment',
-          subheadline: 'Check in and relax — we\'ll notify you when the doctor is ready.',
+          headline: 'Votre consultation spécialisée',
+          subheadline: 'Le spécialiste vous recevra dès que possible.',
         },
       },
       starterDepartments: [
         {
-          name: 'Reception', code: 'R', sortOrder: 1,
+          name: 'Consultations', code: 'C', sortOrder: 1,
           services: [
-            { name: 'Check-In', code: 'CHECKIN', estimatedServiceTime: 5, sortOrder: 1 },
-          ],
-        },
-        {
-          name: 'Consultation', code: 'C', sortOrder: 2,
-          services: [
-            { name: 'New Patient', code: 'NEW', estimatedServiceTime: 30, sortOrder: 1 },
-            { name: 'Follow-Up', code: 'FOLLOWUP', estimatedServiceTime: 20, sortOrder: 2 },
-            { name: 'Procedure', code: 'PROCEDURE', estimatedServiceTime: 45, sortOrder: 3 },
+            { name: 'Première Consultation', code: 'FIRST', estimatedServiceTime: 30, sortOrder: 1 },
+            { name: 'Suivi', code: 'FOLLOWUP', estimatedServiceTime: 20, sortOrder: 2 },
+            { name: 'Acte Médical', code: 'PROCEDURE', estimatedServiceTime: 40, sortOrder: 3 },
           ],
         },
       ],
       defaultSlas: [
-        { metric: 'check_in', label: 'Check-in completed within', targetMinutes: 5 },
-        { metric: 'provider_wait', label: 'Specialist wait under', targetMinutes: 15 },
+        { metric: 'patient_wait', label: 'Patient wait under', targetMinutes: 15 },
       ],
     },
   },
@@ -219,192 +235,303 @@ const CLINIC_PROFILES: TemplateProfile[] = [
 
 const RESTAURANT_PROFILES: TemplateProfile[] = [
   {
-    id: 'casual-dining',
+    id: 'restaurant-simple',
     parentVertical: 'restaurant',
-    title: 'Casual Dining',
-    description: 'Full-service restaurant with walk-in waitlist and reservations.',
+    title: 'Restaurant Simple',
+    description: 'Sur place, à emporter et livraison — le setup le plus courant.',
     icon: '🍽️',
     overrides: {},  // Uses the restaurant defaults
   },
   {
-    id: 'fine-dining',
+    id: 'fast-food',
     parentVertical: 'restaurant',
-    title: 'Fine Dining',
-    description: 'Reservation-first with longer turn times and VIP guest tracking.',
-    icon: '🥂',
+    title: 'Fast Food / Tacos',
+    description: 'Service rapide au comptoir — commande, préparation, retrait.',
+    icon: '🌮',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          customerLabel: 'Guest',
-          bookingLabel: 'Reservation',
-          queueLabel: 'Guest List',
+          serviceLabel: 'Commande',
+          deskLabel: 'Comptoir',
+          queueLabel: 'File de commande',
         },
         kiosk: {
-          welcomeMessage: 'Welcome — check in your reservation',
-          headerText: 'Guest reception',
-          themeColor: '#1e1b4b',
-          buttonLabel: 'Check In',
+          welcomeMessage: 'Passez votre commande',
+          headerText: 'Commandez ici',
+          themeColor: '#ea580c',
+          buttonLabel: 'Commander',
         },
         publicJoin: {
-          headline: 'Your table awaits',
-          subheadline: 'We\'ll notify you the moment your table is ready.',
+          headline: 'Votre commande est en préparation',
+          subheadline: 'On vous appelle quand c\'est prêt.',
         },
-        messagingTone: 'professional',
-        branding: { recommendedPrimaryColor: '#1e1b4b' },
+        branding: { recommendedPrimaryColor: '#ea580c' },
       },
+      starterDepartments: [
+        {
+          name: 'Comptoir', code: 'C', sortOrder: 1,
+          services: [
+            { name: 'Commande', code: 'ORDER', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Retrait', code: 'PICKUP', estimatedServiceTime: 3, sortOrder: 2 },
+            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 8, sortOrder: 3 },
+          ],
+        },
+      ],
       defaultSlas: [
-        { metric: 'seat_wait', label: 'Seating wait under', targetMinutes: 10 },
-        { metric: 'reservation_hold', label: 'Hold reservation for', targetMinutes: 15 },
+        { metric: 'order_wait', label: 'Attente commande sous', targetMinutes: 8 },
       ],
       onboardingCopy: {
-        headline: 'Set up fine dining reception',
-        description: 'Reservation-first guest management with a polished experience.',
+        headline: 'Configurez votre fast food',
+        description: 'File rapide au comptoir — commande, préparation et retrait.',
       },
     },
   },
   {
-    id: 'fast-casual',
+    id: 'grillades',
     parentVertical: 'restaurant',
-    title: 'Fast Casual / Counter',
-    description: 'Quick-service with order queue and minimal wait times.',
-    icon: '🍔',
+    title: 'Grillades / Traditionnel',
+    description: 'Restaurant traditionnel avec salle, terrasse et salle familiale. Réservations supportées.',
+    icon: '🥩',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          deskLabel: 'Counter',
-          customerLabel: 'Customer',
-          bookingLabel: 'Order',
-          queueLabel: 'Order Queue',
-        },
-        kiosk: {
-          welcomeMessage: 'Place your order',
-          headerText: 'Order here',
-          themeColor: '#ea580c',
-          buttonLabel: 'Join Queue',
+          serviceLabel: 'Service',
+          bookingLabel: 'Réservation',
         },
         publicJoin: {
-          headline: 'Your order is being prepared',
-          subheadline: 'We\'ll call your name when it\'s ready.',
+          headline: 'Votre table est bientôt prête',
+          subheadline: 'On vous prévient dès qu\'une table se libère.',
         },
-        messagingTone: 'friendly',
-        branding: { recommendedPrimaryColor: '#ea580c' },
       },
+      starterDepartments: [
+        {
+          name: 'Service', code: 'S', sortOrder: 1,
+          services: [
+            { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 40, sortOrder: 1 },
+            { name: 'Réservation', code: 'RSVP', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 3 },
+          ],
+        },
+      ],
       defaultSlas: [
-        { metric: 'seat_wait', label: 'Average wait under', targetMinutes: 10 },
+        { metric: 'seat_wait', label: 'Attente table sous', targetMinutes: 20 },
       ],
       onboardingCopy: {
-        headline: 'Set up a counter-service flow',
-        description: 'Quick order queue with fast turnover.',
+        headline: 'Configurez votre restaurant traditionnel',
+        description: 'Grillades, couscous, tajine — salle, terrasse et salle familiale.',
       },
+    },
+  },
+  {
+    id: 'pizzeria',
+    parentVertical: 'restaurant',
+    title: 'Pizzeria',
+    description: 'Sur place, à emporter et livraison — optimisé pour la pizza.',
+    icon: '🍕',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          serviceLabel: 'Commande',
+        },
+        kiosk: {
+          themeColor: '#b91c1c',
+        },
+        branding: { recommendedPrimaryColor: '#b91c1c' },
+      },
+      starterDepartments: [
+        {
+          name: 'Service', code: 'S', sortOrder: 1,
+          services: [
+            { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Livraison', code: 'DELIVERY', estimatedServiceTime: 5, sortOrder: 3 },
+          ],
+        },
+      ],
     },
   },
   {
     id: 'cafe',
     parentVertical: 'restaurant',
-    title: 'Cafe / Coffee Shop',
-    description: 'Simple order queue with pickup notifications.',
+    title: 'Café',
+    description: 'Café avec salle et terrasse — ambiance et service simple.',
     icon: '☕',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          deskLabel: 'Bar',
-          customerLabel: 'Customer',
-          bookingLabel: 'Order',
-          queueLabel: 'Order Queue',
+          officeLabel: 'Café',
+          serviceLabel: 'Consommation',
+          deskLabel: 'Comptoir',
+          queueLabel: 'File d\'attente',
         },
         kiosk: {
-          welcomeMessage: 'Join the queue',
-          headerText: 'Order pickup',
+          welcomeMessage: 'Bienvenue au café',
+          headerText: 'Commandez',
           themeColor: '#78350f',
-          buttonLabel: 'Get in Line',
+          buttonLabel: 'Commander',
         },
         publicJoin: {
-          headline: 'Your drink is coming up',
-          subheadline: 'We\'ll let you know when your order is ready.',
+          headline: 'Votre commande arrive',
+          subheadline: 'On vous appelle quand c\'est prêt.',
         },
         branding: { recommendedPrimaryColor: '#78350f' },
       },
-      defaultSlas: [
-        { metric: 'seat_wait', label: 'Average wait under', targetMinutes: 8 },
+      starterDepartments: [
+        {
+          name: 'Service', code: 'S', sortOrder: 1,
+          services: [
+            { name: 'Consommation sur place', code: 'DINE', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'À Emporter', code: 'TAKEOUT', estimatedServiceTime: 3, sortOrder: 2 },
+          ],
+        },
       ],
+      defaultSlas: [
+        { metric: 'order_wait', label: 'Attente sous', targetMinutes: 5 },
+      ],
+    },
+  },
+  {
+    id: 'fine-dining',
+    parentVertical: 'restaurant',
+    title: 'Fine Dining',
+    description: 'Réservation obligatoire, service haut de gamme, suivi VIP.',
+    icon: '🥂',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          customerLabel: 'Invité',
+          bookingLabel: 'Réservation',
+          queueLabel: 'Liste des invités',
+        },
+        kiosk: {
+          welcomeMessage: 'Bienvenue — enregistrez votre réservation',
+          headerText: 'Réception',
+          themeColor: '#1e1b4b',
+          buttonLabel: 'S\'enregistrer',
+        },
+        publicJoin: {
+          headline: 'Votre table vous attend',
+          subheadline: 'Nous vous prévenons dès que votre table est prête.',
+        },
+        messagingTone: 'professional',
+        branding: { recommendedPrimaryColor: '#1e1b4b' },
+      },
+      starterDepartments: [
+        {
+          name: 'Service', code: 'S', sortOrder: 1,
+          services: [
+            { name: 'Réservation', code: 'RSVP', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Sur Place', code: 'DINE', estimatedServiceTime: 60, sortOrder: 2 },
+          ],
+        },
+      ],
+      defaultSlas: [
+        { metric: 'seat_wait', label: 'Attente table sous', targetMinutes: 5 },
+      ],
+      onboardingCopy: {
+        headline: 'Configurez votre restaurant gastronomique',
+        description: 'Réservation-first avec suivi personnalisé des invités.',
+      },
     },
   },
 ];
 
 const BANK_PROFILES: TemplateProfile[] = [
   {
-    id: 'retail-bank',
+    id: 'banque-agence',
     parentVertical: 'bank',
-    title: 'Retail Bank',
-    description: 'Full-service branch with teller and advisory departments.',
+    title: 'Agence Bancaire',
+    description: 'Agence complète — caisse, opérations et conseiller.',
     icon: '🏦',
     overrides: {},  // Uses bank defaults
   },
   {
-    id: 'credit-union',
+    id: 'banque-poste',
     parentVertical: 'bank',
-    title: 'Credit Union',
-    description: 'Member-focused with simplified services and friendly tone.',
-    icon: '🤝',
+    title: 'Bureau de Poste',
+    description: 'Services postaux et financiers — courrier, colis, mandats et CCP.',
+    icon: '📮',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          customerLabel: 'Member',
-          queueLabel: 'Member Queue',
+          officeLabel: 'Bureau',
+          serviceLabel: 'Service',
+          queueLabel: 'File d\'attente',
         },
         kiosk: {
-          welcomeMessage: 'Welcome, member',
-          headerText: 'Member check-in',
+          welcomeMessage: 'Choisissez votre service',
+          headerText: 'Bienvenue à la poste',
+          themeColor: '#1d4ed8',
+          buttonLabel: 'Prendre un ticket',
         },
-        publicJoin: {
-          headline: 'Your visit, timed for you',
-          subheadline: 'Track your place and arrive when your representative is ready.',
-        },
-        messagingTone: 'friendly',
+        branding: { recommendedPrimaryColor: '#1d4ed8' },
       },
+      starterDepartments: [
+        {
+          name: 'Courrier & Colis', code: 'CP', sortOrder: 1,
+          services: [
+            { name: 'Envoi Courrier', code: 'COURRIER', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Envoi Colis', code: 'COLIS', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Retrait Colis', code: 'RETRAIT_COLIS', estimatedServiceTime: 5, sortOrder: 3 },
+          ],
+        },
+        {
+          name: 'Services Financiers', code: 'SF', sortOrder: 2,
+          services: [
+            { name: 'Retrait CCP', code: 'CCP', estimatedServiceTime: 7, sortOrder: 1 },
+            { name: 'Mandat', code: 'MANDAT', estimatedServiceTime: 10, sortOrder: 2 },
+            { name: 'Versement', code: 'VERSEMENT', estimatedServiceTime: 8, sortOrder: 3 },
+          ],
+        },
+      ],
       onboardingCopy: {
-        headline: 'Set up your credit union branch',
-        description: 'Member-first queue with personal service routing.',
+        headline: 'Configurez votre bureau de poste',
+        description: 'Courrier, colis, mandats et services CCP.',
       },
     },
   },
   {
-    id: 'investment-office',
+    id: 'assurance-agence',
     parentVertical: 'bank',
-    title: 'Investment Office',
-    description: 'Appointment-only advisory with consultation rooms.',
-    icon: '📈',
+    title: 'Agence d\'Assurance',
+    description: 'Déclarations de sinistre, souscriptions et renouvellements.',
+    icon: '🛡️',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          departmentLabel: 'Advisory Area',
-          serviceLabel: 'Consultation Type',
-          deskLabel: 'Office',
-          customerLabel: 'Client',
-          bookingLabel: 'Consultation',
-          queueLabel: 'Client Queue',
+          officeLabel: 'Agence',
+          serviceLabel: 'Prestation',
+          customerLabel: 'Assuré',
         },
         kiosk: {
-          welcomeMessage: 'Welcome to your consultation',
-          headerText: 'Client check-in',
-          themeColor: '#0c4a6e',
+          welcomeMessage: 'Bienvenue — choisissez votre service',
+          headerText: 'Agence d\'assurance',
+          themeColor: '#0369a1',
+          buttonLabel: 'Prendre un ticket',
         },
-        branding: { recommendedPrimaryColor: '#0c4a6e' },
-        messagingTone: 'professional',
+        branding: { recommendedPrimaryColor: '#0369a1' },
       },
       starterDepartments: [
         {
-          name: 'Advisory', code: 'A', sortOrder: 1,
+          name: 'Sinistres', code: 'SIN', sortOrder: 1,
           services: [
-            { name: 'Portfolio Review', code: 'PORTFOLIO', estimatedServiceTime: 30, sortOrder: 1 },
-            { name: 'New Account', code: 'OPEN', estimatedServiceTime: 45, sortOrder: 2 },
-            { name: 'Retirement Planning', code: 'RETIRE', estimatedServiceTime: 40, sortOrder: 3 },
+            { name: 'Déclaration de Sinistre', code: 'SINISTRE', estimatedServiceTime: 20, sortOrder: 1 },
+            { name: 'Suivi Dossier', code: 'SUIVI', estimatedServiceTime: 10, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Contrats', code: 'CT', sortOrder: 2,
+          services: [
+            { name: 'Nouvelle Souscription', code: 'SOUSCRIPTION', estimatedServiceTime: 25, sortOrder: 1 },
+            { name: 'Renouvellement', code: 'RENOUVELLEMENT', estimatedServiceTime: 15, sortOrder: 2 },
+            { name: 'Attestation', code: 'ATTEST', estimatedServiceTime: 8, sortOrder: 3 },
           ],
         },
       ],
-      defaultSlas: [
-        { metric: 'advisor_wait', label: 'Advisor wait under', targetMinutes: 10 },
-      ],
+      onboardingCopy: {
+        headline: 'Configurez votre agence d\'assurance',
+        description: 'Sinistres, souscriptions et renouvellements de contrats.',
+      },
     },
   },
 ];
@@ -546,75 +673,188 @@ const BARBERSHOP_PROFILES: TemplateProfile[] = [
 
 const PUBLIC_SERVICE_PROFILES: TemplateProfile[] = [
   {
-    id: 'government-office',
+    id: 'administration-generale',
     parentVertical: 'public_service',
-    title: 'Government Office',
-    description: 'Multi-department public service with ticket numbers and display boards.',
+    title: 'Administration Générale',
+    description: 'Administration multi-services — état civil, documents et guichet unique.',
     icon: '🏛️',
     overrides: {},  // Uses public-service defaults
   },
   {
-    id: 'post-office',
+    id: 'apc-mairie',
     parentVertical: 'public_service',
-    title: 'Post Office',
-    description: 'Mail, parcels, and financial services with counter routing.',
-    icon: '📮',
+    title: 'APC / Mairie',
+    description: 'État civil, légalisations, urbanisme et services communaux.',
+    icon: '🏢',
     overrides: {
       experienceProfile: {
         vocabulary: {
-          officeLabel: 'Post Office',
-          deskLabel: 'Window',
+          officeLabel: 'Mairie',
+          customerLabel: 'Administré',
         },
         kiosk: {
-          welcomeMessage: 'Select your service',
-          headerText: 'Post office',
-        },
-      },
-      onboardingCopy: {
-        headline: 'Set up a post office queue',
-        description: 'Department-first routing for mail, parcels, and financial services.',
-      },
-    },
-  },
-  {
-    id: 'dmv',
-    parentVertical: 'public_service',
-    title: 'Motor Vehicle / DMV',
-    description: 'High-volume processing with appointment and walk-in lanes.',
-    icon: '🚗',
-    overrides: {
-      experienceProfile: {
-        vocabulary: {
-          officeLabel: 'Office',
-          serviceLabel: 'Transaction',
-          deskLabel: 'Window',
-        },
-        kiosk: {
-          welcomeMessage: 'Select your transaction type',
-          headerText: 'DMV check-in',
+          welcomeMessage: 'Bienvenue à la mairie',
+          headerText: 'Services communaux',
         },
       },
       starterDepartments: [
         {
-          name: 'Renewals', code: 'R', sortOrder: 1,
+          name: 'État Civil', code: 'EC', sortOrder: 1,
           services: [
-            { name: 'License Renewal', code: 'LICENSE', estimatedServiceTime: 10, sortOrder: 1 },
-            { name: 'Registration Renewal', code: 'REG', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Extrait de Naissance', code: 'NAISSANCE', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Acte de Mariage', code: 'MARIAGE', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Acte de Décès', code: 'DECES', estimatedServiceTime: 8, sortOrder: 3 },
+            { name: 'Légalisation', code: 'LEGAL', estimatedServiceTime: 3, sortOrder: 4 },
           ],
         },
         {
-          name: 'New Applications', code: 'N', sortOrder: 2,
+          name: 'Urbanisme', code: 'URB', sortOrder: 2,
           services: [
-            { name: 'New License', code: 'NEW', estimatedServiceTime: 25, sortOrder: 1 },
-            { name: 'Title Transfer', code: 'TITLE', estimatedServiceTime: 15, sortOrder: 2 },
-            { name: 'ID Card', code: 'ID', estimatedServiceTime: 12, sortOrder: 3 },
+            { name: 'Permis de Construire', code: 'PERMIS_C', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Certificat d\'Urbanisme', code: 'CERT_URB', estimatedServiceTime: 10, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Services Divers', code: 'SD', sortOrder: 3,
+          services: [
+            { name: 'Certificat de Résidence', code: 'RESIDENCE', estimatedServiceTime: 5, sortOrder: 1 },
+            { name: 'Attestation', code: 'ATTEST', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'Renseignement', code: 'INFO', estimatedServiceTime: 5, sortOrder: 3 },
           ],
         },
       ],
-      defaultSlas: [
-        { metric: 'first_call', label: 'First call within', targetMinutes: 25 },
-        { metric: 'average_wait', label: 'Average wait under', targetMinutes: 30 },
+      onboardingCopy: {
+        headline: 'Configurez votre mairie / APC',
+        description: 'État civil, légalisations, urbanisme et services communaux.',
+      },
+    },
+  },
+  {
+    id: 'daira-wilaya',
+    parentVertical: 'public_service',
+    title: 'Daïra / Wilaya',
+    description: 'Documents d\'identité — passeport, carte nationale, casier judiciaire.',
+    icon: '🪪',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Daïra',
+        },
+        kiosk: {
+          welcomeMessage: 'Choisissez votre démarche',
+          headerText: 'Bienvenue à la daïra',
+        },
+      },
+      starterDepartments: [
+        {
+          name: 'Biométrie', code: 'BIO', sortOrder: 1,
+          services: [
+            { name: 'Passeport Biométrique', code: 'PASSEPORT', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Carte Nationale d\'Identité', code: 'CNI', estimatedServiceTime: 12, sortOrder: 2 },
+            { name: 'Permis de Conduire', code: 'PERMIS', estimatedServiceTime: 10, sortOrder: 3 },
+          ],
+        },
+        {
+          name: 'Documents Administratifs', code: 'DA', sortOrder: 2,
+          services: [
+            { name: 'Casier Judiciaire', code: 'CASIER', estimatedServiceTime: 8, sortOrder: 1 },
+            { name: 'Fiche Familiale', code: 'FICHE', estimatedServiceTime: 10, sortOrder: 2 },
+            { name: 'Légalisation', code: 'LEGAL', estimatedServiceTime: 3, sortOrder: 3 },
+          ],
+        },
       ],
+      onboardingCopy: {
+        headline: 'Configurez votre daïra',
+        description: 'Passeport, carte nationale, casier judiciaire et documents administratifs.',
+      },
+    },
+  },
+  {
+    id: 'cnas-securite-sociale',
+    parentVertical: 'public_service',
+    title: 'CNAS / Sécurité Sociale',
+    description: 'Remboursements, attestations, affiliation et prestations sociales.',
+    icon: '🏥',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Agence CNAS',
+          customerLabel: 'Assuré',
+        },
+        kiosk: {
+          welcomeMessage: 'Bienvenue — choisissez votre prestation',
+          headerText: 'Sécurité Sociale',
+          themeColor: '#0369a1',
+          buttonLabel: 'Prendre un ticket',
+        },
+        branding: { recommendedPrimaryColor: '#0369a1' },
+      },
+      starterDepartments: [
+        {
+          name: 'Prestations', code: 'PR', sortOrder: 1,
+          services: [
+            { name: 'Remboursement', code: 'REMBOURS', estimatedServiceTime: 10, sortOrder: 1 },
+            { name: 'Attestation d\'Affiliation', code: 'AFFIL', estimatedServiceTime: 8, sortOrder: 2 },
+            { name: 'Carte Chifa', code: 'CHIFA', estimatedServiceTime: 12, sortOrder: 3 },
+          ],
+        },
+        {
+          name: 'Affiliation & Cotisation', code: 'AC', sortOrder: 2,
+          services: [
+            { name: 'Nouvelle Affiliation', code: 'NEW_AFFIL', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Mise à Jour Dossier', code: 'MAJ', estimatedServiceTime: 10, sortOrder: 2 },
+            { name: 'Réclamation', code: 'RECLAM', estimatedServiceTime: 12, sortOrder: 3 },
+          ],
+        },
+      ],
+      onboardingCopy: {
+        headline: 'Configurez votre agence CNAS',
+        description: 'Remboursements, carte Chifa, attestations et affiliation.',
+      },
+    },
+  },
+  {
+    id: 'centre-impots',
+    parentVertical: 'public_service',
+    title: 'Centre des Impôts',
+    description: 'Déclarations fiscales, paiements et attestations.',
+    icon: '🧾',
+    overrides: {
+      experienceProfile: {
+        vocabulary: {
+          officeLabel: 'Centre des Impôts',
+          customerLabel: 'Contribuable',
+          serviceLabel: 'Démarche',
+        },
+        kiosk: {
+          welcomeMessage: 'Choisissez votre démarche fiscale',
+          headerText: 'Centre des Impôts',
+          themeColor: '#15803d',
+          buttonLabel: 'Prendre un ticket',
+        },
+        branding: { recommendedPrimaryColor: '#15803d' },
+      },
+      starterDepartments: [
+        {
+          name: 'Déclarations', code: 'DEC', sortOrder: 1,
+          services: [
+            { name: 'Déclaration Annuelle', code: 'DECL', estimatedServiceTime: 15, sortOrder: 1 },
+            { name: 'Déclaration G50', code: 'G50', estimatedServiceTime: 10, sortOrder: 2 },
+          ],
+        },
+        {
+          name: 'Paiements & Attestations', code: 'PA', sortOrder: 2,
+          services: [
+            { name: 'Paiement Impôt', code: 'PAIEMENT', estimatedServiceTime: 8, sortOrder: 1 },
+            { name: 'Attestation Fiscale', code: 'ATTEST', estimatedServiceTime: 5, sortOrder: 2 },
+            { name: 'Réclamation', code: 'RECLAM', estimatedServiceTime: 12, sortOrder: 3 },
+          ],
+        },
+      ],
+      onboardingCopy: {
+        headline: 'Configurez votre centre des impôts',
+        description: 'Déclarations, paiements et attestations fiscales.',
+      },
     },
   },
 ];
@@ -929,8 +1169,8 @@ const OTHER_PROFILES: TemplateProfile[] = [
   {
     id: 'general-service',
     parentVertical: 'other',
-    title: 'General Service',
-    description: 'Flexible queue for any business type.',
+    title: 'Service Général',
+    description: 'File d\'attente flexible pour tout type de commerce ou service.',
     icon: '💼',
     overrides: {},
   },

@@ -103,12 +103,12 @@ export const industryTemplates: IndustryTemplate[] = [
     overlay: getBankBranchOverlay(),
   }),
 
-  // ── Clinic (standard tier) ────────────────────────────────────────────
+  // ── Medical Practice (light tier) ──────────────────────────────────────
   createTemplate({
     id: 'clinic',
-    title: 'Clinic',
+    title: 'Medical Practice',
     vertical: 'clinic',
-    tier: 'standard',
+    tier: 'light',
     version: versionMetadata('1.1.0', ['1.0.0'], 'Privacy-aware clinic flow with stronger triage and accessibility defaults.', [
       {
         fromVersion: '1.0.0',

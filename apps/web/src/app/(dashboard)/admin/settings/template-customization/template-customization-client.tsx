@@ -32,6 +32,7 @@ const CAPABILITY_LABELS: Record<CapabilityKey, string> = {
   intakeForms: 'Intake Forms',
   multiDepartment: 'Multi-Department',
   privacySafeDisplay: 'Privacy-Safe Display',
+  controllerHost: 'Controller / Host Desk',
 };
 
 const CAPABILITY_DESCRIPTIONS: Record<CapabilityKey, string> = {
@@ -47,6 +48,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityKey, string> = {
   intakeForms: 'Collect information during check-in',
   multiDepartment: 'Route customers between multiple departments',
   privacySafeDisplay: 'Hide customer names on public displays',
+  controllerHost: 'Dedicated front-desk person who checks people in and manages the queue',
 };
 
 export function TemplateCustomizationClient({

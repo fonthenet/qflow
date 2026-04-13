@@ -33,6 +33,7 @@ export type BranchType =
   | 'service_center'
   | 'branch_office'
   | 'community_clinic'
+  | 'medical_office'
   | 'restaurant_floor'
   | 'salon_shop'
   | 'campus_office'
@@ -91,6 +92,8 @@ export interface CapabilityFlags {
   intakeForms: boolean;
   multiDepartment: boolean;
   privacySafeDisplay: boolean;
+  /** Dedicated front-desk / host / receptionist who checks people in and manages the queue */
+  controllerHost: boolean;
 }
 
 export interface WorkflowPolicySetting {

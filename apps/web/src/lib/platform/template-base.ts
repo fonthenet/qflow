@@ -37,6 +37,7 @@ const LIGHT_CAPABILITIES: CapabilityFlags = {
   intakeForms: false,
   multiDepartment: false,
   privacySafeDisplay: false,
+  controllerHost: true,
 };
 
 const STANDARD_CAPABILITIES: CapabilityFlags = {
@@ -52,6 +53,7 @@ const STANDARD_CAPABILITIES: CapabilityFlags = {
   intakeForms: true,
   multiDepartment: true,
   privacySafeDisplay: true,
+  controllerHost: true,
 };
 
 const ENTERPRISE_CAPABILITIES: CapabilityFlags = {
@@ -67,6 +69,7 @@ const ENTERPRISE_CAPABILITIES: CapabilityFlags = {
   intakeForms: true,
   multiDepartment: true,
   privacySafeDisplay: false, // enterprise verticals choose individually
+  controllerHost: true,
 };
 
 // ── Workflow Profiles ───────────────────────────────────────────────────────
