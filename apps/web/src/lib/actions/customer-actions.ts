@@ -83,7 +83,7 @@ export async function createCustomer(data: {
     .limit(1)
     .single();
 
-  return { data: customer ?? null };
+  return { data: customer ?? null, error: null };
 }
 
 export async function updateCustomer(
