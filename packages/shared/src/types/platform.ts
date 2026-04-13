@@ -1,5 +1,7 @@
 import type { StaffRole } from '../constants';
 
+export type TemplateTier = 'light' | 'standard' | 'enterprise';
+
 export type IndustryVertical =
   | 'public_service'
   | 'bank'
@@ -341,6 +343,7 @@ export interface IndustryTemplate {
   id: string;
   title: string;
   vertical: IndustryVertical;
+  tier: TemplateTier;
   version: TemplateVersion;
   dashboardMode: DashboardMode;
   defaultNavigation: string[];
