@@ -62,7 +62,16 @@ export function phoneLookupCandidates(raw: string | null | undefined): string[] 
   // Algerian local form for backward compat
   if (norm.startsWith('213') && norm.length === 12) {
     candidates.add('0' + norm.slice(3));
+    candidates.add(norm.slice(3)); // 9-digit without leading 0
   }
+  // US/Canada: strip country code 1 → 10-digit local
+  if (norm.startsWith('1') && norm.length === 11) {
+    candidates.add(norm.slice(1));
+  }
+  // Generic fallback: try last 10 and last 9 digits for any country code
+  const digits = norm.replace(/\D/g, '');
+  if (digits.length > 10) candidates.add(digits.slice(-10));
+  if (digits.length > 9) candidates.add(digits.slice(-9));
   return Array.from(candidates).filter(Boolean);
 }
 
