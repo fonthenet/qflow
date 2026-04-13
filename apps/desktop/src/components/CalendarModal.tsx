@@ -19,7 +19,6 @@ import {
   groupByDate,
   countByDate,
   getStatusColor,
-  getServiceColor,
   isWithinHorizon,
   type CalendarDay,
   type CalendarDayInfo,
@@ -2444,7 +2443,7 @@ function DesktopWeekView({
                   };
 
                   return layout.map(({ appt, svc, hour, minute, topPx, clippedHeight, col }) => {
-                    const color = getServiceColor(svc);
+                    const color = getStatusColor(appt.status);
                     const isActive = appt.id === selectedApptId;
                     const colWidth = 100 / maxCols;
                     const left = col * colWidth;
@@ -2786,7 +2785,7 @@ function DesktopListView({
                     const color = getStatusColor(a.status);
                     const svc = serviceMap.get(a.service_id || '');
                     const svcName = svc?.name || '';
-                    const svcColor = getServiceColor(svc);
+                    const svcColor = getStatusColor(a.status);
                     const deptName = (a.department_id && departments[a.department_id]) || '';
                     const timeStr = formatTimeInTz(a.scheduled_at, timezone);
                     const isSelected = a.id === selectedApptId;
@@ -2974,7 +2973,7 @@ function DesktopMonthView({
                   </div>
                   {dayAppts.map(a => {
                     const svc = serviceMap.get(a.service_id);
-                    const color = getServiceColor(svc);
+                    const color = getStatusColor(a.status);
                     const isSelected = a.id === selectedApptId;
                     return (
                       <button
@@ -3650,7 +3649,7 @@ function DesktopApptDetail({
   const svc = serviceMap.get(a.service_id);
   const dept = a.department_id ? departments[a.department_id] : null;
   const statusColor = getStatusColor(a.status);
-  const serviceColor = getServiceColor(svc);
+  const serviceColor = getStatusColor(a.status);
   const d = new Date(a.scheduled_at);
   const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
   const canReschedule = !['cancelled', 'no_show', 'declined'].includes(a.status); // allow reschedule even for completed
