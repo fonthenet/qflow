@@ -113,13 +113,37 @@ export function Login({ onLogin, locale }: Props) {
 
       const effectiveOfficeId = staff.office_id ?? officeIds[0] ?? '';
 
-      // Get desk assignment
-      const { data: desk } = await supabase
+      // Get desk assignment — first try by current_staff_id, then auto-reclaim if lost
+      let { data: desk } = await supabase
         .from('desks')
         .select('id, name')
         .eq('current_staff_id', staff.id)
         .eq('is_active', true)
         .single();
+
+      // If no desk found (e.g. another device signed out and cleared it), try to reclaim
+      if (!desk && effectiveOfficeId) {
+        // Look for an unassigned desk in the same office, prefer matching department
+        let query = supabase
+          .from('desks')
+          .select('id, name, department_id')
+          .eq('office_id', effectiveOfficeId)
+          .eq('is_active', true)
+          .is('current_staff_id', null);
+        if (staff.department_id) {
+          query = query.eq('department_id', staff.department_id);
+        }
+        const { data: freeDeskList } = await query.limit(1);
+        const freeDesk = freeDeskList?.[0];
+        if (freeDesk) {
+          // Claim the desk
+          await supabase
+            .from('desks')
+            .update({ current_staff_id: staff.id, status: 'open' })
+            .eq('id', freeDesk.id);
+          desk = { id: freeDesk.id, name: freeDesk.name };
+        }
+      }
 
       const session: StaffSession = {
         user_id: auth.user.id,

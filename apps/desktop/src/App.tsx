@@ -77,9 +77,17 @@ export function App() {
       if (s?.access_token && s?.refresh_token) {
         restoreSession(s.access_token, s.refresh_token).catch(() => {});
       }
-      setSession(s);
       setLocale(normalizeLocale(savedLocale));
-      setLoading(false);
+      if (s) {
+        // Force sync on auto-login to ensure fresh tokens + data before showing Station
+        window.qf.sync.forceSync().catch(() => {}).finally(() => {
+          setSession(s);
+          setLoading(false);
+        });
+      } else {
+        setSession(s);
+        setLoading(false);
+      }
     });
   }, []);
 

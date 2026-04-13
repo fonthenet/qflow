@@ -482,37 +482,48 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '24px 16px 0', flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Segmented toggle */}
+        <div style={{
+          position: 'relative', display: 'flex',
+          background: 'var(--surface2, #1e293b)', borderRadius: 8, padding: 2,
+          flex: 1,
+        }}>
+          {/* Sliding indicator */}
           <span style={{
-            width: 22, height: 22, borderRadius: 5,
-            background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 700,
-          }}>+</span>
-          {/* Tab buttons */}
+            position: 'absolute', top: 2, bottom: 2,
+            left: bookingTab === 'walkin' ? 2 : '50%',
+            width: 'calc(50% - 2px)', borderRadius: 6,
+            background: '#8b5cf6',
+            transition: 'left 0.2s ease',
+            zIndex: 0,
+          }} />
           {(['walkin', 'future'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setBookingTab(tab)}
               style={{
-                padding: '3px 10px', border: 'none', borderRadius: 5, cursor: 'pointer',
-                fontSize: 12, fontWeight: 600,
-                background: bookingTab === tab ? 'rgba(139,92,246,0.15)' : 'transparent',
-                color: bookingTab === tab ? '#8b5cf6' : 'var(--text3)',
-                transition: 'all 0.15s',
+                flex: 1, position: 'relative', zIndex: 1,
+                padding: '6px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                fontSize: 11, fontWeight: 600, letterSpacing: 0.2,
+                background: 'transparent',
+                color: bookingTab === tab ? '#fff' : 'var(--text3, #64748b)',
+                transition: 'color 0.2s ease',
               }}
             >
-              {tab === 'walkin' ? t('Walk-in') : t('Future Booking')}
+              {tab === 'walkin' ? `🚶 ${t('Walk-in')}` : `📅 ${t('Future Booking')}`}
             </button>
           ))}
-          <span style={{
-            padding: '1px 5px', fontSize: 9, fontWeight: 600, borderRadius: 3,
-            background: 'rgba(139,92,246,0.15)', color: '#8b5cf6',
-          }}>F6</span>
         </div>
         <button
           onClick={onCollapse}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 16, padding: '2px 6px', borderRadius: 4 }}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--text3)', fontSize: 14, padding: '4px 6px', borderRadius: 6,
+            marginLeft: 6, flexShrink: 0,
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
           title={t('Hide')}
         >
           ✕
