@@ -2901,11 +2901,22 @@ async function handleAppointmentStatus(
     serviceName = svc?.name ?? '';
   }
 
+  // Resolve org timezone for correct time display
+  let orgTz = 'Africa/Algiers';
+  const { data: orgRow } = await supabase
+    .from('organizations')
+    .select('timezone')
+    .eq('id', org.id)
+    .maybeSingle();
+  if (orgRow?.timezone) orgTz = orgRow.timezone;
+
   const dt = new Date(appt.scheduled_at);
-  const dateStr = dt.toLocaleDateString(apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  const intlLocale = apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR';
+  const dateStr = dt.toLocaleDateString(intlLocale, {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: orgTz,
   });
-  const timeStr = `${String(dt.getUTCHours()).padStart(2, '0')}:${String(dt.getUTCMinutes()).padStart(2, '0')}`;
+  const timeParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: orgTz }).formatToParts(dt);
+  const timeStr = `${timeParts.find(p => p.type === 'hour')?.value ?? '00'}:${timeParts.find(p => p.type === 'minute')?.value ?? '00'}`;
 
   const templateKey = appt.status === 'confirmed' ? 'appointment_status' : 'appointment_status_pending';
   await sendMessage({
@@ -2989,8 +3000,9 @@ async function findAndReplyAppointmentStatus(
   const apptLocale: Locale = (appt.locale === 'ar' || appt.locale === 'en' || appt.locale === 'fr')
     ? appt.locale : locale;
 
-  // Resolve org name from office
+  // Resolve org name + timezone from office
   let orgName = '';
+  let orgTz = 'Africa/Algiers';
   if (appt.office_id) {
     const { data: office } = await supabase
       .from('offices')
@@ -3000,10 +3012,11 @@ async function findAndReplyAppointmentStatus(
     if (office?.organization_id) {
       const { data: org } = await supabase
         .from('organizations')
-        .select('name')
+        .select('name, timezone')
         .eq('id', office.organization_id)
         .maybeSingle();
       orgName = org?.name ?? '';
+      if (org?.timezone) orgTz = org.timezone;
     }
   }
 
@@ -3019,10 +3032,12 @@ async function findAndReplyAppointmentStatus(
   }
 
   const dt = new Date(appt.scheduled_at);
-  const dateStr = dt.toLocaleDateString(apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  const intlLocale = apptLocale === 'ar' ? 'ar-DZ' : apptLocale === 'en' ? 'en-US' : 'fr-FR';
+  const dateStr = dt.toLocaleDateString(intlLocale, {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: orgTz,
   });
-  const timeStr = `${String(dt.getUTCHours()).padStart(2, '0')}:${String(dt.getUTCMinutes()).padStart(2, '0')}`;
+  const timeParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: orgTz }).formatToParts(dt);
+  const timeStr = `${timeParts.find(p => p.type === 'hour')?.value ?? '00'}:${timeParts.find(p => p.type === 'minute')?.value ?? '00'}`;
 
   const templateKey = appt.status === 'confirmed' ? 'appointment_status' : 'appointment_status_pending';
   await sendMessage({
