@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
 
   // ── Notes-only update (no status change) ─────────────────────────
   // When status is missing but ticketId + notes are present, just persist notes.
+  // Also syncs to the linked appointment so notes are visible in the Calendar.
   if (ticketId && !status && notes !== undefined) {
     const supabaseAdmin = createAdminClient() as any;
     const { error: notesErr } = await supabaseAdmin
@@ -94,6 +95,8 @@ export async function POST(request: NextRequest) {
     if (notesErr) {
       return NextResponse.json({ error: notesErr.message }, { status: 500 });
     }
+    // Sync notes to linked appointment (if any)
+    await syncNotesToAppointment(supabaseAdmin, ticketId, notes || null);
     return NextResponse.json({ ok: true, saved: 'notes' });
   }
 
@@ -163,6 +166,14 @@ export async function POST(request: NextRequest) {
         await onTicketTerminal(ticketId, status);
       } catch (e: any) {
         console.warn('[ticket-transition] lifecycle sync failed:', e?.message);
+      }
+      // Sync final ticket notes to linked appointment
+      if (notes !== undefined) {
+        await syncNotesToAppointment(supabase, ticketId, notes || null);
+      } else {
+        // Fetch ticket notes if not provided in this request
+        const { data: tkNotes } = await supabase.from('tickets').select('notes').eq('id', ticketId).single();
+        if (tkNotes?.notes) await syncNotesToAppointment(supabase, ticketId, tkNotes.notes);
       }
     }
   }
@@ -283,4 +294,28 @@ export async function POST(request: NextRequest) {
     channel: notifyResult.channel,
     notifyError: notifyResult.error || null,
   });
+}
+
+/**
+ * Sync ticket notes to the linked appointment (both link directions).
+ * This keeps Calendar and Station notes in sync — one source of truth.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncNotesToAppointment(supabase: any, ticketId: string, notes: string | null) {
+  try {
+    // Direction 1: ticket.appointment_id → appointment
+    const { data: tk } = await supabase
+      .from('tickets')
+      .select('appointment_id')
+      .eq('id', ticketId)
+      .single();
+    if (tk?.appointment_id) {
+      await supabase.from('appointments').update({ notes }).eq('id', tk.appointment_id);
+      return;
+    }
+    // Direction 2: appointment.ticket_id → ticket
+    await supabase.from('appointments').update({ notes }).eq('ticket_id', ticketId);
+  } catch (e: any) {
+    console.warn('[ticket-transition] syncNotesToAppointment failed:', e?.message);
+  }
 }
