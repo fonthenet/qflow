@@ -482,14 +482,28 @@ export class SyncEngine {
   // Core refresh — calls Supabase auth endpoint with refresh_token
   // Falls back to silent re-auth with stored encrypted credentials if refresh_token is dead
   private async refreshAccessToken(): Promise<string | null> {
+    // MULTI-PC FIX: Always use password-based re-auth instead of refresh token rotation.
+    // Refresh token rotation causes a "token war" when multiple PCs use the same account —
+    // each PC's refresh invalidates the other's token, causing data to flicker/disappear.
+    // Password-based auth creates independent sessions per device that don't conflict.
+    logger.info('sync.token', 'Refreshing access token via silent re-auth (multi-PC safe)...');
+    const result = await this.silentReAuth();
+    if (result) return result;
+
+    // Fallback: try refresh_token if silent re-auth fails (e.g. no stored credentials)
     const session = this.getSessionFromDB();
     if (!session?.refresh_token) {
-      logger.warn('sync.token', 'No refresh_token — attempting silent re-auth');
-      return this.silentReAuth();
+      logger.warn('sync.token', 'No refresh_token and silent re-auth failed');
+      this.consecutiveRefreshFailures++;
+      if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
+        logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
+        this.onAuthError();
+      }
+      return null;
     }
 
     try {
-      logger.info('sync.token', 'Refreshing access token...');
+      logger.info('sync.token', 'Trying refresh_token as fallback...');
       const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: {
@@ -502,18 +516,11 @@ export class SyncEngine {
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        logger.warn('sync.token', 'Refresh failed', { status: res.status, body: body.slice(0, 200) });
-        // If refresh_token itself is expired/revoked — try silent re-auth
-        if (res.status === 400 || res.status === 401 || res.status === 403) {
-          logger.info('sync.token', 'Refresh token is dead — attempting silent re-auth with stored credentials');
-          const reAuthResult = await this.silentReAuth();
-          if (reAuthResult) return reAuthResult;
-
-          this.consecutiveRefreshFailures++;
-          if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-            logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
-            this.onAuthError();
-          }
+        logger.warn('sync.token', 'Refresh token fallback also failed', { status: res.status, body: body.slice(0, 200) });
+        this.consecutiveRefreshFailures++;
+        if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
+          logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
+          this.onAuthError();
         }
         return null;
       }
@@ -521,7 +528,6 @@ export class SyncEngine {
       const data = await res.json();
       if (!data.access_token) return null;
 
-      // Persist both new access_token AND new refresh_token to session
       const updated = {
         ...session,
         access_token: data.access_token,
@@ -529,13 +535,11 @@ export class SyncEngine {
       };
       this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
 
-      // Update in-memory cache
       this.cachedAccessToken = data.access_token;
       this.lastTokenRefreshAt = Date.now();
       this.consecutiveRefreshFailures = 0;
 
-      logger.info('sync.token', 'Access token refreshed successfully');
-      // Notify renderer so it can update its Supabase client immediately
+      logger.info('sync.token', 'Access token refreshed via refresh_token fallback');
       try { this.onTokenRefreshed(data.access_token); } catch {}
       return data.access_token;
     } catch (err: any) {

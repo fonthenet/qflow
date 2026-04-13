@@ -35,39 +35,23 @@ export async function ensureAuth(stored?: {
 }): Promise<string> {
   const sb = await getSupabase();
 
-  // ── PRIMARY: Ask main process for a valid token ──
+  // ── PRIMARY: Ask main process for a valid token (single source of truth) ──
+  // MULTI-PC FIX: Never refresh tokens from the renderer — only the main process
+  // handles auth to avoid token rotation wars between multiple PCs.
   try {
     const result = await window.qf.auth.getToken();
     if (result?.ok && result.token) {
-      // Set the token on the renderer's Supabase client
       await sb.auth.setSession({
         access_token: result.token,
-        refresh_token: stored?.refresh_token ?? '',
+        refresh_token: '', // Don't pass refresh tokens — main process manages them
       });
       return result.token;
     }
   } catch (err) {
-    console.warn('[supabase] IPC auth:get-token failed, falling back to local refresh', err);
+    console.warn('[supabase] IPC auth:get-token failed', err);
   }
 
-  // ── FALLBACK 1: Try local refresh (if renderer still has a valid session) ──
-  try {
-    const { data: { session } } = await sb.auth.refreshSession();
-    if (session?.access_token) return session.access_token;
-  } catch { /* ignore */ }
-
-  // ── FALLBACK 2: Try setSession with stored tokens ──
-  if (stored?.refresh_token) {
-    try {
-      const { data: { session } } = await sb.auth.setSession({
-        access_token: stored.access_token ?? '',
-        refresh_token: stored.refresh_token,
-      });
-      if (session?.access_token) return session.access_token;
-    } catch { /* ignore */ }
-  }
-
-  // ── FALLBACK 3: Password re-auth ──
+  // ── FALLBACK: Password re-auth (does NOT use refresh tokens, safe for multi-PC) ──
   if (stored?.email && stored?.password) {
     try {
       const { data: { session } } = await sb.auth.signInWithPassword({
