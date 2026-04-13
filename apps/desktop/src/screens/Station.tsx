@@ -3809,7 +3809,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               const officePosition = waiting.findIndex((tt) => tt.id === ticket.id) + 1;
               return (
               <div key={ticket.id} className="queue-item" role="listitem"
-                style={{ borderLeft: `3px solid ${statusColor('waiting')}` }}
                 aria-label={translate(locale, 'Position {position}, ticket {ticket}, {name}, waiting {wait}', { position: officePosition, ticket: ticket.ticket_number, name: getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in'), wait: formatWait(ticket.created_at) })}
                 onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, ticketId: ticket.id, ticketNumber: ticket.ticket_number }); }}
               >
@@ -3909,7 +3908,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <div className="ticket-list" role="list" aria-label={t('Active tickets')}>
             {[...called, ...serving].map((ticket) => (
               <div key={ticket.id} className={`queue-item ${ticket.desk_id === session.desk_id ? 'mine' : ''}`} role="listitem"
-                style={{ borderLeft: `3px solid ${statusColor(ticket.status)}` }}
                 aria-label={translate(locale, 'Ticket {ticket}, {status} at {desk}', { ticket: ticket.ticket_number, status: ticket.status === 'called' ? translate(locale, 'Called') : translate(locale, 'Serving'), desk: names.desks[ticket.desk_id ?? ''] ?? translate(locale, 'desk') })}>
                 <div className="queue-item-dot" style={{ background: statusColor(ticket.status) }} aria-hidden="true" />
                 <div className="queue-item-info">
@@ -3952,7 +3950,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </div>
             ))}
             {parked.map((ticket) => (
-              <div key={ticket.id} className="queue-item" role="listitem" style={{ borderLeft: '3px solid #94a3b8' }}>
+              <div key={ticket.id} className="queue-item" role="listitem">
                 <div className="queue-item-dot" style={{ background: '#94a3b8' }} aria-hidden="true" />
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>

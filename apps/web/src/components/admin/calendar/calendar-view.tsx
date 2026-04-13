@@ -488,7 +488,7 @@ function WeekView({
                   const duration = svc?.estimated_service_time ?? 30;
                   const top = (hour - START_HOUR) * HOUR_HEIGHT + (minute / 60) * HOUR_HEIGHT;
                   const height = Math.max((duration / 60) * HOUR_HEIGHT, 22);
-                  const color = getServiceColor(svc as any);
+                  const color = getStatusColor(appt.status);
 
                   if (hour < START_HOUR || hour >= END_HOUR) return null;
 
@@ -636,8 +636,7 @@ function MonthView({
 
                   <div className="flex flex-col gap-0.5">
                     {dayAppts.map((a) => {
-                      const svc = serviceMap.get(a.service_id);
-                      const color = getServiceColor(svc as any);
+                      const color = getStatusColor(a.status);
                       return (
                         <button
                           key={a.id}
