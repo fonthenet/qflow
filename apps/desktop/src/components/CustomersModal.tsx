@@ -440,12 +440,23 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     if (!initialPhone || initialPhoneHandled.current || loading || customers.length === 0) return;
     initialPhoneHandled.current = true;
     const normalizedInput = initialPhone.replace(/\D/g, '');
-    const match = customers.find(c => {
-      const normalizedCustomer = (c.phone ?? '').replace(/\D/g, '');
-      return normalizedCustomer === normalizedInput
-        || normalizedCustomer.endsWith(normalizedInput)
-        || normalizedInput.endsWith(normalizedCustomer);
-    });
+    if (!normalizedInput) return;
+
+    // 1) Exact match first
+    let match = customers.find(c => (c.phone ?? '').replace(/\D/g, '') === normalizedInput);
+
+    // 2) Suffix match — pick the one with the longest phone (most specific)
+    if (!match) {
+      const candidates = customers.filter(c => {
+        const np = (c.phone ?? '').replace(/\D/g, '');
+        return np.length >= 7 && (np.endsWith(normalizedInput) || normalizedInput.endsWith(np));
+      });
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => (b.phone ?? '').length - (a.phone ?? '').length);
+        match = candidates[0];
+      }
+    }
+
     if (match) openDetail(match);
   }, [initialPhone, loading, customers]);
 
