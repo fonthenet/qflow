@@ -881,6 +881,7 @@ function setupIPC() {
             deskName: dskName,
             staffId: safeUpdates.called_by_staff_id,
             skipNotification: false,
+            ...(safeUpdates.notes !== undefined ? { notes: safeUpdates.notes } : {}),
             ...(isRecall ? { skipStatusUpdate: true, notifyEvent: 'recall' } : {}),
           }),
           signal: AbortSignal.timeout(10000),
@@ -905,6 +906,38 @@ function setupIPC() {
     }
 
     return { id: ticketId, ...safeUpdates };
+  });
+
+  // ── Save notes via direct API (service-role, bypasses RLS) ──────
+  ipcMain.handle('db:save-notes', async (_e, ticketId: string, notes: string) => {
+    if (!ticketId || typeof ticketId !== 'string') return { error: 'invalid_ticket' };
+
+    // 1. Save locally
+    db.prepare('UPDATE tickets SET notes = ? WHERE id = ?').run(notes || null, ticketId);
+
+    // 2. Push to cloud via direct API (reliable, service-role)
+    if (syncEngine?.isOnline) {
+      try {
+        const token = await syncEngine.ensureFreshToken();
+        const res = await fetch(`${CONFIG.CLOUD_URL}/api/ticket-transition`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ ticketId, notes: notes || null }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) return { ok: true };
+        // Fallback to sync queue
+      } catch {}
+    }
+
+    // 3. Offline fallback: enqueue for sync
+    const syncId = `notes-${ticketId}-${Date.now()}`;
+    db.prepare(`
+      INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+      VALUES (?, 'UPDATE', 'tickets', ?, ?, ?)
+    `).run(syncId, ticketId, JSON.stringify({ notes: notes || null }), new Date().toISOString());
+    syncEngine?.pushImmediate(syncId);
+    return { ok: true, queued: true };
   });
 
   ipcMain.handle('db:query', (_e, table: string, officeIds: string[]) => {

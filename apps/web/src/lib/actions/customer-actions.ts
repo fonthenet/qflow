@@ -120,6 +120,70 @@ export async function deleteCustomer(customerId: string) {
   return { success: true };
 }
 
+// ── Name aliases ──────────────────────────────────────────────────────
+
+/** Remove a name from the customer's previous_names array */
+export async function removeCustomerAlias(customerId: string, aliasToRemove: string) {
+  const context = await getStaffContext();
+  const orgId = context.staff.organization_id;
+  const supabase = createAdminClient();
+
+  const { data: customer } = await (supabase as any)
+    .from('customers')
+    .select('previous_names')
+    .eq('id', customerId)
+    .eq('organization_id', orgId)
+    .single();
+
+  if (!customer) return { error: 'Customer not found' };
+
+  const prev: string[] = Array.isArray(customer.previous_names) ? customer.previous_names : [];
+  const updated = prev.filter((n: string) => n !== aliasToRemove);
+
+  const { error } = await (supabase as any)
+    .from('customers')
+    .update({ previous_names: updated })
+    .eq('id', customerId)
+    .eq('organization_id', orgId);
+
+  if (error) return { error: error.message };
+  return { data: updated };
+}
+
+/** Swap an alias to become the main name; current main name moves to aliases */
+export async function setAliasAsMainName(customerId: string, alias: string) {
+  const context = await getStaffContext();
+  const orgId = context.staff.organization_id;
+  const supabase = createAdminClient();
+
+  const { data: customer } = await (supabase as any)
+    .from('customers')
+    .select('name, previous_names')
+    .eq('id', customerId)
+    .eq('organization_id', orgId)
+    .single();
+
+  if (!customer) return { error: 'Customer not found' };
+
+  const currentName = (customer.name ?? '').trim();
+  const prev: string[] = Array.isArray(customer.previous_names) ? customer.previous_names : [];
+
+  // Remove the alias from the list, add current name in its place
+  const updated = prev.filter((n: string) => n !== alias);
+  if (currentName && currentName.toLowerCase() !== alias.toLowerCase()) {
+    updated.push(currentName);
+  }
+
+  const { error } = await (supabase as any)
+    .from('customers')
+    .update({ name: alias, previous_names: updated })
+    .eq('id', customerId)
+    .eq('organization_id', orgId);
+
+  if (error) return { error: error.message };
+  return { data: { name: alias, previous_names: updated } };
+}
+
 // ── Bulk import (CSV) ─────────────────────────────────────────────────
 
 export async function importCustomers(

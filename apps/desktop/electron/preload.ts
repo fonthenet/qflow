@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:insert-cloud-ticket', ticket),
     updateTicket: (ticketId: string, updates: any) =>
       ipcRenderer.invoke('db:update-ticket', ticketId, updates),
+    saveNotes: (ticketId: string, notes: string) =>
+      ipcRenderer.invoke('db:save-notes', ticketId, notes),
     callNext: (officeId: string, deskId: string, staffId: string) =>
       ipcRenderer.invoke('db:call-next', officeId, deskId, staffId),
     query: (table: string, officeIds: string[]) =>

@@ -136,7 +136,7 @@ export async function upsertCustomerFromBooking(
     const variants = phoneVariants(rawPhone, e164, localPhone);
     const { data: matches } = await supabase
       .from('customers')
-      .select('id, name, email, notes, visit_count, wilaya_code, phone')
+      .select('id, name, email, notes, visit_count, wilaya_code, phone, previous_names')
       .eq('organization_id', orgId)
       .in('phone', variants)
       .order('visit_count', { ascending: false })
@@ -150,7 +150,23 @@ export async function upsertCustomerFromBooking(
         phone: localPhone, // always store local format
       };
       if (incrementVisit) updates.visit_count = (primary.visit_count || 0) + 1;
-      if (name && !primary.name) updates.name = name;
+      // Name alias tracking: if the new name differs from stored name,
+      // push the old name into previous_names and use the latest name.
+      if (name) {
+        const currentName = (primary.name ?? '').trim();
+        if (!currentName) {
+          // No existing name — just set it
+          updates.name = name;
+        } else if (currentName.toLowerCase() !== name.toLowerCase()) {
+          // Name changed — archive old name, use new one
+          const prev: string[] = Array.isArray(primary.previous_names) ? primary.previous_names : [];
+          // Only add if not already in the alias list (case-insensitive)
+          if (!prev.some((p: string) => p.toLowerCase() === currentName.toLowerCase())) {
+            updates.previous_names = [...prev, currentName];
+          }
+          updates.name = name;
+        }
+      }
       if (email && !primary.email) updates.email = email;
       if (notes && !primary.notes) updates.notes = notes;
       if (wilayaCode) updates.wilaya_code = wilayaCode;

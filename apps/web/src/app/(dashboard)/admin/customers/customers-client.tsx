@@ -29,6 +29,8 @@ import {
   importFromGoogleSheets,
   sendGroupMessage,
   getCustomersForMessaging,
+  removeCustomerAlias,
+  setAliasAsMainName,
 } from '@/lib/actions/customer-actions';
 
 interface Customer {
@@ -40,6 +42,7 @@ interface Customer {
   visit_count: number;
   last_visit_at: string | null;
   created_at: string;
+  previous_names?: string[] | null;
 }
 
 interface TicketHistory {
@@ -456,6 +459,11 @@ export function CustomersClient({
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">
                         {customer.name || t('Unnamed Customer')}
+                        {Array.isArray(customer.previous_names) && customer.previous_names.length > 0 && (
+                          <span className="ml-1.5 text-[10px] font-normal text-muted-foreground" title={customer.previous_names.join(', ')}>
+                            aka {customer.previous_names.length}
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground sm:hidden">
                         {customer.phone || '--'}
@@ -604,6 +612,53 @@ export function CustomersClient({
                 onChange={(e) => setFormName(e.target.value)}
                 className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
               />
+              {/* Also known as — name aliases */}
+              {modal === 'edit' && editingCustomer && (() => {
+                const aliases: string[] = Array.isArray(editingCustomer.previous_names) ? editingCustomer.previous_names : [];
+                if (aliases.length === 0) return null;
+                return (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[10px] font-semibold text-muted-foreground">{t('Also known as')}:</span>
+                    {aliases.map((alias, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                        <button
+                          type="button"
+                          title={t('Set as main name')}
+                          className="hover:underline"
+                          onClick={() => {
+                            startTransition(async () => {
+                              const result = await setAliasAsMainName(editingCustomer.id, alias);
+                              if (result.data) {
+                                setFormName(result.data.name);
+                                setEditingCustomer({ ...editingCustomer, name: result.data.name, previous_names: result.data.previous_names });
+                                setCustomers(prev => prev.map(c => c.id === editingCustomer.id
+                                  ? { ...c, name: result.data!.name, previous_names: result.data!.previous_names }
+                                  : c));
+                              }
+                            });
+                          }}
+                        >{alias}</button>
+                        <button
+                          type="button"
+                          title={t('Remove alias')}
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            startTransition(async () => {
+                              const result = await removeCustomerAlias(editingCustomer.id, alias);
+                              if (result.data) {
+                                setEditingCustomer({ ...editingCustomer, previous_names: result.data });
+                                setCustomers(prev => prev.map(c => c.id === editingCustomer.id
+                                  ? { ...c, previous_names: result.data }
+                                  : c));
+                              }
+                            });
+                          }}
+                        >×</button>
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">{t('Phone')} *</label>

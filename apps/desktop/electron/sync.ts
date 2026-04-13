@@ -1288,9 +1288,10 @@ export class SyncEngine {
             // For terminal status changes (cancelled, served, no_show), this is critical —
             // treat as failure so the sync retries and the DB trigger can fire notifications.
             const isCritical = ['called', 'serving', 'cancelled', 'served', 'no_show'].includes(payload.status);
-            if (isCritical) {
-              logger.warn('sync.replay', 'PATCH returned 0 rows for CRITICAL status — will retry', { status: payload.status, recordId: item.record_id });
-              throw new Error(`PATCH 0 rows for ${payload.status} — needs retry`);
+            const hasDataUpdate = payload.notes !== undefined || payload.priority !== undefined;
+            if (isCritical || hasDataUpdate) {
+              logger.warn('sync.replay', 'PATCH returned 0 rows — will retry', { status: payload.status, hasNotes: !!payload.notes, recordId: item.record_id });
+              throw new Error(`PATCH 0 rows for ${payload.status || 'data update'} — needs retry`);
             }
             logger.warn('sync.replay', 'PATCH returned 0 rows — row was likely changed/deleted remotely', { operation: item.operation, recordId: item.record_id });
             // Still mark as synced to avoid infinite retries on a conflict

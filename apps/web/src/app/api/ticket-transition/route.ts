@@ -72,6 +72,8 @@ export async function POST(request: NextRequest) {
     skipStatusUpdate?: boolean;
     /** Override notification event (e.g. 'recall' instead of default 'called') */
     notifyEvent?: string;
+    /** Optional notes to persist alongside the transition */
+    notes?: string | null;
   };
   try {
     body = await request.json();
@@ -79,7 +81,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { ticketId, status, deskId, deskName, staffId, skipNotification, skipStatusUpdate, notifyEvent } = body;
+  const { ticketId, status, deskId, deskName, staffId, skipNotification, skipStatusUpdate, notifyEvent, notes } = body;
+
+  // ── Notes-only update (no status change) ─────────────────────────
+  // When status is missing but ticketId + notes are present, just persist notes.
+  if (ticketId && !status && notes !== undefined) {
+    const supabaseAdmin = createAdminClient() as any;
+    const { error: notesErr } = await supabaseAdmin
+      .from('tickets')
+      .update({ notes: notes || null })
+      .eq('id', ticketId);
+    if (notesErr) {
+      return NextResponse.json({ error: notesErr.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, saved: 'notes' });
+  }
+
   if (!ticketId || !status || !VALID_STATUSES.includes(status)) {
     return NextResponse.json(
       { error: `ticketId and status (${VALID_STATUSES.join('|')}) are required` },
@@ -125,6 +142,8 @@ export async function POST(request: NextRequest) {
     } else if (status === 'served' || status === 'cancelled' || status === 'no_show') {
       updatePayload.completed_at = now;
     }
+    // Include notes if provided
+    if (notes !== undefined) updatePayload.notes = notes || null;
 
     const { error: updateErr } = await supabase
       .from('tickets')

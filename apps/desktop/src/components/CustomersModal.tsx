@@ -31,9 +31,10 @@ interface Customer {
   spouse_gender?: string | null;
   marriage_date?: string | null;
   created_at?: string | null;
+  previous_names?: string[] | null;
 }
 
-const CUSTOMER_SELECT = 'id, name, phone, email, visit_count, last_visit_at, last_booking_at, booking_count, notes, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, spouse_gender, marriage_date, created_at';
+const CUSTOMER_SELECT = 'id, name, phone, email, visit_count, last_visit_at, last_booking_at, booking_count, notes, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, spouse_gender, marriage_date, created_at, previous_names';
 
 type SortKey = 'name' | 'last_visit' | 'bookings' | 'created';
 type GroupKey = 'none' | 'wilaya' | 'city' | 'gender' | 'visit_month';
@@ -198,6 +199,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
         spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
         marriage_date: f.is_couple ? (f.marriage_date || null) : null,
+        previous_names: Array.isArray(f.previous_names) ? f.previous_names : [],
       };
       const { error: updErr } = await sb
         .from('customers')
@@ -1468,6 +1470,51 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
         <div>
           <label style={lbl}>{t('Name')} *</label>
           <input type="text" style={inp} value={form.name ?? ''} onChange={(e) => setField('name', e.target.value)} disabled={disabled} placeholder="John Doe" />
+          {/* Also known as — name aliases */}
+          {(() => {
+            const aliases: string[] = Array.isArray(form.previous_names) ? form.previous_names : [];
+            if (aliases.length === 0) return null;
+            return (
+              <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--text2, #94a3b8)', fontWeight: 600 }}>{t('Also known as')}:</span>
+                {aliases.map((alias, i) => (
+                  <span key={i} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                    background: 'rgba(59,130,246,0.12)', color: '#93c5fd',
+                    padding: '1px 8px', borderRadius: 10, fontSize: 11, cursor: 'default',
+                  }}>
+                    <button
+                      type="button"
+                      title={t('Set as main name')}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        const currentName = (form.name ?? '').trim();
+                        const newAliases = aliases.filter(a => a !== alias);
+                        if (currentName && currentName.toLowerCase() !== alias.toLowerCase()) {
+                          newAliases.push(currentName);
+                        }
+                        setField('name', alias);
+                        setField('previous_names', newAliases as any);
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#93c5fd', cursor: disabled ? 'default' : 'pointer', padding: 0, fontSize: 11 }}
+                    >{alias}</button>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        title={t('Remove alias')}
+                        onClick={() => {
+                          const newAliases = aliases.filter(a => a !== alias);
+                          setField('previous_names', newAliases as any);
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}
+                      >×</button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
         <div>
           <label style={lbl}>{t('Phone')} *</label>

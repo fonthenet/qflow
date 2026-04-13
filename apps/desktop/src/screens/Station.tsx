@@ -2208,6 +2208,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   }, [activeTicket?.id, activeTicket?.status]);
 
+  // ── Auto-save notes after 1.5s of inactivity (via direct API) ──
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTicketIdRef = useRef<string | null>(null);
+  useEffect(() => { activeTicketIdRef.current = activeTicket?.id ?? null; }, [activeTicket?.id]);
+  useEffect(() => {
+    const tid = activeTicketIdRef.current;
+    if (!tid) return;
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => {
+      window.qf.db.saveNotes(tid, ticketNotes.trim());
+    }, 1500);
+    return () => { if (notesTimerRef.current) clearTimeout(notesTimerRef.current); };
+  }, [ticketNotes]);
+
   // ── Actions ─────────────────────────────────────────────────────
 
   // ALWAYS write to SQLite first — sync engine pushes to cloud
@@ -2247,7 +2261,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const complete = (id: string) => {
-    updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString() });
+    // Flush any unsaved notes before completing
+    const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
+    updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString(), ...notesUpdate });
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Completed'));
     showToast(t('{ticket} completed', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'success');
@@ -2255,7 +2271,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const noShow = async (id: string) => {
     if (!await styledConfirm(t('Mark this ticket as no-show?'), { variant: 'danger', confirmLabel: t('No Show') })) return;
-    updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString() });
+    const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
+    updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString(), ...notesUpdate });
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
     showToast(t('{ticket} marked no-show', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'info');
@@ -2361,7 +2378,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const cancel = async (id: string) => {
     if (!await styledConfirm(t('Cancel this ticket?'), { variant: 'danger', confirmLabel: t('Cancel Ticket') })) return;
     const ts = new Date().toISOString();
-    updateTicketStatus(id, { status: 'cancelled', completed_at: ts });
+    const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
+    updateTicketStatus(id, { status: 'cancelled', completed_at: ts, ...notesUpdate });
     const tk = tickets.find((x) => x.id === id);
     if (tk) addActivity(tk.ticket_number, translate(locale, 'Cancelled'));
   };
@@ -2803,9 +2821,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit) && (
                   <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit}
                   </div>
                 )}
                 <div className="active-meta">
@@ -2835,7 +2853,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         value={ticketNotes}
                         onChange={(e) => setTicketNotes(e.target.value)}
                         onBlur={() => {
-                          if (activeTicket) updateTicketStatus(activeTicket.id, { notes: ticketNotes.trim() || null });
+                          if (activeTicket) window.qf.db.saveNotes(activeTicket.id, ticketNotes.trim());
                         }}
                         onKeyDown={(e) => e.stopPropagation()}
                         placeholder={t('Add a note about this customer...')}
@@ -2945,9 +2963,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes) && (
+                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit) && (
                   <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit || (activeTicket.customer_data as any)?.notes || (activeTicket as any).notes}
+                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit}
                   </div>
                 )}
                 <div className="active-meta">
@@ -2997,7 +3015,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         value={ticketNotes}
                         onChange={(e) => setTicketNotes(e.target.value)}
                         onBlur={() => {
-                          if (activeTicket) updateTicketStatus(activeTicket.id, { notes: ticketNotes.trim() || null });
+                          if (activeTicket) window.qf.db.saveNotes(activeTicket.id, ticketNotes.trim());
                         }}
                         onKeyDown={(e) => e.stopPropagation()}
                         placeholder={t('Add a note about this customer...')}
