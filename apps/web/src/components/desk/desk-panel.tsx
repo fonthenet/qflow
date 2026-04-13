@@ -2235,6 +2235,7 @@ export function DeskPanel({
                         <div
                           key={ticket.id}
                           className="rounded-xl border border-border px-3 py-3 transition-colors hover:bg-muted/30"
+                          style={{ borderLeft: '3px solid #f59e0b' }}
                         >
                           <div className="flex items-start gap-3">
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
@@ -2485,6 +2486,7 @@ export function DeskPanel({
                   <div
                     key={ticket.id}
                     className="rounded-xl border border-border px-3 py-3"
+                    style={{ borderLeft: `3px solid ${ticket.status === 'serving' ? '#22c55e' : '#3b82f6'}` }}
                   >
                     <div className="flex items-center gap-3">
                       <span
