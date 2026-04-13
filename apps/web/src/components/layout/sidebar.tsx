@@ -67,7 +67,6 @@ interface SidebarProps {
 const adminNav = [
   { href: '/admin/overview', label: 'Business Map', icon: LayoutDashboard, section: 'Work' },
   { href: '/admin/setup-wizard', label: 'Setup Wizard', icon: Rocket, section: 'Work' },
-  { href: '/admin/onboarding', label: 'Business Setup', icon: Sparkles, section: 'Setup' },
   { href: '/admin/template-governance', label: 'Template Updates', icon: GitBranchPlus, section: 'Setup' },
   { href: '/admin/offices', label: 'Locations', icon: Building2, section: 'Setup' },
   { href: '/admin/departments', label: 'Departments', icon: Layers, section: 'Setup' },
@@ -124,14 +123,12 @@ export function Sidebar({
   const pathname = usePathname();
   const navItems = [...deskNav, ...adminNav]
     .filter((item) => {
-      if (item.href === '/admin/setup-wizard') return templateConfigured;
       return allowedNavigation.includes(item.href);
     })
     .sort((a, b) => {
       const desiredOrder = [
         '/admin/overview',
         '/admin/setup-wizard',
-        '/admin/onboarding',
         '/admin/template-governance',
         ...(templateSummary.defaultNavigation ?? []),
         '/admin/calendar',

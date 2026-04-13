@@ -54,7 +54,6 @@ export async function updateDeskServices(deskId: string, serviceIds: string[]) {
   const context = await getStaffContext();
   await requireOrganizationAdmin(context);
 
-  // Delete existing
   const { error: deleteError } = await context.supabase
     .from('desk_services')
     .delete()
@@ -62,7 +61,6 @@ export async function updateDeskServices(deskId: string, serviceIds: string[]) {
 
   if (deleteError) return { error: deleteError.message };
 
-  // Insert new associations
   if (serviceIds.length > 0) {
     const { error: insertError } = await context.supabase
       .from('desk_services')
@@ -72,6 +70,24 @@ export async function updateDeskServices(deskId: string, serviceIds: string[]) {
   }
 
   revalidatePath('/admin/desks');
+  revalidatePath('/admin/setup-wizard');
+  return { success: true };
+}
+
+/**
+ * Assign an existing staff member to a desk (set current_staff_id).
+ */
+export async function assignStaffToDesk(deskId: string, staffId: string) {
+  const context = await getStaffContext();
+  await requireOrganizationAdmin(context);
+
+  const { error } = await context.supabase
+    .from('desks')
+    .update({ current_staff_id: staffId })
+    .eq('id', deskId);
+
+  if (error) return { error: error.message };
+
   revalidatePath('/admin/setup-wizard');
   return { success: true };
 }

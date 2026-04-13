@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import type { BranchType, OperatingModel, TrialTemplateDepartmentDraft, TrialTemplateStructure } from '@qflo/shared';
 import {
   Building2,
   Layers,
@@ -19,16 +20,23 @@ import {
   ArrowRight,
   Sparkles,
   Settings2,
+  LayoutTemplate,
 } from 'lucide-react';
 import {
-  createOffice,
-  createDepartment,
-  createService,
-  createDesk,
   createStaffMember,
   updateDesk,
 } from '@/lib/actions/admin-actions';
-import { updateDeskServices, completeBusinessSetupWizard } from '@/lib/actions/setup-wizard-actions';
+import {
+  saveIndustryTemplateTrial,
+  confirmIndustryTemplateSetup,
+} from '@/lib/actions/platform-actions';
+import {
+  updateDeskServices,
+  completeBusinessSetupWizard,
+} from '@/lib/actions/setup-wizard-actions';
+import { industryTemplates } from '@/lib/platform/templates';
+import { buildTrialTemplateStructure } from '@/lib/platform/trial-structure';
+import { getProfilesForVertical, getDefaultProfileId, getProfileById } from '@/lib/platform/template-profiles';
 import { useI18n } from '@/components/providers/locale-provider';
 import { getVocabularyExamples } from '@/lib/platform/vocabulary-examples';
 
@@ -102,10 +110,13 @@ interface WizardVocabulary {
   departmentLabel: string;
   deskLabel: string;
   officeLabel: string;
+  customerLabel?: string;
 }
 
 interface SetupWizardClientProps {
   organization: { id: string; name: string };
+  confirmed: boolean;
+  trialSettings: Record<string, any>;
   vocabulary?: WizardVocabulary;
   offices: Office[];
   departments: Department[];
@@ -120,15 +131,52 @@ interface SetupWizardClientProps {
 // ────────────────────────────────────────────────────────────────
 
 const STEPS = [
-  { key: 'office', label: 'Office Details', icon: Building2, description: 'Your location and contact info' },
-  { key: 'departments', label: 'Departments & Services', icon: Layers, description: 'What services you offer' },
-  { key: 'desks', label: 'Desks & Counters', icon: Monitor, description: 'Where customers are served' },
-  { key: 'staff', label: 'Team Members', icon: Users, description: 'Who serves your customers' },
-  { key: 'channels', label: 'Channels', icon: MessageSquare, description: 'How customers reach you' },
-  { key: 'review', label: 'Review & Launch', icon: Rocket, description: 'Final check before going live' },
+  { key: 'business', label: 'Business Type', icon: LayoutTemplate, description: 'Choose your industry' },
+  { key: 'setup', label: 'Your Setup', icon: Building2, description: 'Review your setup' },
+  { key: 'team', label: 'Your Team', icon: Users, description: 'Add staff members' },
+  { key: 'launch', label: 'Go Live', icon: Rocket, description: 'Launch your business' },
 ] as const;
 
 type StepKey = (typeof STEPS)[number]['key'];
+
+// ────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────
+
+function defaultOperatingModel(vertical: string): OperatingModel {
+  if (vertical === 'bank') return 'service_routing';
+  if (vertical === 'clinic') return 'appointments_first';
+  if (vertical === 'public_service') return 'department_first';
+  return 'waitlist';
+}
+
+function verticalLabel(vertical: string) {
+  const labels: Record<string, string> = {
+    public_service: 'Public Service',
+    bank: 'Banking',
+    clinic: 'Healthcare',
+    restaurant: 'Restaurant',
+    barbershop: 'Beauty & Spa',
+    education: 'Education',
+    telecom: 'Telecom',
+    insurance: 'Insurance',
+    automotive: 'Automotive',
+    legal: 'Legal',
+    real_estate: 'Real Estate',
+    other: 'General Service',
+  };
+  return labels[vertical] ?? vertical.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function verticalEmoji(vertical: string) {
+  const emojis: Record<string, string> = {
+    public_service: '\u{1F3DB}', bank: '\u{1F3E6}', clinic: '\u{1F3E5}',
+    restaurant: '\u{1F37D}', barbershop: '\u{2702}', education: '\u{1F393}',
+    telecom: '\u{1F4F1}', insurance: '\u{1F6E1}', automotive: '\u{1F697}',
+    legal: '\u{2696}', real_estate: '\u{1F3E0}', other: '\u{2699}',
+  };
+  return emojis[vertical] ?? '\u{2699}';
+}
 
 // ────────────────────────────────────────────────────────────────
 // Main Component
@@ -136,6 +184,8 @@ type StepKey = (typeof STEPS)[number]['key'];
 
 export function SetupWizardClient({
   organization,
+  confirmed,
+  trialSettings,
   vocabulary: vocabProp,
   offices: initialOffices,
   departments: initialDepartments,
@@ -148,53 +198,41 @@ export function SetupWizardClient({
   const vocab = vocabProp ?? { serviceLabel: 'Service', departmentLabel: 'Department', deskLabel: 'Desk', officeLabel: 'Office' };
   const examples = getVocabularyExamples(vocab);
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState<StepKey>('office');
   const [isPending, startTransition] = useTransition();
 
-  // ── Step completion checks ──
+  // Determine initial step based on confirmed state
+  const initialStep: StepKey = confirmed
+    ? (initialStaff.length > 0 && initialDesks.some((d) => d.current_staff_id) ? 'launch' : 'setup')
+    : 'business';
+  const [currentStep, setCurrentStep] = useState<StepKey>(initialStep);
+
+  // Step completion checks
   const stepStatus = useMemo(() => {
     const hasOffice = initialOffices.length > 0;
-    const hasDepartment = initialDepartments.length > 0;
+    const hasDept = initialDepartments.length > 0;
     const hasService = initialServices.length > 0;
     const hasDesk = initialDesks.length > 0;
     const hasStaff = initialStaff.length > 0;
-
-    // Check desks have staff assigned
-    const desksWithStaff = initialDesks.filter((d) => d.current_staff_id);
-    // Check desks have services linked
+    const desksWithStaff = initialDesks.filter((d) => d.current_staff_id).length;
     const deskIdsWithServices = new Set(initialDeskServices.map((ds) => ds.desk_id));
-    const desksWithServices = initialDesks.filter((d) => deskIdsWithServices.has(d.id));
+    const desksWithServices = initialDesks.filter((d) => deskIdsWithServices.has(d.id)).length;
 
     return {
-      office: hasOffice,
-      departments: hasDepartment && hasService,
-      desks: hasDesk && desksWithServices.length >= initialDesks.length,
-      staff: hasStaff && desksWithStaff.length > 0,
-      channels: true, // Optional step
-      review: hasOffice && hasDepartment && hasService && hasDesk && hasStaff && desksWithStaff.length > 0,
+      business: confirmed,
+      setup: hasOffice && hasDept && hasService && hasDesk && desksWithServices >= initialDesks.length,
+      team: hasStaff && desksWithStaff > 0,
+      launch: confirmed && hasOffice && hasDept && hasService && hasDesk && hasStaff && desksWithStaff > 0,
     };
-  }, [initialOffices, initialDepartments, initialServices, initialDesks, initialStaff, initialDeskServices]);
+  }, [confirmed, initialOffices, initialDepartments, initialServices, initialDesks, initialStaff, initialDeskServices]);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
-
-  function goNext() {
-    if (currentStepIndex < STEPS.length - 1) {
-      setCurrentStep(STEPS[currentStepIndex + 1].key);
-    }
-  }
-
-  function goPrev() {
-    if (currentStepIndex > 0) {
-      setCurrentStep(STEPS[currentStepIndex - 1].key);
-    }
-  }
+  const goNext = () => { if (currentStepIndex < STEPS.length - 1) setCurrentStep(STEPS[currentStepIndex + 1].key); };
+  const goPrev = () => { if (currentStepIndex > 0) setCurrentStep(STEPS[currentStepIndex - 1].key); };
 
   function handleComplete() {
     startTransition(async () => {
       const result = await completeBusinessSetupWizard();
-      if (result?.success) {
-        router.push('/admin/overview');
-      }
+      if (result?.success) router.push('/admin/overview');
     });
   }
 
@@ -222,19 +260,23 @@ export function SetupWizardClient({
         {STEPS.map((step, index) => {
           const isActive = step.key === currentStep;
           const isComplete = stepStatus[step.key];
+          const isClickable = step.key === 'business' || confirmed;
           const StepIcon = step.icon;
 
           return (
             <button
               key={step.key}
-              onClick={() => setCurrentStep(step.key)}
+              onClick={() => isClickable && setCurrentStep(step.key)}
+              disabled={!isClickable}
               className={`
                 group flex items-center gap-2 rounded-xl px-4 py-3 text-left transition-all whitespace-nowrap
                 ${isActive
                   ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
                   : isComplete
                     ? 'bg-success/10 text-success hover:bg-success/15'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                    : isClickable
+                      ? 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                      : 'bg-muted/30 text-muted-foreground/50 cursor-not-allowed'
                 }
               `}
             >
@@ -263,48 +305,41 @@ export function SetupWizardClient({
 
       {/* Step content */}
       <div className="min-h-[500px]">
-        {currentStep === 'office' && (
-          <OfficeStep offices={initialOffices} onNext={goNext} vocab={vocab} />
+        {currentStep === 'business' && (
+          <BusinessStep
+            organization={organization}
+            confirmed={confirmed}
+            trialSettings={trialSettings}
+            onNext={goNext}
+            onConfirmed={() => router.refresh()}
+          />
         )}
-        {currentStep === 'departments' && (
-          <DepartmentsStep
+        {currentStep === 'setup' && (
+          <SetupOverviewStep
             offices={initialOffices}
             departments={initialDepartments}
             services={initialServices}
+            desks={initialDesks}
+            deskServices={initialDeskServices}
             vocab={vocab}
             examples={examples}
             onNext={goNext}
             onPrev={goPrev}
           />
         )}
-        {currentStep === 'desks' && (
-          <DesksStep
+        {currentStep === 'team' && (
+          <TeamStep
             offices={initialOffices}
             departments={initialDepartments}
-            services={initialServices}
             desks={initialDesks}
             staffList={initialStaff}
-            deskServices={initialDeskServices}
             vocab={vocab}
             onNext={goNext}
             onPrev={goPrev}
           />
         )}
-        {currentStep === 'staff' && (
-          <StaffStep
-            offices={initialOffices}
-            departments={initialDepartments}
-            desks={initialDesks}
-            staffList={initialStaff}
-            onNext={goNext}
-            onPrev={goPrev}
-          />
-        )}
-        {currentStep === 'channels' && (
-          <ChannelsStep onNext={goNext} onPrev={goPrev} />
-        )}
-        {currentStep === 'review' && (
-          <ReviewStep
+        {currentStep === 'launch' && (
+          <LaunchStep
             offices={initialOffices}
             departments={initialDepartments}
             services={initialServices}
@@ -356,14 +391,19 @@ function StepNavigation({
   nextLabel = 'Continue',
   nextDisabled = false,
   showPrev = true,
+  nextVariant = 'primary',
 }: {
   onPrev?: () => void;
   onNext?: () => void;
   nextLabel?: string;
   nextDisabled?: boolean;
   showPrev?: boolean;
+  nextVariant?: 'primary' | 'success';
 }) {
   const { t } = useI18n();
+  const bgClass = nextVariant === 'success'
+    ? 'bg-success text-white shadow-success/20 hover:bg-success/90'
+    : 'bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90';
   return (
     <div className="mt-8 flex items-center justify-between">
       {showPrev && onPrev ? (
@@ -380,7 +420,7 @@ function StepNavigation({
         <button
           onClick={onNext}
           disabled={nextDisabled}
-          className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${bgClass}`}
         >
           {t(nextLabel)} <ChevronRight className="h-4 w-4" />
         </button>
@@ -398,13 +438,7 @@ function Guideline({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ItemCard({
-  title,
-  subtitle,
-  badge,
-  badgeColor = 'bg-muted text-muted-foreground',
-  children,
-}: {
+function ItemCard({ title, subtitle, badge, badgeColor = 'bg-muted text-muted-foreground', children }: {
   title: string;
   subtitle?: string;
   badge?: string;
@@ -429,25 +463,7 @@ function ItemCard({
   );
 }
 
-function EmptyState({ icon: Icon, message, action }: { icon: any; message: string; action?: React.ReactNode }) {
-  const { t } = useI18n();
-  return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border py-12 px-6 text-center">
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
-        <Icon className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <p className="mb-4 text-sm text-muted-foreground">{t(message)}</p>
-      {action}
-    </div>
-  );
-}
-
-function InlineForm({
-  fields,
-  onSubmit,
-  onCancel,
-  submitLabel = 'Create',
-}: {
+function InlineForm({ fields, onSubmit, onCancel, submitLabel = 'Create' }: {
   fields: React.ReactNode;
   onSubmit: (formData: FormData) => void;
   onCancel: () => void;
@@ -455,23 +471,13 @@ function InlineForm({
 }) {
   const { t } = useI18n();
   return (
-    <form
-      action={onSubmit}
-      className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5"
-    >
+    <form action={onSubmit} className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5">
       <div className="space-y-4">{fields}</div>
       <div className="mt-4 flex items-center gap-3">
-        <button
-          type="submit"
-          className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
+        <button type="submit" className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
           {t(submitLabel)}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
-        >
+        <button type="button" onClick={onCancel} className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
           {t('Cancel')}
         </button>
       </div>
@@ -480,13 +486,7 @@ function InlineForm({
 }
 
 function FormField({ label, name, type = 'text', placeholder, required = false, defaultValue, children }: {
-  label: string;
-  name: string;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-  defaultValue?: string;
-  children?: React.ReactNode;
+  label: string; name: string; type?: string; placeholder?: string; required?: boolean; defaultValue?: string; children?: React.ReactNode;
 }) {
   const { t } = useI18n();
   return (
@@ -495,150 +495,251 @@ function FormField({ label, name, type = 'text', placeholder, required = false, 
         {t(label)} {required && <span className="text-destructive">*</span>}
       </label>
       {children || (
-        <input
-          name={name}
-          type={type}
-          placeholder={placeholder ? t(placeholder) : undefined}
-          required={required}
-          defaultValue={defaultValue}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-        />
+        <input name={name} type={type} placeholder={placeholder ? t(placeholder) : undefined} required={required} defaultValue={defaultValue}
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring" />
       )}
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-// Step 1: Office Details
+// Step 1: Business Type (pre-confirm template + profile selection)
 // ────────────────────────────────────────────────────────────────
 
-function OfficeStep({ offices, onNext, vocab }: { offices: Office[]; onNext: () => void; vocab: WizardVocabulary }) {
+function BusinessStep({
+  organization,
+  confirmed,
+  trialSettings,
+  onNext,
+  onConfirmed,
+}: {
+  organization: { id: string; name: string };
+  confirmed: boolean;
+  trialSettings: Record<string, any>;
+  onNext: () => void;
+  onConfirmed: () => void;
+}) {
   const { t } = useI18n();
-  const router = useRouter();
-  const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function handleCreateOffice(formData: FormData) {
+  // Current template selection from trial settings
+  const currentTemplateId = trialSettings.platform_trial_template_id ?? industryTemplates[0]?.id;
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(currentTemplateId);
+
+  const selectedTemplate = industryTemplates.find((tmpl) => tmpl.id === selectedTemplateId) ?? industryTemplates[0];
+
+  // Profile selection
+  const profiles = getProfilesForVertical(selectedTemplate.vertical);
+  const defaultProfileId = getDefaultProfileId(selectedTemplate.vertical);
+  const currentProfileId = trialSettings.platform_trial_profile_id;
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    currentProfileId ?? defaultProfileId ?? null
+  );
+
+  // Trial structure preview
+  const starterOffice = selectedTemplate.starterOffices[0];
+  const structure = starterOffice
+    ? buildTrialTemplateStructure(starterOffice, { includeDisplays: false })
+    : null;
+
+  const enabledDepts = structure?.departments.filter((d) => d.enabled) ?? [];
+  const enabledServices = enabledDepts.flatMap((d) => d.services.filter((s) => s.enabled));
+  const enabledDesks = structure?.desks.filter((d) => d.enabled) ?? [];
+
+  // If already confirmed, show completed state
+  if (confirmed) {
+    const tmplId = trialSettings.platform_trial_template_id;
+    const tmpl = industryTemplates.find((t) => t.id === tmplId);
+    return (
+      <StepCard>
+        <StepHeader icon={LayoutTemplate} title="Business Type" subtitle="Your business type has been confirmed." />
+        <div className="rounded-xl border border-success/30 bg-success/5 p-4 flex items-center gap-3">
+          <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-foreground">
+              {tmpl ? `${verticalEmoji(tmpl.vertical)} ${tmpl.title}` : t('Business configured')}
+            </p>
+            <p className="text-xs text-muted-foreground">{t('Template confirmed and structure created.')}</p>
+          </div>
+        </div>
+        <StepNavigation onNext={onNext} showPrev={false} />
+      </StepCard>
+    );
+  }
+
+  async function handleCreateBusiness() {
     startTransition(async () => {
       setError(null);
-      const result = await createOffice(formData);
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        setShowForm(false);
-        router.refresh();
+      try {
+        // 1. Save trial settings
+        const payload = {
+          templateId: selectedTemplate.id,
+          profileId: selectedProfileId ?? undefined,
+          operatingModel: defaultOperatingModel(selectedTemplate.vertical),
+          branchType: starterOffice?.branchType as BranchType,
+          officeName: organization.name,
+          timezone: 'Africa/Algiers',
+          createStarterDisplay: false,
+          seedPriorities: true,
+          trialStructure: structure ?? undefined,
+        };
+
+        const saveResult = await saveIndustryTemplateTrial(payload);
+        if (saveResult && 'error' in saveResult) {
+          setError(saveResult.error as string);
+          return;
+        }
+
+        // 2. Confirm and create all DB records
+        const confirmResult = await confirmIndustryTemplateSetup({
+          templateId: selectedTemplate.id,
+          operatingModel: defaultOperatingModel(selectedTemplate.vertical),
+          branchType: starterOffice?.branchType as BranchType,
+          officeName: organization.name,
+          timezone: 'Africa/Algiers',
+          createStarterDisplay: false,
+          seedPriorities: true,
+          trialStructure: structure ?? undefined,
+        });
+
+        if (confirmResult && 'error' in confirmResult) {
+          setError(confirmResult.error as string);
+          return;
+        }
+
+        // 3. Refresh the page — server will see confirmed=true
+        onConfirmed();
+      } catch (err) {
+        setError('Something went wrong. Please try again.');
       }
     });
   }
 
   return (
     <StepCard>
-      <StepHeader
-        icon={Building2}
-        title="Office Details"
-        subtitle="Set up your physical locations where customers will be served."
-      />
+      <StepHeader icon={LayoutTemplate} title="Choose Your Business Type" subtitle="Pick the template that best matches your business." />
 
       <Guideline>
-        <strong>{t('Tip:')}</strong> {t('Each office represents a physical location. Most businesses start with one office. You can add more later as you expand.')}
+        <strong>{t('Tip:')}</strong> {t('Each template comes pre-configured with departments, services, desks, and queue settings optimized for your industry. You can customize everything after setup.')}
       </Guideline>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
       )}
 
-      {offices.length > 0 ? (
-        <div className="space-y-3">
-          {offices.map((office) => (
-            <ItemCard
-              key={office.id}
-              title={office.name}
-              subtitle={office.address || undefined}
-              badge={office.is_active ? t('Active') : t('Inactive')}
-              badgeColor={office.is_active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}
-            >
-              {office.phone && (
-                <p className="text-xs text-muted-foreground">{office.phone}</p>
-              )}
-            </ItemCard>
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          icon={Building2}
-          message="No offices yet. Create your first location to get started."
-          action={
+      {/* Template grid */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 mb-6">
+        {industryTemplates.map((tmpl) => {
+          const isSelected = tmpl.id === selectedTemplateId;
+          return (
             <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+              key={tmpl.id}
+              onClick={() => {
+                setSelectedTemplateId(tmpl.id);
+                const defProfile = getDefaultProfileId(tmpl.vertical);
+                setSelectedProfileId(defProfile ?? null);
+              }}
+              className={`group rounded-xl border-2 p-4 text-left transition-all ${
+                isSelected
+                  ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
+                  : 'border-border bg-card hover:border-primary/40 hover:shadow-md'
+              }`}
             >
-              <Plus className="h-4 w-4" /> {t('Add Office')}
+              <div className="text-2xl mb-2">{verticalEmoji(tmpl.vertical)}</div>
+              <div className="text-sm font-semibold text-foreground">{tmpl.title}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{verticalLabel(tmpl.vertical)}</div>
             </button>
-          }
-        />
-      )}
+          );
+        })}
+      </div>
 
-      {!showForm && offices.length > 0 && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
-        >
-          <Plus className="h-4 w-4" /> {t('Add another office')}
-        </button>
-      )}
-
-      {showForm && (
-        <div className="mt-4">
-          <InlineForm
-            onSubmit={handleCreateOffice}
-            onCancel={() => { setShowForm(false); setError(null); }}
-            submitLabel={isPending ? 'Creating...' : 'Create Office'}
-            fields={
-              <>
-                <input type="hidden" name="is_active" value="true" />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Office Name" name="name" placeholder={`e.g. Main ${vocab.officeLabel}`} required />
-                  <FormField label="Address" name="address" placeholder="123 Main Street" />
-                </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Phone" name="phone" placeholder="+213 555 0123" />
-                  <FormField label="Timezone" name="timezone" defaultValue="Africa/Algiers">
-                    <select
-                      name="timezone"
-                      defaultValue="Africa/Algiers"
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="Africa/Algiers">Africa/Algiers (GMT+1)</option>
-                      <option value="Europe/Paris">Europe/Paris (GMT+1/+2)</option>
-                      <option value="Europe/London">Europe/London (GMT+0/+1)</option>
-                      <option value="America/New_York">America/New_York (GMT-5/-4)</option>
-                      <option value="Asia/Dubai">Asia/Dubai (GMT+4)</option>
-                      <option value="Asia/Riyadh">Asia/Riyadh (GMT+3)</option>
-                    </select>
-                  </FormField>
-                </div>
-              </>
-            }
-          />
+      {/* Profile sub-selection */}
+      {profiles.length > 1 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-foreground mb-3">{t('Specialization')}</h3>
+          <div className="flex flex-wrap gap-2">
+            {profiles.map((profile) => {
+              const isSelected = profile.id === selectedProfileId;
+              return (
+                <button
+                  key={profile.id}
+                  onClick={() => setSelectedProfileId(profile.id)}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium border transition-colors ${
+                    isSelected
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-background text-muted-foreground hover:border-primary/50'
+                  }`}
+                >
+                  {isSelected && <CheckCircle2 className="inline h-3 w-3 mr-1" />}
+                  {profile.title}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      <StepNavigation onNext={onNext} nextDisabled={offices.length === 0} showPrev={false} />
+      {/* Preview what gets created */}
+      {structure && (
+        <div className="rounded-xl border border-border bg-muted/30 p-4 mb-6">
+          <h3 className="text-sm font-semibold text-foreground mb-3">{t('What gets created')}</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-background border border-border p-3 text-center">
+              <div className="text-lg font-bold text-primary">{enabledDepts.length}</div>
+              <div className="text-[10px] text-muted-foreground">{selectedTemplate.experienceProfile.vocabulary?.departmentLabel ?? 'Department'}s</div>
+            </div>
+            <div className="rounded-lg bg-background border border-border p-3 text-center">
+              <div className="text-lg font-bold text-primary">{enabledServices.length}</div>
+              <div className="text-[10px] text-muted-foreground">{selectedTemplate.experienceProfile.vocabulary?.serviceLabel ?? 'Service'}s</div>
+            </div>
+            <div className="rounded-lg bg-background border border-border p-3 text-center">
+              <div className="text-lg font-bold text-primary">{enabledDesks.length}</div>
+              <div className="text-[10px] text-muted-foreground">{selectedTemplate.experienceProfile.vocabulary?.deskLabel ?? 'Desk'}s</div>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1">
+            {enabledDepts.map((dept) => {
+              const deptServices = dept.services.filter((s) => s.enabled);
+              return (
+                <div key={dept.code} className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-foreground">{dept.name}</span>
+                  <span className="text-muted-foreground">{deptServices.length} service{deptServices.length !== 1 ? 's' : ''}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Create business button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleCreateBusiness}
+          disabled={isPending}
+          className="flex items-center gap-2 rounded-xl bg-primary px-8 py-3 text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isPending ? (
+            <>{t('Creating...')}</>
+          ) : (
+            <><Sparkles className="h-4 w-4" /> {t('Create my business')}</>
+          )}
+        </button>
+      </div>
     </StepCard>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-// Step 2: Departments & Services
+// Step 2: Setup Overview (review created structure, allow tweaks)
 // ────────────────────────────────────────────────────────────────
 
-function DepartmentsStep({
+function SetupOverviewStep({
   offices,
   departments,
   services,
+  desks,
+  deskServices,
   vocab,
   examples,
   onNext,
@@ -647,47 +748,20 @@ function DepartmentsStep({
   offices: Office[];
   departments: Department[];
   services: Service[];
+  desks: Desk[];
+  deskServices: DeskService[];
   vocab: WizardVocabulary;
   examples: ReturnType<typeof getVocabularyExamples>;
   onNext: () => void;
   onPrev: () => void;
 }) {
   const { t } = useI18n();
-  const router = useRouter();
-  const [showDeptForm, setShowDeptForm] = useState(false);
-  const [showServiceForm, setShowServiceForm] = useState(false);
-  const [serviceDeptId, setServiceDeptId] = useState<string | null>(null);
+  const [linkingDeskId, setLinkingDeskId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
-  function handleCreateDepartment(formData: FormData) {
-    startTransition(async () => {
-      setError(null);
-      const result = await createDepartment(formData);
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        setShowDeptForm(false);
-        router.refresh();
-      }
-    });
-  }
-
-  function handleCreateService(formData: FormData) {
-    startTransition(async () => {
-      setError(null);
-      const result = await createService(formData);
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        setShowServiceForm(false);
-        setServiceDeptId(null);
-        router.refresh();
-      }
-    });
-  }
-
-  // Group services by department
+  // Services grouped by department
   const servicesByDept = useMemo(() => {
     const map = new Map<string, Service[]>();
     for (const svc of services) {
@@ -697,188 +771,6 @@ function DepartmentsStep({
     }
     return map;
   }, [services]);
-
-  return (
-    <StepCard>
-      <StepHeader
-        icon={Layers}
-        title="Departments & Services"
-        subtitle="Define the areas and services your business offers."
-      />
-
-      <Guideline>
-        <strong>{t('Tip:')}</strong> {`${vocab.departmentLabel}s are the areas of your business (e.g. ${examples.departments}). Each ${vocab.departmentLabel.toLowerCase()} offers specific ${vocab.serviceLabel.toLowerCase()}s (e.g. ${examples.services}). Customers pick a ${vocab.serviceLabel.toLowerCase()} when joining the queue.`}
-      </Guideline>
-
-      {error && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {/* Department list with nested services */}
-      {departments.length > 0 ? (
-        <div className="space-y-4">
-          {departments.map((dept) => {
-            const deptServices = servicesByDept.get(dept.id) ?? [];
-            return (
-              <div key={dept.id} className="rounded-xl border border-border overflow-hidden">
-                <div className="flex items-center justify-between bg-muted/30 px-4 py-3">
-                  <div>
-                    <h4 className="font-semibold text-foreground">{dept.name}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {dept.office?.name} &middot; {deptServices.length} {t('service(s)')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => { setServiceDeptId(dept.id); setShowServiceForm(true); setShowDeptForm(false); }}
-                    className="flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" /> {t('Add Service')}
-                  </button>
-                </div>
-                {deptServices.length > 0 ? (
-                  <div className="divide-y divide-border">
-                    {deptServices.map((svc) => (
-                      <div key={svc.id} className="flex items-center justify-between px-4 py-2.5">
-                        <div>
-                          <span className="text-sm font-medium text-foreground">{svc.name}</span>
-                          {svc.code && <span className="ml-2 text-xs text-muted-foreground">({svc.code})</span>}
-                        </div>
-                        {svc.estimated_service_time && (
-                          <span className="text-xs text-muted-foreground">~{svc.estimated_service_time} min</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="px-4 py-4 text-center text-xs text-muted-foreground">
-                    {t('No services yet. Add at least one service to this department.')}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <EmptyState
-          icon={Layers}
-          message="No departments yet. Create departments to organize your services."
-          action={
-            <button
-              onClick={() => { setShowDeptForm(true); setShowServiceForm(false); }}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" /> {t('Add Department')}
-            </button>
-          }
-        />
-      )}
-
-      {!showDeptForm && departments.length > 0 && (
-        <button
-          onClick={() => { setShowDeptForm(true); setShowServiceForm(false); }}
-          className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
-        >
-          <Plus className="h-4 w-4" /> {t('Add another department')}
-        </button>
-      )}
-
-      {/* Department creation form */}
-      {showDeptForm && (
-        <div className="mt-4">
-          <InlineForm
-            onSubmit={handleCreateDepartment}
-            onCancel={() => { setShowDeptForm(false); setError(null); }}
-            submitLabel={isPending ? 'Creating...' : 'Create Department'}
-            fields={
-              <>
-                <input type="hidden" name="is_active" value="true" />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label={`${vocab.departmentLabel} Name`} name="name" placeholder={examples.placeholderDept} required />
-                  <FormField label="Code" name="code" placeholder={examples.placeholderDeptCode} required />
-                  <FormField label="Office" name="office_id" required>
-                    <select
-                      name="office_id"
-                      required
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      {offices.map((o) => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label="Description" name="description" placeholder="Optional description" />
-                </div>
-              </>
-            }
-          />
-        </div>
-      )}
-
-      {/* Service creation form */}
-      {showServiceForm && serviceDeptId && (
-        <div className="mt-4">
-          <InlineForm
-            onSubmit={handleCreateService}
-            onCancel={() => { setShowServiceForm(false); setServiceDeptId(null); setError(null); }}
-            submitLabel={isPending ? 'Creating...' : 'Create Service'}
-            fields={
-              <>
-                <input type="hidden" name="department_id" value={serviceDeptId} />
-                <input type="hidden" name="is_active" value="true" />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label={`${vocab.serviceLabel} Name`} name="name" placeholder={examples.placeholderService} required />
-                  <FormField label="Code" name="code" placeholder={examples.placeholderCode} required />
-                  <FormField label="Estimated Time (minutes)" name="estimated_service_time" type="number" placeholder="15" />
-                  <FormField label="Description" name="description" placeholder="Optional description" />
-                </div>
-              </>
-            }
-          />
-        </div>
-      )}
-
-      <StepNavigation
-        onPrev={onPrev}
-        onNext={onNext}
-        nextDisabled={departments.length === 0 || services.length === 0}
-      />
-    </StepCard>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────
-// Step 3: Desks & Counters
-// ────────────────────────────────────────────────────────────────
-
-function DesksStep({
-  offices,
-  departments,
-  services,
-  desks,
-  staffList,
-  deskServices,
-  vocab,
-  onNext,
-  onPrev,
-}: {
-  offices: Office[];
-  departments: Department[];
-  services: Service[];
-  desks: Desk[];
-  staffList: StaffMember[];
-  deskServices: DeskService[];
-  vocab: WizardVocabulary;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
-  const { t } = useI18n();
-  const router = useRouter();
-  const [showForm, setShowForm] = useState(false);
-  const [linkingDeskId, setLinkingDeskId] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   // Services grouped by desk
   const servicesByDesk = useMemo(() => {
@@ -891,28 +783,11 @@ function DesksStep({
     return map;
   }, [deskServices]);
 
-  // Service lookup
   const serviceMap = useMemo(() => {
     const map = new Map<string, Service>();
     for (const svc of services) map.set(svc.id, svc);
     return map;
   }, [services]);
-
-  function handleCreateDesk(formData: FormData) {
-    startTransition(async () => {
-      setError(null);
-      // Ensure required fields
-      if (!formData.get('is_active')) formData.set('is_active', 'true');
-      if (!formData.get('status')) formData.set('status', 'closed');
-      const result = await createDesk(formData);
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        setShowForm(false);
-        router.refresh();
-      }
-    });
-  }
 
   function handleLinkServices(deskId: string, selectedServiceIds: string[]) {
     startTransition(async () => {
@@ -929,185 +804,131 @@ function DesksStep({
 
   return (
     <StepCard>
-      <StepHeader
-        icon={Monitor}
-        title="Desks & Counters"
-        subtitle="Create the desks where your team will serve customers."
-      />
+      <StepHeader icon={Building2} title="Your Setup" subtitle="Here's what was created for your business. Review and customize." />
 
       <Guideline>
-        <strong>{t('Tip:')}</strong> {t('Each desk belongs to a department and serves specific services. Link services to each desk so the queue system knows which desk can handle which customer. Assign staff to desks to start serving.')}
+        <strong>{t('Tip:')}</strong> {t('Everything below was auto-generated from your template. You can modify names, add more departments/services, or adjust desk-service links from the admin pages after setup.')}
       </Guideline>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
       )}
 
-      {desks.length > 0 ? (
+      {/* Offices */}
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-primary" /> {t('{label}s', { label: vocab.officeLabel })}
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{offices.length}</span>
+        </h3>
+        <div className="space-y-2">
+          {offices.map((office) => (
+            <ItemCard
+              key={office.id}
+              title={office.name}
+              subtitle={office.address || undefined}
+              badge={office.is_active ? t('Active') : t('Inactive')}
+              badgeColor={office.is_active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Departments & Services */}
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Layers className="h-4 w-4 text-primary" /> {t('{dLabel}s & {sLabel}s', { dLabel: vocab.departmentLabel, sLabel: vocab.serviceLabel })}
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{departments.length} / {services.length}</span>
+        </h3>
         <div className="space-y-3">
+          {departments.map((dept) => {
+            const deptServices = servicesByDept.get(dept.id) ?? [];
+            return (
+              <div key={dept.id} className="rounded-xl border border-border overflow-hidden">
+                <div className="flex items-center justify-between bg-muted/30 px-4 py-2.5">
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm">{dept.name}</h4>
+                    <p className="text-[10px] text-muted-foreground">{dept.office?.name} &middot; {deptServices.length} service(s)</p>
+                  </div>
+                </div>
+                {deptServices.length > 0 && (
+                  <div className="divide-y divide-border">
+                    {deptServices.map((svc) => (
+                      <div key={svc.id} className="flex items-center justify-between px-4 py-2">
+                        <span className="text-xs font-medium text-foreground">{svc.name}</span>
+                        {svc.estimated_service_time && (
+                          <span className="text-[10px] text-muted-foreground">~{svc.estimated_service_time} min</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Desks */}
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <Monitor className="h-4 w-4 text-primary" /> {t('{label}s', { label: vocab.deskLabel })}
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{desks.length}</span>
+        </h3>
+        <div className="space-y-2">
           {desks.map((desk) => {
             const linkedServiceIds = servicesByDesk.get(desk.id) ?? new Set();
             const linkedServices = [...linkedServiceIds].map((id) => serviceMap.get(id)).filter(Boolean) as Service[];
             const isLinking = linkingDeskId === desk.id;
 
             return (
-              <div key={desk.id} className="rounded-xl border border-border p-4">
-                <div className="flex items-start justify-between">
+              <div key={desk.id} className="rounded-xl border border-border p-3">
+                <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h4 className="font-semibold text-foreground">{desk.name}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {desk.department?.name ?? t('No department')} &middot; {desk.office?.name}
-                    </p>
+                    <h4 className="text-sm font-semibold text-foreground">{desk.name}</h4>
+                    <p className="text-[10px] text-muted-foreground">{desk.department?.name} &middot; {desk.office?.name}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {desk.current_staff ? (
-                      <span className="rounded-full bg-success/10 px-2.5 py-0.5 text-[10px] font-semibold text-success">
-                        {desk.current_staff.full_name}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-warning/10 px-2.5 py-0.5 text-[10px] font-semibold text-warning">
-                        {t('No staff assigned')}
-                      </span>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setLinkingDeskId(isLinking ? null : desk.id)}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
+                  >
+                    <Link2 className="h-3 w-3" /> {isLinking ? t('Cancel') : t('Edit Services')}
+                  </button>
                 </div>
-
-                {/* Linked services */}
-                <div className="mt-3 border-t border-border pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-muted-foreground">{t('Linked Services')}</span>
-                    <button
-                      onClick={() => setLinkingDeskId(isLinking ? null : desk.id)}
-                      className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
-                    >
-                      <Link2 className="h-3 w-3" /> {isLinking ? t('Cancel') : t('Edit Links')}
-                    </button>
+                {isLinking ? (
+                  <DeskServiceLinker
+                    desk={desk}
+                    services={services.filter((s) => s.department?.office_id === desk.office_id)}
+                    selectedIds={linkedServiceIds}
+                    onSave={(ids) => handleLinkServices(desk.id, ids)}
+                    isPending={isPending}
+                  />
+                ) : linkedServices.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {linkedServices.map((svc) => (
+                      <span key={svc.id} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        {svc.name}
+                      </span>
+                    ))}
                   </div>
-                  {isLinking ? (
-                    <DeskServiceLinker
-                      desk={desk}
-                      services={services.filter((s) => s.department?.office_id === desk.office_id)}
-                      selectedIds={linkedServiceIds}
-                      onSave={(ids) => handleLinkServices(desk.id, ids)}
-                      isPending={isPending}
-                    />
-                  ) : linkedServices.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {linkedServices.map((svc) => (
-                        <span key={svc.id} className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary">
-                          {svc.name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-warning flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" />
-                      {t('No services linked. This desk cannot receive customers.')}
-                    </p>
-                  )}
-                </div>
+                ) : (
+                  <p className="text-[10px] text-warning flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> {t('No services linked')}
+                  </p>
+                )}
               </div>
             );
           })}
         </div>
-      ) : (
-        <EmptyState
-          icon={Monitor}
-          message="No desks created yet. Add desks so your team can serve customers."
-          action={
-            <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" /> {t('Add Desk')}
-            </button>
-          }
-        />
-      )}
+      </div>
 
-      {!showForm && desks.length > 0 && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="mt-4 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
-        >
-          <Plus className="h-4 w-4" /> {t('Add another desk')}
-        </button>
-      )}
-
-      {showForm && (
-        <div className="mt-4">
-          <InlineForm
-            onSubmit={handleCreateDesk}
-            onCancel={() => { setShowForm(false); setError(null); }}
-            submitLabel={isPending ? 'Creating...' : 'Create Desk'}
-            fields={
-              <>
-                <input type="hidden" name="is_active" value="true" />
-                <input type="hidden" name="status" value="closed" />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label={`${vocab.deskLabel} Name`} name="name" placeholder={`e.g. ${vocab.deskLabel} 1`} required />
-                  <FormField label="Display Name" name="display_name" placeholder={`e.g. ${vocab.deskLabel} 1`} />
-                  <FormField label="Office" name="office_id" required>
-                    <select
-                      name="office_id"
-                      required
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      {offices.map((o) => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label="Department" name="department_id" required>
-                    <select
-                      name="department_id"
-                      required
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="">{t('Select department...')}</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name} ({d.office?.name})</option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label="Assign Staff (optional)" name="current_staff_id">
-                    <select
-                      name="current_staff_id"
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="">{t('None')}</option>
-                      {staffList.map((s) => (
-                        <option key={s.id} value={s.id}>{s.full_name}</option>
-                      ))}
-                    </select>
-                  </FormField>
-                </div>
-              </>
-            }
-          />
-        </div>
-      )}
-
-      <StepNavigation onPrev={onPrev} onNext={onNext} nextDisabled={desks.length === 0} />
+      <StepNavigation onPrev={onPrev} onNext={onNext} />
     </StepCard>
   );
 }
 
 // Desk-Service linker sub-component
-function DeskServiceLinker({
-  desk,
-  services,
-  selectedIds,
-  onSave,
-  isPending,
-}: {
-  desk: Desk;
-  services: Service[];
-  selectedIds: Set<string>;
-  onSave: (ids: string[]) => void;
-  isPending: boolean;
+function DeskServiceLinker({ desk, services, selectedIds, onSave, isPending }: {
+  desk: Desk; services: Service[]; selectedIds: Set<string>; onSave: (ids: string[]) => void; isPending: boolean;
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<Set<string>>(new Set(selectedIds));
@@ -1115,8 +936,7 @@ function DeskServiceLinker({
   function toggle(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
@@ -1139,26 +959,24 @@ function DeskServiceLinker({
           </button>
         ))}
       </div>
-      <button
-        onClick={() => onSave([...selected])}
-        disabled={isPending}
-        className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-      >
-        {isPending ? t('Saving...') : t('Save Links')}
+      <button onClick={() => onSave([...selected])} disabled={isPending}
+        className="rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
+        {isPending ? t('Saving...') : t('Save')}
       </button>
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-// Step 4: Team Members
+// Step 3: Team (add staff + assign to desks)
 // ────────────────────────────────────────────────────────────────
 
-function StaffStep({
+function TeamStep({
   offices,
   departments,
   desks,
   staffList,
+  vocab,
   onNext,
   onPrev,
 }: {
@@ -1166,6 +984,7 @@ function StaffStep({
   departments: Department[];
   desks: Desk[];
   staffList: StaffMember[];
+  vocab: WizardVocabulary;
   onNext: () => void;
   onPrev: () => void;
 }) {
@@ -1176,14 +995,12 @@ function StaffStep({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  // Desks without staff
   const unassignedDesks = desks.filter((d) => !d.current_staff_id);
   const assignedDesks = desks.filter((d) => d.current_staff_id);
 
   function handleCreateStaff(formData: FormData) {
     startTransition(async () => {
       setError(null);
-      // Default fields
       if (!formData.get('is_active')) formData.set('is_active', 'true');
       if (!formData.get('role')) formData.set('role', 'desk_operator');
       const result = await createStaffMember(formData);
@@ -1213,26 +1030,20 @@ function StaffStep({
 
   return (
     <StepCard>
-      <StepHeader
-        icon={Users}
-        title="Team Members"
-        subtitle="Add staff and assign them to desks to start serving customers."
-      />
+      <StepHeader icon={Users} title="Your Team" subtitle="Add staff members and assign them to desks." />
 
       <Guideline>
-        <strong>{t('Tip:')}</strong> {t('Each desk needs a staff member assigned to it. Staff members log in to the Qflo Station app to call and serve customers. Create at least one desk operator for each desk.')}
+        <strong>{t('Tip:')}</strong> {t('Each desk needs a staff member to serve customers. Staff log in to the Qflo Station app. Create at least one desk operator per desk.')}
       </Guideline>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
       )}
 
       {/* Staff list */}
       {staffList.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">{t('Your Team')}</h3>
+          <h3 className="mb-3 text-sm font-semibold text-foreground">{t('Team Members')}</h3>
           <div className="space-y-2">
             {staffList.map((member) => (
               <ItemCard
@@ -1318,19 +1129,19 @@ function StaffStep({
 
       {/* Add staff */}
       {staffList.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          message="No team members yet. Add staff so they can log in and serve customers."
-          action={
-            <button
-              onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <UserPlus className="h-4 w-4" /> {t('Add Staff Member')}
-            </button>
-          }
-        />
-      ) : (
+        <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border py-12 px-6 text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+            <Users className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="mb-4 text-sm text-muted-foreground">{t('No team members yet. Add your first staff member.')}</p>
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <UserPlus className="h-4 w-4" /> {t('Add Staff Member')}
+          </button>
+        </div>
+      ) : !showForm && (
         <button
           onClick={() => setShowForm(true)}
           className="mt-2 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
@@ -1353,11 +1164,8 @@ function StaffStep({
                   <FormField label="Email" name="email" type="email" placeholder="ahmed@example.com" required />
                   <FormField label="Password" name="password" type="password" placeholder="Min 6 characters" required />
                   <FormField label="Role" name="role" required>
-                    <select
-                      name="role"
-                      defaultValue="desk_operator"
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
+                    <select name="role" defaultValue="desk_operator"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
                       <option value="desk_operator">{t('Desk Operator')}</option>
                       <option value="receptionist">{t('Receptionist')}</option>
                       <option value="manager">{t('Manager')}</option>
@@ -1366,25 +1174,17 @@ function StaffStep({
                     </select>
                   </FormField>
                   <FormField label="Office" name="office_id">
-                    <select
-                      name="office_id"
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
+                    <select name="office_id"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
                       <option value="">{t('None')}</option>
-                      {offices.map((o) => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
+                      {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                     </select>
                   </FormField>
                   <FormField label="Department" name="department_id">
-                    <select
-                      name="department_id"
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                    >
+                    <select name="department_id"
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
                       <option value="">{t('None')}</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
+                      {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </FormField>
                 </div>
@@ -1394,116 +1194,16 @@ function StaffStep({
         </div>
       )}
 
-      <StepNavigation
-        onPrev={onPrev}
-        onNext={onNext}
-        nextDisabled={staffList.length === 0}
-      />
+      <StepNavigation onPrev={onPrev} onNext={onNext} nextDisabled={staffList.length === 0} />
     </StepCard>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-// Step 5: Channels
+// Step 4: Go Live (channels + checklist + launch)
 // ────────────────────────────────────────────────────────────────
 
-function ChannelsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
-  const { t } = useI18n();
-
-  const channels = [
-    {
-      name: 'Kiosk',
-      description: 'Physical kiosk or tablet in your office where customers tap to join the queue.',
-      icon: Monitor,
-      status: 'built-in',
-      action: '/admin/kiosk',
-    },
-    {
-      name: 'QR Code / Link',
-      description: 'Generate a QR code or link that customers scan with their phone to join remotely.',
-      icon: Link2,
-      status: 'built-in',
-      action: '/admin/virtual-codes',
-    },
-    {
-      name: 'WhatsApp',
-      description: 'Let customers join and track their queue via WhatsApp messages.',
-      icon: MessageSquare,
-      status: 'configure',
-      action: '/admin/settings',
-    },
-    {
-      name: 'Messenger',
-      description: 'Enable Facebook Messenger as a queue notification channel.',
-      icon: MessageSquare,
-      status: 'configure',
-      action: '/admin/settings',
-    },
-  ];
-
-  return (
-    <StepCard>
-      <StepHeader
-        icon={MessageSquare}
-        title="Customer Channels"
-        subtitle="Choose how customers can join and track their queue."
-      />
-
-      <Guideline>
-        <strong>{t('Tip:')}</strong> {t('The kiosk and QR codes are ready to use. WhatsApp and Messenger require additional configuration in Settings. You can set these up later — they are optional for launch.')}
-      </Guideline>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {channels.map((channel) => {
-          const ChannelIcon = channel.icon;
-          return (
-            <div
-              key={channel.name}
-              className="rounded-xl border border-border p-5 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                  <ChannelIcon className="h-5 w-5 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-semibold text-foreground">{t(channel.name)}</h4>
-                    {channel.status === 'built-in' ? (
-                      <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">
-                        {t('Ready')}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                        {t('Optional')}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{t(channel.description)}</p>
-                  <a
-                    href={channel.action}
-                    className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-                  >
-                    <Settings2 className="h-3 w-3" />
-                    {channel.status === 'built-in' ? t('Configure') : t('Set up')}
-                    <ArrowRight className="h-3 w-3" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <StepNavigation onPrev={onPrev} onNext={onNext} nextLabel="Review Setup" />
-    </StepCard>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────
-// Step 6: Review & Launch
-// ────────────────────────────────────────────────────────────────
-
-function ReviewStep({
+function LaunchStep({
   offices,
   departments,
   services,
@@ -1533,74 +1233,48 @@ function ReviewStep({
   const desksWithStaff = desks.filter((d) => d.current_staff_id).length;
   const deskIdsWithServices = new Set(deskServices.map((ds) => ds.desk_id));
   const desksWithServices = desks.filter((d) => deskIdsWithServices.has(d.id)).length;
-
-  const allGood = stepStatus.review;
+  const allGood = stepStatus.launch;
 
   const checks = [
-    {
-      label: t('{count} office(s) configured', { count: offices.length }),
-      ok: offices.length > 0,
-      step: 'office' as StepKey,
-    },
-    {
-      label: t('{count} department(s) with {svcCount} service(s)', { count: departments.length, svcCount: services.length }),
-      ok: departments.length > 0 && services.length > 0,
-      step: 'departments' as StepKey,
-    },
-    {
-      label: t('{count} desk(s) created, {linked} with services linked', { count: desks.length, linked: desksWithServices }),
-      ok: desks.length > 0 && desksWithServices >= desks.length,
-      step: 'desks' as StepKey,
-    },
-    {
-      label: t('{count} team member(s), {assigned} desk(s) with staff', { count: staffList.length, assigned: desksWithStaff }),
-      ok: staffList.length > 0 && desksWithStaff > 0,
-      step: 'staff' as StepKey,
-    },
+    { label: t('{count} office(s) configured', { count: offices.length }), ok: offices.length > 0, step: 'setup' as StepKey },
+    { label: t('{count} department(s) with {svcCount} service(s)', { count: departments.length, svcCount: services.length }), ok: departments.length > 0 && services.length > 0, step: 'setup' as StepKey },
+    { label: t('{count} desk(s), {linked} with services linked', { count: desks.length, linked: desksWithServices }), ok: desks.length > 0 && desksWithServices >= desks.length, step: 'setup' as StepKey },
+    { label: t('{count} team member(s), {assigned} desk(s) with staff', { count: staffList.length, assigned: desksWithStaff }), ok: staffList.length > 0 && desksWithStaff > 0, step: 'team' as StepKey },
+  ];
+
+  const channels = [
+    { name: 'Kiosk', description: 'Physical kiosk for walk-in customers', icon: Monitor, status: 'built-in', action: '/admin/kiosk' },
+    { name: 'QR Code / Link', description: 'Customers scan to join remotely', icon: Link2, status: 'built-in', action: '/admin/virtual-codes' },
+    { name: 'WhatsApp', description: 'Queue via WhatsApp messages', icon: MessageSquare, status: 'configure', action: '/admin/settings' },
+    { name: 'Messenger', description: 'Queue via Facebook Messenger', icon: MessageSquare, status: 'configure', action: '/admin/settings' },
   ];
 
   return (
     <StepCard>
-      <StepHeader
-        icon={Rocket}
-        title="Review & Launch"
-        subtitle="Check everything is ready before going live."
-      />
+      <StepHeader icon={Rocket} title="Go Live" subtitle="Final check and launch your business." />
 
+      {/* Readiness checklist */}
       {!allGood && (
-        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/5 p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-warning">
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning/5 p-3">
+          <p className="flex items-center gap-2 text-xs font-semibold text-warning">
             <AlertTriangle className="h-4 w-4" />
-            {t('Some steps need attention before you can launch.')}
+            {t('Some items need attention before launch.')}
           </p>
         </div>
       )}
 
-      <div className="space-y-3 mb-8">
+      <div className="space-y-2 mb-8">
         {checks.map((check, i) => (
-          <div
-            key={i}
-            className={`flex items-center justify-between rounded-xl border p-4 transition-colors ${
-              check.ok
-                ? 'border-success/30 bg-success/5'
-                : 'border-warning/30 bg-warning/5'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              {check.ok ? (
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-warning" />
-              )}
-              <span className={`text-sm font-medium ${check.ok ? 'text-foreground' : 'text-warning'}`}>
-                {check.label}
-              </span>
+          <div key={i} className={`flex items-center justify-between rounded-xl border p-3 ${
+            check.ok ? 'border-success/30 bg-success/5' : 'border-warning/30 bg-warning/5'
+          }`}>
+            <div className="flex items-center gap-2">
+              {check.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <AlertTriangle className="h-4 w-4 text-warning" />}
+              <span className={`text-sm font-medium ${check.ok ? 'text-foreground' : 'text-warning'}`}>{check.label}</span>
             </div>
             {!check.ok && (
-              <button
-                onClick={() => onGoToStep(check.step)}
-                className="rounded-lg bg-warning/10 px-3 py-1.5 text-xs font-semibold text-warning hover:bg-warning/20 transition-colors"
-              >
+              <button onClick={() => onGoToStep(check.step)}
+                className="rounded-lg bg-warning/10 px-3 py-1 text-xs font-semibold text-warning hover:bg-warning/20 transition-colors">
                 {t('Fix')}
               </button>
             )}
@@ -1608,31 +1282,53 @@ function ReviewStep({
         ))}
       </div>
 
-      {/* Summary cards */}
+      {/* Customer channels */}
+      <h3 className="text-sm font-semibold text-foreground mb-3">{t('Customer Channels')}</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-8">
+        {channels.map((channel) => {
+          const ChannelIcon = channel.icon;
+          return (
+            <div key={channel.name} className="rounded-xl border border-border p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                  <ChannelIcon className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-foreground">{t(channel.name)}</h4>
+                    {channel.status === 'built-in' ? (
+                      <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">{t('Ready')}</span>
+                    ) : (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{t('Optional')}</span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{t(channel.description)}</p>
+                  <a href={channel.action} className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline">
+                    <Settings2 className="h-3 w-3" /> {channel.status === 'built-in' ? t('Configure') : t('Set up')} <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Launch section */}
       {allGood && (
-        <div className="mb-8 rounded-2xl border border-success/30 bg-gradient-to-br from-success/5 to-transparent p-6 text-center">
-          <div className="mb-2 text-3xl">
-            <Sparkles className="mx-auto h-10 w-10 text-success" />
-          </div>
+        <div className="mb-6 rounded-2xl border border-success/30 bg-gradient-to-br from-success/5 to-transparent p-6 text-center">
+          <Sparkles className="mx-auto mb-2 h-10 w-10 text-success" />
           <h3 className="text-lg font-bold text-foreground mb-1">{t('Everything looks great!')}</h3>
-          <p className="text-sm text-muted-foreground">
-            {t('Your business is ready to start serving customers. Launch to complete the setup.')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('Your business is ready to start serving customers.')}</p>
         </div>
       )}
 
       <div className="flex items-center justify-between">
-        <button
-          onClick={onPrev}
-          className="flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
-        >
+        <button onClick={onPrev}
+          className="flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">
           <ChevronLeft className="h-4 w-4" /> {t('Back')}
         </button>
-        <button
-          onClick={onComplete}
-          disabled={!allGood || isPending}
-          className="flex items-center gap-2 rounded-xl bg-success px-8 py-3 text-sm font-bold text-white shadow-lg shadow-success/20 hover:bg-success/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <button onClick={onComplete} disabled={!allGood || isPending}
+          className="flex items-center gap-2 rounded-xl bg-success px-8 py-3 text-sm font-bold text-white shadow-lg shadow-success/20 hover:bg-success/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
           <Rocket className="h-4 w-4" />
           {isPending ? t('Launching...') : t('Launch Business')}
         </button>

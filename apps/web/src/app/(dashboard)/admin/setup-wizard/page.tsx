@@ -13,7 +13,6 @@ export default async function SetupWizardPage() {
 
   const orgId = context.staff.organization_id;
 
-  // Fetch organization
   const { data: organization } = await context.supabase
     .from('organizations')
     .select('id, name, settings')
@@ -23,78 +22,89 @@ export default async function SetupWizardPage() {
   if (!organization) redirect('/admin/offices');
 
   const settings = (organization.settings as Record<string, any>) ?? {};
-  const lifecycleState = getPlatformLifecycleState(settings, { hasExistingData: true });
 
-  // Only show wizard if template is confirmed but wizard not yet completed
-  if (lifecycleState !== 'template_confirmed') {
-    redirect('/admin/onboarding');
-  }
-
+  // If wizard already completed, go to overview
   if (settings.business_setup_wizard_completed_at) {
     redirect('/admin/overview');
   }
 
-  const platformConfig = resolvePlatformConfig({
-    organizationSettings: settings,
+  // Check if template is confirmed (offices exist)
+  const { count: officeCount } = await context.supabase
+    .from('offices')
+    .select('*', { count: 'exact', head: true })
+    .eq('organization_id', orgId);
+
+  const lifecycleState = getPlatformLifecycleState(settings, {
+    hasExistingData: (officeCount ?? 0) > 0,
   });
+  const confirmed = lifecycleState === 'template_confirmed';
+
+  // Resolve vocabulary for labels
+  const platformConfig = resolvePlatformConfig({ organizationSettings: settings });
   const vocabulary = platformConfig.experienceProfile.vocabulary;
 
-  // Fetch all data needed for the wizard
-  const [
-    { data: offices },
-    { data: departments },
-    { data: services },
-    { data: desks },
-    { data: staffList },
-    { data: deskServices },
-  ] = await Promise.all([
-    context.supabase
-      .from('offices')
-      .select('id, name, address, phone, settings, is_active')
-      .eq('organization_id', orgId)
-      .order('name'),
-    context.supabase
-      .from('departments')
-      .select('id, name, code, description, office_id, is_active, office:offices(id, name)')
-      .eq('is_active', true)
-      .order('sort_order'),
-    context.supabase
-      .from('services')
-      .select('id, name, code, description, estimated_service_time, department_id, is_active, department:departments(id, name, office_id)')
-      .eq('is_active', true)
-      .order('name'),
-    context.supabase
-      .from('desks')
-      .select('id, name, display_name, office_id, department_id, current_staff_id, status, is_active, department:departments(id, name), office:offices(id, name), current_staff:staff(id, full_name)')
-      .eq('is_active', true)
-      .order('name'),
-    context.supabase
-      .from('staff')
-      .select('id, full_name, email, role, office_id, department_id, is_active, office:offices(id, name), department:departments(id, name)')
-      .eq('organization_id', orgId)
-      .eq('is_active', true)
-      .order('full_name'),
-    context.supabase
-      .from('desk_services')
-      .select('desk_id, service_id'),
-  ]);
+  // If confirmed, fetch live data for team & launch steps
+  let offices: any[] = [];
+  let departments: any[] = [];
+  let services: any[] = [];
+  let desks: any[] = [];
+  let staffList: any[] = [];
+  let deskServices: any[] = [];
 
-  // Filter departments/services to only those belonging to this org's offices
-  const orgOfficeIds = new Set((offices ?? []).map((o: any) => o.id));
-  const orgDepartments = (departments ?? []).filter((d: any) => orgOfficeIds.has(d.office_id));
-  const orgDeptIds = new Set(orgDepartments.map((d: any) => d.id));
-  const orgServices = (services ?? []).filter((s: any) => orgDeptIds.has(s.department_id));
+  if (confirmed) {
+    const [officesRes, departmentsRes, servicesRes, desksRes, staffRes, deskServicesRes] =
+      await Promise.all([
+        context.supabase
+          .from('offices')
+          .select('id, name, address, phone, settings, is_active')
+          .eq('organization_id', orgId)
+          .order('name'),
+        context.supabase
+          .from('departments')
+          .select('id, name, code, description, office_id, is_active, office:offices(id, name)')
+          .eq('is_active', true)
+          .order('sort_order'),
+        context.supabase
+          .from('services')
+          .select('id, name, code, description, estimated_service_time, department_id, is_active, department:departments(id, name, office_id)')
+          .eq('is_active', true)
+          .order('name'),
+        context.supabase
+          .from('desks')
+          .select('id, name, display_name, office_id, department_id, current_staff_id, status, is_active, department:departments(id, name), office:offices(id, name), current_staff:staff(id, full_name)')
+          .eq('is_active', true)
+          .order('name'),
+        context.supabase
+          .from('staff')
+          .select('id, full_name, email, role, office_id, department_id, is_active, office:offices(id, name), department:departments(id, name)')
+          .eq('organization_id', orgId)
+          .eq('is_active', true)
+          .order('full_name'),
+        context.supabase.from('desk_services').select('desk_id, service_id'),
+      ]);
+
+    offices = officesRes.data ?? [];
+    const orgOfficeIds = new Set(offices.map((o: any) => o.id));
+    departments = (departmentsRes.data ?? []).filter((d: any) => orgOfficeIds.has(d.office_id));
+    const orgDeptIds = new Set(departments.map((d: any) => d.id));
+    services = (servicesRes.data ?? []).filter((s: any) => orgDeptIds.has(s.department_id));
+    desks = (desksRes.data ?? []).filter((d: any) => orgOfficeIds.has(d.office_id));
+    staffList = staffRes.data ?? [];
+    deskServices = deskServicesRes.data ?? [];
+  }
 
   return (
     <SetupWizardClient
       organization={{ id: organization.id, name: organization.name }}
-      vocabulary={vocabulary ? { serviceLabel: vocabulary.serviceLabel, departmentLabel: vocabulary.departmentLabel, deskLabel: vocabulary.deskLabel, officeLabel: vocabulary.officeLabel } : undefined}
-      offices={(offices ?? []) as any}
-      departments={orgDepartments as any}
-      services={orgServices as any}
-      desks={(desks ?? []).filter((d: any) => orgOfficeIds.has(d.office_id)) as any}
-      staffList={(staffList ?? []) as any}
-      deskServices={(deskServices ?? []) as any}
+      confirmed={confirmed}
+      trialSettings={settings}
+      vocabulary={vocabulary}
+      offices={offices}
+      departments={departments}
+      services={services}
+      desks={desks}
+      staffList={staffList}
+      deskServices={deskServices}
     />
   );
 }

@@ -272,7 +272,7 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
-          '/admin/overview', '/admin/onboarding', '/admin/template-governance',
+          '/admin/overview', '/admin/setup-wizard', '/admin/template-governance',
           '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks',
           '/admin/staff', '/admin/priorities', '/admin/virtual-codes', '/admin/audit',
           '/admin/analytics', '/admin/customers', '/admin/calendar', '/admin/bookings',
@@ -286,7 +286,7 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
         scope: 'organization',
         adminAccess: true,
         allowedNavigation: [
-          '/admin/overview', '/admin/onboarding', '/admin/template-governance',
+          '/admin/overview', '/admin/setup-wizard', '/admin/template-governance',
           '/admin/offices', '/admin/departments', '/admin/services', '/admin/desks',
           '/admin/staff', '/admin/audit', '/admin/analytics', '/admin/calendar',
           '/admin/bookings', '/admin/kiosk', '/admin/displays', '/admin/broadcast',
@@ -353,19 +353,19 @@ function buildRolePolicy(extraCapabilities: string[] = []): RolePolicy {
 // ── Default Navigation ──────────────────────────────────────────────────────
 
 const LIGHT_NAV = [
-  '/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/services',
+  '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/services',
   '/admin/staff', '/admin/analytics', '/admin/customers', '/admin/calendar',
   '/admin/bookings', '/admin/settings', '/desk',
 ];
 
 const STANDARD_NAV = [
-  '/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments',
+  '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/departments',
   '/admin/services', '/admin/staff', '/admin/priorities', '/admin/analytics',
   '/admin/calendar', '/admin/bookings', '/admin/kiosk', '/admin/settings', '/desk',
 ];
 
 const ENTERPRISE_NAV = [
-  '/admin/overview', '/admin/onboarding', '/admin/offices', '/admin/departments',
+  '/admin/overview', '/admin/setup-wizard', '/admin/offices', '/admin/departments',
   '/admin/services', '/admin/desks', '/admin/priorities', '/admin/displays',
   '/admin/kiosk', '/admin/calendar', '/admin/bookings', '/admin/analytics',
   '/admin/settings', '/desk',
