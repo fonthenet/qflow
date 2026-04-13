@@ -2940,7 +2940,7 @@ async function findAndReplyAppointmentStatus(
   // Also check for pending_approval tickets by phone (JOIN flow creates tickets,
   // not appointments). The old STATUS call may have closed the session, so we
   // need to find the ticket directly.
-  const last9 = digits.slice(-9);
+  const last9 = identifier.replace(/\D/g, '').slice(-9);
   let pendingTicket: any = null;
   if (last9.length >= 9) {
     const { data: tickets } = await supabase
