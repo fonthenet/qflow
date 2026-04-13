@@ -578,12 +578,15 @@ function setupIPC() {
     }
     ticket.locale = resolvedLocale;
 
+    // Unify notes: extract customer_data.reason into tickets.notes (single source of truth)
+    const ticketNotes = (ticket.customer_data?.reason ?? ticket.customer_data?.reason_of_visit ?? ticket.customer_data?.notes ?? ticket.notes ?? '').trim() || null;
+
     // Transaction: ticket insert + sync queue insert are atomic (crash-safe)
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id, locale)
-        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null, resolvedLocale);
+        INSERT INTO tickets (id, ticket_number, office_id, department_id, service_id, status, priority, customer_data, created_at, is_offline, source, daily_sequence, appointment_id, locale, notes)
+        VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ticket.id, ticket.ticket_number, ticket.office_id, ticket.department_id, ticket.service_id, ticket.priority ?? 0, JSON.stringify(ticket.customer_data ?? {}), now, ticket.is_offline ? 1 : 0, ticket.source ?? 'walk_in', ticket.daily_sequence, ticket.appointment_id ?? null, resolvedLocale, ticketNotes);
 
       // Build clean sync payload with all Supabase NOT NULL fields
       const syncPayload: Record<string, any> = {
@@ -602,6 +605,7 @@ function setupIPC() {
       };
       if (ticket.appointment_id) syncPayload.appointment_id = ticket.appointment_id;
       if (resolvedLocale) syncPayload.locale = resolvedLocale;
+      if (ticketNotes) syncPayload.notes = ticketNotes;
 
       db.prepare(`
         INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
@@ -719,6 +723,28 @@ function setupIPC() {
             logger.warn('ipc', 'WhatsApp notify failed', { error: waErr?.message });
             whatsappStatus = { sent: false, error: waErr?.message || 'Network error' };
           }
+
+          // Upsert customer record (fire-and-forget) — unified dedup by phone
+          syncEngine.ensureFreshToken().then((upsertToken: string) => {
+            fetch(`${CONFIG.CLOUD_URL}/api/upsert-customer`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${upsertToken}` },
+              body: JSON.stringify({
+                organizationId: orgId,
+                name: cd.name || cd.customer_name || null,
+                phone: rawPhone,
+                email: cd.email || null,
+                wilayaCode: cd.wilaya || cd.wilaya_code || null,
+                source: 'station',
+                timezone: tz || null,
+              }),
+              signal: AbortSignal.timeout(8000),
+            }).then(() => {
+              logger.info('ipc', 'Customer upserted from ticket creation');
+            }).catch((e: any) => {
+              logger.warn('ipc', 'Customer upsert failed (non-fatal)', { error: e?.message });
+            });
+          }).catch(() => {});
         }
       }
     }

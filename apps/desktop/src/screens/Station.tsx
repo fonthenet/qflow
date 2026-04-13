@@ -2199,9 +2199,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Sync notes when active ticket changes ──────────────────────
   useEffect(() => {
     if (activeTicket?.status === 'serving' || activeTicket?.status === 'called') {
-      setTicketNotes((activeTicket as any).notes ?? '');
-      // Auto-show notes field if there are existing notes (from appointment reason)
-      setShowNotesField(!!(activeTicket as any).notes);
+      // Unified notes: prefer tickets.notes, fall back to customer_data.reason for old tickets
+      const notes = (activeTicket as any).notes
+        ?? (activeTicket.customer_data as any)?.reason
+        ?? (activeTicket.customer_data as any)?.reason_of_visit
+        ?? '';
+      setTicketNotes(notes);
+      // Always show notes field during serving, or when there are existing notes
+      setShowNotesField(activeTicket?.status === 'serving' || !!notes);
     } else {
       setTicketNotes('');
       setShowNotesField(false);
@@ -2821,11 +2826,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit) && (
-                  <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit}
-                  </div>
-                )}
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
@@ -2842,7 +2842,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         color: 'var(--text2)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
                       }}
                     >
-                      + {t('Add Note')}
+                      + {t('Notes')}
                     </button>
                   ) : (
                     <div>
@@ -2856,7 +2856,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           if (activeTicket) window.qf.db.saveNotes(activeTicket.id, ticketNotes.trim());
                         }}
                         onKeyDown={(e) => e.stopPropagation()}
-                        placeholder={t('Add a note about this customer...')}
+                        placeholder={t('Reason of visit / notes...')}
                         rows={2}
                         style={{
                           width: '100%', padding: '8px 10px', border: '1px solid var(--border)',
@@ -2963,11 +2963,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
-                {((activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit) && (
-                  <div className="active-notes">
-                    <strong>{t('Reason:')}</strong> {(activeTicket.customer_data as any)?.reason || (activeTicket.customer_data as any)?.reason_of_visit}
-                  </div>
-                )}
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
@@ -3004,7 +2999,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                         color: 'var(--text2)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
                       }}
                     >
-                      + {t('Add Note')}
+                      + {t('Notes')}
                     </button>
                   ) : (
                     <div style={{ flex: '1 1 250px' }}>
@@ -3018,7 +3013,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           if (activeTicket) window.qf.db.saveNotes(activeTicket.id, ticketNotes.trim());
                         }}
                         onKeyDown={(e) => e.stopPropagation()}
-                        placeholder={t('Add a note about this customer...')}
+                        placeholder={t('Reason of visit / notes...')}
                         rows={2}
                         style={{
                           width: '100%', padding: '8px 10px', border: '1px solid var(--border)',

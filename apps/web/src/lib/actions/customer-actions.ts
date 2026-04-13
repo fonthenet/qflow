@@ -51,28 +51,39 @@ export async function createCustomer(data: {
   const context = await getStaffContext();
   const orgId = context.staff.organization_id;
   const supabase = createAdminClient();
-  const localPhone = await toLocalPhone(data.phone, orgId);
 
-  const { data: customer, error } = await (supabase as any)
+  // Fetch org timezone for phone normalization
+  const { data: orgRow } = await (supabase as any)
+    .from('organizations')
+    .select('timezone')
+    .eq('id', orgId)
+    .single();
+  const tz = orgRow?.timezone || 'Africa/Algiers';
+
+  // Use unified upsert — deduplicates by phone, tracks name aliases
+  const { upsertCustomerFromBooking } = await import('@/lib/upsert-customer');
+  await upsertCustomerFromBooking(supabase, {
+    organizationId: orgId,
+    name: data.name.trim(),
+    phone: data.phone.trim(),
+    email: data.email?.trim() || null,
+    source: 'manual',
+    incrementVisit: false,
+    timezone: tz,
+  });
+
+  // Fetch the customer record to return
+  const localPhone = await toLocalPhone(data.phone, orgId);
+  const { data: customer } = await (supabase as any)
     .from('customers')
-    .insert({
-      organization_id: orgId,
-      name: data.name.trim(),
-      phone: localPhone,
-      email: data.email?.trim() || null,
-      visit_count: 0,
-      source: 'manual',
-    })
     .select('*')
+    .eq('organization_id', orgId)
+    .ilike('phone', `%${localPhone.slice(-7)}%`)
+    .order('visit_count', { ascending: false })
+    .limit(1)
     .single();
 
-  if (error) {
-    if (error.code === '23505') {
-      return { error: 'A customer with this phone number already exists.' };
-    }
-    return { error: error.message };
-  }
-  return { data: customer };
+  return { data: customer ?? null };
 }
 
 export async function updateCustomer(

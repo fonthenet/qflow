@@ -167,8 +167,8 @@ export async function upsertCustomerFromBooking(
           updates.name = name;
         }
       }
-      if (email && !primary.email) updates.email = email;
-      if (notes && !primary.notes) updates.notes = notes;
+      if (email) updates.email = email;
+      if (notes) updates.notes = notes;
       if (wilayaCode) updates.wilaya_code = wilayaCode;
       await supabase.from('customers').update(updates).eq('id', primary.id);
 

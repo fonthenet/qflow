@@ -345,44 +345,76 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
       const f = addForm;
-      const { data: inserted, error: insErr } = await sb
+      const localPhone = normalizePhoneForStorage(f.phone ?? '', timezone);
+
+      // Check for existing customer by phone (variant matching: last 7+ digits)
+      const digits = localPhone.replace(/\D/g, '');
+      const tail = digits.length > 7 ? digits.slice(-7) : digits;
+      const { data: existing } = await sb
         .from('customers')
-        .insert({
-          organization_id: orgId,
-          name: (f.name ?? '').trim(),
-          phone: normalizePhoneForStorage(f.phone ?? '', timezone),
-          email: (f.email ?? '').trim() || null,
-          notes: (f.notes ?? '').trim() || null,
-          gender: f.gender || null,
-          date_of_birth: f.date_of_birth || null,
-          blood_type: f.blood_type || null,
-          address: (f.address ?? '').trim() || null,
-          wilaya_code: f.wilaya_code || null,
-          city: f.city || null,
-          is_couple: !!f.is_couple,
-          spouse_name: f.is_couple ? ((f.spouse_name ?? '').trim() || null) : null,
-          spouse_dob: f.is_couple ? (f.spouse_dob || null) : null,
-          spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
-          spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
-          marriage_date: f.is_couple ? (f.marriage_date || null) : null,
-          visit_count: 0,
-          source: 'station',
-        } as any)
-        .select('id')
-        .maybeSingle();
-      if (insErr) {
-        if ((insErr as any).code === '23505') {
-          setAddError(t('A customer with this phone already exists.'));
-        } else {
-          setAddError(insErr.message);
+        .select(CUSTOMER_SELECT)
+        .eq('organization_id', orgId)
+        .ilike('phone', `%${tail}%`)
+        .order('visit_count', { ascending: false })
+        .limit(5);
+
+      // Find exact or suffix match
+      const match = (existing ?? []).find((c: any) => {
+        const cp = (c.phone ?? '').replace(/\D/g, '');
+        return cp === digits || cp.endsWith(tail) || digits.endsWith(cp.slice(-7));
+      });
+
+      const fields = {
+        name: (f.name ?? '').trim(),
+        phone: localPhone,
+        email: (f.email ?? '').trim() || null,
+        notes: (f.notes ?? '').trim() || null,
+        gender: f.gender || null,
+        date_of_birth: f.date_of_birth || null,
+        blood_type: f.blood_type || null,
+        address: (f.address ?? '').trim() || null,
+        wilaya_code: f.wilaya_code || null,
+        city: f.city || null,
+        is_couple: !!f.is_couple,
+        spouse_name: f.is_couple ? ((f.spouse_name ?? '').trim() || null) : null,
+        spouse_dob: f.is_couple ? (f.spouse_dob || null) : null,
+        spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
+        spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
+        marriage_date: f.is_couple ? (f.marriage_date || null) : null,
+      };
+
+      if (match) {
+        // Update existing — track name alias if different
+        const updates: any = { ...fields };
+        const currentName = (match.name ?? '').trim();
+        if (fields.name && currentName && currentName.toLowerCase() !== fields.name.toLowerCase()) {
+          const prev: string[] = Array.isArray((match as any).previous_names) ? (match as any).previous_names : [];
+          if (!prev.some(p => p.toLowerCase() === currentName.toLowerCase())) {
+            updates.previous_names = [...prev, currentName];
+          }
         }
-        return;
-      }
-      if (inserted?.id) {
-        const { data: full } = await sb.from('customers').select(CUSTOMER_SELECT).eq('id', inserted.id).maybeSingle();
-        if (full) setCustomers((prev) => [full as Customer, ...prev]);
+        const { error: updErr } = await sb.from('customers').update(updates).eq('id', match.id);
+        if (updErr) { setAddError(updErr.message); return; }
+        const { data: full } = await sb.from('customers').select(CUSTOMER_SELECT).eq('id', match.id).maybeSingle();
+        if (full) setCustomers((prev) => prev.some(c => c.id === match.id) ? prev.map(c => c.id === match.id ? full as Customer : c) : [full as Customer, ...prev]);
       } else {
-        await loadCustomers();
+        // Insert new
+        const { data: inserted, error: insErr } = await sb
+          .from('customers')
+          .insert({ organization_id: orgId, ...fields, visit_count: 0, source: 'station' } as any)
+          .select('id')
+          .maybeSingle();
+        if (insErr) {
+          if ((insErr as any).code === '23505') setAddError(t('A customer with this phone already exists.'));
+          else setAddError(insErr.message);
+          return;
+        }
+        if (inserted?.id) {
+          const { data: full } = await sb.from('customers').select(CUSTOMER_SELECT).eq('id', inserted.id).maybeSingle();
+          if (full) setCustomers((prev) => [full as Customer, ...prev]);
+        } else {
+          await loadCustomers();
+        }
       }
       setAddForm(emptyAddForm);
       setShowAdd(false);

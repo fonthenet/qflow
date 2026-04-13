@@ -305,6 +305,33 @@ export async function checkInAppointment(appointmentId: string) {
     priorityCategory = data ?? null;
   }
 
+  // ── Upsert customer record (dedup by phone, track name aliases) ──
+  if (appointment.customer_phone) {
+    try {
+      const { upsertCustomerFromBooking } = await import('@/lib/upsert-customer');
+      const { data: officeForUpsert } = await supabase
+        .from('offices')
+        .select('organization_id, organization:organizations(timezone)')
+        .eq('id', appointment.office_id)
+        .single();
+      const upsertOrgId = (officeForUpsert as any)?.organization_id;
+      const upsertTz = (officeForUpsert as any)?.organization?.timezone ?? 'Africa/Algiers';
+      if (upsertOrgId) {
+        await upsertCustomerFromBooking(supabase, {
+          organizationId: upsertOrgId,
+          name: appointment.customer_name,
+          phone: appointment.customer_phone,
+          email: appointment.customer_email,
+          wilayaCode: (appointment as any).wilaya,
+          source: 'appointment',
+          timezone: upsertTz,
+        });
+      }
+    } catch (e) {
+      console.warn('[checkInAppointment] customer upsert failed (non-fatal):', e);
+    }
+  }
+
   // ── Send "joined" WhatsApp notification (same as desktop/kiosk path) ──
   if (appointment.customer_phone) {
     try {
