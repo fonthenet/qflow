@@ -2085,6 +2085,7 @@ function DesktopWeekView({
     highlightedEl: HTMLElement | null; // currently highlighted slot cell
   } | null>(null);
   const rafRef = useRef<number | null>(null);
+  const justDraggedRef = useRef(false);
 
   // Slot cell positions for hit-testing — keyed by "dateKey|time" for uniqueness
   const slotCellRefs = useRef<Map<string, { el: HTMLDivElement; dayIdx: number; slotIdx: number; dateKey: string; time: string }>>(new Map());
@@ -2124,6 +2125,7 @@ function DesktopWeekView({
 
   // Apply drag highlight to a slot cell
   const applyHighlight = useCallback((el: HTMLElement) => {
+    el.setAttribute('data-drag-highlight', '1');
     el.style.outline = '2px dashed #22c55e';
     el.style.outlineOffset = '-2px';
     el.style.background = 'rgba(34,197,94,0.25)';
@@ -2141,21 +2143,29 @@ function DesktopWeekView({
     }
     // Clear highlight on tracked element
     clearHighlight();
-    // Safety: clear ALL slot cells that might still have highlight styles
-    for (const [, info] of slotCellRefs.current) {
-      info.el.style.outline = '';
-      info.el.style.outlineOffset = '';
-      info.el.style.background = '';
-      info.el.style.borderRadius = '';
-    }
+    // Safety: query the ENTIRE DOM for any element with drag highlight
+    // (covers orphaned elements after React re-renders)
+    document.querySelectorAll('[data-drag-highlight]').forEach((el) => {
+      (el as HTMLElement).style.outline = '';
+      (el as HTMLElement).style.outlineOffset = '';
+      (el as HTMLElement).style.background = '';
+      (el as HTMLElement).style.borderRadius = '';
+      el.removeAttribute('data-drag-highlight');
+    });
     // Restore ALL draggable appointment elements
     document.querySelectorAll('[data-appt-drag]').forEach((el) => {
       (el as HTMLElement).style.opacity = '1';
       (el as HTMLElement).style.transform = '';
     });
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    // Delayed null so onClick can see didMove
-    setTimeout(() => { dragRef.current = null; }, 60);
+    // Null immediately to prevent pointermove from re-applying highlight
+    const wasDrag = drag?.didMove ?? false;
+    dragRef.current = null;
+    // Let onClick handlers know we just finished a drag (cleared after 60ms)
+    if (wasDrag) {
+      justDraggedRef.current = true;
+      setTimeout(() => { justDraggedRef.current = false; }, 60);
+    }
   }, [clearHighlight]);
 
   // Global pointermove/pointerup during drag
@@ -2399,7 +2409,7 @@ function DesktopWeekView({
                       ref={(el) => registerSlotCell(cellKey, el as HTMLDivElement | null, dayIdx, si, day.dateKey, s.label)}
                       onClick={() => {
                         // Don't select cell if we just finished a drag
-                        if (dragRef.current?.didMove) return;
+                        if (justDraggedRef.current) return;
                         setSelectedCell(
                           selectedCell?.dayIdx === dayIdx && selectedCell?.slotIdx === si ? null : { dayIdx, slotIdx: si }
                         );
@@ -2542,10 +2552,7 @@ function DesktopWeekView({
                         onClick={(e) => {
                           e.stopPropagation();
                           // Skip if we just finished a drag
-                          if (dragRef.current?.didMove) {
-                            dragRef.current = null;
-                            return;
-                          }
+                          if (justDraggedRef.current) return;
                           onSelect(appt);
                           setSelectedCell(null);
                           onDayHeaderClick?.({ stopPropagation() {}, preventDefault() {} } as any, day.dateKey);
