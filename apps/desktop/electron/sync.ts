@@ -1590,7 +1590,18 @@ export class SyncEngine {
         // pending sync) are already resurrected by upsertBatch's "cloud overrides local"
         // branch above — so after this block the Station's waiting list exactly mirrors
         // what WhatsApp /status and the display boards see.
-        if (activeTickets !== null) {
+        //
+        // MULTI-PC SAFETY: If cloud returned 0 active tickets but we have local active
+        // tickets, this likely means the auth token was dead and RLS returned empty results.
+        // Skip the mirror to avoid wiping valid local data.
+        const localActiveCount = (this.db.prepare(
+          "SELECT count(*) as cnt FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
+        ).get(officeId) as any)?.cnt ?? 0;
+        const skipMirror = activeTickets !== null && activeTickets.length === 0 && localActiveCount > 0;
+        if (skipMirror) {
+          logger.warn('sync.mirror', 'Skipping mirror — cloud returned 0 but local has active tickets (possible auth issue)', { officeId, localActiveCount });
+        }
+        if (activeTickets !== null && !skipMirror) {
           const cloudActiveIds = new Set(activeTickets.map((t: any) => t.id));
           const localActive = this.db.prepare(
             "SELECT id, ticket_number, status, is_offline, created_at FROM tickets WHERE office_id = ? AND status IN ('waiting','called','serving')"
