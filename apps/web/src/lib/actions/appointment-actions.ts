@@ -11,7 +11,7 @@ import { nanoid } from 'nanoid';
 import { normalizeWilayaDisplay } from '@/lib/wilayas';
 import { revalidatePath } from 'next/cache';
 import { getOfficeDayStartIso, getOfficeDayEndIso, getDateStartIso, getDateEndIso } from '@/lib/office-day';
-import { transitionAppointment } from '@/lib/lifecycle';
+import { transitionAppointment, notifyAppointmentRescheduled } from '@/lib/lifecycle';
 import { trackUrl } from '@/lib/config';
 
 interface CreateAppointmentData {
@@ -547,6 +547,11 @@ export async function rescheduleAppointment(appointmentId: string, newScheduledA
     .eq('id', appointmentId);
 
   if (updErr) return { error: updErr.message };
+
+  // Notify customer about the reschedule (fire-and-forget — don't block the UI)
+  notifyAppointmentRescheduled(appointmentId, newScheduledAt).catch((err) => {
+    console.error('[reschedule] notification error:', err);
+  });
 
   revalidatePath('/admin/calendar');
   revalidatePath('/admin/bookings');

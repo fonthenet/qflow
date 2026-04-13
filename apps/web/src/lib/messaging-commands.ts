@@ -374,6 +374,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '🚫 تم *إلغاء* موعدك في *{name}* من قبل المزود.{reason}\n\nلإعادة الحجز، تواصل معنا أو احجز من جديد.',
     en: '🚫 Your appointment at *{name}* has been *cancelled* by the provider.{reason}\n\nTo reschedule, contact us or book again.',
   },
+  appointment_rescheduled: {
+    fr: '📅 Votre rendez-vous à *{name}* a été *reprogrammé*.\n\n🕐 Nouveau créneau : *{new_date}* à *{new_time}*\n\nSi cela ne vous convient pas, contactez-nous pour modifier.',
+    ar: '📅 تم *إعادة جدولة* موعدك في *{name}*.\n\n🕐 الموعد الجديد: *{new_date}* الساعة *{new_time}*\n\nإذا لم يناسبك، تواصل معنا للتعديل.',
+    en: '📅 Your appointment at *{name}* has been *rescheduled*.\n\n🕐 New time: *{new_date}* at *{new_time}*\n\nIf this doesn\'t work for you, contact us to change it.',
+  },
   appointment_no_show: {
     fr: '⏰ Vous avez manqué votre rendez-vous à *{name}*.\n\nLe créneau a été libéré. N\'hésitez pas à réserver à nouveau.',
     ar: '⏰ لقد فاتك موعدك في *{name}*.\n\nتم تحرير الموعد. يمكنك الحجز من جديد.',

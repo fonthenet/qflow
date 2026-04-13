@@ -324,6 +324,60 @@ export async function transitionAppointment(
 }
 
 /**
+ * Notify customer when their appointment is rescheduled to a new date/time.
+ * Called from rescheduleAppointment() after the DB update.
+ */
+export async function notifyAppointmentRescheduled(
+  appointmentId: string,
+  newScheduledAt: string,
+): Promise<{ notified: boolean; channel: string | null; notifyError: string | null }> {
+  const sb = createAdminClient() as any;
+
+  // 1. Fetch appointment details
+  const { data: appt, error: fetchErr } = await sb
+    .from('appointments')
+    .select('id, office_id, customer_phone, customer_name, locale')
+    .eq('id', appointmentId)
+    .single();
+
+  if (fetchErr || !appt) {
+    return { notified: false, channel: null, notifyError: fetchErr?.message ?? 'Not found' };
+  }
+
+  if (!appt.customer_phone) {
+    return { notified: false, channel: null, notifyError: null };
+  }
+
+  // 2. Get org name + timezone
+  const { data: office } = await sb
+    .from('offices')
+    .select('organization_id, organization:organizations(id, name, timezone)')
+    .eq('id', appt.office_id)
+    .single();
+
+  const orgName: string = (office?.organization as any)?.name ?? '';
+  const orgId: string | null = office?.organization_id ?? (office?.organization as any)?.id ?? null;
+  const tz: string = (office?.organization as any)?.timezone ?? 'Africa/Algiers';
+
+  // 3. Format new date/time in org timezone
+  const dt = new Date(newScheduledAt);
+  const newDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(dt);
+  const timeParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(dt);
+  const newTime = `${timeParts.find(p => p.type === 'hour')?.value ?? '00'}:${timeParts.find(p => p.type === 'minute')?.value ?? '00'}`;
+
+  // 4. Resolve channel + send
+  const resolved = await resolveNotificationChannel(sb, appt.customer_phone, orgId, appt.locale);
+  const msgBody = tMsg('appointment_rescheduled', resolved.locale, {
+    name: orgName,
+    new_date: newDate,
+    new_time: newTime,
+  });
+  const { notified, notifyError } = await sendNotification(resolved, msgBody);
+
+  return { notified, channel: resolved.channel, notifyError };
+}
+
+/**
  * Called when a ticket reaches a terminal state (served, cancelled, no_show, transferred).
  *
  * Syncs the status back to the linked appointment:
