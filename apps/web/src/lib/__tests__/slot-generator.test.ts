@@ -87,6 +87,7 @@ function defaultOffice(overrides: Record<string, any> = {}, forDate?: string) {
 
 function defaultOrg(settingsOverrides: Record<string, any> = {}) {
   return {
+    timezone: 'UTC',
     settings: {
       booking_mode: 'simple',
       booking_horizon_days: 14,
@@ -300,8 +301,8 @@ describe('getAvailableSlots', () => {
       { scheduled_at: scheduledAt1 },
     ];
     const allDayAppointments = [
-      { id: 'a1' },
-      { id: 'a2' },
+      { id: 'a1', scheduled_at: scheduledAt1 },
+      { id: 'a2', scheduled_at: scheduledAt2 },
     ];
 
     setupStandard({
