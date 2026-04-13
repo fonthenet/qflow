@@ -381,8 +381,11 @@ export function logTicketEvent(
     toStatus?: string;
     source?: string;
     details?: Record<string, unknown>;
+    /** Set to true to also enqueue a cloud sync of this event to ticket_events */
+    syncToCloud?: boolean;
   }
 ) {
+  const now = new Date().toISOString();
   try {
     db.prepare(`
       INSERT INTO ticket_audit_log (ticket_id, ticket_number, event_type, from_status, to_status, source, details, created_at)
@@ -395,10 +398,35 @@ export function logTicketEvent(
       opts?.toStatus ?? null,
       opts?.source ?? 'station',
       JSON.stringify(opts?.details ?? {}),
-      new Date().toISOString()
+      now
     );
   } catch (err) {
     logger.error('audit', 'Failed to log ticket event', { err });
+  }
+
+  // Also enqueue cloud sync to ticket_events table
+  if (opts?.syncToCloud !== false) {
+    try {
+      const syncId = `${ticketId}-evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const cloudPayload: Record<string, unknown> = {
+        ticket_id: ticketId,
+        event_type: eventType,
+        from_status: opts?.fromStatus ?? null,
+        to_status: opts?.toStatus ?? null,
+        created_at: now,
+      };
+      // Include staff_id and desk_id from details if available
+      if (opts?.details?.staffId) cloudPayload.staff_id = opts.details.staffId;
+      if (opts?.details?.deskId) cloudPayload.desk_id = opts.details.deskId;
+      if (opts?.details) cloudPayload.metadata = opts.details;
+
+      db.prepare(`
+        INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at)
+        VALUES (?, 'INSERT', 'ticket_events', ?, ?, ?)
+      `).run(syncId, syncId, JSON.stringify(cloudPayload), now);
+    } catch (err) {
+      logger.error('audit', 'Failed to enqueue ticket_event cloud sync', { err });
+    }
   }
 }
 
