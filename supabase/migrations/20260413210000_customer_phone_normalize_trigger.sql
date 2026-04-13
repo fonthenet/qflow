@@ -63,19 +63,20 @@ BEGIN
   ELSIF length(digits) = 9 AND dial_code = '33' THEN
     e164 := '33' || digits;
   ELSE
-    NEW.phone := digits;
-    RETURN NEW;
+    -- Well-known country code detection (regardless of org timezone)
+    -- Catches numbers like 16612346622 (US) even when org is Algerian
+    e164 := digits;
   END IF;
 
   -- Convert E.164 back to local format (strip country code)
+  -- US/Canada (1) — check first with strict pattern to avoid false matches
+  IF e164 ~ '^1[2-9]' AND length(e164) = 11 THEN
+    NEW.phone := substring(e164 from 2);
+    RETURN NEW;
+  END IF;
   -- Algeria (213)
   IF e164 ~ '^213' AND length(e164) = 12 THEN
     NEW.phone := '0' || substring(e164 from 4);
-    RETURN NEW;
-  END IF;
-  -- US/Canada (1)
-  IF e164 ~ '^1' AND length(e164) = 11 THEN
-    NEW.phone := substring(e164 from 2);
     RETURN NEW;
   END IF;
   -- France (33)
