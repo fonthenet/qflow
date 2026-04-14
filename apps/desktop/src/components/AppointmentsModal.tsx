@@ -119,7 +119,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     if (!await styledConfirm(t('Delete this appointment?'), { variant: 'danger', confirmLabel: t('Delete') })) return;
     setBusyId(id);
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       const { error: dErr } = await sb.from('appointments').delete().eq('id', id);
       if (dErr) throw dErr;
@@ -135,7 +135,7 @@ export function AppointmentsModal({ organizationId: _organizationId, officeId, l
     setLoading(true);
     setError(null);
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
 
       // Anchor "today" to the OFFICE's local day, not the Station machine's

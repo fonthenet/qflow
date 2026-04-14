@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, safeStorage, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import fs from 'fs';
@@ -1252,16 +1252,8 @@ function setupIPC() {
   // ── Session ───────────────────────────────────────────────────────
 
   ipcMain.handle('session:save', (_e, session: any) => {
-    // Extract and encrypt password for silent re-auth (never stored in plaintext)
-    const pwd = session._pwd;
-    delete session._pwd; // never persist plaintext in session JSON
-
-    if (pwd && session.email && safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(pwd).toString('base64');
-      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('auth_cred', ?)")
-        .run(JSON.stringify({ email: session.email, enc: encrypted }));
-      logger.info('auth', 'Credentials encrypted and stored for silent re-auth');
-    }
+    // Pure token auth (v1.8.0) — no password storage
+    delete session._pwd; // strip if somehow still present
 
     // Generate a station_token for authenticating HTTP station endpoints
     const stationToken = randomUUID();
@@ -1269,6 +1261,9 @@ function setupIPC() {
       INSERT OR REPLACE INTO session (key, value, station_token)
       VALUES ('current', ?, ?)
     `).run(JSON.stringify(session), stationToken);
+
+    // Clean up any legacy stored credentials from pre-v1.8.0
+    try { db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run(); } catch {}
 
     // Register Station's local IP in office settings so web kiosk can discover it
     registerStationIP(session);
@@ -1285,23 +1280,12 @@ function setupIPC() {
   ipcMain.handle('session:load', () => {
     const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
     if (!row) return null;
-    const session = JSON.parse(row.value);
-    // Restore encrypted password for silent re-auth
-    try {
-      const credRow = db.prepare("SELECT value FROM session WHERE key = 'auth_cred'").get() as any;
-      if (credRow && safeStorage.isEncryptionAvailable()) {
-        const cred = JSON.parse(credRow.value);
-        if (cred.enc) {
-          session._pwd = safeStorage.decryptString(Buffer.from(cred.enc, 'base64'));
-        }
-      }
-    } catch { /* ignore decryption failures */ }
-    return session;
+    return JSON.parse(row.value);
   });
 
   ipcMain.handle('session:clear', () => {
     db.prepare("DELETE FROM session WHERE key = 'current'").run();
-    db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
+    try { db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run(); } catch {} // clean legacy
     // Stop sync engine on logout to prevent stale token errors
     syncEngine?.stop();
     notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() });

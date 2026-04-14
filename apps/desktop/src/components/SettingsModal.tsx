@@ -269,7 +269,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // ─── Resolve org id ───────────────────────────────────────────────
   const resolveOrgId = useCallback(async (): Promise<string> => {
     if (orgIdRef.current) return orgIdRef.current;
-    await ensureAuth(storedAuth);
+    await ensureAuth();
     const sb = await getSupabase();
     let orgId = organizationId;
     if (!orgId || orgId === 'undefined') {

@@ -188,7 +188,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   useEffect(() => {
     (async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         const { data: office } = await sb.from('offices').select('operating_hours, settings').eq('id', officeId).single();
         if (office?.operating_hours) setOperatingHours(office.operating_hours as OperatingHours);
@@ -223,7 +223,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   const reloadHolidays = useCallback(async () => {
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       const { data } = await sb.from('office_holidays')
         .select('id, holiday_date, name, is_full_day')
@@ -270,7 +270,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   // Fetch ALL appointments (including cancelled/declined) for activity log diffing
   const loadAll = useCallback(async (): Promise<CalendarAppointment[] | null> => {
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       // Fetch current month + 7 day buffer on each side for carousel side panels
       const monthRange = getMonthRange(currentDate.getFullYear(), currentDate.getMonth(), tz);
@@ -295,7 +295,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   // ── Activity log — independent fetch of recent business-wide activity ──
   const loadActivity = useCallback(async () => {
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       // Fetch last 50 appointments ordered by most recently changed
       const { data } = await sb
@@ -376,7 +376,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     // If not in current range, fetch it directly
     (async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         const { data } = await sb.from('appointments').select(APPT_SELECT).eq('id', initialAppointmentId).single();
         if (data) {
@@ -398,7 +398,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     let sub: any;
     (async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         sub = sb.channel(`calendar-appts-${officeId}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `office_id=eq.${officeId}` }, () => {
@@ -897,7 +897,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     // If not found (different month/range), fetch it directly
     if (!appt && entry.appointmentId) {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         const { data } = await sb
           .from('appointments')
@@ -991,7 +991,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     setDayOffBusy(true);
     setDayOffNotifyResult(null);
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       const allDates = expandRange(dayOffDialog.startDate, dayOffDialog.endDate);
       const rows = allDates
@@ -1010,7 +1010,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       // Send notifications to affected customers
       if (dayOffNotify.whatsapp || dayOffNotify.sms) {
         try {
-          const token = storedAuth?.access_token;
+          const token = await ensureAuth();
           const res = await fetch('https://qflo.net/api/dayoff-notify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -1039,7 +1039,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   const handleRemoveHoliday = async (dateKey: string) => {
     setCtxMenu(null);
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       await sb.from('office_holidays').delete()
         .eq('office_id', officeId)
@@ -1052,7 +1052,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     setCtxMenu(null);
     if (holidays.length === 0) return;
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       await sb.from('office_holidays').delete()
         .eq('office_id', officeId)
@@ -1097,7 +1097,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   const handleReschedule = useCallback(async (appointmentId: string, newDateKey: string, newTime: string, opts?: { skipSelect?: boolean }): Promise<boolean> => {
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       const appt = appointments.find(a => a.id === appointmentId);
       if (!appt) return false;
@@ -1151,7 +1151,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       try {
         fetch('https://qflo.net/api/notify-reschedule', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${storedAuth?.access_token ?? ''}` },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${await ensureAuth()}` },
           body: JSON.stringify({ appointmentId, newScheduledAt }),
         }).catch(err => console.error('[Calendar] reschedule notify error:', err));
       } catch {}
@@ -1185,7 +1185,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   const handleNotesChange = useCallback(async (appointmentId: string, notes: string) => {
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       await sb.from('appointments').update({ notes: notes || null }).eq('id', appointmentId);
       // Update local state so the grid reflects the change
@@ -3119,7 +3119,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
     if (raw.length < 1) { setCustHits([]); setShowCustHits(false); return; }
     const seq = ++custSeq.current;
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       const safe = raw.replace(/[%,()]/g, ' ').trim();
       const digits = raw.replace(/\D/g, '');
@@ -3557,7 +3557,7 @@ function DesktopApptDetail({
         // Fallback: fetch from Supabase
         if (storedAuth) {
           const { ensureAuth, getSupabase } = await import('../lib/supabase');
-          await ensureAuth(storedAuth);
+          await ensureAuth();
           const sb = await getSupabase();
           const { data } = await sb.from('tickets').select('ticket_number').eq('id', a.ticket_id).single();
           if (!cancelled && data?.ticket_number) setTicketNumber(data.ticket_number);
@@ -3646,7 +3646,7 @@ function DesktopApptDetail({
         // 2) Supabase ticket_events (covers events from other Stations / web)
         if (!cancelled && storedAuth) {
           try {
-            await ensureAuth(storedAuth);
+            await ensureAuth();
             const sb = await getSupabase();
             const { data: ticketEvents } = await sb
               .from('ticket_events')

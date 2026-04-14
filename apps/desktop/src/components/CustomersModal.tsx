@@ -298,7 +298,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
 
   const resolveOrgId = useCallback(async (): Promise<string> => {
     if (orgIdRef.current) return orgIdRef.current;
-    await ensureAuth(storedAuth);
+    await ensureAuth();
     const sb = await getSupabase();
     let orgId = organizationId;
     if (!orgId || orgId === 'undefined') {
@@ -446,7 +446,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     setSendError(null);
     setSendResult(null);
     try {
-      const accessToken = await ensureAuth(storedAuth);
+      const accessToken = await ensureAuth();
       if (!accessToken) throw new Error('Not authenticated');
 
       const res = await fetch('https://qflo.net/api/customer-broadcast', {

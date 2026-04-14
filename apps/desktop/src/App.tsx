@@ -56,6 +56,7 @@ export function App() {
   });
   const [staffStatus, setStaffStatus] = useState<'available' | 'on_break' | 'away'>('available');
   const [queuePaused, setQueuePaused] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Apply saved theme on mount (ensures CSS variables are set even if index.html script missed it)
   useEffect(() => {
@@ -169,6 +170,14 @@ export function App() {
     return () => { unsub(); };
   }, []);
 
+  // Listen for session expired — pure token auth, no password fallback
+  useEffect(() => {
+    const unsub = window.qf.auth?.onSessionExpired?.(() => {
+      setSessionExpired(true);
+    });
+    return () => { unsub?.(); };
+  }, []);
+
   // Listen for sync status changes
   useEffect(() => {
     const unsub1 = window.qf.sync.onStatusChange((status: string) => {
@@ -237,9 +246,10 @@ export function App() {
     return translate(locale, key, values);
   }, [locale]);
 
-  // Note: we intentionally do NOT auto-logout on auth errors.
-  // The sync engine logs token issues and retries automatically.
-  // The user sees "Offline Mode" and can manually sign out/in if needed.
+  const handleReLogin = useCallback(async () => {
+    setSessionExpired(false);
+    await handleLogout();
+  }, [handleLogout]);
 
   const handleInstallNow = useCallback(() => {
     window.qf.updater?.installUpdate?.();
@@ -258,6 +268,32 @@ export function App() {
     <ErrorBoundary locale={locale}>
       <ConfirmDialogProvider>
       <div className="app">
+        {/* Session expired overlay — QF-AUTH-001 */}
+        {sessionExpired && session && (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              background: 'var(--bg, #fff)', borderRadius: 16, padding: '40px 48px',
+              textAlign: 'center', maxWidth: 420, boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🔑</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px', color: 'var(--text)' }}>{t('Session Expired')}</h2>
+              <p style={{ fontSize: 14, color: 'var(--text2)', margin: '0 0 8px' }}>{t('Your login session has expired. Please log in again to continue.')}</p>
+              <p style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text3)', margin: '0 0 20px', opacity: 0.7 }}>QF-AUTH-001</p>
+              <button
+                onClick={handleReLogin}
+                style={{
+                  padding: '12px 32px', background: 'var(--primary, #2563eb)', color: '#fff',
+                  border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+                }}
+              >
+                {t('Log In Again')}
+              </button>
+            </div>
+          </div>
+        )}
         {/* Update progress overlay — visible during download and when ready to install */}
         {(updateStatus.status === 'downloading' || updateStatus.status === 'available') && (
           <div style={{

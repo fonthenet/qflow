@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
-import { safeStorage } from 'electron';
 import { CONFIG } from './config';
 import { logTicketEvent } from './db';
 import { logger } from './logger';
+import { createQfError } from './error-codes';
 
 type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') => void;
 type ProgressCallback = (pendingCount: number) => void;
@@ -482,28 +482,25 @@ export class SyncEngine {
   // Core refresh — calls Supabase auth endpoint with refresh_token
   // Falls back to silent re-auth with stored encrypted credentials if refresh_token is dead
   private async refreshAccessToken(): Promise<string | null> {
-    // MULTI-PC FIX: Always use password-based re-auth instead of refresh token rotation.
-    // Refresh token rotation causes a "token war" when multiple PCs use the same account —
-    // each PC's refresh invalidates the other's token, causing data to flicker/disappear.
-    // Password-based auth creates independent sessions per device that don't conflict.
-    logger.info('sync.token', 'Refreshing access token via silent re-auth (multi-PC safe)...');
-    const result = await this.silentReAuth();
-    if (result) return result;
-
-    // Fallback: try refresh_token if silent re-auth fails (e.g. no stored credentials)
+    // PURE TOKEN AUTH: Only use refresh_token. No password storage.
+    // Each device gets its own session at login time. The main process
+    // is the single source of truth for tokens. If refresh fails after
+    // 5 consecutive attempts, prompt re-login.
     const session = this.getSessionFromDB();
     if (!session?.refresh_token) {
-      logger.warn('sync.token', 'No refresh_token and silent re-auth failed');
+      const err = createQfError('QF-AUTH-003', { reason: 'no refresh_token in session' });
+      logger.warn('sync.token', err.message, { code: err.code });
       this.consecutiveRefreshFailures++;
       if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-        logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
+        const authErr = createQfError('QF-AUTH-001', { failures: this.consecutiveRefreshFailures });
+        logger.error('sync.token', authErr.message, { code: authErr.code });
         this.onAuthError();
       }
       return null;
     }
 
     try {
-      logger.info('sync.token', 'Trying refresh_token as fallback...');
+      logger.info('sync.token', 'Refreshing access token via refresh_token...');
       const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: {
@@ -516,10 +513,12 @@ export class SyncEngine {
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        logger.warn('sync.token', 'Refresh token fallback also failed', { status: res.status, body: body.slice(0, 200) });
+        const err = createQfError('QF-AUTH-002', { status: res.status, body: body.slice(0, 200) });
+        logger.warn('sync.token', err.message, { code: err.code, status: res.status });
         this.consecutiveRefreshFailures++;
         if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-          logger.error('sync.token', 'All auth methods exhausted — prompting re-login');
+          const authErr = createQfError('QF-AUTH-001', { failures: this.consecutiveRefreshFailures });
+          logger.error('sync.token', authErr.message, { code: authErr.code });
           this.onAuthError();
         }
         return null;
@@ -539,91 +538,12 @@ export class SyncEngine {
       this.lastTokenRefreshAt = Date.now();
       this.consecutiveRefreshFailures = 0;
 
-      logger.info('sync.token', 'Access token refreshed via refresh_token fallback');
+      logger.info('sync.token', 'Access token refreshed successfully');
       try { this.onTokenRefreshed(data.access_token); } catch {}
       return data.access_token;
     } catch (err: any) {
-      logger.warn('sync.token', 'Token refresh network error', { error: err?.message ?? err });
-      return null;
-    }
-  }
-
-  /**
-   * Silent re-authentication: uses OS-encrypted stored credentials to get
-   * a brand new Supabase session when the refresh token is dead.
-   * Zero user intervention — the station heals itself.
-   */
-  private async silentReAuth(): Promise<string | null> {
-    try {
-      if (!safeStorage.isEncryptionAvailable()) {
-        logger.warn('sync.reAuth', 'OS encryption not available — cannot decrypt stored credentials');
-        return null;
-      }
-
-      const credRow = this.db.prepare("SELECT value FROM session WHERE key = 'auth_cred'").get() as any;
-      if (!credRow) {
-        logger.warn('sync.reAuth', 'No stored credentials found — user must sign in manually');
-        return null;
-      }
-
-      const cred = JSON.parse(credRow.value);
-      if (!cred?.email || !cred?.enc) return null;
-
-      // Decrypt password using OS credential store (Windows DPAPI / macOS Keychain)
-      const password = safeStorage.decryptString(Buffer.from(cred.enc, 'base64'));
-
-      logger.info('sync.reAuth', 'Attempting silent re-auth', { email: cred.email });
-      const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=password`, {
-        method: 'POST',
-        headers: {
-          apikey: this.supabaseKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: cred.email, password }),
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        logger.warn('sync.reAuth', 'Re-auth failed', { status: res.status, body: body.slice(0, 200) });
-        // If password was changed, credentials are stale — clear them
-        if (res.status === 400 || res.status === 401) {
-          this.db.prepare("DELETE FROM session WHERE key = 'auth_cred'").run();
-          logger.warn('sync.reAuth', 'Stored credentials invalidated — user must sign in manually');
-        }
-        return null;
-      }
-
-      const data = await res.json();
-      if (!data.access_token || !data.refresh_token) return null;
-
-      // Update session with fresh tokens
-      const session = this.getSessionFromDB();
-      const updated = {
-        ...session,
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-      };
-      this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
-
-      // Update in-memory cache
-      this.cachedAccessToken = data.access_token;
-      this.lastTokenRefreshAt = Date.now();
-      this.consecutiveRefreshFailures = 0;
-
-      logger.info('sync.reAuth', 'Silent re-auth succeeded — station is back online');
-      // Notify renderer so it can update its Supabase client immediately
-      try { this.onTokenRefreshed(data.access_token); } catch {}
-
-      // Auto-retry all stuck AUTH_EXPIRED items
-      this.db.prepare(
-        "UPDATE sync_queue SET attempts = 0, last_error = NULL, next_retry_at = NULL WHERE synced_at IS NULL AND last_error LIKE '%AUTH_EXPIRED%'"
-      ).run();
-      this.updatePendingCount();
-
-      return data.access_token;
-    } catch (err: any) {
-      logger.warn('sync.reAuth', 'Silent re-auth error', { error: err?.message ?? err });
+      const qfErr = createQfError('QF-NET-001', { error: err?.message });
+      logger.warn('sync.token', 'Token refresh network error', { code: qfErr.code, error: err?.message ?? err });
       return null;
     }
   }

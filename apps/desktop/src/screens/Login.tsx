@@ -169,7 +169,6 @@ export function Login({ onLogin, locale }: Props) {
         office_ids: officeIds,
         access_token: auth.session?.access_token,
         refresh_token: auth.session?.refresh_token,
-        _pwd: password, // passed to main process for encrypted storage (silent re-auth)
       };
 
       onLogin(session);

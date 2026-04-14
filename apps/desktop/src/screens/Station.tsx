@@ -105,7 +105,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   onCollapse: () => void;
   session: any;
   prefill?: { name?: string; phone?: string; notes?: string; futureDate?: string; futureTime?: string } | null;
-  storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
+  storedAuth?: Record<string, unknown>;
   timezone?: string;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
@@ -150,7 +150,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     if (raw.length < 1) { setCustSuggestions([]); setShowCustSuggestions(false); return; }
     const mySeq = ++custSearchSeq.current;
     try {
-      await ensureAuth(storedAuth);
+      await ensureAuth();
       const sb = await getSupabase();
       let orgId = session?.organization_id;
       if (!orgId || orgId === 'undefined') {
@@ -1440,7 +1440,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         try {
           const { ensureAuth } = await import('../lib/supabase');
           const { getSupabase } = await import('../lib/supabase');
-          await ensureAuth({ access_token: session.access_token, refresh_token: session.refresh_token, email: session.email, password: session._pwd });
+          await ensureAuth();
           const sb = await getSupabase();
           // Get org timezone + settings via the organization_id
           const { data: orgData } = await sb.from('organizations').select('timezone, settings').eq('id', session.organization_id).single();
@@ -1460,12 +1460,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     })();
     return () => { cancelled = true; };
   }, [session.organization_id, settingsVersion]);
-  const storedAuth = useMemo(() => ({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    email: session.email,
-    password: session._pwd,
-  }), [session.access_token, session.refresh_token, session.email, session._pwd]);
+  // storedAuth kept as empty stub for prop compatibility — ensureAuth() uses IPC (pure token auth v1.8.0)
+  const storedAuth = useMemo(() => ({}), []);
   // Today's counter + RDV side panel
   const [todayStats, setTodayStats] = useState<{ walkins: number; rdv: number }>({ walkins: 0, rdv: 0 });
   const [todayAppointments, setTodayAppointments] = useState<Array<{ id: string; customer_name: string | null; customer_phone: string | null; scheduled_at: string; status: string; wilaya: string | null; notes: string | null; service_id: string | null; department_id: string | null; source: string | null }>>([]);
@@ -1689,7 +1685,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     let cancelled = false;
     const fetchToday = async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         // Anchor "today" to the OFFICE's local day, not the Station machine's
         // local day. Otherwise an operator running the Station from a different
@@ -1745,7 +1741,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     let channel: any;
     const fetchPending = async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         const { data, error } = await sb
           .from('tickets')
@@ -1837,7 +1833,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     let channel: any;
     const fetchPendingAppts = async () => {
       try {
-        await ensureAuth(storedAuth);
+        await ensureAuth();
         const sb = await getSupabase();
         const nowIso = new Date().toISOString();
         const { data, error } = await sb
@@ -1928,7 +1924,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   ): Promise<boolean> => {
     setRdvBusyId(apptId);
     try {
-      const token = await ensureAuth(storedAuth);
+      const token = await ensureAuth();
 
       // ── call / serve: ticket-level actions — reuse existing queue path ──
       // Find the linked ticket and delegate to updateTicketStatus (same as queue buttons)
@@ -2517,7 +2513,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     try {
       const messageBody = msg[broadcastLang] || msg.fr || msg.ar;
       console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
-      const accessToken = await ensureAuth(storedAuth);
+      const accessToken = await ensureAuth();
       console.log('[broadcast] Token present:', !!accessToken, 'len:', accessToken.length);
       const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',

@@ -20,30 +20,21 @@ export async function restoreSession(accessToken: string, refreshToken: string):
 /**
  * Ensure the Supabase client has a valid auth session (for RLS).
  *
- * STRATEGY (v1.5.87+): Main process is the SINGLE SOURCE OF TRUTH for tokens.
- * The renderer asks main process for a fresh token via IPC instead of
- * managing its own refresh logic. This eliminates token drift between
- * the SyncEngine and the renderer's Supabase client.
- *
- * Fallback: if IPC fails (shouldn't happen), tries local refresh.
+ * PURE TOKEN AUTH (v1.8.0+): Main process is the SINGLE SOURCE OF TRUTH.
+ * The renderer asks main process for a fresh token via IPC.
+ * No passwords stored anywhere. If token is expired and refresh fails,
+ * the user is prompted to log in again (QF-AUTH-001).
  */
-export async function ensureAuth(stored?: {
-  access_token?: string;
-  refresh_token?: string;
-  email?: string;
-  password?: string;
-}): Promise<string> {
+export async function ensureAuth(): Promise<string> {
   const sb = await getSupabase();
 
-  // ── PRIMARY: Ask main process for a valid token (single source of truth) ──
-  // MULTI-PC FIX: Never refresh tokens from the renderer — only the main process
-  // handles auth to avoid token rotation wars between multiple PCs.
+  // Ask main process for a valid token (single source of truth)
   try {
     const result = await window.qf.auth.getToken();
     if (result?.ok && result.token) {
       await sb.auth.setSession({
         access_token: result.token,
-        refresh_token: '', // Don't pass refresh tokens — main process manages them
+        refresh_token: '', // Main process manages refresh tokens
       });
       return result.token;
     }
@@ -51,18 +42,7 @@ export async function ensureAuth(stored?: {
     console.warn('[supabase] IPC auth:get-token failed', err);
   }
 
-  // ── FALLBACK: Password re-auth (does NOT use refresh tokens, safe for multi-PC) ──
-  if (stored?.email && stored?.password) {
-    try {
-      const { data: { session } } = await sb.auth.signInWithPassword({
-        email: stored.email,
-        password: stored.password,
-      });
-      if (session?.access_token) return session.access_token;
-    } catch { /* ignore */ }
-  }
-
-  console.error('[supabase] All auth methods failed — queries will return empty results');
+  console.error('[supabase] Auth failed (QF-AUTH-001) — queries will return empty results');
   return '';
 }
 
