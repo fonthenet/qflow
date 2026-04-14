@@ -2131,10 +2131,18 @@ app.whenReady().then(async () => {
     }
   });
   autoUpdater.on('error', (error) => {
+    const msg = error?.message || '';
+    const isPermission = msg.includes('EPERM') || msg.includes('EACCES') || msg.includes('elevation');
+    logger.error('update', 'Auto-update error', {
+      code: isPermission ? 'QF-INSTALL-002' : 'QF-INSTALL-001',
+      message: msg,
+    });
     setUpdateStatus({
       status: 'error',
       progress: null,
-      message: error?.message || translate(currentLocale, 'Update check failed'),
+      message: isPermission
+        ? `QF-INSTALL-002: ${translate(currentLocale, 'Update failed — app needs admin permission. Please download and install manually.')}`
+        : `QF-INSTALL-001: ${error?.message || translate(currentLocale, 'Update check failed')}`,
     });
   });
 
