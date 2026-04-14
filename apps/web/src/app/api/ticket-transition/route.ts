@@ -159,22 +159,22 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Sync linked appointment status ────────────────────────────────
-  if (!alreadyInState && !skipStatusUpdate) {
-    if (status === 'served' || status === 'cancelled' || status === 'no_show') {
-      try {
-        const { onTicketTerminal } = await import('@/lib/lifecycle');
-        await onTicketTerminal(ticketId, status);
-      } catch (e: any) {
-        console.warn('[ticket-transition] lifecycle sync failed:', e?.message);
-      }
-      // Sync final ticket notes to linked appointment
-      if (notes !== undefined) {
-        await syncNotesToAppointment(supabase, ticketId, notes || null);
-      } else {
-        // Fetch ticket notes if not provided in this request
-        const { data: tkNotes } = await supabase.from('tickets').select('notes').eq('id', ticketId).single();
-        if (tkNotes?.notes) await syncNotesToAppointment(supabase, ticketId, tkNotes.notes);
-      }
+  // ALWAYS sync appointment for terminal statuses, even if ticket was already
+  // in this state (race: sync queue may update ticket before this API call).
+  if (status === 'served' || status === 'cancelled' || status === 'no_show') {
+    try {
+      const { onTicketTerminal } = await import('@/lib/lifecycle');
+      await onTicketTerminal(ticketId, status);
+    } catch (e: any) {
+      console.warn('[ticket-transition] lifecycle sync failed:', e?.message);
+    }
+    // Sync final ticket notes to linked appointment
+    if (notes !== undefined) {
+      await syncNotesToAppointment(supabase, ticketId, notes || null);
+    } else {
+      // Fetch ticket notes if not provided in this request
+      const { data: tkNotes } = await supabase.from('tickets').select('notes').eq('id', ticketId).single();
+      if (tkNotes?.notes) await syncNotesToAppointment(supabase, ticketId, tkNotes.notes);
     }
   }
 

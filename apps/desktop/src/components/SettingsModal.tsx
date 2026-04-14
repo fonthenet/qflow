@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
+import DatePicker from './DatePicker';
+import TimePicker from './TimePicker';
 
 interface Props {
   organizationId: string;
@@ -937,23 +939,23 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                     {!d.closed && (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-                          <input
-                            type="time"
+                          <TimePicker
                             value={d.open}
                             onChange={(e) => setSchedule(prev => ({
                               ...prev,
                               [day.key]: { ...prev[day.key], open: e.target.value },
                             }))}
+                            step={15}
                             style={{ ...inputStyle, width: 95, padding: '3px 5px', fontSize: 11 }}
                           />
                           <span style={{ fontSize: 10, color: 'var(--text3, #64748b)' }}>→</span>
-                          <input
-                            type="time"
+                          <TimePicker
                             value={d.close}
                             onChange={(e) => setSchedule(prev => ({
                               ...prev,
                               [day.key]: { ...prev[day.key], close: e.target.value },
                             }))}
+                            step={15}
                             style={{ ...inputStyle, width: 95, padding: '3px 5px', fontSize: 11 }}
                           />
                         </div>
@@ -1016,17 +1018,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   {!d.closed && hasBreak && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 75 }}>
                       <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>☕ {t('sm.break')}</span>
-                      <input
-                        type="time"
+                      <TimePicker
                         value={d.break_start || '12:00'}
                         onChange={(e) => setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_start: e.target.value } }))}
+                        step={15}
                         style={{ ...inputStyle, width: 95, padding: '2px 5px', fontSize: 11 }}
                       />
                       <span style={{ fontSize: 10, color: 'var(--text3, #64748b)' }}>→</span>
-                      <input
-                        type="time"
+                      <TimePicker
                         value={d.break_end || '13:00'}
                         onChange={(e) => setSchedule(prev => ({ ...prev, [day.key]: { ...prev[day.key], break_end: e.target.value } }))}
+                        step={15}
                         style={{ ...inputStyle, width: 95, padding: '2px 5px', fontSize: 11 }}
                       />
                     </div>
@@ -1086,8 +1088,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
             background: 'rgba(59,130,246,0.04)', border: '1px dashed rgba(59,130,246,0.2)',
           }}>
-            <input
-              type="date"
+            <DatePicker
               value={newHolidayDate}
               onChange={(e) => setNewHolidayDate(e.target.value)}
               style={{ ...inputStyle, width: 130, padding: '3px 5px', fontSize: 11 }}

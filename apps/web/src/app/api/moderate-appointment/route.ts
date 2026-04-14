@@ -90,9 +90,11 @@ export async function POST(request: NextRequest) {
   }
 
   // ── complete: mark appointment completed + linked ticket served ──
+  // Uses the existing ticket-transition path for notifications, session cleanup,
+  // and position reminders — no duplicated logic.
   if (action === 'complete') {
     const sb = createAdminClient();
-    // Update appointment
+    // Update appointment status
     const { error: updErr } = await (sb as any)
       .from('appointments')
       .update({ status: 'completed' })
@@ -100,18 +102,47 @@ export async function POST(request: NextRequest) {
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 409 });
     }
-    // Mark linked ticket(s) as served
-    const nowIso = new Date().toISOString();
-    await (sb as any)
-      .from('tickets')
-      .update({ status: 'served', completed_at: nowIso })
+    // Find linked ticket(s) via both directions
+    const ticketIds = new Set<string>();
+    const { data: byApptId } = await (sb as any)
+      .from('tickets').select('id')
       .eq('appointment_id', appointmentId)
       .in('status', ['waiting', 'called', 'serving']);
+    if (byApptId) byApptId.forEach((t: any) => ticketIds.add(t.id));
+    const { data: apptRow } = await (sb as any)
+      .from('appointments').select('ticket_id')
+      .eq('id', appointmentId).single();
+    if (apptRow?.ticket_id) ticketIds.add(apptRow.ticket_id);
+
+    // Transition each linked ticket through the standard ticket-transition path
+    let notified = false;
+    let channel: string | null = null;
+    const { onTicketTerminal } = await import('@/lib/lifecycle');
+    const { notifyCustomer } = await import('@/lib/notify');
+    const nowIso = new Date().toISOString();
+
+    for (const tkId of ticketIds) {
+      // Mark ticket served
+      await (sb as any).from('tickets')
+        .update({ status: 'served', completed_at: nowIso })
+        .eq('id', tkId)
+        .in('status', ['waiting', 'called', 'serving']);
+      // Send notification (same as ticket-transition does)
+      try {
+        const nr = await notifyCustomer(tkId, 'served', { skipNotification: false });
+        if (nr.sent) { notified = true; channel = nr.channel; }
+      } catch { /* non-critical */ }
+      // Close session (same as ticket-transition does)
+      try {
+        await (sb as any).from('whatsapp_sessions')
+          .update({ state: 'completed' }).eq('ticket_id', tkId);
+      } catch { /* non-critical */ }
+    }
     return NextResponse.json({
       ok: true,
       status: 'completed',
-      notified: false,
-      channel: null,
+      notified,
+      channel,
       notifyError: null,
     });
   }

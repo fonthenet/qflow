@@ -537,7 +537,7 @@ export async function rescheduleAppointment(appointmentId: string, newScheduledA
     .single();
 
   if (fetchErr || !appt) return { error: 'Appointment not found' };
-  if (appt.status === 'cancelled' || appt.status === 'completed') {
+  if (['cancelled', 'completed', 'no_show', 'declined'].includes(appt.status)) {
     return { error: `Cannot reschedule a ${appt.status} appointment` };
   }
 

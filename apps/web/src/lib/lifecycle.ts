@@ -400,8 +400,6 @@ export async function onTicketTerminal(
       .eq('id', ticketId)
       .single();
 
-    if (!ticket?.appointment_id) return;
-
     const appointmentStatus =
       terminalStatus === 'served' ? 'completed' :
       terminalStatus === 'transferred' ? 'confirmed' :
@@ -409,22 +407,36 @@ export async function onTicketTerminal(
 
     // Sync notes back to appointment + update status
     const apptUpdate: Record<string, any> = { status: appointmentStatus };
-    if (ticket.notes) apptUpdate.notes = ticket.notes;
+    if (ticket?.notes) apptUpdate.notes = ticket.notes;
 
-    // Only update if appointment is in an active state
+    // Active states that can transition to a terminal state
+    const activeStates = ['pending', 'confirmed', 'checked_in', 'serving'];
+
+    // Direction 1: ticket.appointment_id → appointment (primary link)
+    if (ticket?.appointment_id) {
+      await sb
+        .from('appointments')
+        .update(apptUpdate)
+        .eq('id', ticket.appointment_id)
+        .in('status', activeStates);
+
+      // For transfers: re-link appointment to the new ticket
+      if (terminalStatus === 'transferred' && opts.newTicketId) {
+        await sb
+          .from('appointments')
+          .update({ ticket_id: opts.newTicketId })
+          .eq('id', ticket.appointment_id);
+      }
+    }
+
+    // Direction 2: appointment.ticket_id → ticket (reverse link, safety net)
+    // This catches cases where ticket.appointment_id wasn't set but
+    // appointment.ticket_id was (e.g. check-in sets both, but sync may lose one)
     await sb
       .from('appointments')
       .update(apptUpdate)
-      .eq('id', ticket.appointment_id)
-      .in('status', ['pending', 'confirmed', 'checked_in']);
-
-    // For transfers: re-link appointment to the new ticket
-    if (terminalStatus === 'transferred' && opts.newTicketId) {
-      await sb
-        .from('appointments')
-        .update({ ticket_id: opts.newTicketId })
-        .eq('id', ticket.appointment_id);
-    }
+      .eq('ticket_id', ticketId)
+      .in('status', activeStates);
   } catch (err) {
     console.error(`[lifecycle:onTicketTerminal] Failed for ticket ${ticketId}:`, err);
   }

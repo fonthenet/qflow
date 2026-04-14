@@ -3,6 +3,7 @@ import { getSupabase, ensureAuth } from '../lib/supabase';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilayas';
 import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
+import DatePicker from './DatePicker';
 import { GoogleSheetsModal } from './GoogleSheetsModal';
 import { normalizePhone } from '@qflo/shared';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -691,8 +692,9 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           background: 'var(--surface, #1e293b)', width: '100%', height: '100%',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         } : {
-          background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 920,
+          background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: detail ? 1280 : 920,
           maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          transition: 'max-width 0.2s ease',
           border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
       >
@@ -967,224 +969,224 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           </div>
         </div>
 
-        {/* List */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px' }}>
-          {loading ? (
-            <p style={{ textAlign: 'center', color: 'var(--text2, #94a3b8)', padding: 40 }}>{t('Loading...')}</p>
-          ) : error ? (
-            <p style={{ textAlign: 'center', color: 'var(--danger, #ef4444)', padding: 40 }}>{error}</p>
-          ) : filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3, #64748b)' }}>
-              <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.4 }}>👥</div>
-              <p style={{ margin: 0 }}>{search ? t('No matches') : t('No customers found')}</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {grouped.map((grp, gi) => (
-                <div key={gi}>
-                  {grp.label && (
-                    <div style={{
-                      margin: '10px 0 6px', padding: '6px 10px', borderRadius: 6,
-                      background: 'rgba(59,130,246,0.08)', color: '#3b82f6',
-                      fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
-                    }}>{grp.label} · {grp.items.length}</div>
-                  )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {grp.items.map((c) => {
-                const seed = c.id || c.phone || c.name || 'x';
-                return (
-                  <div
-                    key={c.id}
-                    onClick={() => openDetail(c)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '12px 14px', borderRadius: 10,
-                      background: 'var(--bg, #0f172a)', border: '1px solid var(--border, #475569)',
-                      transition: 'border-color 0.15s, transform 0.15s',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary, #3b82f6)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border, #475569)'; }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected.has(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => toggleOne(c.id)}
-                      style={{ width: 16, height: 16, accentColor: 'var(--primary, #3b82f6)', cursor: 'pointer' }}
-                    />
-                    <div style={{
-                      width: 40, height: 40, borderRadius: 20, flexShrink: 0,
-                      background: avatarColor(seed), color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 700, fontSize: 13,
-                    }}>{initials(c.name, c.phone)}</div>
+        {/* List + Detail side panel */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {/* Customer list */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 22px 16px', minWidth: 0 }}>
+            {loading ? (
+              <p style={{ textAlign: 'center', color: 'var(--text2, #94a3b8)', padding: 40 }}>{t('Loading...')}</p>
+            ) : error ? (
+              <p style={{ textAlign: 'center', color: 'var(--danger, #ef4444)', padding: 40 }}>{error}</p>
+            ) : filtered.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3, #64748b)' }}>
+                <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.4 }}>👥</div>
+                <p style={{ margin: 0 }}>{search ? t('No matches') : t('No customers found')}</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {grouped.map((grp, gi) => (
+                  <div key={gi}>
+                    {grp.label && (
+                      <div style={{
+                        margin: '10px 0 6px', padding: '6px 10px', borderRadius: 6,
+                        background: 'rgba(59,130,246,0.08)', color: '#3b82f6',
+                        fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
+                      }}>{grp.label} · {grp.items.length}</div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {grp.items.map((c) => {
+                  const seed = c.id || c.phone || c.name || 'x';
+                  const isActive = detail?.id === c.id;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => openDetail(c)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 14px', borderRadius: 10,
+                        background: isActive ? 'rgba(59,130,246,0.1)' : 'var(--bg, #0f172a)',
+                        border: `1px solid ${isActive ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)'}`,
+                        transition: 'border-color 0.15s, background 0.15s',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = 'var(--primary, #3b82f6)'; }}
+                      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = 'var(--border, #475569)'; }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(c.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => toggleOne(c.id)}
+                        style={{ width: 16, height: 16, accentColor: 'var(--primary, #3b82f6)', cursor: 'pointer' }}
+                      />
+                      <div style={{
+                        width: 40, height: 40, borderRadius: 20, flexShrink: 0,
+                        background: avatarColor(seed), color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 700, fontSize: 13,
+                      }}>{initials(c.name, c.phone)}</div>
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {c.name || t('Unknown')}
-                        </span>
-                        {(c.visit_count || 0) >= 2 && (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
-                            background: 'rgba(59,130,246,0.15)', color: '#3b82f6', textTransform: 'uppercase',
-                          }}>{t('Repeat')}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.name || t('Unknown')}
+                          </span>
+                          {(c.visit_count || 0) >= 2 && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10,
+                              background: 'rgba(59,130,246,0.15)', color: '#3b82f6', textTransform: 'uppercase',
+                            }}>{t('Repeat')}</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3, #64748b)' }}>
+                          {c.phone && <span style={{ direction: 'ltr' }}>📱 {formatPhoneDisplay(c.phone)}</span>}
+                          {c.email && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {c.email}</span>}
+                        </div>
+                        {!detail && c.notes && (
+                          <div style={{
+                            marginTop: 4, fontSize: 11, color: 'var(--text2, #94a3b8)',
+                            fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: 480,
+                          }}>📝 {c.notes}</div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', gap: 12, marginTop: 2, fontSize: 12, color: 'var(--text3, #64748b)' }}>
-                        {c.phone && <span style={{ direction: 'ltr' }}>📱 {formatPhoneDisplay(c.phone)}</span>}
-                        {c.email && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {c.email}</span>}
+
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{c.visit_count || 0}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</div>
                       </div>
-                      {c.notes && (
-                        <div style={{
-                          marginTop: 4, fontSize: 11, color: 'var(--text2, #94a3b8)',
-                          fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap', maxWidth: 480,
-                        }}>📝 {c.notes}</div>
+                      {!detail && (
+                        <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 48 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)' }}>{timeAgo(c.last_visit_at, t)}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Last Visit')}</div>
+                        </div>
                       )}
                     </div>
+                  );
+                })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>{c.visit_count || 0}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Visits')}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 48 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)' }}>{timeAgo(c.last_visit_at, t)}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text3, #64748b)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{t('Last Visit')}</div>
-                    </div>
-                  </div>
-                );
-              })}
-                  </div>
+          {/* Customer detail — right side panel */}
+          {detail && (
+            <div
+              style={{
+                width: 420, minWidth: 420, flexShrink: 0,
+                borderLeft: '1px solid var(--border, #475569)',
+                background: 'var(--surface, #1e293b)',
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              }}
+            >
+              <div style={{
+                padding: '16px 18px', borderBottom: '1px solid var(--border, #475569)',
+                display: 'flex', alignItems: 'center', gap: 10,
+                background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
+              }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 22, flexShrink: 0,
+                  background: avatarColor(detail.id), color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 700, fontSize: 15,
+                }}>{initials(detail.name, detail.phone)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, color: 'var(--text, #f1f5f9)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {detail.name || t('Unknown')}
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text3, #64748b)' }}>
+                    {(detail.visit_count || 0)} {t('Visits')} · {detail.last_visit_at ? timeAgo(detail.last_visit_at, t) : '—'}
+                  </p>
                 </div>
-              ))}
+                <button
+                  onClick={() => { if (!detailBusy) setDetail(null); }}
+                  style={{
+                    background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                    width: 28, height: 28, borderRadius: 6, fontSize: 16, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >×</button>
+              </div>
+
+              <div style={{ flex: 1, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto' }}>
+                {detail.file_number && (
+                  <div style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
+                    {t('File number')}: <span style={{ color: 'var(--text, #f1f5f9)', fontFamily: 'monospace' }}>{detail.file_number}</span>
+                  </div>
+                )}
+                <CustomerFormFields
+                  t={t}
+                  form={detailForm}
+                  setField={setDetailField as any}
+                  disabled={detailBusy}
+                />
+                {detailError && (
+                  <div style={{
+                    padding: 10, borderRadius: 8,
+                    background: 'rgba(239,68,68,0.12)', color: 'var(--danger, #ef4444)', fontSize: 13,
+                  }}>{detailError}</div>
+                )}
+              </div>
+
+              <div style={{
+                padding: '12px 18px', borderTop: '1px solid var(--border, #475569)',
+                display: 'flex', flexDirection: 'column', gap: 8,
+              }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {onBookCustomer && (
+                    <button
+                      onClick={() => {
+                        if (!detail) return;
+                        onBookCustomer({
+                          name: detail.name ?? '',
+                          phone: formatPhoneDisplay(detail.phone),
+                          notes: detail.notes ?? '',
+                        });
+                        setDetail(null);
+                        onClose();
+                      }}
+                      disabled={detailBusy}
+                      style={{
+                        flex: 1, background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
+                        padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      }}
+                    >📅 {t('Book')}</button>
+                  )}
+                  <button
+                    onClick={handleSaveDetail}
+                    disabled={detailBusy}
+                    style={{
+                      flex: 1, background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
+                      padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                      cursor: detailBusy ? 'wait' : 'pointer', opacity: detailBusy ? 0.6 : 1,
+                    }}
+                  >{detailBusy ? t('Saving...') : t('Save')}</button>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={handleDeleteDetail}
+                    disabled={detailBusy}
+                    style={{
+                      background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--danger, #ef4444)',
+                      padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', flex: 1,
+                    }}
+                  >🗑 {t('Delete')}</button>
+                  <button
+                    onClick={() => { if (!detailBusy) setDetail(null); }}
+                    disabled={detailBusy}
+                    style={{
+                      background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
+                      padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', flex: 1,
+                    }}
+                  >{t('Close')}</button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      {/* Customer detail / notes modal */}
-      {detail && (
-        <div
-          onClick={(e) => { e.stopPropagation(); if (!detailBusy) setDetail(null); }}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)',
-            zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: 720,
-              maxHeight: '88vh', border: '1px solid var(--border, #475569)',
-              boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
-              display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            }}
-          >
-            <div style={{
-              padding: '18px 22px', borderBottom: '1px solid var(--border, #475569)',
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: 'linear-gradient(180deg, rgba(59,130,246,0.08), transparent)',
-            }}>
-              <div style={{
-                width: 48, height: 48, borderRadius: 24, flexShrink: 0,
-                background: avatarColor(detail.id), color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 700, fontSize: 16,
-              }}>{initials(detail.name, detail.phone)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text, #f1f5f9)', fontWeight: 700 }}>
-                  {detail.name || t('Unknown')}
-                </h3>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text3, #64748b)' }}>
-                  {(detail.visit_count || 0)} {t('Visits')} · {detail.last_visit_at ? timeAgo(detail.last_visit_at, t) : '—'}
-                </p>
-              </div>
-              <button
-                onClick={() => { if (!detailBusy) setDetail(null); }}
-                style={{
-                  background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-                  width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >×</button>
-            </div>
-
-            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
-              {detail.file_number && (
-                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)' }}>
-                  {t('File number')}: <span style={{ color: 'var(--text, #f1f5f9)', fontFamily: 'monospace' }}>{detail.file_number}</span>
-                </div>
-              )}
-              <CustomerFormFields
-                t={t}
-                form={detailForm}
-                setField={setDetailField as any}
-                disabled={detailBusy}
-              />
-              {detailError && (
-                <div style={{
-                  padding: 10, borderRadius: 8,
-                  background: 'rgba(239,68,68,0.12)', color: 'var(--danger, #ef4444)', fontSize: 13,
-                }}>{detailError}</div>
-              )}
-            </div>
-
-            <div style={{
-              padding: '14px 22px', borderTop: '1px solid var(--border, #475569)',
-              display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center',
-            }}>
-              <button
-                onClick={handleDeleteDetail}
-                disabled={detailBusy}
-                style={{
-                  background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--danger, #ef4444)',
-                  padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-                }}
-              >🗑 {t('Delete')}</button>
-              <div style={{ display: 'flex', gap: 10 }}>
-                {onBookCustomer && (
-                  <button
-                    onClick={() => {
-                      if (!detail) return;
-                      onBookCustomer({
-                        name: detail.name ?? '',
-                        phone: formatPhoneDisplay(detail.phone),
-                        notes: detail.notes ?? '',
-                      });
-                      setDetail(null);
-                      onClose();
-                    }}
-                    disabled={detailBusy}
-                    style={{
-                      background: 'var(--success, #22c55e)', color: '#fff', border: 'none',
-                      padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >📅 {t('Book In-House')}</button>
-                )}
-                <button
-                  onClick={() => { if (!detailBusy) setDetail(null); }}
-                  disabled={detailBusy}
-                  style={{
-                    background: 'transparent', border: '1px solid var(--border, #475569)', color: 'var(--text2, #94a3b8)',
-                    padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-                  }}
-                >{t('Cancel')}</button>
-                <button
-                  onClick={handleSaveDetail}
-                  disabled={detailBusy}
-                  style={{
-                    background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none',
-                    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    cursor: detailBusy ? 'wait' : 'pointer', opacity: detailBusy ? 0.6 : 1,
-                  }}
-                >{detailBusy ? t('Saving...') : t('Save')}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Customer modal */}
       {showAdd && (
@@ -1590,7 +1592,7 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
         </div>
         <div>
           <label style={lbl}>{t('Date of Birth')}</label>
-          <input type="date" style={inp} value={form.date_of_birth ?? ''} onChange={(e) => setField('date_of_birth', e.target.value)} disabled={disabled} />
+          <DatePicker style={inp} value={form.date_of_birth ?? ''} onChange={(e) => setField('date_of_birth', e.target.value)} disabled={disabled} />
         </div>
         <div>
           <label style={lbl}>{t('Blood Type')}</label>
@@ -1654,11 +1656,11 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
           <div style={grid2}>
             <div>
               <label style={lbl}>{t('Spouse Date of Birth')}</label>
-              <input type="date" style={inp} value={form.spouse_dob ?? ''} onChange={(e) => setField('spouse_dob', e.target.value)} disabled={disabled} />
+              <DatePicker style={inp} value={form.spouse_dob ?? ''} onChange={(e) => setField('spouse_dob', e.target.value)} disabled={disabled} />
             </div>
             <div>
               <label style={lbl}>{t('Marriage Date')}</label>
-              <input type="date" style={inp} value={form.marriage_date ?? ''} onChange={(e) => setField('marriage_date', e.target.value)} disabled={disabled} />
+              <DatePicker style={inp} value={form.marriage_date ?? ''} onChange={(e) => setField('marriage_date', e.target.value)} disabled={disabled} />
             </div>
           </div>
         </>

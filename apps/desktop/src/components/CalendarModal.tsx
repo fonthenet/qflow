@@ -26,6 +26,7 @@ import {
   type CalendarAppointment,
 } from '@qflo/shared';
 import { normalizeWilayaDisplay, WILAYAS, formatWilayaLabel } from '../lib/wilayas';
+import DatePicker from './DatePicker';
 
 // ── Schedule types ────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ interface Props {
   services: { id: string; name: string; department_id: string; color?: string | null; estimated_service_time?: number }[];
   officeTimezone?: string;
   onClose: () => void;
-  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete', opts?: { reason?: string }) => Promise<boolean>;
+  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete', opts?: { reason?: string }) => Promise<boolean>;
   onOpenCustomer?: (phone: string) => void;
   onSlotBook?: (date: string, time: string) => void;
   initialViewMode?: ViewMode;
@@ -868,7 +869,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Actions on appointment ─────────────────────────────────────
 
-  const handleAction = async (appt: CalendarAppointment, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete') => {
+  const handleAction = async (appt: CalendarAppointment, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete') => {
     if (!onModerate) return;
     setActionBusy(true);
     try {
@@ -1742,7 +1743,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
             <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
               <label style={{ flex: 1 }}>
                 <span style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4 }}>{t('From')}</span>
-                <input type="date" value={dayOffDialog.startDate}
+                <DatePicker value={dayOffDialog.startDate}
                   onChange={e => setDayOffDialog(d => d ? { ...d, startDate: e.target.value, endDate: e.target.value < d.endDate ? d.endDate : e.target.value } : d)}
                   style={{
                     width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 13,
@@ -1753,7 +1754,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               </label>
               <label style={{ flex: 1 }}>
                 <span style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4 }}>{t('To')}</span>
-                <input type="date" value={dayOffDialog.endDate}
+                <DatePicker value={dayOffDialog.endDate}
                   min={dayOffDialog.startDate}
                   onChange={e => setDayOffDialog(d => d ? { ...d, endDate: e.target.value } : d)}
                   style={{
@@ -2495,6 +2496,7 @@ function DesktopWeekView({
                     pending: { color: '#f59e0b', label: 'Pending' },
                     confirmed: { color: '#3b82f6', label: 'Confirmed' },
                     checked_in: { color: '#06b6d4', label: 'Checked In' },
+                    called: { color: '#3b82f6', label: 'Called' },
                     serving: { color: '#f97316', label: 'Serving' },
                     completed: { color: '#22c55e', label: 'Completed' },
                     cancelled: { color: '#ef4444', label: 'Cancelled' },
@@ -3510,7 +3512,7 @@ function DesktopApptDetail({
   officeId: string;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   onClose: () => void;
-  onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete') => void;
+  onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete') => void;
   onNotesChange: (appointmentId: string, notes: string) => void;
   onOpenCustomer?: (phone: string) => void;
   onReschedule?: (appointmentId: string, newDateKey: string, newTime: string) => Promise<boolean>;
@@ -3750,11 +3752,12 @@ function DesktopApptDetail({
   const serviceColor = getStatusColor(a.status);
   const d = new Date(a.scheduled_at);
   const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
-  const canReschedule = !['cancelled', 'no_show', 'declined'].includes(a.status); // allow reschedule even for completed
+  const canReschedule = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
 
   const statusLabel: Record<string, string> = {
     pending: t('Pending'), pending_approval: t('Pending'), confirmed: t('Confirmed'), checked_in: t('Checked In'),
-    completed: t('Completed'), cancelled: t('Cancelled'), no_show: t('No Show'), declined: t('Declined'), serving: t('Serving'),
+    called: t('Called'), serving: t('Serving'),
+    completed: t('Completed'), cancelled: t('Cancelled'), no_show: t('No Show'), declined: t('Declined'),
   };
 
   const labelStyle: React.CSSProperties = {
@@ -3869,8 +3872,7 @@ function DesktopApptDetail({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 14 }}>📅</span>
-                <input
-                  type="date"
+                <DatePicker
                   value={editDate}
                   onChange={(e) => { setEditDate(e.target.value); setEditTime(''); setRescheduleError(null); }}
                   style={{
@@ -4072,7 +4074,17 @@ function DesktopApptDetail({
                 {t('Check In')}
               </button>
             )}
-            {(a.status === 'checked_in' || (a.status as string) === 'serving') && (
+            {a.status === 'checked_in' && (
+              <button onClick={() => onAction('call')} disabled={actionBusy} style={actionBtn('#3b82f6', '#fff')}>
+                📢 {t('Call to Desk')}
+              </button>
+            )}
+            {(a.status as string) === 'called' && (
+              <button onClick={() => onAction('serve')} disabled={actionBusy} style={actionBtn('#06b6d4', '#fff')}>
+                ▶ {t('Start Serving')}
+              </button>
+            )}
+            {(a.status === 'checked_in' || (a.status as string) === 'called' || (a.status as string) === 'serving') && (
               <button onClick={() => onAction('complete')} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
                 ✓ {t('Complete')}
               </button>

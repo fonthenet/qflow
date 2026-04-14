@@ -308,6 +308,7 @@ export function countByDate(
 // ── Color helpers ──────────────────────────────────────────────────
 
 const EXTRA_STATUS_COLORS: Record<string, string> = {
+  called: '#3b82f6',  // blue — called to desk
   serving: '#f97316', // orange — in-progress
 };
 

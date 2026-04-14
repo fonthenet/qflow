@@ -7,6 +7,7 @@ import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
+import DatePicker from '../components/DatePicker';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
@@ -130,7 +131,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [customerWilaya, setCustomerWilaya] = useState('');
 
   // Smart customer search (shared between walk-in and future tabs)
-  type CustSuggestion = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; visit_count: number };
+  type CustSuggestion = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; visit_count: number; wilaya_code: string | null };
   const [custSuggestions, setCustSuggestions] = useState<CustSuggestion[]>([]);
   const [showCustSuggestions, setShowCustSuggestions] = useState(false);
   const custSearchSeq = useRef(0);
@@ -190,7 +191,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
       let req = sb
         .from('customers')
-        .select('id, name, phone, email, notes, visit_count')
+        .select('id, name, phone, email, notes, visit_count, wilaya_code')
         .eq('organization_id', orgId)
         .order('last_visit_at', { ascending: false, nullsFirst: false })
         .limit(20);
@@ -237,14 +238,17 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
   const pickCustomer = (c: CustSuggestion) => {
     const displayPhone = formatAlgPhoneLocal(c.phone);
+    const displayWilaya = normalizeWilayaDisplay(c.wilaya_code, locale === 'ar') ?? '';
     if (bookingTab === 'walkin') {
       setCustomerName(c.name ?? '');
       setCustomerPhone(displayPhone);
       if (c.notes) setCustomerReason(c.notes);
+      if (displayWilaya) setCustomerWilaya(displayWilaya);
     } else {
       setFutName(c.name ?? '');
       setFutPhone(displayPhone);
       if (c.notes) setFutNotes(c.notes);
+      if (displayWilaya) setFutWilaya(displayWilaya);
     }
     setShowCustSuggestions(false);
     setCustSuggestions([]);
@@ -619,8 +623,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           <div style={{ display: 'flex', gap: 8 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('Date')} *</label>
-              <input
-                type="date"
+              <DatePicker
                 value={futDate}
                 onChange={(e) => { setFutDate(e.target.value); setFutTime(''); }}
                 min={today}
@@ -1904,15 +1907,61 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const pendingTotalCount = pendingTickets.length + pendingAppointmentsAll.length;
 
+  const updateTicketStatus = useCallback(async (ticketId: string, updates: Record<string, any>) => {
+    try {
+      const result = await window.qf.db.updateTicket(ticketId, updates);
+      if (updates.status === 'called' && !result) {
+        showToast(t('Ticket already called by another desk'), 'error');
+      }
+      fetchTickets();
+    } catch (err: any) {
+      showToast(t('Failed to update ticket'), 'error');
+      console.error('[station] updateTicket error:', err);
+    }
+  }, [showToast, t, fetchTickets]);
+
   // ── Unified appointment action: ALL appointment operations go through the API ──
   const moderateAppointment = useCallback(async (
     apptId: string,
-    action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete',
+    action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete',
     opts?: { reason?: string },
   ): Promise<boolean> => {
     setRdvBusyId(apptId);
     try {
       const token = await ensureAuth(storedAuth);
+
+      // ── call / serve: ticket-level actions — reuse existing queue path ──
+      // Find the linked ticket and delegate to updateTicketStatus (same as queue buttons)
+      if (action === 'call' || action === 'serve') {
+        // Find linked ticket from local SQLite (it was inserted at check-in time)
+        const localTickets = await window.qf.db.getTickets();
+        const linkedTicket = localTickets.find((t: any) => t.appointment_id === apptId && !['served', 'no_show', 'cancelled'].includes(t.status));
+        if (!linkedTicket) throw new Error('No active ticket found for this appointment');
+
+        if (action === 'call') {
+          if (!session.desk_id) throw new Error('No desk assigned');
+          updateTicketStatus(linkedTicket.id, {
+            status: 'called',
+            desk_id: session.desk_id,
+            called_at: new Date().toISOString(),
+            called_by_staff_id: session.staff_id || undefined,
+          });
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'called' as any } : a));
+        } else {
+          updateTicketStatus(linkedTicket.id, {
+            status: 'serving',
+            serving_started_at: new Date().toISOString(),
+          });
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'serving' as any } : a));
+        }
+
+        const toastMsg = action === 'call' ? 'Called to desk' : 'Service started';
+        showToast(translate(locale, toastMsg), 'success');
+        setRdvBusyId(null);
+        return true;
+      }
+
+      // ── All other actions go through /api/moderate-appointment ──
       const payload: any = { appointmentId: apptId, action };
       if (opts?.reason) payload.reason = opts.reason;
       const res = await fetch('https://qflo.net/api/moderate-appointment', {
@@ -2007,7 +2056,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } finally {
       setRdvBusyId(null);
     }
-  }, [locale, showToast, storedAuth, fetchTickets, pendingAppointmentsAll]);
+  }, [locale, showToast, storedAuth, fetchTickets, pendingAppointmentsAll, session.desk_id, session.staff_id, updateTicketStatus]);
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
@@ -2256,20 +2305,6 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
-    }
-  };
-
-  const updateTicketStatus = async (ticketId: string, updates: Record<string, any>) => {
-    try {
-      const result = await window.qf.db.updateTicket(ticketId, updates);
-      if (updates.status === 'called' && !result) {
-        showToast(t('Ticket already called by another desk'), 'error');
-      }
-      fetchTickets();
-      if (isSmallScreen && updates.status === 'called') setSidebarVisible(false);
-    } catch (err: any) {
-      showToast(t('Failed to update ticket'), 'error');
-      console.error('[station] updateTicket error:', err);
     }
   };
 
