@@ -1191,6 +1191,12 @@ export class SyncEngine {
           }
         }
 
+        // 400 might be auth-related (expired JWT)
+        if (res.status === 400) {
+          const errText = await res.text().catch(() => '');
+          if (/jwt|token|expir|auth|invalid claim/i.test(errText)) return { status: 401 };
+          throw new Error(`INSERT failed: 400 — ${errText.slice(0, 100)}`);
+        }
         throw new Error(`INSERT failed: ${res.status}`);
       }
 
@@ -1204,6 +1210,14 @@ export class SyncEngine {
           signal: AbortSignal.timeout(10000),
         });
         if (res.status === 401 || res.status === 403) return { status: 401 };
+        // 400 from Supabase often means expired/malformed JWT — treat as auth error
+        if (res.status === 400) {
+          const errBody = await res.text().catch(() => '');
+          const isAuthRelated = /jwt|token|expir|auth|invalid claim/i.test(errBody);
+          logger.warn('sync.replay', 'PATCH 400', { recordId: item.record_id, authRelated: isAuthRelated, body: errBody.slice(0, 200) });
+          if (isAuthRelated) return { status: 401 };
+          throw new Error(`UPDATE failed: 400 — ${errBody.slice(0, 100)}`);
+        }
         if (res.ok) {
           // Check if Supabase actually updated any rows (RLS or status conflict = empty array)
           const body = await res.json().catch(() => []);
