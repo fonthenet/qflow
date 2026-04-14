@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       if (deskId) updatePayload.desk_id = deskId;
       if (staffId) updatePayload.called_by_staff_id = staffId;
     } else if (status === 'serving') {
-      updatePayload.serving_at = now;
+      updatePayload.serving_started_at = now;
       if (deskId) updatePayload.desk_id = deskId;
     } else if (status === 'served' || status === 'cancelled' || status === 'no_show') {
       updatePayload.completed_at = now;

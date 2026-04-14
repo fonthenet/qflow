@@ -584,6 +584,100 @@ export class SyncEngine {
   }
 
   /**
+   * Flush prerequisite sync items before pushing a CALL/UPDATE.
+   * Ensures:
+   *   1. The ticket's INSERT exists in Supabase (can't PATCH a non-existent row)
+   *   2. Previous desk occupant is cleared (served/cancelled/no_show synced first)
+   */
+  private async flushPrerequisites(item: any) {
+    const authToken = await this.ensureFreshToken();
+    const payload = JSON.parse(item.payload || '{}');
+
+    // 1. Ensure ticket INSERT is synced first
+    const pendingInsert = this.db.prepare(
+      "SELECT * FROM sync_queue WHERE synced_at IS NULL AND record_id = ? AND table_name = 'tickets' AND operation = 'INSERT'"
+    ).get(item.record_id) as any;
+
+    if (pendingInsert) {
+      logger.info('sync.prerequisites', 'Flushing pending INSERT before CALL/UPDATE', { recordId: item.record_id });
+      try {
+        const res = await this.replayMutation(pendingInsert, authToken);
+        if (res.status === 0) {
+          this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+            .run(new Date().toISOString(), pendingInsert.id);
+          this.rewriteOfflineTicket(pendingInsert.record_id, pendingInsert.payload);
+          this.createWhatsAppSessionForTicket(pendingInsert.record_id, pendingInsert.payload);
+          logger.info('sync.prerequisites', 'INSERT flushed successfully');
+        }
+      } catch (err: any) {
+        logger.warn('sync.prerequisites', 'INSERT flush failed — CALL/UPDATE will proceed anyway', { error: err?.message });
+      }
+    }
+
+    // 2. For CALL operations: clear the desk by flushing pending terminal-state mutations
+    if (payload.status === 'called' && payload.desk_id) {
+      // Find tickets currently assigned to this desk in Supabase (they might be stale)
+      // and flush any pending served/cancelled/no_show mutations for those tickets
+      const deskTicketIds = (this.db.prepare(
+        "SELECT id FROM tickets WHERE desk_id = ? AND status IN ('served', 'cancelled', 'no_show') AND id != ?"
+      ).all(payload.desk_id, item.record_id) as any[]).map((r: any) => r.id);
+
+      if (deskTicketIds.length > 0) {
+        const pendingClears = this.db.prepare(
+          `SELECT * FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets'
+           AND record_id IN (${deskTicketIds.map(() => '?').join(',')})
+           AND json_extract(payload, '$.status') IN ('served', 'cancelled', 'no_show')
+           ORDER BY created_at ASC`
+        ).all(...deskTicketIds) as any[];
+
+        for (const clearItem of pendingClears) {
+          logger.info('sync.prerequisites', 'Flushing desk-clearing mutation before CALL', {
+            recordId: clearItem.record_id, status: JSON.parse(clearItem.payload || '{}').status, deskId: payload.desk_id,
+          });
+          try {
+            const res = await this.replayMutation(clearItem, authToken);
+            if (res.status === 0) {
+              this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+                .run(new Date().toISOString(), clearItem.id);
+              logger.info('sync.prerequisites', 'Desk-clearing mutation flushed');
+            }
+          } catch (err: any) {
+            logger.warn('sync.prerequisites', 'Desk-clearing flush failed', { error: err?.message });
+          }
+        }
+      }
+
+      // Also flush any pending "serving" state for the SAME desk (previous ticket still in serving state)
+      const servingOnDesk = (this.db.prepare(
+        "SELECT id FROM tickets WHERE desk_id = ? AND status IN ('called', 'serving') AND id != ?"
+      ).all(payload.desk_id, item.record_id) as any[]).map((r: any) => r.id);
+
+      if (servingOnDesk.length > 0) {
+        const pendingTransitions = this.db.prepare(
+          `SELECT * FROM sync_queue WHERE synced_at IS NULL AND table_name = 'tickets'
+           AND record_id IN (${servingOnDesk.map(() => '?').join(',')})
+           ORDER BY created_at ASC`
+        ).all(...servingOnDesk) as any[];
+
+        for (const transItem of pendingTransitions) {
+          logger.info('sync.prerequisites', 'Flushing pending transition for desk occupant', {
+            recordId: transItem.record_id, operation: transItem.operation,
+          });
+          try {
+            const res = await this.replayMutation(transItem, authToken);
+            if (res.status === 0) {
+              this.db.prepare("UPDATE sync_queue SET synced_at = ?, last_error = NULL WHERE id = ?")
+                .run(new Date().toISOString(), transItem.id);
+            }
+          } catch (err: any) {
+            logger.warn('sync.prerequisites', 'Desk occupant transition flush failed', { error: err?.message });
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Fire-and-forget: immediately push a specific sync_queue item to Supabase.
    * Called right after a local mutation to minimize cloud display lag.
    * On failure, schedules rapid retries (2s, 5s, 15s) before falling back to syncNow().
@@ -597,6 +691,16 @@ export class SyncEngine {
     if (!item) {
       this.rapidRetryInFlight.delete(syncQueueId);
       return;
+    }
+
+    // ── DEPENDENCY ORDERING ──────────────────────────────────────────
+    // Before pushing a CALL/UPDATE, ensure prerequisites are synced first.
+    // This prevents two key failures:
+    //   1. CALL on a ticket whose INSERT hasn't reached Supabase yet → 0 rows
+    //   2. CALL on a desk that still has a called/serving ticket in Supabase
+    //      because the previous COMPLETE/NO_SHOW hasn't synced yet → trigger rejection
+    if (_retryAttempt === 0 && (item.operation === 'CALL' || item.operation === 'UPDATE')) {
+      await this.flushPrerequisites(item);
     }
 
     try {
@@ -615,6 +719,16 @@ export class SyncEngine {
           this.rewriteOfflineTicket(item.record_id, item.payload);
           this.createWhatsAppSessionForTicket(item.record_id, item.payload);
         }
+        return;
+      }
+
+      if (result.status === 409) {
+        // Desk conflict — previous ticket still active in cloud.
+        // flushPrerequisites should have cleared it, but if it didn't,
+        // schedule a gentle retry. Don't count as consecutive failure.
+        logger.info('sync.pushImmediate', 'Desk conflict — scheduling retry without penalty', { syncQueueId });
+        this.rapidRetryInFlight.add(syncQueueId);
+        setTimeout(() => this.pushImmediate(syncQueueId, _retryAttempt), 3000);
         return;
       }
 
@@ -945,6 +1059,13 @@ export class SyncEngine {
       try {
         const result = await this.replayMutation(item, authToken);
 
+        if (result.status === 409) {
+          // Desk conflict — transient, don't count as failure.
+          // The prerequisite (COMPLETE) should be ahead in the queue and will sync first.
+          logger.info('sync.syncNow', 'Desk conflict — skipping for now, will retry next cycle', { recordId: item.record_id });
+          continue;
+        }
+
         if (result.status === 401) {
           // ── 401: Token died mid-sync — refresh once and retry this item ──
           if (!had401) {
@@ -1210,12 +1331,28 @@ export class SyncEngine {
           signal: AbortSignal.timeout(10000),
         });
         if (res.status === 401 || res.status === 403) return { status: 401 };
-        // 400 from Supabase often means expired/malformed JWT — treat as auth error
+        // 400 from Supabase — could be auth, desk conflict, or constraint violation
         if (res.status === 400) {
           const errBody = await res.text().catch(() => '');
           const isAuthRelated = /jwt|token|expir|auth|invalid claim/i.test(errBody);
           logger.warn('sync.replay', 'PATCH 400', { recordId: item.record_id, authRelated: isAuthRelated, body: errBody.slice(0, 200) });
           if (isAuthRelated) return { status: 401 };
+
+          // Desk-conflict errors (P0001 from enforce_one_active_per_desk / check_desk_capacity)
+          // These are TRANSIENT — the desk will be freed once the previous ticket's COMPLETE syncs.
+          // Return special status 409 (conflict) so callers can retry without tripping circuit breaker.
+          const isDeskConflict = /active ticket|desk.*capacity|P0001/i.test(errBody);
+          if (isDeskConflict && payload.status === 'called') {
+            logger.info('sync.replay', 'Desk conflict — previous ticket still active in cloud, will retry', { recordId: item.record_id, deskId: payload.desk_id });
+            return { status: 409 };
+          }
+
+          // CHECK constraint violation (23514) — could be status mismatch or other data issue
+          // Log details for diagnosis but still throw to trigger retry
+          if (/23514/i.test(errBody)) {
+            logger.error('sync.replay', 'CHECK constraint violation', { recordId: item.record_id, payload: JSON.stringify(payload).slice(0, 200), body: errBody.slice(0, 300) });
+          }
+
           throw new Error(`UPDATE failed: 400 — ${errBody.slice(0, 100)}`);
         }
         if (res.ok) {
