@@ -324,23 +324,23 @@ export function getServiceColor(service?: { color?: string | null } | null): str
 /** Format a date for display in the calendar header: "Mon 14" */
 export function formatDayHeader(date: Date, timezone: string, locale?: string): string {
   try {
-    const d = new Intl.DateTimeFormat(locale ?? 'en-US', {
+    const d = new Intl.DateTimeFormat(locale ?? 'fr-DZ', {
       weekday: 'short', day: 'numeric', timeZone: timezone,
     });
     return d.format(date);
   } catch {
-    return date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
+    return date.toLocaleDateString('fr-DZ', { weekday: 'short', day: 'numeric' });
   }
 }
 
 /** Format month+year: "June 2026" */
 export function formatMonthYear(date: Date, locale?: string): string {
-  return new Intl.DateTimeFormat(locale ?? 'en-US', { month: 'long', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat(locale ?? 'fr-DZ', { month: 'long', year: 'numeric' }).format(date);
 }
 
 /** Format date range for header: "14 - 18 Jun, 2026" */
 export function formatWeekRange(startDate: Date, endDate: Date, locale?: string): string {
-  const fmt = new Intl.DateTimeFormat(locale ?? 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmt = new Intl.DateTimeFormat(locale ?? 'fr-DZ', { day: 'numeric', month: 'short', year: 'numeric' });
   const startDay = startDate.getDate();
   const endParts = fmt.format(endDate);
   return `${startDay} - ${endParts}`;

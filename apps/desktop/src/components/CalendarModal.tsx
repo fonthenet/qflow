@@ -120,7 +120,7 @@ function getVisibleHourRange(oh: OperatingHours): { startHour: number; endHour: 
   const endHour = Math.min(24, Math.ceil(latest) + 1);
   return { startHour, endHour };
 }
-const LOCALE_MAP: Record<string, string> = { fr: 'fr-FR', ar: 'ar-DZ', en: 'en-US' };
+const LOCALE_MAP: Record<string, string> = { fr: 'fr-DZ', ar: 'ar-DZ', en: 'en-DZ' };
 
 const APPT_SELECT = `
   id, office_id, department_id, service_id, staff_id,

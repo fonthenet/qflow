@@ -1818,8 +1818,8 @@ export function t(locale: DesktopLocale, key: string, values?: Record<string, st
 
 export function formatDesktopTime(value: string | Date, locale: DesktopLocale): string {
   const date = typeof value === 'string' ? new Date(value) : value;
-  const tag = locale === 'fr' ? 'fr-FR' : locale === 'ar' ? 'ar' : 'en-US';
-  return new Intl.DateTimeFormat(tag, { hour: 'numeric', minute: '2-digit' }).format(date);
+  const tag = locale === 'fr' ? 'fr-DZ' : locale === 'ar' ? 'ar-DZ' : 'en-DZ';
+  return new Intl.DateTimeFormat(tag, { hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
 }
 
 export function formatWaitLabel(dateStr: string, locale: DesktopLocale): string {
