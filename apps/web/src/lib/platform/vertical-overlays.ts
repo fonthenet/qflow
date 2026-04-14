@@ -38,54 +38,55 @@ function starterDisplay(
 
 // ── Operating hours presets ─────────────────────────────────────────────────
 
+// Algeria schedule: Sun–Thu workdays, Fri & Sat weekend
 const WEEKDAY_SERVICE_HOURS: OperatingHoursPreset = {
+  sunday: { open: '08:00', close: '17:00' },
   monday: { open: '08:00', close: '17:00' },
   tuesday: { open: '08:00', close: '17:00' },
   wednesday: { open: '08:00', close: '17:00' },
   thursday: { open: '08:00', close: '17:00' },
-  friday: { open: '08:00', close: '17:00' },
-  saturday: { open: '09:00', close: '13:00' },
-  sunday: { open: '00:00', close: '00:00' },
+  friday: { open: '00:00', close: '00:00' },
+  saturday: { open: '00:00', close: '00:00' },
 };
 
 const EXTENDED_BRANCH_HOURS: OperatingHoursPreset = {
+  sunday: { open: '09:00', close: '18:00' },
   monday: { open: '09:00', close: '18:00' },
   tuesday: { open: '09:00', close: '18:00' },
   wednesday: { open: '09:00', close: '18:00' },
   thursday: { open: '09:00', close: '18:00' },
-  friday: { open: '09:00', close: '18:00' },
-  saturday: { open: '10:00', close: '14:00' },
-  sunday: { open: '00:00', close: '00:00' },
+  friday: { open: '00:00', close: '00:00' },
+  saturday: { open: '00:00', close: '00:00' },
 };
 
 const CLINIC_HOURS: OperatingHoursPreset = {
+  sunday: { open: '08:30', close: '17:30' },
   monday: { open: '08:30', close: '17:30' },
   tuesday: { open: '08:30', close: '17:30' },
   wednesday: { open: '08:30', close: '17:30' },
   thursday: { open: '08:30', close: '17:30' },
-  friday: { open: '08:30', close: '17:30' },
-  saturday: { open: '09:00', close: '13:00' },
-  sunday: { open: '00:00', close: '00:00' },
+  friday: { open: '00:00', close: '00:00' },
+  saturday: { open: '00:00', close: '00:00' },
 };
 
 const HOSPITALITY_HOURS: OperatingHoursPreset = {
+  sunday: { open: '11:00', close: '22:00' },
   monday: { open: '11:00', close: '22:00' },
   tuesday: { open: '11:00', close: '22:00' },
   wednesday: { open: '11:00', close: '22:00' },
-  thursday: { open: '11:00', close: '22:00' },
-  friday: { open: '11:00', close: '23:00' },
-  saturday: { open: '10:00', close: '23:00' },
-  sunday: { open: '10:00', close: '21:00' },
+  thursday: { open: '11:00', close: '23:00' },
+  friday: { open: '00:00', close: '00:00' },
+  saturday: { open: '00:00', close: '00:00' },
 };
 
 const SHOP_HOURS: OperatingHoursPreset = {
+  sunday: { open: '09:00', close: '19:00' },
   monday: { open: '09:00', close: '19:00' },
   tuesday: { open: '09:00', close: '19:00' },
   wednesday: { open: '09:00', close: '19:00' },
   thursday: { open: '09:00', close: '19:00' },
-  friday: { open: '09:00', close: '19:00' },
-  saturday: { open: '09:00', close: '17:00' },
-  sunday: { open: '00:00', close: '00:00' },
+  friday: { open: '00:00', close: '00:00' },
+  saturday: { open: '00:00', close: '00:00' },
 };
 
 // ── Restaurant intake helper ────────────────────────────────────────────────
@@ -634,7 +635,7 @@ export function getBarbershopOverlay(): DeepPartial<IndustryTemplate> {
       {
         branchType: 'salon_shop',
         name: 'Main Shop',
-        timezone: 'America/Los_Angeles',
+        timezone: 'Africa/Algiers',
         operatingHours: SHOP_HOURS,
         displayScreens: [],
         departments: [
