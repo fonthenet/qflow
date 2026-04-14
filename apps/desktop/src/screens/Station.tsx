@@ -3602,24 +3602,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       >
         <div className="sidebar-section">
           <div className="sidebar-header">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <h3 style={{ margin: 0 }}>{t('Queue Overview')}</h3>
-              <button
-                onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
-                title={t('Broadcast')}
-                aria-label={t('Broadcast')}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '5px 12px', borderRadius: 20,
-                  border: '1.5px solid rgba(14,165,233,0.4)',
-                  background: 'rgba(14,165,233,0.12)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  color: '#0ea5e9',
-                }}
-              >
-                {'\u{1F4E2}'} {t('Broadcast')}
-              </button>
-            </div>
+            <h3 style={{ margin: 0 }}>{t('Queue Overview')}</h3>
             <div className="queue-stats" aria-label={t('{waiting} waiting, {called} called, {serving} serving', { waiting: waiting.length, called: called.length, serving: serving.length })}>
               <span className="stat-pill waiting" aria-hidden="true">{t('{count} waiting', { count: waiting.length })}</span>
               <span className="stat-pill called" aria-hidden="true">{t('{count} called', { count: called.length })}</span>
@@ -3984,18 +3967,35 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
         {queueTab === 'queue' && (<>
         <div className="sidebar-section queue-list queue-waiting">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 6 }}>
             <h4 style={{ margin: 0 }}>{t('Waiting ({count})', { count: waiting.length })}</h4>
-            {waiting.length > 3 && (
-              <input
-                type="text"
-                placeholder={t('Search...')}
-                value={searchFilter}
-                onChange={(e) => { setSearchFilter(e.target.value); setShowAllWaiting(false); }}
-                className="queue-search"
-                aria-label={t('Search waiting queue by name, phone, or ticket number')}
-              />
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+              {waiting.length > 3 && (
+                <input
+                  type="text"
+                  placeholder={t('Search...')}
+                  value={searchFilter}
+                  onChange={(e) => { setSearchFilter(e.target.value); setShowAllWaiting(false); }}
+                  className="queue-search"
+                  aria-label={t('Search waiting queue by name, phone, or ticket number')}
+                />
+              )}
+              <button
+                onClick={() => { setShowBroadcast(true); fetchBroadcastTemplates(); }}
+                title={t('Broadcast')}
+                aria-label={t('Broadcast')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 14,
+                  border: '1.5px solid rgba(14,165,233,0.4)',
+                  background: 'rgba(14,165,233,0.12)',
+                  cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                  color: '#0ea5e9', whiteSpace: 'nowrap',
+                }}
+              >
+                {'\u{1F4E2}'} {t('Broadcast')}
+              </button>
+            </div>
           </div>
           <div className="ticket-list" role="list" aria-label={t('Waiting tickets')}>
             {visibleWaiting.map((ticket, i) => {

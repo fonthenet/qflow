@@ -480,6 +480,20 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
         serveStationIndex(res);
       } else if (path.startsWith('/station/assets/')) {
         serveStationAsset(path.replace('/station/', ''), res);
+      // Token endpoint (unauthenticated — allows web station to self-heal)
+      } else if (path === '/api/station/token' && req.method === 'GET') {
+        try {
+          const db = getDB();
+          const row = db.prepare("SELECT station_token FROM session WHERE key = 'current'").get() as any;
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ token: row?.station_token ?? null }));
+        } catch {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ token: null }));
+        }
+      // Config endpoint (unauthenticated — only public Supabase URL + anon key)
+      } else if (path === '/api/station/config' && req.method === 'GET') {
+        handleStationConfig(res);
       // ── Station HTTP API (mirrors Electron IPC) ──────────────────
       // All /api/station/* endpoints require X-Station-Token authentication
       } else if (path.startsWith('/api/station/') || path === '/api/station') {
@@ -2645,6 +2659,11 @@ function serveStationIndex(res: http.ServerResponse) {
   window.__QF_HTTP_MODE__ = true;
   var API = window.location.origin;
   var STATION_TOKEN = ${JSON.stringify(stationToken)};
+  var _tokenReady = STATION_TOKEN
+    ? Promise.resolve()
+    : fetch(API + '/api/station/token').then(function(r) { return r.json(); }).then(function(d) {
+        if (d && d.token) { STATION_TOKEN = d.token; console.log('[qf-bridge] Token acquired'); }
+      }).catch(function() {});
 
   function authHeaders(extra) {
     var h = extra || {};
@@ -2652,20 +2671,55 @@ function serveStationIndex(res: http.ServerResponse) {
     return h;
   }
 
+  function retryToken() {
+    return fetch(API + '/api/station/token').then(function(r) { return r.json(); }).then(function(d) {
+      if (d && d.token) { STATION_TOKEN = d.token; console.log('[qf-bridge] Token re-acquired'); return true; }
+      return false;
+    }).catch(function() { return false; });
+  }
+
   function get(path) {
-    return fetch(API + path, { headers: authHeaders() }).then(function(r) {
-      if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); }
-      return r.json();
+    return _tokenReady.then(function() {
+      return fetch(API + path, { headers: authHeaders() }).then(function(r) {
+        if (r.status === 401 || r.status === 403) {
+          console.warn('[qf-bridge] GET ' + path + ' → ' + r.status + ', retrying token...');
+          return retryToken().then(function(ok) {
+            if (!ok) return r.json().then(function(d) { return Promise.reject(d); });
+            return fetch(API + path, { headers: authHeaders() }).then(function(r2) {
+              if (!r2.ok) return r2.json().then(function(d) { return Promise.reject(d); });
+              return r2.json();
+            });
+          });
+        }
+        if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); return r.json().then(function(d) { return Promise.reject(d); }); }
+        return r.json();
+      });
     });
   }
   function post(path, body) {
-    return fetch(API + path, {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(body),
-    }).then(function(r) {
-      if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); }
-      return r.json();
+    return _tokenReady.then(function() {
+      return fetch(API + path, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      }).then(function(r) {
+        if (r.status === 401 || r.status === 403) {
+          console.warn('[qf-bridge] POST ' + path + ' → ' + r.status + ', retrying token...');
+          return retryToken().then(function(ok) {
+            if (!ok) return r.json().then(function(d) { return Promise.reject(d); });
+            return fetch(API + path, {
+              method: 'POST',
+              headers: authHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify(body),
+            }).then(function(r2) {
+              if (!r2.ok) return r2.json().then(function(d) { return Promise.reject(d); });
+              return r2.json();
+            });
+          });
+        }
+        if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); return r.json().then(function(d) { return Promise.reject(d); }); }
+        return r.json();
+      });
     });
   }
 
@@ -2725,12 +2779,26 @@ function serveStationIndex(res: http.ServerResponse) {
       updateTicket: function(ticketId, updates) {
         return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates });
       },
+      updateDesk: function(deskId, update) {
+        return post('/api/station/update-desk', { deskId: deskId, updates: update });
+      },
       callNext: function(officeId, deskId, staffId) {
         return post('/api/station/call-next', { officeId: officeId, deskId: deskId, staffId: staffId });
       },
       query: function(table, officeIds) {
         return get('/api/station/query?table=' + table + '&officeIds=' + officeIds.join(','));
       },
+      insertCloudTicket: function() { return Promise.resolve(); },
+      saveNotes: function(ticketId, notes) {
+        return post('/api/station/update-ticket', { ticketId: ticketId, updates: { notes: notes } }).catch(function() {});
+      },
+      banCustomer: function() { return Promise.resolve({ error: 'Not available in web station' }); },
+    },
+
+    templates: {
+      list: function() { return Promise.resolve([]); },
+      save: function() { return Promise.resolve(); },
+      delete: function() { return Promise.resolve(); },
     },
 
     sync: {
@@ -2753,7 +2821,13 @@ function serveStationIndex(res: http.ServerResponse) {
 
     session: {
       save: function(session) { return Promise.resolve(); },
-      load: function() { return get('/api/station/session'); },
+      load: function() {
+        return get('/api/station/session').then(function(s) {
+          // Return null if error or no valid session data
+          if (!s || s.error || !s.staff_id || !s.office_id) return null;
+          return s;
+        }).catch(function() { return null; });
+      },
       clear: function() { return post('/api/station/session/clear', {}); },
     },
 
@@ -2780,6 +2854,8 @@ function serveStationIndex(res: http.ServerResponse) {
     isOnline: function() { return get('/api/station/sync-status').then(function(s) { return s.isOnline; }); },
 
     auth: {
+      getToken: function() { return get('/api/station/session').then(function(s) { return s && s.access_token ? s.access_token : null; }).catch(function() { return null; }); },
+      onTokenRefreshed: function(cb) { return function() {}; },
       onSessionExpired: function(cb) { return function() {}; },
     },
 
@@ -2865,8 +2941,17 @@ function serveStationIndex(res: http.ServerResponse) {
 })();
 </script>`;
 
+    // Add global error handler to catch and display any crash
+    const errorCatcher = `<script>
+window.onerror = function(msg, src, line, col, err) {
+  document.body.innerHTML = '<div style="padding:40px;font-family:monospace;color:red;white-space:pre-wrap"><h2>Station Error</h2>' + msg + '\\n\\nSource: ' + src + ':' + line + ':' + col + '\\n\\n' + (err && err.stack ? err.stack : '') + '</div>';
+};
+window.addEventListener('unhandledrejection', function(e) {
+  document.body.innerHTML = '<div style="padding:40px;font-family:monospace;color:red;white-space:pre-wrap"><h2>Station Promise Error</h2>' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '\\n\\n' + (e.reason && e.reason.stack ? e.reason.stack : '') + '</div>';
+});
+</script>`;
     // Inject shim before the app's module script
-    html = html.replace('<script type="module"', shimScript + '\n  <script type="module"');
+    html = html.replace('<script type="module"', errorCatcher + '\n' + shimScript + '\n  <script type="module"');
     // Fix asset paths for /station/ base
     html = html.replace(/\.\/assets\//g, '/station/assets/');
 

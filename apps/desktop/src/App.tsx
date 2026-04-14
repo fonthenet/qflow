@@ -38,6 +38,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLoca
 export function App() {
   const STAFF_STATUS_KEY = 'qflo_station_staff_status';
   const QUEUE_PAUSED_KEY = 'qflo_station_queue_paused';
+  const isHttpBridge = !!(window as any).__QF_HTTP_MODE__;
   const [session, setSession] = useState<StaffSession | null>(null);
   const [locale, setLocale] = useState<DesktopLocale>('en');
   const [stationVersion, setStationVersion] = useState<string | null>(null);
@@ -69,9 +70,11 @@ export function App() {
   // Load saved session on mount
   useEffect(() => {
     Promise.all([
-      window.qf.session.load(),
+      window.qf.session.load().catch(() => null),
       Promise.resolve(window.qf.settings?.getLocale?.()).catch(() => 'en'),
-    ]).then(([s, savedLocale]: [StaffSession | null, string]) => {
+    ]).then(([rawSession, savedLocale]: [StaffSession | null, string]) => {
+      // Validate session has required fields (guards against error objects from HTTP bridge)
+      const s = rawSession && rawSession.staff_id && rawSession.office_id ? rawSession : null;
       try {
         const storedStaffStatus = window.localStorage.getItem(STAFF_STATUS_KEY);
         if (storedStaffStatus === 'available' || storedStaffStatus === 'on_break' || storedStaffStatus === 'away') {
@@ -100,6 +103,25 @@ export function App() {
       }
     });
   }, []);
+
+  // In HTTP bridge mode, if no session, poll every 3s until desktop logs in
+  useEffect(() => {
+    if (!isHttpBridge || session || loading) return;
+    const interval = setInterval(() => {
+      window.qf.session.load().then((rawSession: StaffSession | null) => {
+        const s = rawSession && rawSession.staff_id && rawSession.office_id ? rawSession : null;
+        if (s) {
+          if (s.access_token && s.refresh_token) {
+            restoreSession(s.access_token, s.refresh_token).catch(() => {});
+          }
+          window.qf.sync.forceSync().catch(() => {}).finally(() => {
+            setSession(s);
+          });
+        }
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isHttpBridge, session, loading]);
 
   useEffect(() => {
     try {
@@ -303,6 +325,12 @@ export function App() {
             onStaffStatusChange={setStaffStatus}
             onQueuePausedChange={setQueuePaused}
           />
+        ) : isHttpBridge ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
+            <div className="spinner" style={{ width: 32, height: 32 }} />
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{t('Waiting for Station Login')}</h2>
+            <p style={{ fontSize: 14, color: 'var(--text2)', maxWidth: 400, margin: 0 }}>{t('Please log in on the desktop Station app. This screen will connect automatically.')}</p>
+          </div>
         ) : (
           <Login onLogin={handleLogin} locale={locale} />
         )}
