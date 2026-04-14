@@ -1305,7 +1305,8 @@ function setupIPC() {
         }
       }
       // Fallback: read from DB
-      const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const sdb = getDB();
+      const row = sdb.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
       if (row) {
         const session = JSON.parse(row.value);
         if (session?.access_token) {
@@ -1989,6 +1990,47 @@ app.whenReady().then(async () => {
     }
   );
   syncEngine.start();
+
+  // ── Startup token validation ──────────────────────────────────────
+  // If the session has a stale refresh token (e.g. from pre-v1.8.x),
+  // detect it immediately instead of waiting for 5 sync failures.
+  (async () => {
+    try {
+      const sdb = getDB();
+      const row = sdb.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      if (!row) return; // No session — Login screen will show
+      const session = JSON.parse(row.value);
+      if (!session?.refresh_token) return;
+
+      // Quick validate: try to refresh the token once
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        logger.error('startup', 'Refresh token is stale — prompting re-login', {
+          code: 'QF-AUTH-001', status: res.status,
+        });
+        // Small delay to let the renderer mount first
+        setTimeout(() => {
+          mainWindow?.webContents.send('auth:session-expired');
+        }, 3000);
+      } else {
+        // Token is valid — update session with fresh tokens
+        const data = await res.json();
+        if (data.access_token) {
+          const updated = { ...session, access_token: data.access_token, refresh_token: data.refresh_token ?? session.refresh_token };
+          sdb.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+          logger.info('startup', 'Startup token validation passed — session refreshed');
+        }
+      }
+    } catch (err: any) {
+      logger.warn('startup', 'Startup token validation skipped (network error)', { error: err?.message });
+    }
+  })();
 
   // Start local kiosk server for tablets/touchscreens
   try {
