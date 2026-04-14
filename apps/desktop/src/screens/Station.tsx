@@ -1930,7 +1930,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // Find the linked ticket and delegate to updateTicketStatus (same as queue buttons)
       if (action === 'call' || action === 'serve') {
         // Find linked ticket from local SQLite (it was inserted at check-in time)
-        const localTickets = await window.qf.db.getTickets();
+        const localTickets = await window.qf.db.getTickets(session.office_ids ?? [session.office_id], ['waiting', 'called', 'serving']);
         const linkedTicket = localTickets.find((t: any) => t.appointment_id === apptId && !['served', 'no_show', 'cancelled'].includes(t.status));
         if (!linkedTicket) throw new Error('No active ticket found for this appointment');
 

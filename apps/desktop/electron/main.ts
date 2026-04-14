@@ -491,16 +491,17 @@ function setupIPC() {
 
   // ── Offline Queue Operations ──────────────────────────────────────
 
-  ipcMain.handle('db:get-tickets', (_e, officeIdOrIds: string | string[], statuses: string[]) => {
-    const ids = Array.isArray(officeIdOrIds) ? officeIdOrIds : [officeIdOrIds];
-    if (!ids.length) return [];
+  ipcMain.handle('db:get-tickets', (_e, officeIdOrIds?: string | string[], statuses?: string[]) => {
+    const ids = Array.isArray(officeIdOrIds) ? officeIdOrIds : officeIdOrIds ? [officeIdOrIds] : [];
+    const sts = Array.isArray(statuses) ? statuses : [];
+    if (!ids.length || !sts.length) return [];
     const officePlaceholders = ids.map(() => '?').join(',');
-    const statusPlaceholders = statuses.map(() => '?').join(',');
+    const statusPlaceholders = sts.map(() => '?').join(',');
     // NEVER filter active tickets by date — if it's waiting, show it
     const result = db.prepare(
       `SELECT * FROM tickets WHERE office_id IN (${officePlaceholders}) AND status IN (${statusPlaceholders})
        ORDER BY priority DESC, created_at ASC`
-    ).all(...ids, ...statuses);
+    ).all(...ids, ...sts);
 
     return result;
   });
