@@ -46,7 +46,7 @@ function createMockSupabase() {
   };
 }
 
-const mockSupabase = createMockSupabase();
+let mockSupabase = createMockSupabase();
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({
@@ -87,6 +87,7 @@ function defaultOffice(overrides: Record<string, any> = {}, forDate?: string) {
 
 function defaultOrg(settingsOverrides: Record<string, any> = {}) {
   return {
+    timezone: 'UTC',
     settings: {
       booking_mode: 'simple',
       booking_horizon_days: 14,
@@ -187,6 +188,7 @@ describe('getAvailableSlots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryResults = {};
+    mockSupabase = createMockSupabase();
   });
 
   it('returns slots with correct remaining capacity for a valid office/service/date', async () => {
