@@ -2162,6 +2162,37 @@ app.whenReady().then(async () => {
 
     if (response === 0) {
       clearDismissed();
+
+      // Check if installed in a protected directory (Program Files, etc.)
+      const installDir = path.dirname(app.getPath('exe'));
+      const isProtected = installDir.toLowerCase().includes('program files') ||
+        installDir.toLowerCase().startsWith('c:\\windows');
+      let canWrite = true;
+      try {
+        const testFile = path.join(installDir, '.qf-update-test');
+        require('fs').writeFileSync(testFile, 'test');
+        require('fs').unlinkSync(testFile);
+      } catch {
+        canWrite = false;
+      }
+
+      if (!canWrite || isProtected) {
+        // Can't auto-update — open GitHub release for manual install
+        logger.error('update', 'Install dir is protected — manual install required', {
+          code: 'QF-INSTALL-002', installDir,
+        });
+        const { shell } = require('electron');
+        shell.openExternal(`https://github.com/fonthenet/qflow/releases/tag/v${info.version}`);
+        await dialog.showMessageBox(mainWindow!, {
+          type: 'warning',
+          title: 'QF-INSTALL-002',
+          message: translate(currentLocale, 'Admin permission required'),
+          detail: translate(currentLocale, 'The app was installed with admin rights so auto-update cannot proceed. The download page has opened in your browser — please download and install as Administrator.'),
+          buttons: ['OK'],
+        });
+        return;
+      }
+
       // Close DB before update to prevent data loss from forced taskkill
       backupDatabase();
       closeDB();
