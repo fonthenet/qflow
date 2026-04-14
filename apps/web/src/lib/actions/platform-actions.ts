@@ -30,6 +30,7 @@ import {
   normalizeTrialTemplateStructure,
 } from '@/lib/platform/trial-structure';
 import { getIndustryTemplateById } from '@/lib/platform/templates';
+import { applyProfile } from '@/lib/platform/template-profiles';
 
 function generateScreenToken(officeId?: string) {
   // First screen uses office token (unified with kiosk URL), subsequent ones get random tokens
@@ -205,7 +206,10 @@ async function seedConfirmedTemplate(
   currentSettings: Record<string, unknown>,
   input: TemplateSetupInput
 ) {
-  const template = getIndustryTemplateById(input.templateId);
+  let template = getIndustryTemplateById(input.templateId);
+  if (input.profileId) {
+    template = applyProfile(template, input.profileId);
+  }
   const starterOffice =
     template.starterOffices.find((office) => office.branchType === input.branchType) ??
     template.starterOffices[0];
@@ -496,17 +500,30 @@ async function seedConfirmedTemplate(
 
       const finalCode = codeTaken ? autoCode + Math.floor(Math.random() * 99).toString().padStart(2, '0') : autoCode;
 
-      // Set WhatsApp/Messenger defaults in org settings
+      // Set WhatsApp/Messenger/Booking defaults in org settings
+      // Every new business is pre-wired: channels on, booking ready
       const currentOrgSettings = (orgRow?.settings ?? {}) as Record<string, unknown>;
+      const channelDefaults: Record<string, unknown> = {
+        whatsapp_enabled: true,
+        messenger_enabled: true,
+        whatsapp_default_virtual_code_id: createdVqc.id,
+        messenger_default_virtual_code_id: createdVqc.id,
+        whatsapp_code: currentOrgSettings.whatsapp_code || finalCode,
+        // Booking always enabled — customer can toggle off in settings
+        booking_mode: currentOrgSettings.booking_mode || 'simple',
+        booking_horizon_days: currentOrgSettings.booking_horizon_days ?? 90,
+        slot_duration_minutes: currentOrgSettings.slot_duration_minutes ?? 30,
+        slots_per_interval: currentOrgSettings.slots_per_interval ?? 1,
+        allow_cancellation: currentOrgSettings.allow_cancellation ?? true,
+        min_booking_lead_hours: currentOrgSettings.min_booking_lead_hours ?? 1,
+      };
       await context.supabase
         .from('organizations')
         .update({
           settings: {
             ...currentOrgSettings,
             ...nextSettings,
-            whatsapp_default_virtual_code_id: createdVqc.id,
-            messenger_default_virtual_code_id: createdVqc.id,
-            whatsapp_code: currentOrgSettings.whatsapp_code || finalCode,
+            ...channelDefaults,
           },
         })
         .eq('id', context.staff.organization_id);
@@ -687,6 +704,11 @@ export async function confirmIndustryTemplateSetup(input?: Partial<TemplateSetup
   const trialSelection = getTrialPlatformSelection(onboardingState.currentSettings);
   const normalizedInput: TemplateSetupInput = {
     templateId: input?.templateId ?? trialSelection.templateId,
+    profileId:
+      input?.profileId ??
+      (typeof onboardingState.currentSettings.platform_trial_profile_id === 'string'
+        ? onboardingState.currentSettings.platform_trial_profile_id
+        : undefined),
     operatingModel: input?.operatingModel ?? trialSelection.operatingModel,
     branchType: input?.branchType ?? trialSelection.branchType,
     officeName:

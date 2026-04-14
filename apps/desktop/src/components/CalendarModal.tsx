@@ -3522,9 +3522,38 @@ function DesktopApptDetail({
   type TimelineEvent = { time: string; label: string; icon: string; color: string };
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [ticketNumber, setTicketNumber] = useState<string | null>(null);
 
   // Sync when switching appointments
-  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); setEditingTime(false); setRescheduleError(null); setAvailableSlots([]); setTimeline([]); }, [a.id]);
+  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); setEditingTime(false); setRescheduleError(null); setAvailableSlots([]); setTimeline([]); setTicketNumber(null); }, [a.id]);
+
+  // Fetch ticket number when appointment has a ticket_id
+  useEffect(() => {
+    if (!a.ticket_id) { setTicketNumber(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        // Try local SQLite first (fastest)
+        const w = window as any;
+        if (w.qf?.db?.query) {
+          const rows: any[] = await w.qf.db.rawQuery?.('SELECT ticket_number FROM tickets WHERE id = ?', [a.ticket_id]) ?? [];
+          if (!cancelled && rows.length > 0 && rows[0].ticket_number) {
+            setTicketNumber(rows[0].ticket_number);
+            return;
+          }
+        }
+        // Fallback: fetch from Supabase
+        if (storedAuth) {
+          const { ensureAuth, getSupabase } = await import('../lib/supabase');
+          await ensureAuth(storedAuth);
+          const sb = await getSupabase();
+          const { data } = await sb.from('tickets').select('ticket_number').eq('id', a.ticket_id).single();
+          if (!cancelled && data?.ticket_number) setTicketNumber(data.ticket_number);
+        }
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [a.ticket_id, storedAuth]);
 
   // Fetch ticket events for timeline
   useEffect(() => {
@@ -3759,11 +3788,16 @@ function DesktopApptDetail({
 
       {/* Body */}
       <div style={{ padding: 16 }}>
-        {/* Status badge */}
-        <div style={{ marginBottom: 14 }}>
+        {/* Status badge + ticket number */}
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, color: '#fff', background: statusColor }}>
             {statusLabel[a.status] ?? a.status}
           </span>
+          {ticketNumber && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#8b5cf6', fontFamily: 'monospace', letterSpacing: 0.5 }}>
+              🎫 {ticketNumber}
+            </span>
+          )}
         </div>
 
         {/* Source badge — same CSS classes as queue tickets */}

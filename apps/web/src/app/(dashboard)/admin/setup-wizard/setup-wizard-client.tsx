@@ -21,6 +21,7 @@ import {
   Sparkles,
   Settings2,
   LayoutTemplate,
+  Trash2,
 } from 'lucide-react';
 import {
   createOffice,
@@ -29,6 +30,9 @@ import {
   createDesk,
   createStaffMember,
   updateDesk,
+  deleteService,
+  deleteDepartment,
+  deleteDesk,
 } from '@/lib/actions/admin-actions';
 import {
   saveIndustryTemplateTrial,
@@ -533,6 +537,42 @@ function EmptyState({ icon: Icon, message, action }: { icon: any; message: strin
   );
 }
 
+function StatTile({ icon: Icon, count, label, colorClass }: {
+  icon: any; count: number; label: string; colorClass: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="rounded-xl border border-border bg-card p-3 text-center">
+      <div className={`mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg ${colorClass}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-xl font-bold text-foreground">{count}</p>
+      <p className="text-[11px] text-muted-foreground">{t(label)}</p>
+    </div>
+  );
+}
+
+function SectionCard({ icon: Icon, iconColor, title, subtitle, children }: {
+  icon: any; iconColor: string; title: string; subtitle: string; children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-6 rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="border-b border-border bg-muted/30 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconColor}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-foreground">{title}</h3>
+            <p className="text-[11px] leading-relaxed text-muted-foreground mt-0.5">{subtitle}</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────────
 // Step 1: Business Type (pre-confirm template + profile selection)
 // ────────────────────────────────────────────────────────────────
@@ -870,82 +910,164 @@ function SetupOverviewStep({
     });
   }
 
+  function handleDeleteService(id: string) {
+    startTransition(async () => {
+      setError(null);
+      const result = await deleteService(id);
+      if (result?.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
+  function handleDeleteDepartment(id: string) {
+    startTransition(async () => {
+      setError(null);
+      const result = await deleteDepartment(id);
+      if (result?.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
+  function handleDeleteDesk(id: string) {
+    startTransition(async () => {
+      setError(null);
+      const result = await deleteDesk(id);
+      if (result?.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
+  // Count desks that have services linked
+  const desksWithServices = desks.filter((d) => (servicesByDesk.get(d.id)?.size ?? 0) > 0).length;
+
   return (
     <StepCard>
-      <StepHeader icon={Building2} title="Your Setup" subtitle="Review and customize what was created for your business." />
+      <StepHeader icon={Building2} title="Your Setup" subtitle="Review what was pre-configured for your business. You can customize everything below." />
 
       <Guideline>
-        <strong>{t('Tip:')}</strong> {t('Everything below was auto-generated from your template. You can add more departments, services, or desks right here.')}
+        <strong>{t('Auto-generated')}</strong> &mdash; {t('Based on your template, we created a ready-to-go setup. Review each section and add or adjust anything that doesn\'t match your business.')}
       </Guideline>
 
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</div>
       )}
 
-      {/* Offices */}
-      <div className="mb-6">
-        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-primary" /> {t('{label}s', { label: vocab.officeLabel })}
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{offices.length}</span>
-        </h3>
+      {/* Quick stats overview */}
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile icon={Building2} count={offices.length} label={vocab.officeLabel + 's'} colorClass="text-primary bg-primary/10" />
+        <StatTile icon={Layers} count={departments.length} label={vocab.departmentLabel + 's'} colorClass="text-success bg-success/10" />
+        <StatTile icon={Settings2} count={services.length} label={vocab.serviceLabel + 's'} colorClass="text-warning bg-warning/10" />
+        <StatTile icon={Monitor} count={desks.length} label={vocab.deskLabel + 's'} colorClass="text-destructive bg-destructive/10" />
+      </div>
+
+      {/* ── Section 1: Location ── */}
+      <SectionCard
+        icon={Building2}
+        iconColor="text-primary bg-primary/10"
+        title={t('{label}s', { label: vocab.officeLabel })}
+        subtitle={t('Your physical location where {customers} are served. Each {office} operates independently with its own {departments} and {desks}.', {
+          customers: (vocab.customerLabel ?? 'Customer').toLowerCase() + 's',
+          office: vocab.officeLabel.toLowerCase(),
+          departments: vocab.departmentLabel.toLowerCase() + 's',
+          desks: vocab.deskLabel.toLowerCase() + 's',
+        })}
+      >
         {offices.length > 0 ? (
           <div className="space-y-2">
             {offices.map((office) => (
-              <ItemCard
-                key={office.id}
-                title={office.name}
-                subtitle={office.address || undefined}
-                badge={office.is_active ? t('Active') : t('Inactive')}
-                badgeColor={office.is_active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}
-              />
+              <div key={office.id} className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-foreground">{office.name}</h4>
+                  {office.address && <p className="text-xs text-muted-foreground mt-0.5">{office.address}</p>}
+                </div>
+                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
+                  office.is_active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {office.is_active ? t('Active') : t('Inactive')}
+                </span>
+              </div>
             ))}
           </div>
         ) : (
-          <EmptyState icon={Building2} message="No offices found. Your template should have created one automatically." />
+          <EmptyState icon={Building2} message={`No ${vocab.officeLabel.toLowerCase()}s found. Your template should have created one automatically.`} />
         )}
-      </div>
+      </SectionCard>
 
-      {/* Departments & Services */}
-      <div className="mb-6">
-        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <Layers className="h-4 w-4 text-primary" /> {t('{dLabel}s & {sLabel}s', { dLabel: vocab.departmentLabel, sLabel: vocab.serviceLabel })}
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{departments.length} / {services.length}</span>
-        </h3>
+      {/* ── Section 2: Departments & Services ── */}
+      <SectionCard
+        icon={Layers}
+        iconColor="text-success bg-success/10"
+        title={t('{dLabel}s & {sLabel}s', { dLabel: vocab.departmentLabel, sLabel: vocab.serviceLabel })}
+        subtitle={t('{departments} group related {services} together. {customers} choose a {service} when they join the queue, and they get routed to the right {desk}.', {
+          departments: vocab.departmentLabel + 's',
+          services: vocab.serviceLabel.toLowerCase() + 's',
+          customers: (vocab.customerLabel ?? 'Customer') + 's',
+          service: vocab.serviceLabel.toLowerCase(),
+          desk: vocab.deskLabel.toLowerCase(),
+        })}
+      >
         {departments.length > 0 ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {departments.map((dept) => {
               const deptServices = servicesByDept.get(dept.id) ?? [];
               return (
                 <div key={dept.id} className="rounded-xl border border-border overflow-hidden">
-                  <div className="flex items-center justify-between bg-muted/30 px-4 py-2.5">
+                  <div className="flex items-center justify-between bg-muted/40 px-4 py-3">
                     <div>
                       <h4 className="font-semibold text-foreground text-sm">{dept.name}</h4>
-                      <p className="text-[10px] text-muted-foreground">{dept.office?.name} &middot; {deptServices.length} service(s)</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {deptServices.length} {vocab.serviceLabel.toLowerCase()}{deptServices.length !== 1 ? 's' : ''}
+                      </p>
                     </div>
-                    <button
-                      onClick={() => { setServiceDeptId(dept.id); setShowServiceForm(true); setShowDeptForm(false); setShowDeskForm(false); }}
-                      className="flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-                    >
-                      <Plus className="h-3 w-3" /> {t('Add Service')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setServiceDeptId(dept.id); setShowServiceForm(true); setShowDeptForm(false); setShowDeskForm(false); }}
+                        className="flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        <Plus className="h-3 w-3" /> {t('Add {label}', { label: vocab.serviceLabel })}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDepartment(dept.id)}
+                        disabled={isPending}
+                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+                        title={t('Delete {label}', { label: vocab.departmentLabel.toLowerCase() })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   {deptServices.length > 0 ? (
                     <div className="divide-y divide-border">
                       {deptServices.map((svc) => (
-                        <div key={svc.id} className="flex items-center justify-between px-4 py-2">
-                          <div>
-                            <span className="text-xs font-medium text-foreground">{svc.name}</span>
-                            {svc.code && <span className="ml-2 text-[10px] text-muted-foreground">({svc.code})</span>}
+                        <div key={svc.id} className="flex items-center justify-between px-4 py-2.5 group">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-success" />
+                            <span className="text-sm text-foreground">{svc.name}</span>
                           </div>
-                          {svc.estimated_service_time && (
-                            <span className="text-[10px] text-muted-foreground">~{svc.estimated_service_time} min</span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {svc.estimated_service_time ? (
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                ~{svc.estimated_service_time} min
+                              </span>
+                            ) : null}
+                            <button
+                              onClick={() => handleDeleteService(svc.id)}
+                              disabled={isPending}
+                              className="rounded-lg p-1 text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-destructive transition-colors disabled:opacity-50"
+                              title={t('Delete {label}', { label: vocab.serviceLabel.toLowerCase() })}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="px-4 py-3 text-center text-xs text-muted-foreground">
-                      {t('No services yet. Add at least one service.')}
+                    <div className="px-4 py-4 text-center text-xs text-muted-foreground">
+                      {t('No {services} yet. Add at least one so {customers} can join the queue.', {
+                        services: vocab.serviceLabel.toLowerCase() + 's',
+                        customers: (vocab.customerLabel ?? 'Customer').toLowerCase() + 's',
+                      })}
                     </div>
                   )}
                 </div>
@@ -953,11 +1075,11 @@ function SetupOverviewStep({
             })}
           </div>
         ) : (
-          <EmptyState icon={Layers} message="No departments yet. Add one to organize your services."
+          <EmptyState icon={Layers} message={`No ${vocab.departmentLabel.toLowerCase()}s yet. Add one to organize your ${vocab.serviceLabel.toLowerCase()}s.`}
             action={
               <button onClick={() => { setShowDeptForm(true); setShowServiceForm(false); setShowDeskForm(false); }}
                 className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
-                <Plus className="h-4 w-4" /> {t('Add Department')}
+                <Plus className="h-4 w-4" /> {t('Add {label}', { label: vocab.departmentLabel })}
               </button>
             }
           />
@@ -967,9 +1089,9 @@ function SetupOverviewStep({
         {!showDeptForm && departments.length > 0 && (
           <button
             onClick={() => { setShowDeptForm(true); setShowServiceForm(false); setShowDeskForm(false); }}
-            className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
+            className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
           >
-            <Plus className="h-4 w-4" /> {t('Add department')}
+            <Plus className="h-4 w-4" /> {t('Add {label}', { label: vocab.departmentLabel.toLowerCase() })}
           </button>
         )}
 
@@ -979,14 +1101,14 @@ function SetupOverviewStep({
             <InlineForm
               onSubmit={handleCreateDepartment}
               onCancel={() => { setShowDeptForm(false); setError(null); }}
-              submitLabel={isPending ? 'Creating...' : 'Create Department'}
+              submitLabel={isPending ? 'Creating...' : `Create ${vocab.departmentLabel}`}
               fields={
                 <>
                   <input type="hidden" name="is_active" value="true" />
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <FormField label={`${vocab.departmentLabel} Name`} name="name" placeholder={examples.placeholderDept} required />
                     <FormField label="Code" name="code" placeholder={examples.placeholderDeptCode} required />
-                    <FormField label="Office" name="office_id" required>
+                    <FormField label={vocab.officeLabel} name="office_id" required>
                       <select name="office_id" required className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
                         {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                       </select>
@@ -1005,7 +1127,7 @@ function SetupOverviewStep({
             <InlineForm
               onSubmit={handleCreateService}
               onCancel={() => { setShowServiceForm(false); setServiceDeptId(null); setError(null); }}
-              submitLabel={isPending ? 'Creating...' : 'Create Service'}
+              submitLabel={isPending ? 'Creating...' : `Create ${vocab.serviceLabel}`}
               fields={
                 <>
                   <input type="hidden" name="department_id" value={serviceDeptId} />
@@ -1021,34 +1143,56 @@ function SetupOverviewStep({
             />
           </div>
         )}
-      </div>
+      </SectionCard>
 
-      {/* Desks */}
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <Monitor className="h-4 w-4 text-primary" /> {t('{label}s', { label: vocab.deskLabel })}
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{desks.length}</span>
-        </h3>
+      {/* ── Section 3: Desks / Service Points ── */}
+      <SectionCard
+        icon={Monitor}
+        iconColor="text-warning bg-warning/10"
+        title={t('{label}s', { label: vocab.deskLabel })}
+        subtitle={t('Each {desk} is a service point where a staff member serves {customers}. {Desks} are linked to {services} they can handle.', {
+          desk: vocab.deskLabel.toLowerCase(),
+          customers: (vocab.customerLabel ?? 'Customer').toLowerCase() + 's',
+          Desks: vocab.deskLabel + 's',
+          services: vocab.serviceLabel.toLowerCase() + 's',
+        })}
+      >
         {desks.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {desks.map((desk) => {
               const linkedServiceIds = servicesByDesk.get(desk.id) ?? new Set();
               const linkedServices = [...linkedServiceIds].map((id) => serviceMap.get(id)).filter(Boolean) as Service[];
               const isLinking = linkingDeskId === desk.id;
+              const hasServices = linkedServices.length > 0;
 
               return (
-                <div key={desk.id} className="rounded-xl border border-border p-3">
+                <div key={desk.id} className={`rounded-xl border p-4 transition-colors ${
+                  hasServices ? 'border-border bg-background' : 'border-warning/30 bg-warning/5'
+                }`}>
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h4 className="text-sm font-semibold text-foreground">{desk.name}</h4>
-                      <p className="text-[10px] text-muted-foreground">{desk.department?.name} &middot; {desk.office?.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {desk.department?.name}
+                        {desk.office && offices.length > 1 ? ` \u00b7 ${desk.office.name}` : ''}
+                      </p>
                     </div>
-                    <button
-                      onClick={() => setLinkingDeskId(isLinking ? null : desk.id)}
-                      className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"
-                    >
-                      <Link2 className="h-3 w-3" /> {isLinking ? t('Cancel') : t('Edit Services')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setLinkingDeskId(isLinking ? null : desk.id)}
+                        className="flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+                      >
+                        <Link2 className="h-3 w-3" /> {isLinking ? t('Cancel') : t('Edit {label}s', { label: vocab.serviceLabel })}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDesk(desk.id)}
+                        disabled={isPending}
+                        className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+                        title={t('Delete {label}', { label: vocab.deskLabel.toLowerCase() })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   {isLinking ? (
                     <DeskServiceLinker
@@ -1058,17 +1202,21 @@ function SetupOverviewStep({
                       onSave={(ids) => handleLinkServices(desk.id, ids)}
                       isPending={isPending}
                     />
-                  ) : linkedServices.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
+                  ) : hasServices ? (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
                       {linkedServices.map((svc) => (
-                        <span key={svc.id} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        <span key={svc.id} className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
                           {svc.name}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-warning flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" /> {t('No services linked')}
+                    <p className="text-xs text-warning flex items-center gap-1 mt-1">
+                      <AlertTriangle className="h-3 w-3" /> {t('No {services} linked \u2014 this {desk} won\'t receive {customers} until you assign {services}', {
+                        services: vocab.serviceLabel.toLowerCase() + 's',
+                        desk: vocab.deskLabel.toLowerCase(),
+                        customers: (vocab.customerLabel ?? 'Customer').toLowerCase() + 's',
+                      })}
                     </p>
                   )}
                 </div>
@@ -1076,11 +1224,11 @@ function SetupOverviewStep({
             })}
           </div>
         ) : (
-          <EmptyState icon={Monitor} message="No desks yet. Add desks so your team can serve customers."
+          <EmptyState icon={Monitor} message={`No ${vocab.deskLabel.toLowerCase()}s yet. Add ${vocab.deskLabel.toLowerCase()}s so your team can serve ${(vocab.customerLabel ?? 'Customer').toLowerCase()}s.`}
             action={
               <button onClick={() => { setShowDeskForm(true); setShowDeptForm(false); setShowServiceForm(false); }}
                 className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
-                <Plus className="h-4 w-4" /> {t('Add Desk')}
+                <Plus className="h-4 w-4" /> {t('Add {label}', { label: vocab.deskLabel })}
               </button>
             }
           />
@@ -1090,9 +1238,9 @@ function SetupOverviewStep({
         {!showDeskForm && desks.length > 0 && (
           <button
             onClick={() => { setShowDeskForm(true); setShowDeptForm(false); setShowServiceForm(false); }}
-            className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
+            className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors w-full justify-center"
           >
-            <Plus className="h-4 w-4" /> {t('Add desk')}
+            <Plus className="h-4 w-4" /> {t('Add {label}', { label: vocab.deskLabel.toLowerCase() })}
           </button>
         )}
 
@@ -1102,7 +1250,7 @@ function SetupOverviewStep({
             <InlineForm
               onSubmit={handleCreateDesk}
               onCancel={() => { setShowDeskForm(false); setError(null); }}
-              submitLabel={isPending ? 'Creating...' : 'Create Desk'}
+              submitLabel={isPending ? 'Creating...' : `Create ${vocab.deskLabel}`}
               fields={
                 <>
                   <input type="hidden" name="is_active" value="true" />
@@ -1110,15 +1258,15 @@ function SetupOverviewStep({
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <FormField label={`${vocab.deskLabel} Name`} name="name" placeholder={`e.g. ${vocab.deskLabel} 1`} required />
                     <FormField label="Display Name" name="display_name" placeholder={`e.g. ${vocab.deskLabel} 1`} />
-                    <FormField label="Office" name="office_id" required>
+                    <FormField label={vocab.officeLabel} name="office_id" required>
                       <select name="office_id" required className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
                         {offices.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                       </select>
                     </FormField>
-                    <FormField label="Department" name="department_id" required>
+                    <FormField label={vocab.departmentLabel} name="department_id" required>
                       <select name="department_id" required className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring">
-                        <option value="">{t('Select department...')}</option>
-                        {departments.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.office?.name})</option>)}
+                        <option value="">{t('Select {label}...', { label: vocab.departmentLabel.toLowerCase() })}</option>
+                        {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                       </select>
                     </FormField>
                   </div>
@@ -1127,7 +1275,7 @@ function SetupOverviewStep({
             />
           </div>
         )}
-      </div>
+      </SectionCard>
 
       <StepNavigation onPrev={onPrev} onNext={onNext} />
     </StepCard>
@@ -1222,10 +1370,18 @@ function TeamStep({
   }
 
   function handleAssignStaff(deskId: string, staffId: string) {
+    const desk = desks.find((d) => d.id === deskId);
+    if (!desk) return;
     startTransition(async () => {
       setError(null);
       const formData = new FormData();
+      formData.set('name', desk.name);
+      formData.set('display_name', desk.display_name ?? '');
+      formData.set('office_id', desk.office_id);
+      formData.set('department_id', desk.department_id);
       formData.set('current_staff_id', staffId);
+      formData.set('status', desk.status ?? 'closed');
+      formData.set('is_active', desk.is_active ? 'true' : 'false');
       const result = await updateDesk(deskId, formData);
       if (result?.error) {
         setError(result.error);
@@ -1449,8 +1605,8 @@ function LaunchStep({
   const channels = [
     { name: 'Kiosk', description: 'Physical kiosk for walk-in customers', icon: Monitor, status: 'built-in', action: '/admin/kiosk' },
     { name: 'QR Code / Link', description: 'Customers scan to join remotely', icon: Link2, status: 'built-in', action: '/admin/virtual-codes' },
-    { name: 'WhatsApp', description: 'Queue via WhatsApp messages', icon: MessageSquare, status: 'configure', action: '/admin/settings' },
-    { name: 'Messenger', description: 'Queue via Facebook Messenger', icon: MessageSquare, status: 'configure', action: '/admin/settings' },
+    { name: 'WhatsApp', description: 'Customers join via WhatsApp. Managed by Qflo.', icon: MessageSquare, status: 'built-in', action: '/admin/settings' },
+    { name: 'Messenger', description: 'Customers join via Messenger. Managed by Qflo.', icon: MessageSquare, status: 'built-in', action: '/admin/settings' },
   ];
 
   return (

@@ -14,6 +14,7 @@ import type {
   IndustryVertical,
   IndustryTemplate,
   StarterDepartmentTemplate,
+  StarterDeskTemplate,
   IntakeSchema,
   CapabilityFlags,
 } from '@qflo/shared';
@@ -38,6 +39,8 @@ export interface TemplateProfile {
     };
     /** Replace starter departments/services entirely */
     starterDepartments?: StarterDepartmentTemplate[];
+    /** Replace starter desks (auto-generated from departments if omitted) */
+    starterDesks?: StarterDeskTemplate[];
     /** Replace intake schemas entirely */
     intakeSchemas?: IntakeSchema[];
     /** Override default SLAs */
@@ -1315,12 +1318,47 @@ export function applyProfile(
     ) as unknown as IndustryTemplate['experienceProfile'];
   }
 
-  // Replace starter departments in all starter offices
+  // Replace starter departments (and remap desks) in all starter offices
   if (overrides.starterDepartments && result.starterOffices.length > 0) {
-    result.starterOffices = result.starterOffices.map((office) => ({
-      ...office,
-      departments: overrides.starterDepartments!,
-    }));
+    const newDepts = overrides.starterDepartments;
+    const newDeptCodes = new Set(newDepts.map((d) => d.code));
+
+    result.starterOffices = result.starterOffices.map((office) => {
+      let desks: StarterDeskTemplate[];
+
+      if (overrides.starterDesks) {
+        // Explicit desk overrides from profile
+        desks = overrides.starterDesks;
+      } else {
+        // Auto-remap existing desks to new department codes
+        const allDesksValid = office.desks.every((d) => newDeptCodes.has(d.departmentCode));
+        if (allDesksValid) {
+          // Department codes unchanged — assign all services from the (replaced) department
+          desks = office.desks.map((desk) => {
+            const dept = newDepts.find((d) => d.code === desk.departmentCode)!;
+            return {
+              ...desk,
+              serviceCodes: dept.services.map((s) => s.code),
+            };
+          });
+        } else {
+          // Department codes changed — redistribute desks across new departments
+          desks = newDepts.flatMap((dept, deptIdx) => {
+            // First department gets 2 desks, rest get 1 desk each
+            const deskCount = deptIdx === 0 ? Math.max(2, Math.ceil(office.desks.length / newDepts.length)) : 1;
+            const svcCodes = dept.services.map((s) => s.code);
+            return Array.from({ length: deskCount }, (_, i) => ({
+              name: `${dept.name} ${i + 1}`,
+              departmentCode: dept.code,
+              serviceCodes: svcCodes,
+              displayName: `${dept.name} ${i + 1}`,
+            }));
+          });
+        }
+      }
+
+      return { ...office, departments: newDepts, desks };
+    });
   }
 
   // Replace intake schemas

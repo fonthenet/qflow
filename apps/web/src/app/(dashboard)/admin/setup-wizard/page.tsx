@@ -88,7 +88,7 @@ export default async function SetupWizardPage() {
       await Promise.all([
         context.supabase
           .from('offices')
-          .select('id, name, address, phone, settings, is_active')
+          .select('id, name, address, settings, is_active')
           .eq('organization_id', orgId)
           .order('name'),
         context.supabase

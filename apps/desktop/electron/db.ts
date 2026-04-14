@@ -51,7 +51,11 @@ export function initDB() {
       synced_at TEXT,
       source TEXT DEFAULT 'local_kiosk',
       daily_sequence INTEGER DEFAULT 0,
-      priority_category_id TEXT
+      priority_category_id TEXT,
+      locale TEXT,
+      qr_token TEXT,
+      checked_in_at TEXT,
+      estimated_wait_minutes INTEGER
     );
 
     -- Offices cache
@@ -201,6 +205,9 @@ export function initDB() {
   try { db.exec(`ALTER TABLE tickets ADD COLUMN daily_sequence INTEGER DEFAULT 0`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN priority_category_id TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE tickets ADD COLUMN locale TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN qr_token TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN checked_in_at TEXT`); } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN estimated_wait_minutes INTEGER`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN status TEXT DEFAULT 'open'`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE session ADD COLUMN station_token TEXT`); } catch { /* already exists */ }

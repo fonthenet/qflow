@@ -774,13 +774,9 @@ export function SettingsClient({
               {whatsappEnabled ? t('WhatsApp Queue Join is enabled') : t('WhatsApp Queue Join is disabled')}
             </span>
           </label>
-          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-            whatsappProviderReady
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
-            <div className={`h-2 w-2 rounded-full ${whatsappProviderReady ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            {whatsappProviderReady ? t('Connected') : t('Not connected')}
+          <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+            <div className="h-2 w-2 rounded-full bg-primary" />
+            {t('Managed by Qflo')}
           </div>
         </div>
 
@@ -903,13 +899,9 @@ export function SettingsClient({
               {messengerEnabled ? t('Messenger Notifications are enabled') : t('Messenger Notifications are disabled')}
             </span>
           </label>
-          <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-            messengerPageInfo?.connected
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-red-50 text-red-700 border border-red-200'
-          }`}>
-            <div className={`h-2 w-2 rounded-full ${messengerPageInfo?.connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            {messengerPageInfo?.connected ? t('Connected') : t('Not connected')}
+          <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+            <div className="h-2 w-2 rounded-full bg-primary" />
+            {t('Managed by Qflo')}
           </div>
         </div>
 
@@ -1188,7 +1180,7 @@ export function SettingsClient({
                   type="button"
                   onClick={() => setSlotDurationMinutes(Math.max(5, slotDurationMinutes - 5))}
                   disabled={slotDurationMinutes <= 5}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
                 >
                   −
                 </button>
@@ -1199,7 +1191,7 @@ export function SettingsClient({
                   type="button"
                   onClick={() => setSlotDurationMinutes(Math.min(120, slotDurationMinutes + 5))}
                   disabled={slotDurationMinutes >= 120}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
                 >
                   +
                 </button>

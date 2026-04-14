@@ -212,6 +212,21 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: 'عذرًا، هذا الطابور مغلق حاليًا. حاول مرة أخرى لاحقًا.',
     en: 'Sorry, this queue is currently closed. Please try again later.',
   },
+  business_closed_opens_at: {
+    fr: '🕐 *{name}* n\'est pas encore ouvert.\n\nOuverture aujourd\'hui à *{time}*.\nRevenez à ce moment-là !',
+    ar: '🕐 *{name}* لم يفتح بعد.\n\nيفتح اليوم الساعة *{time}*.\nعد في ذلك الوقت!',
+    en: '🕐 *{name}* is not open yet.\n\nOpens today at *{time}*.\nCome back then!',
+  },
+  business_closed_for_day: {
+    fr: '🚪 *{name}* est fermé pour aujourd\'hui.\n\nRéessayez demain !',
+    ar: '🚪 *{name}* مغلق لبقية اليوم.\n\nحاول مجددًا غدًا!',
+    en: '🚪 *{name}* is closed for today.\n\nTry again tomorrow!',
+  },
+  business_closed_today: {
+    fr: '🚪 *{name}* est fermé aujourd\'hui.\n\nRéessayez un autre jour !',
+    ar: '🚪 *{name}* مغلق اليوم.\n\nحاول في يوم آخر!',
+    en: '🚪 *{name}* is closed today.\n\nTry again another day!',
+  },
   queue_requires_service: {
     fr: 'Désolé, cette file nécessite de choisir un service. Rejoignez via le lien QR code.',
     ar: 'عذرًا، يتطلب هذا الطابور اختيار خدمة. انضم عبر رابط QR.',
@@ -2365,6 +2380,85 @@ async function handleBackToDepartments(
   });
 }
 
+// ── Business hours check (inlined to avoid server-action export) ─────
+const DAYS_OF_WEEK_MSG = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'] as const;
+
+function checkBusinessHours(
+  operatingHours: Record<string, { open: string; close: string }> | null,
+  timezone: string | null | undefined,
+) {
+  const tz = ((timezone ?? '').trim() || 'Africa/Algiers').replace('Europe/Algiers', 'Africa/Algiers');
+  const now = new Date();
+  let day: string, time: string;
+  try {
+    day = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: tz }).format(now).toLowerCase();
+    const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(now);
+    const h = parts.find(p => p.type === 'hour')?.value ?? '00';
+    const m = parts.find(p => p.type === 'minute')?.value ?? '00';
+    time = `${h.padStart(2,'0')}:${m.padStart(2,'0')}`;
+  } catch {
+    day = DAYS_OF_WEEK_MSG[now.getUTCDay()];
+    time = `${String(now.getUTCHours()).padStart(2,'0')}:${String(now.getUTCMinutes()).padStart(2,'0')}`;
+  }
+  if (!operatingHours || Object.keys(operatingHours).length === 0) return { isOpen: true, reason: 'no_hours', todayHours: null as { open: string; close: string } | null };
+  const todayHours = operatingHours[day];
+  if (!todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00')) return { isOpen: false, reason: 'closed_today', todayHours: null as { open: string; close: string } | null };
+  const toMin = (v: string) => { const [hh, mm] = v.split(':').map(Number); return hh * 60 + mm; };
+  const cur = toMin(time), open = toMin(todayHours.open), close = toMin(todayHours.close);
+  if (cur < open) return { isOpen: false, reason: 'before_hours', todayHours };
+  if (cur >= close) return { isOpen: false, reason: 'after_hours', todayHours };
+  return { isOpen: true, reason: 'within_hours', todayHours };
+}
+
+// ── Early closed check — avoids asking YES/NO when business is closed ──
+async function checkBusinessClosedEarly(
+  officeId: string,
+  org: { id: string; name: string; settings?: Record<string, any> },
+  locale: Locale,
+  identifier: string,
+  sendMessage: SendFn,
+): Promise<boolean> {
+  const supabase = createAdminClient() as any;
+  const { data: office } = await supabase
+    .from('offices')
+    .select('operating_hours, timezone, settings, organization:organizations(settings, timezone)')
+    .eq('id', officeId)
+    .single();
+
+  if (!office) return false;
+
+  const orgTz = (office.organization as any)?.timezone || office.timezone || 'Africa/Algiers';
+  const orgSettings = ((office.organization as any)?.settings ?? {}) as Record<string, unknown>;
+  const officeSettings = (office.settings as Record<string, unknown> | null) ?? {};
+  const overrideMode = (
+    typeof orgSettings.visit_intake_override_mode === 'string'
+      ? orgSettings.visit_intake_override_mode
+      : typeof officeSettings.visit_intake_override_mode === 'string'
+        ? officeSettings.visit_intake_override_mode
+        : 'business_hours'
+  ) as string;
+
+  if (overrideMode === 'always_open') return false;
+  if (overrideMode === 'always_closed') {
+    await sendMessage({ to: identifier, body: t('business_closed_today', locale, { name: org.name }) });
+    return true;
+  }
+
+  const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
+  const status = checkBusinessHours(operatingHours, orgTz);
+
+  if (status.isOpen) return false;
+
+  if (status.reason === 'before_hours' && status.todayHours?.open) {
+    await sendMessage({ to: identifier, body: t('business_closed_opens_at', locale, { name: org.name, time: status.todayHours.open }) });
+  } else if (status.reason === 'after_hours') {
+    await sendMessage({ to: identifier, body: t('business_closed_for_day', locale, { name: org.name }) });
+  } else {
+    await sendMessage({ to: identifier, body: t('business_closed_today', locale, { name: org.name }) });
+  }
+  return true;
+}
+
 // ── Direct confirmation with pre-resolved IDs ───────────────────────
 async function askJoinConfirmationDirect(
   identifier: string, org: any, locale: Locale, channel: Channel,
@@ -2377,6 +2471,12 @@ async function askJoinConfirmationDirect(
   // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
     .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_department', 'pending_service']).eq('channel', channel);
+
+  // Early closed check — tell the customer immediately instead of asking YES/NO first
+  if (resolved?.officeId) {
+    const closed = await checkBusinessClosedEarly(resolved.officeId, org, locale, identifier, sendMessage);
+    if (closed) return;
+  }
 
   const sessionData: Record<string, any> = {
     organization_id: org.id,
@@ -2453,6 +2553,10 @@ async function askJoinConfirmation(
 
   // Resolve office (use vCode office or first available)
   const officeId = resolvedOfficeId || departments[0].office_id;
+
+  // Early closed check — tell the customer immediately
+  const closed = await checkBusinessClosedEarly(officeId, org, locale, identifier, sendMessage);
+  if (closed) return;
 
   // Filter departments for this office
   const officeDepts = departments.filter((d: any) => d.office_id === officeId);

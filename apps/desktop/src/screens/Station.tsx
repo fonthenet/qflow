@@ -2564,6 +2564,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const [bookingWidth, setBookingWidth] = useState(420);
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
   useEffect(() => {
@@ -2594,7 +2595,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }
   }, [sidebarWidth]);
 
-  const startSidebarResize = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+  const startSidebarResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
     event.preventDefault();
     const isRtl = document.documentElement.dir === 'rtl';
     const startX = event.clientX;
@@ -3530,20 +3531,40 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* In-House Booking Panel moved to split view inside queue tab */}
       </div>
 
+      {/* Resizer strip — always visible, outside sidebar */}
+      {!isSmallScreen && (
+        <div
+          onPointerDown={sidebarCollapsed ? undefined : startSidebarResize}
+          style={{ position: 'relative', width: 10, flexShrink: 0, zIndex: 10, cursor: sidebarCollapsed ? 'default' : 'col-resize', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          {/* Center toggle arrow */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setSidebarCollapsed((c) => !c); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            title={sidebarCollapsed ? t('Show queue panel') : t('Hide queue panel')}
+            aria-label={sidebarCollapsed ? t('Show queue panel') : t('Hide queue panel')}
+            style={{
+              width: 12, height: 56, borderRadius: 4, flexShrink: 0,
+              border: '1px solid rgba(0,0,0,0.08)',
+              background: 'var(--surface, #fff)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text2, #64748b)', fontSize: 8,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            }}
+          >
+            {sidebarCollapsed ? '◀' : '▶'}
+          </button>
+        </div>
+      )}
+
       {/* Right panel — queue overview */}
       <div
         className={`station-sidebar${isSmallScreen && sidebarVisible ? ' sidebar-visible' : ''}`}
         role="complementary"
         aria-label={t('Queue Overview')}
-        style={isSmallScreen ? undefined : { width: sidebarWidth }}
+        style={isSmallScreen ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth, minWidth: sidebarCollapsed ? 0 : undefined, overflow: sidebarCollapsed ? 'hidden' : undefined, borderLeft: sidebarCollapsed ? 'none' : undefined }}
       >
-        <button
-          type="button"
-          className="station-sidebar-resizer"
-          onPointerDown={startSidebarResize}
-          aria-label={t('Resize queue panel')}
-          title={t('Resize queue panel')}
-        />
         <div className="sidebar-section">
           <div className="sidebar-header">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
