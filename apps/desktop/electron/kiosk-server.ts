@@ -2684,16 +2684,16 @@ function serveStationIndex(res: http.ServerResponse) {
         if (r.status === 401 || r.status === 403) {
           console.warn('[qf-bridge] GET ' + path + ' → ' + r.status + ', retrying token...');
           return retryToken().then(function(ok) {
-            if (!ok) return r.json().then(function(d) { return Promise.reject(d); });
+            if (!ok) { console.error('[qf-bridge] GET ' + path + ' token retry failed'); return null; }
             return fetch(API + path, { headers: authHeaders() }).then(function(r2) {
-              if (!r2.ok) return r2.json().then(function(d) { return Promise.reject(d); });
+              if (!r2.ok) { console.error('[qf-bridge] GET ' + path + ' retry → ' + r2.status); return null; }
               return r2.json();
             });
           });
         }
-        if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); return r.json().then(function(d) { return Promise.reject(d); }); }
+        if (!r.ok) { console.error('[qf-bridge] GET ' + path + ' → ' + r.status); return null; }
         return r.json();
-      });
+      }).catch(function(err) { console.error('[qf-bridge] GET ' + path + ' error:', err); return null; });
     });
   }
   function post(path, body) {
@@ -2706,20 +2706,20 @@ function serveStationIndex(res: http.ServerResponse) {
         if (r.status === 401 || r.status === 403) {
           console.warn('[qf-bridge] POST ' + path + ' → ' + r.status + ', retrying token...');
           return retryToken().then(function(ok) {
-            if (!ok) return r.json().then(function(d) { return Promise.reject(d); });
+            if (!ok) { console.error('[qf-bridge] POST ' + path + ' token retry failed'); return null; }
             return fetch(API + path, {
               method: 'POST',
               headers: authHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify(body),
             }).then(function(r2) {
-              if (!r2.ok) return r2.json().then(function(d) { return Promise.reject(d); });
+              if (!r2.ok) { console.error('[qf-bridge] POST ' + path + ' retry → ' + r2.status); return null; }
               return r2.json();
             });
           });
         }
-        if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); return r.json().then(function(d) { return Promise.reject(d); }); }
+        if (!r.ok) { console.error('[qf-bridge] POST ' + path + ' → ' + r.status); return null; }
         return r.json();
-      });
+      }).catch(function(err) { console.error('[qf-bridge] POST ' + path + ' error:', err); return null; });
     });
   }
 
@@ -2751,15 +2751,19 @@ function serveStationIndex(res: http.ServerResponse) {
   connectSSE();
 
   window.qf = {
-    getConfig: function() { return get('/api/station/config'); },
+    getConfig: function() {
+      return get('/api/station/config').then(function(c) {
+        return c && c.supabaseUrl ? c : { supabaseUrl: '', supabaseAnonKey: '' };
+      });
+    },
 
     db: {
       getTickets: function(officeId, statuses) {
-        var ids = Array.isArray(officeId) ? officeId.join(',') : officeId;
-        return get('/api/station/tickets?officeIds=' + ids + '&statuses=' + statuses.join(','));
+        var ids = Array.isArray(officeId) ? officeId.join(',') : (officeId || '');
+        var sts = Array.isArray(statuses) ? statuses.join(',') : '';
+        return get('/api/station/tickets?officeIds=' + ids + '&statuses=' + sts).then(function(r) { return r || []; });
       },
       createTicket: function(ticket) {
-        console.log('[qf-bridge] createTicket input:', JSON.stringify(ticket));
         return post('/api/take-ticket', {
           officeId: ticket.office_id,
           departmentId: ticket.department_id,
@@ -2770,27 +2774,26 @@ function serveStationIndex(res: http.ServerResponse) {
           priority: ticket.priority || 0,
           source: ticket.source || 'in_house',
         }).then(function(r) {
-          console.log('[qf-bridge] createTicket raw response:', JSON.stringify(r));
-          var result = r && r.ticket ? r.ticket : r;
-          console.log('[qf-bridge] createTicket unwrapped:', JSON.stringify(result));
-          return result;
+          if (!r) return null;
+          return r.ticket ? r.ticket : r;
         });
       },
       updateTicket: function(ticketId, updates) {
-        return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates });
+        return post('/api/station/update-ticket', { ticketId: ticketId, updates: updates }).then(function(r) { return r || {}; });
       },
       updateDesk: function(deskId, update) {
-        return post('/api/station/update-desk', { deskId: deskId, updates: update });
+        return post('/api/station/update-desk', { deskId: deskId, updates: update }).then(function(r) { return r || {}; });
       },
       callNext: function(officeId, deskId, staffId) {
-        return post('/api/station/call-next', { officeId: officeId, deskId: deskId, staffId: staffId });
+        return post('/api/station/call-next', { officeId: officeId, deskId: deskId, staffId: staffId }).then(function(r) { return r || null; });
       },
       query: function(table, officeIds) {
-        return get('/api/station/query?table=' + table + '&officeIds=' + officeIds.join(','));
+        var ids = Array.isArray(officeIds) ? officeIds.join(',') : (officeIds || '');
+        return get('/api/station/query?table=' + table + '&officeIds=' + ids).then(function(r) { return r || []; });
       },
       insertCloudTicket: function() { return Promise.resolve(); },
       saveNotes: function(ticketId, notes) {
-        return post('/api/station/update-ticket', { ticketId: ticketId, updates: { notes: notes } }).catch(function() {});
+        return post('/api/station/update-ticket', { ticketId: ticketId, updates: { notes: notes } }).then(function() {}).catch(function() {});
       },
       banCustomer: function() { return Promise.resolve({ error: 'Not available in web station' }); },
     },
@@ -2802,9 +2805,17 @@ function serveStationIndex(res: http.ServerResponse) {
     },
 
     sync: {
-      getStatus: function() { return get('/api/station/sync-status'); },
-      forceSync: function() { return post('/api/station/sync-force', {}); },
-      getPendingDetails: function() { return get('/api/station/sync-pending'); },
+      getStatus: function() {
+        return get('/api/station/sync-status').then(function(s) {
+          return s || { isOnline: false, pendingCount: 0, lastSyncAt: null };
+        });
+      },
+      forceSync: function() {
+        return post('/api/station/sync-force', {}).then(function(r) { return r || {}; });
+      },
+      getPendingDetails: function() {
+        return get('/api/station/sync-pending').then(function(r) { return r || []; });
+      },
       discardItem: function() { return Promise.resolve(); },
       discardAll: function() { return Promise.resolve(); },
       retryItem: function() { return Promise.resolve(); },
@@ -2820,15 +2831,14 @@ function serveStationIndex(res: http.ServerResponse) {
     },
 
     session: {
-      save: function(session) { return Promise.resolve(); },
+      save: function() { return Promise.resolve(); },
       load: function() {
         return get('/api/station/session').then(function(s) {
-          // Return null if error or no valid session data
-          if (!s || s.error || !s.staff_id || !s.office_id) return null;
+          if (!s || !s.staff_id || !s.office_id) return null;
           return s;
-        }).catch(function() { return null; });
+        });
       },
-      clear: function() { return post('/api/station/session/clear', {}); },
+      clear: function() { return post('/api/station/session/clear', {}).then(function() {}); },
     },
 
     settings: {
@@ -2836,14 +2846,14 @@ function serveStationIndex(res: http.ServerResponse) {
       getLocale: function() {
         var stored = localStorage.getItem('qflo_station_locale');
         if (stored) return Promise.resolve(stored);
-        return get('/api/station/settings').then(function(s) { return s.locale; });
+        return get('/api/station/settings').then(function(s) { return (s && s.locale) ? s.locale : 'en'; });
       },
       setLocale: function(locale) {
         localStorage.setItem('qflo_station_locale', locale);
         currentLang = locale;
         var btn = document.getElementById('qf-lang-toggle');
         if (btn) btn.textContent = langLabels[locale] || locale.toUpperCase();
-        return post('/api/station/settings/locale', { locale: locale }).then(function(s) { return s.locale; });
+        return post('/api/station/settings/locale', { locale: locale }).then(function(s) { return (s && s.locale) ? s.locale : locale; });
       },
       onLocaleChange: function(cb) {
         window.qf.settings._localeCallbacks.push(cb);
@@ -2851,10 +2861,16 @@ function serveStationIndex(res: http.ServerResponse) {
       },
     },
 
-    isOnline: function() { return get('/api/station/sync-status').then(function(s) { return s.isOnline; }); },
+    isOnline: function() {
+      return get('/api/station/sync-status').then(function(s) { return s ? s.isOnline : false; });
+    },
 
     auth: {
-      getToken: function() { return get('/api/station/session').then(function(s) { return s && s.access_token ? s.access_token : null; }).catch(function() { return null; }); },
+      getToken: function() {
+        return get('/api/station/session').then(function(s) {
+          return s && s.access_token ? { ok: true, token: s.access_token } : { ok: false, token: null };
+        });
+      },
       onTokenRefreshed: function(cb) { return function() {}; },
       onSessionExpired: function(cb) { return function() {}; },
     },
@@ -2868,27 +2884,27 @@ function serveStationIndex(res: http.ServerResponse) {
 
     activity: {
       getRecent: function(officeId, limit) {
-        return get('/api/station/activity?officeId=' + officeId + '&limit=' + (limit || 20));
+        return get('/api/station/activity?officeId=' + officeId + '&limit=' + (limit || 20)).then(function(r) { return r || []; });
       },
     },
 
     debug: {
-      dbStats: function() { return get('/api/station/debug-stats'); },
+      dbStats: function() { return get('/api/station/debug-stats').then(function(r) { return r || {}; }); },
     },
 
     getKioskPort: function() { return Promise.resolve(location.port || (location.protocol === 'https:' ? 443 : 80)); },
 
     kiosk: {
-      getUrl: function() { return get('/api/station/kiosk-info').then(function(d) { return d.kioskUrl; }); },
-      getLocalIP: function() { return get('/api/station/kiosk-info').then(function(d) { return d.localIP; }); },
+      getUrl: function() { return get('/api/station/kiosk-info').then(function(d) { return d ? d.kioskUrl : ''; }); },
+      getLocalIP: function() { return get('/api/station/kiosk-info').then(function(d) { return d ? d.localIP : ''; }); },
     },
 
     links: {
-      getPublic: function() { return get('/api/station/public-links'); },
+      getPublic: function() { return get('/api/station/public-links').then(function(r) { return r || {}; }); },
     },
 
     org: {
-      getBranding: function() { return get('/api/station/branding'); },
+      getBranding: function() { return get('/api/station/branding').then(function(r) { return r || {}; }); },
     },
 
     updater: {
@@ -2944,10 +2960,10 @@ function serveStationIndex(res: http.ServerResponse) {
     // Add global error handler to catch and display any crash
     const errorCatcher = `<script>
 window.onerror = function(msg, src, line, col, err) {
-  document.body.innerHTML = '<div style="padding:40px;font-family:monospace;color:red;white-space:pre-wrap"><h2>Station Error</h2>' + msg + '\\n\\nSource: ' + src + ':' + line + ':' + col + '\\n\\n' + (err && err.stack ? err.stack : '') + '</div>';
+  console.error('[Station Error]', msg, src, line, col, err);
 };
 window.addEventListener('unhandledrejection', function(e) {
-  document.body.innerHTML = '<div style="padding:40px;font-family:monospace;color:red;white-space:pre-wrap"><h2>Station Promise Error</h2>' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '\\n\\n' + (e.reason && e.reason.stack ? e.reason.stack : '') + '</div>';
+  console.error('[Station Unhandled Rejection]', e.reason);
 });
 </script>`;
     // Inject shim before the app's module script
