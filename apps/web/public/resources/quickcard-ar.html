@@ -26,9 +26,9 @@
 
   .right-panel {
     width: 45%;
-    background: linear-gradient(200deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    background: linear-gradient(200deg, #128c7e 0%, #25d366 60%, #2ecc71 100%);
     color: #fff;
-    padding: 14mm;
+    padding: 12mm 14mm;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -42,7 +42,7 @@
     left: -30px;
     width: 60px;
     height: 100%;
-    background: linear-gradient(200deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    background: linear-gradient(200deg, #128c7e 0%, #25d366 60%, #2ecc71 100%);
     transform: skewX(4deg);
   }
 
@@ -77,25 +77,56 @@
   }
 
   .card-hero h1 {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 900;
-    line-height: 1.4;
-    margin-bottom: 6px;
+    line-height: 1.5;
+    margin-bottom: 4px;
   }
 
-  .card-hero h1 span { color: #86efac; }
+  .card-hero h2 {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.5;
+    margin-bottom: 8px;
+    opacity: 0.95;
+  }
 
   .card-hero p {
     font-size: 11px;
-    opacity: 0.8;
-    line-height: 1.6;
+    opacity: 0.85;
+    line-height: 1.7;
+  }
+
+  .badge-free {
+    display: inline-block;
+    background: rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    margin-top: 8px;
+    z-index: 1;
+  }
+
+  .card-bottom {
+    z-index: 1;
   }
 
   .card-url {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    opacity: 0.7;
-    z-index: 1;
+    opacity: 0.8;
+    font-family: 'Inter', sans-serif;
+    direction: ltr;
+    text-align: right;
+  }
+
+  .card-email {
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.65;
+    margin-top: 2px;
     font-family: 'Inter', sans-serif;
     direction: ltr;
     text-align: right;
@@ -104,58 +135,58 @@
   .left-panel {
     width: 55%;
     background: #fff;
-    padding: 14mm 20mm 14mm 14mm;
+    padding: 12mm 20mm 10mm 14mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
 
   .how-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
-    color: #1e40af;
-    margin-bottom: 8mm;
+    color: #128c7e;
+    margin-bottom: 6mm;
   }
 
   .how-step {
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    margin-bottom: 6mm;
+    margin-bottom: 5mm;
   }
 
   .how-num {
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, #2563eb, #1e40af);
+    width: 26px;
+    height: 26px;
+    background: linear-gradient(135deg, #25d366, #128c7e);
     color: #fff;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
     flex-shrink: 0;
     font-family: 'Inter', sans-serif;
   }
 
   .how-content h3 {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: #0f172a;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
   }
 
   .how-content p {
-    font-size: 10.5px;
+    font-size: 10px;
     color: #64748b;
     line-height: 1.5;
   }
 
   .how-content .cmd {
     display: inline-block;
-    background: #eff6ff;
-    color: #1e40af;
+    background: #ecfdf5;
+    color: #128c7e;
     padding: 2px 8px;
     border-radius: 6px;
     font-size: 11px;
@@ -165,9 +196,21 @@
     direction: ltr;
   }
 
+  .how-content .cmd + .cmd {
+    margin-right: 4px;
+  }
+
+  .section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #25d366;
+    margin-bottom: 2mm;
+    margin-top: 2mm;
+  }
+
   .card-footer {
     margin-top: auto;
-    padding-top: 6mm;
+    padding-top: 4mm;
     border-top: 1px solid #e2e8f0;
     display: flex;
     justify-content: space-between;
@@ -175,20 +218,20 @@
   }
 
   .card-footer-text {
-    font-size: 10px;
+    font-size: 9px;
     color: #94a3b8;
   }
 
   .channels {
     display: flex;
-    gap: 6px;
+    gap: 5px;
   }
 
   .channel {
     background: #f1f5f9;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     color: #64748b;
   }
@@ -204,47 +247,64 @@
     </div>
 
     <div class="card-hero">
-      <h1>انضم للطابور<br>عبر <span>واتساب</span></h1>
-      <p>لا حاجة للوقوف في الطابور.<br>استلم تذكرتك على هاتفك مباشرة.</p>
+      <h1>طابور فوري<br>أو موعد مسبق</h1>
+      <h2>عبر واتساب، QR<br>أو كشك الخدمة</h2>
+      <p>انضم = تذكرة الآن<br>احجز = موعد مسبق</p>
     </div>
 
-    <div class="card-url">qflo.net</div>
+    <div class="card-bottom">
+      <div class="card-url">qflo.net</div>
+      <div class="card-email">contact@qflo.net</div>
+    </div>
   </div>
 
   <div class="left-panel">
     <div class="how-title">كيف تفعل ذلك؟</div>
 
+    <div class="section-label">⚡ نفس اليوم — بدون موعد</div>
+
     <div class="how-step">
       <div class="how-num">1</div>
       <div class="how-content">
-        <h3>افتح واتساب</h3>
-        <p>أرسل رسالة للرقم المعروض</p>
+        <h3>انضم للطابور الان</h3>
+        <div class="cmd">انضم [الرمز]</div>
+        <p>عبر واتساب، QR، كشك محلي أو كشك ويب</p>
       </div>
     </div>
 
     <div class="how-step">
       <div class="how-num">2</div>
       <div class="how-content">
-        <h3>اكتب الأمر</h3>
-        <p>أرسل الكلمة المعروضة، مثلاً:</p>
-        <div class="cmd">ELAZHAR انضم</div>
+        <h3>تابع موقعك</h3>
+        <p>عبر واتساب، ماسنجر أو رابط URL التذكرة</p>
       </div>
     </div>
+
+    <div class="section-label">📅 حجز مسبق — موعد مخطط</div>
 
     <div class="how-step">
       <div class="how-num">3</div>
       <div class="how-content">
-        <h3>استلم تذكرتك</h3>
-        <p>تابع موقعك مباشرة وسيتم إشعارك عندما يحين دورك!</p>
+        <h3>احجز تاريخا ووقتا مسبقا</h3>
+        <div class="cmd">احجز [الرمز]</div>
+      </div>
+    </div>
+
+    <div class="how-step">
+      <div class="how-num">4</div>
+      <div class="how-content">
+        <h3>تأكيد + تذكير تلقائي</h3>
+        <p>تذكير واتساب قبل الموعد</p>
       </div>
     </div>
 
     <div class="card-footer">
-      <div class="card-footer-text">متوفر أيضاً على:</div>
+      <div class="card-footer-text">متوفر ايضا على:</div>
       <div class="channels">
-        <div class="channel">💬 واتساب</div>
-        <div class="channel">📱 ماسنجر</div>
-        <div class="channel">🖥️ كشك</div>
+        <div class="channel">ماسنجر</div>
+        <div class="channel">QR</div>
+        <div class="channel">كشك</div>
+        <div class="channel">رابط التذكرة</div>
       </div>
     </div>
   </div>

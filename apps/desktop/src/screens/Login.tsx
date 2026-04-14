@@ -13,6 +13,15 @@ export function Login({ onLogin, locale }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return (localStorage.getItem('qflo_theme') as 'light' | 'dark') ?? 'light'; } catch { return 'light'; }
+  });
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('qflo_theme', next); } catch {};
+  };
 
   // License state
   const [licenseChecked, setLicenseChecked] = useState(false);
@@ -209,9 +218,9 @@ export function Login({ onLogin, locale }: Props) {
                 letterSpacing: 3,
                 textAlign: 'center',
                 padding: '14px 16px',
-                background: '#f1f5f9',
+                background: 'var(--surface2)',
                 borderRadius: 12,
-                color: '#334155',
+                color: 'var(--text)',
                 userSelect: 'all',
                 cursor: 'pointer',
               }}
@@ -226,7 +235,7 @@ export function Login({ onLogin, locale }: Props) {
             <div style={{
               textAlign: 'center',
               padding: '16px 0',
-              color: '#64748b',
+              color: 'var(--text3)',
               fontSize: 14,
             }}>
               <div style={{
@@ -234,7 +243,7 @@ export function Login({ onLogin, locale }: Props) {
                 width: 10,
                 height: 10,
                 borderRadius: '50%',
-                background: '#f59e0b',
+                background: 'var(--warning)',
                 marginRight: 8,
                 animation: 'pulse 1.5s ease-in-out infinite',
               }} />
@@ -243,9 +252,9 @@ export function Login({ onLogin, locale }: Props) {
 
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0' }}>
-              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
-              <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('or enter key manually')}</span>
-              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{t('or enter key manually')}</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
 
             <form onSubmit={handleActivate}>
@@ -271,6 +280,11 @@ export function Login({ onLogin, locale }: Props) {
             }
           `}</style>
 
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+            <button className="theme-toggle" onClick={toggleTheme} aria-label={t('Toggle theme')} title={t('Toggle theme')}>
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+          </div>
           <p className="login-footer">
             {t('This station will activate automatically once approved by your administrator.')}
           </p>
@@ -318,6 +332,11 @@ export function Login({ onLogin, locale }: Props) {
           </button>
         </form>
 
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+          <button className="theme-toggle" onClick={toggleTheme} aria-label={t('Toggle theme')} title={t('Toggle theme')}>
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
         <p className="login-footer">
           {t('This station works offline. Your queue data is stored locally and synced automatically.')}
         </p>

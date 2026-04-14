@@ -1677,7 +1677,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); const dk = ctxMenu.dateKey; requestAnimationFrame(() => openDayOffDialog(dk)); }}
                 style={{
                   display: 'block', width: '100%', padding: '8px 12px', border: 'none',
-                  background: 'transparent', color: '#f87171', fontSize: 12, fontWeight: 600,
+                  background: 'transparent', color: '#fca5a5', fontSize: 12, fontWeight: 600,
                   cursor: 'pointer', textAlign: 'left', borderRadius: 6,
                 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.12)')}
@@ -1975,7 +1975,7 @@ function MiniCalendar({
           // Priority: selected > today > in-week > default
           let bg = 'transparent';
           let fg = isCurrentMonth ? (cellClosed ? '#475569' : 'var(--text, #f1f5f9)') : '#334155';
-          if (cellHoliday && isCurrentMonth) fg = '#f87171';
+          if (cellHoliday && isCurrentMonth) fg = '#fca5a5';
           let fontWeight = 500;
           let border = 'none';
 
@@ -2356,9 +2356,9 @@ function DesktopWeekView({
                       ? 'rgba(239,68,68,0.15)'
                       : isHighlightedCol
                         ? 'rgba(59,130,246,0.18)'
-                        : dayClosed ? 'rgba(239,68,68,0.08)' : day.isToday ? '#3b82f6' : 'transparent',
-                  color: isHoliday ? '#f87171'
-                    : dayClosed ? '#ef4444'
+                        : dayClosed ? 'rgba(239,68,68,0.12)' : day.isToday ? '#3b82f6' : 'transparent',
+                  color: isHoliday ? '#fca5a5'
+                    : dayClosed ? '#fca5a5'
                     : isHighlightedCol ? '#1e293b'
                     : day.isToday ? '#fff'
                     : 'var(--text, #1e293b)',
@@ -2366,11 +2366,11 @@ function DesktopWeekView({
                 }}>
                 {formatDayHeader(day.date, timezone, intlLocale)}
                 {isHoliday ? (
-                  <span style={{ fontSize: 7, fontWeight: 700, lineHeight: '10px', color: '#f87171', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                  <span style={{ fontSize: 7, fontWeight: 700, lineHeight: '10px', color: '#fca5a5', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
                     {holiday.name}
                   </span>
                 ) : dayClosed ? (
-                  <span style={{ fontSize: 8, fontWeight: 700, lineHeight: '10px', color: '#ef4444' }}>
+                  <span style={{ fontSize: 8, fontWeight: 700, lineHeight: '10px', color: '#fca5a5' }}>
                     {translate(locale, 'Closed')}
                   </span>
                 ) : dayAppts.length > 0 ? (
@@ -2800,18 +2800,18 @@ function DesktopListView({
                   <div style={{ flex: 1 }}>
                     <span style={{
                       fontSize: 13, fontWeight: 700,
-                      color: holiday ? '#f87171' : closed ? '#ef4444' : isToday ? '#3b82f6' : 'var(--text, #f1f5f9)',
+                      color: holiday ? '#fca5a5' : closed ? '#fca5a5' : isToday ? '#3b82f6' : 'var(--text, #f1f5f9)',
                     }}>
                       {dayLabel}
                       {isToday && <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 6, color: '#3b82f6', background: 'rgba(59,130,246,0.12)', padding: '1px 6px', borderRadius: 6 }}>{t('Today')}</span>}
                     </span>
                     {holiday && (
-                      <div style={{ fontSize: 10, color: '#f87171', fontWeight: 600 }}>
+                      <div style={{ fontSize: 10, color: '#fca5a5', fontWeight: 600 }}>
                         🎉 {holiday.name}
                       </div>
                     )}
                     {closed && !holiday && (
-                      <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>{t('Closed')}</div>
+                      <div style={{ fontSize: 10, color: '#fca5a5', fontWeight: 600 }}>{t('Closed')}</div>
                     )}
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3, #94a3b8)' }}>
@@ -2908,15 +2908,25 @@ function DesktopListView({
                             )}
                             {deptName && <span>· {deptName}</span>}
                             {a.wilaya && <span dir="auto" style={{ unicodeBidi: 'isolate' }}>· 📍 {normalizeWilayaDisplay(a.wilaya) || a.wilaya}</span>}
-                            {a.source && (
-                              <span style={{
-                                fontSize: 9, fontWeight: 600, padding: '0 4px', borderRadius: 4,
-                                background: a.source === 'in_house' ? 'rgba(139,92,246,0.12)' : 'rgba(59,130,246,0.12)',
-                                color: a.source === 'in_house' ? '#8b5cf6' : '#3b82f6',
-                              }}>
-                                {a.source === 'in_house' ? t('In-house') : t('Online')}
-                              </span>
-                            )}
+                            {a.source && (() => {
+                              const src = a.source as string;
+                              const MAP: Record<string, { label: string; bg: string; color: string }> = {
+                                whatsapp: { label: 'WhatsApp', bg: 'rgba(37,211,102,0.12)', color: '#25d366' },
+                                messenger: { label: 'Messenger', bg: 'rgba(0,132,255,0.12)', color: '#0084ff' },
+                                web: { label: 'Web', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+                                portal: { label: 'Portal', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+                                qr_code: { label: 'QR Code', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+                                mobile_app: { label: 'Mobile', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+                                kiosk: { label: 'Kiosk', bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' },
+                                in_house: { label: 'In-House', bg: 'rgba(139,92,246,0.12)', color: '#8b5cf6' },
+                              };
+                              const s = MAP[src] ?? { label: src.replace('_', ' '), bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' };
+                              return (
+                                <span style={{ fontSize: 9, fontWeight: 600, padding: '0 4px', borderRadius: 4, background: s.bg, color: s.color }}>
+                                  {t(s.label)}
+                                </span>
+                              );
+                            })()}
                           </div>
                           {a.notes && (
                             <div style={{ fontSize: 10, color: 'var(--text3, #94a3b8)', marginTop: 2, fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -3014,12 +3024,12 @@ function DesktopMonthView({
                       fontSize: 11, fontWeight: day.isToday || isHoliday ? 700 : 500,
                       width: 22, height: 22, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: day.isToday ? '#3b82f6' : 'transparent',
-                      color: isHoliday ? '#f87171' : day.isToday ? '#fff' : 'var(--text, #f1f5f9)',
+                      color: isHoliday ? '#fca5a5' : day.isToday ? '#fff' : 'var(--text, #f1f5f9)',
                     }}>
                       {day.date.getDate()}
                     </span>
                     {isHoliday ? (
-                      <span style={{ fontSize: 8, fontWeight: 700, color: '#f87171', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 8, fontWeight: 700, color: '#fca5a5', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {holiday.name}
                       </span>
                     ) : count > 0 ? (
@@ -3565,8 +3575,10 @@ function DesktopApptDetail({
       called: { label: t('Called to desk'), icon: '📢', color: '#f59e0b' },
       recalled: { label: t('Recalled'), icon: '🔄', color: '#f59e0b' },
       serving_started: { label: t('Service started'), icon: '⚡', color: '#06b6d4' },
+      serving: { label: t('Service started'), icon: '⚡', color: '#06b6d4' },
       served: { label: t('Served'), icon: '✓', color: '#22c55e' },
       completed: { label: t('Completed'), icon: '✓', color: '#22c55e' },
+      waiting: { label: t('Returned to queue'), icon: '↩', color: '#64748b' },
       no_show: { label: t('No show'), icon: '👻', color: '#ef4444' },
       cancelled: { label: t('Cancelled'), icon: '✗', color: '#ef4444' },
       transferred: { label: t('Transferred'), icon: '↗', color: '#8b5cf6' },
@@ -3678,7 +3690,7 @@ function DesktopApptDetail({
     };
     buildTimeline();
     return () => { cancelled = true; };
-  }, [a.id, a.ticket_id, a.status]);
+  }, [a.id, a.ticket_id, a.status, locale]);
 
   // Fetch available slots when date changes in edit mode
   useEffect(() => {

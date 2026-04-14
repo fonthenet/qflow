@@ -47,8 +47,6 @@
   }
 
   /* ===== OUTER SIDE ===== */
-  /* RTL: Panel order is reversed visually */
-  /* Panel 1 (rightmost) = Front cover */
   .outer .p-cover {
     background: linear-gradient(200deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%);
     color: #fff;
@@ -88,18 +86,31 @@
   }
 
   .cover-hero h1 {
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 900;
     line-height: 1.4;
-    margin-bottom: 6mm;
+    margin-bottom: 5mm;
   }
 
-  .cover-hero h1 span { color: #86efac; }
+  .cover-hero h1 .green { color: #86efac; }
+  .cover-hero h1 .wa-green { color: #25d366; }
 
   .cover-hero p {
     font-size: 11px;
     line-height: 1.7;
-    opacity: 0.8;
+    opacity: 0.85;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    background: #25d366;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-top: 4mm;
+    text-align: center;
   }
 
   .cover-url {
@@ -150,6 +161,8 @@
     color: #1e40af;
     font-family: 'Inter', sans-serif;
   }
+
+  .flap-stat-num.wa-color { color: #25d366; }
 
   .flap-stat-label {
     font-size: 9px;
@@ -226,7 +239,7 @@
     color: #1e40af;
     padding: 5px 10px;
     border-radius: 999px;
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 600;
     margin: 0 0 5px 3px;
   }
@@ -296,6 +309,10 @@
     font-family: 'Inter', sans-serif;
   }
 
+  .step-num.wa-bg {
+    background: linear-gradient(135deg, #25d366, #128c7e);
+  }
+
   .step-content h4 {
     font-size: 12px;
     font-weight: 700;
@@ -333,6 +350,11 @@
     text-align: center;
   }
 
+  .channel-box.wa-highlight {
+    background: #f0fdf4;
+    border-color: #25d366;
+  }
+
   .channel-icon { font-size: 28px; margin-bottom: 4px; }
   .channel-name { font-size: 10px; font-weight: 700; color: #0f172a; }
   .channel-desc { font-size: 8px; color: #94a3b8; }
@@ -356,6 +378,17 @@
     font-family: 'Inter', sans-serif;
     direction: ltr;
   }
+
+  .wa-accent { color: #25d366; }
+  .free-badge {
+    display: inline-block;
+    background: #25d366;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
 </style>
 </head>
 <body>
@@ -370,12 +403,13 @@
     </div>
 
     <div class="cover-hero">
-      <h1>ودّع فوضى<br>الطوابير<br>نهائياً.</h1>
-      <p>الحل الذكي لإدارة الطوابير في العيادات، البنوك والإدارات العمومية في الجزائر.</p>
+      <h1>عملاؤك ينتظرون<br>لساعات في <span class="green">الطابور</span>؟<br><span class="wa-green">واتساب وماسنجر</span><br>يحلّان المشكل.</h1>
+      <p>إدارة الطوابير وحجز المواعيد عبر واتساب وماسنجر — للعيادات، البنوك، البلديات والمؤسسات العمومية في الجزائر.</p>
+      <div class="cover-badge">طابور فوري + موعد مسبق</div>
     </div>
 
     <div class="cover-url">qflo.net</div>
-    <div class="cover-footer">نظام إدارة الطوابير من الجيل الجديد</div>
+    <div class="cover-footer">نظام إدارة الطوابير والمواعيد من الجيل الجديد</div>
   </div>
 
   <!-- Panel 2 — Back flap -->
@@ -383,39 +417,39 @@
     <div class="flap-title">لماذا Qflo؟</div>
 
     <div class="flap-stat">
-      <div class="flap-stat-icon">⏱️</div>
+      <div class="flap-stat-icon">💬</div>
       <div>
-        <div class="flap-stat-num">-60%</div>
-        <div class="flap-stat-label">وقت الانتظار المحسوس</div>
+        <div class="flap-stat-num wa-color">90%</div>
+        <div class="flap-stat-label">من الجزائريين يستخدمون واتساب</div>
       </div>
     </div>
 
     <div class="flap-stat">
-      <div class="flap-stat-icon">📱</div>
+      <div class="flap-stat-icon">⚡</div>
       <div>
-        <div class="flap-stat-num">10s</div>
-        <div class="flap-stat-label">للانضمام للطابور</div>
+        <div class="flap-stat-num">2 في 1</div>
+        <div class="flap-stat-label">طابور فوري + موعد مسبق</div>
       </div>
     </div>
 
     <div class="flap-stat">
       <div class="flap-stat-icon">🚀</div>
       <div>
-        <div class="flap-stat-num">15min</div>
-        <div class="flap-stat-label">تثبيت كامل</div>
+        <div class="flap-stat-num">15 دقيقة</div>
+        <div class="flap-stat-label">تثبيت كامل وجاهز للعمل</div>
       </div>
     </div>
 
     <div class="flap-stat">
-      <div class="flap-stat-icon">💰</div>
+      <div class="flap-stat-icon">📅</div>
       <div>
-        <div class="flap-stat-num">0 DA</div>
-        <div class="flap-stat-label">تكلفة على العميل</div>
+        <div class="flap-stat-num" style="font-size:16px">حجز مواعيد</div>
+        <div class="flap-stat-label">عبر واتساب — بدون اتصال هاتفي</div>
       </div>
     </div>
 
     <div class="flap-quote">
-      <p>"منذ أن استخدمنا Qflo، لم يعد مرضانا يشتكون من الانتظار. كل شيء واضح وشفاف."</p>
+      <p>"منذ أن استخدمنا Qflo، لم يعد مرضانا يشتكون من الانتظار. حجز المواعيد عبر واتساب غيّر كل شيء."</p>
       <cite>— مدير عيادة، الجزائر العاصمة</cite>
     </div>
   </div>
@@ -439,12 +473,13 @@
 
     <div class="back-sectors">
       <div class="back-sectors-title">القطاعات المستهدفة</div>
-      <span class="sector-pill">🏥 العيادات</span>
+      <span class="sector-pill">🏥 العيادات والمستشفيات</span>
       <span class="sector-pill">🏦 البنوك</span>
-      <span class="sector-pill">🏛️ الإدارات</span>
-      <span class="sector-pill">📮 البريد</span>
-      <span class="sector-pill">🏪 المحلات</span>
+      <span class="sector-pill">🏛️ البلدية / الدائرة</span>
       <span class="sector-pill">🎓 الجامعات</span>
+      <span class="sector-pill">🍽️ المطاعم</span>
+      <span class="sector-pill">💈 الحلاقين والصالونات</span>
+      <span class="sector-pill">📡 الاتصالات</span>
     </div>
 
     <div class="back-bottom-logo">
@@ -460,49 +495,51 @@
   <div class="panel" style="background:#fff">
     <div class="inner-title">كيف يعمل؟</div>
 
+    <div class="inner-subtitle">⚡ نفس اليوم — بدون موعد (انضم)</div>
     <div class="step">
-      <div class="step-num">1</div>
+      <div class="step-num wa-bg">1</div>
       <div class="step-content">
-        <h4>العميل ينضم للطابور</h4>
-        <p>عبر واتساب، ماسنجر أو كشك الخدمة الذاتية. يكفي إرسال رسالة بسيطة.</p>
+        <h4>العميل ينضم للطابور الآن</h4>
+        <p>عبر واتساب، ماسنجر، QR، كشك محلي أو كشك ويب. تذكرة فورية.</p>
       </div>
     </div>
 
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-content">
-        <h4>تذكرة تلقائية</h4>
-        <p>يتم منح رقم فوري. العميل يرى موقعه في الطابور مباشرة.</p>
+        <h4>تتبع مباشر</h4>
+        <p>الموقع عبر واتساب، ماسنجر أو رابط URL التذكرة.</p>
       </div>
     </div>
 
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-content">
-        <h4>الموظف يستدعي</h4>
-        <p>من تطبيق سطح المكتب أو الهاتف، نقرة واحدة لاستدعاء التالي.</p>
+        <h4>إشعار عند الدور</h4>
+        <p>إشعار واتساب/ماسنجر + عرض على شاشة التلفزيون.</p>
       </div>
     </div>
 
+    <div class="inner-subtitle">📅 حجز مسبق — موعد محدد (احجز)</div>
     <div class="step">
-      <div class="step-num">4</div>
+      <div class="step-num wa-bg">4</div>
       <div class="step-content">
-        <h4>إشعار فوري</h4>
-        <p>العميل يتلقى إشعار واتساب/ماسنجر + عرض على شاشة التلفزيون.</p>
+        <h4>حجز تاريخ ووقت محدد</h4>
+        <p>العميل يرسل احجز + الرمز ← يختار الخدمة والتاريخ ← تأكيد + تذكير تلقائي.</p>
       </div>
     </div>
 
     <div class="inner-subtitle">قنوات الوصول</div>
     <div style="display:flex;gap:6px">
-      <div class="channel-box" style="flex:1">
+      <div class="channel-box wa-highlight" style="flex:1">
         <div class="channel-icon">💬</div>
-        <div class="channel-name">واتساب</div>
-        <div class="channel-desc">الأكثر استخداماً</div>
+        <div class="channel-name" style="color:#25d366">واتساب</div>
+        <div class="channel-desc">طابور + مواعيد</div>
       </div>
       <div class="channel-box" style="flex:1">
         <div class="channel-icon">📱</div>
         <div class="channel-name">ماسنجر</div>
-        <div class="channel-desc">عبر فيسبوك</div>
+        <div class="channel-desc">طابور + مواعيد</div>
       </div>
       <div class="channel-box" style="flex:1">
         <div class="channel-icon">🖥️</div>
@@ -510,11 +547,24 @@
         <div class="channel-desc">في المكان</div>
       </div>
     </div>
+
+    <div style="background:#f0fdf4;border:2px solid #25d366;border-radius:10px;padding:10px;margin-top:3mm">
+      <div style="font-size:10px;font-weight:800;color:#25d366;margin-bottom:2px">⚡ طريقتان: فوري + مسبق</div>
+      <div style="font-size:8.5px;color:#475569;line-height:1.5"><b>انضم</b> = طابور الآن (نفس اليوم). <b>احجز</b> = موعد مسبق (تاريخ ووقت). عبر واتساب، QR أو كشك.</div>
+    </div>
   </div>
 
   <!-- Panel 2 — Features -->
   <div class="panel" style="background:#fff">
     <div class="inner-title">المميزات</div>
+
+    <div class="feat">
+      <div class="feat-icon">📅</div>
+      <div>
+        <h4 style="color:#25d366">حجز المواعيد عبر واتساب</h4>
+        <p>عملاؤك يحجزون مواعيدهم مباشرة عبر واتساب أو ماسنجر — بدون اتصال هاتفي أو تطبيق</p>
+      </div>
+    </div>
 
     <div class="feat">
       <div class="feat-icon">📺</div>
@@ -549,26 +599,18 @@
     </div>
 
     <div class="feat">
-      <div class="feat-icon">📱</div>
-      <div>
-        <h4>تطبيق الموظف</h4>
-        <p>تطبيق سطح مكتب وهاتف لموظفي الشبابيك</p>
-      </div>
-    </div>
-
-    <div class="feat">
       <div class="feat-icon">📍</div>
       <div>
         <h4>تتبع مباشر</h4>
-        <p>العميل يتابع موقعه في الطابور مباشرة عبر واتساب، ماسنجر أو رابط التذكرة</p>
+        <p>العميل يتابع موقعه في الطابور مباشرة عبر واتساب أو ماسنجر</p>
       </div>
     </div>
 
     <div class="feat">
       <div class="feat-icon">🔔</div>
       <div>
-        <h4>إشعارات</h4>
-        <p>يتم إشعار العميل تلقائياً عندما يحين دوره</p>
+        <h4>إشعارات فورية</h4>
+        <p>إشعار تلقائي عبر واتساب وماسنجر عند حلول الدور</p>
       </div>
     </div>
 
@@ -593,14 +635,14 @@
   <div class="panel" style="background:#fff">
     <div class="inner-title">ابدأ اليوم</div>
 
-    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:5mm">
-      <div style="font-size:11px;font-weight:800;color:#16a34a;margin-bottom:4px">✓ تجربة مجانية</div>
-      <div style="font-size:9px;color:#475569;line-height:1.6">جرّب Qflo مجاناً لمدة 14 يوم. بدون التزام، بدون بطاقة بنكية.</div>
+    <div style="background:#f0fdf4;border:2px solid #25d366;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:13px;font-weight:900;color:#25d366;margin-bottom:4px">⚡ طريقتان في نظام واحد</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6"><b>انضم</b> = طابور فوري (نفس اليوم). <b>احجز</b> = موعد مسبق. عبر واتساب، QR، كشك محلي أو كشك ويب.</div>
     </div>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px;margin-bottom:5mm">
-      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">🚀 تثبيت سريع</div>
-      <div style="font-size:9px;color:#475569;line-height:1.6">تثبيت في 15 دقيقة. فريقنا يرافقك من الألف إلى الياء.</div>
+      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">🚀 تثبيت في 15 دقيقة</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6">تثبيت سريع وبسيط. فريقنا يرافقك من الألف إلى الياء.</div>
     </div>
 
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:14px;margin-bottom:5mm">
@@ -608,12 +650,17 @@
       <div style="font-size:9px;color:#475569;line-height:1.6">عملاؤك يستخدمون واتساب أو ماسنجر — مثبتين مسبقاً على هواتفهم.</div>
     </div>
 
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#25d366;margin-bottom:4px">📅 حجز مواعيد عبر واتساب</div>
+      <div style="font-size:9px;color:#475569;line-height:1.6">عملاؤك يحجزون موعدهم مباشرة عبر واتساب. بدون طابور، بدون اتصال.</div>
+    </div>
+
     <div style="flex:1"></div>
 
     <div class="inner-cta">
-      <h3>اطلب عرضاً توضيحياً</h3>
-      <p>مجاني وبدون التزام</p>
-      <div class="inner-cta-url">contact@qflo.net</div>
+      <h3>ابدأ الآن</h3>
+      <p>طابور فوري + موعد مسبق — التثبيت في 15 دقيقة</p>
+      <div class="inner-cta-url">qflo.net</div>
     </div>
 
     <div style="text-align:center;margin-top:5mm;font-size:8px;color:#94a3b8">

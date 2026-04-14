@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Qflo — تقويم المواعيد الذكي</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: A4; margin: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: #0f172a;
+    direction: rtl;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+
+  /* ===== PAGE 1 — CALENDAR HERO ===== */
+  .p1 {
+    background: linear-gradient(160deg, #0f172a 0%, #1e293b 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
+
+  .p1-top {
+    padding: 14mm 16mm 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 900;
+    color: #fff;
+  }
+
+  .logo-text {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .badge-top {
+    background: rgba(37,211,102,0.15);
+    border: 1px solid rgba(37,211,102,0.3);
+    color: #25d366;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .p1-hero {
+    padding: 10mm 16mm 6mm;
+  }
+
+  .hero-pre {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #3b82f6;
+    margin-bottom: 4mm;
+  }
+
+  .hero-title {
+    font-size: 32px;
+    font-weight: 900;
+    line-height: 1.3;
+    margin-bottom: 4mm;
+  }
+
+  .hero-title span { color: #25d366; }
+  .hero-title .blue { color: #3b82f6; }
+
+  .hero-sub {
+    font-size: 14px;
+    color: rgba(255,255,255,0.7);
+    line-height: 1.7;
+    max-width: 500px;
+  }
+
+  /* Calendar mockup */
+  .calendar-mock {
+    margin: 6mm 16mm 0;
+    background: #1e293b;
+    border-radius: 16px;
+    border: 1px solid #334155;
+    overflow: hidden;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    direction: ltr; /* Calendar grid stays LTR */
+  }
+
+  .cal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #334155;
+    background: rgba(15,23,42,0.5);
+  }
+
+  .cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .cal-nav-btn {
+    width: 28px;
+    height: 28px;
+    background: #334155;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .cal-month {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f1f5f9;
+  }
+
+  .cal-views {
+    display: flex;
+    gap: 4px;
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 3px;
+  }
+
+  .cal-view-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+  }
+
+  .cal-view-btn.active {
+    background: #3b82f6;
+    color: #fff;
+  }
+
+  .cal-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .cal-sidebar {
+    width: 160px;
+    border-right: 1px solid #334155;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mini-cal {
+    background: rgba(15,23,42,0.5);
+    border-radius: 10px;
+    padding: 8px;
+  }
+
+  .mini-cal-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .mini-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    text-align: center;
+  }
+
+  .mini-cal-day {
+    font-size: 7px;
+    color: #64748b;
+    font-weight: 600;
+    padding: 2px 0;
+  }
+
+  .mini-cal-num {
+    font-size: 8px;
+    color: #94a3b8;
+    padding: 3px 0;
+    border-radius: 4px;
+  }
+
+  .mini-cal-num.today {
+    background: #3b82f6;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .mini-cal-num.has-appt::after {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 3px;
+    background: #22c55e;
+    border-radius: 50%;
+    margin: 1px auto 0;
+  }
+
+  .activity {
+    flex: 1;
+    overflow: hidden;
+    direction: rtl;
+  }
+
+  .activity-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .activity-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+
+  .activity-item {
+    padding: 5px 6px;
+    border-radius: 6px;
+    border-right: 2px solid;
+    border-left: none;
+    margin-bottom: 4px;
+    background: rgba(100,116,139,0.05);
+    direction: rtl;
+  }
+
+  .activity-label {
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+
+  .activity-name {
+    font-size: 8px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-top: 1px;
+  }
+
+  .activity-meta {
+    font-size: 6.5px;
+    color: #64748b;
+    margin-top: 1px;
+    display: flex;
+    gap: 4px;
+  }
+
+  .source-badge {
+    font-size: 6px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  /* Week grid */
+  .week-grid {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .week-days {
+    display: flex;
+    border-bottom: 1px solid #334155;
+  }
+
+  .week-time-col {
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .week-day {
+    flex: 1;
+    text-align: center;
+    padding: 6px 0;
+    border-left: 1px solid #334155;
+  }
+
+  .week-day-name {
+    font-size: 8px;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .week-day-num {
+    font-size: 14px;
+    font-weight: 800;
+    color: #f1f5f9;
+    margin-top: 2px;
+  }
+
+  .week-day.today .week-day-num {
+    background: #3b82f6;
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px auto 0;
+  }
+
+  .week-content {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .time-labels {
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .time-label {
+    height: 28px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-right: 6px;
+    font-size: 7px;
+    color: #475569;
+    font-weight: 500;
+  }
+
+  .day-columns {
+    flex: 1;
+    display: flex;
+    position: relative;
+  }
+
+  .day-col {
+    flex: 1;
+    border-left: 1px solid #1e293b;
+    position: relative;
+  }
+
+  .hour-line {
+    height: 28px;
+    border-bottom: 1px solid rgba(51,65,85,0.4);
+  }
+
+  .now-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ef4444;
+    z-index: 5;
+  }
+
+  .now-dot {
+    position: absolute;
+    left: -3px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+  }
+
+  .appt {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    border-radius: 6px;
+    padding: 3px 5px;
+    font-size: 7px;
+    overflow: hidden;
+    border-left: 3px solid;
+    z-index: 2;
+  }
+
+  .appt-name {
+    font-weight: 700;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .appt-service {
+    color: #94a3b8;
+    font-size: 6.5px;
+    margin-top: 1px;
+  }
+
+  .appt-time {
+    color: #64748b;
+    font-size: 6px;
+    margin-top: 1px;
+  }
+
+  .appt.confirmed { background: rgba(59,130,246,0.15); border-color: #3b82f6; }
+  .appt.completed { background: rgba(34,197,94,0.12); border-color: #22c55e; }
+  .appt.pending { background: rgba(245,158,11,0.12); border-color: #f59e0b; }
+  .appt.checked-in { background: rgba(6,182,212,0.12); border-color: #06b6d4; }
+  .appt.serving { background: rgba(249,115,22,0.12); border-color: #f97316; }
+  .appt.cancelled { background: rgba(239,68,68,0.08); border-color: #ef4444; opacity: 0.6; }
+
+  .drag-ghost { position: absolute; z-index: 10; opacity: 0.85; transform: rotate(2deg); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .drop-highlight { position: absolute; left: 2px; right: 2px; background: rgba(34,197,94,0.15); border: 2px dashed #22c55e; border-radius: 6px; z-index: 1; }
+
+  /* Detail panel */
+  .detail-panel {
+    width: 180px;
+    border-left: 1px solid #334155;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15,23,42,0.3);
+    direction: rtl;
+  }
+
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .detail-name { font-size: 13px; font-weight: 800; color: #f1f5f9; }
+  .detail-close { width: 20px; height: 20px; background: #334155; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 10px; }
+  .detail-badges { display: flex; gap: 4px; flex-wrap: wrap; }
+  .detail-badge { padding: 2px 8px; border-radius: 6px; font-size: 8px; font-weight: 700; }
+  .detail-badge.whatsapp { background: rgba(37,211,102,0.12); color: #25d366; }
+  .detail-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(51,65,85,0.4); }
+  .detail-label { font-size: 8px; color: #64748b; font-weight: 500; }
+  .detail-value { font-size: 8px; color: #f1f5f9; font-weight: 600; }
+  .detail-section-title { font-size: 8px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+
+  .timeline { padding-right: 10px; position: relative; }
+  .timeline::before { content: ''; position: absolute; right: 3px; top: 4px; bottom: 4px; width: 1.5px; background: linear-gradient(to bottom, rgba(100,116,139,0.4), rgba(100,116,139,0.1)); }
+  .timeline-item { position: relative; margin-bottom: 6px; padding-right: 10px; }
+  .timeline-dot { position: absolute; right: -4px; top: 2px; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #1e293b; }
+  .timeline-label { font-size: 7px; font-weight: 600; color: #f1f5f9; }
+  .timeline-time { font-size: 6px; color: #64748b; margin-top: 1px; }
+
+  .detail-actions { display: flex; gap: 4px; margin-top: auto; }
+  .action-btn { flex: 1; padding: 5px; border-radius: 6px; text-align: center; font-size: 7px; font-weight: 700; }
+  .action-btn.green { background: rgba(34,197,94,0.15); color: #22c55e; }
+  .action-btn.red { background: rgba(239,68,68,0.1); color: #ef4444; }
+  .action-btn.blue { background: rgba(59,130,246,0.15); color: #3b82f6; }
+
+  .p1-bottom {
+    padding: 6mm 16mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #334155;
+    direction: rtl;
+  }
+
+  .p1-bottom-features { display: flex; gap: 14px; }
+  .p1-feature { display: flex; align-items: center; gap: 5px; font-size: 9px; color: rgba(255,255,255,0.6); font-weight: 500; }
+  .p1-feature-icon { font-size: 12px; }
+  .p1-url { font-size: 14px; font-weight: 800; color: #3b82f6; }
+
+  /* ===== PAGE 2 ===== */
+  .p2 {
+    background: #f8fafc;
+    color: #0f172a;
+    padding: 14mm 16mm;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .p2-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8mm; padding-bottom: 5mm; border-bottom: 2px solid #e2e8f0; }
+  .p2-logo { display: flex; align-items: center; gap: 8px; }
+  .p2-logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #2563eb, #1e40af); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18px; font-weight: 900; }
+  .p2-logo-text { font-size: 20px; font-weight: 800; color: #1e40af; }
+  .p2-subtitle { font-size: 11px; color: #64748b; font-weight: 500; }
+
+  .section-title { font-size: 20px; font-weight: 800; color: #1e40af; margin-bottom: 5mm; display: flex; align-items: center; gap: 8px; }
+  .section-title .icon { font-size: 22px; }
+
+  .showcase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8mm; }
+  .showcase-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; }
+  .showcase-card.highlight { border-color: #25d366; background: linear-gradient(135deg, rgba(37,211,102,0.03), rgba(37,211,102,0.08)); }
+  .showcase-card.span2 { grid-column: span 2; }
+  .sc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .sc-icon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .sc-title { font-size: 13px; font-weight: 800; }
+  .sc-new { font-size: 7px; font-weight: 800; color: #25d366; background: rgba(37,211,102,0.12); padding: 2px 6px; border-radius: 4px; margin-right: 4px; }
+  .sc-desc { font-size: 10px; color: #64748b; line-height: 1.5; }
+  .sc-visual { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .sc-step { display: flex; align-items: center; gap: 4px; font-size: 8px; font-weight: 600; color: #475569; background: #f1f5f9; padding: 4px 8px; border-radius: 6px; }
+  .sc-arrow { color: #94a3b8; font-size: 10px; }
+
+  .channels { display: flex; gap: 10px; margin-bottom: 8mm; }
+  .channel-card { flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; text-align: center; }
+  .channel-icon { font-size: 28px; margin-bottom: 6px; }
+  .channel-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .channel-desc { font-size: 9px; color: #64748b; line-height: 1.5; }
+
+  .stats-bar { display: flex; gap: 10px; margin-bottom: 8mm; }
+  .stat { flex: 1; background: linear-gradient(135deg, #eff6ff, #dbeafe); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat-num { font-size: 24px; font-weight: 900; color: #1e40af; }
+  .stat-label { font-size: 9px; color: #64748b; font-weight: 500; margin-top: 2px; }
+
+  .sector-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8mm; }
+  .sector-pill { background: #eff6ff; color: #1e40af; padding: 6px 12px; border-radius: 999px; font-size: 10px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+
+  .p2-cta { margin-top: auto; background: linear-gradient(135deg, #1e40af, #2563eb); border-radius: 14px; padding: 16px 20px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+  .cta-left h3 { font-size: 18px; font-weight: 800; margin-bottom: 3px; }
+  .cta-left p { font-size: 11px; opacity: 0.8; }
+  .cta-free { display: inline-block; background: #25d366; color: #fff; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-top: 4px; }
+  .cta-right { text-align: left; }
+  .cta-right .email { font-size: 13px; font-weight: 700; }
+  .cta-right .url { font-size: 11px; opacity: 0.8; }
+</style>
+</head>
+<body>
+
+<!-- ===== PAGE 1 ===== -->
+<div class="page p1">
+  <div class="p1-top">
+    <div class="logo">
+      <div class="logo-icon">Q</div>
+      <div class="logo-text">Qflo</div>
+    </div>
+    <div class="badge-top">📅 تقويم المواعيد الذكي</div>
+  </div>
+
+  <div class="p1-hero">
+    <div class="hero-pre">إدارة المواعيد وطوابير الانتظار</div>
+    <div class="hero-title">
+      تقويم <span>واتساب</span> ذكي<br>
+      لإدارة <span class="blue">مواعيدك</span>
+    </div>
+    <div class="hero-sub">
+      مرضاك يحجزون عبر واتساب. أنت تدير كل شيء من تقويم بصري.
+      اسحب وأفلت لإعادة الجدولة. عرض أسبوعي، شهري وقائمة. طابور فوري + موعد مسبق.
+    </div>
+  </div>
+
+  <!-- Calendar Mockup - same visual as French -->
+  <div class="calendar-mock">
+    <div class="cal-header">
+      <div class="cal-nav">
+        <div class="cal-nav-btn">‹</div>
+        <div class="cal-month">14 – 18 أفريل 2026</div>
+        <div class="cal-nav-btn">›</div>
+      </div>
+      <div class="cal-views">
+        <div class="cal-view-btn active">أسبوع</div>
+        <div class="cal-view-btn">شهر</div>
+        <div class="cal-view-btn">قائمة</div>
+      </div>
+    </div>
+
+    <div class="cal-body">
+      <div class="cal-sidebar">
+        <div class="mini-cal">
+          <div class="mini-cal-title">أفريل 2026</div>
+          <div class="mini-cal-grid">
+            <div class="mini-cal-day">أح</div><div class="mini-cal-day">إث</div><div class="mini-cal-day">ثل</div><div class="mini-cal-day">أر</div><div class="mini-cal-day">خم</div><div class="mini-cal-day">جم</div><div class="mini-cal-day">سب</div>
+            <div class="mini-cal-num"></div><div class="mini-cal-num"></div><div class="mini-cal-num">1</div><div class="mini-cal-num">2</div><div class="mini-cal-num">3</div><div class="mini-cal-num">4</div><div class="mini-cal-num">5</div>
+            <div class="mini-cal-num has-appt">6</div><div class="mini-cal-num has-appt">7</div><div class="mini-cal-num has-appt">8</div><div class="mini-cal-num">9</div><div class="mini-cal-num has-appt">10</div><div class="mini-cal-num">11</div><div class="mini-cal-num">12</div>
+            <div class="mini-cal-num today has-appt">13</div><div class="mini-cal-num has-appt">14</div><div class="mini-cal-num has-appt">15</div><div class="mini-cal-num has-appt">16</div><div class="mini-cal-num">17</div><div class="mini-cal-num">18</div><div class="mini-cal-num">19</div>
+            <div class="mini-cal-num has-appt">20</div><div class="mini-cal-num has-appt">21</div><div class="mini-cal-num">22</div><div class="mini-cal-num has-appt">23</div><div class="mini-cal-num">24</div><div class="mini-cal-num">25</div><div class="mini-cal-num">26</div>
+            <div class="mini-cal-num">27</div><div class="mini-cal-num has-appt">28</div><div class="mini-cal-num">29</div><div class="mini-cal-num has-appt">30</div><div class="mini-cal-num"></div><div class="mini-cal-num"></div><div class="mini-cal-num"></div>
+          </div>
+        </div>
+
+        <div class="activity">
+          <div class="activity-title"><div class="activity-dot"></div> النشاط</div>
+          <div class="activity-item" style="border-color: #f59e0b;">
+            <div class="activity-label" style="color: #f59e0b;">📅 حُجز</div>
+            <div class="activity-name">أميرة بن علي</div>
+            <div class="activity-meta">استشارة · 14 أفريل <span class="source-badge" style="background: rgba(37,211,102,0.12); color: #25d366;">واتساب</span></div>
+          </div>
+          <div class="activity-item" style="border-color: #3b82f6;">
+            <div class="activity-label" style="color: #3b82f6;">✅ مؤكد</div>
+            <div class="activity-name">كريم حاج</div>
+            <div class="activity-meta">أشعة · 14 أفريل <span class="source-badge" style="background: rgba(0,132,255,0.12); color: #0084ff;">ماسنجر</span></div>
+          </div>
+          <div class="activity-item" style="border-color: #22c55e;">
+            <div class="activity-label" style="color: #22c55e;">✔️ تمت الخدمة</div>
+            <div class="activity-name">فاطمة زهراء</div>
+            <div class="activity-meta">تحاليل · 13 أفريل <span class="source-badge" style="background: rgba(139,92,246,0.12); color: #8b5cf6;">حضوري</span></div>
+          </div>
+          <div class="activity-item" style="border-color: #06b6d4;">
+            <div class="activity-label" style="color: #06b6d4;">📋 تسجيل</div>
+            <div class="activity-name">يوسف سعيدي</div>
+            <div class="activity-meta">استشارة · 13 أفريل <span class="source-badge" style="background: rgba(37,211,102,0.12); color: #25d366;">واتساب</span></div>
+          </div>
+          <div class="activity-item" style="border-color: #ef4444;">
+            <div class="activity-label" style="color: #ef4444;">❌ ملغي</div>
+            <div class="activity-name">سارة مصباح</div>
+            <div class="activity-meta">أسنان · 15 أفريل</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Same week grid as French version but with Arabic day names -->
+      <div class="week-grid">
+        <div class="week-days">
+          <div class="week-time-col"></div>
+          <div class="week-day"><div class="week-day-name">أحد</div><div class="week-day-num">12</div></div>
+          <div class="week-day today"><div class="week-day-name">إثن</div><div class="week-day-num">13</div></div>
+          <div class="week-day"><div class="week-day-name">ثلا</div><div class="week-day-num">14</div></div>
+          <div class="week-day"><div class="week-day-name">أرب</div><div class="week-day-num">15</div></div>
+          <div class="week-day"><div class="week-day-name">خمي</div><div class="week-day-num">16</div></div>
+        </div>
+
+        <div class="week-content">
+          <div class="time-labels">
+            <div class="time-label">08:00</div>
+            <div class="time-label">09:00</div>
+            <div class="time-label">10:00</div>
+            <div class="time-label">11:00</div>
+            <div class="time-label">12:00</div>
+            <div class="time-label">13:00</div>
+            <div class="time-label">14:00</div>
+            <div class="time-label">15:00</div>
+            <div class="time-label">16:00</div>
+          </div>
+
+          <div class="day-columns">
+            <div class="day-col">
+              <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+              <div class="appt confirmed" style="top: 28px; height: 42px;">
+                <div class="appt-name">علي بوزيد</div>
+                <div class="appt-service">استشارة</div>
+                <div class="appt-time">09:00 – 09:30</div>
+              </div>
+              <div class="appt completed" style="top: 84px; height: 28px;">
+                <div class="appt-name">نادية فرحات</div>
+                <div class="appt-service">مراقبة</div>
+              </div>
+            </div>
+
+            <div class="day-col" style="background: rgba(59,130,246,0.04);">
+              <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+              <div class="now-line" style="top: 69px;"><div class="now-dot"></div></div>
+              <div class="appt completed" style="top: 0px; height: 28px;">
+                <div class="appt-name">فاطمة زهراء</div>
+                <div class="appt-service">تحاليل</div>
+              </div>
+              <div class="appt serving" style="top: 42px; height: 42px;">
+                <div class="appt-name">يوسف سعيدي</div>
+                <div class="appt-service">استشارة</div>
+                <div class="appt-time">09:30 – 10:00</div>
+              </div>
+              <div class="appt checked-in" style="top: 84px; height: 28px;">
+                <div class="appt-name">مريم لحلو</div>
+                <div class="appt-service">أشعة صوتية</div>
+              </div>
+              <div class="appt confirmed" style="top: 140px; height: 42px;">
+                <div class="appt-name">رشيد قاسي</div>
+                <div class="appt-service">استشارة</div>
+                <div class="appt-time">12:00 – 12:30</div>
+              </div>
+              <div class="appt confirmed" style="top: 196px; height: 28px;">
+                <div class="appt-name">سامية بن سالم</div>
+                <div class="appt-service">متابعة</div>
+              </div>
+            </div>
+
+            <div class="day-col">
+              <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+              <div class="appt pending" style="top: 14px; height: 28px;">
+                <div class="appt-name">أميرة بن علي</div>
+                <div class="appt-service">استشارة</div>
+              </div>
+              <div class="appt confirmed" style="top: 56px; height: 42px;">
+                <div class="appt-name">كريم حاج</div>
+                <div class="appt-service">أشعة</div>
+                <div class="appt-time">10:00 – 10:45</div>
+              </div>
+              <div class="appt confirmed drag-ghost" style="top: 120px; height: 28px; left: 10px; right: 10px;">
+                <div class="appt-name">↕ مراد زياني</div>
+                <div class="appt-service">مراقبة</div>
+              </div>
+              <div class="drop-highlight" style="top: 154px; height: 28px;"></div>
+              <div class="appt confirmed" style="top: 196px; height: 42px;">
+                <div class="appt-name">لينا رحماني</div>
+                <div class="appt-service">استشارة</div>
+                <div class="appt-time">15:00 – 15:30</div>
+              </div>
+            </div>
+
+            <div class="day-col">
+              <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+              <div class="appt confirmed" style="top: 28px; height: 56px;">
+                <div class="appt-name">عمر بوضياف</div>
+                <div class="appt-service">جراحة بسيطة</div>
+                <div class="appt-time">09:00 – 10:00</div>
+              </div>
+              <div class="appt pending" style="top: 112px; height: 28px;">
+                <div class="appt-name">هدى بلحاج</div>
+                <div class="appt-service">استشارة</div>
+              </div>
+              <div class="appt cancelled" style="top: 154px; height: 28px;">
+                <div class="appt-name">سارة مصباح</div>
+                <div class="appt-service">أسنان</div>
+              </div>
+            </div>
+
+            <div class="day-col">
+              <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+              <div class="appt confirmed" style="top: 28px; height: 28px;">
+                <div class="appt-name">أمين مالك</div>
+                <div class="appt-service">استشارة</div>
+              </div>
+              <div class="appt confirmed" style="top: 84px; height: 42px;">
+                <div class="appt-name">ياسمين شريف</div>
+                <div class="appt-service">متابعة حمل</div>
+                <div class="appt-time">10:30 – 11:00</div>
+              </div>
+              <div class="appt pending" style="top: 168px; height: 28px;">
+                <div class="appt-name">جمال والي</div>
+                <div class="appt-service">تحليل دم</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail Panel -->
+      <div class="detail-panel">
+        <div class="detail-header">
+          <div class="detail-name">يوسف سعيدي</div>
+          <div class="detail-close">✕</div>
+        </div>
+        <div class="detail-badges">
+          <div class="detail-badge" style="background: rgba(249,115,22,0.12); color: #f97316;">⚡ جارٍ الخدمة</div>
+          <div class="detail-badge whatsapp">💬 واتساب</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">📞 الهاتف</div>
+          <div class="detail-value" dir="ltr">+213 555 12 34 56</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">🏥 الخدمة</div>
+          <div class="detail-value">استشارة عامة</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">📅 الموعد</div>
+          <div class="detail-value" dir="ltr">13/04/2026 09:30</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">🎫 التذكرة</div>
+          <div class="detail-value" style="color: #3b82f6; font-weight: 800;" dir="ltr">A-08</div>
+        </div>
+
+        <div class="detail-section-title">📜 سجل النشاط</div>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background: #3b82f6;"></div>
+            <div class="timeline-label">📋 تم إنشاء الموعد</div>
+            <div class="timeline-time" dir="ltr">11/04/2026 14:22</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background: #22c55e;"></div>
+            <div class="timeline-label">✅ مؤكد</div>
+            <div class="timeline-time" dir="ltr">11/04/2026 14:23</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background: #06b6d4;"></div>
+            <div class="timeline-label">📋 تم التسجيل</div>
+            <div class="timeline-time" dir="ltr">13/04/2026 09:25</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background: #f59e0b;"></div>
+            <div class="timeline-label">📢 تم النداء للشباك</div>
+            <div class="timeline-time" dir="ltr">13/04/2026 09:32</div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-dot" style="background: #f97316;"></div>
+            <div class="timeline-label">⚡ بدأت الخدمة</div>
+            <div class="timeline-time" dir="ltr">13/04/2026 09:33</div>
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid rgba(51,65,85,0.4); padding-top: 6px; margin-top: 4px;">
+          <div style="font-size: 7px; color: #64748b; font-weight: 600; margin-bottom: 4px;">📝 ملاحظات</div>
+          <div style="font-size: 8px; color: #94a3b8; background: rgba(15,23,42,0.3); padding: 4px 6px; border-radius: 4px;">مريض دائم — متابعة ضغط</div>
+        </div>
+
+        <div class="detail-actions">
+          <div class="action-btn green">✓ تمت الخدمة</div>
+          <div class="action-btn red">✕ غائب</div>
+          <div class="action-btn blue">↗ تحويل</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="p1-bottom">
+    <div class="p1-bottom-features">
+      <div class="p1-feature"><span class="p1-feature-icon">📱</span> حجز واتساب</div>
+      <div class="p1-feature"><span class="p1-feature-icon">↕️</span> سحب وإفلات</div>
+      <div class="p1-feature"><span class="p1-feature-icon">📊</span> إحصائيات</div>
+      <div class="p1-feature"><span class="p1-feature-icon">📡</span> بدون إنترنت</div>
+    </div>
+    <div class="p1-url">qflo.net</div>
+  </div>
+</div>
+
+<!-- ===== PAGE 2 ===== -->
+<div class="page p2">
+  <div class="p2-header">
+    <div class="p2-logo">
+      <div class="p2-logo-icon">Q</div>
+      <div class="p2-logo-text">Qflo</div>
+    </div>
+    <div class="p2-subtitle">تقويم ذكي للمواعيد وإدارة طوابير الانتظار</div>
+  </div>
+
+  <div class="section-title"><span class="icon">📅</span> مميزات التقويم</div>
+
+  <div class="showcase-grid">
+    <div class="showcase-card highlight span2">
+      <div class="sc-header">
+        <div class="sc-icon" style="background: rgba(37,211,102,0.12);">💬</div>
+        <div class="sc-title">حجز المواعيد عبر واتساب<span class="sc-new">جديد</span></div>
+      </div>
+      <div class="sc-desc">مرضاك يرسلون رسالة واتساب بسيطة لحجز موعد. الموعد يظهر تلقائياً في تقويمك. لا مكالمات هاتفية، لا انتظار.</div>
+      <div class="sc-visual">
+        <div class="sc-step">📱 احجز عيادة</div>
+        <div class="sc-arrow">←</div>
+        <div class="sc-step">🏥 اختر الخدمة</div>
+        <div class="sc-arrow">←</div>
+        <div class="sc-step">📅 اختر التاريخ</div>
+        <div class="sc-arrow">←</div>
+        <div class="sc-step">✅ مؤكد!</div>
+      </div>
+    </div>
+
+    <div class="showcase-card">
+      <div class="sc-header">
+        <div class="sc-icon" style="background: rgba(59,130,246,0.12);">📅</div>
+        <div class="sc-title">عرض الأسبوع</div>
+      </div>
+      <div class="sc-desc">عرض جميع مواعيدك على شبكة زمنية. كل خانة ملونة حسب الحالة: انتظار، مؤكد، جارٍ الخدمة، مكتمل.</div>
+    </div>
+
+    <div class="showcase-card">
+      <div class="sc-header">
+        <div class="sc-icon" style="background: rgba(139,92,246,0.12);">↕️</div>
+        <div class="sc-title">سحب وإفلات</div>
+      </div>
+      <div class="sc-desc">أعد جدولة موعد بسحبه إلى خانة أخرى. يتم إشعار المريض تلقائياً عبر واتساب.</div>
+    </div>
+
+    <div class="showcase-card">
+      <div class="sc-header">
+        <div class="sc-icon" style="background: rgba(6,182,212,0.12);">📋</div>
+        <div class="sc-title">تفاصيل كاملة</div>
+      </div>
+      <div class="sc-desc">سجل كامل: الإنشاء، التأكيد، التسجيل، النداء، الخدمة. ملاحظات وإجراءات بنقرة واحدة.</div>
+    </div>
+
+    <div class="showcase-card">
+      <div class="sc-header">
+        <div class="sc-icon" style="background: rgba(245,158,11,0.12);">🔴</div>
+        <div class="sc-title">نشاط مباشر</div>
+      </div>
+      <div class="sc-desc">تدفق النشاط المباشر: حجوزات، تأكيدات، إلغاءات. المصدر معروض (واتساب، ماسنجر، كشك).</div>
+    </div>
+  </div>
+
+  <div class="section-title"><span class="icon">📱</span> قنوات الحجز</div>
+  <div class="channels">
+    <div class="channel-card" style="border-color: #25d366;">
+      <div class="channel-icon">💬</div>
+      <div class="channel-name" style="color: #25d366;">واتساب</div>
+      <div class="channel-desc">العميل يرسل احجز + الرمز<br>اختيار الخدمة والموعد<br>تأكيد فوري</div>
+    </div>
+    <div class="channel-card" style="border-color: #0084ff;">
+      <div class="channel-icon">💙</div>
+      <div class="channel-name" style="color: #0084ff;">ماسنجر</div>
+      <div class="channel-desc">نفس المسار عبر ماسنجر<br>واجهة تلقائية<br>بدون تحميل</div>
+    </div>
+    <div class="channel-card" style="border-color: #3b82f6;">
+      <div class="channel-icon">🌐</div>
+      <div class="channel-name" style="color: #3b82f6;">ويب / QR</div>
+      <div class="channel-desc">صفحة حجز إلكترونية<br>رمز QR للمسح في المكان<br>يعمل على أي متصفح</div>
+    </div>
+    <div class="channel-card" style="border-color: #f59e0b;">
+      <div class="channel-icon">🖥️</div>
+      <div class="channel-name" style="color: #f59e0b;">كشك</div>
+      <div class="channel-desc">كشك لمس في المكان<br>طباعة حرارية للتذكرة<br>لمن بدون هاتف</div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num">%90</div>
+      <div class="stat-label">من الجزائريين<br>يستخدمون واتساب</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">2</div>
+      <div class="stat-label">طريقتان: فوري<br>+ مسبق</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">15 دقيقة</div>
+      <div class="stat-label">للتثبيت<br>والتشغيل</div>
+    </div>
+    <div class="stat" style="background: linear-gradient(135deg, rgba(37,211,102,0.1), rgba(37,211,102,0.2));">
+      <div class="stat-num" style="color: #25d366;">+5</div>
+      <div class="stat-label">قنوات<br>وصول</div>
+    </div>
+  </div>
+
+  <div class="section-title"><span class="icon">🏢</span> القطاعات</div>
+  <div class="sector-pills">
+    <div class="sector-pill">🏥 العيادات والمستشفيات</div>
+    <div class="sector-pill">🏦 البنوك</div>
+    <div class="sector-pill">🏛️ البلدية والدائرة</div>
+    <div class="sector-pill">🎓 الجامعات</div>
+    <div class="sector-pill">🍽️ المطاعم</div>
+    <div class="sector-pill">💈 الحلاقين والصالونات</div>
+    <div class="sector-pill">🏪 المحلات التجارية</div>
+    <div class="sector-pill">📱 الاتصالات</div>
+  </div>
+
+  <div class="p2-cta">
+    <div class="cta-left">
+      <h3>رقمنة مواعيدك</h3>
+      <p>التثبيت في 15 دقيقة — واتساب مدمج</p>
+      <div class="cta-free">✓ طابور فوري + موعد مسبق</div>
+    </div>
+    <div class="cta-right">
+      <div class="email">contact@qflo.net</div>
+      <div class="url">qflo.net</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

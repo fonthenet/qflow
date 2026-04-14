@@ -124,13 +124,13 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)',
-              border: '1px solid rgba(148,163,184,0.15)',
+              background: 'linear-gradient(145deg, var(--surface) 0%, var(--bg) 100%)',
+              border: '1px solid var(--border)',
               borderRadius: 16,
               padding: 0,
               width: 400,
               maxWidth: 'calc(100vw - 40px)',
-              boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.05)',
               animation: 'confirmDialogIn 0.25s cubic-bezier(0.16,1,0.3,1)',
               overflow: 'hidden',
             }}
@@ -158,12 +158,12 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
               </div>
               <div style={{ flex: 1 }}>
                 {state.title && (
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', marginBottom: 6 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
                     {state.title}
                   </div>
                 )}
                 <div style={{
-                  fontSize: 14, color: '#cbd5e1', lineHeight: 1.55,
+                  fontSize: 14, color: 'var(--text2)', lineHeight: 1.55,
                   fontWeight: 500,
                 }}>
                   {state.message}
@@ -181,19 +181,19 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                   onClick={handleCancel}
                   style={{
                     padding: '9px 20px', borderRadius: 10,
-                    border: '1px solid rgba(148,163,184,0.2)',
-                    background: 'rgba(148,163,184,0.08)',
-                    color: '#94a3b8', cursor: 'pointer',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface2)',
+                    color: 'var(--text2)', cursor: 'pointer',
                     fontSize: 13, fontWeight: 600,
                     transition: 'all 0.15s',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(148,163,184,0.15)';
-                    e.currentTarget.style.color = '#e2e8f0';
+                    e.currentTarget.style.background = 'var(--surface2)';
+                    e.currentTarget.style.color = 'var(--text)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(148,163,184,0.08)';
-                    e.currentTarget.style.color = '#94a3b8';
+                    e.currentTarget.style.background = 'var(--surface2)';
+                    e.currentTarget.style.color = 'var(--text2)';
                   }}
                 >
                   {state.cancelLabel}

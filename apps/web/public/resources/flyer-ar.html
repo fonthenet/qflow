@@ -95,17 +95,17 @@
   }
 
   .tagline-pre {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 2px;
-    opacity: 0.7;
+    font-size: 16px;
+    font-weight: 700;
+    opacity: 0.8;
     margin-bottom: 8mm;
+    color: #fbbf24;
   }
 
   .tagline {
-    font-size: 42px;
+    font-size: 40px;
     font-weight: 900;
-    line-height: 1.3;
+    line-height: 1.35;
     margin-bottom: 8mm;
   }
 
@@ -114,11 +114,11 @@
   }
 
   .subtitle {
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 400;
-    line-height: 1.7;
+    line-height: 1.8;
     opacity: 0.85;
-    max-width: 460px;
+    max-width: 500px;
   }
 
   .feature-pills {
@@ -140,6 +140,21 @@
     gap: 8px;
   }
 
+  .pill.new {
+    background: rgba(37,211,102,0.3);
+    border: 1px solid rgba(37,211,102,0.5);
+  }
+
+  .pill-new-badge {
+    background: #25d366;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Inter', sans-serif;
+  }
+
   .pill-icon { font-size: 18px; }
 
   /* Visual mockup */
@@ -151,7 +166,7 @@
   }
 
   .mock-phone {
-    width: 140px;
+    width: 155px;
     background: rgba(255,255,255,0.12);
     border-radius: 20px;
     padding: 12px;
@@ -179,6 +194,8 @@
   }
 
   .mock-msg.bot { background: rgba(34,197,94,0.3); }
+
+  .mock-msg.appointment { background: rgba(37,211,102,0.25); border: 1px solid rgba(37,211,102,0.4); }
 
   .mock-display {
     flex: 1;
@@ -236,6 +253,14 @@
     direction: ltr;
   }
 
+  .front-bottom-email {
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.7;
+    font-family: 'Inter', sans-serif;
+    direction: ltr;
+  }
+
   /* ===== PAGE 2 — BACK ===== */
   .back {
     background: #f8fafc;
@@ -282,67 +307,113 @@
   }
 
   .back-section-title {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 800;
     color: #1e40af;
-    margin-bottom: 6mm;
+    margin-bottom: 5mm;
   }
 
   .steps {
     display: flex;
-    gap: 12px;
-    margin-bottom: 10mm;
+    gap: 10px;
+    margin-bottom: 8mm;
   }
 
   .step {
     flex: 1;
     background: #fff;
     border-radius: 16px;
-    padding: 20px;
+    padding: 16px;
     border: 1px solid #e2e8f0;
     text-align: center;
   }
 
   .step-num {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     background: linear-gradient(135deg, #2563eb, #1e40af);
     color: #fff;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 800;
-    margin: 0 auto 12px;
+    margin: 0 auto 10px;
     font-family: 'Inter', sans-serif;
   }
 
-  .step-icon { font-size: 32px; margin-bottom: 8px; }
-  .step-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
-  .step-desc { font-size: 11px; color: #64748b; line-height: 1.6; }
+  .step-icon { font-size: 28px; margin-bottom: 6px; }
+  .step-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .step-desc { font-size: 10px; color: #64748b; line-height: 1.6; }
+
+  /* NEW appointment section */
+  .appointment-section {
+    background: linear-gradient(135deg, #dcfce7, #f0fdf4);
+    border: 2px solid #25d366;
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 8mm;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .appointment-icon {
+    font-size: 40px;
+    flex-shrink: 0;
+  }
+
+  .appointment-content {
+    flex: 1;
+  }
+
+  .appointment-badge {
+    display: inline-block;
+    background: #25d366;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .appointment-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #166534;
+    margin-bottom: 4px;
+  }
+
+  .appointment-desc {
+    font-size: 11px;
+    color: #15803d;
+    line-height: 1.6;
+  }
 
   .features {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 10mm;
+    gap: 8px;
+    margin-bottom: 8mm;
   }
 
   .feature {
     display: flex;
-    gap: 12px;
-    padding: 14px;
+    gap: 10px;
+    padding: 12px;
     background: #fff;
     border-radius: 12px;
     border: 1px solid #e2e8f0;
   }
 
-  .feature-icon { font-size: 24px; flex-shrink: 0; }
-  .feature-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
-  .feature-desc { font-size: 10.5px; color: #64748b; line-height: 1.5; }
+  .feature-icon { font-size: 22px; flex-shrink: 0; }
+  .feature-title { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+  .feature-desc { font-size: 10px; color: #64748b; line-height: 1.5; }
 
-  .sectors { margin-bottom: 10mm; }
+  .sectors { margin-bottom: 8mm; }
 
   .sector-tags {
     display: flex;
@@ -353,9 +424,9 @@
   .sector-tag {
     background: #eff6ff;
     color: #1e40af;
-    padding: 8px 16px;
+    padding: 7px 14px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     display: flex;
     align-items: center;
@@ -366,15 +437,15 @@
     margin-top: auto;
     background: linear-gradient(135deg, #1e40af, #2563eb);
     border-radius: 16px;
-    padding: 20px 24px;
+    padding: 18px 22px;
     color: #fff;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
-  .cta-text h3 { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
-  .cta-text p { font-size: 13px; opacity: 0.8; }
+  .cta-text h3 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .cta-text p { font-size: 12px; opacity: 0.8; }
 
   .cta-contact { text-align: left; direction: ltr; }
   .cta-contact div { font-size: 12px; margin-bottom: 2px; }
@@ -390,43 +461,50 @@
       <div class="logo-icon">Q</div>
       <div class="logo-text">Qflo</div>
     </div>
-    <div class="badge">نظام إدارة الطوابير الذكي</div>
+    <div class="badge">حل إدارة الطوابير والمواعيد</div>
   </div>
 
   <div class="front-hero">
-    <div class="tagline-pre">ودّع فوضى الطوابير</div>
+    <div class="tagline-pre">عملاؤك ينتظرون لساعات في الطابور؟</div>
     <div class="tagline">
-      عملاؤك ينضمّون للطابور<br>
+      مع Qflo، ينضمون<br>
       عبر <span>واتساب</span><br>
-      في 10 ثوانٍ فقط.
+      في 10 ثوانٍ.
     </div>
     <div class="subtitle">
-      Qflo يرقمن إدارة الطوابير للعيادات، البنوك والإدارات العمومية.
-      بدون ورق، بدون انتظار عشوائي.
+      طابور فوري (انضم) أو موعد مسبق (احجز) — كل شيء عبر واتساب وماسنجر.<br>
+      بدون تحميل أي تطبيق.
     </div>
 
     <div class="feature-pills">
-      <div class="pill"><span class="pill-icon">💬</span> واتساب و ماسنجر</div>
-      <div class="pill"><span class="pill-icon">📺</span> شاشة عرض مباشر</div>
+      <div class="pill"><span class="pill-icon">💬</span> واتساب وماسنجر</div>
+      <div class="pill new"><span class="pill-icon">📅</span> مواعيد عبر واتساب <span class="pill-new-badge">NEW</span></div>
+      <div class="pill"><span class="pill-icon">📺</span> شاشة عرض</div>
       <div class="pill"><span class="pill-icon">🖥️</span> كشك خدمة ذاتية</div>
       <div class="pill"><span class="pill-icon">📍</span> تتبع مباشر</div>
-      <div class="pill"><span class="pill-icon">📱</span> تطبيق للموظف</div>
       <div class="pill"><span class="pill-icon">🌐</span> متعدد اللغات</div>
+      <div class="pill"><span class="pill-icon">📡</span> يعمل بدون إنترنت</div>
+      <div class="pill"><span class="pill-icon">⚡</span> طابور فوري + موعد مسبق</div>
     </div>
   </div>
 
   <div class="front-visual">
     <div class="mock-phone">
       <div class="mock-phone-header">💬 واتساب</div>
-      <div class="mock-msg">أرسل <b>ELAZHAR انضم</b></div>
-      <div class="mock-msg bot">✅ أهلاً! رقم تذكرتك: <b>A-12</b><br>موقعك: الثالث</div>
-      <div class="mock-msg bot">📢 دورك الآن!<br>الشبّاك 2</div>
+      <div style="font-size:7px;font-weight:700;color:#fbbf24;margin-bottom:3px">⚡ نفس اليوم — بدون موعد</div>
+      <div class="mock-msg">انضم عيادة-المركز</div>
+      <div class="mock-msg bot">✅ تذكرة <b>A-12</b> | الثالث | ~8 دقائق</div>
+      <div class="mock-msg bot">📢 حان دورك! الشباك 2</div>
+      <div style="height:6px"></div>
+      <div style="font-size:7px;font-weight:700;color:#a78bfa;margin-bottom:3px">📅 حجز مسبق — موعد مخطط</div>
+      <div class="mock-msg">احجز عيادة-المركز</div>
+      <div class="mock-msg appointment">📅 موعد مؤكد: الاثنين 14/04 الساعة 10:30</div>
     </div>
     <div class="mock-display">
       <div class="mock-display-title">📺 شاشة العرض</div>
       <div class="mock-row">
         <span>🎫 A-12</span>
-        <span class="mock-ticket">◀ الشبّاك 2</span>
+        <span class="mock-ticket">◀ الشباك 2</span>
       </div>
       <div class="mock-row">
         <span>🎫 A-13</span>
@@ -440,7 +518,9 @@
   </div>
 
   <div class="front-bottom">
-    <div class="front-bottom-text">← اكتشف الحل الآن</div>
+    <div>
+      <div class="front-bottom-text">طابور + مواعيد | contact@qflo.net</div>
+    </div>
     <div class="front-bottom-url">qflo.net</div>
   </div>
 </div>
@@ -452,38 +532,65 @@
       <div class="back-logo-icon">Q</div>
       <div class="back-logo-text">Qflo</div>
     </div>
-    <div style="font-size:12px;color:#64748b;font-weight:500">إدارة ذكية للطوابير</div>
+    <div style="font-size:12px;color:#64748b;font-weight:500">إدارة ذكية للطوابير والمواعيد</div>
   </div>
 
+  <!-- How it works -->
   <div class="back-section-title">كيف يعمل؟</div>
   <div class="steps">
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-icon">📱</div>
-      <div class="step-title">العميل ينضم</div>
-      <div class="step-desc">عبر واتساب، ماسنجر أو كشك الخدمة الذاتية في المكان</div>
+      <div class="step-title">العميل ينضم عبر واتساب</div>
+      <div class="step-desc">يرسل رسالة واتساب أو ماسنجر أو يستخدم كشك الخدمة الذاتية</div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-icon">🎫</div>
-      <div class="step-title">تذكرة تلقائية</div>
-      <div class="step-desc">يتم منح رقم فوري مع موقع العميل في الطابور</div>
+      <div class="step-title">تذكرة تلقائية + تتبع مباشر</div>
+      <div class="step-desc">رقم فوري مع الموقع في الطابور ومدة الانتظار المتوقعة</div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-icon">📢</div>
-      <div class="step-title">استدعاء مباشر</div>
-      <div class="step-desc">يتم إشعار العميل على هاتفه وعلى شاشة العرض</div>
+      <div class="step-title">إشعار عندما يحين الدور</div>
+      <div class="step-desc">إشعار على الهاتف وعلى شاشة العرض — لا يفوت دوره أبداً</div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-icon">✅</div>
+      <div class="step-title">تمت الخدمة</div>
+      <div class="step-desc">الإحصائيات محدثة تلقائياً — تتبع الأداء في الوقت الحقيقي</div>
     </div>
   </div>
 
+  <!-- Two modes -->
+  <div class="appointment-section">
+    <div class="appointment-icon">⚡</div>
+    <div class="appointment-content">
+      <div class="appointment-title">طريقتان للخدمة</div>
+      <div class="appointment-desc">
+        <b>انضم</b> = طابور فوري — نفس اليوم، بدون موعد، تذكرة فورية<br>
+        <b>احجز</b> = موعد مسبق — اختر تاريخا ووقتا، تأكيد + تذكير تلقائي
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
   <div class="back-section-title">المميزات</div>
   <div class="features">
     <div class="feature">
       <div class="feature-icon">💬</div>
       <div>
-        <div class="feature-title">واتساب و ماسنجر</div>
-        <div class="feature-desc">العملاء ينضمون للطابور بدون تحميل أي تطبيق</div>
+        <div class="feature-title">واتساب وماسنجر</div>
+        <div class="feature-desc">العملاء ينضمون للطابور بدون تحميل أي تطبيق — 90% من الجزائريين يستخدمون واتساب</div>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📅</div>
+      <div>
+        <div class="feature-title">حجز مواعيد عبر واتساب</div>
+        <div class="feature-desc">حجز وتأكيد وتذكير — كل شيء تلقائي عبر واتساب</div>
       </div>
     </div>
     <div class="feature">
@@ -504,21 +611,21 @@
       <div class="feature-icon">📍</div>
       <div>
         <div class="feature-title">تتبع مباشر</div>
-        <div class="feature-desc">العميل يتابع موقعه في الطابور مباشرة عبر واتساب، ماسنجر أو رابط التذكرة</div>
+        <div class="feature-desc">العميل يتابع موقعه في الطابور مباشرة عبر واتساب أو رابط التذكرة</div>
       </div>
     </div>
     <div class="feature">
       <div class="feature-icon">📊</div>
       <div>
-        <div class="feature-title">لوحة تحكم</div>
-        <div class="feature-desc">إحصائيات ومتابعة الأداء في الوقت الحقيقي</div>
+        <div class="feature-title">لوحة تحكم وإحصائيات</div>
+        <div class="feature-desc">متابعة الأداء في الوقت الحقيقي مع تقارير مفصلة</div>
       </div>
     </div>
     <div class="feature">
-      <div class="feature-icon">🏢</div>
+      <div class="feature-icon">📡</div>
       <div>
-        <div class="feature-title">متعدد الأقسام</div>
-        <div class="feature-desc">إدارة عدة أقسام وشبابيك في نفس الوقت</div>
+        <div class="feature-title">يعمل بدون إنترنت</div>
+        <div class="feature-desc">النظام يعمل محلياً — لا يتوقف حتى لو انقطع الإنترنت</div>
       </div>
     </div>
     <div class="feature">
@@ -530,22 +637,26 @@
     </div>
   </div>
 
+  <!-- Sectors -->
   <div class="sectors">
     <div class="back-section-title">القطاعات المستهدفة</div>
     <div class="sector-tags">
       <div class="sector-tag">🏥 العيادات والمستشفيات</div>
-      <div class="sector-tag">🏦 البنوك والتأمينات</div>
-      <div class="sector-tag">🏛️ الإدارات العمومية</div>
-      <div class="sector-tag">📮 مكاتب البريد</div>
-      <div class="sector-tag">🏪 المحلات التجارية</div>
+      <div class="sector-tag">🏦 البنوك</div>
+      <div class="sector-tag">🏛️ الإدارات العمومية (البلدية، الدائرة)</div>
       <div class="sector-tag">🎓 الجامعات</div>
+      <div class="sector-tag">🍽️ المطاعم</div>
+      <div class="sector-tag">💈 الحلاقين والصالونات</div>
+      <div class="sector-tag">🏪 المحلات التجارية</div>
+      <div class="sector-tag">📡 الاتصالات</div>
     </div>
   </div>
 
+  <!-- CTA -->
   <div class="back-cta">
     <div class="cta-text">
       <h3>مستعد للتخلص من الطوابير؟</h3>
-      <p>تجربة مجانية — تثبيت في 15 دقيقة</p>
+      <p>طابور فوري + موعد مسبق — التثبيت في 15 دقيقة</p>
     </div>
     <div class="cta-contact">
       <div class="email">contact@qflo.net</div>

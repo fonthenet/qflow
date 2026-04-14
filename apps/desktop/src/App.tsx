@@ -18,13 +18,13 @@ class ErrorBoundary extends Component<{ children: ReactNode; locale: DesktopLoca
   render() {
     if (this.state.error) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: '#0f172a', color: '#e2e8f0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16, padding: 40, textAlign: 'center', background: 'var(--bg)', color: 'var(--text)' }}>
           <div style={{ fontSize: 48 }}>⚠️</div>
           <h2 style={{ fontSize: 22, fontWeight: 700 }}>{translate(this.props.locale, 'Something went wrong')}</h2>
-          <p style={{ fontSize: 14, color: '#94a3b8', maxWidth: 400 }}>{this.state.error.message}</p>
+          <p style={{ fontSize: 14, color: 'var(--text2)', maxWidth: 400 }}>{this.state.error.message}</p>
           <button
             onClick={() => { this.setState({ error: null }); window.location.reload(); }}
-            style={{ padding: '10px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
+            style={{ padding: '10px 24px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
           >
             {translate(this.props.locale, 'Reload App')}
           </button>
@@ -55,6 +55,16 @@ export function App() {
   });
   const [staffStatus, setStaffStatus] = useState<'available' | 'on_break' | 'away'>('available');
   const [queuePaused, setQueuePaused] = useState(false);
+
+  // Apply saved theme on mount (ensures CSS variables are set even if index.html script missed it)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('qflo_theme');
+      if (saved === 'dark' || saved === 'light') {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    } catch {}
+  }, []);
 
   // Load saved session on mount
   useEffect(() => {

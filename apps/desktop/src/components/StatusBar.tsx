@@ -37,7 +37,17 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
   const [orgName, setOrgName] = useState<string | null>(null);
   const [orgNameAr, setOrgNameAr] = useState<string | null>(null);
   const [liveDeskName, setLiveDeskName] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return (localStorage.getItem('qflo_theme') as 'light' | 'dark') ?? 'light'; } catch { return 'light'; }
+  });
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('qflo_theme', next); } catch {}
+  };
 
   useEffect(() => {
     if (!session) {
@@ -255,7 +265,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
           {syncStatus.connectionQuality === 'flaky' && (
             <span style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+              background: 'rgba(239,68,68,0.15)', color: 'var(--danger)',
               animation: 'pulse 2s infinite',
             }}>
               {t('Slow connection')}
@@ -270,7 +280,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
           {!syncStatus.isOnline && (
             <span style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-              background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+              background: 'rgba(245,158,11,0.15)', color: 'var(--warning)',
               animation: 'pulse 2s infinite',
             }}>
               {t('No internet - running locally')}
@@ -290,7 +300,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
             <span
               style={{
                 padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                background: 'rgba(239,68,68,0.15)', color: 'var(--danger)',
                 cursor: 'pointer',
               }}
               onClick={openPanel}
@@ -308,7 +318,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                 <span style={{
                   fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
                   background: staffStatus === 'on_break' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
-                  color: staffStatus === 'on_break' ? '#f59e0b' : '#ef4444',
+                  color: staffStatus === 'on_break' ? 'var(--warning)' : 'var(--danger)',
                 }}>
                   {staffStatus === 'on_break' ? `☕ ${t('Break')}` : `🚫 ${t('Away')}`}
                 </span>
@@ -318,6 +328,9 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
               {(liveDeskName ?? session.desk_name) && (
                 <span className="desk-badge">{liveDeskName ?? session.desk_name}</span>
               )}
+              <button className="theme-toggle" onClick={toggleTheme} aria-label={t('Toggle theme')} title={t('Toggle theme')}>
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
               <button className="btn-logout" onClick={onLogout} aria-label={t('Sign out of Qflo Station')}>{t('Sign Out')}</button>
             </>
           )}
@@ -344,7 +357,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                 {retrying ? t('Syncing...') : t('Retry All')}
               </button>
               {pendingItems.length > 0 && (
-                <button className="btn-sm" style={{ background: '#ef4444', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }} onClick={discardAll}>
+                <button className="btn-sm" style={{ background: 'var(--danger)', color: 'white', border: 'none', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }} onClick={discardAll}>
                   {t('Discard All')}
                 </button>
               )}
@@ -373,7 +386,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {t('ID: {id}... - Attempts: {attempts}', { id: item.record_id.substring(0, 12), attempts: item.attempts })}
-                      {item.last_error && <span style={{ color: '#ef4444' }}> · {item.last_error}</span>}
+                      {item.last_error && <span style={{ color: 'var(--danger)' }}> · {item.last_error}</span>}
                     </div>
                   </div>
                   <button
@@ -385,7 +398,7 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
                   </button>
                   <button
                     className="btn-sm"
-                    style={{ background: 'transparent', color: '#ef4444', border: '1px solid #ef4444', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                    style={{ background: 'transparent', color: 'var(--danger)', border: '1px solid var(--danger)', padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
                     onClick={() => discardItem(item.id)}
                   >
                     {t('Discard')}

@@ -6,9 +6,18 @@
   <title>Qflo Station</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #0f172a; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+    [data-theme="light"] body { background: #f8fafc; color: #0f172a; }
+    [data-theme="dark"] body { background: #0f172a; color: #f1f5f9; }
     #root { height: 100vh; }
   </style>
+  <script>
+    // Apply saved theme before first paint to avoid flash
+    try {
+      var t = localStorage.getItem('qflo_theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch(e) {}
+  </script>
 </head>
 <body>
   <div id="root"></div>

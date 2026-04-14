@@ -52,7 +52,7 @@
 
   /* Panel 3 — FRONT COVER (rightmost on outer) */
   .outer .p-cover {
-    background: linear-gradient(160deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%);
+    background: linear-gradient(160deg, #075e28 0%, #128c3e 40%, #25d366 100%);
     color: #fff;
     justify-content: space-between;
     border-radius: 0;
@@ -89,18 +89,30 @@
   }
 
   .cover-hero h1 {
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 900;
-    line-height: 1.2;
-    margin-bottom: 6mm;
+    line-height: 1.25;
+    margin-bottom: 5mm;
   }
 
-  .cover-hero h1 span { color: #86efac; }
+  .cover-hero h1 span { color: #bbf7d0; }
 
   .cover-hero p {
     font-size: 11px;
     line-height: 1.6;
-    opacity: 0.8;
+    opacity: 0.85;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-bottom: 5mm;
   }
 
   .cover-footer {
@@ -125,7 +137,7 @@
   .back-title {
     font-size: 16px;
     font-weight: 800;
-    color: #1e40af;
+    color: #128c3e;
     margin-bottom: 6mm;
   }
 
@@ -155,7 +167,7 @@
   .back-sectors-title {
     font-size: 10px;
     font-weight: 700;
-    color: #1e40af;
+    color: #128c3e;
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 4mm;
@@ -163,13 +175,21 @@
 
   .sector-pill {
     display: inline-block;
-    background: #eff6ff;
-    color: #1e40af;
     padding: 5px 10px;
     border-radius: 999px;
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 600;
     margin: 0 3px 5px 0;
+  }
+
+  .sector-pill-green {
+    background: #f0fdf4;
+    color: #128c3e;
+  }
+
+  .sector-pill-blue {
+    background: #eff6ff;
+    color: #1e40af;
   }
 
   .back-bottom-logo {
@@ -182,7 +202,7 @@
   .back-bottom-logo-icon {
     width: 28px;
     height: 28px;
-    background: linear-gradient(135deg, #2563eb, #1e40af);
+    background: linear-gradient(135deg, #25d366, #128c3e);
     border-radius: 8px;
     color: #fff;
     display: flex;
@@ -195,7 +215,7 @@
   .back-bottom-logo-text {
     font-size: 18px;
     font-weight: 800;
-    color: #1e40af;
+    color: #128c3e;
   }
 
   /* Panel 2 — BACK FLAP (middle on outer) */
@@ -209,7 +229,7 @@
   .flap-title {
     font-size: 14px;
     font-weight: 800;
-    color: #1e40af;
+    color: #128c3e;
     margin-bottom: 6mm;
   }
 
@@ -230,7 +250,7 @@
   .flap-stat-num {
     font-size: 22px;
     font-weight: 900;
-    color: #1e40af;
+    color: #128c3e;
   }
 
   .flap-stat-label {
@@ -242,9 +262,9 @@
   .flap-quote {
     margin-top: 8mm;
     padding: 12px;
-    background: #eff6ff;
+    background: #f0fdf4;
     border-radius: 10px;
-    border-left: 3px solid #2563eb;
+    border-left: 3px solid #25d366;
   }
 
   .flap-quote p {
@@ -278,14 +298,14 @@
   .inner-title {
     font-size: 15px;
     font-weight: 800;
-    color: #1e40af;
+    color: #128c3e;
     margin-bottom: 6mm;
   }
 
   .inner-subtitle {
     font-size: 10px;
     font-weight: 700;
-    color: #1e40af;
+    color: #128c3e;
     text-transform: uppercase;
     letter-spacing: 1px;
     margin-bottom: 4mm;
@@ -302,7 +322,7 @@
   .step-num {
     width: 26px;
     height: 26px;
-    background: linear-gradient(135deg, #2563eb, #1e40af);
+    background: linear-gradient(135deg, #25d366, #128c3e);
     color: #fff;
     border-radius: 50%;
     display: flex;
@@ -351,6 +371,19 @@
     line-height: 1.4;
   }
 
+  .feat-new {
+    display: inline-block;
+    background: #25d366;
+    color: #fff;
+    font-size: 7px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+    letter-spacing: 0.5px;
+  }
+
   /* Channels visual */
   .channel-box {
     background: #f8fafc;
@@ -361,6 +394,11 @@
     text-align: center;
   }
 
+  .channel-box-wa {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
   .channel-icon { font-size: 28px; margin-bottom: 4px; }
   .channel-name { font-size: 10px; font-weight: 700; color: #0f172a; }
   .channel-desc { font-size: 8px; color: #94a3b8; }
@@ -368,7 +406,7 @@
   /* CTA panel */
   .inner-cta {
     margin-top: auto;
-    background: linear-gradient(135deg, #1e40af, #2563eb);
+    background: linear-gradient(135deg, #128c3e, #25d366);
     border-radius: 12px;
     padding: 14px;
     color: #fff;
@@ -389,6 +427,11 @@
   .inner-cta-url {
     margin-top: 6px;
     font-size: 12px;
+    font-weight: 800;
+  }
+
+  .wa-highlight {
+    color: #25d366;
     font-weight: 800;
   }
 </style>
@@ -415,13 +458,14 @@
     </div>
 
     <div class="back-sectors">
-      <div class="back-sectors-title">Nos secteurs</div>
-      <span class="sector-pill">🏥 Cliniques</span>
-      <span class="sector-pill">🏦 Banques</span>
-      <span class="sector-pill">🏛️ Administrations</span>
-      <span class="sector-pill">📮 Postes</span>
-      <span class="sector-pill">🏪 Commerces</span>
-      <span class="sector-pill">🎓 Universités</span>
+      <div class="back-sectors-title">Secteurs en Alg&#233;rie</div>
+      <span class="sector-pill sector-pill-green">&#x1F3E5; Cliniques</span>
+      <span class="sector-pill sector-pill-blue">&#x1F3E6; Banques</span>
+      <span class="sector-pill sector-pill-green">&#x1F3DB;&#xFE0F; APC / Da&#239;ra</span>
+      <span class="sector-pill sector-pill-blue">&#x1F393; Universit&#233;s</span>
+      <span class="sector-pill sector-pill-blue">&#x1F37D;&#xFE0F; Restaurants</span>
+      <span class="sector-pill sector-pill-green">&#x1F488; Barbiers &amp; Salons</span>
+      <span class="sector-pill sector-pill-green">&#x1F4F6; T&#233;l&#233;coms</span>
     </div>
 
     <div class="back-bottom-logo">
@@ -435,40 +479,40 @@
     <div class="flap-title">Pourquoi Qflo ?</div>
 
     <div class="flap-stat">
-      <div class="flap-stat-icon">⏱️</div>
+      <div class="flap-stat-icon">&#x1F4F1;</div>
+      <div>
+        <div class="flap-stat-num">90%</div>
+        <div class="flap-stat-label">des Alg&#233;riens utilisent WhatsApp</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">&#x26A1;</div>
+      <div>
+        <div class="flap-stat-num">2 modes</div>
+        <div class="flap-stat-label">File imm&#233;diate + rendez-vous futur</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">&#x1F680;</div>
+      <div>
+        <div class="flap-stat-num">15 min</div>
+        <div class="flap-stat-label">Installation compl&#232;te</div>
+      </div>
+    </div>
+
+    <div class="flap-stat">
+      <div class="flap-stat-icon">&#x23F1;&#xFE0F;</div>
       <div>
         <div class="flap-stat-num">-60%</div>
-        <div class="flap-stat-label">Temps d'attente perçu</div>
-      </div>
-    </div>
-
-    <div class="flap-stat">
-      <div class="flap-stat-icon">📱</div>
-      <div>
-        <div class="flap-stat-num">10s</div>
-        <div class="flap-stat-label">Pour rejoindre la file</div>
-      </div>
-    </div>
-
-    <div class="flap-stat">
-      <div class="flap-stat-icon">🚀</div>
-      <div>
-        <div class="flap-stat-num">15min</div>
-        <div class="flap-stat-label">Installation complète</div>
-      </div>
-    </div>
-
-    <div class="flap-stat">
-      <div class="flap-stat-icon">💰</div>
-      <div>
-        <div class="flap-stat-num">0 DZD</div>
-        <div class="flap-stat-label">Coût pour le client</div>
+        <div class="flap-stat-label">Temps d'attente per&#231;u</div>
       </div>
     </div>
 
     <div class="flap-quote">
-      <p>"Depuis Qflo, nos patients ne se plaignent plus de l'attente. Tout est transparent."</p>
-      <cite>— Directeur de clinique, Alger</cite>
+      <p>&laquo; Nos patients prennent rendez-vous par WhatsApp et ne font plus la queue. C'est une r&#233;volution. &raquo;</p>
+      <cite>&mdash; Directeur de clinique, Alger</cite>
     </div>
   </div>
 
@@ -480,12 +524,13 @@
     </div>
 
     <div class="cover-hero">
-      <h1>Fini le chaos<br>des files<br>d'attente.</h1>
-      <p>La solution intelligente de gestion des files d'attente pour les cliniques, banques et administrations en Algérie.</p>
+      <div class="cover-badge">&#x1F4AC; WhatsApp + Messenger</div>
+      <h1>Vos clients font<br>la queue pendant<br>des heures ?<br><span>C'est fini.</span></h1>
+      <p>File d'attente imm&#233;diate (REJOINDRE) ou rendez-vous futur (R&#201;SERVER) — via WhatsApp, Messenger, QR code ou kiosque. Z&#233;ro app &#224; installer.</p>
     </div>
 
     <div class="cover-url">qflo.net</div>
-    <div class="cover-footer">Gestion de files d'attente nouvelle génération</div>
+    <div class="cover-footer">Gestion de files d'attente nouvelle g&#233;n&#233;ration pour l'Alg&#233;rie</div>
   </div>
 </div>
 
@@ -493,54 +538,65 @@
 <div class="page inner">
   <!-- Panel 1 — How it works -->
   <div class="panel p-left">
-    <div class="inner-title">Comment ça marche ?</div>
+    <div class="inner-title">Comment &#231;a marche ?</div>
+
+    <div class="inner-subtitle">File d'attente</div>
 
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-content">
         <h4>Le client rejoint la file</h4>
-        <p>Via WhatsApp, Messenger ou la borne kiosque. Il envoie un simple message.</p>
+        <p>Via WhatsApp, Messenger, QR code, kiosque sur place ou kiosque web distant.</p>
       </div>
     </div>
 
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-content">
-        <h4>Ticket automatique</h4>
-        <p>Un numéro est attribué instantanément. Le client voit sa position en temps réel.</p>
+        <h4>Ticket + suivi en direct</h4>
+        <p>Num&#233;ro attribu&#233; instantan&#233;ment. Suivi via WhatsApp, Messenger ou lien URL du ticket.</p>
       </div>
     </div>
 
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-content">
-        <h4>L'opérateur appelle</h4>
-        <p>Depuis l'application desktop ou mobile, un clic suffit pour appeler le prochain.</p>
+        <h4>Notification WhatsApp</h4>
+        <p>Quand c'est son tour, le client re&#231;oit une notification + affichage sur &#233;cran TV.</p>
+      </div>
+    </div>
+
+    <div class="inner-subtitle" style="margin-top:6mm">Rendez-vous futur (R&#201;SERVER)</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h4>Le client choisit une date future</h4>
+        <p>Via WhatsApp : R&#201;SERVER + code &rarr; choix de service, date et heure future.</p>
       </div>
     </div>
 
     <div class="step">
-      <div class="step-num">4</div>
+      <div class="step-num">2</div>
       <div class="step-content">
-        <h4>Notification instantanée</h4>
-        <p>Le client reçoit une notification WhatsApp/Messenger + affichage sur écran TV.</p>
+        <h4>Rappel automatique</h4>
+        <p>WhatsApp rappelle le client avant son rendez-vous. Il arrive juste &#224; temps, sans attente.</p>
       </div>
     </div>
 
-    <div class="inner-subtitle">Canaux d'accès</div>
-    <div style="display:flex;gap:6px">
-      <div class="channel-box" style="flex:1">
-        <div class="channel-icon">💬</div>
-        <div class="channel-name">WhatsApp</div>
-        <div class="channel-desc">Le plus populaire</div>
+    <div style="display:flex;gap:6px;margin-top:auto">
+      <div class="channel-box channel-box-wa" style="flex:1">
+        <div class="channel-icon">&#x1F4AC;</div>
+        <div class="channel-name" style="color:#25d366">WhatsApp</div>
+        <div class="channel-desc">90% des Alg&#233;riens</div>
       </div>
       <div class="channel-box" style="flex:1">
-        <div class="channel-icon">📱</div>
+        <div class="channel-icon">&#x1F4F1;</div>
         <div class="channel-name">Messenger</div>
         <div class="channel-desc">Via Facebook</div>
       </div>
       <div class="channel-box" style="flex:1">
-        <div class="channel-icon">🖥️</div>
+        <div class="channel-icon">&#x1F5A5;&#xFE0F;</div>
         <div class="channel-name">Kiosque</div>
         <div class="channel-desc">Sur place</div>
       </div>
@@ -549,26 +605,42 @@
 
   <!-- Panel 2 — Features -->
   <div class="panel p-center">
-    <div class="inner-title">Fonctionnalités</div>
+    <div class="inner-title">Fonctionnalit&#233;s</div>
 
     <div class="feat">
-      <div class="feat-icon">📺</div>
+      <div class="feat-icon">&#x1F4AC;</div>
       <div>
-        <h4>Écran d'affichage</h4>
-        <p>Affichez les appels en direct sur n'importe quel écran TV ou tablette</p>
+        <h4>WhatsApp &amp; Messenger</h4>
+        <p>Notifications, rappels et suivi de position &mdash; file imm&#233;diate ou rendez-vous futur</p>
       </div>
     </div>
 
     <div class="feat">
-      <div class="feat-icon">🏢</div>
+      <div class="feat-icon">&#x1F4C5;</div>
       <div>
-        <h4>Multi-départements</h4>
-        <p>Gérez plusieurs services avec des files séparées dans le même établissement</p>
+        <h4>Prise de RDV via WhatsApp <span class="feat-new">NOUVEAU</span></h4>
+        <p>Vos clients r&#233;servent un cr&#233;neau directement par message. Fini les appels t&#233;l&#233;phoniques</p>
       </div>
     </div>
 
     <div class="feat">
-      <div class="feat-icon">📊</div>
+      <div class="feat-icon">&#x1F4FA;</div>
+      <div>
+        <h4>&#201;cran d'affichage</h4>
+        <p>Affichez les appels en direct sur n'importe quel &#233;cran TV ou tablette</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">&#x1F3E2;</div>
+      <div>
+        <h4>Multi-d&#233;partements</h4>
+        <p>G&#233;rez plusieurs services avec des files s&#233;par&#233;es dans le m&#234;me &#233;tablissement</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-icon">&#x1F4CA;</div>
       <div>
         <h4>Tableau de bord</h4>
         <p>Statistiques de performance, temps d'attente moyen, volume par heure</p>
@@ -576,50 +648,34 @@
     </div>
 
     <div class="feat">
-      <div class="feat-icon">🌐</div>
+      <div class="feat-icon">&#x1F310;</div>
       <div>
         <h4>Multilingue</h4>
-        <p>Français, arabe et anglais — détection automatique de la langue du client</p>
+        <p>Fran&#231;ais, arabe et anglais &mdash; d&#233;tection automatique de la langue du client</p>
       </div>
     </div>
 
     <div class="feat">
-      <div class="feat-icon">📱</div>
+      <div class="feat-icon">&#x1F4F1;</div>
       <div>
-        <h4>App opérateur</h4>
+        <h4>App op&#233;rateur</h4>
         <p>Application desktop et mobile pour les agents de guichet</p>
       </div>
     </div>
 
     <div class="feat">
-      <div class="feat-icon">📍</div>
-      <div>
-        <h4>Suivi en direct</h4>
-        <p>Le client suit sa position via WhatsApp, Messenger ou un lien web en temps réel</p>
-      </div>
-    </div>
-
-    <div class="feat">
-      <div class="feat-icon">🔔</div>
-      <div>
-        <h4>Notifications</h4>
-        <p>Le client est averti automatiquement quand c'est son tour</p>
-      </div>
-    </div>
-
-    <div class="feat">
-      <div class="feat-icon">☁️</div>
+      <div class="feat-icon">&#x2601;&#xFE0F;</div>
       <div>
         <h4>Cloud + Hors-ligne</h4>
-        <p>Fonctionne même sans internet grâce au mode hors-ligne intégré</p>
+        <p>Fonctionne m&#234;me sans internet gr&#226;ce au mode hors-ligne int&#233;gr&#233;</p>
       </div>
     </div>
 
     <div class="feat">
-      <div class="feat-icon">🔒</div>
+      <div class="feat-icon">&#x1F512;</div>
       <div>
-        <h4>Sécurisé</h4>
-        <p>Données chiffrées, hébergement sécurisé, conformité RGPD</p>
+        <h4>S&#233;curis&#233;</h4>
+        <p>Donn&#233;es chiffr&#233;es, h&#233;bergement s&#233;curis&#233;, conformit&#233; RGPD</p>
       </div>
     </div>
   </div>
@@ -628,31 +684,36 @@
   <div class="panel p-right">
     <div class="inner-title">Commencez aujourd'hui</div>
 
+    <div style="background:#f0fdf4;border:2px solid #25d366;border-radius:12px;padding:14px;margin-bottom:5mm">
+      <div style="font-size:11px;font-weight:800;color:#25d366;margin-bottom:4px">&#x26A1; Deux modes en un</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5"><b>REJOINDRE</b> = file imm&#233;diate (m&#234;me jour). <b>R&#201;SERVER</b> = rendez-vous futur (date et heure). Via WhatsApp, QR code ou kiosque.</div>
+    </div>
+
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;margin-bottom:5mm">
-      <div style="font-size:11px;font-weight:800;color:#16a34a;margin-bottom:4px">✓ Essai gratuit</div>
-      <div style="font-size:9px;color:#475569;line-height:1.5">Testez Qflo gratuitement pendant 14 jours. Aucun engagement, aucune carte bancaire.</div>
+      <div style="font-size:11px;font-weight:800;color:#128c3e;margin-bottom:4px">&#x1F4C5; 5+ canaux d'acc&#232;s</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">WhatsApp, Messenger, QR code, kiosque sur place, kiosque web distant. Suivi via lien URL du ticket.</div>
     </div>
 
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px;margin-bottom:5mm">
-      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">🚀 Installation rapide</div>
-      <div style="font-size:9px;color:#475569;line-height:1.5">Installation en 15 minutes. Notre équipe vous accompagne de A à Z.</div>
+      <div style="font-size:11px;font-weight:800;color:#1e40af;margin-bottom:4px">&#x1F680; Installation en 15 min</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">Notre &#233;quipe vous accompagne de A &#224; Z.</div>
     </div>
 
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:14px;margin-bottom:5mm">
-      <div style="font-size:11px;font-weight:800;color:#a16207;margin-bottom:4px">📱 Zéro app pour vos clients</div>
-      <div style="font-size:9px;color:#475569;line-height:1.5">Vos clients utilisent WhatsApp ou Messenger — déjà installés sur leur téléphone.</div>
+      <div style="font-size:11px;font-weight:800;color:#a16207;margin-bottom:4px">&#x1F4F1; Z&#233;ro app pour vos clients</div>
+      <div style="font-size:9px;color:#475569;line-height:1.5">Vos clients utilisent WhatsApp ou Messenger &mdash; d&#233;j&#224; install&#233;s sur leur t&#233;l&#233;phone.</div>
     </div>
 
     <div style="flex:1"></div>
 
     <div class="inner-cta">
-      <h3>Demandez une démo</h3>
-      <p>Gratuit et sans engagement</p>
-      <div class="inner-cta-url">contact@qflo.net</div>
+      <h3>Demandez une d&#233;mo</h3>
+      <p>WhatsApp : 0551 17 65 98</p>
+      <div class="inner-cta-url">qflo.net</div>
     </div>
 
     <div style="text-align:center;margin-top:5mm;font-size:8px;color:#94a3b8">
-      &copy; 2026 Qflo — Tous droits réservés
+      &copy; 2026 Qflo &mdash; Tous droits r&#233;serv&#233;s
     </div>
   </div>
 </div>

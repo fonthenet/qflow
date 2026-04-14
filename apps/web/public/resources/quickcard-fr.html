@@ -23,12 +23,12 @@
     overflow: hidden;
   }
 
-  /* Left panel — blue */
+  /* Left panel — green WhatsApp */
   .left {
     width: 45%;
-    background: linear-gradient(160deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    background: linear-gradient(160deg, #128c7e 0%, #25d366 60%, #2ecc71 100%);
     color: #fff;
-    padding: 14mm;
+    padding: 12mm 14mm;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -42,7 +42,7 @@
     right: -30px;
     width: 60px;
     height: 100%;
-    background: linear-gradient(160deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    background: linear-gradient(160deg, #128c7e 0%, #25d366 60%, #2ecc71 100%);
     transform: skewX(-4deg);
   }
 
@@ -75,42 +75,70 @@
   }
 
   .card-hero h1 {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 900;
-    line-height: 1.25;
-    margin-bottom: 6px;
+    line-height: 1.3;
+    margin-bottom: 4px;
   }
 
-  .card-hero h1 span { color: #86efac; }
+  .card-hero h2 {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 8px;
+    opacity: 0.95;
+  }
 
   .card-hero p {
     font-size: 11px;
-    opacity: 0.8;
+    opacity: 0.85;
     line-height: 1.5;
   }
 
-  .card-url {
-    font-size: 13px;
-    font-weight: 700;
-    opacity: 0.7;
+  .badge-free {
+    display: inline-block;
+    background: rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    margin-top: 8px;
     z-index: 1;
+  }
+
+  .card-bottom {
+    z-index: 1;
+  }
+
+  .card-url {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.8;
+  }
+
+  .card-email {
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.65;
+    margin-top: 2px;
   }
 
   /* Right panel — white */
   .right {
     width: 55%;
     background: #fff;
-    padding: 14mm 14mm 14mm 20mm;
+    padding: 12mm 14mm 10mm 20mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
 
   .how-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
-    color: #1e40af;
-    margin-bottom: 8mm;
+    color: #128c7e;
+    margin-bottom: 6mm;
     text-transform: uppercase;
     letter-spacing: 1px;
   }
@@ -119,40 +147,40 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    margin-bottom: 6mm;
+    margin-bottom: 5mm;
   }
 
   .how-num {
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, #2563eb, #1e40af);
+    width: 26px;
+    height: 26px;
+    background: linear-gradient(135deg, #25d366, #128c7e);
     color: #fff;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
     flex-shrink: 0;
   }
 
   .how-content h3 {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: #0f172a;
-    margin-bottom: 2px;
+    margin-bottom: 1px;
   }
 
   .how-content p {
-    font-size: 10.5px;
+    font-size: 10px;
     color: #64748b;
     line-height: 1.4;
   }
 
   .how-content .cmd {
     display: inline-block;
-    background: #eff6ff;
-    color: #1e40af;
+    background: #ecfdf5;
+    color: #128c7e;
     padding: 2px 8px;
     border-radius: 6px;
     font-size: 11px;
@@ -160,9 +188,23 @@
     margin-top: 2px;
   }
 
+  .how-content .cmd + .cmd {
+    margin-left: 4px;
+  }
+
+  .section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #25d366;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2mm;
+    margin-top: 2mm;
+  }
+
   .card-footer {
     margin-top: auto;
-    padding-top: 6mm;
+    padding-top: 4mm;
     border-top: 1px solid #e2e8f0;
     display: flex;
     justify-content: space-between;
@@ -170,20 +212,20 @@
   }
 
   .card-footer-text {
-    font-size: 10px;
+    font-size: 9px;
     color: #94a3b8;
   }
 
   .channels {
     display: flex;
-    gap: 6px;
+    gap: 5px;
   }
 
   .channel {
     background: #f1f5f9;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     color: #64748b;
   }
@@ -199,47 +241,64 @@
     </div>
 
     <div class="card-hero">
-      <h1>Rejoignez la file<br>via <span>WhatsApp</span></h1>
-      <p>Plus besoin de faire la queue.<br>Recevez votre ticket sur votre téléphone.</p>
+      <h1>File immediate<br>ou rendez-vous futur</h1>
+      <h2>Tout via WhatsApp,<br>QR code ou kiosque</h2>
+      <p>REJOINDRE = ticket maintenant<br>RESERVER = rendez-vous futur</p>
     </div>
 
-    <div class="card-url">qflo.net</div>
+    <div class="card-bottom">
+      <div class="card-url">qflo.net</div>
+      <div class="card-email">contact@qflo.net</div>
+    </div>
   </div>
 
   <div class="right">
     <div class="how-title">Comment faire ?</div>
 
+    <div class="section-label">⚡ Meme jour — Sans rendez-vous</div>
+
     <div class="how-step">
       <div class="how-num">1</div>
       <div class="how-content">
-        <h3>Ouvrez WhatsApp</h3>
-        <p>Envoyez un message au numéro affiché</p>
+        <h3>Rejoignez la file maintenant</h3>
+        <div class="cmd">REJOINDRE [code]</div>
+        <p>Via WhatsApp, QR code, kiosque sur place ou kiosque web</p>
       </div>
     </div>
 
     <div class="how-step">
       <div class="how-num">2</div>
       <div class="how-content">
-        <h3>Tapez la commande</h3>
-        <p>Envoyez le mot-clé affiché sur place :</p>
-        <div class="cmd">REJOINDRE ELAZHAR</div>
+        <h3>Suivez votre position</h3>
+        <p>Via WhatsApp, Messenger ou lien URL de votre ticket</p>
       </div>
     </div>
+
+    <div class="section-label">📅 Futur — Rendez-vous planifie</div>
 
     <div class="how-step">
       <div class="how-num">3</div>
       <div class="how-content">
-        <h3>Recevez votre ticket</h3>
-        <p>Suivez votre position en direct et soyez notifié quand c'est votre tour !</p>
+        <h3>Reservez une date et heure future</h3>
+        <div class="cmd">RESERVER [code]</div>
+      </div>
+    </div>
+
+    <div class="how-step">
+      <div class="how-num">4</div>
+      <div class="how-content">
+        <h3>Confirmation + rappel automatique</h3>
+        <p>Rappel WhatsApp avant le rendez-vous</p>
       </div>
     </div>
 
     <div class="card-footer">
       <div class="card-footer-text">Disponible aussi sur :</div>
       <div class="channels">
-        <div class="channel">💬 WhatsApp</div>
-        <div class="channel">📱 Messenger</div>
-        <div class="channel">🖥️ Kiosque</div>
+        <div class="channel">Messenger</div>
+        <div class="channel">QR Code</div>
+        <div class="channel">Kiosque</div>
+        <div class="channel">URL ticket</div>
       </div>
     </div>
   </div>
