@@ -1364,7 +1364,22 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
             <button onClick={goNext} style={navBtn}>▸</button>
           </div>
 
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', minWidth: 160 }}>
+          <div style={{ display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--border, #475569)', borderRadius: 8, overflow: 'hidden' }}>
+            <button onClick={() => {
+              resetPanelsTo(currentDate);
+              setViewMode('week');
+            }} style={btnStyle(viewMode === 'week')}>
+              {t('Week')}
+            </button>
+            <button onClick={() => setViewMode('month')} style={btnStyle(viewMode === 'month')}>
+              {t('Month')}
+            </button>
+            <button onClick={() => setViewMode('list')} style={btnStyle(viewMode === 'list')}>
+              {t('List')}
+            </button>
+          </div>
+
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text, #f1f5f9)', minWidth: 160, marginLeft: 12 }}>
             {viewMode === 'list' ? listHeaderLabel : headerLabel}
           </span>
 
@@ -1391,21 +1406,6 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                 fontSize: 14, padding: 2, lineHeight: 1,
               }}>✕</button>
             )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 2, border: '1px solid var(--border, #475569)', borderRadius: 8, overflow: 'hidden' }}>
-            <button onClick={() => {
-              resetPanelsTo(currentDate);
-              setViewMode('week');
-            }} style={btnStyle(viewMode === 'week')}>
-              {t('Week')}
-            </button>
-            <button onClick={() => setViewMode('month')} style={btnStyle(viewMode === 'month')}>
-              {t('Month')}
-            </button>
-            <button onClick={() => setViewMode('list')} style={btnStyle(viewMode === 'list')}>
-              {t('List')}
-            </button>
           </div>
 
           {loading && (
@@ -2152,6 +2152,7 @@ function DesktopWeekView({
   /** Called when a drop is attempted on a closed/unavailable cell */
   onDropBlocked?: (message: string) => void;
 }) {
+  const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const slotHeightPx = (slotDuration / 60) * PIXELS_PER_HOUR;
   const [selectedCell, setSelectedCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
   const [activeColIdx, setActiveColIdx] = useState<number | null>(null);
@@ -2426,7 +2427,7 @@ function DesktopWeekView({
       ref={gridRef}
       tabIndex={0}
       role="grid"
-      aria-label="Weekly calendar"
+      aria-label={t('Weekly calendar')}
       onKeyDown={handleKeyDown}
       style={{ display: 'flex', minHeight: '100%', outline: 'none' }}
     >
@@ -2638,15 +2639,15 @@ function DesktopWeekView({
                   const maxCols = layout.reduce((max, item) => Math.max(max, item.col + 1), 1);
 
                   const STATUS_STRIP: Record<string, { color: string; label: string }> = {
-                    pending: { color: '#f59e0b', label: 'Pending' },
-                    confirmed: { color: '#3b82f6', label: 'Confirmed' },
-                    checked_in: { color: '#06b6d4', label: 'Checked In' },
-                    called: { color: '#3b82f6', label: 'Called' },
-                    serving: { color: '#f97316', label: 'Serving' },
-                    completed: { color: '#22c55e', label: 'Completed' },
-                    cancelled: { color: '#ef4444', label: 'Cancelled' },
-                    no_show: { color: '#64748b', label: 'No Show' },
-                    declined: { color: '#991b1b', label: 'Declined' },
+                    pending: { color: '#f59e0b', label: t('Pending') },
+                    confirmed: { color: '#3b82f6', label: t('Confirmed') },
+                    checked_in: { color: '#06b6d4', label: t('Checked In') },
+                    called: { color: '#3b82f6', label: t('Called') },
+                    serving: { color: '#f97316', label: t('Serving') },
+                    completed: { color: '#22c55e', label: t('Completed') },
+                    cancelled: { color: '#ef4444', label: t('Cancelled') },
+                    no_show: { color: '#64748b', label: t('No Show') },
+                    declined: { color: '#991b1b', label: t('Declined') },
                   };
 
                   return layout.map(({ appt, svc, hour, minute, topPx, clippedHeight, col }) => {
@@ -4160,8 +4161,8 @@ function DesktopApptDetail({
           <div style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 12 }}>📝</span>
             {t('Notes')}
-            {notesSaving && <span style={{ fontSize: 8, color: '#eab308', fontWeight: 500, textTransform: 'none' }}>saving...</span>}
-            {notesSaved && <span style={{ fontSize: 8, color: '#22c55e', fontWeight: 500, textTransform: 'none' }}>✓ saved</span>}
+            {notesSaving && <span style={{ fontSize: 8, color: '#eab308', fontWeight: 500, textTransform: 'none' }}>{t('saving...')}</span>}
+            {notesSaved && <span style={{ fontSize: 8, color: '#22c55e', fontWeight: 500, textTransform: 'none' }}>✓ {t('saved')}</span>}
           </div>
           <div style={{
             background: 'linear-gradient(135deg, #fef9c3, #fef08a)',

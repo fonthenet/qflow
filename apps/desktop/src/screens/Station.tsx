@@ -1564,7 +1564,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Port conflict notification ─────────────────────────────────
   useEffect(() => {
     const unsub = window.qf.onPortChanged?.((info: { requested: number; actual: number }) => {
-      showToast(`Port ${info.requested} was in use — running on port ${info.actual}`, 'info');
+      showToast(translate(locale, 'Port {requested} was in use — running on port {actual}', { requested: info.requested, actual: info.actual }), 'info');
     });
     return () => unsub?.();
   }, [showToast]);
@@ -1610,6 +1610,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     // Fallback poll in case events are missed (10s vs old 3s)
     const iv = setInterval(fetchTickets, FALLBACK_POLL_INTERVAL);
     return () => { unsub?.(); clearInterval(iv); };
+  }, [fetchTickets]);
+
+  // ── Auth recovery: re-fetch all data when token refreshes (cold start fix) ──
+  useEffect(() => {
+    const unsub = window.qf.auth?.onTokenRefreshed?.(() => {
+      // Token was refreshed — re-fetch appointment data that may have failed on cold start
+      fetchTodayRef.current();
+      fetchTickets();
+    });
+    return () => { unsub?.(); };
   }, [fetchTickets]);
 
   // ── Sync error notifications ───────────────────────────────────
@@ -1691,7 +1701,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
-    const fetchToday = async () => {
+    const fetchToday = async (retryCount = 0) => {
       try {
         await ensureAuth();
         const sb = await getSupabase();
@@ -1734,7 +1744,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         setUpcomingAppointments(upcomingRes.data as any[]);
         setTodayStats({ walkins: Math.max(0, (ticketRes.count || 0)), rdv: rdvList.length });
       } catch (e) {
-        if (!cancelled) console.warn('[Station] today stats fetch failed', e);
+        if (!cancelled) {
+          console.warn('[Station] today stats fetch failed', e);
+          // Retry up to 3 times with exponential backoff on initial load failure
+          if (retryCount < 3) {
+            const delay = Math.min(2000 * Math.pow(2, retryCount), 10000);
+            setTimeout(() => { if (!cancelled) fetchToday(retryCount + 1); }, delay);
+          }
+        }
       }
     };
     fetchTodayRef.current = fetchToday;
@@ -1761,7 +1778,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     if (!session.office_id) return;
     let cancelled = false;
     let channel: any;
-    const fetchPending = async () => {
+    const fetchPending = async (retryCount = 0) => {
       try {
         await ensureAuth();
         const sb = await getSupabase();
@@ -1786,7 +1803,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         prevPendingCount.current = list.length;
         setPendingTickets(list);
       } catch (e) {
-        if (!cancelled) console.warn('[Station] pending tickets fetch failed', e);
+        if (!cancelled) {
+          console.warn('[Station] pending tickets fetch failed', e);
+          // Retry up to 3 times with exponential backoff
+          if (retryCount < 3) {
+            const delay = Math.min(2000 * Math.pow(2, retryCount), 10000);
+            setTimeout(() => { if (!cancelled) fetchPending(retryCount + 1); }, delay);
+          }
+        }
       }
     };
     fetchPending();
@@ -2121,18 +2145,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
       // ── Toast feedback ──
       const notified = result?.notified === true;
-      const toastMap: Record<string, string> = {
+      const toastKey: Record<string, string> = {
         approve: notified ? 'Appointment approved — customer notified' : 'Appointment approved — customer not reachable on chat',
         decline: notified ? 'Appointment declined — customer notified' : 'Appointment declined — customer not reachable on chat',
         cancel: 'Appointment cancelled',
         no_show: 'Appointment marked no-show',
-        check_in: result.ticket ? `Checked in — ${result.ticket.ticket_number}` : 'Checked in',
+        check_in: result.ticket ? 'Checked in — {ticket}' : 'Checked in',
         complete: 'Appointment completed',
       };
-      showToast(translate(locale, toastMap[action] || 'Done'), notified ? 'success' : 'info');
+      const toastParams: Record<string, string | number | null | undefined> | undefined =
+        action === 'check_in' && result.ticket ? { ticket: result.ticket.ticket_number } : undefined;
+      showToast(translate(locale, toastKey[action] || 'Done', toastParams), notified ? 'success' : 'info');
       return true;
     } catch (e: any) {
-      showToast(e?.message || 'Failed', 'error');
+      showToast(e?.message || translate(locale, 'Failed'), 'error');
       return false;
     } finally {
       setRdvBusyId(null);
@@ -2235,7 +2261,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // Refresh local queue so approved tickets appear immediately
       if (action === 'approve') fetchTickets();
     } catch (e: any) {
-      showToast(e?.message || 'Moderation failed', 'error');
+      showToast(e?.message || translate(locale, 'Moderation failed'), 'error');
     } finally {
       setPendingBusyId(null);
     }
@@ -2373,7 +2399,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Actions ─────────────────────────────────────────────────────
 
   // ALWAYS write to SQLite first — sync engine pushes to cloud
+  const callingNextRef = useRef(false);
   const callNext = async () => {
+    // Double-click guard: prevent concurrent callNext invocations
+    if (callingNextRef.current) return;
+    callingNextRef.current = true;
     try {
       const result = await window.qf.db.callNext(session.office_id, session.desk_id!, session.staff_id);
       if (!result) {
@@ -2385,6 +2415,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } catch (err: any) {
       showToast(t('Failed to call next ticket'), 'error');
       console.error('[station] callNext error:', err);
+    } finally {
+      // Small delay to prevent rapid double-clicks even after completion
+      setTimeout(() => { callingNextRef.current = false; }, 500);
     }
   };
 

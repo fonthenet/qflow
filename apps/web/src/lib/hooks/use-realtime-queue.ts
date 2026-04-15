@@ -42,6 +42,7 @@ export function useRealtimeQueue({
   const [isLoading, setIsLoading] = useState(!disabled);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   const fetchQueue = useCallback(async () => {
     if (disabled) {
@@ -144,6 +145,21 @@ export function useRealtimeQueue({
         realtimeConnected = status === 'SUBSCRIBED';
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[RealtimeQueue] Subscription failed:', status, '— using polling fallback');
+          // Exponential backoff: avoid hammering reconnections on persistent failures
+          const attempt = reconnectAttemptRef.current;
+          if (attempt < 5) {
+            const backoffMs = Math.min(2000 * Math.pow(2, attempt), 30000);
+            reconnectAttemptRef.current = attempt + 1;
+            console.log(`[RealtimeQueue] Reconnect attempt ${attempt + 1} in ${backoffMs}ms`);
+            setTimeout(() => {
+              if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+              }
+            }, backoffMs);
+          }
+        } else if (status === 'SUBSCRIBED') {
+          reconnectAttemptRef.current = 0; // Reset on success
         }
       });
 

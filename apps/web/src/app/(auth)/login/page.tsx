@@ -37,10 +37,8 @@ export default function LoginPage() {
     const rememberPref = localStorage.getItem('qflo_remember_password') === 'true';
     setRememberPassword(rememberPref);
 
-    if (rememberPref) {
-      const savedPassword = localStorage.getItem('qflo_saved_password');
-      if (savedPassword) setPassword(savedPassword);
-    }
+    // Migrate: remove any legacy plaintext password from localStorage
+    try { localStorage.removeItem('qflo_saved_password'); } catch {}
   }, []);
 
   async function handleSubmit(formData: FormData) {
@@ -52,11 +50,8 @@ export default function LoginPage() {
     localStorage.setItem('qflo_saved_email', emailValue);
     localStorage.setItem('qflo_remember_password', rememberPassword ? 'true' : 'false');
 
-    if (rememberPassword) {
-      localStorage.setItem('qflo_saved_password', passwordValue);
-    } else {
-      localStorage.removeItem('qflo_saved_password');
-    }
+    // Password no longer stored in localStorage (security fix)
+    // Web uses Supabase session cookies for persistence
 
     const result = await login(formData);
     if (result?.error) {

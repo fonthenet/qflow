@@ -23,9 +23,10 @@ function nowTruncatedInTz(tz: string): number {
   const now = new Date();
   const parts = new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(now);
   const get = (t: string) => parts.find(p => p.type === t)?.value ?? '0';
-  // Build an ISO string in the target timezone, then parse it as if local
-  // We just need the epoch ms for comparison with slot times on the same date
-  return new Date(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:00`).getTime();
+  // Build an explicit UTC string from the office-timezone-aware parts.
+  // Both this value and the slot time strings use 'Z' suffix for consistency,
+  // so the comparison is always apples-to-apples regardless of server timezone.
+  return new Date(`${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:00Z`).getTime();
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -345,7 +346,7 @@ export async function getAvailableSlots(
 
     // Skip past slots (with lead time buffer)
     if (isToday) {
-      const slotMs = new Date(`${date}T${slot}:00`).getTime();
+      const slotMs = new Date(`${date}T${slot}:00Z`).getTime();
       if (slotMs <= nowMs + minLeadMs) continue;
     }
 
@@ -596,7 +597,7 @@ export async function getAvailableDates(
     for (const slot of allSlots) {
       if (isSlotBlocked(slot, blocked)) continue;
       if (isToday) {
-        const slotMs = new Date(`${dateStr}T${slot}:00`).getTime();
+        const slotMs = new Date(`${dateStr}T${slot}:00Z`).getTime();
         if (slotMs <= nowMs + minLeadMs) continue;
       }
       if (dailyLimitReached) continue;

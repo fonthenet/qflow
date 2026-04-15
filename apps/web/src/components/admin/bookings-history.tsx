@@ -93,7 +93,7 @@ export function BookingsHistory({
   const activeOffices = offices.filter((office) => office.is_active);
 
   async function handleCancelOne(id: string) {
-    if (!await styledConfirm(t('Cancel this appointment?'), { variant: 'danger', confirmLabel: 'Cancel Appointment' })) return;
+    if (!await styledConfirm(t('Cancel this appointment?'), { variant: 'danger', confirmLabel: t('Cancel Appointment') })) return;
     setCancellingId(id);
     startTransition(async () => {
       const result = await cancelAppointment(id);
@@ -107,7 +107,7 @@ export function BookingsHistory({
   }
 
   async function handleCancelSeries(id: string) {
-    if (!await styledConfirm(t('Cancel the entire recurring series? This will cancel all upcoming appointments in this series.'), { variant: 'danger', confirmLabel: 'Cancel Series' })) return;
+    if (!await styledConfirm(t('Cancel the entire recurring series? This will cancel all upcoming appointments in this series.'), { variant: 'danger', confirmLabel: t('Cancel Series') })) return;
     setCancellingId(id);
     startTransition(async () => {
       const result = await cancelRecurringSeries(id);

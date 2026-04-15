@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, session as electronSession, dialog, safeStorage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import fs from 'fs';
@@ -1320,6 +1320,49 @@ function setupIPC() {
     }
   });
 
+  // ── Secure credential storage (safeStorage — OS keychain encryption) ──
+  ipcMain.handle('auth:save-credentials', (_e, email: string, password: string) => {
+    try {
+      if (!safeStorage.isEncryptionAvailable()) {
+        logger.warn('auth', 'safeStorage encryption not available — credentials not saved');
+        return { ok: false };
+      }
+      const db = getDB();
+      const encrypted = safeStorage.encryptString(password).toString('base64');
+      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('saved_credentials', ?)").run(
+        JSON.stringify({ email, encrypted_password: encrypted })
+      );
+      return { ok: true };
+    } catch (err: any) {
+      logger.error('auth', 'save-credentials failed', { error: err?.message });
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('auth:get-credentials', () => {
+    try {
+      if (!safeStorage.isEncryptionAvailable()) return null;
+      const db = getDB();
+      const row = db.prepare("SELECT value FROM session WHERE key = 'saved_credentials'").get() as any;
+      if (!row) return null;
+      const { email, encrypted_password } = JSON.parse(row.value);
+      const password = safeStorage.decryptString(Buffer.from(encrypted_password, 'base64'));
+      return { email, password };
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('auth:clear-credentials', () => {
+    try {
+      const db = getDB();
+      db.prepare("DELETE FROM session WHERE key = 'saved_credentials'").run();
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   ipcMain.handle('settings:get-locale', () => loadLocale());
   ipcMain.handle('settings:set-locale', (_e, locale: string) => {
     const nextLocale = normalizeLocale(locale);
@@ -2003,23 +2046,15 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('auth:token-refreshed', token);
     },
     async () => {
-      // Ask renderer for stored login credentials (saved via "Remember Password")
+      // Read stored credentials from encrypted safeStorage (OS keychain)
       try {
-        if (!mainWindow || mainWindow.isDestroyed()) return null;
-        const creds = await mainWindow.webContents.executeJavaScript(`
-          (function() {
-            try {
-              const email = localStorage.getItem('qflo_saved_email');
-              const password = localStorage.getItem('qflo_saved_password');
-              const remember = localStorage.getItem('qflo_remember_password');
-              if (email && password && remember === 'true') {
-                return { email, password };
-              }
-              return null;
-            } catch { return null; }
-          })()
-        `);
-        return creds;
+        if (!safeStorage.isEncryptionAvailable()) return null;
+        const db = getDB();
+        const row = db.prepare("SELECT value FROM session WHERE key = 'saved_credentials'").get() as any;
+        if (!row) return null;
+        const { email, encrypted_password } = JSON.parse(row.value);
+        const password = safeStorage.decryptString(Buffer.from(encrypted_password, 'base64'));
+        return { email, password };
       } catch {
         return null;
       }
@@ -2062,7 +2097,9 @@ app.whenReady().then(async () => {
         if (data.access_token) {
           const updated = { ...session, access_token: data.access_token, refresh_token: data.refresh_token ?? session.refresh_token };
           sdb.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
-          logger.info('startup', 'Startup token validation passed — session refreshed');
+          // Push fresh token to renderer so its Supabase client + data fetches work immediately
+          mainWindow?.webContents.send('auth:token-refreshed', data.access_token);
+          logger.info('startup', 'Startup token validation passed — session refreshed + renderer notified');
         }
       }
     } catch (err: any) {

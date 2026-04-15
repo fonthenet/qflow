@@ -100,7 +100,7 @@ type ViewMode = 'week' | 'month';
 // ── Component ──────────────────────────────────────────────────────
 
 export function CalendarView({ offices, departments, services, staffMembers }: Props) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -301,7 +301,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             onChange={(e) => { setFilterDeptId(e.target.value); setFilterServiceId(''); }}
             className="text-xs border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
           >
-            <option value="">All departments</option>
+            <option value="">{t('All departments')}</option>
             {officeDepts.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -313,7 +313,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             onChange={(e) => setFilterServiceId(e.target.value)}
             className="text-xs border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
           >
-            <option value="">All services</option>
+            <option value="">{t('All services')}</option>
             {officeServices
               .filter((s) => !filterDeptId || s.department_id === filterDeptId)
               .map((s) => (
@@ -327,7 +327,7 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
             onChange={(e) => setFilterStaffId(e.target.value)}
             className="text-xs border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
           >
-            <option value="">All staff</option>
+            <option value="">{t('All staff')}</option>
             {staffMembers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.full_name}
@@ -424,6 +424,7 @@ function WeekView({
   onSelectAppt: (a: CalendarAppointment) => void;
   onReschedule?: (apptId: string, newScheduledAt: string) => void;
 }) {
+  const { t } = useI18n();
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Group by dateKey
@@ -479,7 +480,7 @@ function WeekView({
                 }`}
               >
                 <span>{formatDayHeader(day.date, timezone, intlLocale)}</span>
-                {isClosed && <span className="text-[9px] text-red-400 font-normal">Closed</span>}
+                {isClosed && <span className="text-[9px] text-red-400 font-normal">{t('Closed')}</span>}
               </div>
 
               {/* Half-hour slots + positioned appointments */}
@@ -746,6 +747,7 @@ function AppointmentDetail({
   onClose: () => void;
   onAction: () => void;
 }) {
+  const { t } = useI18n();
   const [cancelling, setCancelling] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [editDate, setEditDate] = useState('');
@@ -828,7 +830,7 @@ function AppointmentDetail({
   }, [onClose]);
 
   const handleCancel = async () => {
-    if (!await styledConfirm('Cancel this appointment?', { variant: 'danger', confirmLabel: 'Cancel Appointment' })) return;
+    if (!await styledConfirm(t('Cancel this appointment?'), { variant: 'danger', confirmLabel: t('Cancel Appointment') })) return;
     setCancelling(true);
     await cancelAppointment(a.id);
     setCancelling(false);
@@ -838,8 +840,8 @@ function AppointmentDetail({
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
     if (!await styledConfirm(
-      `Permanently delete appointment for ${a.customer_name}? This cannot be undone. The time slot will become available again.`,
-      { variant: 'danger', confirmLabel: 'Delete' },
+      t('Permanently delete appointment for {name}?', { name: a.customer_name }) + ' ' + t('This cannot be undone. The time slot will become available again.'),
+      { variant: 'danger', confirmLabel: t('Delete') },
     )) return;
     setDeleting(true);
     const result = await deleteAppointment(a.id);
@@ -865,7 +867,7 @@ function AppointmentDetail({
               {a.customer_name}
             </h3>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {(svc as any)?.name ?? 'Service'} · {(dept as any)?.name ?? 'Department'}
+              {(svc as any)?.name ?? t('Service')} · {(dept as any)?.name ?? t('Department')}
             </p>
           </div>
           <button
@@ -888,7 +890,7 @@ function AppointmentDetail({
             </span>
             {a.recurrence_rule && (
               <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <CalendarClock size={12} /> Recurring ({a.recurrence_rule})
+                <CalendarClock size={12} /> {t('Recurring')} ({a.recurrence_rule})
               </span>
             )}
           </div>
@@ -923,7 +925,7 @@ function AppointmentDetail({
                       }}
                       className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
                     >
-                      <Pencil size={10} /> Reschedule
+                      <Pencil size={10} /> {t('Reschedule')}
                     </button>
                   )}
                 </div>
@@ -942,9 +944,9 @@ function AppointmentDetail({
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-gray-400 flex-shrink-0" />
                   {slotsLoading ? (
-                    <span className="text-xs text-gray-400">Loading slots...</span>
+                    <span className="text-xs text-gray-400">{t('Loading slots...')}</span>
                   ) : availableSlots.length === 0 ? (
-                    <span className="text-xs text-amber-500">No available slots</span>
+                    <span className="text-xs text-amber-500">{t('No available slots')}</span>
                   ) : (
                     <select
                       value={editTime}
@@ -986,13 +988,13 @@ function AppointmentDetail({
                     }}
                     className="flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {rescheduling ? '...' : 'Save'}
+                    {rescheduling ? '...' : t('Save')}
                   </button>
                   <button
                     onClick={() => { setEditingTime(false); setRescheduleError(null); }}
                     className="py-1.5 px-3 rounded-md text-xs font-semibold text-gray-500 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
-                    Cancel
+                    {t('Cancel')}
                   </button>
                 </div>
               </div>
@@ -1002,7 +1004,7 @@ function AppointmentDetail({
           {/* Customer info */}
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              Customer
+              {t('Customer')}
             </h4>
             <div className="space-y-1.5">
               <InfoRow icon={<User size={13} />} value={a.customer_name} />
@@ -1016,7 +1018,7 @@ function AppointmentDetail({
           {staff && (
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Assigned Staff
+                {t('Assigned Staff')}
               </h4>
               <InfoRow icon={<User size={13} />} value={(staff as any).full_name} />
             </div>
@@ -1026,7 +1028,7 @@ function AppointmentDetail({
           {a.notes && (
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Notes
+                {t('Notes')}
               </h4>
               <p className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                 {a.notes}
@@ -1043,7 +1045,7 @@ function AppointmentDetail({
                 className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50"
               >
                 <Trash2 size={14} />
-                {cancelling ? 'Cancelling...' : 'Cancel Appointment'}
+                {cancelling ? t('Cancelling...') : t('Cancel Appointment')}
               </button>
             </div>
           )}
@@ -1056,7 +1058,7 @@ function AppointmentDetail({
               className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-medium text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 opacity-70 hover:opacity-100"
             >
               <Trash2 size={12} />
-              {deleting ? 'Deleting...' : 'Delete Appointment'}
+              {deleting ? t('Deleting...') : t('Delete Appointment')}
             </button>
           </div>
 
@@ -1064,12 +1066,12 @@ function AppointmentDetail({
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
               <FileText size={12} />
-              Activity Log
+              {t('Activity Log')}
             </h4>
             {timelineLoading ? (
-              <p className="text-xs text-gray-400">Loading...</p>
+              <p className="text-xs text-gray-400">{t('Loading...')}</p>
             ) : timeline.length === 0 ? (
-              <p className="text-xs text-gray-400">No activity</p>
+              <p className="text-xs text-gray-400">{t('No activity')}</p>
             ) : (
               <div className="relative pl-5">
                 {/* Vertical line */}

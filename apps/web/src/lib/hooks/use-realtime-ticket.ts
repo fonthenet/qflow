@@ -63,6 +63,7 @@ export function useRealtimeTicket({
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const channelsRef = useRef<RealtimeChannel[]>([]);
   const supabaseRef = useRef(createClient());
+  const reconnectAttemptRef = useRef(0);
 
   const fetchPosition = useCallback(async () => {
     const supabase = supabaseRef.current;
@@ -195,6 +196,19 @@ export function useRealtimeTicket({
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[RealtimeTicket] Subscription failed:', status, '— polling fallback active');
+          // Exponential backoff reconnect: unsubscribe, wait, then re-subscribe
+          const attempt = reconnectAttemptRef.current;
+          if (attempt < 5) { // Max 5 reconnect attempts
+            const backoffMs = Math.min(2000 * Math.pow(2, attempt), 30000);
+            reconnectAttemptRef.current = attempt + 1;
+            console.log(`[RealtimeTicket] Reconnect attempt ${attempt + 1} in ${backoffMs}ms`);
+            setTimeout(() => {
+              supabase.removeChannel(ticketChannel);
+              // Channel will be recreated on next effect cycle via polling
+            }, backoffMs);
+          }
+        } else if (status === 'SUBSCRIBED') {
+          reconnectAttemptRef.current = 0; // Reset on successful subscribe
         }
       });
 

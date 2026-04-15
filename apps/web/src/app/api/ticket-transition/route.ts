@@ -257,27 +257,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── Position reminders for next-in-line ───────────────────────────
-  if (['called', 'served', 'no_show', 'cancelled'].includes(status)) {
-    try {
-      const { data: nextTickets } = await supabase
-        .from('tickets')
-        .select('id')
-        .eq('department_id', ticket.department_id)
-        .eq('office_id', ticket.office_id)
-        .eq('status', 'waiting')
-        .order('priority', { ascending: false })
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-      const nextTicket = nextTickets?.[0];
-      if (nextTicket) {
-        await notifyCustomer(nextTicket.id, 'next_in_line');
-      }
-    } catch (e: any) {
-      console.warn('[ticket-transition] position reminder failed:', e?.message);
-    }
-  }
+  // ── Position reminders (next_in_line, approaching) ────────────────
+  // Handled by the DB trigger (notify_ticket_called) which has the complex
+  // SQL position logic. Not duplicated here to prevent double notifications.
 
   // ── Close session on terminal events ──────────────────────────────
   if (['served', 'no_show', 'cancelled'].includes(status)) {

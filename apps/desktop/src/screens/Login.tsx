@@ -15,7 +15,7 @@ export function Login({ onLogin, locale }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Restore saved email and optionally password from localStorage
+  // Restore saved email + encrypted password from main process (safeStorage)
   useEffect(() => {
     try {
       const savedEmail = localStorage.getItem('qflo_saved_email');
@@ -23,10 +23,14 @@ export function Login({ onLogin, locale }: Props) {
       const shouldRemember = localStorage.getItem('qflo_remember_password') === 'true';
       setRememberPassword(shouldRemember);
       if (shouldRemember) {
-        const savedPwd = localStorage.getItem('qflo_saved_password');
-        if (savedPwd) setPassword(savedPwd);
+        // Retrieve password from encrypted storage (OS keychain via Electron safeStorage)
+        window.qf.auth.getCredentials?.().then((creds: any) => {
+          if (creds?.password) setPassword(creds.password);
+        }).catch(() => {});
       }
     } catch {}
+    // Migrate: remove any legacy plaintext password from localStorage
+    try { localStorage.removeItem('qflo_saved_password'); } catch {}
   }, []);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try { return (localStorage.getItem('qflo_theme') as 'light' | 'dark') ?? 'light'; } catch { return 'light'; }
@@ -107,14 +111,28 @@ export function Login({ onLogin, locale }: Props) {
       if (authErr) throw authErr;
       if (!auth.user) throw new Error(t('Login failed'));
 
-      // Get staff record
-      const { data: staff, error: staffErr } = await supabase
-        .from('staff')
-        .select('id, full_name, role, office_id, department_id, organization_id')
-        .eq('auth_user_id', auth.user.id)
-        .single();
-
-      if (staffErr || !staff) throw new Error(t('No staff account found for this email'));
+      // Get staff record — distinguish network errors from "not found"
+      let staff: any;
+      try {
+        const { data, error: staffErr } = await supabase
+          .from('staff')
+          .select('id, full_name, role, office_id, department_id, organization_id')
+          .eq('auth_user_id', auth.user.id)
+          .single();
+        if (staffErr) {
+          // PGRST116 = no rows found (genuine "not found"); anything else is likely a network/server error
+          if (staffErr.code === 'PGRST116') {
+            throw new Error(t('No staff account found for this email'));
+          }
+          throw new Error(t('Could not verify staff account. Check your internet connection and try again.'));
+        }
+        if (!data) throw new Error(t('No staff account found for this email'));
+        staff = data;
+      } catch (e: any) {
+        // Re-throw our custom errors, wrap unexpected network errors
+        if (e?.message?.includes(t('No staff account')) || e?.message?.includes(t('Could not verify'))) throw e;
+        throw new Error(t('Connection error. Please check your internet and try again.'));
+      }
 
       // Get all offices for the org
       const orgId = staff.organization_id;
@@ -186,14 +204,14 @@ export function Login({ onLogin, locale }: Props) {
         refresh_token: auth.session?.refresh_token,
       };
 
-      // Always save email, optionally save password
+      // Always save email; password stored encrypted via main process safeStorage
       try {
         localStorage.setItem('qflo_saved_email', email);
         localStorage.setItem('qflo_remember_password', rememberPassword ? 'true' : 'false');
         if (rememberPassword) {
-          localStorage.setItem('qflo_saved_password', password);
+          window.qf.auth.saveCredentials?.(email, password).catch(() => {});
         } else {
-          localStorage.removeItem('qflo_saved_password');
+          window.qf.auth.clearCredentials?.().catch(() => {});
         }
       } catch {}
 

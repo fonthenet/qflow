@@ -29,17 +29,24 @@ export async function ensureAuth(): Promise<string> {
   const sb = await getSupabase();
 
   // Ask main process for a valid token (single source of truth)
-  try {
-    const result = await window.qf.auth.getToken();
-    if (result?.ok && result.token) {
-      await sb.auth.setSession({
-        access_token: result.token,
-        refresh_token: '', // Main process manages refresh tokens
-      });
-      return result.token;
+  // Retry once after a short delay — main process may still be refreshing on cold start
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await window.qf.auth.getToken();
+      if (result?.ok && result.token) {
+        await sb.auth.setSession({
+          access_token: result.token,
+          refresh_token: '', // Main process manages refresh tokens
+        });
+        return result.token;
+      }
+    } catch (err) {
+      console.warn('[supabase] IPC auth:get-token failed', err);
     }
-  } catch (err) {
-    console.warn('[supabase] IPC auth:get-token failed', err);
+    // First attempt failed — wait 2s for main process token refresh to complete
+    if (attempt === 0) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 
   console.error('[supabase] Auth failed (QF-AUTH-001) — queries will return empty results');

@@ -232,18 +232,32 @@ export async function POST(request: NextRequest) {
 
     console.log(`[whatsapp-send] Result: sent=${sent}, provider=${provider}, error=${error}`);
 
-    if (sent) {
-      // Log notification
+    // Log notification result (both success AND failure for tracking)
+    try {
+      await supabase.from('notifications').insert({
+        ticket_id: ticketId,
+        type: `${channel}_${event}` as any,
+        channel: channel as any,
+        payload: sent
+          ? { messageId, provider, locale, channel, status: 'sent' }
+          : { error, provider, locale, channel, status: 'failed' },
+        sent_at: new Date().toISOString(),
+      });
+    } catch { /* non-critical */ }
+
+    // Log failures to notification_failures table for monitoring/alerting
+    if (!sent && error) {
       try {
-        await supabase.from('notifications').insert({
+        await (supabase as any).from('notification_failures').insert({
           ticket_id: ticketId,
-          type: `${channel}_${event}` as any,
-          channel: channel as any,
-          payload: { messageId, provider, locale, channel },
-          sent_at: new Date().toISOString(),
+          event,
+          channel: channel,
+          error: error,
         });
       } catch { /* non-critical */ }
+    }
 
+    if (sent) {
       // Complete session for terminal events
       if (completeSession) {
         await (supabase as any)

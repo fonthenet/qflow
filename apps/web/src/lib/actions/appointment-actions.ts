@@ -592,12 +592,15 @@ export async function rescheduleAppointment(appointmentId: string, newScheduledA
     return { error: `Cannot reschedule a ${appt.status} appointment` };
   }
 
-  const { error: updErr } = await supabase
+  // Optimistic lock: only update if status hasn't changed since read (prevents concurrent reschedule)
+  const { error: updErr, count: updCount } = await (supabase as any)
     .from('appointments')
-    .update({ scheduled_at: newScheduledAt })
-    .eq('id', appointmentId);
+    .update({ scheduled_at: newScheduledAt }, { count: 'exact' })
+    .eq('id', appointmentId)
+    .eq('status', appt.status);
 
   if (updErr) return { error: updErr.message };
+  if (updCount === 0) return { error: 'Appointment was modified by another user. Please refresh and try again.' };
 
   // Notify customer about the reschedule (fire-and-forget — don't block the UI)
   notifyAppointmentRescheduled(appointmentId, newScheduledAt).catch((err) => {
@@ -710,11 +713,18 @@ export async function createRecurringAppointments(data: CreateRecurringAppointme
     data.recurrenceRule === 'biweekly' ? 14 :
     0; // monthly handled separately
 
+  const originalDay = new Date(data.scheduledAt).getDate();
+
   for (let i = 1; i < count; i++) {
     const baseDate = new Date(data.scheduledAt);
 
     if (data.recurrenceRule === 'monthly') {
       baseDate.setMonth(baseDate.getMonth() + i);
+      // Fix day-of-month overflow: e.g., Jan 31 → setMonth(1) gives Mar 3 (Feb overflow)
+      // Clamp to the last day of the target month if the original day overflowed
+      if (baseDate.getDate() !== originalDay) {
+        baseDate.setDate(0); // Sets to last day of previous month (the intended target month)
+      }
     } else {
       baseDate.setDate(baseDate.getDate() + intervalDays * i);
     }

@@ -107,6 +107,11 @@ contextBridge.exposeInMainWorld('qf', {
   auth: {
     // Get a valid access token from main process (single source of truth)
     getToken: () => ipcRenderer.invoke('auth:get-token'),
+    // Secure credential storage via Electron safeStorage (OS keychain encryption)
+    saveCredentials: (email: string, password: string) =>
+      ipcRenderer.invoke('auth:save-credentials', email, password),
+    getCredentials: () => ipcRenderer.invoke('auth:get-credentials'),
+    clearCredentials: () => ipcRenderer.invoke('auth:clear-credentials'),
     onSessionExpired: (callback: () => void) => {
       const handler = () => callback();
       ipcRenderer.on('auth:session-expired', handler);
