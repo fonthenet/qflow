@@ -5,6 +5,7 @@ import { Save, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib/actions/settings-actions';
 import { useI18n } from '@/components/providers/locale-provider';
+import { createClient } from '@/lib/supabase/client';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
 
 interface Organization {
@@ -305,6 +306,80 @@ export function SettingsClient({
     settings.require_appointment_approval ?? true
   );
 
+  // Account Settings
+  const [newEmail, setNewEmail] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [emailUpdating, setEmailUpdating] = useState(false);
+  const [passwordUpdating, setPasswordUpdating] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) {
+        setNewEmail(data.user.email);
+      }
+    });
+  }, []);
+
+  async function handleUpdateEmail() {
+    setEmailSuccess(null);
+    setEmailError(null);
+    if (!newEmail.trim()) {
+      setEmailError(t('Please enter a valid email address.'));
+      return;
+    }
+    setEmailUpdating(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) {
+        setEmailError(error.message);
+      } else {
+        setEmailSuccess(t('A confirmation link has been sent to your new email address.'));
+      }
+    } catch (err: any) {
+      setEmailError(err.message ?? t('An unexpected error occurred.'));
+    } finally {
+      setEmailUpdating(false);
+    }
+  }
+
+  async function handleUpdatePassword() {
+    setPasswordSuccess(null);
+    setPasswordError(null);
+    if (newPassword.length < 6) {
+      setPasswordError(t('Password must be at least 6 characters.'));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError(t('Passwords do not match.'));
+      return;
+    }
+    setPasswordUpdating(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setPasswordError(error.message);
+      } else {
+        setPasswordSuccess(t('Password updated successfully.'));
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err: any) {
+      setPasswordError(err.message ?? t('An unexpected error occurred.'));
+    } finally {
+      setPasswordUpdating(false);
+    }
+  }
+
   const languageOptions = [
     { code: 'en', label: t('English') },
     { code: 'fr', label: t('French') },
@@ -496,15 +571,68 @@ export function SettingsClient({
           </div>
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Logo URL')}
+              {t('Business Logo')}
             </label>
-            <input
-              type="url"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              placeholder={t('https://example.com/logo.png')}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+            <div className="flex items-center gap-4">
+              {/* Preview */}
+              {logoUrl && (
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="h-14 w-14 rounded-lg object-contain border border-border bg-card"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div className="flex-1 space-y-2">
+                {/* File upload */}
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                    📁 {t('Upload Image')}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 2 * 1024 * 1024) {
+                          alert(t('File must be under 2 MB'));
+                          return;
+                        }
+                        try {
+                          const supabase = createClient();
+                          const { data: { session } } = await supabase.auth.getSession();
+                          const token = session?.access_token;
+                          if (!token) { alert(t('Please sign in again')); return; }
+                          const fd = new FormData();
+                          fd.append('file', file);
+                          fd.append('organizationId', organization.id);
+                          const res = await fetch('/api/upload-logo', {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: fd,
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Upload failed');
+                          setLogoUrl(data.url);
+                        } catch (err: any) {
+                          alert(err.message || t('Upload failed'));
+                        }
+                      }}
+                    />
+                  </label>
+                  <span className="text-xs text-muted-foreground">{t('PNG, JPEG, WebP, SVG · max 2 MB')}</span>
+                </div>
+                {/* URL fallback */}
+                <input
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder={t('Or paste a logo URL...')}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
           </div>
 
           <div>
@@ -1334,6 +1462,108 @@ export function SettingsClient({
                 </div>
               </label>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Account ─────────────────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-foreground">
+          {t('Account')}
+        </h2>
+
+        {/* Change Email */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">{t('Change Email')}</h3>
+          <div className="max-w-md">
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              {t('Email Address')}
+            </label>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleUpdateEmail}
+              disabled={emailUpdating}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {emailUpdating ? t('Updating...') : t('Update Email')}
+            </button>
+            {emailSuccess && (
+              <span className="inline-flex items-center gap-1 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4" />
+                {emailSuccess}
+              </span>
+            )}
+            {emailError && (
+              <span className="text-sm text-red-600">{emailError}</span>
+            )}
+          </div>
+        </div>
+
+        <hr className="border-border" />
+
+        {/* Change Password */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">{t('Change Password')}</h3>
+          <div className="grid gap-4 max-w-md">
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                {t('Current Password')}
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                {t('New Password')}
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={t('Minimum 6 characters')}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                {t('Confirm New Password')}
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleUpdatePassword}
+              disabled={passwordUpdating}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {passwordUpdating ? t('Updating...') : t('Update Password')}
+            </button>
+            {passwordSuccess && (
+              <span className="inline-flex items-center gap-1 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4" />
+                {passwordSuccess}
+              </span>
+            )}
+            {passwordError && (
+              <span className="text-sm text-red-600">{passwordError}</span>
+            )}
           </div>
         </div>
       </section>

@@ -374,29 +374,29 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '❌ Cancelled. You did not join the queue.\n\nSend *JOIN <code>* to try again.',
   },
   pending_approval: {
-    fr: '⏳ Votre demande de rendez-vous à *{name}* a bien été reçue.\n\nElle est en attente d\'approbation par le prestataire. Vous recevrez un message dès qu\'elle sera approuvée ou refusée.',
-    ar: '⏳ تم استلام طلب موعدك في *{name}*.\n\nفي انتظار موافقة المزود. ستتلقى رسالة فور الموافقة أو الرفض.',
-    en: '⏳ Your appointment request at *{name}* has been received.\n\nIt is pending provider approval. You will receive a message as soon as it is approved or declined.',
+    fr: '⏳ Votre demande de rendez-vous à *{name}* a bien été reçue.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\nElle est en attente d\'approbation par le prestataire. Vous recevrez un message dès qu\'elle sera approuvée ou refusée.',
+    ar: '⏳ تم استلام طلب موعدك في *{name}*.\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\nفي انتظار موافقة المزود. ستتلقى رسالة فور الموافقة أو الرفض.',
+    en: '⏳ Your appointment request at *{name}* has been received.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nIt is pending provider approval. You will receive a message as soon as it is approved or declined.',
   },
   approval_approved: {
-    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.\n\n🎫 Un ticket vous sera remis à votre arrivée sur place.',
-    ar: '✅ تم *قبول* موعدك في *{name}*.\n\n🎫 ستستلم تذكرتك عند وصولك إلى المكان.',
-    en: '✅ Your appointment at *{name}* has been *approved*.\n\n🎫 A ticket will be issued when you check in at the location.',
+    fr: '✅ Votre rendez-vous à *{name}* a été *approuvé*.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\n🎫 Un ticket vous sera remis à votre arrivée sur place.',
+    ar: '✅ تم *قبول* موعدك في *{name}*.\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\n🎫 ستستلم تذكرتك عند وصولك إلى المكان.',
+    en: '✅ Your appointment at *{name}* has been *approved*.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\n🎫 A ticket will be issued when you check in at the location.',
   },
   approval_approved_sameday: {
-    fr: '✅ Votre rendez-vous a été *approuvé* par *{name}*. Vous êtes maintenant dans la file !\n',
-    ar: '✅ تم *قبول* موعدك من *{name}*. أنت الآن في الطابور!\n',
-    en: '✅ Your appointment has been *approved* by *{name}*. You are now in the queue!\n',
+    fr: '✅ Votre rendez-vous a été *approuvé* par *{name}*.\n\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\nVous êtes maintenant dans la file !',
+    ar: '✅ تم *قبول* موعدك من *{name}*.\n\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\nأنت الآن في الطابور!',
+    en: '✅ Your appointment has been *approved* by *{name}*.\n\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nYou are now in the queue!',
   },
   approval_declined: {
-    fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\nMotif : {reason}',
-    ar: '❌ تم *رفض* موعدك في *{name}*.\n\nالسبب: {reason}',
-    en: '❌ Your appointment at *{name}* has been *declined*.\n\nReason: {reason}',
+    fr: '❌ Votre rendez-vous à *{name}* a été *refusé*.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\nMotif : {reason}',
+    ar: '❌ تم *رفض* موعدك في *{name}*.\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\nالسبب: {reason}',
+    en: '❌ Your appointment at *{name}* has been *declined*.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nReason: {reason}',
   },
   appointment_cancelled: {
-    fr: '🚫 Votre rendez-vous à *{name}* a été *annulé* par le prestataire.{reason}\n\nPour reprendre rendez-vous, contactez-nous ou réservez à nouveau.',
-    ar: '🚫 تم *إلغاء* موعدك في *{name}* من قبل المزود.{reason}\n\nلإعادة الحجز، تواصل معنا أو احجز من جديد.',
-    en: '🚫 Your appointment at *{name}* has been *cancelled* by the provider.{reason}\n\nTo reschedule, contact us or book again.',
+    fr: '🚫 Votre rendez-vous à *{name}* a été *annulé* par le prestataire.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*{reason}\n\nPour reprendre rendez-vous, contactez-nous ou réservez à nouveau.',
+    ar: '🚫 تم *إلغاء* موعدك في *{name}* من قبل المزود.\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*{reason}\n\nلإعادة الحجز، تواصل معنا أو احجز من جديد.',
+    en: '🚫 Your appointment at *{name}* has been *cancelled* by the provider.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*{reason}\n\nTo reschedule, contact us or book again.',
   },
   appointment_rescheduled: {
     fr: '📅 Votre rendez-vous à *{name}* a été *reprogrammé*.\n\n🕐 Nouveau créneau : *{new_date}* à *{new_time}*\n\nSi cela ne vous convient pas, contactez-nous pour modifier.',
@@ -404,9 +404,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📅 Your appointment at *{name}* has been *rescheduled*.\n\n🕐 New time: *{new_date}* at *{new_time}*\n\nIf this doesn\'t work for you, contact us to change it.',
   },
   appointment_no_show: {
-    fr: '⏰ Vous avez manqué votre rendez-vous à *{name}*.\n\nLe créneau a été libéré. N\'hésitez pas à réserver à nouveau.',
-    ar: '⏰ لقد فاتك موعدك في *{name}*.\n\nتم تحرير الموعد. يمكنك الحجز من جديد.',
-    en: '⏰ You missed your appointment at *{name}*.\n\nThe slot has been released. Feel free to book again.',
+    fr: '⏰ Vous avez manqué votre rendez-vous à *{name}*.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\nLe créneau a été libéré. N\'hésitez pas à réserver à nouveau.',
+    ar: '⏰ لقد فاتك موعدك في *{name}*.\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*\n🏥 الخدمة: *{service}*\n\nتم تحرير الموعد. يمكنك الحجز من جديد.',
+    en: '⏰ You missed your appointment at *{name}*.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*\n🏥 Service: *{service}*\n\nThe slot has been released. Feel free to book again.',
   },
   appointment_status: {
     fr: '✅ Vous avez un rendez-vous *confirmé* chez *{name}*\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*\n🏥 Service : *{service}*\n\n🎫 Un ticket vous sera remis à votre arrivée sur place.\n\nEnvoyez *ANNULER RDV* pour annuler.',
@@ -2811,9 +2811,21 @@ async function handleJoin(
   // Send a "waiting for approval" message; the full joined message is sent later
   // by /api/moderate-ticket when the provider approves.
   if ((ticket as any).status === 'pending_approval') {
+    // Resolve service name for the pending_approval template
+    let pendingServiceName = '—';
+    if (serviceId) {
+      try {
+        const { data: svc } = await supabase.from('services').select('name').eq('id', serviceId).maybeSingle();
+        if (svc?.name) pendingServiceName = svc.name;
+      } catch { /* ignore */ }
+    }
+    const locTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
+    const nowDt = new Date();
+    const pendingDate = nowDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const pendingTime = nowDt.toLocaleTimeString(locTag, { hour: '2-digit', minute: '2-digit', hour12: false });
     await sendMessage({
       to: identifier,
-      body: t('pending_approval', locale, { name: org.name }),
+      body: t('pending_approval', locale, { name: org.name, date: pendingDate, time: pendingTime, service: pendingServiceName }),
     });
     return;
   }
@@ -2903,7 +2915,15 @@ async function handleStatus(
 
   // If ticket is pending provider approval, tell the customer it's awaiting approval.
   if (tRow.status === 'pending_approval') {
-    await sendMessage({ to: identifier, body: t('pending_approval', locale, { name: org.name }) });
+    const ctx = await fetchTicketContext(session.ticket_id, locale);
+    const locTag = locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR';
+    const nowDt = new Date();
+    const pendingDate = nowDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const pendingTime = nowDt.toLocaleTimeString(locTag, { hour: '2-digit', minute: '2-digit', hour12: false });
+    // ctx.service is a formatted line; extract the raw name between asterisks
+    const svcMatch = ctx.service.match(/\*(.+?)\*/);
+    const svcName = svcMatch ? svcMatch[1] : '—';
+    await sendMessage({ to: identifier, body: t('pending_approval', locale, { name: org.name, date: pendingDate, time: pendingTime, service: svcName }) });
     return;
   }
 
@@ -3091,9 +3111,17 @@ async function findAndReplyAppointmentStatus(
         orgName = org?.name ?? '';
       }
     }
+    // Resolve service name and date/time for the pending_approval template
+    const ctx = await fetchTicketContext(pendingTicket.id, ticketLocale);
+    const svcMatch = ctx.service.match(/\*(.+?)\*/);
+    const svcName = svcMatch ? svcMatch[1] : '—';
+    const locTag = ticketLocale === 'ar' ? 'ar-DZ' : ticketLocale === 'en' ? 'en-GB' : 'fr-FR';
+    const nowDt = new Date();
+    const pendingDate = nowDt.toLocaleDateString(locTag, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const pendingTime = nowDt.toLocaleTimeString(locTag, { hour: '2-digit', minute: '2-digit', hour12: false });
     await sendMessage({
       to: identifier,
-      body: t('pending_approval', ticketLocale, { name: orgName || (ticketLocale === 'ar' ? 'المزود' : ticketLocale === 'en' ? 'Provider' : 'Prestataire') }),
+      body: t('pending_approval', ticketLocale, { name: orgName || (ticketLocale === 'ar' ? 'المزود' : ticketLocale === 'en' ? 'Provider' : 'Prestataire'), date: pendingDate, time: pendingTime, service: svcName }),
     });
     return true;
   }
