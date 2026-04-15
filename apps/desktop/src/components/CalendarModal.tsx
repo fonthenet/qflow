@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
+import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import {
   dateKeyInTz,
@@ -1046,7 +1047,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       if (dayOffNotify.whatsapp || dayOffNotify.sms) {
         try {
           const token = await ensureAuth();
-          const res = await fetch('https://qflo.net/api/dayoff-notify', {
+          const res = await cloudFetch('https://qflo.net/api/dayoff-notify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
@@ -1179,7 +1180,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
       // ── 4. Notify customer about reschedule (fire-and-forget via web API) ──
       try {
-        fetch('https://qflo.net/api/notify-reschedule', {
+        cloudFetch('https://qflo.net/api/notify-reschedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${await ensureAuth()}` },
           body: JSON.stringify({ appointmentId, newScheduledAt }),
@@ -2478,7 +2479,6 @@ function DesktopWeekView({
               aria-label={formatDayHeader(day.date, timezone, intlLocale)}
               style={{
                 borderRight: '1px solid var(--border, #334155)', position: 'relative',
-                opacity: dayClosed && !isHoliday ? 0.5 : 1,
               }}
             >
               {/* Day header — left-click to select, right-click to mark day off */}
@@ -2574,7 +2574,7 @@ function DesktopWeekView({
                         background: isExactCell
                           ? 'rgba(59,130,246,0.25)'
                           : isCellClosed
-                            ? 'repeating-linear-gradient(135deg, var(--cell-closed-a, rgba(100,116,139,0.08)), var(--cell-closed-a, rgba(100,116,139,0.08)) 4px, var(--cell-closed-b, rgba(100,116,139,0.16)) 4px, var(--cell-closed-b, rgba(100,116,139,0.16)) 8px)'
+                            ? 'rgba(239,68,68,0.045)'
                             : isCrossHighlight
                               ? 'rgba(59,130,246,0.12)'
                               : 'transparent',
@@ -3348,7 +3348,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
   const reloadSlots = useCallback(() => {
     if (!date || !service) { setSlots([]); return; }
     setSlotsLoading(true);
-    fetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(service)}&date=${date}`)
+    cloudFetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(service)}&date=${date}`)
       .then(r => r.json())
       .then(data => {
         const available: string[] = data.slots ?? [];
@@ -3399,7 +3399,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
     setSubmitting(true);
     setResult(null);
     try {
-      const res = await fetch('https://qflo.net/api/book-appointment', {
+      const res = await cloudFetch('https://qflo.net/api/book-appointment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3682,37 +3682,65 @@ function DesktopApptDetail({
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [ticketNumber, setTicketNumber] = useState<string | null>(null);
+  // Track the linked ticket's real-time status from local SQLite
+  // so action buttons stay in sync when ticket is called/served from queue sidebar
+  const [linkedTicketStatus, setLinkedTicketStatus] = useState<string | null>(null);
 
   // Sync when switching appointments
-  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); setEditingTime(false); setRescheduleError(null); setAvailableSlots([]); setTimeline([]); setTicketNumber(null); }, [a.id]);
+  useEffect(() => { setNotesValue(a.notes ?? ''); setNotesSaved(false); setEditingTime(false); setRescheduleError(null); setAvailableSlots([]); setTimeline([]); setTicketNumber(null); setLinkedTicketStatus(null); }, [a.id]);
 
-  // Fetch ticket number when appointment has a ticket_id
+  // Fetch ticket number + status when appointment has a ticket_id
+  // Polls every 3s so buttons update if ticket status changes from queue sidebar
   useEffect(() => {
-    if (!a.ticket_id) { setTicketNumber(null); return; }
+    if (!a.ticket_id) { setTicketNumber(null); setLinkedTicketStatus(null); return; }
     let cancelled = false;
-    (async () => {
+    const fetchTicketInfo = async () => {
       try {
-        // Try local SQLite first (fastest)
         const w = window as any;
-        if (w.qf?.db?.query) {
-          const rows: any[] = await w.qf.db.rawQuery?.('SELECT ticket_number FROM tickets WHERE id = ?', [a.ticket_id]) ?? [];
-          if (!cancelled && rows.length > 0 && rows[0].ticket_number) {
-            setTicketNumber(rows[0].ticket_number);
+        if (w.qf?.db?.rawQuery) {
+          const rows: any[] = await w.qf.db.rawQuery('SELECT ticket_number, status FROM tickets WHERE id = ?', [a.ticket_id]) ?? [];
+          if (!cancelled && rows.length > 0) {
+            if (rows[0].ticket_number) setTicketNumber(rows[0].ticket_number);
+            if (rows[0].status) setLinkedTicketStatus(rows[0].status);
             return;
           }
         }
-        // Fallback: fetch from Supabase
+        // Fallback: fetch from Supabase (no polling for remote — too expensive)
         if (storedAuth) {
           const { ensureAuth, getSupabase } = await import('../lib/supabase');
           await ensureAuth();
           const sb = await getSupabase();
-          const { data } = await sb.from('tickets').select('ticket_number').eq('id', a.ticket_id).single();
-          if (!cancelled && data?.ticket_number) setTicketNumber(data.ticket_number);
+          const { data } = await sb.from('tickets').select('ticket_number, status').eq('id', a.ticket_id).single();
+          if (!cancelled && data) {
+            if (data.ticket_number) setTicketNumber(data.ticket_number);
+            if (data.status) setLinkedTicketStatus(data.status);
+          }
         }
       } catch { /* non-fatal */ }
-    })();
-    return () => { cancelled = true; };
+    };
+    fetchTicketInfo();
+    // Poll local SQLite every 3s for real-time sync with queue operations
+    const iv = setInterval(fetchTicketInfo, 3000);
+    return () => { cancelled = true; clearInterval(iv); };
   }, [a.ticket_id, storedAuth]);
+
+  // Derive the effective status from the linked ticket's real-time status.
+  // This prevents action button conflicts when a ticket is called/served from the queue sidebar.
+  // ticket status → effective appointment status mapping:
+  //   waiting → checked_in, called → called, serving → serving,
+  //   served → completed, no_show → no_show, cancelled → cancelled
+  const effectiveStatus: string = (() => {
+    if (!linkedTicketStatus) return a.status;
+    const ticketToApptStatus: Record<string, string> = {
+      waiting: 'checked_in',
+      called: 'called',
+      serving: 'serving',
+      served: 'completed',
+      no_show: 'no_show',
+      cancelled: 'cancelled',
+    };
+    return ticketToApptStatus[linkedTicketStatus] ?? a.status;
+  })();
 
   // Fetch ticket events for timeline
   useEffect(() => {
@@ -3850,7 +3878,7 @@ function DesktopApptDetail({
     (async () => {
       try {
         const url = `https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(a.service_id)}&date=${editDate}`;
-        const resp = await fetch(url);
+        const resp = await cloudFetch(url);
         if (!cancelled && resp.ok) {
           const data = await resp.json();
           const slots: string[] = data.slots ?? [];
@@ -3895,11 +3923,11 @@ function DesktopApptDetail({
   useEffect(() => () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }, []);
   const svc = serviceMap.get(a.service_id);
   const dept = a.department_id ? departments[a.department_id] : null;
-  const statusColor = getStatusColor(a.status);
-  const serviceColor = getStatusColor(a.status);
+  const statusColor = getStatusColor(effectiveStatus);
+  const serviceColor = getStatusColor(effectiveStatus);
   const d = new Date(a.scheduled_at);
-  const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
-  const canReschedule = !['cancelled', 'completed', 'no_show', 'declined'].includes(a.status);
+  const isActive = !['cancelled', 'completed', 'no_show', 'declined'].includes(effectiveStatus);
+  const canReschedule = !['cancelled', 'completed', 'no_show', 'declined'].includes(effectiveStatus);
 
   const statusLabel: Record<string, string> = {
     pending: t('Pending'), pending_approval: t('Pending'), confirmed: t('Confirmed'), checked_in: t('Checked In'),
@@ -3954,7 +3982,7 @@ function DesktopApptDetail({
         {/* Status badge + ticket number */}
         <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, color: '#fff', background: statusColor }}>
-            {statusLabel[a.status] ?? a.status}
+            {statusLabel[effectiveStatus] ?? effectiveStatus}
           </span>
           {ticketNumber && (
             <span style={{ fontSize: 12, fontWeight: 700, color: '#8b5cf6', fontFamily: 'monospace', letterSpacing: 0.5 }}>
@@ -4207,7 +4235,7 @@ function DesktopApptDetail({
         {/* Action buttons */}
         {isActive && (
           <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {a.status === 'pending' && (
+            {effectiveStatus === 'pending' && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => onAction('approve')} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
                   ✓ {t('Approve')}
@@ -4217,27 +4245,27 @@ function DesktopApptDetail({
                 </button>
               </div>
             )}
-            {a.status === 'confirmed' && (
+            {effectiveStatus === 'confirmed' && (
               <button onClick={() => onAction('check_in')} disabled={actionBusy} style={actionBtn('#8b5cf6', '#fff')}>
                 {t('Check In')}
               </button>
             )}
-            {a.status === 'checked_in' && (
+            {effectiveStatus === 'checked_in' && (
               <button onClick={() => onAction('call')} disabled={actionBusy} style={actionBtn('#3b82f6', '#fff')}>
                 📢 {t('Call to Desk')}
               </button>
             )}
-            {(a.status as string) === 'called' && (
+            {effectiveStatus === 'called' && (
               <button onClick={() => onAction('serve')} disabled={actionBusy} style={actionBtn('#06b6d4', '#fff')}>
                 ▶ {t('Start Serving')}
               </button>
             )}
-            {(a.status === 'checked_in' || (a.status as string) === 'called' || (a.status as string) === 'serving') && (
+            {(effectiveStatus === 'checked_in' || effectiveStatus === 'called' || effectiveStatus === 'serving') && (
               <button onClick={() => onAction('complete')} disabled={actionBusy} style={actionBtn('#22c55e', '#fff')}>
                 ✓ {t('Complete')}
               </button>
             )}
-            {a.status !== 'pending' && (
+            {effectiveStatus !== 'pending' && (
               <button onClick={() => onAction('cancel')} disabled={actionBusy} style={actionBtn('rgba(239,68,68,0.15)', '#ef4444')}>
                 {t('Cancel Appointment')}
               </button>

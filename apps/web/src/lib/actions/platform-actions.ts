@@ -297,6 +297,15 @@ async function seedConfirmedTemplate(
     return { error: officeError?.message ?? 'Failed to create starter office' };
   }
 
+  // Auto-assign the current admin to the first office so they show as staff
+  // (they can reassign themselves later if the business has multiple offices)
+  if (!context.staff.office_id) {
+    await context.supabase
+      .from('staff')
+      .update({ office_id: createdOffice.id })
+      .eq('id', context.staff.id);
+  }
+
   const departmentIdsByCode = new Map<string, string>();
   const serviceIdsByCode = new Map<string, string>();
 

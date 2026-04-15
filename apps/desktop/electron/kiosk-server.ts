@@ -1,4 +1,5 @@
 import http from 'http';
+import https from 'https';
 import { networkInterfaces } from 'os';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname } from 'path';
@@ -540,6 +541,14 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
           handleStationBranding(res);
         } else if (path === '/api/station/public-links' && req.method === 'GET') {
           handleStationPublicLinks(res);
+        } else if (path === '/api/station/auth-token' && req.method === 'GET') {
+          handleStationAuthToken(res);
+        } else if (path === '/api/station/cache-appointments' && req.method === 'GET') {
+          handleCacheGet(url, res);
+        } else if (path === '/api/station/cache-appointments' && req.method === 'POST') {
+          handleCacheSave(req, res);
+        } else if (path === '/api/cloud-proxy') {
+          handleCloudProxy(req, url, res);
         } else {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Not found' }));
@@ -2746,16 +2755,35 @@ function serveStationIndex(res: http.ServerResponse) {
           syncListeners.forEach(function(cb) { cb(data.status); });
         } else if (data.type === 'sync_error') {
           errorListeners.forEach(function(cb) { cb(data.error); });
+        } else if (data.type === 'session_cleared') {
+          // Station logged out — force session reload
+          window.location.reload();
         }
       } catch(err) {}
     };
     sse.onerror = function() {
-      setTimeout(connectSSE, 3000);
+      // On disconnect (Station restart), re-acquire token before reconnecting
+      retryToken().then(function() {
+        setTimeout(connectSSE, 3000);
+      });
     };
   }
   connectSSE();
 
   window.qf = {
+    isKiosk: true,
+
+    // Proxy fetch calls to qflo.net through the local kiosk server
+    // to avoid CORS blocks in the browser (http -> https cross-origin).
+    cloudFetch: function(url, opts) {
+      var parsed = new URL(url);
+      if (parsed.origin !== 'https://qflo.net') return fetch(url, opts);
+      // Rewrite: https://qflo.net/api/foo?bar=1 → /api/cloud-proxy?path=/api/foo&bar=1
+      var proxyUrl = '/api/cloud-proxy?path=' + encodeURIComponent(parsed.pathname);
+      parsed.searchParams.forEach(function(v, k) { proxyUrl += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(v); });
+      return fetch(proxyUrl, opts);
+    },
+
     getConfig: function() {
       return get('/api/station/config').then(function(c) {
         return c && c.supabaseUrl ? c : { supabaseUrl: '', supabaseAnonKey: '' };
@@ -2872,12 +2900,23 @@ function serveStationIndex(res: http.ServerResponse) {
 
     auth: {
       getToken: function() {
-        return get('/api/station/session').then(function(s) {
-          return s && s.access_token ? { ok: true, token: s.access_token } : { ok: false, token: null };
+        return get('/api/station/auth-token').then(function(r) {
+          return r && r.ok ? r : { ok: false, token: null };
         });
       },
       onTokenRefreshed: function(cb) { return function() {}; },
       onSessionExpired: function(cb) { return function() {}; },
+    },
+
+    cache: {
+      saveAppointments: function(officeId, data) {
+        return post('/api/station/cache-appointments', { officeId: officeId, data: data }).catch(function() { return { ok: false }; });
+      },
+      getAppointments: function(officeId) {
+        return get('/api/station/cache-appointments?officeId=' + encodeURIComponent(officeId)).then(function(r) {
+          return typeof r === 'string' ? r : JSON.stringify(r);
+        }).catch(function() { return null; });
+      },
     },
 
     tickets: {
@@ -3093,6 +3132,126 @@ async function handleStationSyncForce(res: http.ServerResponse) {
   } catch (err: any) {
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: false, error: err?.message ?? 'Sync failed' }));
+  }
+}
+
+async function handleStationAuthToken(res: http.ServerResponse) {
+  try {
+    // Always read session for refresh_token (needed for Supabase auto-refresh in browser)
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+    const session = row ? JSON.parse(row.value) : null;
+    const refreshToken = session?.refresh_token || '';
+
+    // Try to get a FRESH access token via sync engine
+    const token = await getAuthToken?.();
+    if (token) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: true, token, refresh_token: refreshToken }));
+    } else if (session?.access_token) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: true, token: session.access_token, refresh_token: refreshToken }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, token: null }));
+    }
+  } catch (err: any) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ ok: false, token: null, error: err?.message }));
+  }
+}
+
+/**
+ * Appointment cache — read cached appointment data from SQLite.
+ * Prevents blank calendar when auth is temporarily broken.
+ */
+function handleCacheGet(url: URL, res: http.ServerResponse) {
+  try {
+    const officeId = url.searchParams.get('officeId') || '';
+    if (!officeId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'officeId required' }));
+      return;
+    }
+    const db = getDB();
+    const row = db.prepare("SELECT value FROM session WHERE key = ?").get(`appt_cache_${officeId}`) as any;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(row?.value || 'null');
+  } catch (err: any) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('null');
+  }
+}
+
+/** Save appointment cache to SQLite. */
+function handleCacheSave(req: http.IncomingMessage, res: http.ServerResponse) {
+  let body = '';
+  req.on('data', (c: Buffer) => { body += c.toString(); });
+  req.on('end', () => {
+    try {
+      const { officeId, data } = JSON.parse(body);
+      if (!officeId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'officeId required' }));
+        return;
+      }
+      const db = getDB();
+      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES (?, ?)").run(`appt_cache_${officeId}`, data);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err: any) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false }));
+    }
+  });
+}
+
+/**
+ * Generic cloud API proxy — forwards requests from the kiosk browser to qflo.net.
+ * Needed because browsers block cross-origin requests from http://local-ip to https://qflo.net.
+ * The kiosk bridge rewrites fetch('https://qflo.net/api/...') to fetch('/api/cloud-proxy?path=/api/...').
+ *
+ * Supports GET (query forwarded) and POST (body forwarded).
+ */
+function handleCloudProxy(req: http.IncomingMessage, url: URL, res: http.ServerResponse) {
+  const targetPath = url.searchParams.get('path');
+  if (!targetPath || !targetPath.startsWith('/api/')) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing or invalid path parameter' }));
+    return;
+  }
+
+  // Build target URL — forward all query params except 'path'
+  const targetUrl = new URL('https://qflo.net' + targetPath);
+  url.searchParams.forEach((v, k) => { if (k !== 'path') targetUrl.searchParams.set(k, v); });
+
+  // Forward relevant headers (auth, content-type)
+  const fwdHeaders: Record<string, string> = {
+    'User-Agent': 'QfloStation-KioskProxy/1.0',
+  };
+  if (req.headers['content-type']) fwdHeaders['Content-Type'] = req.headers['content-type'] as string;
+  if (req.headers['authorization']) fwdHeaders['Authorization'] = req.headers['authorization'] as string;
+
+  const method = (req.method || 'GET').toUpperCase();
+
+  const proxyReq = https.request(targetUrl, { method, headers: fwdHeaders }, (proxyRes) => {
+    // Forward status + content-type back to kiosk browser
+    const ct = proxyRes.headers['content-type'] || 'application/json';
+    res.writeHead(proxyRes.statusCode || 502, { 'Content-Type': ct, 'Cache-Control': 'no-store' });
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    logger.error('kiosk', `Cloud proxy error: ${err.message}`);
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Cloud proxy failed', message: err.message }));
+  });
+
+  // Forward request body for POST/PUT/PATCH
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+    req.pipe(proxyReq);
+  } else {
+    proxyReq.end();
   }
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useConfirmDialog } from './ConfirmDialog';
+import { cloudFetch } from '../lib/cloud-fetch';
 
 interface SheetFile { id: string; name: string; modifiedTime: string }
 interface SheetInfo { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number; autoSync: boolean }
@@ -28,7 +29,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
   const refresh = useCallback(async () => {
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`${API}/status?org=${encodeURIComponent(orgId)}`);
+      const res = await cloudFetch(`${API}/status?org=${encodeURIComponent(orgId)}`);
       if (res.ok) setStatus(await res.json());
     } catch (e: any) { setError(e?.message ?? String(e)); }
   }, [resolveOrgId]);
@@ -45,7 +46,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
       const id = window.setInterval(async () => {
         tries++;
         await refresh();
-        const s = await (await fetch(`${API}/status?org=${encodeURIComponent(orgId)}`)).json();
+        const s = await (await cloudFetch(`${API}/status?org=${encodeURIComponent(orgId)}`)).json();
         if (s.connected || tries > 90) { window.clearInterval(id); setStatus(s); }
       }, 2000);
     } catch (e: any) { setError(e?.message ?? String(e)); }
@@ -56,7 +57,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setBusy(true);
     try {
       const orgId = await resolveOrgId();
-      await fetch(`${API}/disconnect`, {
+      await cloudFetch(`${API}/disconnect`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId }),
       });
@@ -68,7 +69,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setPickerLoading(true);
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`${API}/list?org=${encodeURIComponent(orgId)}`);
+      const res = await cloudFetch(`${API}/list?org=${encodeURIComponent(orgId)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'List failed');
       setFiles(data.files || []);
@@ -80,7 +81,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setBusy(true); setError(null);
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`${API}/link`, {
+      const res = await cloudFetch(`${API}/link`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId, sheetIdOrUrl }),
       });
@@ -96,7 +97,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setBusy(true); setError(null);
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`${API}/create`, {
+      const res = await cloudFetch(`${API}/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId, title: newTitle || 'Qflo Customers' }),
       });
@@ -114,7 +115,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setBusy(true); setError(null);
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`${API}/push`, {
+      const res = await cloudFetch(`${API}/push`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId }),
       });
@@ -130,7 +131,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     setBusy(true);
     try {
       const orgId = await resolveOrgId();
-      await fetch(`${API}/unlink`, {
+      await cloudFetch(`${API}/unlink`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId }),
       });
@@ -144,7 +145,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
     try {
       const orgId = await resolveOrgId();
       const enabled = !status.sheet.autoSync;
-      await fetch(`${API}/auto-sync`, {
+      await cloudFetch(`${API}/auto-sync`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: orgId, enabled }),
       });

@@ -212,14 +212,14 @@ const CLINIC_PROFILES: TemplateProfile[] = [
     overrides: {
       experienceProfile: {
         vocabulary: {
-          officeLabel: 'Clinique',
-          departmentLabel: 'Service',
-          serviceLabel: 'Prestation',
-          deskLabel: 'Guichet',
+          officeLabel: 'Clinic',
+          departmentLabel: 'Department',
+          serviceLabel: 'Service',
+          deskLabel: 'Office',
         },
         kiosk: {
-          welcomeMessage: 'Bienvenue — choisissez votre service',
-          headerText: 'Enregistrement',
+          welcomeMessage: 'Welcome — choose your service',
+          headerText: 'Registration',
           themeColor: '#1d4ed8',
           buttonLabel: 'S\'enregistrer',
           showPriorities: true,

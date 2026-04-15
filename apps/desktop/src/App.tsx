@@ -88,16 +88,37 @@ export function App() {
       } catch {
         // ignore persistence failures
       }
-      if (s?.access_token && s?.refresh_token) {
-        restoreSession(s.access_token, s.refresh_token).catch(() => {});
-      }
       setLocale(normalizeLocale(savedLocale));
       if (s) {
-        // Force sync on auto-login to ensure fresh tokens + data before showing Station
-        window.qf.sync.forceSync().catch(() => {}).finally(() => {
-          setSession(s);
-          setLoading(false);
-        });
+        // Ask main process for a FRESH token (not the stale one from SQLite)
+        // This is critical: the stored token may be expired after idle/restart,
+        // and using it would cause all Supabase queries to return empty (RLS block).
+        const freshLogin = async () => {
+          try {
+            const result = await window.qf.auth.getToken();
+            if (result?.ok && result.token) {
+              // Always pass refresh_token so Supabase can auto-refresh the JWT.
+              // In Electron, main process also pushes updates via IPC.
+              // In HTTP bridge (kiosk), this is the ONLY way to auto-refresh.
+              await restoreSession(result.token, s.refresh_token || '');
+            } else if (s.access_token) {
+              // Fallback to stored token (better than nothing)
+              await restoreSession(s.access_token, s.refresh_token || '').catch(() => {});
+            }
+          } catch {
+            // Last resort: use stored token
+            if (s.access_token) {
+              await restoreSession(s.access_token, s.refresh_token || '').catch(() => {});
+            }
+          }
+        };
+        // Get fresh token + force sync, then show Station
+        freshLogin()
+          .then(() => window.qf.sync.forceSync().catch(() => {}))
+          .finally(() => {
+            setSession(s);
+            setLoading(false);
+          });
       } else {
         setSession(s);
         setLoading(false);

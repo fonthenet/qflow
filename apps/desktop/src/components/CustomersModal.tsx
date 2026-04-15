@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
+import { cloudFetch } from '../lib/cloud-fetch';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { ALGERIA_WILAYAS, BLOOD_TYPES, getCommunes } from '../lib/algeria-wilayas';
 import { parseExcelFile, parseCsvText, fetchGoogleSheet, type ParsedCustomerRow } from '../lib/customer-import';
@@ -45,7 +46,7 @@ interface Props {
   locale: DesktopLocale;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   onClose: () => void;
-  onBookCustomer?: (customer: { name: string; phone: string; notes?: string }) => void;
+  onBookCustomer?: (customer: { name: string; phone: string; notes?: string; wilaya?: string }) => void;
   initialPhone?: string;
   timezone?: string;
   /** When true, renders inline (no overlay/backdrop) filling its parent container */
@@ -449,7 +450,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
       const accessToken = await ensureAuth();
       if (!accessToken) throw new Error('Not authenticated');
 
-      const res = await fetch('https://qflo.net/api/customer-broadcast', {
+      const res = await cloudFetch('https://qflo.net/api/customer-broadcast', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -559,7 +560,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   const refreshGStatus = useCallback(async () => {
     try {
       const orgId = await resolveOrgId();
-      const res = await fetch(`https://qflo.net/api/google/sheets/status?org=${encodeURIComponent(orgId)}`);
+      const res = await cloudFetch(`https://qflo.net/api/google/sheets/status?org=${encodeURIComponent(orgId)}`);
       if (res.ok) {
         const data = await res.json();
         setGConnected(!!data.connected);
@@ -578,7 +579,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
     const id = window.setInterval(async () => {
       try {
         const orgId = await resolveOrgId();
-        await fetch('https://qflo.net/api/google/sheets/push', {
+        await cloudFetch('https://qflo.net/api/google/sheets/push', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ organizationId: orgId }),
         });
@@ -1143,6 +1144,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                           name: detail.name ?? '',
                           phone: formatPhoneDisplay(detail.phone),
                           notes: detail.notes ?? '',
+                          wilaya: detail.wilaya_code ?? '',
                         });
                         setDetail(null);
                         onClose();

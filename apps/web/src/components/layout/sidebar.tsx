@@ -123,6 +123,8 @@ export function Sidebar({
   const pathname = usePathname();
   const navItems = [...deskNav, ...adminNav]
     .filter((item) => {
+      // Hide desk link during signup (before template is confirmed)
+      if (item.href === '/desk' && !templateConfigured) return false;
       return allowedNavigation.includes(item.href);
     })
     .sort((a, b) => {

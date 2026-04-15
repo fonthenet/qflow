@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
-import { getSupabase, ensureAuth } from '../lib/supabase';
+import { getSupabase, ensureAuth, verifyAuthWorks } from '../lib/supabase';
 import type { StaffSession, Ticket } from '../lib/types';
 import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale } from '../lib/i18n';
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
@@ -8,6 +8,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
+import { cloudFetch } from '../lib/cloud-fetch';
 import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS } from '@qflo/shared';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
@@ -105,7 +106,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   whatsappPhone?: string | null;
   onCollapse: () => void;
   session: any;
-  prefill?: { name?: string; phone?: string; notes?: string; futureDate?: string; futureTime?: string } | null;
+  prefill?: { name?: string; phone?: string; notes?: string; wilaya?: string; futureDate?: string; futureTime?: string; _ts?: number } | null;
   storedAuth?: Record<string, unknown>;
   timezone?: string;
 }) {
@@ -129,7 +130,18 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const [customerName, setCustomerName] = useState(prefill?.name ?? '');
   const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
   const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
-  const [customerWilaya, setCustomerWilaya] = useState('');
+  const [customerWilaya, setCustomerWilaya] = useState(() => normalizeWilayaDisplay(prefill?.wilaya, locale === 'ar') ?? '');
+
+  // Update walk-in + future fields when prefill changes (panel may already be mounted).
+  // Always override ALL fields so a second customer click fully replaces the first.
+  useEffect(() => {
+    if (!prefill) return;
+    setCustomerName(prefill.name ?? ''); setFutName(prefill.name ?? '');
+    setCustomerPhone(prefill.phone ?? ''); setFutPhone(prefill.phone ?? '');
+    setCustomerReason(prefill.notes ?? ''); setFutNotes(prefill.notes ?? '');
+    const displayW = normalizeWilayaDisplay(prefill.wilaya, locale === 'ar') ?? '';
+    setCustomerWilaya(displayW); setFutWilaya(displayW);
+  }, [prefill]);
 
   // Smart customer search (shared between walk-in and future tabs)
   type CustSuggestion = { id: string; name: string | null; phone: string | null; email: string | null; notes: string | null; visit_count: number; wilaya_code: string | null };
@@ -291,7 +303,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       if (prefill.futureTime) setFutTime(prefill.futureTime);
     }
   }, [prefill?.futureDate, prefill?.futureTime]);
-  const [futWilaya, setFutWilaya] = useState('');
+  const [futWilaya, setFutWilaya] = useState(() => normalizeWilayaDisplay(prefill?.wilaya, locale === 'ar') ?? '');
   const [futSlots, setFutSlots] = useState<string[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
   const [futSubmitting, setFutSubmitting] = useState(false);
@@ -308,7 +320,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     setFutSlotsLoading(true);
     const ctrl = new AbortController();
     // Use the links:public API to get the slug, or call booking-slots with officeId
-    fetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(futService)}&date=${futDate}`, { signal: ctrl.signal })
+    cloudFetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(futService)}&date=${futDate}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(data => { setFutSlots(data.slots ?? []); })
       .catch(() => setFutSlots([]))
@@ -321,7 +333,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     setFutSubmitting(true);
     setFutResult(null);
     try {
-      const res = await fetch('https://qflo.net/api/book-appointment', {
+      const res = await cloudFetch('https://qflo.net/api/book-appointment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1477,13 +1489,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [rdvBusyId, setRdvBusyId] = useState<string | null>(null);
   const [pendingTickets, setPendingTickets] = useState<Array<{ id: string; ticket_number: string; source: string | null; customer_data: any; created_at: string; department_id: string | null; service_id: string | null }>>([]);
   const [pendingBusyId, setPendingBusyId] = useState<string | null>(null);
+  const [expandedPendingId, setExpandedPendingId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
   // Main view: 'queue' shows active ticket/idle, 'calendar' shows embedded calendar, 'customers' shows embedded customer list
-  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers'>('queue');
+  const [mainView, setMainView] = useState<'queue' | 'calendar' | 'customers'>('calendar');
   // Track which tabs have been visited — mount once, then keep alive (no flash on revisit)
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set(['queue']));
   // Refresh counters — increment on each tab switch to trigger silent data reload
@@ -1499,7 +1512,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
     return () => { if (typeof off === 'function') off(); };
   }, []);
-  const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string; futureDate?: string; futureTime?: string } | null>(null);
+  const [bookingPrefill, setBookingPrefill] = useState<{ name?: string; phone?: string; notes?: string; wilaya?: string; futureDate?: string; futureTime?: string; _ts?: number } | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState<{ fr: string; ar: string }>({ fr: '', ar: '' });
   const [broadcastLang, setBroadcastLang] = useState<'fr' | 'ar'>('fr');
@@ -1701,6 +1714,20 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
+
+    // Load cached appointments from SQLite FIRST so the calendar is never blank
+    (async () => {
+      try {
+        const raw = await window.qf.cache?.getAppointments?.(session.office_id);
+        if (raw && !cancelled) {
+          const cached = JSON.parse(raw);
+          if (cached?.today?.length) setTodayAppointments(cached.today);
+          if (cached?.upcoming?.length) setUpcomingAppointments(cached.upcoming);
+          if (cached?.stats) setTodayStats(cached.stats);
+        }
+      } catch {}
+    })();
+
     const fetchToday = async (retryCount = 0) => {
       try {
         await ensureAuth();
@@ -1740,9 +1767,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           return;
         }
         const rdvList = apptsRes.data as any[];
+        const stats = { walkins: Math.max(0, (ticketRes.count || 0)), rdv: rdvList.length };
         setTodayAppointments(rdvList);
         setUpcomingAppointments(upcomingRes.data as any[]);
-        setTodayStats({ walkins: Math.max(0, (ticketRes.count || 0)), rdv: rdvList.length });
+        setTodayStats(stats);
+        // Cache to SQLite so data survives auth failures / app restarts
+        try {
+          window.qf.cache?.saveAppointments?.(session.office_id, JSON.stringify({
+            today: rdvList,
+            upcoming: upcomingRes.data,
+            stats,
+            cachedAt: new Date().toISOString(),
+          }));
+        } catch {}
       } catch (e) {
         if (!cancelled) {
           console.warn('[Station] today stats fetch failed', e);
@@ -1772,6 +1809,30 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       if (rdvChannel) getSupabase().then((sb) => sb.removeChannel(rdvChannel));
     };
   }, [session.office_id, storedAuth, officeTimezone]);
+
+  // ── Auth health monitor — detect & recover from broken auth ────
+  // Runs every 2 minutes. If auth is silently broken (expired token,
+  // lost refresh_token), aggressively re-requests from main process
+  // and re-fetches data so the operator never sees blank screens.
+  useEffect(() => {
+    if (!session.office_id) return;
+    const checkAuth = async () => {
+      const ok = await verifyAuthWorks();
+      if (!ok) {
+        console.warn('[Station] Auth health check FAILED — attempting recovery...');
+        const token = await ensureAuth();
+        if (token) {
+          console.info('[Station] Auth recovered — refreshing data');
+          fetchTickets();
+          fetchTodayRef.current();
+        } else {
+          console.error('[Station] Auth recovery FAILED — showing cached data');
+        }
+      }
+    };
+    const iv = setInterval(checkAuth, 120_000); // every 2 minutes
+    return () => clearInterval(iv);
+  }, [session.office_id, fetchTickets]);
 
   // ── Pending approval tickets (realtime + initial fetch) ────────
   useEffect(() => {
@@ -1987,7 +2048,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         } catch { /* non-critical */ }
 
         // Call API to delete from cloud
-        const res = await fetch('https://qflo.net/api/moderate-appointment', {
+        const res = await cloudFetch('https://qflo.net/api/moderate-appointment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({ appointmentId: apptId, action: 'delete' }),
@@ -2072,7 +2133,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       // ── All other actions go through /api/moderate-appointment ──
       const payload: any = { appointmentId: apptId, action };
       if (opts?.reason) payload.reason = opts.reason;
-      const res = await fetch('https://qflo.net/api/moderate-appointment', {
+      const res = await cloudFetch('https://qflo.net/api/moderate-appointment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
@@ -2172,72 +2233,137 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const dateStr = opts?.showDate
       ? new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: 'short', timeZone: tz }).format(new Date(a.scheduled_at))
       : '';
+    const fullDateStr = new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', {
+      weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', timeZone: tz,
+    }).format(new Date(a.scheduled_at));
     const svcName = (a.service_id && names.services?.[a.service_id]) || '';
     const deptName = (a.department_id && names.departments?.[a.department_id]) || '';
     const busy = rdvBusyId === a.id;
+    const expKey = `appt-${a.id}`;
+    const isExpanded = expandedPendingId === expKey;
     return (
       <div key={a.id} style={{
         padding: '6px 8px',
-        background: 'rgba(245,158,11,0.08)',
+        background: isExpanded ? 'rgba(245,158,11,0.14)' : 'rgba(245,158,11,0.08)',
         border: '1px solid rgba(245,158,11,0.35)',
         borderLeft: '3px solid #f59e0b',
         borderRadius: 6,
         opacity: busy ? 0.55 : 1,
-        display: 'flex', alignItems: 'center', gap: 8,
+        cursor: 'pointer',
+        transition: 'background 0.15s',
       }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
-            <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
-              {opts?.showDate ? `${dateStr} · ${timeStr}` : timeStr}
-            </span>
-            <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {a.customer_name || t('(no name)')}
-            </span>
-            {a.customer_phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{a.customer_phone}</span>}
-          </div>
-          {(svcName || deptName || a.wilaya || a.notes) && (
-            <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {svcName && <span>{svcName}</span>}
-              {deptName && <span>· {deptName}</span>}
-              {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span></span>}
-              {a.notes && <span style={{ fontStyle: 'italic' }}>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          onClick={() => setExpandedPendingId(prev => prev === expKey ? null : expKey)}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
+              <span style={{ fontSize: 8, color: 'var(--text3, #94a3b8)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>&#9654;</span>
+              <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)', fontVariantNumeric: 'tabular-nums' }}>
+                {opts?.showDate ? `${dateStr} · ${timeStr}` : timeStr}
+              </span>
+              <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {a.customer_name || t('(no name)')}
+              </span>
+              {!isExpanded && a.customer_phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{a.customer_phone}</span>}
             </div>
-          )}
+            {!isExpanded && (svcName || deptName || a.wilaya || a.notes) && (
+              <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {svcName && <span>{svcName}</span>}
+                {deptName && <span>· {deptName}</span>}
+                {a.wilaya && <span>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span></span>}
+                {a.notes && <span style={{ fontStyle: 'italic' }}>· <span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
+            <button
+              disabled={busy}
+              onClick={() => moderateAppointment(a.id, 'approve')}
+              title={t('Approve')}
+              style={{
+                padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
+                background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                fontSize: 12, fontWeight: 800,
+              }}
+            >✓</button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
+                moderateAppointment(a.id, 'decline');
+              }}
+              title={t('Decline')}
+              style={{
+                padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
+                background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                fontSize: 12, fontWeight: 800,
+              }}
+            >✕</button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 3 }}>
-          <button
-            disabled={busy}
-            onClick={() => moderateAppointment(a.id, 'approve')}
-            title={t('Approve')}
-            style={{
-              padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
-              background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-              fontSize: 12, fontWeight: 800,
-            }}
-          >✓</button>
-          <button
-            disabled={busy}
-            onClick={() => {
-              if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
-              moderateAppointment(a.id, 'decline');
-            }}
-            title={t('Decline')}
-            style={{
-              padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
-              background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-              fontSize: 12, fontWeight: 800,
-            }}
-          >✕</button>
-        </div>
+        {isExpanded && (
+          <div style={{
+            marginTop: 6, paddingTop: 6,
+            borderTop: '1px solid rgba(245,158,11,0.2)',
+            display: 'flex', flexDirection: 'column', gap: 4,
+            fontSize: 11, color: 'var(--text2, #cbd5e1)',
+          }}>
+            {a.customer_name && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Name')}</span>
+                <span dir="auto" style={{ fontWeight: 600, unicodeBidi: 'isolate' }}>{a.customer_name}</span>
+              </div>
+            )}
+            {a.customer_phone && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Phone')}</span>
+                <span style={{ direction: 'ltr', unicodeBidi: 'embed' }}>{a.customer_phone}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Date')}</span>
+              <span>{fullDateStr}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Time')}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>
+            </div>
+            {svcName && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Service')}</span>
+                <span>{svcName}</span>
+              </div>
+            )}
+            {deptName && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Department')}</span>
+                <span>{deptName}</span>
+              </div>
+            )}
+            {a.wilaya && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Wilaya')}</span>
+                <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(a.wilaya)}</span>
+              </div>
+            )}
+            {a.notes && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Notes')}</span>
+                <span dir="auto" style={{ fontStyle: 'italic', unicodeBidi: 'isolate', wordBreak: 'break-word' }}>{a.notes}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
-  }, [officeTimezone, locale, names.services, names.departments, rdvBusyId, moderateAppointment, t]);
+  }, [officeTimezone, locale, names.services, names.departments, rdvBusyId, expandedPendingId, moderateAppointment, t]);
 
   // Moderate a pending ticket via the web API (approve or decline)
   const moderatePendingTicket = useCallback(async (ticketId: string, action: 'approve' | 'decline', reason?: string) => {
     setPendingBusyId(ticketId);
     try {
-      const res = await fetch('https://qflo.net/api/moderate-ticket', {
+      const res = await cloudFetch('https://qflo.net/api/moderate-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticketId, action, reason }),
@@ -2638,7 +2764,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       console.log('[broadcast] Sending to', CLOUD_URL, 'org:', session.organization_id);
       const accessToken = await ensureAuth();
       console.log('[broadcast] Token present:', !!accessToken, 'len:', accessToken.length);
-      const res = await fetch(`${CLOUD_URL}/api/broadcast`, {
+      const res = await cloudFetch(`${CLOUD_URL}/api/broadcast`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3218,7 +3344,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 timezone={officeTimezone}
                 onClose={() => setMainView('queue')}
                 onBookCustomer={(c) => {
-                  setBookingPrefill(c);
+                  setBookingPrefill({ ...c, _ts: Date.now() });
                   setMainView('queue');
                   setShowBookingModal(true);
                 }}
@@ -3695,7 +3821,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             timezone={officeTimezone}
             onClose={() => { setShowCustomersModal(false); setCustomerPhoneToOpen(undefined); }}
             onBookCustomer={(c) => {
-              setBookingPrefill(c);
+              setBookingPrefill({ ...c, _ts: Date.now() });
               setShowCustomersModal(false);
               setCustomerPhoneToOpen(undefined);
               setShowBookingModal(true);
@@ -4022,60 +4148,137 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   const busy = pendingBusyId === p.id;
                   const waitedMin = Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000);
                   const sourceLabel = p.source === 'whatsapp' ? 'WhatsApp' : p.source === 'messenger' ? 'Messenger' : p.source === 'kiosk' ? t('Kiosk') : p.source === 'mobile_app' ? t('Mobile App') : p.source === 'qr_code' ? t('QR Code') : (p.source || '');
+                  const expKey = `ticket-${p.id}`;
+                  const isExpanded = expandedPendingId === expKey;
+                  const createdStr = new Intl.DateTimeFormat(locale === 'ar' ? 'ar' : locale === 'en' ? 'en-GB' : 'fr-FR', {
+                    hour: '2-digit', minute: '2-digit', hour12: false,
+                    day: '2-digit', month: 'short',
+                  }).format(new Date(p.created_at));
                   return (
                     <div
                       key={p.id}
                       style={{
                         padding: '6px 8px',
-                        background: 'rgba(245,158,11,0.08)',
+                        background: isExpanded ? 'rgba(245,158,11,0.14)' : 'rgba(245,158,11,0.08)',
                         border: '1px solid rgba(245,158,11,0.35)',
                         borderLeft: '3px solid #f59e0b',
                         borderRadius: 6,
                         opacity: busy ? 0.55 : 1,
-                        display: 'flex', alignItems: 'center', gap: 8,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s',
                       }}
                     >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
-                          <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>{p.ticket_number || '—'}</span>
-                          <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {cd.name || t('(no name)')}
-                          </span>
-                          {cd.phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{cd.phone}</span>}
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                        onClick={() => setExpandedPendingId(prev => prev === expKey ? null : expKey)}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: 1.2 }}>
+                            <span style={{ fontSize: 8, color: 'var(--text3, #94a3b8)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>&#9654;</span>
+                            <span style={{ fontWeight: 800, color: 'var(--text, #f1f5f9)' }}>{p.ticket_number || '—'}</span>
+                            <span style={{ fontWeight: 600, color: 'var(--text2, #cbd5e1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {cd.name || t('(no name)')}
+                            </span>
+                            {!isExpanded && cd.phone && <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, direction: 'ltr', unicodeBidi: 'embed' }}>{cd.phone}</span>}
+                          </div>
+                          {!isExpanded && (
+                            <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span style={{ color: '#f59e0b', fontWeight: 700 }}>{waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}</span>
+                              {sourceLabel && <span>· {sourceLabel}</span>}
+                              {svcName && <span>· {svcName}</span>}
+                              {cd.wilaya && <span>· 📍 {normalizeWilayaDisplay(cd.wilaya)}</span>}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')}</span>
-                          {sourceLabel && <span>· {sourceLabel}</span>}
-                          {svcName && <span>· {svcName}</span>}
-                          {cd.wilaya && <span>· 📍 {normalizeWilayaDisplay(cd.wilaya)}</span>}
+                        <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
+                          <button
+                            disabled={busy}
+                            onClick={() => moderatePendingTicket(p.id, 'approve')}
+                            title={t('Approve')}
+                            style={{
+                              padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
+                              background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 12, fontWeight: 800,
+                            }}
+                          >✓</button>
+                          <button
+                            disabled={busy}
+                            onClick={() => {
+                              const reason = window.prompt(t('Decline this ticket? The customer will be notified.\n\nReason (optional):'), '');
+                              if (reason === null) return;
+                              moderatePendingTicket(p.id, 'decline', reason.trim() || undefined);
+                            }}
+                            title={t('Decline')}
+                            style={{
+                              padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
+                              background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
+                              fontSize: 12, fontWeight: 800,
+                            }}
+                          >✕</button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 3 }}>
-                        <button
-                          disabled={busy}
-                          onClick={() => moderatePendingTicket(p.id, 'approve')}
-                          title={t('Approve')}
-                          style={{
-                            padding: '4px 8px', borderRadius: 5, border: '1px solid #22c55e60',
-                            background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 800,
-                          }}
-                        >✓</button>
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            const reason = window.prompt(t('Decline this ticket? The customer will be notified.\n\nReason (optional):'), '');
-                            if (reason === null) return;
-                            moderatePendingTicket(p.id, 'decline', reason.trim() || undefined);
-                          }}
-                          title={t('Decline')}
-                          style={{
-                            padding: '4px 8px', borderRadius: 5, border: '1px solid #ef444460',
-                            background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-                            fontSize: 12, fontWeight: 800,
-                          }}
-                        >✕</button>
-                      </div>
+                      {isExpanded && (
+                        <div style={{
+                          marginTop: 6, paddingTop: 6,
+                          borderTop: '1px solid rgba(245,158,11,0.2)',
+                          display: 'flex', flexDirection: 'column', gap: 4,
+                          fontSize: 11, color: 'var(--text2, #cbd5e1)',
+                        }}>
+                          {cd.name && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Name')}</span>
+                              <span dir="auto" style={{ fontWeight: 600, unicodeBidi: 'isolate' }}>{cd.name}</span>
+                            </div>
+                          )}
+                          {cd.phone && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Phone')}</span>
+                              <span style={{ direction: 'ltr', unicodeBidi: 'embed' }}>{cd.phone}</span>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Created')}</span>
+                            <span>{createdStr}</span>
+                            <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: 10 }}>({waitedMin > 0 ? t('{n}m ago', { n: waitedMin }) : t('now')})</span>
+                          </div>
+                          {sourceLabel && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Source')}</span>
+                              <span>{sourceLabel}</span>
+                            </div>
+                          )}
+                          {svcName && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Service')}</span>
+                              <span>{svcName}</span>
+                            </div>
+                          )}
+                          {deptName && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Department')}</span>
+                              <span>{deptName}</span>
+                            </div>
+                          )}
+                          {cd.wilaya && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Wilaya')}</span>
+                              <span dir="auto" style={{ unicodeBidi: 'isolate' }}>📍 {normalizeWilayaDisplay(cd.wilaya)}</span>
+                            </div>
+                          )}
+                          {cd.notes && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Notes')}</span>
+                              <span dir="auto" style={{ fontStyle: 'italic', unicodeBidi: 'isolate', wordBreak: 'break-word' }}>{cd.notes}</span>
+                            </div>
+                          )}
+                          {cd.email && (
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text3, #94a3b8)', fontSize: 10, minWidth: 55 }}>{t('Email')}</span>
+                              <span>{cd.email}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

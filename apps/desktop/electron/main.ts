@@ -1293,25 +1293,43 @@ function setupIPC() {
     notifyStationClients({ type: 'session_cleared' });
   });
 
+  // ── Appointment cache (survives auth failures) ───────────────
+  // Stores last-known appointment data in SQLite so the Station never
+  // shows a blank calendar just because a token refresh failed.
+  ipcMain.handle('cache:save-appointments', (_e, officeId: string, data: string) => {
+    try {
+      db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES (?, ?)").run(`appt_cache_${officeId}`, data);
+      return { ok: true };
+    } catch { return { ok: false }; }
+  });
+
+  ipcMain.handle('cache:get-appointments', (_e, officeId: string) => {
+    try {
+      const row = db.prepare("SELECT value FROM session WHERE key = ?").get(`appt_cache_${officeId}`) as any;
+      return row?.value || null;
+    } catch { return null; }
+  });
+
   // ── Auth token provider (single source of truth) ──────────────
   // Renderer asks main process for a valid token instead of managing
   // its own refresh logic. This eliminates the dual-client token drift.
   ipcMain.handle('auth:get-token', async () => {
     try {
+      // Always read refresh_token from DB so renderer can auto-refresh
+      const sdb = getDB();
+      const row = sdb.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
+      const session = row ? JSON.parse(row.value) : null;
+      const refreshToken = session?.refresh_token || '';
+
       if (syncEngine) {
         const token = await syncEngine.ensureFreshToken();
         if (token && token !== CONFIG.SUPABASE_ANON_KEY) {
-          return { token, ok: true };
+          return { token, refresh_token: refreshToken, ok: true };
         }
       }
-      // Fallback: read from DB
-      const sdb = getDB();
-      const row = sdb.prepare("SELECT value FROM session WHERE key = 'current'").get() as any;
-      if (row) {
-        const session = JSON.parse(row.value);
-        if (session?.access_token) {
-          return { token: session.access_token, ok: true };
-        }
+      // Fallback: use stored access_token
+      if (session?.access_token) {
+        return { token: session.access_token, refresh_token: refreshToken, ok: true };
       }
       return { token: '', ok: false, error: 'No valid auth token' };
     } catch (err: any) {
@@ -2040,10 +2058,11 @@ app.whenReady().then(async () => {
       // Surface sync/reconciliation errors to the Station UI
       mainWindow?.webContents.send('sync:error', error);
     },
-    (token) => {
+    (token, refreshToken) => {
       // Token was refreshed by sync engine — broadcast to renderer
       // so its Supabase client gets the new token immediately
-      mainWindow?.webContents.send('auth:token-refreshed', token);
+      // CRITICAL: send refresh_token too so renderer can auto-refresh on its own
+      mainWindow?.webContents.send('auth:token-refreshed', token, refreshToken);
     },
     async () => {
       // Read stored credentials from encrypted safeStorage (OS keychain)
@@ -2096,9 +2115,15 @@ app.whenReady().then(async () => {
         const data = await res.json();
         if (data.access_token) {
           const updated = { ...session, access_token: data.access_token, refresh_token: data.refresh_token ?? session.refresh_token };
-          sdb.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+          // Use UPDATE (not INSERT OR REPLACE) to preserve station_token column for kiosk auth
+          sdb.prepare("UPDATE session SET value = ? WHERE key = 'current'").run(JSON.stringify(updated));
           // Push fresh token to renderer so its Supabase client + data fetches work immediately
-          mainWindow?.webContents.send('auth:token-refreshed', data.access_token);
+          // CRITICAL: include refresh_token so renderer can auto-refresh on its own
+          mainWindow?.webContents.send('auth:token-refreshed', data.access_token, updated.refresh_token);
+          // Safety net: push token again after 3s in case renderer wasn't ready for the first one
+          setTimeout(() => {
+            mainWindow?.webContents.send('auth:token-refreshed', data.access_token, updated.refresh_token);
+          }, 3000);
           logger.info('startup', 'Startup token validation passed — session refreshed + renderer notified');
         }
       }

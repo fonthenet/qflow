@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 /**
- * Custom DatePicker — replaces native <input type="date"> with a themed
- * calendar dropdown that matches the dark/light theme via CSS variables.
+ * Custom DatePicker — replaces native <input type="date"> with a compact themed
+ * calendar dropdown. Supports month/year quick-select for date-of-birth use cases.
  *
  * Props mirror a standard date input: value, onChange, min, max, disabled, style.
  */
@@ -22,13 +22,13 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
 function firstDayOfWeek(year: number, month: number): number {
-  // Use UTC noon to avoid local timezone shifting the day
   const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const d = new Date(dateKey + 'T12:00:00Z');
   const dow = d.getUTCDay(); // 0=Sun
@@ -43,14 +43,19 @@ function toKey(y: number, m: number, d: number): string {
   return `${y}-${pad(m + 1)}-${pad(d)}`;
 }
 
+type ViewMode = 'days' | 'months' | 'years';
+
 export default function DatePicker({ value, onChange, min, max, disabled, style, placeholder }: DatePickerProps) {
   const [open, setOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('days');
   const ref = useRef<HTMLDivElement>(null);
+  const yearGridRef = useRef<HTMLDivElement>(null);
 
-  // Parse current value or default to today's month
   const parsed = value ? new Date(value + 'T00:00:00') : null;
   const [viewYear, setViewYear] = useState(parsed?.getFullYear() ?? new Date().getFullYear());
   const [viewMonth, setViewMonth] = useState(parsed?.getMonth() ?? new Date().getMonth());
+  // Year range page (shows 12 years at a time)
+  const [yearPage, setYearPage] = useState(Math.floor((parsed?.getFullYear() ?? new Date().getFullYear()) / 12) * 12);
 
   // Sync view when value changes externally
   useEffect(() => {
@@ -59,9 +64,15 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
       if (!isNaN(d.getTime())) {
         setViewYear(d.getFullYear());
         setViewMonth(d.getMonth());
+        setYearPage(Math.floor(d.getFullYear() / 12) * 12);
       }
     }
   }, [value]);
+
+  // Reset to day view when opening
+  useEffect(() => {
+    if (open) setViewMode('days');
+  }, [open]);
 
   // Close on outside click
   useEffect(() => {
@@ -76,7 +87,7 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
   // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); e.stopPropagation(); } };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [open]);
@@ -107,13 +118,11 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
   const dim = daysInMonth(viewYear, viewMonth);
   const startDay = firstDayOfWeek(viewYear, viewMonth);
 
-  // Build grid cells
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDay; i++) cells.push(null);
   for (let d = 1; d <= dim; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  // Display value
   const displayValue = value
     ? new Date(value + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
     : '';
@@ -125,6 +134,11 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
     opacity: disabled ? 0.5 : 1, position: 'relative' as const, fontFamily: 'inherit',
     ...style,
   };
+
+  // Year grid for year picker
+  const yearStart = yearPage;
+  const yearEnd = yearPage + 11;
+  const currentYear = today.getFullYear();
 
   return (
     <div ref={ref} style={{ position: 'relative', width: style?.width ?? '100%' }}>
@@ -145,73 +159,163 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
         }}>📅</span>
       </div>
 
-      {/* Dropdown Calendar */}
+      {/* Dropdown */}
       {open && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 9999,
-          width: 280, padding: 12,
+          width: 220, padding: 8,
           background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
-          borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         }}>
-          {/* Month/Year nav */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <button onClick={prevMonth} type="button" style={navBtn}>‹</button>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>
-              {MONTHS[viewMonth]} {viewYear}
-            </span>
-            <button onClick={nextMonth} type="button" style={navBtn}>›</button>
+          {/* ── Header: nav arrows + clickable month/year ── */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <button
+              onClick={() => {
+                if (viewMode === 'days') prevMonth();
+                else if (viewMode === 'years') setYearPage(p => p - 12);
+                else { setViewYear(y => y - 1); }
+              }}
+              type="button" style={navBtn}
+            >‹</button>
+
+            {viewMode === 'days' && (
+              <button
+                type="button"
+                onClick={() => { setViewMode('months'); }}
+                style={{ ...headerBtn }}
+              >
+                {MONTHS_SHORT[viewMonth]} {viewYear}
+              </button>
+            )}
+            {viewMode === 'months' && (
+              <button
+                type="button"
+                onClick={() => { setYearPage(Math.floor(viewYear / 12) * 12); setViewMode('years'); }}
+                style={{ ...headerBtn }}
+              >
+                {viewYear}
+              </button>
+            )}
+            {viewMode === 'years' && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>
+                {yearStart} — {yearEnd}
+              </span>
+            )}
+
+            <button
+              onClick={() => {
+                if (viewMode === 'days') nextMonth();
+                else if (viewMode === 'years') setYearPage(p => p + 12);
+                else { setViewYear(y => y + 1); }
+              }}
+              type="button" style={navBtn}
+            >›</button>
           </div>
 
-          {/* Day headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
-            {DAYS_SHORT.map(d => (
-              <div key={d} style={{
-                textAlign: 'center', fontSize: 10, fontWeight: 700,
-                color: 'var(--text3, #64748b)', padding: '2px 0', textTransform: 'uppercase',
-              }}>{d}</div>
-            ))}
-          </div>
+          {/* ── DAYS view ── */}
+          {viewMode === 'days' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
+                {DAYS_SHORT.map(d => (
+                  <div key={d} style={{
+                    textAlign: 'center', fontSize: 9, fontWeight: 700,
+                    color: 'var(--text3, #64748b)', padding: '1px 0', textTransform: 'uppercase',
+                  }}>{d}</div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
+                {cells.map((day, i) => {
+                  if (day === null) return <div key={`e${i}`} />;
+                  const key = toKey(viewYear, viewMonth, day);
+                  const isToday = key === todayKey;
+                  const isSelected = key === selectedKey;
+                  const isOff = isDisabledDate(key);
+                  return (
+                    <button
+                      key={key} type="button" disabled={isOff}
+                      onClick={() => selectDay(day)}
+                      style={{
+                        width: '100%', height: 26, border: 'none', borderRadius: 4,
+                        fontSize: 11, fontWeight: isSelected || isToday ? 700 : 400,
+                        cursor: isOff ? 'not-allowed' : 'pointer',
+                        background: isSelected ? '#3b82f6' : isToday ? 'rgba(59,130,246,0.15)' : 'transparent',
+                        color: isOff ? 'var(--text3, #64748b)' : isSelected ? '#fff' : 'var(--text, #f1f5f9)',
+                        opacity: isOff ? 0.4 : 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'inherit', transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!isSelected && !isOff) (e.target as HTMLElement).style.background = 'rgba(59,130,246,0.1)';
+                      }}
+                      onMouseLeave={e => {
+                        if (!isSelected) (e.target as HTMLElement).style.background = isToday ? 'rgba(59,130,246,0.15)' : 'transparent';
+                      }}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-          {/* Day cells */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
-            {cells.map((day, i) => {
-              if (day === null) return <div key={`e${i}`} />;
-              const key = toKey(viewYear, viewMonth, day);
-              const isToday = key === todayKey;
-              const isSelected = key === selectedKey;
-              const isOff = isDisabledDate(key);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={isOff}
-                  onClick={() => selectDay(day)}
-                  style={{
-                    width: '100%', aspectRatio: '1', border: 'none', borderRadius: 6,
-                    fontSize: 12, fontWeight: isSelected || isToday ? 700 : 400,
-                    cursor: isOff ? 'not-allowed' : 'pointer',
-                    background: isSelected ? '#3b82f6' : isToday ? 'rgba(59,130,246,0.15)' : 'transparent',
-                    color: isOff ? 'var(--text3, #64748b)' : isSelected ? '#fff' : 'var(--text, #f1f5f9)',
-                    opacity: isOff ? 0.4 : 1,
-                    transition: 'background 0.1s',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'inherit',
-                  }}
-                  onMouseEnter={e => {
-                    if (!isSelected && !isOff) (e.target as HTMLElement).style.background = 'rgba(59,130,246,0.1)';
-                  }}
-                  onMouseLeave={e => {
-                    if (!isSelected) (e.target as HTMLElement).style.background = isToday ? 'rgba(59,130,246,0.15)' : 'transparent';
-                  }}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
+          {/* ── MONTHS view ── */}
+          {viewMode === 'months' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '4px 0' }}>
+              {MONTHS_SHORT.map((m, idx) => {
+                const isCurrent = idx === viewMonth && viewYear === (parsed?.getFullYear() ?? -1);
+                return (
+                  <button
+                    key={m} type="button"
+                    onClick={() => { setViewMonth(idx); setViewMode('days'); }}
+                    style={{
+                      padding: '6px 2px', border: 'none', borderRadius: 4,
+                      fontSize: 11, fontWeight: isCurrent ? 700 : 500,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: isCurrent ? '#3b82f6' : 'transparent',
+                      color: isCurrent ? '#fff' : 'var(--text, #f1f5f9)',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { if (!isCurrent) (e.target as HTMLElement).style.background = 'rgba(59,130,246,0.1)'; }}
+                    onMouseLeave={e => { if (!isCurrent) (e.target as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Today shortcut */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border, #475569)' }}>
+          {/* ── YEARS view ── */}
+          {viewMode === 'years' && (
+            <div ref={yearGridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '4px 0' }}>
+              {Array.from({ length: 12 }, (_, i) => yearStart + i).map(y => {
+                const isCurrent = y === viewYear;
+                const isThisYear = y === currentYear;
+                return (
+                  <button
+                    key={y} type="button"
+                    onClick={() => { setViewYear(y); setViewMode('months'); }}
+                    style={{
+                      padding: '6px 2px', border: 'none', borderRadius: 4,
+                      fontSize: 11, fontWeight: isCurrent || isThisYear ? 700 : 500,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: isCurrent ? '#3b82f6' : isThisYear ? 'rgba(59,130,246,0.15)' : 'transparent',
+                      color: isCurrent ? '#fff' : 'var(--text, #f1f5f9)',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { if (!isCurrent) (e.target as HTMLElement).style.background = 'rgba(59,130,246,0.1)'; }}
+                    onMouseLeave={e => { if (!isCurrent) (e.target as HTMLElement).style.background = isThisYear ? 'rgba(59,130,246,0.15)' : 'transparent'; }}
+                  >
+                    {y}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Footer: Clear / Today ── */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border, #475569)' }}>
             <button
               type="button"
               onClick={() => { onChange({ target: { value: '' } }); setOpen(false); }}
@@ -235,13 +339,19 @@ export default function DatePicker({ value, onChange, min, max, disabled, style,
 }
 
 const navBtn: React.CSSProperties = {
-  width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border, #475569)',
-  background: 'transparent', color: 'var(--text, #f1f5f9)', fontSize: 16, fontWeight: 700,
+  width: 24, height: 24, borderRadius: 4, border: '1px solid var(--border, #475569)',
+  background: 'transparent', color: 'var(--text, #f1f5f9)', fontSize: 14, fontWeight: 700,
   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontFamily: 'inherit',
 };
 
+const headerBtn: React.CSSProperties = {
+  background: 'none', border: 'none', fontSize: 12, fontWeight: 700,
+  color: 'var(--text, #f1f5f9)', cursor: 'pointer', padding: '2px 8px',
+  borderRadius: 4, fontFamily: 'inherit', transition: 'background 0.1s',
+};
+
 const linkBtn: React.CSSProperties = {
-  background: 'none', border: 'none', fontSize: 11, fontWeight: 600,
+  background: 'none', border: 'none', fontSize: 10, fontWeight: 600,
   cursor: 'pointer', padding: '2px 6px', borderRadius: 4, fontFamily: 'inherit',
 };

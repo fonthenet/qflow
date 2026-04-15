@@ -35,6 +35,25 @@ export default async function DashboardLayout({
     .single();
 
   if (!staff) redirect('/account-not-linked');
+
+  // Auto-assign admin to first office if they have no office yet
+  if (staff.role === 'admin' && !staff.office_id) {
+    const { data: firstOffice } = await supabase
+      .from('offices')
+      .select('id')
+      .eq('organization_id', staff.organization_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+    if (firstOffice) {
+      await supabase
+        .from('staff')
+        .update({ office_id: firstOffice.id })
+        .eq('id', staff.id);
+      staff.office_id = firstOffice.id;
+    }
+  }
+
   const { count: officeCount } = await supabase
     .from('offices')
     .select('*', { count: 'exact', head: true })

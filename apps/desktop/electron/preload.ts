@@ -29,6 +29,14 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:update-desk', deskId, updates),
   },
 
+  // Local cache (survives auth failures — prevents data disappearance)
+  cache: {
+    saveAppointments: (officeId: string, data: string) =>
+      ipcRenderer.invoke('cache:save-appointments', officeId, data),
+    getAppointments: (officeId: string) =>
+      ipcRenderer.invoke('cache:get-appointments', officeId),
+  },
+
   // Sync
   sync: {
     getStatus: () => ipcRenderer.invoke('sync:status'),
@@ -117,8 +125,8 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.on('auth:session-expired', handler);
       return () => ipcRenderer.removeListener('auth:session-expired', handler);
     },
-    onTokenRefreshed: (callback: (token: string) => void) => {
-      const handler = (_: any, token: string) => callback(token);
+    onTokenRefreshed: (callback: (token: string, refreshToken?: string) => void) => {
+      const handler = (_: any, token: string, refreshToken?: string) => callback(token, refreshToken);
       ipcRenderer.on('auth:token-refreshed', handler);
       return () => ipcRenderer.removeListener('auth:token-refreshed', handler);
     },

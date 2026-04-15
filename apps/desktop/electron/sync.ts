@@ -9,7 +9,7 @@ type ProgressCallback = (pendingCount: number) => void;
 type AuthErrorCallback = () => void;
 type DataPulledCallback = () => void;
 type TicketErrorCallback = (error: { message: string; ticketNumber?: string; type: string }) => void;
-type TokenRefreshedCallback = (token: string) => void;
+type TokenRefreshedCallback = (token: string, refreshToken: string) => void;
 /** Returns { email, password } or null if no stored credentials */
 type GetStoredCredsCallback = () => Promise<{ email: string; password: string } | null>;
 
@@ -552,7 +552,8 @@ export class SyncEngine {
         access_token: data.access_token,
         refresh_token: data.refresh_token ?? session.refresh_token,
       };
-      this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+      // Use UPDATE (not INSERT OR REPLACE) to preserve station_token column for kiosk auth
+      this.db.prepare("UPDATE session SET value = ? WHERE key = 'current'").run(JSON.stringify(updated));
 
       this.cachedAccessToken = data.access_token;
       this.lastTokenRefreshAt = Date.now();
@@ -560,7 +561,7 @@ export class SyncEngine {
       this.firstRefreshFailureAt = 0;
 
       logger.info('sync.token', 'Access token refreshed successfully');
-      try { this.onTokenRefreshed(data.access_token); } catch {}
+      try { this.onTokenRefreshed(data.access_token, updated.refresh_token); } catch {}
       return data.access_token;
     } catch (err: any) {
       // Network errors (timeout, DNS, etc.) — don't count toward auth failures
@@ -633,7 +634,8 @@ export class SyncEngine {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       };
-      this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+      // Use UPDATE (not INSERT OR REPLACE) to preserve station_token column for kiosk auth
+      this.db.prepare("UPDATE session SET value = ? WHERE key = 'current'").run(JSON.stringify(updated));
 
       this.cachedAccessToken = data.access_token;
       this.lastTokenRefreshAt = Date.now();
@@ -641,7 +643,7 @@ export class SyncEngine {
       this.firstRefreshFailureAt = 0;
 
       logger.info('sync.reauth', 'Silent re-authentication successful — session restored');
-      try { this.onTokenRefreshed(data.access_token); } catch {}
+      try { this.onTokenRefreshed(data.access_token, data.refresh_token); } catch {}
       return data.access_token;
     } catch (err: any) {
       logger.warn('sync.reauth', 'Silent re-auth error', { error: err?.message });
