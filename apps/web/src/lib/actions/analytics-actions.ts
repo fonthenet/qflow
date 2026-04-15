@@ -221,15 +221,20 @@ function getHourInTz(dateStr: string, tz?: string): number {
   } catch { return new Date(dateStr).getUTCHours(); }
 }
 
-/** Convert a UTC date to day-of-week (0=Sunday) in the given timezone */
+/** Convert a UTC date to day-of-week (0=Sunday) in the given timezone.
+ *  Uses dateKey approach for deterministic day resolution. */
 function getDayInTz(dateStr: string, tz?: string): number {
-  if (!tz) return new Date(dateStr).getUTCDay();
   try {
     const d = new Date(dateStr);
-    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: tz }).format(d);
-    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    return map[weekday] ?? d.getUTCDay();
-  } catch { return new Date(dateStr).getUTCDay(); }
+    // Get YYYY-MM-DD in office timezone, then derive day from UTC noon
+    const dateKey = tz
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)
+      : d.toISOString().split('T')[0];
+    const noon = new Date(dateKey + 'T12:00:00Z');
+    return noon.getUTCDay(); // 0=Sunday
+  } catch {
+    return new Date(dateStr).getUTCDay();
+  }
 }
 
 // ─── Date range helpers ────────────────────────────────────────────────────

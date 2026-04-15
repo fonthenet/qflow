@@ -401,6 +401,57 @@ export async function cancelAppointment(appointmentId: string) {
 }
 
 /**
+ * Permanently delete an appointment.
+ * Hard-deletes from the database — the slot becomes immediately available.
+ * Also deletes any linked ticket that hasn't been served yet.
+ * No customer notification is sent.
+ */
+export async function deleteAppointment(appointmentId: string) {
+  const supabase = createAdminClient();
+
+  // Fetch the appointment to check it exists
+  const { data: appt, error: fetchErr } = await (supabase as any)
+    .from('appointments')
+    .select('id, status, ticket_id')
+    .eq('id', appointmentId)
+    .single();
+
+  if (fetchErr || !appt) {
+    return { error: 'Appointment not found' };
+  }
+
+  // If there's a linked ticket that hasn't been served, delete it too
+  if (appt.ticket_id) {
+    await (supabase as any)
+      .from('tickets')
+      .delete()
+      .eq('id', appt.ticket_id)
+      .not('status', 'eq', 'served');
+  }
+
+  // Also clean up any tickets that reference this appointment by appointment_id
+  await (supabase as any)
+    .from('tickets')
+    .delete()
+    .eq('appointment_id', appointmentId)
+    .not('status', 'eq', 'served');
+
+  // Hard-delete the appointment
+  const { error: deleteErr } = await (supabase as any)
+    .from('appointments')
+    .delete()
+    .eq('id', appointmentId);
+
+  if (deleteErr) {
+    return { error: 'Failed to delete appointment: ' + deleteErr.message };
+  }
+
+  revalidatePath('/desk');
+  revalidatePath('/admin/bookings');
+  return { data: { id: appointmentId, deleted: true } };
+}
+
+/**
  * Cancel an entire recurring series.
  * Cancels the parent appointment and all future child instances.
  * Past instances (already happened) are left alone.

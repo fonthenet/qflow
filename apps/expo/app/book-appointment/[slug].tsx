@@ -543,7 +543,11 @@ function MiniCalendar({
   const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+  // Use UTC noon to avoid local timezone shifting the day
+  const firstDayOfWeek = (() => {
+    const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-01`;
+    return new Date(dateKey + 'T12:00:00Z').getUTCDay(); // 0=Sun
+  })();
 
   const monthLabel = new Date(viewYear, viewMonth).toLocaleDateString('en-US', {
     month: 'long',

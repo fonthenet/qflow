@@ -99,10 +99,13 @@ function isSlotBlocked(
 }
 
 /**
- * Get the day-of-week name from a date string.
+ * Get the day-of-week name from a YYYY-MM-DD date string.
+ * Uses UTC noon to avoid timezone ambiguity — deterministic and safe.
  */
 function getDayOfWeek(date: string): string {
-  return new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const d = new Date(date + 'T12:00:00Z');
+  return DAYS[d.getUTCDay()];
 }
 
 // ── Main generator ───────────────────────────────────────────────────

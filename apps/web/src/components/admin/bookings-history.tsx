@@ -2,11 +2,11 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CalendarClock, Clock3, Ticket, Users, Repeat, X } from 'lucide-react';
+import { CalendarClock, Clock3, Ticket, Users, Repeat, X, Trash2 } from 'lucide-react';
 import { buildBookingCheckInPath, buildBookingPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
 import { PublicLinkActions } from './public-link-actions';
-import { cancelAppointment, cancelRecurringSeries } from '@/lib/actions/appointment-actions';
+import { cancelAppointment, cancelRecurringSeries, deleteAppointment } from '@/lib/actions/appointment-actions';
 
 interface Office {
   id: string;
@@ -129,6 +129,22 @@ export function BookingsHistory({
       }
     });
   }
+  const [localDeleted, setLocalDeleted] = useState<Set<string>>(new Set());
+
+  async function handleDeleteOne(id: string, name: string) {
+    if (!await styledConfirm(t('Permanently delete appointment for {name}? This cannot be undone.', { name }), { variant: 'danger', confirmLabel: t('Delete') })) return;
+    setCancellingId(id);
+    startTransition(async () => {
+      const result = await deleteAppointment(id);
+      setCancellingId(null);
+      if (result.error) {
+        await styledAlert(result.error);
+      } else {
+        setLocalDeleted((prev) => new Set(prev).add(id));
+      }
+    });
+  }
+
   const totalAppointments = appointments.length;
   const pendingAppointments = appointments.filter((entry) =>
     ['pending', 'confirmed'].includes(entry.status ?? 'pending')
@@ -295,7 +311,7 @@ export function BookingsHistory({
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {allAppointmentRows.slice(0, 50).map((appointment) => (
+            {allAppointmentRows.filter(a => !localDeleted.has(a.id)).slice(0, 50).map((appointment) => (
               <div key={appointment.id} className="flex items-center gap-4 px-6 py-3.5">
                 {/* Customer info */}
                 <div className="min-w-0 flex-1">
@@ -336,29 +352,39 @@ export function BookingsHistory({
                   </div>
                 ) : null}
 
-                {/* Cancel actions */}
-                {!localCancelled.has(appointment.id) &&
-                appointment.status !== 'cancelled' &&
-                appointment.status !== 'checked_in' ? (
+                {/* Cancel / Delete actions */}
+                {!localCancelled.has(appointment.id) && !localDeleted.has(appointment.id) ? (
                   <div className="shrink-0 flex items-center gap-1">
+                    {appointment.status !== 'cancelled' && appointment.status !== 'checked_in' && (
+                      <>
+                        <button
+                          onClick={() => handleCancelOne(appointment.id)}
+                          disabled={pending && cancellingId === appointment.id}
+                          title={t('Cancel appointment')}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                        {appointment.recurrence_parent_id ? (
+                          <button
+                            onClick={() => handleCancelSeries(appointment.id)}
+                            disabled={pending && cancellingId === appointment.id}
+                            title={t('Cancel entire series')}
+                            className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                          >
+                            <Repeat className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
+                      </>
+                    )}
                     <button
-                      onClick={() => handleCancelOne(appointment.id)}
+                      onClick={() => handleDeleteOne(appointment.id, appointment.customer_name)}
                       disabled={pending && cancellingId === appointment.id}
-                      title={t('Cancel appointment')}
-                      className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      title={t('Delete appointment permanently')}
+                      className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50 opacity-60 hover:opacity-100"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
-                    {appointment.recurrence_parent_id ? (
-                      <button
-                        onClick={() => handleCancelSeries(appointment.id)}
-                        disabled={pending && cancellingId === appointment.id}
-                        title={t('Cancel entire series')}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                      >
-                        <Repeat className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
                   </div>
                 ) : null}
               </div>

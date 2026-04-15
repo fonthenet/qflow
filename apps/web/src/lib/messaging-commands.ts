@@ -2389,9 +2389,13 @@ function checkBusinessHours(
 ) {
   const tz = ((timezone ?? '').trim() || 'Africa/Algiers').replace('Europe/Algiers', 'Africa/Algiers');
   const now = new Date();
+  // Day resolution: dateKey → day name (timezone-safe, no Date.getDay())
   let day: string, time: string;
   try {
-    day = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: tz }).format(now).toLowerCase();
+    // Get YYYY-MM-DD in office timezone, then derive day name deterministically
+    const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+    const d = new Date(dateKey + 'T12:00:00Z');
+    day = DAYS_OF_WEEK_MSG[d.getUTCDay()];
     const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }).formatToParts(now);
     const h = parts.find(p => p.type === 'hour')?.value ?? '00';
     const m = parts.find(p => p.type === 'minute')?.value ?? '00';

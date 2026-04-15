@@ -136,17 +136,36 @@ export function KioskView({
 
   const themeColor = ks.themeColor || '#5b8a72';
 
-  // ── Business hours (matches local kiosk) ──
+  // ── Business hours (timezone-safe using dateKey) ──
   const operatingHours = (office.operating_hours as Record<string, { open: string; close: string }> | null) ?? null;
-  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  const currentDayName = dayNames[new Date().getDay()];
+  const officeTimezone = ((office.timezone ?? '') as string).trim().replace('Europe/Algiers', 'Africa/Algiers') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const currentDayName = (() => {
+    try {
+      const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: officeTimezone }).format(new Date());
+      const d = new Date(dateKey + 'T12:00:00Z');
+      const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+      return DAYS[d.getUTCDay()];
+    } catch {
+      const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+      return DAYS[new Date().getDay()];
+    }
+  })();
   const todayHours = operatingHours?.[currentDayName] ?? null;
   const isTodayClosed = !todayHours || (todayHours.open === '00:00' && todayHours.close === '00:00');
   const isCurrentlyOpen = (() => {
     if (!operatingHours || isTodayClosed) return false;
-    const now = new Date();
-    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    return hhmm >= todayHours!.open && hhmm < todayHours!.close;
+    try {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: officeTimezone }).formatToParts(now);
+      const h = parts.find(p => p.type === 'hour')?.value ?? '00';
+      const m = parts.find(p => p.type === 'minute')?.value ?? '00';
+      const hhmm = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+      return hhmm >= todayHours!.open && hhmm < todayHours!.close;
+    } catch {
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      return hhmm >= todayHours!.open && hhmm < todayHours!.close;
+    }
   })();
   const bookingPath = sandboxMode ? sandbox?.bookingPath ?? buildBookingPath(office) : buildBookingPath(office);
   const hasLogo = ks.showLogo && Boolean(ks.logoUrl?.trim());

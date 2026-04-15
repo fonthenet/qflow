@@ -39,11 +39,10 @@ function getBusinessHoursStatus(
   let time: string;
 
   try {
-    const dayFmt = new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      timeZone: normalizedTimezone,
-    });
-    day = dayFmt.format(now).toLowerCase();
+    // Day resolution: dateKey → day name (timezone-safe, deterministic)
+    const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: normalizedTimezone }).format(now);
+    const d = new Date(dateKey + 'T12:00:00Z');
+    day = DAYS_OF_WEEK[d.getUTCDay()];
 
     const timeFmt = new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
@@ -56,8 +55,10 @@ function getBusinessHoursStatus(
     const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
     time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   } catch {
-    // Fallback: use UTC — still safer than server-local time
-    day = DAYS_OF_WEEK[now.getUTCDay()];
+    // Fallback: use UTC noon dateKey approach — safer than raw getUTCDay()
+    const fallbackKey = now.toISOString().split('T')[0];
+    const fd = new Date(fallbackKey + 'T12:00:00Z');
+    day = DAYS_OF_WEEK[fd.getUTCDay()];
     time = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
   }
 

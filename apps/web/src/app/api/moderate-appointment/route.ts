@@ -16,7 +16,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
  * waitlist notification) are handled by the centralized lifecycle module.
  * check_in and complete have special handling (ticket creation / ticket served).
  */
-type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete';
+type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete' | 'delete';
 
 const ACTION_TO_STATUS: Record<string, string> = {
   approve: 'confirmed',
@@ -65,12 +65,28 @@ export async function POST(request: NextRequest) {
   }
 
   const { appointmentId, action, reason } = body;
-  const validActions: ModerateAction[] = ['approve', 'decline', 'cancel', 'no_show', 'check_in', 'complete'];
+  const validActions: ModerateAction[] = ['approve', 'decline', 'cancel', 'no_show', 'check_in', 'complete', 'delete'];
   if (!appointmentId || !action || !validActions.includes(action)) {
     return NextResponse.json(
-      { error: 'appointmentId and action (approve|decline|cancel|no_show|check_in|complete) are required' },
+      { error: 'appointmentId and action (approve|decline|cancel|no_show|check_in|complete|delete) are required' },
       { status: 400 },
     );
+  }
+
+  // ── delete: permanently remove appointment + linked unserved tickets ──
+  if (action === 'delete') {
+    const { deleteAppointment } = await import('@/lib/actions/appointment-actions');
+    const result = await deleteAppointment(appointmentId);
+    if (result.error) {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true,
+      status: 'deleted',
+      notified: false,
+      channel: null,
+      notifyError: null,
+    });
   }
 
   // ── check_in: create ticket + send "joined" notification ──

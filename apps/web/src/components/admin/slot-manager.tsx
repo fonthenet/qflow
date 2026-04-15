@@ -101,9 +101,12 @@ export function SlotManager({ offices, orgSettings }: SlotManagerProps) {
 
   // Generate time slots for the selected office and day
   const operatingHours = selectedOffice?.operating_hours ?? {};
-  const dayOfWeek = new Date(selectedDate + 'T12:00:00')
-    .toLocaleDateString('en-US', { weekday: 'long' })
-    .toLowerCase();
+  // Use UTC noon for deterministic day resolution from dateKey
+  const dayOfWeek = (() => {
+    const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const d = new Date(selectedDate + 'T12:00:00Z');
+    return DAYS[d.getUTCDay()];
+  })();
   const dayHours = operatingHours[dayOfWeek] ?? { open: '08:00', close: '17:00' };
   const allSlots = generateSlots(dayHours.open, dayHours.close, slotDuration);
 

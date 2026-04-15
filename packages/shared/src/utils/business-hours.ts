@@ -31,19 +31,23 @@ export interface BusinessHoursResult {
   currentDay: string;
 }
 
+import { dateKeyInTz, getDayNameFromKey, CALENDAR_DAYS } from './calendar';
+
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 /**
- * Get current day and time in the office's timezone
+ * Get current day and time in the office's timezone.
+ * Uses dateKeyInTz + getDayNameFromKey as the single source of truth for day-of-week.
  */
 function getOfficeLocalTime(timezone: string, now?: Date): { day: string; time: string; dayIndex: number } {
   const d = now ?? new Date();
-  try {
-    // Get day of week in office timezone
-    const dayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timezone });
-    const day = dayFormatter.format(d).toLowerCase();
+  // Day resolution: dateKey → getDayNameFromKey (timezone-safe, deterministic)
+  const dateKey = dateKeyInTz(d, timezone);
+  const day = getDayNameFromKey(dateKey);
 
-    // Get time in office timezone
+  // Time resolution: still uses Intl for correct timezone conversion
+  let time: string;
+  try {
     const timeFormatter = new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -53,15 +57,12 @@ function getOfficeLocalTime(timezone: string, now?: Date): { day: string; time: 
     const parts = timeFormatter.formatToParts(d);
     const hour = parts.find(p => p.type === 'hour')?.value ?? '00';
     const minute = parts.find(p => p.type === 'minute')?.value ?? '00';
-    const time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
-
-    return { day, time, dayIndex: DAYS.indexOf(day) };
+    time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
   } catch {
-    // Fallback if timezone is invalid
-    const day = DAYS[d.getDay()];
-    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return { day, time, dayIndex: d.getDay() };
+    time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
+
+  return { day, time, dayIndex: DAYS.indexOf(day) };
 }
 
 /**

@@ -49,7 +49,7 @@ import {
   type MonthDayInfo,
   type CalendarAppointment,
 } from '@qflo/shared';
-import { getAppointmentsForRange, cancelAppointment, rescheduleAppointment, getAvailableSlots, getAppointmentTimeline, type TimelineEvent } from '@/lib/actions/appointment-actions';
+import { getAppointmentsForRange, cancelAppointment, deleteAppointment, rescheduleAppointment, getAvailableSlots, getAppointmentTimeline, type TimelineEvent } from '@/lib/actions/appointment-actions';
 import { normalizeWilayaDisplay } from '@/lib/wilayas';
 import { useI18n } from '@/components/providers/locale-provider';
 
@@ -828,6 +828,23 @@ function AppointmentDetail({
     onAction();
   };
 
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async () => {
+    if (!await styledConfirm(
+      `Permanently delete appointment for ${a.customer_name}? This cannot be undone. The time slot will become available again.`,
+      { variant: 'danger', confirmLabel: 'Delete' },
+    )) return;
+    setDeleting(true);
+    const result = await deleteAppointment(a.id);
+    setDeleting(false);
+    if (result.error) {
+      console.error('Delete failed:', result.error);
+      return;
+    }
+    onAction();
+    onClose();
+  };
+
   return (
     <div
       ref={panelRef}
@@ -1023,6 +1040,18 @@ function AppointmentDetail({
               </button>
             </div>
           )}
+
+          {/* Delete — always available */}
+          <div className="pt-2 border-t border-dashed border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-medium text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 opacity-70 hover:opacity-100"
+            >
+              <Trash2 size={12} />
+              {deleting ? 'Deleting...' : 'Delete Appointment'}
+            </button>
+          </div>
 
           {/* ── Activity Timeline ── */}
           <div className="space-y-2">

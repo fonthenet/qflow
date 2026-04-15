@@ -94,6 +94,62 @@ function getDayOfWeekInTz(date: Date, timezone: string): number {
   }
 }
 
+// ── Single source of truth: day name from dateKey ─────────────────
+
+/**
+ * Get the CalendarDay name from a YYYY-MM-DD string.
+ * Uses UTC noon to avoid any timezone ambiguity — pure, deterministic.
+ * This is THE canonical function for resolving day-of-week from a date.
+ */
+export function getDayNameFromKey(dateKey: string): CalendarDay {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  const jsDow = d.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  return CALENDAR_DAYS[(jsDow + 6) % 7]; // convert to Mon-based
+}
+
+/**
+ * Get the full day name (e.g. "sunday") from a YYYY-MM-DD string.
+ * Equivalent to getDayNameFromKey but returns the full lowercase name
+ * matching the format used by operating hours keys.
+ */
+export function getDayNameLongFromKey(dateKey: string): string {
+  return getDayNameFromKey(dateKey);
+}
+
+/**
+ * Get today's day name in the given timezone.
+ * Combines dateKeyInTz + getDayNameFromKey for a safe, single-call API.
+ */
+export function getTodayDayName(timezone: string): CalendarDay {
+  return getDayNameFromKey(dateKeyInTz(new Date(), timezone));
+}
+
+/**
+ * Get operating hours for a specific date, using dateKey as source of truth.
+ * Returns null if the day is closed (00:00–00:00 or missing).
+ */
+export function getDayHours(
+  operatingHours: Record<string, { open: string; close: string }> | null | undefined,
+  dateKey: string,
+): { open: string; close: string } | null {
+  if (!operatingHours) return null;
+  const dayName = getDayNameFromKey(dateKey);
+  const hours = operatingHours[dayName];
+  if (!hours) return null;
+  if (hours.open === '00:00' && hours.close === '00:00') return null;
+  return hours;
+}
+
+/**
+ * Check if a date is closed (no operating hours or 00:00–00:00).
+ */
+export function isDateClosed(
+  operatingHours: Record<string, { open: string; close: string }> | null | undefined,
+  dateKey: string,
+): boolean {
+  return getDayHours(operatingHours, dateKey) === null;
+}
+
 // ── UTC ISO boundaries for Supabase queries ────────────────────────
 
 /** Compute UTC offset in ms for a given YYYY-MM-DD + timezone */
@@ -134,40 +190,53 @@ export interface CalendarDayInfo {
 }
 
 /**
+ * Create a Date from a "YYYY-MM-DD" string at noon UTC (avoids DST edge cases).
+ */
+function dateFromKey(dateKey: string): Date {
+  return new Date(dateKey + 'T12:00:00Z');
+}
+
+/**
+ * Add `days` to a "YYYY-MM-DD" string, returning a new "YYYY-MM-DD" string.
+ * Uses UTC noon to avoid any local-timezone or DST ambiguity.
+ */
+function addDaysToKey(dateKey: string, days: number): string {
+  const d = dateFromKey(dateKey);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+/**
  * Get 7 days for the week containing the given date, in the office timezone.
  * When `startFromToday` is true and anchorDate is within the current week,
  * the view starts from today and shows 7 consecutive days instead of Mon–Sun.
+ *
+ * IMPORTANT: All date arithmetic uses YYYY-MM-DD strings and UTC noon to avoid
+ * the timezone mismatch bug where the machine's local timezone differs from
+ * the office timezone (e.g. machine in UTC-7 but office in UTC+1).
  */
 export function getWeekDays(anchorDate: Date, timezone: string, startFromToday = false): CalendarDayInfo[] {
   const todayKey = dateKeyInTz(new Date(), timezone);
+  const anchorKey = dateKeyInTz(anchorDate, timezone);
 
-  if (startFromToday) {
-    const anchorKey = dateKeyInTz(anchorDate, timezone);
-    // If anchor is today (i.e. user is viewing the current week), start from today
-    if (anchorKey === todayKey) {
-      const start = new Date(anchorDate);
-      start.setHours(0, 0, 0, 0);
-      return Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(start);
-        d.setDate(start.getDate() + i);
-        const dateKey = dateKeyInTz(d, timezone);
-        const jsDow = d.getDay(); // 0=Sun
-        const dayName = CALENDAR_DAYS[(jsDow + 6) % 7]; // convert to Mon-based
-        return { date: d, dateKey, dayName, isToday: dateKey === todayKey };
-      });
-    }
+  if (startFromToday && anchorKey === todayKey) {
+    // Start from today and show 7 consecutive days
+    return Array.from({ length: 7 }, (_, i) => {
+      const dateKey = addDaysToKey(todayKey, i);
+      const d = dateFromKey(dateKey);
+      const jsDow = d.getUTCDay(); // 0=Sun (UTC is safe since we use noon)
+      const dayName = CALENDAR_DAYS[(jsDow + 6) % 7]; // convert to Mon-based
+      return { date: d, dateKey, dayName, isToday: dateKey === todayKey };
+    });
   }
 
-  // Default: Mon–Sun week
-  const dow = getDayOfWeekInTz(anchorDate, timezone);
-  const monday = new Date(anchorDate);
-  monday.setDate(monday.getDate() - dow);
-  monday.setHours(0, 0, 0, 0);
+  // Default: Mon–Sun week — find Monday using the office timezone
+  const anchorDow = getDayOfWeekInTz(anchorDate, timezone); // 0=Mon
+  const mondayKey = addDaysToKey(anchorKey, -anchorDow);
 
   return CALENDAR_DAYS.map((dayName, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const dateKey = dateKeyInTz(d, timezone);
+    const dateKey = addDaysToKey(mondayKey, i);
+    const d = dateFromKey(dateKey);
     return { date: d, dateKey, dayName, isToday: dateKey === todayKey };
   });
 }
@@ -184,7 +253,7 @@ export function getWeekRange(anchorDate: Date, timezone: string, startFromToday 
 /** Navigate by +/- weeks */
 export function shiftWeek(current: Date, direction: -1 | 1): Date {
   const d = new Date(current);
-  d.setDate(d.getDate() + direction * 7);
+  d.setUTCDate(d.getUTCDate() + direction * 7);
   return d;
 }
 
@@ -200,22 +269,22 @@ export interface MonthDayInfo {
 /** Get a 6×7 grid of days for the month containing anchorDate */
 export function getMonthGrid(year: number, month: number, timezone: string): MonthDayInfo[] {
   const todayKey = dateKeyInTz(new Date(), timezone);
-  // First day of month
-  const firstOfMonth = new Date(year, month, 1);
+  // First day of month — use UTC noon to avoid timezone issues
+  const firstKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const firstOfMonth = dateFromKey(firstKey);
   const dow = getDayOfWeekInTz(firstOfMonth, timezone); // 0=Mon
   // Start from the Monday before (or on) the 1st
-  const gridStart = new Date(firstOfMonth);
-  gridStart.setDate(gridStart.getDate() - dow);
+  const mondayKey = addDaysToKey(firstKey, -dow);
 
   const days: MonthDayInfo[] = [];
   for (let i = 0; i < 42; i++) { // 6 rows × 7 cols
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    const dateKey = dateKeyInTz(d, timezone);
+    const dateKey = addDaysToKey(mondayKey, i);
+    const d = dateFromKey(dateKey);
+    const m = parseInt(dateKey.split('-')[1], 10) - 1;
     days.push({
       date: d,
       dateKey,
-      isCurrentMonth: d.getMonth() === month,
+      isCurrentMonth: m === month,
       isToday: dateKey === todayKey,
     });
   }
