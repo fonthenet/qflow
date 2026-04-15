@@ -54,8 +54,10 @@ function checkBusinessHours(
   const normalizedTimezone = normalizeOfficeTimezone(timezone);
 
   try {
-    const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: normalizedTimezone });
-    day = dayFmt.format(now).toLowerCase();
+    // Day resolution: dateKey → day name (timezone-safe, deterministic)
+    const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: normalizedTimezone }).format(now);
+    const dk = new Date(dateKey + 'T12:00:00Z');
+    day = DAYS_OF_WEEK[dk.getUTCDay()];
     const timeFmt = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: normalizedTimezone });
     const parts = timeFmt.formatToParts(now);
     const h = parts.find(p => p.type === 'hour')?.value ?? '00';
@@ -63,9 +65,12 @@ function checkBusinessHours(
     time = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
     dayIndex = DAYS_OF_WEEK.indexOf(day);
   } catch {
-    day = DAYS_OF_WEEK[now.getDay()];
+    // Fallback: use dateKey approach to avoid timezone mismatch
+    const fallbackKey = now.toISOString().split('T')[0];
+    const fd = new Date(fallbackKey + 'T12:00:00Z');
+    day = DAYS_OF_WEEK[fd.getUTCDay()];
     time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    dayIndex = now.getDay();
+    dayIndex = DAYS_OF_WEEK.indexOf(day);
   }
 
   const base = { currentTime: time, currentDay: day };

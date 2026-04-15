@@ -238,14 +238,18 @@ export async function transitionAppointment(
     return { ok: false, status: appt.status, notified: false, channel: null, notifyError: `Already in terminal state: ${appt.status}` };
   }
 
-  // 3. DB update
-  const { error: updErr } = await sb
+  // 3. DB update (optimistic lock: only update if status hasn't changed since read)
+  const { error: updErr, count: updCount } = await sb
     .from('appointments')
-    .update({ status: newStatus })
-    .eq('id', appointmentId);
+    .update({ status: newStatus }, { count: 'exact' })
+    .eq('id', appointmentId)
+    .eq('status', appt.status);
 
   if (updErr) {
     return { ok: false, status: appt.status, notified: false, channel: null, notifyError: updErr.message };
+  }
+  if (updCount === 0) {
+    return { ok: false, status: appt.status, notified: false, channel: null, notifyError: 'Concurrent modification — status changed by another user' };
   }
 
   // 4. Cancel linked tickets (for destructive transitions)
@@ -280,7 +284,25 @@ export async function transitionAppointment(
 
   // 7. Send customer notification
   let templateKey: string;
-  const templateParams: Record<string, string> = { name: orgName };
+
+  // Resolve date, time, and service for richer notification messages
+  const loc = resolved.locale || 'fr';
+  const dateLoc = loc === 'ar' ? 'ar-DZ' : loc === 'en' ? 'en-GB' : 'fr-FR';
+  const apptDate = appt.scheduled_at
+    ? new Intl.DateTimeFormat(dateLoc, { timeZone: officeTz, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(appt.scheduled_at))
+    : '—';
+  const apptTime = appt.scheduled_at
+    ? new Intl.DateTimeFormat(dateLoc, { timeZone: officeTz, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(appt.scheduled_at))
+    : '—';
+  let serviceName = '—';
+  if (appt.service_id) {
+    try {
+      const { data: svc } = await sb.from('services').select('name').eq('id', appt.service_id).single();
+      if (svc?.name) serviceName = svc.name;
+    } catch { /* ignore */ }
+  }
+
+  const templateParams: Record<string, string> = { name: orgName, date: apptDate, time: apptTime, service: serviceName };
 
   switch (newStatus) {
     case 'confirmed': {

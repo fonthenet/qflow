@@ -28,8 +28,11 @@ function daysInMonth(year: number, month: number): number {
 }
 
 function firstDayOfWeek(year: number, month: number): number {
-  const d = new Date(year, month, 1).getDay();
-  return d === 0 ? 6 : d - 1; // Monday = 0
+  // Use UTC noon to avoid local timezone shifting the day
+  const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const d = new Date(dateKey + 'T12:00:00Z');
+  const dow = d.getUTCDay(); // 0=Sun
+  return dow === 0 ? 6 : dow - 1; // Monday = 0
 }
 
 function pad(n: number): string {

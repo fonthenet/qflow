@@ -8,6 +8,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
+import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS } from '@qflo/shared';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
@@ -338,7 +339,12 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       const data = await res.json();
       if (res.ok && data.appointment) {
         setFutResult({ success: true, date: futDate, time: futTime });
+        // Reset entire form so the booked slot disappears and form is ready for next booking
         setFutName(''); setFutPhone(''); setFutNotes(''); setFutWilaya(''); setFutTime('');
+        // Force slots re-fetch by toggling the date (clears then restores)
+        const bookedDate = futDate;
+        setFutDate('');
+        setTimeout(() => setFutDate(bookedDate), 50);
       } else {
         setFutResult({ success: false, error: data.error || 'Booking failed' });
       }
@@ -1076,6 +1082,7 @@ const STAFF_STATUS_LABELS: Record<StaffStatus, { label: string; color: string; i
   away: { label: 'Away', color: '#ef4444', icon: '○' },
 };
 
+/** @deprecated — use getDayNameFromKey(dateKeyInTz(now, tz)) instead */
 const DAYS_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 function normalizeOfficeTimezone(timezone: string | null | undefined) {
@@ -1162,15 +1169,15 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
         const tz = normalizeOfficeTimezone(office.timezone);
         const now = new Date();
 
-        let day: string, time: string;
+        // Use dateKey → getDayNameFromKey for timezone-safe day resolution
+        const todayKey = tz ? dateKeyInTz(now, tz) : now.toISOString().split('T')[0];
+        const day = getDayNameFromKey(todayKey);
+        let time: string;
         try {
-          const df = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: tz });
-          day = df.format(now).toLowerCase();
           const tf = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
           const parts = tf.formatToParts(now);
           time = `${(parts.find(p => p.type === 'hour')?.value ?? '00').padStart(2, '0')}:${(parts.find(p => p.type === 'minute')?.value ?? '00').padStart(2, '0')}`;
         } catch {
-          day = DAYS_NAMES[now.getDay()];
           time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         }
 
@@ -1186,11 +1193,11 @@ function OfficeHoursBadge({ locale, session }: { locale: DesktopLocale; session:
         if (!hours || Object.keys(hours).length === 0) return;
         const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
         if (!todayH || (todayH.open === '00:00' && todayH.close === '00:00')) {
-          // Find next open
-          const di = DAYS_NAMES.indexOf(day);
+          // Find next open — use CALENDAR_DAYS (Mon-based) for consistency
+          const di = CALENDAR_DAYS.indexOf(day as typeof CALENDAR_DAYS[number]);
           let next: any;
           for (let o = 1; o <= 7; o++) {
-            const d = DAYS_NAMES[(di + o) % 7];
+            const d = CALENDAR_DAYS[(di + o) % 7];
             const h = hours[d];
             if (h && !(h.open === '00:00' && h.close === '00:00')) { next = { day: d, time: h.open }; break; }
           }
@@ -1680,6 +1687,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [session.desk_id, staffStatus, queuePaused]);
 
   // ── Today's counter + RDV side panel data ──────────────────────
+  const fetchTodayRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!session.office_id) return;
     let cancelled = false;
@@ -1729,9 +1737,23 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         if (!cancelled) console.warn('[Station] today stats fetch failed', e);
       }
     };
+    fetchTodayRef.current = fetchToday;
     fetchToday();
+    // Realtime subscription — instant refresh when any appointment changes
+    let rdvChannel: any;
+    getSupabase().then((sb) => {
+      if (cancelled) return;
+      rdvChannel = sb.channel(`station-rdv-${session.office_id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `office_id=eq.${session.office_id}` },
+          () => { fetchToday(); })
+        .subscribe();
+    });
     const iv = setInterval(fetchToday, 60_000);
-    return () => { cancelled = true; clearInterval(iv); };
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      if (rdvChannel) getSupabase().then((sb) => sb.removeChannel(rdvChannel));
+    };
   }, [session.office_id, storedAuth, officeTimezone]);
 
   // ── Pending approval tickets (realtime + initial fetch) ────────
@@ -1919,20 +1941,54 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // ── Unified appointment action: ALL appointment operations go through the API ──
   const moderateAppointment = useCallback(async (
     apptId: string,
-    action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete',
+    action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete' | 'delete',
     opts?: { reason?: string },
   ): Promise<boolean> => {
     setRdvBusyId(apptId);
     try {
       const token = await ensureAuth();
 
-      // ── call / serve: ticket-level actions — reuse existing queue path ──
-      // Find the linked ticket and delegate to updateTicketStatus (same as queue buttons)
-      if (action === 'call' || action === 'serve') {
-        // Find linked ticket from local SQLite (it was inserted at check-in time)
+      // ── Ticket-level actions: reuse existing queue path for instant local update ──
+      // For call/serve/complete/no_show/cancel — find linked ticket and update locally
+      // This ensures the queue sidebar updates immediately (no waiting for cloud sync)
+      // ── Delete: goes straight to API, also removes local linked ticket ──
+      if (action === 'delete') {
+        // Remove any local linked ticket first
+        try {
+          const localTickets = await window.qf.db.getTickets(session.office_ids ?? [session.office_id], ['waiting', 'called', 'serving']);
+          const linkedTicket = localTickets.find((t: any) => t.appointment_id === apptId);
+          if (linkedTicket) {
+            updateTicketStatus(linkedTicket.id, { status: 'cancelled' });
+          }
+        } catch { /* non-critical */ }
+
+        // Call API to delete from cloud
+        const res = await fetch('https://qflo.net/api/moderate-appointment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ appointmentId: apptId, action: 'delete' }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        // Remove from all local state
+        setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+        setUpcomingAppointments((prev) => prev.filter((a) => a.id !== apptId));
+        setPendingAppointmentsAll((prev) => prev.filter((a) => a.id !== apptId));
+        showToast(translate(locale, 'Appointment deleted'), 'success');
+        setRdvBusyId(null);
+        return true;
+      }
+
+      if (action === 'call' || action === 'serve' || action === 'complete' || action === 'no_show' || action === 'cancel') {
         const localTickets = await window.qf.db.getTickets(session.office_ids ?? [session.office_id], ['waiting', 'called', 'serving']);
         const linkedTicket = localTickets.find((t: any) => t.appointment_id === apptId && !['served', 'no_show', 'cancelled'].includes(t.status));
-        if (!linkedTicket) throw new Error('No active ticket found for this appointment');
+
+        // For call/serve/complete, a linked ticket MUST exist (post-check-in)
+        if ((action === 'call' || action === 'serve' || action === 'complete') && !linkedTicket) {
+          throw new Error('No active ticket found for this appointment');
+        }
 
         if (action === 'call') {
           if (!session.desk_id) throw new Error('No desk assigned');
@@ -1943,18 +1999,50 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             called_by_staff_id: session.staff_id || undefined,
           });
           setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'called' as any } : a));
-        } else {
+          showToast(translate(locale, 'Called to desk'), 'success');
+          setRdvBusyId(null);
+          return true;
+        } else if (action === 'serve') {
           updateTicketStatus(linkedTicket.id, {
             status: 'serving',
             serving_started_at: new Date().toISOString(),
           });
           setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'serving' as any } : a));
+          showToast(translate(locale, 'Service started'), 'success');
+          setRdvBusyId(null);
+          return true;
+        } else if (action === 'complete') {
+          // Mark ticket served locally (same path as queue Complete button)
+          updateTicketStatus(linkedTicket.id, {
+            status: 'served',
+            completed_at: new Date().toISOString(),
+          });
+          // Also update appointment status to completed directly via Supabase
+          // (skip moderate-appointment API to avoid double notifications — ticket-transition handles notifs)
+          // Precondition: only update if still in an active state (prevents race with other users)
+          getSupabase().then((sb) => {
+            sb.from('appointments').update({ status: 'completed' }).eq('id', apptId).in('status', ['confirmed', 'checked_in', 'serving']).then(() => {});
+          }).catch(() => { /* non-critical */ });
+          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'completed' as any } : a));
+          showToast(translate(locale, 'Appointment completed'), 'success');
+          setRdvBusyId(null);
+          return true;
+        } else if ((action === 'no_show' || action === 'cancel') && linkedTicket) {
+          // Ticket exists (post-check-in): update locally for instant queue removal
+          const ticketStatus = action === 'no_show' ? 'no_show' : 'cancelled';
+          updateTicketStatus(linkedTicket.id, { status: ticketStatus });
+          // Update appointment via Supabase directly (lifecycle handles notifications)
+          // Precondition: only update if still in an active state (prevents race with other users)
+          getSupabase().then((sb) => {
+            sb.from('appointments').update({ status: action === 'no_show' ? 'no_show' : 'cancelled' }).eq('id', apptId).in('status', ['pending', 'confirmed', 'checked_in', 'serving']).then(() => {});
+          }).catch(() => { /* non-critical */ });
+          setTodayAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          setUpcomingAppointments((prev) => prev.filter((a) => a.id !== apptId));
+          showToast(translate(locale, action === 'no_show' ? 'Marked no-show' : 'Appointment cancelled'), 'success');
+          setRdvBusyId(null);
+          return true;
         }
-
-        const toastMsg = action === 'call' ? 'Called to desk' : 'Service started';
-        showToast(translate(locale, toastMsg), 'success');
-        setRdvBusyId(null);
-        return true;
+        // cancel/no_show without linked ticket: fall through to API path below
       }
 
       // ── All other actions go through /api/moderate-appointment ──
@@ -2028,10 +2116,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           }
           setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'checked_in' } : a));
           break;
-        case 'complete':
-          setTodayAppointments((prev) => prev.map((a) => a.id === apptId ? { ...a, status: 'completed' } : a));
-          fetchTickets(); // refresh queue since linked ticket was marked served
-          break;
+        // complete, call, serve handled above — won't reach the switch
       }
 
       // ── Toast feedback ──
@@ -2052,7 +2137,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     } finally {
       setRdvBusyId(null);
     }
-  }, [locale, showToast, storedAuth, fetchTickets, pendingAppointmentsAll, session.desk_id, session.staff_id, updateTicketStatus]);
+  }, [locale, showToast, storedAuth, fetchTickets, pendingAppointmentsAll, session.desk_id, session.staff_id, session.office_id, session.office_ids, updateTicketStatus]);
 
   // Render a single pending-appointment card (used in Today + Upcoming sections)
   const renderPendingApptCard = useCallback((a: PendingAppt, opts?: { showDate?: boolean }) => {
@@ -2107,9 +2192,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           <button
             disabled={busy}
             onClick={() => {
-              const reason = window.prompt(t('Decline this appointment? The customer will be notified.\n\nReason (optional):'), '');
-              if (reason === null) return;
-              moderateAppointment(a.id, 'decline', { reason: reason.trim() || undefined });
+              if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
+              moderateAppointment(a.id, 'decline');
             }}
             title={t('Decline')}
             style={{
@@ -2311,6 +2395,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const complete = (id: string) => {
+    setActiveTicket(null); // Clear panel immediately
     // Flush any unsaved notes before completing
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString(), ...notesUpdate });
@@ -2321,6 +2406,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const noShow = async (id: string) => {
     if (!await styledConfirm(t('Mark this ticket as no-show?'), { variant: 'danger', confirmLabel: t('No Show') })) return;
+    setActiveTicket(null); // Clear panel immediately
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString(), ...notesUpdate });
     const ticket = tickets.find((t) => t.id === id);
@@ -2352,6 +2438,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const requeue = (id: string) => {
+    setActiveTicket(null); // Clear calling panel immediately
     updateTicketStatus(id, {
       status: 'waiting',
       desk_id: null,
@@ -2374,6 +2461,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const park = (id: string) => {
+    setActiveTicket(null); // Clear calling panel immediately
     updateTicketStatus(id, {
       status: 'waiting',
       desk_id: null,
@@ -2414,8 +2502,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const unparkToQueue = (id: string) => {
+    // Don't send status:'waiting' — ticket is already waiting (parked is just a flag).
+    // Sending waiting→waiting would fail the transition validator.
     updateTicketStatus(id, {
-      status: 'waiting',
       parked_at: null,
     });
     const ticket = tickets.find((tk) => tk.id === id);
@@ -2427,6 +2516,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
 
   const cancel = async (id: string) => {
     if (!await styledConfirm(t('Cancel this ticket?'), { variant: 'danger', confirmLabel: t('Cancel Ticket') })) return;
+    setActiveTicket(null); // Clear panel immediately
     const ts = new Date().toISOString();
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'cancelled', completed_at: ts, ...notesUpdate });
@@ -2853,7 +2943,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       )}
       {/* Left panel — active ticket / calendar */}
       <div className="station-main" aria-label={t('Active tickets')} style={
-        mainView !== 'queue' && !activeTicket && session.desk_id
+        mainView !== 'queue' && session.desk_id
           ? { padding: 0, justifyContent: 'flex-start', alignItems: 'stretch' }
           : showBookingModal && mainView === 'queue'
             ? { paddingRight: 0 }
@@ -2990,7 +3080,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     background: showBookingModal ? 'rgba(139,92,246,0.2)' : 'transparent',
                     cursor: 'pointer', fontSize: 12, fontWeight: 600,
                     color: showBookingModal ? '#8b5cf6' : 'var(--text3, #64748b)',
-                    transition: 'all 0.15s',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
                   + {t('In-House Booking')} <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>F6</span>
@@ -3000,13 +3090,33 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5,
                     padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
-                    background: mainView === 'queue' ? 'rgba(59,130,246,0.2)' : 'transparent',
+                    background: mainView === 'queue'
+                      ? (activeTicket?.status === 'serving' ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)')
+                      : activeTicket
+                        ? (activeTicket.status === 'serving' ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.1)')
+                        : 'transparent',
                     cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    color: mainView === 'queue' ? '#3b82f6' : 'var(--text3, #64748b)',
-                    transition: 'all 0.15s',
+                    color: mainView === 'queue'
+                      ? (activeTicket?.status === 'serving' ? '#22c55e' : '#3b82f6')
+                      : activeTicket
+                        ? (activeTicket.status === 'serving' ? '#22c55e' : '#3b82f6')
+                        : 'var(--text3, #64748b)',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    animation: activeTicket && mainView !== 'queue'
+                      ? (activeTicket.status === 'serving' ? 'queue-pulse-serving 2s ease-in-out infinite' : 'queue-pulse 2s ease-in-out infinite')
+                      : 'none',
+                    borderRadius: activeTicket && mainView !== 'queue' ? 6 : 0,
                   }}
                 >
                   📋 {t('Queue')}
+                  {activeTicket && mainView !== 'queue' && (
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: activeTicket.status === 'serving' ? '#22c55e' : '#3b82f6',
+                      animation: activeTicket.status === 'serving' ? 'queue-pulse-serving 2s ease-in-out infinite' : 'queue-pulse 2s ease-in-out infinite',
+                      flexShrink: 0,
+                    }} />
+                  )}
                 </button>
                 <button
                   onClick={() => { setMainView('calendar'); setCalendarInitialView('week'); }}
@@ -3016,7 +3126,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     background: mainView === 'calendar' ? 'rgba(99,102,241,0.2)' : 'transparent',
                     cursor: 'pointer', fontSize: 12, fontWeight: 600,
                     color: mainView === 'calendar' ? '#818cf8' : 'var(--text3, #64748b)',
-                    transition: 'all 0.15s',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
                   📅 {t('Calendar')}
@@ -3029,7 +3139,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     background: mainView === 'customers' ? 'rgba(59,130,246,0.2)' : 'transparent',
                     cursor: 'pointer', fontSize: 12, fontWeight: 600,
                     color: mainView === 'customers' ? '#3b82f6' : 'var(--text3, #64748b)',
-                    transition: 'all 0.15s',
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
                   👥 {t('Customers')}
@@ -3051,6 +3161,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 officeTimezone={officeTimezone}
                 onClose={() => setMainView('queue')}
                 onModerate={moderateAppointment}
+                onAppointmentChange={() => fetchTodayRef.current()}
                 onOpenCustomer={(phone) => {
                   setCustomerPhoneToOpen(phone);
                   setMainView('customers');
@@ -3517,6 +3628,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             officeTimezone={officeTimezone}
             onClose={() => { setShowCalendarModal(false); setCalendarInitialApptId(null); }}
             onModerate={moderateAppointment}
+            onAppointmentChange={() => fetchTodayRef.current()}
             onOpenCustomer={(phone) => {
               setCustomerPhoneToOpen(phone);
               setShowCustomersModal(true);
@@ -3562,31 +3674,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         {/* In-House Booking Panel moved to split view inside queue tab */}
       </div>
 
-      {/* Resizer strip — always visible, outside sidebar */}
-      {!isSmallScreen && (
-        <div
-          onPointerDown={sidebarCollapsed ? undefined : startSidebarResize}
-          style={{ position: 'relative', width: 10, flexShrink: 0, zIndex: 10, cursor: sidebarCollapsed ? 'default' : 'col-resize', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      {/* Expand button when sidebar is collapsed — sits flush against right edge */}
+      {!isSmallScreen && sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          title={t('Show queue panel')}
+          aria-label={t('Show queue panel')}
+          style={{
+            flexShrink: 0, width: 14, alignSelf: 'center',
+            height: 40, borderRadius: '4px 0 0 4px',
+            border: '1px solid var(--border, rgba(0,0,0,0.08))', borderRight: 'none',
+            background: 'var(--surface, #fff)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text2, #64748b)', fontSize: 8,
+          }}
         >
-          {/* Center toggle arrow */}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setSidebarCollapsed((c) => !c); }}
-            onPointerDown={(e) => e.stopPropagation()}
-            title={sidebarCollapsed ? t('Show queue panel') : t('Hide queue panel')}
-            aria-label={sidebarCollapsed ? t('Show queue panel') : t('Hide queue panel')}
-            style={{
-              width: 12, height: 56, borderRadius: 4, flexShrink: 0,
-              border: '1px solid rgba(0,0,0,0.08)',
-              background: 'var(--surface, #fff)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text2, #64748b)', fontSize: 8,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-            }}
-          >
-            {sidebarCollapsed ? '◀' : '▶'}
-          </button>
-        </div>
+          ◀
+        </button>
       )}
 
       {/* Right panel — queue overview */}
@@ -3596,6 +3701,32 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         aria-label={t('Queue Overview')}
         style={isSmallScreen ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth, minWidth: sidebarCollapsed ? 0 : undefined, overflow: sidebarCollapsed ? 'hidden' : undefined, borderLeft: sidebarCollapsed ? 'none' : undefined }}
       >
+        {/* Resize handle + toggle — overlaid on the left edge, zero layout width */}
+        {!isSmallScreen && !sidebarCollapsed && (
+          <div
+            onPointerDown={startSidebarResize}
+            style={{ position: 'absolute', top: 0, left: -3, width: 6, height: '100%', zIndex: 10, cursor: 'col-resize' }}
+          >
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setSidebarCollapsed(true); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={t('Hide queue panel')}
+              aria-label={t('Hide queue panel')}
+              style={{
+                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                width: 8, height: 40, borderRadius: 4,
+                border: '1px solid rgba(0,0,0,0.08)',
+                background: 'var(--surface, #fff)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'var(--text2, #64748b)', fontSize: 8,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              }}
+            >
+              ▶
+            </button>
+          </div>
+        )}
         <div className="sidebar-section">
           <div className="sidebar-header">
             <h3 style={{ margin: 0 }}>{t('Queue Overview')}</h3>
@@ -3614,12 +3745,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   color: queueTab === 'queue' ? '#fff' : 'var(--text3, #94a3b8)',
                   fontSize: 12, fontWeight: 700,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'all 0.2s ease',
+                  boxShadow: queueTab === 'queue' ? '0 2px 8px rgba(59,130,246,0.35)' : 'none',
                 }}
               >
                 👥 {t('Queue')}
                 <span style={{
                   background: queueTab === 'queue' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
                   borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
+                  transition: 'all 0.2s ease',
                 }}>{waiting.length + called.length + serving.length}</span>
               </button>
               <button
@@ -3630,12 +3764,15 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   color: queueTab === 'rdv' ? '#fff' : 'var(--text3, #94a3b8)',
                   fontSize: 12, fontWeight: 700,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'all 0.2s ease',
+                  boxShadow: queueTab === 'rdv' ? '0 2px 8px rgba(34,197,94,0.35)' : 'none',
                 }}
               >
                 📅 {t('RDV')}
                 <span style={{
                   background: queueTab === 'rdv' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
                   borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
+                  transition: 'all 0.2s ease',
                 }}>{totalRdvCount}</span>
               </button>
               <button
@@ -3647,6 +3784,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   fontSize: 12, fontWeight: 700,
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   position: 'relative',
+                  transition: 'all 0.2s ease',
+                  boxShadow: queueTab === 'pending' ? '0 2px 8px rgba(245,158,11,0.35)' : 'none',
                 }}
               >
                 ⏳ {t('Pending')}
@@ -3707,54 +3846,57 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     </span>
                   )}
                 </div>
-                {(svcName || deptName || a.notes) && (
-                  <div style={{ fontSize: 9, color: 'var(--text3, #94a3b8)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr', unicodeBidi: 'isolate' }}>
-                    {[svcName, deptName].filter(Boolean).map((s, i) => <span key={i}>{i > 0 ? ' · ' : ''}{s}</span>)}
-                    {a.notes && <span>{(svcName || deptName) ? ' · ' : ''}<span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-                  {isToday && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                  {(svcName || deptName || a.notes) && (
+                    <div style={{ flex: 1, fontSize: 9, color: 'var(--text3, #94a3b8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr', unicodeBidi: 'isolate', minWidth: 0 }}>
+                      {[svcName, deptName].filter(Boolean).map((s, i) => <span key={i}>{i > 0 ? ' · ' : ''}{s}</span>)}
+                      {a.notes && <span>{(svcName || deptName) ? ' · ' : ''}<span dir="auto" style={{ unicodeBidi: 'isolate' }}>{a.notes}</span></span>}
+                    </div>
+                  )}
+                  {!(svcName || deptName || a.notes) && <div style={{ flex: 1 }} />}
+                  <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                    {isToday && (
+                      <button
+                        disabled={busy}
+                        onClick={async () => {
+                          await moderateAppointment(a.id, 'check_in');
+                          setQueueTab('queue');
+                        }}
+                        style={{
+                          padding: '2px 6px', borderRadius: 4, border: '1px solid #22c55e60',
+                          background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                          fontSize: 10, fontWeight: 700,
+                        }}
+                      >
+                        → {t('Register')}
+                      </button>
+                    )}
                     <button
                       disabled={busy}
                       onClick={async () => {
-                        await moderateAppointment(a.id, 'check_in');
-                        setQueueTab('queue');
+                        if (!await styledConfirm(t('Cancel this appointment? The customer will be notified.'), { variant: 'danger', confirmLabel: t('Cancel Appointment') })) return;
+                        await moderateAppointment(a.id, 'cancel');
                       }}
+                      title={t('Cancel')}
                       style={{
-                        flex: '1 1 auto', padding: '3px 6px', borderRadius: 4, border: '1px solid #22c55e60',
-                        background: '#22c55e22', color: '#22c55e', cursor: busy ? 'wait' : 'pointer',
+                        padding: '2px 7px', borderRadius: 4, border: '1px solid #ef444460',
+                        background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
                         fontSize: 10, fontWeight: 700,
                       }}
                     >
-                      → {t('Register')}
+                      ✕
                     </button>
-                  )}
-                  <button
-                    disabled={busy}
-                    onClick={async () => {
-                      if (!await styledConfirm(t('Cancel this appointment? The customer will be notified.'), { variant: 'danger', confirmLabel: t('Cancel Appointment') })) return;
-                      await moderateAppointment(a.id, 'cancel');
-                    }}
-                    title={t('Cancel')}
-                    style={{
-                      padding: '3px 7px', borderRadius: 4, border: '1px solid #ef444460',
-                      background: '#ef444422', color: '#ef4444', cursor: busy ? 'wait' : 'pointer',
-                      fontSize: 10, fontWeight: 700,
-                    }}
-                  >
-                    ✕
-                  </button>
-                  <button
-                    onClick={() => { setCalendarInitialApptId(a.id); setCalendarInitialView('week'); setShowCalendarModal(true); }}
-                    style={{
-                      padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
-                      background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',
-                      fontSize: 10, fontWeight: 600,
-                    }}
-                  >
-                    {t('Details')}
-                  </button>
+                    <button
+                      onClick={() => { setCalendarInitialApptId(a.id); setCalendarInitialView('week'); setShowCalendarModal(true); }}
+                      style={{
+                        padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
+                        background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',
+                        fontSize: 10, fontWeight: 600,
+                      }}
+                    >
+                      {t('Details')}
+                    </button>
+                  </div>
                 </div>
               </div>
             );

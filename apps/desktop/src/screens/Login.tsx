@@ -11,8 +11,23 @@ interface Props {
 export function Login({ onLogin, locale }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberPassword, setRememberPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Restore saved email and optionally password from localStorage
+  useEffect(() => {
+    try {
+      const savedEmail = localStorage.getItem('qflo_saved_email');
+      if (savedEmail) setEmail(savedEmail);
+      const shouldRemember = localStorage.getItem('qflo_remember_password') === 'true';
+      setRememberPassword(shouldRemember);
+      if (shouldRemember) {
+        const savedPwd = localStorage.getItem('qflo_saved_password');
+        if (savedPwd) setPassword(savedPwd);
+      }
+    } catch {}
+  }, []);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try { return (localStorage.getItem('qflo_theme') as 'light' | 'dark') ?? 'light'; } catch { return 'light'; }
   });
@@ -171,6 +186,17 @@ export function Login({ onLogin, locale }: Props) {
         refresh_token: auth.session?.refresh_token,
       };
 
+      // Always save email, optionally save password
+      try {
+        localStorage.setItem('qflo_saved_email', email);
+        localStorage.setItem('qflo_remember_password', rememberPassword ? 'true' : 'false');
+        if (rememberPassword) {
+          localStorage.setItem('qflo_saved_password', password);
+        } else {
+          localStorage.removeItem('qflo_saved_password');
+        }
+      } catch {}
+
       onLogin(session);
     } catch (err: any) {
       setError(err.message ?? t('Login failed'));
@@ -324,6 +350,19 @@ export function Login({ onLogin, locale }: Props) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('Enter password')}
             />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              id="rememberPwd"
+              checked={rememberPassword}
+              onChange={(e) => setRememberPassword(e.target.checked)}
+              style={{ width: 14, height: 14, accentColor: 'var(--primary, #3b82f6)', cursor: 'pointer' }}
+            />
+            <label htmlFor="rememberPwd" style={{ fontSize: 13, color: 'var(--text2, #94a3b8)', cursor: 'pointer', userSelect: 'none' }}>
+              {t('Remember password')}
+            </label>
           </div>
 
           <button type="submit" className="btn-primary btn-full" disabled={loading}>

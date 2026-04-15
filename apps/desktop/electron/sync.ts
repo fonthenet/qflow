@@ -10,6 +10,8 @@ type AuthErrorCallback = () => void;
 type DataPulledCallback = () => void;
 type TicketErrorCallback = (error: { message: string; ticketNumber?: string; type: string }) => void;
 type TokenRefreshedCallback = (token: string) => void;
+/** Returns { email, password } or null if no stored credentials */
+type GetStoredCredsCallback = () => Promise<{ email: string; password: string } | null>;
 
 export class SyncEngine {
   private db: Database.Database;
@@ -21,7 +23,10 @@ export class SyncEngine {
   private onDataPulled: DataPulledCallback;
   private onTicketError: TicketErrorCallback;
   private onTokenRefreshed: TokenRefreshedCallback;
+  private getStoredCreds: GetStoredCredsCallback;
   private authErrorSuppressedUntil = 0;
+  private firstRefreshFailureAt = 0;
+  private silentReAuthInFlight = false;
   private interval: ReturnType<typeof setInterval> | null = null;
   private healthInterval: ReturnType<typeof setInterval> | null = null;
   private pullInterval: ReturnType<typeof setInterval> | null = null;
@@ -60,6 +65,7 @@ export class SyncEngine {
     onDataPulled: DataPulledCallback = () => {},
     onTicketError: TicketErrorCallback = () => {},
     onTokenRefreshed: TokenRefreshedCallback = () => {},
+    getStoredCreds: GetStoredCredsCallback = async () => null,
   ) {
     this.db = db;
     this.supabaseUrl = supabaseUrl;
@@ -70,6 +76,7 @@ export class SyncEngine {
     this.onDataPulled = onDataPulled;
     this.onTicketError = onTicketError;
     this.onTokenRefreshed = onTokenRefreshed;
+    this.getStoredCreds = getStoredCreds;
   }
 
   private realtimeWs: WebSocket | null = null;
@@ -400,6 +407,11 @@ export class SyncEngine {
       }
 
       if (wasOffline && this.isOnline) {
+        // Reset auth failure tracking — network just resumed, give refresh a fresh chance
+        this.consecutiveRefreshFailures = 0;
+        this.firstRefreshFailureAt = 0;
+        // Proactively refresh token immediately on reconnection
+        await this.ensureFreshToken();
         // CRITICAL: Push local changes first, then pull, then notify online
         this.onStatus('syncing');
         await this.syncNow();   // Push offline changes to cloud
@@ -484,16 +496,21 @@ export class SyncEngine {
   private async refreshAccessToken(): Promise<string | null> {
     // PURE TOKEN AUTH: Only use refresh_token. No password storage.
     // Each device gets its own session at login time. The main process
-    // is the single source of truth for tokens. If refresh fails after
-    // 5 consecutive attempts, prompt re-login.
+    // is the single source of truth for tokens. Only trigger re-login
+    // after sustained failures over a meaningful time window (not just
+    // a burst after sleep/wake).
+    const AUTH_FAILURE_THRESHOLD = 15;           // consecutive failures needed
+    const AUTH_FAILURE_TIME_WINDOW = 3 * 60_000; // failures must span 3+ minutes
+
     const session = this.getSessionFromDB();
     if (!session?.refresh_token) {
       const err = createQfError('QF-AUTH-003', { reason: 'no refresh_token in session' });
       logger.warn('sync.token', err.message, { code: err.code });
-      this.consecutiveRefreshFailures++;
-      if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-        const authErr = createQfError('QF-AUTH-001', { failures: this.consecutiveRefreshFailures });
-        logger.error('sync.token', authErr.message, { code: authErr.code });
+      // No refresh token — try silent re-auth immediately
+      const reAuthToken = await this.attemptSilentReAuth();
+      if (reAuthToken) return reAuthToken;
+      this.trackRefreshFailure();
+      if (this.shouldTriggerAuthError(AUTH_FAILURE_THRESHOLD, AUTH_FAILURE_TIME_WINDOW)) {
         this.onAuthError();
       }
       return null;
@@ -515,10 +532,13 @@ export class SyncEngine {
         const body = await res.text().catch(() => '');
         const err = createQfError('QF-AUTH-002', { status: res.status, body: body.slice(0, 200) });
         logger.warn('sync.token', err.message, { code: err.code, status: res.status });
-        this.consecutiveRefreshFailures++;
-        if (this.consecutiveRefreshFailures >= 5 && Date.now() > this.authErrorSuppressedUntil) {
-          const authErr = createQfError('QF-AUTH-001', { failures: this.consecutiveRefreshFailures });
-          logger.error('sync.token', authErr.message, { code: authErr.code });
+
+        // Refresh token is dead — try silent re-auth with stored credentials
+        const reAuthToken = await this.attemptSilentReAuth();
+        if (reAuthToken) return reAuthToken;
+
+        this.trackRefreshFailure();
+        if (this.shouldTriggerAuthError(AUTH_FAILURE_THRESHOLD, AUTH_FAILURE_TIME_WINDOW)) {
           this.onAuthError();
         }
         return null;
@@ -537,14 +557,97 @@ export class SyncEngine {
       this.cachedAccessToken = data.access_token;
       this.lastTokenRefreshAt = Date.now();
       this.consecutiveRefreshFailures = 0;
+      this.firstRefreshFailureAt = 0;
 
       logger.info('sync.token', 'Access token refreshed successfully');
       try { this.onTokenRefreshed(data.access_token); } catch {}
       return data.access_token;
     } catch (err: any) {
+      // Network errors (timeout, DNS, etc.) — don't count toward auth failures
+      // These are connectivity issues, not auth issues
       const qfErr = createQfError('QF-NET-001', { error: err?.message });
       logger.warn('sync.token', 'Token refresh network error', { code: qfErr.code, error: err?.message ?? err });
       return null;
+    }
+  }
+
+  /** Track a refresh failure with timing info */
+  private trackRefreshFailure() {
+    this.consecutiveRefreshFailures++;
+    if (this.firstRefreshFailureAt === 0) {
+      this.firstRefreshFailureAt = Date.now();
+    }
+  }
+
+  /** Only trigger auth error after sustained failures over a time window */
+  private shouldTriggerAuthError(threshold: number, timeWindowMs: number): boolean {
+    if (Date.now() <= this.authErrorSuppressedUntil) return false;
+    if (this.consecutiveRefreshFailures < threshold) return false;
+    // Failures must span at least the time window (not just a burst after wake)
+    const failureDuration = Date.now() - this.firstRefreshFailureAt;
+    if (failureDuration < timeWindowMs) return false;
+    return true;
+  }
+
+  /**
+   * Silent re-authentication using stored email/password.
+   * Called when refresh_token is dead — attempts a full sign-in behind the scenes.
+   * If successful, updates session tokens and the user never sees anything.
+   * Returns fresh access_token or null if re-auth failed.
+   */
+  public async attemptSilentReAuth(): Promise<string | null> {
+    if (this.silentReAuthInFlight) return null; // prevent concurrent attempts
+    this.silentReAuthInFlight = true;
+
+    try {
+      const creds = await this.getStoredCreds();
+      if (!creds?.email || !creds?.password) {
+        logger.info('sync.reauth', 'No stored credentials — cannot re-authenticate silently');
+        return null;
+      }
+
+      logger.info('sync.reauth', 'Attempting silent re-authentication...');
+      const res = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          apikey: this.supabaseKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: creds.email, password: creds.password }),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        logger.warn('sync.reauth', 'Silent re-auth failed', { status: res.status, body: body.slice(0, 200) });
+        return null;
+      }
+
+      const data = await res.json();
+      if (!data.access_token || !data.refresh_token) return null;
+
+      // Update session in DB with fresh tokens
+      const session = this.getSessionFromDB();
+      const updated = {
+        ...session,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      };
+      this.db.prepare("INSERT OR REPLACE INTO session (key, value) VALUES ('current', ?)").run(JSON.stringify(updated));
+
+      this.cachedAccessToken = data.access_token;
+      this.lastTokenRefreshAt = Date.now();
+      this.consecutiveRefreshFailures = 0;
+      this.firstRefreshFailureAt = 0;
+
+      logger.info('sync.reauth', 'Silent re-authentication successful — session restored');
+      try { this.onTokenRefreshed(data.access_token); } catch {}
+      return data.access_token;
+    } catch (err: any) {
+      logger.warn('sync.reauth', 'Silent re-auth error', { error: err?.message });
+      return null;
+    } finally {
+      this.silentReAuthInFlight = false;
     }
   }
 
@@ -1119,11 +1222,21 @@ export class SyncEngine {
             logger.warn('sync', 'Auth expired — remaining pending items kept for retry after re-login');
             this.updatePendingCount();
 
-            // Fire auth error so UI can prompt re-login (but only if not suppressed)
+            // Try silent re-auth before showing the modal
+            const reAuthToken = await this.attemptSilentReAuth();
+            if (reAuthToken) {
+              logger.info('sync', 'Silent re-auth succeeded — retrying sync');
+              // Clear AUTH_EXPIRED errors so items get retried
+              this.db.prepare(
+                "UPDATE sync_queue SET last_error = NULL WHERE synced_at IS NULL AND last_error = 'AUTH_EXPIRED: re-login required'"
+              ).run();
+              this.updatePendingCount();
+              break; // Will retry on next cycle with fresh token
+            }
+            // Re-auth failed — fire auth error so UI can prompt re-login
             if (Date.now() > this.authErrorSuppressedUntil) {
               this.onAuthError();
             }
-            // Done with this cycle
             break;
           } else {
             // Already tried refresh once this cycle — skip remaining
@@ -1324,7 +1437,22 @@ export class SyncEngine {
       case 'UPDATE':
       case 'CALL': {
         const patchHeaders = { ...headers, Prefer: 'return=representation' };
-        res = await fetch(`${baseUrl}?id=eq.${item.record_id}`, {
+
+        // Build URL with optimistic locking: prevent overwriting terminal states
+        let patchUrl = `${baseUrl}?id=eq.${item.record_id}`;
+        if (payload.status) {
+          const terminalStatuses = item.table_name === 'tickets'
+            ? ['served', 'cancelled', 'no_show']
+            : item.table_name === 'appointments'
+              ? ['completed', 'cancelled', 'no_show', 'declined']
+              : null;
+          if (terminalStatuses) {
+            // Don't overwrite a row already in a terminal state
+            patchUrl += `&status=not.in.(${terminalStatuses.join(',')})`;
+          }
+        }
+
+        res = await fetch(patchUrl, {
           method: 'PATCH',
           headers: patchHeaders,
           body: JSON.stringify(payload),
@@ -1359,9 +1487,20 @@ export class SyncEngine {
           // Check if Supabase actually updated any rows (RLS or status conflict = empty array)
           const body = await res.json().catch(() => []);
           if (Array.isArray(body) && body.length === 0) {
-            // PATCH returned 0 rows — RLS blocked or row changed remotely.
-            // For terminal status changes (cancelled, served, no_show), this is critical —
-            // treat as failure so the sync retries and the DB trigger can fire notifications.
+            // PATCH returned 0 rows — could be:
+            // a) Terminal-state precondition: row already advanced past our target → safe to skip
+            // b) RLS blocked or row changed remotely → may need retry for critical ops
+            const terminalTicket = ['served', 'cancelled', 'no_show'];
+            const terminalAppt = ['completed', 'cancelled', 'no_show', 'declined'];
+            const isTerminalConflict = payload.status && (
+              (item.table_name === 'tickets' && terminalTicket.includes(payload.status)) ||
+              (item.table_name === 'appointments' && terminalAppt.includes(payload.status))
+            );
+            if (isTerminalConflict) {
+              // Row is already in a terminal state — our update is stale, safe to skip
+              logger.info('sync.replay', 'PATCH 0 rows — row already in terminal state, skipping', { status: payload.status, recordId: item.record_id });
+              return { status: 0 };
+            }
             const isCritical = ['called', 'serving', 'cancelled', 'served', 'no_show'].includes(payload.status);
             const hasDataUpdate = payload.notes !== undefined || payload.priority !== undefined;
             if (isCritical || hasDataUpdate) {

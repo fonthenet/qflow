@@ -16,9 +16,21 @@
   --serving: #22c55e;
   --radius: 12px;
   --radius-sm: 8px;
+  /* Closed/unavailable calendar cells — diagonal stripe pattern */
+  --cell-closed-a: rgba(100,116,139,0.08);
+  --cell-closed-b: rgba(100,116,139,0.18);
+}
+
+/* Light theme overrides (if applied) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --cell-closed-a: rgba(148,163,184,0.12);
+    --cell-closed-b: rgba(148,163,184,0.25);
+  }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { overflow-x: hidden; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
 button { cursor: pointer; font-family: inherit; border: none; }
 input { font-family: inherit; }
@@ -208,21 +220,62 @@ select option {
 .login-footer { text-align: center; color: var(--text3); font-size: 12px; margin-top: 24px; }
 
 /* ── Buttons ─────────────────────────────────────────────────────── */
-.btn-primary { background: var(--primary); color: white; font-weight: 700; border-radius: var(--radius-sm); padding: 12px 24px; font-size: 14px; transition: background 0.15s; }
-.btn-primary:hover { background: var(--primary-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-success { background: var(--success); color: white; font-weight: 700; border-radius: var(--radius-sm); padding: 12px 24px; font-size: 14px; }
-.btn-success:hover { background: #16a34a; }
+.btn-primary {
+  background: var(--primary); color: white; font-weight: 700; border-radius: var(--radius-sm);
+  padding: 12px 24px; font-size: 14px;
+  transition: background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.btn-primary:hover { background: var(--primary-hover); box-shadow: 0 4px 12px rgba(59,130,246,0.35); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0) scale(0.98); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-success {
+  background: var(--success); color: white; font-weight: 700; border-radius: var(--radius-sm);
+  padding: 12px 24px; font-size: 14px;
+  transition: background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.btn-success:hover { background: #16a34a; box-shadow: 0 4px 12px rgba(34,197,94,0.35); transform: translateY(-1px); }
+.btn-success:active { transform: translateY(0) scale(0.98); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
 .btn-full { width: 100%; }
 .btn-lg { padding: 16px 32px; font-size: 18px; border-radius: var(--radius); }
 .btn-xl { padding: 20px 48px; font-size: 22px; border-radius: var(--radius); }
-.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text2); padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; transition: all 0.15s; }
-.btn-outline:hover { background: var(--surface2); color: var(--text); }
-.btn-outline.btn-warning:hover { border-color: var(--warning); color: var(--warning); }
-.btn-outline.btn-danger:hover { border-color: var(--danger); color: var(--danger); }
-.btn-sm { padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; flex-shrink: 0; white-space: nowrap; }
-.btn-call { background: var(--called); color: white; }
-.btn-call:hover { background: #2563eb; }
+
+.btn-outline {
+  background: transparent; border: 1px solid var(--border); color: var(--text2);
+  padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+  transition: all 0.2s ease, transform 0.12s ease;
+}
+.btn-outline:hover { background: var(--surface2); color: var(--text); border-color: var(--text3); transform: translateY(-1px); }
+.btn-outline:active { transform: translateY(0) scale(0.97); }
+.btn-outline.btn-warning:hover { border-color: var(--warning); color: var(--warning); background: rgba(245,158,11,0.08); }
+.btn-outline.btn-danger:hover { border-color: var(--danger); color: var(--danger); background: rgba(239,68,68,0.08); }
+
+.btn-sm {
+  padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px;
+  flex-shrink: 0; white-space: nowrap;
+  transition: all 0.15s ease, transform 0.1s ease;
+}
+.btn-sm:hover { transform: translateY(-1px); }
+.btn-sm:active { transform: translateY(0) scale(0.96); }
+
+.btn-call { background: var(--called); color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease; }
+.btn-call:hover { background: #2563eb; box-shadow: 0 4px 12px rgba(59,130,246,0.3); transform: translateY(-1px); }
+.btn-call:active { transform: translateY(0) scale(0.98); }
+
+/* ── Premium interactive feel (global) ────────────────────────────── */
+/* All clickable inline buttons (not class-based) */
+button:not(.btn-primary):not(.btn-success):not(.btn-outline):not(.btn-sm):not(.btn-call):not(.btn-lg):not([class*="btn-"]) {
+  transition: background 0.2s ease, color 0.15s ease, border-color 0.2s ease, transform 0.1s ease, opacity 0.15s ease, box-shadow 0.2s ease;
+}
+button:not([disabled]):not(.btn-primary):not(.btn-success):not(.btn-outline):not(.btn-sm):not(.btn-call):hover {
+  filter: brightness(1.15);
+}
+button:not([disabled]):active {
+  transform: scale(0.97);
+}
 
 /* ── Station Layout ──────────────────────────────────────────────── */
 .station { display: flex; flex: 1; overflow: hidden; }
@@ -294,7 +347,8 @@ select option {
 .sidebar-section { padding: 10px 16px; border-bottom: 1px solid rgba(71,85,105,0.3); }
 .sidebar-header h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
 .queue-stats { display: flex; gap: 8px; }
-.stat-pill { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+.stat-pill { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; transition: transform 0.15s ease, filter 0.15s ease; }
+.stat-pill:hover { transform: scale(1.05); filter: brightness(1.15); }
 .stat-pill.waiting { background: rgba(245,158,11,0.15); color: var(--warning); }
 .stat-pill.called { background: rgba(59,130,246,0.15); color: var(--called); }
 .stat-pill.serving { background: rgba(34,197,94,0.15); color: var(--serving); }
@@ -305,8 +359,8 @@ select option {
 .queue-list h4 { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
 .ticket-list { display: flex; flex-direction: column; gap: 4px; }
 
-.queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); transition: background 0.1s; }
-.queue-item:hover { background: rgba(255,255,255,0.03); }
+.queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius-sm); transition: background 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease; cursor: default; }
+.queue-item:hover { background: rgba(255,255,255,0.05); transform: translateX(2px); }
 .queue-item.mine { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2); }
 .queue-item-pos { font-size: 12px; font-weight: 800; color: var(--text3); min-width: 28px; flex-shrink: 0; }
 .queue-item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -315,7 +369,8 @@ select option {
 .queue-item-meta { display: block; font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; direction: ltr; unicode-bidi: plaintext; }
 .queue-item-badges { display: flex; gap: 4px; flex-shrink: 0; }
 
-.badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; transition: transform 0.15s ease, filter 0.15s ease; }
+.badge:hover { filter: brightness(1.2); transform: scale(1.05); }
 .badge.priority { background: rgba(245,158,11,0.15); color: var(--warning); }
 .badge.booked { background: rgba(59,130,246,0.15); color: var(--primary); }
 .badge.remote { background: rgba(168,85,247,0.15); color: #a855f7; }
@@ -914,4 +969,38 @@ html[dir="rtl"] .station-action-pills .pills-right {
   .login-card { width: 100%; max-width: 100%; padding: 32px 20px; border-radius: 0; }
 
   [role="dialog"] { min-width: auto !important; max-width: calc(100vw - 32px) !important; margin: 16px; }
+}
+
+/* ── Active ticket pulse on Queue tab ─────────────────────────────── */
+@keyframes queue-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.5); }
+  50% { box-shadow: 0 0 12px 3px rgba(59,130,246,0.4); }
+}
+@keyframes queue-pulse-serving {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+  50% { box-shadow: 0 0 12px 3px rgba(34,197,94,0.4); }
+}
+
+/* ── Premium hover polish (global) ──────────────────────────────── */
+
+/* Appointment / RDV cards in sidebar */
+.sidebar-section [style*="borderLeft"] {
+  transition: transform 0.15s ease, box-shadow 0.2s ease !important;
+}
+.sidebar-section [style*="borderLeft"]:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transform: translateX(2px);
+}
+
+/* Settings modal nav items */
+[role="dialog"] button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar date group headers (Upcoming collapsible) */
+.sidebar-section > div > button {
+  transition: all 0.2s ease !important;
+}
+.sidebar-section > div > button:hover {
+  filter: brightness(1.1);
 }

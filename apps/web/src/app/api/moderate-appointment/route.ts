@@ -110,13 +110,17 @@ export async function POST(request: NextRequest) {
   // and position reminders — no duplicated logic.
   if (action === 'complete') {
     const sb = createAdminClient();
-    // Update appointment status
-    const { error: updErr } = await (sb as any)
+    // Update appointment status (with precondition to prevent race conditions)
+    const { error: updErr, count: updCount } = await (sb as any)
       .from('appointments')
-      .update({ status: 'completed' })
-      .eq('id', appointmentId);
+      .update({ status: 'completed' }, { count: 'exact' })
+      .eq('id', appointmentId)
+      .in('status', ['confirmed', 'checked_in', 'serving']);
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 409 });
+    }
+    if (updCount === 0) {
+      return NextResponse.json({ error: 'Appointment already in terminal state or modified by another user' }, { status: 409 });
     }
     // Find linked ticket(s) via both directions
     const ticketIds = new Set<string>();

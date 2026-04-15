@@ -20,19 +20,21 @@ import {
   countByDate,
   getStatusColor,
   isWithinHorizon,
+  getDayNameFromKey,
   type CalendarDay,
   type CalendarDayInfo,
   type MonthDayInfo,
   type CalendarAppointment,
 } from '@qflo/shared';
 import { normalizeWilayaDisplay, WILAYAS, formatWilayaLabel } from '../lib/wilayas';
+import { useConfirmDialog } from './ConfirmDialog';
 import DatePicker from './DatePicker';
 
 // ── Schedule types ────────────────────────────────────────────────
 
 type OperatingHours = Record<string, { open: string; close: string }> | null;
 
-/** JS Date.getDay() → CalendarDay name */
+/** @deprecated — use getDayNameFromKey(dateKey) instead of JS_DAY_TO_NAME[date.getDay()] */
 const JS_DAY_TO_NAME: CalendarDay[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 /** Check if a day is closed (00:00–00:00 or missing) */
@@ -85,9 +87,11 @@ interface Props {
   services: { id: string; name: string; department_id: string; color?: string | null; estimated_service_time?: number }[];
   officeTimezone?: string;
   onClose: () => void;
-  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete', opts?: { reason?: string }) => Promise<boolean>;
+  onModerate?: (apptId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete' | 'delete', opts?: { reason?: string }) => Promise<boolean>;
   onOpenCustomer?: (phone: string) => void;
   onSlotBook?: (date: string, time: string) => void;
+  /** Called after any appointment data changes (reschedule, notes, etc.) so parent can refresh */
+  onAppointmentChange?: () => void;
   initialViewMode?: ViewMode;
   initialAppointmentId?: string | null;
   /** When true, renders inline (no overlay/backdrop) filling its parent container */
@@ -134,14 +138,17 @@ const APPT_SELECT = `
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, initialViewMode, initialAppointmentId, embedded, refreshKey }: Props) {
+export function CalendarModal({ organizationId, officeId, locale, storedAuth, departments, services, officeTimezone, onClose, onModerate, onOpenCustomer, onSlotBook, onAppointmentChange, initialViewMode, initialAppointmentId, embedded, refreshKey }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
   const tz = officeTimezone || 'Africa/Algiers';
   const intlLocale = LOCALE_MAP[locale] ?? 'en-US';
+  const { confirm } = useConfirmDialog();
 
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode || 'week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [appointments, setAppointments] = useState<CalendarAppointment[]>([]);
+  const appointmentsRef = useRef<CalendarAppointment[]>([]);
+  appointmentsRef.current = appointments;
   const [loading, setLoading] = useState(true);
   const [selectedAppt, setSelectedAppt] = useState<CalendarAppointment | null>(null);
   const [selectedSlotIdx, setSelectedSlotIdx] = useState<number | null>(null);
@@ -345,6 +352,15 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
       // Set visible appointments (exclude cancelled/declined for the grid)
       const visible = allAppts.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
       setAppointments(visible);
+      // Update or close the detail panel if the selected appointment changed externally
+      setSelectedAppt(prev => {
+        if (!prev) return null;
+        const fresh = allAppts.find(a => a.id === prev.id);
+        if (!fresh) return null; // deleted externally → close panel
+        // Status changed externally → update panel data
+        if (fresh.status !== prev.status || fresh.notes !== prev.notes) return fresh as CalendarAppointment;
+        return prev;
+      });
     } catch (err) { console.error('[Calendar] load error:', err); }
     setLoading(false);
   }, [loadAll]);
@@ -394,6 +410,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
   // Realtime gives instant updates; polling every 30s is a safety net
   // in case the realtime channel drops (e.g. JWT expiry).
 
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     let sub: any;
     (async () => {
@@ -402,13 +419,20 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         const sb = await getSupabase();
         sub = sb.channel(`calendar-appts-${officeId}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `office_id=eq.${officeId}` }, () => {
-            load(true);
-            loadActivity();
+            // Debounce rapid-fire events (e.g. bulk approvals) — 300ms
+            if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+            realtimeDebounceRef.current = setTimeout(() => {
+              load(true);
+              loadActivity();
+            }, 300);
           })
           .subscribe();
       } catch { /* ignore */ }
     })();
-    return () => { sub?.unsubscribe?.(); };
+    return () => {
+      sub?.unsubscribe?.();
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+    };
   }, [officeId, load, loadActivity, storedAuth]);
 
   // Polling fallback — reloads every 30s to catch missed realtime events
@@ -869,12 +893,23 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // ── Actions on appointment ─────────────────────────────────────
 
-  const handleAction = async (appt: CalendarAppointment, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete') => {
+  const handleAction = async (appt: CalendarAppointment, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete' | 'delete') => {
     if (!onModerate) return;
     setActionBusy(true);
     try {
       const ok = await onModerate(appt.id, action);
       if (ok) {
+        // On delete, close panel immediately — appointment no longer exists
+        if (action === 'delete') {
+          setSelectedAppt(null);
+          const refreshed = await loadAll();
+          if (refreshed) {
+            setAppointments(refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined'));
+          }
+          loadActivity();
+          setActionBusy(false);
+          return;
+        }
         const refreshed = await loadAll();
         if (!refreshed) { setActionBusy(false); return; }
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
@@ -1095,42 +1130,37 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
     return adjusted.toISOString();
   }, []);
 
-  const handleReschedule = useCallback(async (appointmentId: string, newDateKey: string, newTime: string, opts?: { skipSelect?: boolean }): Promise<boolean> => {
+  const handleReschedule = useCallback(async (appointmentId: string, newDateKey: string, newTime: string, opts?: { skipSelect?: boolean; originalScheduledAt?: string }): Promise<boolean> => {
     try {
       await ensureAuth();
       const sb = await getSupabase();
-      const appt = appointments.find(a => a.id === appointmentId);
+      const appt = appointmentsRef.current.find(a => a.id === appointmentId);
       if (!appt) return false;
 
-      // ── 1. Server-side slot availability check ──
-      // This checks ALL bookings (WhatsApp, web, kiosk, etc.) — single source of truth
-      try {
-        const slotsUrl = `https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(appt.service_id)}&date=${newDateKey}`;
-        const slotsResp = await fetch(slotsUrl);
-        if (slotsResp.ok) {
-          const slotsData = await slotsResp.json();
-          const availableSlots: string[] = slotsData.slots ?? [];
-          // The target time must be in the available list, OR the appointment itself currently
-          // occupies that slot (moving within same slot = ok)
-          const currentTime = formatTimeInTz(appt.scheduled_at, tz);
-          const currentDate = dateKeyInTz(new Date(appt.scheduled_at), tz);
-          const isSameSlot = currentDate === newDateKey && currentTime === newTime;
-          if (!isSameSlot && !availableSlots.includes(newTime)) {
-            console.warn('[Calendar] slot not available server-side:', newTime, 'available:', availableSlots);
-            return false;
-          }
-        }
-      } catch (e) {
-        // If server check fails (e.g. offline), fall back to local check
-        console.warn('[Calendar] server slot check failed, using local check:', e);
-        const conflict = appointments.find(a =>
-          a.id !== appointmentId
-          && a.service_id === appt.service_id
-          && a.status !== 'cancelled' && a.status !== 'declined' && a.status !== 'no_show'
-          && dateKeyInTz(new Date(a.scheduled_at), tz) === newDateKey
-          && formatTimeInTz(a.scheduled_at, tz) === newTime
-        );
-        if (conflict) return false;
+      // ── 0. Same-slot early exit ──
+      // Use originalScheduledAt if provided (drag-drop passes it because
+      // the optimistic UI update has already changed appointmentsRef)
+      const origScheduledAt = opts?.originalScheduledAt ?? appt.scheduled_at;
+      const currentTime = formatTimeInTz(origScheduledAt, tz);
+      const currentDate = dateKeyInTz(new Date(origScheduledAt), tz);
+      if (currentDate === newDateKey && currentTime === newTime) {
+        return true; // No-op — appointment is already in this slot
+      }
+
+      // ── 1. Conflict check (admin-level — no business-hour restrictions) ──
+      // Admin reschedule only checks for double-booking at the target slot.
+      // The customer-facing booking-slots API enforces operating hours, lead time,
+      // holidays, etc. — those rules should NOT restrict admin drag-and-drop.
+      const conflict = appointmentsRef.current.find(a =>
+        a.id !== appointmentId
+        && a.service_id === appt.service_id
+        && a.status !== 'cancelled' && a.status !== 'declined' && a.status !== 'no_show'
+        && dateKeyInTz(new Date(a.scheduled_at), tz) === newDateKey
+        && formatTimeInTz(a.scheduled_at, tz) === newTime
+      );
+      if (conflict) {
+        console.warn('[Calendar] slot conflict — another appointment exists at', newDateKey, newTime);
+        return false;
       }
 
       // ── 2. Compute new UTC timestamp ──
@@ -1156,7 +1186,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         }).catch(err => console.error('[Calendar] reschedule notify error:', err));
       } catch {}
 
-      // ── 5. Refresh local state ──
+      // ── 5. Refresh local state (background — optimistic update already shown) ──
       const refreshed = await loadAll();
       if (refreshed) {
         const visible = refreshed.filter(a => a.status !== 'cancelled' && a.status !== 'declined');
@@ -1164,22 +1194,65 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         const updated = refreshed.find(a => a.id === appointmentId);
         if (updated && !opts?.skipSelect) setSelectedAppt(updated);
       }
+      // Notify parent (Station sidebar) to refresh appointment lists
+      onAppointmentChange?.();
       return true;
     } catch (e) {
       console.error('[Calendar] reschedule failed:', e);
       return false;
     }
-  }, [storedAuth, tz, officeId, appointments, loadAll, localTimeToUTC]);
+  }, [storedAuth, tz, officeId, loadAll, localTimeToUTC, onAppointmentChange]);
+
+  // Stable ref so the drag useEffect never re-subscribes when handleReschedule changes
+  const handleRescheduleRef = useRef(handleReschedule);
+  handleRescheduleRef.current = handleReschedule;
 
   const handleApptDrop = useCallback(async (apptId: string, dateKey: string, time: string) => {
-    const ok = await handleReschedule(apptId, dateKey, time, { skipSelect: true });
+    // ── Same-slot check (cheap, no network) ──
+    const appt = appointmentsRef.current.find(a => a.id === apptId);
+    if (appt) {
+      const curTime = formatTimeInTz(appt.scheduled_at, tz);
+      const curDate = dateKeyInTz(new Date(appt.scheduled_at), tz);
+      if (curDate === dateKey && curTime === time) return; // Dropped back on same cell — no-op
+    }
+
+    // Save original scheduled_at BEFORE optimistic update — handleReschedule
+    // needs it because the optimistic update will have already changed
+    // appointmentsRef by the time ensureAuth() yields
+    const originalScheduledAt = appt?.scheduled_at;
+
+    // ── Optimistic UI: instantly move the appointment in local state ──
+    const newScheduledAt = localTimeToUTC(dateKey, time, tz);
+    setAppointments(prev => prev.map(a =>
+      a.id === apptId ? { ...a, scheduled_at: newScheduledAt } : a
+    ));
+
+    // ── Async server update (pass original time so same-slot check works) ──
+    const ok = await handleRescheduleRef.current(apptId, dateKey, time, { skipSelect: true, originalScheduledAt });
     if (ok) {
-      setDropFeedback({ type: 'success', message: translate(locale, 'Appointment rescheduled') });
+      // Build descriptive message with full context
+      const name = appt?.customer_name || translate(locale, 'Appointment');
+      const service = appt?.service?.name || '';
+      const [y, m, d] = dateKey.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const dayName = dateObj.toLocaleDateString(locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'short' });
+      const dateStr = dateObj.toLocaleDateString(locale === 'ar' ? 'ar-SA' : locale === 'fr' ? 'fr-FR' : 'en-US', { month: 'short', day: 'numeric' });
+      // e.g. "Ahmed's Consultation moved to Wed, Apr 16 at 09:30"
+      const movedTo = locale === 'fr' ? 'déplacé au' : locale === 'ar' ? 'نُقل إلى' : 'moved to';
+      const atWord = locale === 'fr' ? 'à' : locale === 'ar' ? 'الساعة' : 'at';
+      const servicePart = service ? ` · ${service}` : '';
+      setDropFeedback({ type: 'success', message: `${name}${servicePart} ${movedTo} ${dayName} ${dateStr} ${atWord} ${time}` });
     } else {
+      // Revert optimistic update on failure
+      if (originalScheduledAt) {
+        setAppointments(prev => prev.map(a =>
+          a.id === apptId ? { ...a, scheduled_at: originalScheduledAt } : a
+        ));
+      }
       setDropFeedback({ type: 'error', message: translate(locale, 'This time slot is not available') });
     }
     setTimeout(() => setDropFeedback(null), 3000);
-  }, [handleReschedule, locale]);
+  }, [tz, localTimeToUTC, locale]);
 
   // ── Save notes ─────────────────────────────────────────────────
 
@@ -1469,7 +1542,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
             onPointerMove={onSwipeMove}
             onPointerUp={onSwipeUp}
             onPointerCancel={onSwipeUp}
-            onWheel={onWheelSwipe}
+
             onClick={() => {
               // Click on the calendar area closes side panels
               setSelectedAppt(null);
@@ -1546,6 +1619,10 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
                           onWeekNavigate={navigateWeek}
                           slotDuration={slotDuration}
                           onApptDrop={handleApptDrop}
+                          onDropBlocked={(msg) => {
+                            setDropFeedback({ type: 'error', message: msg });
+                            setTimeout(() => setDropFeedback(null), 3000);
+                          }}
                         />
                       </div>
                     ))}
@@ -1614,6 +1691,17 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
               storedAuth={storedAuth}
               onClose={() => setSelectedAppt(null)}
               onAction={(action) => handleAction(selectedAppt, action)}
+              onDelete={async () => {
+                const appt = selectedAppt;
+                if (!appt) return;
+                const customerName = appt.customer_name || t('Unknown');
+                const svcName = serviceMap.get(appt.service_id)?.name || '';
+                const yes = await confirm(
+                  t('Permanently delete appointment for {name}?', { name: customerName }) + (svcName ? ` (${svcName})` : '') + '\n' + t('This cannot be undone. The time slot will become available again.'),
+                  { title: t('Delete Appointment'), confirmLabel: t('Delete'), variant: 'danger' },
+                );
+                if (yes) handleAction(appt, 'delete');
+              }}
               onNotesChange={handleNotesChange}
               onOpenCustomer={onOpenCustomer}
               onReschedule={handleReschedule}
@@ -1624,7 +1712,7 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
           {dropFeedback && (
             <div style={{
               position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-              padding: '10px 20px', borderRadius: 10,
+              padding: '12px 24px', borderRadius: 10, maxWidth: '90%',
               background: dropFeedback.type === 'success'
                 ? 'linear-gradient(135deg, rgba(34,197,94,0.95), rgba(21,128,61,0.95))'
                 : 'linear-gradient(135deg, rgba(239,68,68,0.95), rgba(185,28,28,0.95))',
@@ -1916,16 +2004,10 @@ function MiniCalendar({
     new Date(year, month, 15)
   );
 
-  // Build 6×7 grid starting from Monday
+  // Build 6×7 grid starting from Monday — uses shared getMonthGrid for timezone safety
   const cells = useMemo(() => {
-    const firstDay = new Date(year, month, 1);
-    let startDow = firstDay.getDay() - 1;
-    if (startDow < 0) startDow = 6;
-    const gridStart = new Date(year, month, 1 - startDow);
-    return Array.from({ length: 42 }, (_, i) =>
-      new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i)
-    );
-  }, [year, month]);
+    return getMonthGrid(year, month, timezone).map(d => d.date);
+  }, [year, month, timezone]);
 
   // Week highlight set
   const weekKeySet = useMemo(() => new Set(weekDays.map(d => d.dateKey)), [weekDays]);
@@ -1969,7 +2051,7 @@ function MiniCalendar({
           const isSelected = cellKey === selectedDateKey;
           const isInWeek = weekKeySet.has(cellKey);
           const count = appointmentCounts.get(cellKey) ?? 0;
-          const cellDayName = JS_DAY_TO_NAME[cell.getDay()];
+          const cellDayName = getDayNameFromKey(cellKey);
           const cellClosed = operatingHours ? isDayClosed(operatingHours, cellDayName) : false;
           const cellHoliday = holidaysByDate?.get(cellKey);
 
@@ -2041,7 +2123,7 @@ function DesktopWeekView({
   days, appointmentsByDate, timezone, serviceMap, intlLocale, locale, selectedApptId, operatingHours, onSelect, hideGutter, onCellSelect,
   holidaysByDate, selectedDates, onDayContext, onDayHeaderClick, onSlotDoubleClick, clearSelection,
   startHour: START_HOUR = DEFAULT_START_HOUR, endHour: END_HOUR = DEFAULT_END_HOUR,
-  onWeekNavigate, slotDuration = 30, onApptDrop,
+  onWeekNavigate, slotDuration = 30, onApptDrop, onDropBlocked,
 }: {
   days: CalendarDayInfo[];
   appointmentsByDate: Map<string, CalendarAppointment[]>;
@@ -2067,6 +2149,8 @@ function DesktopWeekView({
   slotDuration?: number;
   /** Called when an appointment is dragged and dropped onto a new slot */
   onApptDrop?: (appointmentId: string, newDateKey: string, newTime: string) => void;
+  /** Called when a drop is attempted on a closed/unavailable cell */
+  onDropBlocked?: (message: string) => void;
 }) {
   const slotHeightPx = (slotDuration / 60) * PIXELS_PER_HOUR;
   const [selectedCell, setSelectedCell] = useState<{ dayIdx: number; slotIdx: number } | null>(null);
@@ -2084,25 +2168,38 @@ function DesktopWeekView({
     startY: number;
     didMove: boolean;
     highlightedEl: HTMLElement | null; // currently highlighted slot cell
+    highlightedOrigBg: string; // original background to restore on clear
   } | null>(null);
   const rafRef = useRef<number | null>(null);
   const justDraggedRef = useRef(false);
 
   // Slot cell positions for hit-testing — keyed by "dateKey|time" for uniqueness
-  const slotCellRefs = useRef<Map<string, { el: HTMLDivElement; dayIdx: number; slotIdx: number; dateKey: string; time: string }>>(new Map());
+  const slotCellRefs = useRef<Map<string, { el: HTMLDivElement; dayIdx: number; slotIdx: number; dateKey: string; time: string; closed: boolean }>>(new Map());
 
-  const registerSlotCell = useCallback((key: string, el: HTMLDivElement | null, dayIdx: number, slotIdx: number, dateKey: string, time: string) => {
+  const registerSlotCell = useCallback((key: string, el: HTMLDivElement | null, dayIdx: number, slotIdx: number, dateKey: string, time: string, closed?: boolean) => {
     // Use dateKey|time as the map key so we can find cells across all 3 carousel panels
     const stableKey = `${dateKey}|${time}`;
     if (el) {
-      slotCellRefs.current.set(stableKey, { el, dayIdx, slotIdx, dateKey, time });
+      slotCellRefs.current.set(stableKey, { el, dayIdx, slotIdx, dateKey, time, closed: !!closed });
     } else {
       slotCellRefs.current.delete(stableKey);
     }
   }, []);
 
-  // Find which slot cell the pointer is over
+  // Find which slot cell the pointer is over (skips closed/outside-hours cells)
   const hitTestSlot = useCallback((clientX: number, clientY: number) => {
+    for (const [, info] of slotCellRefs.current) {
+      const rect = info.el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        if (info.closed) return null; // Can't drop on closed cells
+        return info;
+      }
+    }
+    return null;
+  }, []);
+
+  // Raw hit-test including closed cells — used to show "blocked" feedback during drag
+  const hitTestSlotRaw = useCallback((clientX: number, clientY: number) => {
     for (const [, info] of slotCellRefs.current) {
       const rect = info.el.getBoundingClientRect();
       if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
@@ -2112,20 +2209,23 @@ function DesktopWeekView({
     return null;
   }, []);
 
-  // Clear drag highlight from any element
+  // Clear drag highlight from any element — restores original background
   const clearHighlight = useCallback(() => {
     const drag = dragRef.current;
     if (drag?.highlightedEl) {
       drag.highlightedEl.style.outline = '';
       drag.highlightedEl.style.outlineOffset = '';
-      drag.highlightedEl.style.background = '';
+      drag.highlightedEl.style.background = drag.highlightedOrigBg ?? '';
       drag.highlightedEl.style.borderRadius = '';
       drag.highlightedEl = null;
+      drag.highlightedOrigBg = '';
     }
   }, []);
 
-  // Apply drag highlight to a slot cell
+  // Apply drag highlight to a slot cell — saves original background first
   const applyHighlight = useCallback((el: HTMLElement) => {
+    const drag = dragRef.current;
+    if (drag) drag.highlightedOrigBg = el.style.background;
     el.setAttribute('data-drag-highlight', '1');
     el.style.outline = '2px dashed #22c55e';
     el.style.outlineOffset = '-2px';
@@ -2146,10 +2246,11 @@ function DesktopWeekView({
     clearHighlight();
     // Safety: query the ENTIRE DOM for any element with drag highlight
     // (covers orphaned elements after React re-renders)
+    // NOTE: Don't clear `background` here — closed cells have stripe patterns
+    // set via inline style that can't be restored. Only clear outline styling.
     document.querySelectorAll('[data-drag-highlight]').forEach((el) => {
       (el as HTMLElement).style.outline = '';
       (el as HTMLElement).style.outlineOffset = '';
-      (el as HTMLElement).style.background = '';
       (el as HTMLElement).style.borderRadius = '';
       el.removeAttribute('data-drag-highlight');
     });
@@ -2169,7 +2270,22 @@ function DesktopWeekView({
     }
   }, [clearHighlight]);
 
-  // Global pointermove/pointerup during drag
+  // Stable refs for values used inside the drag useEffect —
+  // prevents re-subscribing listeners when these change.
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
+  const onDropBlockedRef = useRef(onDropBlocked);
+  onDropBlockedRef.current = onDropBlocked;
+
+  // Stable ref for the drop callback — prevents the drag useEffect from
+  // re-subscribing listeners every time appointments/locale changes.
+  // Without this, every 30s poll or realtime event would tear down the
+  // pointermove/pointerup listeners, calling cleanupDrag() and killing
+  // any in-progress drag.
+  const onApptDropRef = useRef(onApptDrop);
+  onApptDropRef.current = onApptDrop;
+
+  // Global pointermove/pointerup during drag — subscribes ONCE on mount
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -2191,12 +2307,26 @@ function DesktopWeekView({
         }
         // Hit-test and highlight via DOM (no React state)
         const hit = hitTestSlot(e.clientX, e.clientY);
+        const rawHit = !hit ? hitTestSlotRaw(e.clientX, e.clientY) : null;
         const prevEl = dragRef.current.highlightedEl;
         if (hit) {
+          // Valid drop target — green highlight
           if (prevEl !== hit.el) {
             clearHighlight();
             applyHighlight(hit.el);
             dragRef.current.highlightedEl = hit.el;
+          }
+        } else if (rawHit?.closed) {
+          // Hovering over a closed cell — red blocked highlight
+          if (prevEl !== rawHit.el) {
+            clearHighlight();
+            dragRef.current.highlightedOrigBg = rawHit.el.style.background;
+            rawHit.el.setAttribute('data-drag-highlight', '1');
+            rawHit.el.style.outline = '2px dashed #ef4444';
+            rawHit.el.style.outlineOffset = '-2px';
+            rawHit.el.style.background = 'rgba(239,68,68,0.15)';
+            rawHit.el.style.borderRadius = '4px';
+            dragRef.current.highlightedEl = rawHit.el;
           }
         } else if (prevEl) {
           clearHighlight();
@@ -2210,17 +2340,30 @@ function DesktopWeekView({
 
       // Get drop target BEFORE cleanup
       let dropTarget: { dateKey: string; time: string } | null = null;
+      let droppedOnClosed = false;
       if (drag.didMove) {
         const hit = hitTestSlot(e.clientX, e.clientY);
-        if (hit) dropTarget = { dateKey: hit.dateKey, time: hit.time };
+        if (hit) {
+          dropTarget = { dateKey: hit.dateKey, time: hit.time };
+        } else {
+          // Check if we dropped on a closed cell
+          const rawHit = hitTestSlotRaw(e.clientX, e.clientY);
+          if (rawHit?.closed) droppedOnClosed = true;
+        }
       }
 
       // Clean up everything immediately
       cleanupDrag();
 
-      // Perform async drop
-      if (dropTarget && onApptDrop) {
-        onApptDrop(drag.apptId, dropTarget.dateKey, dropTarget.time);
+      // Show alert if dropped on closed cell
+      if (droppedOnClosed) {
+        onDropBlockedRef.current?.(translate(localeRef.current, 'This time slot is closed'));
+        return;
+      }
+
+      // Perform async drop (use ref so we always call the latest handler)
+      if (dropTarget && onApptDropRef.current) {
+        onApptDropRef.current(drag.apptId, dropTarget.dateKey, dropTarget.time);
       }
     };
 
@@ -2238,10 +2381,11 @@ function DesktopWeekView({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      // Safety: cleanup any lingering drag state on unmount/re-render
+      // Safety: cleanup any lingering drag state on unmount
       if (dragRef.current) cleanupDrag();
     };
-  }, [hitTestSlot, onApptDrop, cleanupDrag, clearHighlight, applyHighlight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hitTestSlot, hitTestSlotRaw, cleanupDrag, clearHighlight, applyHighlight]);
 
   // Notify parent of selected slot for time gutter highlighting
   useEffect(() => {
@@ -2352,17 +2496,17 @@ function DesktopWeekView({
                   cursor: 'pointer',
                   borderRadius: (isMultiSelected || isHighlightedCol || day.isToday) ? '4px 4px 0 0' : 0,
                   background: isMultiSelected
-                    ? 'rgba(59,130,246,0.25)'
+                    ? 'rgba(59,130,246,0.35)'
                     : isHoliday
                       ? 'rgba(239,68,68,0.15)'
                       : isHighlightedCol
-                        ? 'rgba(59,130,246,0.18)'
+                        ? 'rgba(59,130,246,0.35)'
                         : dayClosed ? 'rgba(239,68,68,0.12)' : day.isToday ? '#3b82f6' : 'transparent',
                   color: isHoliday ? '#fca5a5'
                     : dayClosed ? '#fca5a5'
-                    : isHighlightedCol ? '#1e293b'
+                    : isHighlightedCol ? '#e2e8f0'
                     : day.isToday ? '#fff'
-                    : 'var(--text, #1e293b)',
+                    : 'var(--text, #e2e8f0)',
                   fontSize: 12, fontWeight: day.isToday || isHighlightedCol || isHoliday ? 700 : 500,
                 }}>
                 {formatDayHeader(day.date, timezone, intlLocale)}
@@ -2404,13 +2548,16 @@ function DesktopWeekView({
                   const isExactCell = selectedCell !== null
                     && selectedCell.dayIdx === dayIdx && selectedCell.slotIdx === si;
                   const cellKey = `${dayIdx}-${si}`;
+                  const isCellClosed = dayClosed || isOutsideHours || isHoliday;
                   return (
                     <div
                       key={s.label}
-                      ref={(el) => registerSlotCell(cellKey, el as HTMLDivElement | null, dayIdx, si, day.dateKey, s.label)}
+                      ref={(el) => registerSlotCell(cellKey, el as HTMLDivElement | null, dayIdx, si, day.dateKey, s.label, isCellClosed)}
+                      data-cell-closed={isCellClosed ? '1' : undefined}
                       onClick={() => {
                         // Don't select cell if we just finished a drag
                         if (justDraggedRef.current) return;
+                        if (isCellClosed) return; // Can't select closed cells
                         setSelectedCell(
                           selectedCell?.dayIdx === dayIdx && selectedCell?.slotIdx === si ? null : { dayIdx, slotIdx: si }
                         );
@@ -2419,19 +2566,17 @@ function DesktopWeekView({
                       }}
                       style={{
                         height: slotHeightPx,
-                        cursor: 'pointer',
+                        cursor: isCellClosed ? 'not-allowed' : 'pointer',
                         borderBottom: s.minute === 0
                           ? '1px solid var(--border, #334155)'
                           : '1px solid var(--border, #1e293b)',
                         background: isExactCell
-                          ? 'rgba(59,130,246,0.18)'
-                          : isCrossHighlight
-                            ? 'rgba(59,130,246,0.06)'
-                            : dayClosed
-                              ? 'repeating-linear-gradient(135deg, transparent, transparent 4px, rgba(239,68,68,0.03) 4px, rgba(239,68,68,0.03) 8px)'
-                              : isOutsideHours
-                                ? 'rgba(100,116,139,0.06)'
-                                : 'rgba(59,130,246,0.02)',
+                          ? 'rgba(59,130,246,0.25)'
+                          : isCellClosed
+                            ? 'repeating-linear-gradient(135deg, var(--cell-closed-a, rgba(100,116,139,0.08)), var(--cell-closed-a, rgba(100,116,139,0.08)) 4px, var(--cell-closed-b, rgba(100,116,139,0.16)) 4px, var(--cell-closed-b, rgba(100,116,139,0.16)) 8px)'
+                            : isCrossHighlight
+                              ? 'rgba(59,130,246,0.12)'
+                              : 'transparent',
                         transition: 'background 0.12s',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
@@ -2546,6 +2691,7 @@ function DesktopWeekView({
                             startY: e.clientY,
                             didMove: false,
                             highlightedEl: null,
+                            highlightedOrigBg: '',
                           };
                           // Fade source
                           (e.currentTarget as HTMLElement).style.opacity = '0.3';
@@ -2567,14 +2713,14 @@ function DesktopWeekView({
                           height: clippedHeight,
                           background: color + (isActive ? 'ff' : 'cc'),
                           color: '#fff',
-                          border: isActive ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.15)',
-                          borderLeft: isActive ? '2px solid #22c55e' : `4px solid ${statusInfo.color}`,
+                          border: isActive ? '2px solid #ef4444' : '1px solid rgba(255,255,255,0.15)',
+                          borderLeft: isActive ? '2px solid #ef4444' : `4px solid ${statusInfo.color}`,
                           padding: '2px 5px 2px 4px', textAlign: 'left',
                           cursor: canDrag ? 'grab' : 'pointer',
                           fontSize: clippedHeight < 28 ? 9 : 11,
                           lineHeight: clippedHeight < 28 ? '11px' : '14px',
                           overflow: 'hidden', zIndex: isActive ? 15 : 10,
-                          boxShadow: isActive ? '0 0 0 2px rgba(34,197,94,0.3), 0 2px 8px rgba(0,0,0,0.3)' : 'none',
+                          boxShadow: isActive ? '0 0 0 2px rgba(239,68,68,0.3), 0 2px 8px rgba(0,0,0,0.3)' : 'none',
                           transition: 'border 0.15s, box-shadow 0.15s, left 0.2s, width 0.2s, opacity 0.2s, transform 0.2s',
                           userSelect: 'none',
                           touchAction: 'none',
@@ -2763,8 +2909,7 @@ function DesktopListView({
         ) : (
           filteredGroups.map(g => {
             const date = new Date(g.dateKey + 'T12:00:00');
-            const dayOfWeek = date.getDay();
-            const dayName = JS_DAY_NAMES[dayOfWeek];
+            const dayName = getDayNameFromKey(g.dateKey);
             const holiday = holidaysByDate.get(g.dateKey);
             const closed = isDayClosed(operatingHours, dayName);
             const isToday = g.dateKey === todayKey;
@@ -2996,7 +3141,7 @@ function DesktopMonthView({
             {week.map(day => {
               const count = appointmentCounts.get(day.dateKey) ?? 0;
               const dayAppts = (appointmentsByDate.get(day.dateKey) ?? []).slice(0, 3);
-              const dayName = JS_DAY_TO_NAME[day.date.getDay()];
+              const dayName = getDayNameFromKey(day.dateKey);
               const closed = operatingHours ? isDayClosed(operatingHours, dayName) : false;
               const holiday = holidaysByDate?.get(day.dateKey);
               const isHoliday = !!holiday;
@@ -3500,7 +3645,7 @@ function QuickBookPanel({ date, time, officeId, organizationId, storedAuth, depa
 
 function DesktopApptDetail({
   appointment: a, timezone, serviceMap, departments, locale, intlLocale, actionBusy,
-  officeId, storedAuth, onClose, onAction, onNotesChange, onOpenCustomer, onReschedule,
+  officeId, storedAuth, onClose, onAction, onDelete, onNotesChange, onOpenCustomer, onReschedule,
 }: {
   appointment: CalendarAppointment;
   timezone: string;
@@ -3512,7 +3657,8 @@ function DesktopApptDetail({
   officeId: string;
   storedAuth?: { access_token?: string; refresh_token?: string; email?: string; password?: string };
   onClose: () => void;
-  onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete') => void;
+  onAction: (action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'call' | 'serve' | 'complete' | 'delete') => void;
+  onDelete: () => void;
   onNotesChange: (appointmentId: string, notes: string) => void;
   onOpenCustomer?: (phone: string) => void;
   onReschedule?: (appointmentId: string, newDateKey: string, newTime: string) => Promise<boolean>;
@@ -3776,14 +3922,15 @@ function DesktopApptDetail({
 
   return (
     <div style={{
-      width: 360, flexShrink: 0,
+      width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column',
       background: 'var(--surface, #1e293b)', borderLeft: '1px solid var(--border, #475569)',
-      boxShadow: '-8px 0 32px rgba(0,0,0,0.3)', overflow: 'auto',
+      boxShadow: '-8px 0 32px rgba(0,0,0,0.3)', overflow: 'hidden',
     }}>
-      {/* Header */}
+      {/* Header — fixed, never scrolls */}
       <div style={{
         padding: '14px 16px', borderBottom: '1px solid var(--border, #475569)',
-        display: 'flex', alignItems: 'center', gap: 10,
+        display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        background: 'var(--surface, #1e293b)', zIndex: 2,
       }}>
         <div style={{ width: 10, height: 10, borderRadius: 5, background: serviceColor, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -3801,8 +3948,8 @@ function DesktopApptDetail({
         }}>×</button>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: 16 }}>
+      {/* Body — scrollable */}
+      <div style={{ padding: 16, flex: 1, overflowY: 'auto' }}>
         {/* Status badge + ticket number */}
         <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12, color: '#fff', background: statusColor }}>
@@ -4089,11 +4236,34 @@ function DesktopApptDetail({
                 ✓ {t('Complete')}
               </button>
             )}
-            <button onClick={() => onAction('cancel')} disabled={actionBusy} style={actionBtn('rgba(239,68,68,0.15)', '#ef4444')}>
-              {t('Cancel Appointment')}
-            </button>
+            {a.status !== 'pending' && (
+              <button onClick={() => onAction('cancel')} disabled={actionBusy} style={actionBtn('rgba(239,68,68,0.15)', '#ef4444')}>
+                {t('Cancel Appointment')}
+              </button>
+            )}
           </div>
         )}
+
+        {/* ── Delete button (always visible) ── */}
+        <div style={{ marginTop: isActive ? 8 : 16, paddingTop: 12, borderTop: '1px solid var(--border, #334155)' }}>
+          <button
+            onClick={onDelete}
+            disabled={actionBusy}
+            style={{
+              width: '100%', padding: '8px 12px', borderRadius: 8,
+              border: '1px dashed rgba(239,68,68,0.3)',
+              background: 'transparent',
+              color: '#ef4444', cursor: actionBusy ? 'not-allowed' : 'pointer',
+              fontSize: 12, fontWeight: 600, opacity: actionBusy ? 0.5 : 0.7,
+              transition: 'all 0.15s',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+            onMouseEnter={(e) => { if (!actionBusy) { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.background = 'transparent'; }}
+          >
+            🗑 {t('Delete Appointment')}
+          </button>
+        </div>
 
         {/* ── Activity Timeline ── */}
         <div style={{ marginTop: 20 }}>

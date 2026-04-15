@@ -237,7 +237,78 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       title: t('sm.section.languages'),
       fields: [], // Station language handled as custom section below
     },
+    {
+      id: 'account',
+      icon: '👤',
+      title: t('Account'),
+      fields: [], // Custom-rendered section
+    },
   ], [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Account section state ──
+  const [acctEmail, setAcctEmail] = useState('');
+  const [acctNewPassword, setAcctNewPassword] = useState('');
+  const [acctConfirmPassword, setAcctConfirmPassword] = useState('');
+  const [acctEmailBusy, setAcctEmailBusy] = useState(false);
+  const [acctPwdBusy, setAcctPwdBusy] = useState(false);
+  const [acctEmailMsg, setAcctEmailMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [acctPwdMsg, setAcctPwdMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Load current email on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        await ensureAuth();
+        const sb = await getSupabase();
+        const { data } = await sb.auth.getUser();
+        if (data?.user?.email) setAcctEmail(data.user.email);
+      } catch {}
+    })();
+  }, []);
+
+  const handleUpdateEmail = async () => {
+    if (!acctEmail.trim() || acctEmailBusy) return;
+    setAcctEmailBusy(true);
+    setAcctEmailMsg(null);
+    try {
+      await ensureAuth();
+      const sb = await getSupabase();
+      const { error } = await sb.auth.updateUser({ email: acctEmail.trim() });
+      if (error) throw error;
+      setAcctEmailMsg({ ok: true, text: t('Email updated successfully') });
+    } catch (err: any) {
+      setAcctEmailMsg({ ok: false, text: err?.message || t('Failed to update email') });
+    } finally {
+      setAcctEmailBusy(false);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!acctNewPassword || acctPwdBusy) return;
+    if (acctNewPassword.length < 6) {
+      setAcctPwdMsg({ ok: false, text: t('Password must be at least 6 characters') });
+      return;
+    }
+    if (acctNewPassword !== acctConfirmPassword) {
+      setAcctPwdMsg({ ok: false, text: t('Passwords do not match') });
+      return;
+    }
+    setAcctPwdBusy(true);
+    setAcctPwdMsg(null);
+    try {
+      await ensureAuth();
+      const sb = await getSupabase();
+      const { error } = await sb.auth.updateUser({ password: acctNewPassword });
+      if (error) throw error;
+      setAcctNewPassword('');
+      setAcctConfirmPassword('');
+      setAcctPwdMsg({ ok: true, text: t('Password updated successfully') });
+    } catch (err: any) {
+      setAcctPwdMsg({ ok: false, text: err?.message || t('Failed to update password') });
+    } finally {
+      setAcctPwdBusy(false);
+    }
+  };
 
   // Side nav items: sections + schedule
   const navItems = useMemo(() => {
@@ -428,7 +499,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (cur !== orig) return true;
     }
     return false;
-  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr]);
+  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr, officeTimezone, originalTimezone, schedule, originalSchedule, holidays, originalHolidays]);
 
   // ─── Validation ───────────────────────────────────────────────────
   const errors = useMemo(() => {
@@ -1434,7 +1505,70 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               <div style={{
                 flex: 1, overflowY: 'auto', padding: '16px 22px',
               }}>
-                {activeSection === 'schedule' ? (
+                {activeSection === 'account' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>👤 {t('Account')}</h3>
+
+                    {/* Change Email */}
+                    <div style={{ background: 'var(--surface2, #334155)', borderRadius: 10, padding: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{t('Change Email')}</div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 11, color: 'var(--text3, #64748b)', display: 'block', marginBottom: 4 }}>{t('Email')}</label>
+                          <input
+                            type="email"
+                            value={acctEmail}
+                            onChange={(e) => setAcctEmail(e.target.value)}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                          />
+                        </div>
+                        <button
+                          onClick={handleUpdateEmail}
+                          disabled={acctEmailBusy}
+                          style={{ padding: '8px 14px', borderRadius: 6, background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: acctEmailBusy ? 'not-allowed' : 'pointer', opacity: acctEmailBusy ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                        >{acctEmailBusy ? t('Loading...') : t('Update Email')}</button>
+                      </div>
+                      {acctEmailMsg && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: acctEmailMsg.ok ? '#22c55e' : '#ef4444' }}>{acctEmailMsg.text}</div>
+                      )}
+                    </div>
+
+                    {/* Change Password */}
+                    <div style={{ background: 'var(--surface2, #334155)', borderRadius: 10, padding: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>{t('Change Password')}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, color: 'var(--text3, #64748b)', display: 'block', marginBottom: 4 }}>{t('New Password')}</label>
+                          <input
+                            type="password"
+                            value={acctNewPassword}
+                            onChange={(e) => setAcctNewPassword(e.target.value)}
+                            placeholder={t('Minimum 6 characters')}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, color: 'var(--text3, #64748b)', display: 'block', marginBottom: 4 }}>{t('Confirm Password')}</label>
+                          <input
+                            type="password"
+                            value={acctConfirmPassword}
+                            onChange={(e) => setAcctConfirmPassword(e.target.value)}
+                            placeholder={t('Repeat new password')}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)', color: 'var(--text, #f1f5f9)', fontSize: 13 }}
+                          />
+                        </div>
+                        <button
+                          onClick={handleUpdatePassword}
+                          disabled={acctPwdBusy || !acctNewPassword}
+                          style={{ alignSelf: 'flex-start', padding: '8px 14px', borderRadius: 6, background: 'var(--primary, #3b82f6)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: acctPwdBusy || !acctNewPassword ? 'not-allowed' : 'pointer', opacity: acctPwdBusy || !acctNewPassword ? 0.6 : 1 }}
+                        >{acctPwdBusy ? t('Loading...') : t('Update Password')}</button>
+                      </div>
+                      {acctPwdMsg && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: acctPwdMsg.ok ? '#22c55e' : '#ef4444' }}>{acctPwdMsg.text}</div>
+                      )}
+                    </div>
+                  </div>
+                ) : activeSection === 'schedule' ? (
                   scheduleMatchesSearch ? renderScheduleContent() : (
                     <p style={{ textAlign: 'center', color: 'var(--text3, #64748b)', padding: 30 }}>
                       {t('sm.no_results')}

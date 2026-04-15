@@ -148,13 +148,17 @@ export async function POST(request: NextRequest) {
     // Include notes if provided
     if (notes !== undefined) updatePayload.notes = notes || null;
 
-    const { error: updateErr } = await supabase
+    const { error: updateErr, count: updateCount } = await supabase
       .from('tickets')
-      .update(updatePayload)
-      .eq('id', ticketId);
+      .update(updatePayload, { count: 'exact' })
+      .eq('id', ticketId)
+      .eq('status', ticket.status);  // optimistic lock: only update if status hasn't changed
 
     if (updateErr) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    }
+    if (updateCount === 0) {
+      return NextResponse.json({ error: 'Ticket status changed by another user' }, { status: 409 });
     }
   }
 

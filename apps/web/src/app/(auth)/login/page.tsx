@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
@@ -25,10 +25,39 @@ function SubmitButton() {
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberPassword, setRememberPassword] = useState(false);
   const { t } = useI18n();
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('qflo_saved_email');
+    if (savedEmail) setEmail(savedEmail);
+
+    const rememberPref = localStorage.getItem('qflo_remember_password') === 'true';
+    setRememberPassword(rememberPref);
+
+    if (rememberPref) {
+      const savedPassword = localStorage.getItem('qflo_saved_password');
+      if (savedPassword) setPassword(savedPassword);
+    }
+  }, []);
 
   async function handleSubmit(formData: FormData) {
     setError(null);
+
+    const emailValue = formData.get('email') as string;
+    const passwordValue = formData.get('password') as string;
+
+    localStorage.setItem('qflo_saved_email', emailValue);
+    localStorage.setItem('qflo_remember_password', rememberPassword ? 'true' : 'false');
+
+    if (rememberPassword) {
+      localStorage.setItem('qflo_saved_password', passwordValue);
+    } else {
+      localStorage.removeItem('qflo_saved_password');
+    }
+
     const result = await login(formData);
     if (result?.error) {
       setError(result.error);
@@ -62,6 +91,8 @@ export default function LoginPage() {
                 name="email"
                 type="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 placeholder="you@company.com"
               />
@@ -76,9 +107,24 @@ export default function LoginPage() {
                 name="password"
                 type="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 placeholder={t('Enter your password')}
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="rememberPassword"
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={(e) => setRememberPassword(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <label htmlFor="rememberPassword" className="text-sm text-muted-foreground">
+                {t('Remember password')}
+              </label>
             </div>
 
             <SubmitButton />

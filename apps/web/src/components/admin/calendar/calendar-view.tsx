@@ -157,6 +157,13 @@ export function CalendarView({ offices, departments, services, staffMembers }: P
           staff: Array.isArray(row.staff) ? row.staff[0] ?? null : row.staff ?? null,
         })) as CalendarAppointment[];
         setAppointments(normalized);
+        // Update or close the detail panel if the selected appointment changed externally
+        setSelectedAppt(prev => {
+          if (!prev) return null;
+          const fresh = normalized.find(a => a.id === prev.id);
+          if (!fresh) return null; // deleted or filtered out → close panel
+          return fresh;
+        });
       }
     });
   }, [selectedOfficeId, viewMode, currentDate, tz, filterDeptId, filterServiceId, filterStaffId]);

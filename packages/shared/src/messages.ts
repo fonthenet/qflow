@@ -47,14 +47,14 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: "▶️ Your service has started at *{name}*! Ticket *{ticket}* — you're now being served at *{desk}*.",
   },
   no_show: {
-    fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
-    ar: "التذكرة *{ticket}* في *{name}* تم تسجيلها كـ *غائب*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.",
-    en: "❌ Ticket *{ticket}* at *{name}* was marked as *no show*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.",
+    fr: "❌ Le ticket *{ticket}* chez *{name}* a été marqué *absent* le *{date}* à *{time}*. Vous avez manqué votre tour.\n\nEnvoyez *REJOINDRE <code>* pour rejoindre à nouveau.",
+    ar: "التذكرة *{ticket}* في *{name}* تم تسجيلها كـ *غائب* بتاريخ *{date}* الساعة *{time}*. لقد فاتك دورك ❌\n\nأرسل *انضم <الرمز>* للانضمام مجددًا.",
+    en: "❌ Ticket *{ticket}* at *{name}* was marked as *no show* on *{date}* at *{time}*. You missed your turn.\n\nSend *JOIN <code>* to rejoin.",
   },
   served: {
-    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé. Merci pour votre visite.",
-    ar: "التذكرة *{ticket}* في *{name}* مكتملة. شكرًا لزيارتكم. ✅",
-    en: "✅ Ticket *{ticket}* at *{name}* is complete. Thank you for your visit.",
+    fr: "✅ Le ticket *{ticket}* chez *{name}* est terminé le *{date}* à *{time}*. Merci pour votre visite !",
+    ar: "التذكرة *{ticket}* في *{name}* مكتملة بتاريخ *{date}* الساعة *{time}*. شكرًا لزيارتكم! ✅",
+    en: "✅ Ticket *{ticket}* at *{name}* is complete (*{date}* at *{time}*). Thank you for your visit!",
   },
   next_in_line: {
     fr: "⏳ *Vous êtes le prochain chez {name} !* Ticket *{ticket}* — préparez-vous, c'est bientôt votre tour.\n\nSuivi : {url}",
@@ -72,9 +72,9 @@ export const notificationMessages: Record<string, Record<Locale, string>> = {
     en: "✅ You're in the queue at *{name}*!\n\n🎫 Ticket: *{ticket}*\n📍 Position: *#{position}*\n⏱️ Est. wait: *~{wait} min*\n\n📍 Track your position: {url}",
   },
   cancelled_notify: {
-    fr: "🚫 Le ticket *{ticket}* chez *{name}* a été annulé.",
-    ar: "تم إلغاء التذكرة *{ticket}* في *{name}* 🚫",
-    en: "🚫 Ticket *{ticket}* at *{name}* has been cancelled.",
+    fr: "🚫 Le ticket *{ticket}* chez *{name}* a été annulé.\n\n📅 Date : *{date}*\n🕐 Heure : *{time}*",
+    ar: "تم إلغاء التذكرة *{ticket}* في *{name}* 🚫\n\n📅 التاريخ: *{date}*\n🕐 الوقت: *{time}*",
+    en: "🚫 Ticket *{ticket}* at *{name}* has been cancelled.\n\n📅 Date: *{date}*\n🕐 Time: *{time}*",
   },
   position_update: {
     fr: "📍 *{name}* — Mise à jour\n\nVous êtes maintenant *#{position}* dans la file.\n⏱ Attente estimée : ~*{wait} min*\n\nSuivi : {url}",

@@ -1464,9 +1464,19 @@ function setupIPC() {
     // Backup and close DB before installing update to prevent data loss
     backupDatabase();
     closeDB();
-    logger.info('update', 'DB backed up and closed — proceeding with quitAndInstall');
+    // Silent install when we have write access; non-silent for elevation (UAC)
+    const installDir = path.dirname(app.getPath('exe'));
+    const isProtected = installDir.toLowerCase().includes('program files') || installDir.toLowerCase().startsWith('c:\\windows');
+    let canWrite = true;
+    try {
+      const testFile = path.join(installDir, '.qf-update-test');
+      require('fs').writeFileSync(testFile, 'test');
+      require('fs').unlinkSync(testFile);
+    } catch { canWrite = false; }
+    const useSilent = canWrite && !isProtected;
+    logger.info('update', 'DB backed up and closed — proceeding with quitAndInstall', { silent: useSilent });
     setImmediate(() => {
-      autoUpdater.quitAndInstall(false, true);
+      autoUpdater.quitAndInstall(useSilent, true);
     });
     return { ok: true };
   });
@@ -1922,7 +1932,11 @@ async function registerStationIP(session: any) {
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  // Another instance is already running — quit this one immediately
+  // Another instance is already running — focus it instead of launching a duplicate.
+  // But if the old instance is a zombie (no visible window), it won't respond to
+  // second-instance. The user must kill it from Task Manager. On next start, we'll
+  // get the lock. Don't silently quit — show a brief log so it's diagnosable.
+  console.log('[startup] Another instance holds the lock — quitting. If the app is not visible, end "Qflo Station" in Task Manager.');
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -1987,7 +2001,29 @@ app.whenReady().then(async () => {
       // Token was refreshed by sync engine — broadcast to renderer
       // so its Supabase client gets the new token immediately
       mainWindow?.webContents.send('auth:token-refreshed', token);
-    }
+    },
+    async () => {
+      // Ask renderer for stored login credentials (saved via "Remember Password")
+      try {
+        if (!mainWindow || mainWindow.isDestroyed()) return null;
+        const creds = await mainWindow.webContents.executeJavaScript(`
+          (function() {
+            try {
+              const email = localStorage.getItem('qflo_saved_email');
+              const password = localStorage.getItem('qflo_saved_password');
+              const remember = localStorage.getItem('qflo_remember_password');
+              if (email && password && remember === 'true') {
+                return { email, password };
+              }
+              return null;
+            } catch { return null; }
+          })()
+        `);
+        return creds;
+      } catch {
+        return null;
+      }
+    },
   );
   syncEngine.start();
 
@@ -2011,13 +2047,15 @@ app.whenReady().then(async () => {
       });
 
       if (!res.ok) {
-        logger.error('startup', 'Refresh token is stale — prompting re-login', {
-          code: 'QF-AUTH-001', status: res.status,
-        });
-        // Small delay to let the renderer mount first
-        setTimeout(() => {
-          mainWindow?.webContents.send('auth:session-expired');
-        }, 3000);
+        logger.warn('startup', 'Refresh token is stale — attempting silent re-auth', { status: res.status });
+        // Try silent re-auth with stored credentials before showing modal
+        const reAuthResult = await syncEngine?.attemptSilentReAuth();
+        if (!reAuthResult) {
+          logger.error('startup', 'Silent re-auth failed — prompting re-login', { code: 'QF-AUTH-001' });
+          setTimeout(() => {
+            mainWindow?.webContents.send('auth:session-expired');
+          }, 3000);
+        }
       } else {
         // Token is valid — update session with fresh tokens
         const data = await res.json();
@@ -2176,10 +2214,28 @@ app.whenReady().then(async () => {
         canWrite = false;
       }
 
+      // Close DB before update to prevent data loss from forced taskkill
+      backupDatabase();
+      closeDB();
+
       if (!canWrite || isProtected) {
-        // Can't auto-update — open GitHub release for manual install
-        logger.error('update', 'Install dir is protected — manual install required', {
-          code: 'QF-INSTALL-002', installDir,
+        // Install dir needs elevation — NSIS installer will show UAC prompt
+        // thanks to allowElevation: true in electron-builder config
+        logger.info('update', 'Install dir is protected — attempting elevated install via NSIS UAC', {
+          installDir,
+        });
+      }
+
+      // Silent install (no progress UI) when we have write access;
+      // non-silent when elevation needed so NSIS can show UAC prompt
+      const useSilent = canWrite && !isProtected;
+      logger.info('update', 'DB backed up and closed — user chose Restart Now', { silent: useSilent });
+      try {
+        autoUpdater.quitAndInstall(useSilent, true);
+      } catch (installErr: any) {
+        // If quitAndInstall fails (e.g. UAC denied), fall back to GitHub release
+        logger.error('update', 'quitAndInstall failed — opening GitHub release', {
+          code: 'QF-INSTALL-002', installDir, error: installErr?.message,
         });
         const { shell } = require('electron');
         shell.openExternal(`https://github.com/fonthenet/qflow/releases/tag/v${info.version}`);
@@ -2187,17 +2243,10 @@ app.whenReady().then(async () => {
           type: 'warning',
           title: 'QF-INSTALL-002',
           message: translate(currentLocale, 'Admin permission required'),
-          detail: translate(currentLocale, 'The app was installed with admin rights so auto-update cannot proceed. The download page has opened in your browser — please download and install as Administrator.'),
+          detail: translate(currentLocale, 'The installer needs admin permission. The download page has opened in your browser — please download and install as Administrator.'),
           buttons: ['OK'],
         });
-        return;
       }
-
-      // Close DB before update to prevent data loss from forced taskkill
-      backupDatabase();
-      closeDB();
-      logger.info('update', 'DB backed up and closed — user chose Restart Now');
-      autoUpdater.quitAndInstall(false, true);
     } else {
       // User chose "Later" — dismiss this version to prevent re-prompting
       dismissVersion(info.version);

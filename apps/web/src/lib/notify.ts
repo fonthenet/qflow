@@ -107,6 +107,11 @@ export async function notifyCustomer(
     // Build tracking URL
     const trackUrl = opts.trackUrl || `${APP_BASE_URL}/q/${ticket.qr_token}`;
 
+    // Format current date/time for locale
+    const now = new Date();
+    const dateStr = now.toLocaleDateString(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString(locale === 'ar' ? 'ar-DZ' : locale === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
     // Render message
     const messageBody = renderNotification(event, locale, {
       name: orgName,
@@ -115,6 +120,8 @@ export async function notifyCustomer(
       wait: opts.waitMinutes != null ? String(opts.waitMinutes) : '1',
       position: opts.position != null ? String(opts.position) : '',
       url: trackUrl,
+      date: dateStr,
+      time: timeStr,
     });
 
     // Send via appropriate channel
