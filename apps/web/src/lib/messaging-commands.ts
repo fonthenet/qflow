@@ -1270,6 +1270,15 @@ export async function handleInboundMessage(
         return;
       }
 
+      // Guard: reject YES/NO confirmation keywords — this is a Meta duplicate
+      // webhook replaying the same "YES" that triggered the state transition.
+      // Re-prompt for the actual name instead of using "YES" as the customer name.
+      const isConfirmKeyword = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+      if (isConfirmKeyword) {
+        await sendMessage({ to: identifier, body: t('join_enter_name', nameLocale) });
+        return;
+      }
+
       // Validate name (2-100 chars)
       if (cleaned.length < 2 || cleaned.length > 100) {
         await sendMessage({ to: identifier, body: t('join_enter_name', nameLocale) });
