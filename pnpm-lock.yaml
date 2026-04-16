@@ -209,10 +209,10 @@ importers:
   apps/web:
     dependencies:
       '@qflo/shared':
-        specifier: workspace:*
+        specifier: file:../../packages/shared
         version: link:../../packages/shared
       '@qflo/ui':
-        specifier: workspace:*
+        specifier: file:../../packages/ui
         version: link:../../packages/ui
       '@sentry/nextjs':
         specifier: ^10.48.0

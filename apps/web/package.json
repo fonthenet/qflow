@@ -26,8 +26,8 @@
     "ios:clip-call-again": "node scripts/ios-clip-e2e.mjs --call-only"
   },
   "dependencies": {
-    "@qflo/shared": "workspace:*",
-    "@qflo/ui": "workspace:*",
+    "@qflo/shared": "file:../../packages/shared",
+    "@qflo/ui": "file:../../packages/ui",
     "@sentry/nextjs": "^10.48.0",
     "@supabase/ssr": "^0.6",
     "@supabase/supabase-js": "^2",
