@@ -484,6 +484,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '📝 يرجى إدخال *اسمك الكامل* للحجز.\nأرسل *0* للإلغاء.',
     en: '📝 Please enter your *full name* for the booking.\nSend *0* to cancel.',
   },
+  join_enter_name: {
+    fr: '📝 Veuillez entrer votre *nom complet* pour rejoindre la file.\nEnvoyez *0* pour annuler.',
+    ar: '📝 يرجى إدخال *اسمك الكامل* للانضمام إلى الطابور.\nأرسل *0* للإلغاء.',
+    en: '📝 Please enter your *full name* to join the queue.\nSend *0* to cancel.',
+  },
   booking_enter_phone: {
     fr: '📱 Entrez votre *numéro de téléphone* (ou envoyez *SKIP* pour passer).\nEnvoyez *0* pour annuler.',
     ar: '📱 أدخل *رقم هاتفك* (أو أرسل *SKIP* للتخطي).\nأرسل *0* للإلغاء.',
@@ -1207,15 +1212,27 @@ export async function handleInboundMessage(
       }
 
       if (isYes) {
-        // Look up org name for the joined message
         const { data: orgRow } = await supabaseCheck
           .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
         if (orgRow) {
+          // Check if name is required for same-day tickets
+          const requireName = Boolean((orgRow.settings as any)?.require_name_sameday);
+          if (requireName) {
+            // Transition to name collection state instead of joining immediately
+            await supabaseCheck.from('whatsapp_sessions').update({
+              state: 'pending_join_name',
+            }).eq('id', pendingSession.id);
+            await sendMessage({ to: identifier, body: t('join_enter_name', pendingLocale) });
+            return;
+          }
           const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
             ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
             : undefined;
           await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved);
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+        } else {
+          await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+          await sendMessage({ to: identifier, body: t('join_failed', pendingLocale) });
         }
         return;
       }
@@ -1226,6 +1243,53 @@ export async function handleInboundMessage(
       }
       // Something else — clear pending and fall through to normal processing
       await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+    }
+  }
+
+  // ── Awaiting name input for join flow ──
+  {
+    const supabaseName = createAdminClient() as any;
+    const identColN = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: nameSession } = await supabaseName
+      .from('whatsapp_sessions')
+      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid')
+      .eq(identColN, identifier)
+      .eq('state', 'pending_join_name')
+      .eq('channel', channel)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (nameSession) {
+      const nameLocale: Locale = (nameSession.locale as Locale) || 'fr';
+
+      // Cancel on 0
+      if (cleaned === '0') {
+        await supabaseName.from('whatsapp_sessions').delete().eq('id', nameSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join_cancelled', nameLocale) });
+        return;
+      }
+
+      // Validate name (2-100 chars)
+      if (cleaned.length < 2 || cleaned.length > 100) {
+        await sendMessage({ to: identifier, body: t('join_enter_name', nameLocale) });
+        return;
+      }
+
+      // Name is valid — proceed with join
+      const { data: orgRow } = await supabaseName
+        .from('organizations').select('id, name, settings').eq('id', nameSession.organization_id).single();
+      if (orgRow) {
+        const preResolved = nameSession.office_id && nameSession.department_id && nameSession.service_id
+          ? { officeId: nameSession.office_id, departmentId: nameSession.department_id, serviceId: nameSession.service_id }
+          : undefined;
+        // Pass the entered name as profileName so handleJoin uses it for customer_data.name
+        await handleJoin(identifier, orgRow as OrgContext, nameLocale, channel, sendMessage, cleaned, bsuid, preResolved);
+      } else {
+        await sendMessage({ to: identifier, body: t('join_failed', nameLocale) });
+      }
+      await supabaseName.from('whatsapp_sessions').delete().eq('id', nameSession.id);
+      return;
     }
   }
 
@@ -3234,9 +3298,20 @@ async function cancelPendingTicketByPhone(
     .eq('ticket_id', ticket.id)
     .eq('state', 'active');
 
+  // Fetch org name for the cancellation message
+  let orgName = '';
+  try {
+    const { data: officeRow } = await supabase
+      .from('offices')
+      .select('organization:organizations(name)')
+      .eq('id', ticket.office_id)
+      .single();
+    orgName = (officeRow as any)?.organization?.name ?? '';
+  } catch { /* ignore */ }
+
   await sendMessage({
     to: identifier,
-    body: t('cancelled', ticketLocale, { ticket: ticket.ticket_number }),
+    body: t('cancelled', ticketLocale, { ticket: ticket.ticket_number, name: orgName }),
   });
   return true;
 }
@@ -3367,9 +3442,9 @@ async function handleCancel(
       .eq('id', session.ticket_id)
       .maybeSingle();
     if (recheck?.status === 'cancelled') {
-      // Already cancelled — don't send a duplicate error message
       await supabase.from('whatsapp_sessions')
         .update({ state: 'completed' }).eq('id', session.id);
+      await sendMessage({ to: identifier, body: t('cancelled', locale, { ticket: ticketRow?.ticket_number ?? '?', name: org.name }) });
       return;
     }
     await supabase
