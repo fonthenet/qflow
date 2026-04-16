@@ -418,7 +418,7 @@ export default function HowItWorksPage() {
           <div className="space-y-12">
             {setupSteps.map((step, i) => {
               const Icon = step.icon;
-              const accent = step.color || '#2563eb';
+              const accent = '#2563eb';
               return (
                 <div key={i} className="relative flex gap-6 md:gap-10">
                   {i < setupSteps.length - 1 && (
