@@ -1360,7 +1360,9 @@ export async function handleInboundMessage(
 
       // Determine context from session: booking has booking_date, otherwise same-day join
       const intakeContext = customSession.booking_date ? 'booking' as const : 'sameday' as const;
-      const enabledFields = getEnabledIntakeFields((orgRow.settings ?? {}) as Record<string, any>, ['phone'], intakeContext);
+      // Phone auto-collected on WhatsApp only, not Messenger
+      const intakePhoneExclude = channel === 'whatsapp' ? ['phone'] : [];
+      const enabledFields = getEnabledIntakeFields((orgRow.settings ?? {}) as Record<string, any>, intakePhoneExclude, intakeContext);
       const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
       const currentIndex = cData.index ?? 0;
       const answers = cData.answers ?? {};
@@ -2735,9 +2737,10 @@ async function askJoinConfirmationDirect(
     if (closed) return;
   }
 
-  // Determine intake fields to collect (phone is auto-collected from WhatsApp/Messenger)
+  // Determine intake fields to collect (phone auto-collected on WhatsApp only, not Messenger)
   // Same-day join → context 'sameday'
-  const enabledFields = getEnabledIntakeFields((org.settings ?? {}) as Record<string, any>, ['phone'], 'sameday');
+  const phoneExclude = channel === 'whatsapp' ? ['phone'] : [];
+  const enabledFields = getEnabledIntakeFields((org.settings ?? {}) as Record<string, any>, phoneExclude, 'sameday');
 
   let initialState: string;
   if (enabledFields.length > 0) {
@@ -4286,9 +4289,10 @@ async function handleBookingTimeChoice(
     .eq('id', session.organization_id)
     .single();
 
-  // Use unified intake fields system (exclude phone — auto-collected)
+  // Use unified intake fields system (phone auto-collected on WhatsApp only)
   // Future booking → context 'booking'
-  const bookingEnabledFields = getEnabledIntakeFields((orgRow?.settings ?? {}) as Record<string, any>, ['phone'], 'booking');
+  const bookingPhoneExclude = channel === 'whatsapp' ? ['phone'] : [];
+  const bookingEnabledFields = getEnabledIntakeFields((orgRow?.settings ?? {}) as Record<string, any>, bookingPhoneExclude, 'booking');
 
   if (bookingEnabledFields.length > 0) {
     // Intake fields to collect — go to unified pending_custom_intake
