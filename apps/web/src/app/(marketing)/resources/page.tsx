@@ -10,7 +10,7 @@ import {
   HelpCircle, Zap, Building2, Stethoscope, Landmark, GraduationCap,
   ShoppingBag, Mail, MapPin, ExternalLink, Sparkles,
   CalendarCheck, WifiOff, Phone, Send, AlertTriangle,
-  XCircle, CheckCircle2, Timer, TrendingUp,
+  XCircle, CheckCircle2, Timer, TrendingUp, Settings,
 } from 'lucide-react';
 
 type L = 'en' | 'fr' | 'ar';
@@ -99,6 +99,32 @@ const labels = {
   appointmentStep3: { en: 'Customer picks a future date & time slot', fr: 'Le client choisit une date et un creneau futur', ar: 'العميل يختار تاريخا ووقتا مسبقا' },
   appointmentStep4: { en: 'Confirmation + automatic reminder before the appointment', fr: 'Confirmation + rappel automatique avant le rendez-vous', ar: 'تاكيد + تذكير تلقائي قبل الموعد' },
   appointmentIdeal: { en: 'Ideal for clinics, restaurants, barbershops, government offices, and any queue or appointment-based service', fr: 'Ideal pour cliniques, restaurants, barbiers, administrations, et tout service a file d\'attente ou sur rendez-vous', ar: 'مثالي للعيادات، المطاعم، الحلاقين، الادارات، واي خدمة بالطوابير او المواعيد' },
+
+  setupBadge: { en: 'Setup Guide', fr: 'Guide d\'installation', ar: 'دليل الاعداد' },
+  setupTitle: { en: 'Connect WhatsApp & Messenger in 4 steps', fr: 'Connectez WhatsApp & Messenger en 4 etapes', ar: 'اربط واتساب و ماسنجر في 4 خطوات' },
+  setupSub: { en: 'From sign-up to your first customer in 15 minutes. Here\'s how to set up your channels.', fr: 'De l\'inscription a votre premier client en 15 minutes. Voici comment configurer vos canaux.', ar: 'من التسجيل الى اول عميل في 15 دقيقة. اليك كيفية اعداد قنواتك.' },
+  setupStep1Title: { en: 'Create your Qflo account', fr: 'Creez votre compte Qflo', ar: 'انشئ حسابك على Qflo' },
+  setupStep1Desc: { en: 'Sign up at qflo.net and choose your industry template. Configure departments, services, desks, and business hours.', fr: 'Inscrivez-vous sur qflo.net et choisissez votre modele de secteur. Configurez departements, services, guichets et horaires.', ar: 'سجل في qflo.net واختر نموذج قطاعك. اضبط الاقسام، الخدمات، الشبابيك وساعات العمل.' },
+  setupStep1B1: { en: 'Choose a template: clinic, bank, restaurant, government...', fr: 'Choisissez un modele : clinique, banque, restaurant, administration...', ar: 'اختر نموذجا: عيادة، بنك، مطعم، ادارة...' },
+  setupStep1B2: { en: 'Add departments and services', fr: 'Ajoutez departements et services', ar: 'اضف الاقسام والخدمات' },
+  setupStep1B3: { en: 'Set business hours and desk count', fr: 'Definissez les horaires et le nombre de guichets', ar: 'حدد ساعات العمل وعدد الشبابيك' },
+  setupStep2Title: { en: 'Connect WhatsApp', fr: 'Connectez WhatsApp', ar: 'اربط واتساب' },
+  setupStep2Desc: { en: 'Customers message the Qflo WhatsApp number with your unique business code. Just enable WhatsApp in your settings — Qflo handles everything.', fr: 'Les clients envoient un message au numero WhatsApp Qflo avec votre code unique. Activez WhatsApp dans vos parametres — Qflo gere tout.', ar: 'العملاء يراسلون رقم واتساب Qflo برمز مؤسستك الفريد. فعل واتساب في اعداداتك — Qflo يتكفل بالباقي.' },
+  setupStep2B1: { en: 'Customers use the Qflo WhatsApp number — no separate account needed', fr: 'Les clients utilisent le numero WhatsApp Qflo — aucun compte separe requis', ar: 'العملاء يستخدمون رقم واتساب Qflo — لا حاجة لحساب منفصل' },
+  setupStep2B2: { en: 'Admin settings \u2192 Channels \u2192 Enable WhatsApp', fr: 'Parametres admin \u2192 Canaux \u2192 Activer WhatsApp', ar: 'اعدادات المسؤول \u2192 القنوات \u2192 تفعيل واتساب' },
+  setupStep2B3: { en: 'Your business gets a unique code (e.g. CLINIQUE-CENTRE)', fr: 'Votre entreprise recoit un code unique (ex: CLINIQUE-CENTRE)', ar: 'مؤسستك تحصل على رمز فريد (مثال: CLINIQUE-CENTRE)' },
+  setupStep2B4: { en: 'Qflo handles message routing, ticket creation & notifications automatically', fr: 'Qflo gere le routage des messages, la creation de tickets et les notifications automatiquement', ar: 'Qflo يتولى توجيه الرسائل، انشاء التذاكر والاشعارات تلقائيا' },
+  setupStep3Title: { en: 'Connect Messenger (optional)', fr: 'Connectez Messenger (optionnel)', ar: 'اربط ماسنجر (اختياري)' },
+  setupStep3Desc: { en: 'Link your Facebook Page for Messenger support. Same features: join queue, book appointments, get notifications.', fr: 'Liez votre Page Facebook pour le support Messenger. Memes fonctionnalites : rejoindre la file, reserver, recevoir les notifications.', ar: 'اربط صفحة فيسبوك لدعم ماسنجر. نفس المميزات: انضمام للطابور، حجز مواعيد، استلام اشعارات.' },
+  setupStep3B1: { en: 'Link your Facebook Page to Qflo', fr: 'Liez votre Page Facebook a Qflo', ar: 'اربط صفحتك على فيسبوك مع Qflo' },
+  setupStep3B2: { en: 'Admin settings \u2192 Channels \u2192 Enable Messenger', fr: 'Parametres admin \u2192 Canaux \u2192 Activer Messenger', ar: 'اعدادات المسؤول \u2192 القنوات \u2192 تفعيل ماسنجر' },
+  setupStep3B3: { en: 'Paste your Facebook Page ID + verification code', fr: 'Collez l\'ID de votre Page Facebook + code de verification', ar: 'الصق معرف صفحة فيسبوك + رمز التحقق' },
+  setupStep4Title: { en: 'Share with customers', fr: 'Partagez avec vos clients', ar: 'شارك مع عملائك' },
+  setupStep4Desc: { en: 'Multiple ways to let customers discover your queue and book appointments.', fr: 'Plusieurs facons de permettre a vos clients de decouvrir votre file et reserver.', ar: 'عدة طرق لتمكين عملائك من اكتشاف طابورك وحجز المواعيد.' },
+  setupStep4B1: { en: 'Print QR codes (auto-generated) at your entrance', fr: 'Imprimez les QR codes (generes automatiquement) a votre entree', ar: 'اطبع رموز QR (تولد تلقائيا) عند مدخلك' },
+  setupStep4B2: { en: 'Share web links on your website and social media', fr: 'Partagez les liens web sur votre site et reseaux sociaux', ar: 'شارك روابط الويب على موقعك وشبكاتك الاجتماعية' },
+  setupStep4B3: { en: 'Set up a touch-screen kiosk for walk-ins', fr: 'Installez une borne tactile pour les sans-rendez-vous', ar: 'ثبت كشك شاشة لمس للزوار بدون موعد' },
+  setupStep4B4: { en: 'Connect a TV display for the waiting room', fr: 'Connectez un ecran TV pour la salle d\'attente', ar: 'وصل شاشة تلفزيون لقاعة الانتظار' },
 
   guideBadge: { en: 'How it works', fr: 'Comment ca marche', ar: 'كيف يعمل' },
   guideTitle: { en: 'The customer journey, step by step', fr: 'Le parcours client, etape par etape', ar: 'رحلة العميل، خطوة بخطوة' },
@@ -272,8 +298,8 @@ const faqs: { q: T3; a: T3 }[] = [
     a: { en: 'No. Customers use WhatsApp or Messenger — apps they already have. They can also scan a QR code or use a web link. Nothing to install.', fr: 'Non. Les clients utilisent WhatsApp ou Messenger — des apps qu\'ils ont deja. Ils peuvent aussi scanner un QR code ou utiliser un lien web. Rien a installer.', ar: 'لا. العملاء يستخدمون واتساب او ماسنجر — تطبيقات لديهم بالفعل. يمكنهم ايضا مسح رمز QR او استخدام رابط ويب. لا شيء للتثبيت.' },
   },
   {
-    q: { en: 'Does it work with WhatsApp Business?', fr: 'Ca marche avec WhatsApp Business ?', ar: 'هل يعمل مع واتساب بيزنس؟' },
-    a: { en: 'Yes. Qflo integrates with the WhatsApp Business API. Your customers interact with your official business number.', fr: 'Oui. Qflo s\'integre a l\'API WhatsApp Business. Vos clients interagissent avec votre numero professionnel officiel.', ar: 'نعم. Qflo يتكامل مع واجهة واتساب بيزنس. عملاؤك يتفاعلون مع رقمك المهني الرسمي.' },
+    q: { en: 'Do I need my own WhatsApp Business number?', fr: 'Ai-je besoin de mon propre numero WhatsApp Business ?', ar: 'هل احتاج رقم واتساب بيزنس خاص بي؟' },
+    a: { en: 'No. Your customers message the Qflo WhatsApp number using your unique business code (e.g. REJOINDRE CLINIQUE-CENTRE). You just enable WhatsApp in your Qflo settings — no separate WhatsApp account needed.', fr: 'Non. Vos clients envoient un message au numero WhatsApp Qflo avec votre code unique (ex: REJOINDRE CLINIQUE-CENTRE). Activez WhatsApp dans vos parametres Qflo — aucun compte WhatsApp separe requis.', ar: 'لا. عملاؤك يراسلون رقم واتساب Qflo برمز مؤسستك الفريد (مثال: REJOINDRE CLINIQUE-CENTRE). فعل واتساب في اعدادات Qflo — لا حاجة لحساب واتساب منفصل.' },
   },
   {
     q: { en: 'Can customers book a future appointment via WhatsApp?', fr: 'Les clients peuvent-ils reserver un rendez-vous futur via WhatsApp ?', ar: 'هل يمكن للعملاء حجز موعد مسبق عبر واتساب؟' },
@@ -710,6 +736,97 @@ export default function ResourcesPage() {
             {/* Right: Phone mockup */}
             <div className="shrink-0">
               <WhatsAppPhoneMockup flow="appointment" locale={l} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── SETUP GUIDE: CONNECT WHATSAPP & MESSENGER ─── */}
+      <section className="py-20 md:py-24">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#25d366]/10 px-4 py-1.5 text-xs font-bold text-[#25d366] mb-4">
+              <Settings className="h-3.5 w-3.5" />{_(labels.setupBadge)}
+            </div>
+            <h2 className="text-3xl font-black md:text-4xl mb-4">{_(labels.setupTitle)}</h2>
+            <p className="mt-3 text-muted-foreground max-w-xl mx-auto">{_(labels.setupSub)}</p>
+          </div>
+
+          <div className="grid gap-8 md:grid-cols-2">
+            {/* Step 1 */}
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-black">1</div>
+                <div>
+                  <h3 className="text-lg font-bold">{_(labels.setupStep1Title)}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{_(labels.setupStep1Desc)}</p>
+                </div>
+              </div>
+              <ul className="space-y-2 ml-14">
+                {[labels.setupStep1B1, labels.setupStep1B2, labels.setupStep1B3].map((b, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Check className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
+                    <span>{_(b)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Step 2 — WhatsApp (green) */}
+            <div className="rounded-2xl border border-[#25d366]/30 bg-[#25d366]/5 p-6 shadow-sm">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#25d366] text-white text-lg font-black">2</div>
+                <div>
+                  <h3 className="text-lg font-bold">{_(labels.setupStep2Title)}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{_(labels.setupStep2Desc)}</p>
+                </div>
+              </div>
+              <ul className="space-y-2 ml-14">
+                {[labels.setupStep2B1, labels.setupStep2B2, labels.setupStep2B3, labels.setupStep2B4].map((b, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Check className="h-4 w-4 shrink-0 mt-0.5 text-[#25d366]" />
+                    <span>{_(b)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Step 3 — Messenger (blue) */}
+            <div className="rounded-2xl border border-[#0084ff]/30 bg-[#0084ff]/5 p-6 shadow-sm">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0084ff] text-white text-lg font-black">3</div>
+                <div>
+                  <h3 className="text-lg font-bold">{_(labels.setupStep3Title)}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{_(labels.setupStep3Desc)}</p>
+                </div>
+              </div>
+              <ul className="space-y-2 ml-14">
+                {[labels.setupStep3B1, labels.setupStep3B2, labels.setupStep3B3].map((b, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Check className="h-4 w-4 shrink-0 mt-0.5 text-[#0084ff]" />
+                    <span>{_(b)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Step 4 */}
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-lg font-black">4</div>
+                <div>
+                  <h3 className="text-lg font-bold">{_(labels.setupStep4Title)}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{_(labels.setupStep4Desc)}</p>
+                </div>
+              </div>
+              <ul className="space-y-2 ml-14">
+                {[labels.setupStep4B1, labels.setupStep4B2, labels.setupStep4B3, labels.setupStep4B4].map((b, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <Check className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
+                    <span>{_(b)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>

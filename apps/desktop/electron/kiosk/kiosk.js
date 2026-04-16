@@ -442,11 +442,14 @@
       render();
       resetIdle();
     } catch (err) {
+      var errMsg = (err && err.message) ? err.message : String(err);
+      console.error('[kiosk] init failed:', errMsg);
       document.getElementById('app').innerHTML =
         '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:32px">' +
         '<div style="font-size:48px;margin-bottom:16px">&#128225;</div>' +
         '<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">' + tr('Cannot Connect') + '</div>' +
         '<div style="font-size:14px;color:var(--text3);max-width:280px">' + tr('Make sure Qflo Station is running on this network and try refreshing.') + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);max-width:360px;margin-top:8px;opacity:0.6;word-break:break-all">' + errMsg + '</div>' +
         '<button onclick="location.reload()" style="margin-top:20px;padding:12px 32px;border-radius:12px;border:none;background:var(--brand);color:white;font-weight:700;font-size:14px;cursor:pointer">' + tr('Retry') + '</button>' +
         '</div>';
     }

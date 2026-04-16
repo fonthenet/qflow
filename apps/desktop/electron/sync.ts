@@ -3,6 +3,7 @@ import { CONFIG } from './config';
 import { logTicketEvent } from './db';
 import { logger } from './logger';
 import { createQfError } from './error-codes';
+import { normalizePhone } from '@qflo/shared';
 
 type StatusCallback = (status: 'online' | 'offline' | 'syncing' | 'connecting') => void;
 type ProgressCallback = (pendingCount: number) => void;
@@ -1120,8 +1121,7 @@ export class SyncEngine {
   }
 
   private normalizePhoneForWA(phone: string, tz?: string, cc?: string): string | null {
-    // Delegate to shared normalizePhone (single source of truth)
-    const { normalizePhone } = require('@qflo/shared');
+    // normalizePhone imported statically at top — dynamic require() breaks in asar
     return normalizePhone(phone, tz, cc);
   }
 

@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import { CONFIG } from './config';
 import QRCode from 'qrcode';
 import { normalizeLocale } from '../src/lib/i18n';
-import { isValidTransition } from '@qflo/shared';
+import { isValidTransition, resolveDialCode } from '@qflo/shared';
 import { logger } from './logger';
 
 // ── Static kiosk assets (loaded once at startup, served from memory) ──
@@ -719,9 +719,11 @@ function resolveRequestedOffice(url: URL) {
 async function handleKioskInfo(url: URL, res: http.ServerResponse) {
   const db = getDB();
   const requestedOffice = resolveRequestedOffice(url);
+  logger.info('kiosk', 'handleKioskInfo', { officeId: url.searchParams.get('officeId'), resolvedOffice: requestedOffice?.id ?? null });
   const office = requestedOffice?.id ? await refreshOfficeRuntimeConfig(requestedOffice.id) : null;
 
   if (!office) {
+    logger.warn('kiosk', 'No active office for kiosk-info', { requestedOfficeId: url.searchParams.get('officeId'), sessionIds: getCurrentSessionOfficeIds() });
     res.writeHead(404, {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -1118,7 +1120,7 @@ function handleTakeTicket(req: http.IncomingMessage, res: http.ServerResponse) {
       let whatsappStatus: { sent: boolean; error?: string } | undefined;
       if (safePhone && isCloudReachable) {
         // Compute country dial code for phone normalization
-        const { resolveDialCode } = require('@qflo/shared');
+        // resolveDialCode imported statically at top — dynamic require() breaks in asar
         let officeCC2: string | null = null;
         try { const s = typeof officeRow?.settings === 'string' ? JSON.parse(officeRow.settings) : (officeRow?.settings || {}); officeCC2 = s.country_code || null; } catch (e: any) { logger.warn('kiosk', 'Failed to parse office settings for country code', { error: e?.message }); }
         const countryDialCode = resolveDialCode(officeRow?.timezone, officeCC2);
