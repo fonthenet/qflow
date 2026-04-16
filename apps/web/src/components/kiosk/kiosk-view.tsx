@@ -16,6 +16,8 @@ import { PriorityBadge } from '@/components/tickets/priority-badge';
 import { checkInAppointment, findAppointment } from '@/lib/actions/appointment-actions';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
 import { buildBookingPath } from '@/lib/office-links';
+import { getEnabledIntakeFields, getFieldLabel, getFieldPlaceholder, type IntakeField, type PresetKey } from '@qflo/shared';
+import { WILAYAS, formatWilaya } from '@/lib/wilayas';
 
 interface PriorityCategory {
   id: string;
@@ -75,7 +77,7 @@ export function KioskView({
   kioskSettings,
   sandbox,
 }: KioskViewProps) {
-  const { t, formatDateTime, formatTime, dir } = useI18n();
+  const { t, formatDateTime, formatTime, dir, locale } = useI18n();
   const sandboxMode = Boolean(sandbox?.enabled);
   const ks = kioskSettings ?? {
     welcomeMessage: t('Welcome'),
@@ -118,6 +120,7 @@ export function KioskView({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerReason, setCustomerReason] = useState('');
+  const [intakeData, setIntakeData] = useState<Record<string, string>>({});
   const [customerInfoError, setCustomerInfoError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -173,6 +176,24 @@ export function KioskView({
   const businessName = organization?.name?.trim() || office.name;
   const officeLine = office.name && office.name !== businessName ? office.name : null;
   const orgSettings = (organization?.settings as Record<string, any> | null) ?? {};
+  // Dynamic intake fields from org settings
+  const intakeFields = getEnabledIntakeFields(orgSettings, undefined, 'sameday');
+  const intakeLocale = (locale === 'ar' || locale === 'fr') ? locale : 'en';
+
+  function getIntakeValue(field: IntakeField): string {
+    if (field.key === 'name') return customerName;
+    if (field.key === 'phone') return customerPhone;
+    if (field.key === 'reason') return customerReason;
+    return intakeData[field.key] ?? '';
+  }
+
+  function setIntakeValue(field: IntakeField, value: string) {
+    if (field.key === 'name') { setCustomerName(value); return; }
+    if (field.key === 'phone') { setCustomerPhone(value); return; }
+    if (field.key === 'reason') { setCustomerReason(value); return; }
+    setIntakeData((prev) => ({ ...prev, [field.key]: value }));
+  }
+
   const messengerPageId = orgSettings.messenger_enabled && orgSettings.messenger_page_id
     ? (orgSettings.messenger_page_id as string) : null;
   const whatsappEnabled = Boolean(orgSettings.whatsapp_enabled);
@@ -187,7 +208,20 @@ export function KioskView({
   };
   const compactLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.22em]';
   const compactTicketLabelClass = dir === 'rtl' ? 'tracking-normal normal-case' : 'uppercase tracking-[0.24em]';
-  const hasRequiredCustomerInfo = customerName.trim().length > 0 && customerPhone.trim().length > 0;
+  const hasRequiredCustomerInfo = (() => {
+    // Check all required intake fields are filled
+    for (const field of intakeFields) {
+      if (field.required && !getIntakeValue(field).trim()) return false;
+    }
+    // Name and phone are always required for kiosk if present in intake fields
+    const nameField = intakeFields.find((f) => f.key === 'name');
+    const phoneField = intakeFields.find((f) => f.key === 'phone');
+    if (nameField && !customerName.trim()) return false;
+    if (phoneField && !customerPhone.trim()) return false;
+    // If no intake fields at all, fall back to requiring name + phone
+    if (intakeFields.length === 0) return customerName.trim().length > 0 && customerPhone.trim().length > 0;
+    return true;
+  })();
   const intakePaused = ks.visitIntakeOverrideMode === 'always_closed';
 
   function clearAppointmentSearch() {
@@ -207,6 +241,7 @@ export function KioskView({
     setCustomerName('');
     setCustomerPhone('');
     setCustomerReason('');
+    setIntakeData({});
     setCustomerInfoError(null);
     setTicket(null);
     setQrDataUrl('');
@@ -344,20 +379,22 @@ export function KioskView({
     if (!selectedDept) return;
 
     setLoading(true);
-    const trimmedCustomerName = customerName.trim();
-    const trimmedCustomerPhone = customerPhone.trim();
-    if (!trimmedCustomerName || !trimmedCustomerPhone) {
+    // Build customer_data from all intake fields
+    const customerData: Record<string, string> = {};
+    for (const field of intakeFields) {
+      const val = getIntakeValue(field).trim();
+      if (val) customerData[field.key] = val;
+    }
+    // Fallback if no intake fields configured
+    if (intakeFields.length === 0) {
+      if (customerName.trim()) customerData.name = customerName.trim();
+      if (customerPhone.trim()) customerData.phone = customerPhone.trim();
+    }
+    if (!customerData.name && !customerData.phone && intakeFields.length === 0) {
       setCustomerInfoError(t('Please enter your name and phone number.'));
       setLoading(false);
       return;
     }
-    const trimmedReason = customerReason.trim();
-    const customerData =
-      {
-        name: trimmedCustomerName,
-        phone: trimmedCustomerPhone,
-        ...(trimmedReason ? { reason: trimmedReason } : {}),
-      };
 
     if (sandboxMode) {
       const sandboxTicketId = `sandbox-kiosk-${Date.now()}`;
@@ -559,6 +596,151 @@ export function KioskView({
     );
   }
 
+  /** Render a single intake field for the kiosk form */
+  function renderKioskIntakeField(field: IntakeField, opts?: { gridItem?: boolean }) {
+    const label = getFieldLabel(field, intakeLocale);
+    const placeholder = getFieldPlaceholder(field, intakeLocale);
+    const value = getIntakeValue(field);
+    const presetKey = field.type === 'preset' ? (field.key as PresetKey) : null;
+    const isRequired = field.required;
+
+    if (presetKey === 'wilaya') {
+      return (
+        <div key={field.key} className="text-center">
+          <label className="mb-2 block text-[13px] font-bold text-slate-950">
+            {t(label)} {isRequired ? <span className="font-normal text-rose-500">*</span> : <span className="font-normal text-slate-400">{t('(optional)')}</span>}
+          </label>
+          <select
+            value={value}
+            onChange={(event) => {
+              setIntakeValue(field, event.target.value);
+              if (customerInfoError) setCustomerInfoError(null);
+            }}
+            className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : ''}`}
+            style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+          >
+            <option value="">{t(placeholder) || t('Select wilaya')}</option>
+            {WILAYAS.map((w) => (
+              <option key={w.code} value={formatWilaya(w, intakeLocale === 'ar' ? 'ar' : 'fr')}>
+                {formatWilaya(w, intakeLocale === 'ar' ? 'ar' : 'fr')}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (presetKey === 'age') {
+      return (
+        <div key={field.key} className="text-center">
+          <label className="mb-2 block text-[13px] font-bold text-slate-950">
+            {t(label)} {isRequired ? <span className="font-normal text-rose-500">*</span> : <span className="font-normal text-slate-400">{t('(optional)')}</span>}
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="150"
+            value={value}
+            onChange={(event) => {
+              setIntakeValue(field, event.target.value);
+              if (customerInfoError) setCustomerInfoError(null);
+            }}
+            placeholder={t(placeholder)}
+            autoComplete="off"
+            className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : ''}`}
+            style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div key={field.key} className="text-center">
+        <label className="mb-2 block text-[13px] font-bold text-slate-950">
+          {t(label)} {isRequired ? <span className="font-normal text-rose-500">*</span> : <span className="font-normal text-slate-400">{t('(optional)')}</span>}
+        </label>
+        <input
+          type={presetKey === 'phone' ? 'tel' : 'text'}
+          value={value}
+          onChange={(event) => {
+            setIntakeValue(field, event.target.value);
+            if (customerInfoError) setCustomerInfoError(null);
+          }}
+          placeholder={presetKey === 'phone' && whatsappEnabled ? t('For WhatsApp alerts') : t(placeholder)}
+          autoComplete={presetKey === 'name' ? 'name' : presetKey === 'phone' ? 'tel' : 'off'}
+          className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+          style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+        />
+      </div>
+    );
+  }
+
+  /** Render all intake fields for the kiosk, splitting into grid and full-width groups */
+  function renderKioskIntakeFields() {
+    if (intakeFields.length === 0) {
+      // Fallback: hardcoded name + phone
+      return (
+        <>
+          <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
+            <div className="text-center">
+              <label className="mb-2 block text-[13px] font-bold text-slate-950">
+                {t('Name')} <span className="font-normal text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(event) => {
+                  setCustomerName(event.target.value);
+                  if (customerInfoError) setCustomerInfoError(null);
+                }}
+                placeholder={t('Enter your name')}
+                autoComplete="name"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
+                style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+              />
+            </div>
+            <div className="text-center">
+              <label className="mb-2 block text-[13px] font-bold text-slate-950">
+                {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
+              </label>
+              <input
+                type="tel"
+                value={customerPhone}
+                onChange={(event) => {
+                  setCustomerPhone(event.target.value);
+                  if (customerInfoError) setCustomerInfoError(null);
+                }}
+                placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
+                autoComplete="tel"
+                className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
+                style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
+              />
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    // Split fields: name+phone in a grid row, rest full-width
+    const gridFields = intakeFields.filter((f) => f.key === 'name' || f.key === 'phone');
+    const otherFields = intakeFields.filter((f) => f.key !== 'name' && f.key !== 'phone');
+
+    return (
+      <>
+        {gridFields.length > 0 && (
+          <div className={`mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 ${gridFields.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+            {gridFields.map((f) => renderKioskIntakeField(f))}
+          </div>
+        )}
+        {otherFields.map((f) => (
+          <div key={f.key} className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
+            {renderKioskIntakeField(f)}
+          </div>
+        ))}
+      </>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-[#f1f5f9]">
       {/* ── Header — clean white, matches local kiosk ── */}
@@ -674,64 +856,13 @@ export function KioskView({
           {/* ── HOME step ── */}
           {!intakePaused && step === 'home' && (
             <>
-              {/* Name/phone form card */}
+              {/* Name/phone/intake form card */}
               <div className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
                 <div className="border-b border-slate-100 pb-5 text-center">
                   <div className="text-[28px] font-bold text-slate-950">{t('Your Details')}</div>
                   <div className="mt-1 text-sm text-slate-400">{t('Fill in your details to get started')}</div>
                 </div>
-                <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
-                  <div className="text-center">
-                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                      {t('Name')} <span className="font-normal text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={customerName}
-                      onChange={(event) => {
-                        setCustomerName(event.target.value);
-                        if (customerInfoError) setCustomerInfoError(null);
-                      }}
-                      placeholder={t('Enter your name')}
-                      autoComplete="name"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5"
-                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
-                    />
-                  </div>
-                  <div className="text-center">
-                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                      {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      value={customerPhone}
-                      onChange={(event) => {
-                        setCustomerPhone(event.target.value);
-                        if (customerInfoError) setCustomerInfoError(null);
-                      }}
-                      placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
-                      autoComplete="tel"
-                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
-                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
-                    />
-                  </div>
-                </div>
-                <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
-                  <div className="text-center">
-                    <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                      {t('Reason for visit')} <span className="font-normal text-slate-400">{t('(optional)')}</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={customerReason}
-                      onChange={(event) => setCustomerReason(event.target.value)}
-                      placeholder={t('Brief description')}
-                      autoComplete="off"
-                      className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 sm:py-5 ${dir === 'rtl' ? 'text-right' : ''}`}
-                      style={{ boxShadow: 'none', '--tw-ring-color': `${themeColor}40` } as any}
-                    />
-                  </div>
-                </div>
+                {renderKioskIntakeFields()}
                 {customerInfoError ? (
                   <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
                     {customerInfoError}
@@ -815,58 +946,7 @@ export function KioskView({
                     <div className="mt-1 text-[28px] font-bold text-slate-950">{t('Your Details')}</div>
                     <div className="mt-1 text-sm text-slate-400">{t('Fill in your details to get started')}</div>
                   </div>
-                  <div className="mt-5 grid gap-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5 sm:grid-cols-2">
-                    <div className="text-center">
-                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                        {t('Name')} <span className="font-normal text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={customerName}
-                        onChange={(event) => {
-                          setCustomerName(event.target.value);
-                          if (customerInfoError) setCustomerInfoError(null);
-                        }}
-                        placeholder={t('Enter your name')}
-                        autoComplete="name"
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2"
-                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
-                      />
-                    </div>
-                    <div className="text-center">
-                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                        {t('Phone Number')} <span className="font-normal text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="tel"
-                        value={customerPhone}
-                        onChange={(event) => {
-                          setCustomerPhone(event.target.value);
-                          if (customerInfoError) setCustomerInfoError(null);
-                        }}
-                        placeholder={whatsappEnabled ? t('For WhatsApp alerts') : t('Enter your phone number')}
-                        autoComplete="tel"
-                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${dir === 'rtl' ? 'text-right' : 'text-left'}`}
-                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 rounded-[1.25rem] border border-slate-200 bg-[#f8fafc] p-5">
-                    <div className="text-center">
-                      <label className="mb-2 block text-[13px] font-bold text-slate-950">
-                        {t('Reason for visit')} <span className="font-normal text-slate-400">{t('(optional)')}</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={customerReason}
-                        onChange={(event) => setCustomerReason(event.target.value)}
-                        placeholder={t('Brief description')}
-                        autoComplete="off"
-                        className={`w-full rounded-2xl border border-slate-200 bg-white px-[18px] py-4 text-[17px] text-slate-950 outline-none transition-all focus:border-transparent focus:ring-2 ${dir === 'rtl' ? 'text-right' : ''}`}
-                        style={{ '--tw-ring-color': `${themeColor}40` } as any}
-                      />
-                    </div>
-                  </div>
+                  {renderKioskIntakeFields()}
                   {customerInfoError ? (
                     <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-center text-[13px] font-semibold text-rose-600">
                       {customerInfoError}

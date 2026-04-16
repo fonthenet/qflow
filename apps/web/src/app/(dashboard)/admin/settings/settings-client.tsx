@@ -7,6 +7,7 @@ import { updateOrganizationSettings, checkWhatsAppCodeAvailability } from '@/lib
 import { useI18n } from '@/components/providers/locale-provider';
 import { createClient } from '@/lib/supabase/client';
 import { BUSINESS_CATEGORIES } from '@/lib/business-categories';
+import { IntakeField, INTAKE_PRESETS, PresetKey, migrateToIntakeFields, generateCustomFieldKey } from '@qflo/shared';
 
 interface Organization {
   id: string;
@@ -305,12 +306,10 @@ export function SettingsClient({
   const [requireAppointmentApproval, setRequireAppointmentApproval] = useState<boolean>(
     settings.require_appointment_approval ?? true
   );
-  const [requireNameSameday, setRequireNameSameday] = useState<boolean>(
-    settings.require_name_sameday ?? false
+  const [intakeFields, setIntakeFields] = useState<IntakeField[]>(
+    migrateToIntakeFields(settings)
   );
-  const [customIntakeFields, setCustomIntakeFields] = useState<{ label: string; label_fr: string; label_ar: string }[]>(
-    settings.custom_intake_fields ?? []
-  );
+  const [bookingSettingsTab, setBookingSettingsTab] = useState<'intake' | 'queue' | 'appointments' | 'channels'>('intake');
 
   // Account Settings
   const [newEmail, setNewEmail] = useState('');
@@ -452,8 +451,7 @@ export function SettingsClient({
           allow_cancellation: allowCancellation,
           require_ticket_approval: requireTicketApproval,
           require_appointment_approval: requireAppointmentApproval,
-          require_name_sameday: requireNameSameday,
-          custom_intake_fields: customIntakeFields.filter(f => f.label.trim()),
+          intake_fields: intakeFields,
         },
       });
 
@@ -887,391 +885,693 @@ export function SettingsClient({
         </div>
       </section>
 
-      {/* ── WhatsApp Queue Integration (read-only) ─────────────────────── */}
+      {/* ── Booking & Queue (tabbed) ──────────────────────────────────── */}
       <section className="rounded-xl border border-border bg-card p-6 space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-foreground">
-            {t('WhatsApp Queue')}
+            {t('Booking & Queue')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t('Customers join your queue by sending a message via WhatsApp. Managed by Qflo.')}
+            {t('Configure customer intake, queue, appointments, and messaging channels.')}
           </p>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
-            <input
-              type="checkbox"
-              checked={whatsappEnabled}
-              onChange={(e) => setWhatsappEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-            />
-            <span className="text-sm font-medium text-foreground">
-              {whatsappEnabled ? t('WhatsApp Queue Join is enabled') : t('WhatsApp Queue Join is disabled')}
-            </span>
-          </label>
-          <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-            <div className="h-2 w-2 rounded-full bg-primary" />
-            {t('Managed by Qflo')}
-          </div>
+        <div className="flex gap-1 border-b border-border mb-4">
+          {(['intake', 'queue', 'appointments', 'channels'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setBookingSettingsTab(tab)}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                bookingSettingsTab === tab
+                  ? 'bg-primary/10 text-primary border-b-2 border-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              }`}
+            >
+              {t(tab === 'intake' ? 'Intake' : tab === 'queue' ? 'Queue' : tab === 'appointments' ? 'Appointments' : 'Channels')}
+            </button>
+          ))}
         </div>
 
-        {whatsappEnabled && (
+        {/* ── Tab: Intake ── */}
+        {bookingSettingsTab === 'intake' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-medium">{t('Intake fields')}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('Fields asked before confirmation in both same-day queue and future booking flows. Drag to reorder, toggle to enable/disable.')}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIntakeFields([...intakeFields, {
+                    key: generateCustomFieldKey(),
+                    type: 'custom',
+                    enabled: true,
+                    required: false,
+                    label: '',
+                    label_fr: '',
+                    label_ar: '',
+                  }]);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+              >
+                + {t('Add custom field')}
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {intakeFields.map((field, idx) => {
+                const isPreset = field.type === 'preset';
+                const presetMeta = isPreset ? INTAKE_PRESETS[field.key as PresetKey] : null;
+                const displayLabel = isPreset
+                  ? (presetMeta?.label ?? field.key)
+                  : (field.label || t('Untitled field'));
+
+                return (
+                  <div key={field.key} className="rounded-lg border border-border bg-muted/30">
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      {/* Reorder buttons */}
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => {
+                            const updated = [...intakeFields];
+                            [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
+                            setIntakeFields(updated);
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 leading-none"
+                          title={t('Move up')}
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === intakeFields.length - 1}
+                          onClick={() => {
+                            const updated = [...intakeFields];
+                            [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+                            setIntakeFields(updated);
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 leading-none"
+                          title={t('Move down')}
+                        >
+                          ▼
+                        </button>
+                      </div>
+
+                      {/* Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...intakeFields];
+                          updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
+                          setIntakeFields(updated);
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${field.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${field.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
+
+                      {/* Label */}
+                      <span className={`text-sm font-medium flex-1 ${!field.enabled ? 'text-muted-foreground line-through' : ''}`}>
+                        {displayLabel}
+                      </span>
+
+                      {/* Preset badge */}
+                      {isPreset && (
+                        <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-medium">
+                          {t('Preset')}
+                        </span>
+                      )}
+
+                      {/* Scope selector */}
+                      <select
+                        value={field.scope || 'both'}
+                        onChange={(e) => {
+                          const updated = [...intakeFields];
+                          updated[idx] = { ...updated[idx], scope: e.target.value as 'both' | 'sameday' | 'booking' };
+                          setIntakeFields(updated);
+                        }}
+                        className="rounded-md border border-border bg-card text-[10px] font-medium px-1.5 py-0.5 text-muted-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      >
+                        <option value="both">{t('Both')}</option>
+                        <option value="sameday">{t('Same-day')}</option>
+                        <option value="booking">{t('Booking')}</option>
+                      </select>
+
+                      {/* Remove button (custom only) */}
+                      {!isPreset && (
+                        <button
+                          type="button"
+                          onClick={() => setIntakeFields(intakeFields.filter((_, i) => i !== idx))}
+                          className="text-red-500 hover:text-red-400 text-sm font-medium"
+                          title={t('Remove')}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Expandable custom field editor */}
+                    {!isPreset && (
+                      <details className="border-t border-border">
+                        <summary className="px-3 py-1.5 text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                          {t('Edit labels (EN / FR / AR)')}
+                        </summary>
+                        <div className="px-3 pb-3 pt-1 grid gap-2 sm:grid-cols-3">
+                          <div>
+                            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (EN)')}</label>
+                            <input
+                              type="text"
+                              value={field.label ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label: e.target.value };
+                                setIntakeFields(updated);
+                              }}
+                              placeholder="e.g. Color"
+                              className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (FR)')}</label>
+                            <input
+                              type="text"
+                              value={field.label_fr ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label_fr: e.target.value };
+                                setIntakeFields(updated);
+                              }}
+                              placeholder="ex. Couleur"
+                              className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (AR)')}</label>
+                            <input
+                              type="text"
+                              value={field.label_ar ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label_ar: e.target.value };
+                                setIntakeFields(updated);
+                              }}
+                              placeholder="مثال: اللون"
+                              dir="rtl"
+                              className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            />
+                          </div>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Tab: Queue ── */}
+        {bookingSettingsTab === 'queue' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('Business Code')}
+              <label className="block text-sm font-medium text-muted-foreground mb-2">
+                {t('Visit Intake Availability')}
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={whatsappCode}
-                  onChange={(e) => setWhatsappCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                  placeholder={t('e.g. CLINIC1')}
-                  maxLength={20}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground uppercase tracking-wider font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-                {codeAvailability === 'checking' && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{t('Checking…')}</span>
-                )}
-                {codeAvailability === 'available' && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-600 font-medium">✓ {t('Available')}</span>
-                )}
-                {codeAvailability === 'taken' && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-red-600 font-medium">✗ {t('Already taken')}</span>
-                )}
+              <p className="mb-3 text-xs text-muted-foreground">
+                {t('Choose whether customer-facing queue intake follows your business hours, stays open all the time, or stays closed until you reopen it.')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    value: 'business_hours',
+                    title: t('Use business hours'),
+                    description: t('Follow each location schedule for kiosk and public queue intake.'),
+                  },
+                  {
+                    value: 'always_open',
+                    title: t('Always open'),
+                    description: t('Keep taking walk-in and remote queue visits even outside scheduled hours.'),
+                  },
+                  {
+                    value: 'always_closed',
+                    title: t('Always closed'),
+                    description: t('Pause all customer visit intake until you switch it back on.'),
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setVisitIntakeOverrideMode(option.value)}
+                    className={`rounded-xl border p-4 text-left transition-colors ${
+                      visitIntakeOverrideMode === option.value
+                        ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                        : 'border-border hover:bg-muted'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-foreground">{option.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
+                  </button>
+                ))}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('Unique code customers use to join your queue via WhatsApp.')}
-              </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('Arabic Code')} <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
-              </label>
-              <input
-                type="text"
-                value={arabicCode}
-                onChange={(e) => setArabicCode(e.target.value)}
-                placeholder={t('e.g. حدابي')}
-                maxLength={30}
-                dir="rtl"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground tracking-wider font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('Arabic alternative for your business code. Customers can type')} <code className="font-mono font-bold" dir="rtl">انضم {arabicCode || 'حدابي'}</code>
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                {t('Default Queue')}
-              </label>
-              {virtualQueueCodes.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Check-in mode')}
+                </label>
                 <select
-                  value={whatsappDefaultVirtualCodeId}
-                  onChange={(e) => setWhatsappDefaultVirtualCodeId(e.target.value)}
+                  value={checkInMode}
+                  onChange={(e) => setCheckInMode(e.target.value)}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
-                  <option value="">{t('Select a queue...')}</option>
-                  {virtualQueueCodes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
-                  ))}
+                  <option value="self_service">{t('Self Service')}</option>
+                  <option value="manual">{t('Manual')}</option>
+                  <option value="hybrid">{t('Hybrid')}</option>
                 </select>
-              ) : (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                  <p className="text-sm text-amber-800">
-                    {t('No virtual queue codes found.')}{' '}
-                    <Link href="/admin/virtual-codes" className="font-medium text-primary hover:underline">
-                      {t('Create one')}
-                    </Link>{' '}
-                    {t('to enable WhatsApp/Messenger queue joining.')}
-                  </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Ticket Number Prefix')}
+                </label>
+                <input
+                  type="text"
+                  value={ticketPrefix}
+                  onChange={(e) => setTicketPrefix(e.target.value)}
+                  placeholder={t('e.g. TK-')}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Auto No-Show Timeout (minutes)')}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={autoNoShowTimeout}
+                  onChange={(e) => setAutoNoShowTimeout(Number(e.target.value))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("Mark ticket as no-show if customer doesn't arrive within this time after being called.")}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  {t('Max Queue Size per Department')}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={maxQueueSize}
+                  onChange={(e) => setMaxQueueSize(Number(e.target.value))}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t('Stop accepting tickets when department queue reaches this limit.')}
+                </p>
+              </div>
+            </div>
+
+            {/* Require Approval — Same-Day Tickets */}
+            <div className="flex items-start gap-3 pt-2">
+              <input
+                type="checkbox"
+                id="require-ticket-approval"
+                checked={requireTicketApproval}
+                onChange={(e) => setRequireTicketApproval(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border"
+              />
+              <label htmlFor="require-ticket-approval" className="text-sm">
+                <div className="font-medium">{t('Require approval for same-day tickets')}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('When on, every JOIN ticket waits for staff approval before entering the queue.')}
                 </div>
-              )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('The queue customers join when they send your business code via WhatsApp or Messenger.')}
-              </p>
+              </label>
             </div>
-
-            {whatsappCode && (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                <p className="font-medium">{t('How customers join')}</p>
-                <p className="mt-1 text-sm">
-                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo WhatsApp number, or scan the QR code on your join page.')}
-                </p>
-                {arabicCode && (
-                  <p className="mt-1 text-sm" dir="rtl">
-                    {t('Or in Arabic:')} <code className="font-semibold">انضم {arabicCode}</code>
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
-      </section>
 
-      {/* ── Messenger Notifications (read-only) ────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">
-            {t('Messenger Notifications')}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('Customers receive queue notifications via Facebook Messenger. Managed by Qflo.')}
-          </p>
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
-            <input
-              type="checkbox"
-              checked={messengerEnabled}
-              onChange={(e) => setMessengerEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
-            />
-            <span className="text-sm font-medium text-foreground">
-              {messengerEnabled ? t('Messenger Notifications are enabled') : t('Messenger Notifications are disabled')}
-            </span>
-          </label>
-          <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-            <div className="h-2 w-2 rounded-full bg-primary" />
-            {t('Managed by Qflo')}
-          </div>
-        </div>
-
-        {messengerEnabled && (
+        {/* ── Tab: Appointments ── */}
+        {bookingSettingsTab === 'appointments' && (
           <div className="space-y-4">
-            <ConnectedPageCard pageInfo={messengerPageInfo} t={t} />
-
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              <p className="font-medium">{t('How it works')}</p>
-              <p className="mt-1 text-sm">
-                {t('Customers can join your queue directly through Messenger or tap "Get Messenger notifications" after booking to receive live updates about their ticket.')}
-              </p>
-            </div>
-
-            {whatsappCode && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <p className="font-medium">{t('How customers join via Messenger')}</p>
-                <p className="mt-1 text-sm">
-                  {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo Messenger bot to join the queue.')}
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="booking-enabled"
+                checked={bookingEnabled}
+                onChange={(e) => setBookingEnabled(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-border"
+              />
+              <div>
+                <label htmlFor="booking-enabled" className="text-sm font-medium">
+                  {t('Online Booking')}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t('Allow customers to book appointments via WhatsApp, Messenger, and web')}
                 </p>
               </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* ── Ticket Settings ────────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">
-          {t('Queue Defaults')}
-        </h2>
-
-        <div>
-          <label className="block text-sm font-medium text-muted-foreground mb-2">
-            {t('Visit Intake Availability')}
-          </label>
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t('Choose whether customer-facing queue intake follows your business hours, stays open all the time, or stays closed until you reopen it.')}
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              {
-                value: 'business_hours',
-                title: t('Use business hours'),
-                description: t('Follow each location schedule for kiosk and public queue intake.'),
-              },
-              {
-                value: 'always_open',
-                title: t('Always open'),
-                description: t('Keep taking walk-in and remote queue visits even outside scheduled hours.'),
-              },
-              {
-                value: 'always_closed',
-                title: t('Always closed'),
-                description: t('Pause all customer visit intake until you switch it back on.'),
-              },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setVisitIntakeOverrideMode(option.value)}
-                className={`rounded-xl border p-4 text-left transition-colors ${
-                  visitIntakeOverrideMode === option.value
-                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                    : 'border-border hover:bg-muted'
-                }`}
-              >
-                <div className="text-sm font-semibold text-foreground">{option.title}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{option.description}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Check-in mode')}
-            </label>
-            <select
-              value={checkInMode}
-              onChange={(e) => setCheckInMode(e.target.value)}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              <option value="self_service">{t('Self Service')}</option>
-              <option value="manual">{t('Manual')}</option>
-              <option value="hybrid">{t('Hybrid')}</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Ticket Number Prefix')}
-            </label>
-            <input
-              type="text"
-              value={ticketPrefix}
-              onChange={(e) => setTicketPrefix(e.target.value)}
-              placeholder={t('e.g. TK-')}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Auto No-Show Timeout (minutes)')}
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={autoNoShowTimeout}
-              onChange={(e) => setAutoNoShowTimeout(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("Mark ticket as no-show if customer doesn't arrive within this time after being called.")}
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">
-              {t('Max Queue Size per Department')}
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={maxQueueSize}
-              onChange={(e) => setMaxQueueSize(Number(e.target.value))}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('Stop accepting tickets when department queue reaches this limit.')}
-            </p>
-          </div>
-        </div>
-
-        {/* Require name — Same-day bookings */}
-        <div className="flex items-start gap-3 pt-2">
-          <input
-            type="checkbox"
-            id="require-name-sameday"
-            checked={requireNameSameday}
-            onChange={(e) => setRequireNameSameday(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-border"
-          />
-          <label htmlFor="require-name-sameday" className="text-sm">
-            <div className="font-medium">{t('Require name for same-day booking')}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {t('When enabled, customers must provide their full name for same-day bookings via WhatsApp and Messenger. When disabled, same-day bookings skip the name step.')}
             </div>
-          </label>
-        </div>
 
-        {/* Custom intake fields */}
-        <div className="pt-4 border-t border-border">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="text-sm font-medium">{t('Custom intake fields')}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {t('Add custom fields that customers must fill in before joining the queue or booking via WhatsApp/Messenger.')}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCustomIntakeFields([...customIntakeFields, { label: '', label_fr: '', label_ar: '' }])}
-              className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
-            >
-              + {t('Add field')}
-            </button>
-          </div>
+            <div className={bookingEnabled ? '' : 'opacity-60 pointer-events-none'}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Slot Duration */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {t('Slot Duration')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSlotDurationMinutes(Math.max(5, slotDurationMinutes - 5))}
+                      disabled={slotDurationMinutes <= 5}
+                      className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[4.5rem] text-center text-sm font-semibold text-foreground tabular-nums">
+                      {slotDurationMinutes} {t('min')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSlotDurationMinutes(Math.min(120, slotDurationMinutes + 5))}
+                      disabled={slotDurationMinutes >= 120}
+                      className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('Duration of each appointment slot')}</p>
+                </div>
 
-          {customIntakeFields.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">{t('No custom fields configured. Click "Add field" to get started.')}</p>
-          ) : (
-            <div className="space-y-3">
-              {customIntakeFields.map((field, idx) => (
-                <div key={idx} className="flex items-start gap-3 rounded-lg border border-border p-3 bg-muted/30">
-                  <div className="flex-1 grid gap-2 sm:grid-cols-3">
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (EN)')}</label>
+                {/* Booking Horizon */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {t('Booking Horizon')}
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[7, 15, 30, 60, 90].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setBookingHorizonDays(d)}
+                        className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${bookingHorizonDays === d ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}`}
+                      >
+                        {d === 7 ? t('1 week') : d === 15 ? t('15 days') : d === 30 ? t('30 days') : d === 60 ? t('60 days') : t('90 days')}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1">
                       <input
-                        type="text"
-                        value={field.label}
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={bookingHorizonDays}
                         onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label: e.target.value };
-                          setCustomIntakeFields(updated);
+                          const v = Number(e.target.value);
+                          if (v >= 1) setBookingHorizonDays(v);
                         }}
-                        placeholder="e.g. Color"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="w-20 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/50"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (FR)')}</label>
-                      <input
-                        type="text"
-                        value={field.label_fr}
-                        onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label_fr: e.target.value };
-                          setCustomIntakeFields(updated);
-                        }}
-                        placeholder="ex. Couleur"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (AR)')}</label>
-                      <input
-                        type="text"
-                        value={field.label_ar}
-                        onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label_ar: e.target.value };
-                          setCustomIntakeFields(updated);
-                        }}
-                        placeholder="مثال: اللون"
-                        dir="rtl"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
+                      <span className="text-sm text-muted-foreground">{t('days')}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setCustomIntakeFields(customIntakeFields.filter((_, i) => i !== idx))}
-                    className="mt-5 text-red-500 hover:text-red-400 text-sm font-medium"
-                    title={t('Remove')}
-                  >
-                    ✕
-                  </button>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('How far in advance customers can book (WhatsApp, web, kiosk)')}</p>
                 </div>
-              ))}
+
+                {/* Slots Per Interval */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {t('Capacity Per Slot')}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={slotsPerInterval}
+                    onChange={(e) => setSlotsPerInterval(Number(e.target.value))}
+                    className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">{t('Max concurrent bookings per time slot')}</p>
+                </div>
+
+                {/* Daily Ticket Limit */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {t('Daily Booking Limit')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={500}
+                      value={dailyTicketLimit}
+                      onChange={(e) => setDailyTicketLimit(Number(e.target.value))}
+                      className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                    />
+                    <span className="text-sm text-muted-foreground">{t('per day')}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('0 = no limit. Max bookings allowed per day per office.')}</p>
+                </div>
+
+                {/* Min Lead Time */}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {t('Minimum Lead Time')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={48}
+                      value={minBookingLeadHours}
+                      onChange={(e) => setMinBookingLeadHours(Number(e.target.value))}
+                      className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
+                    />
+                    <span className="text-sm text-muted-foreground">{t('hours before')}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('Minimum hours before appointment to allow booking')}</p>
+                </div>
+
+                {/* Allow Cancellation */}
+                <div className="flex items-center gap-3 pt-6">
+                  <input
+                    type="checkbox"
+                    id="allow-cancellation"
+                    checked={allowCancellation}
+                    onChange={(e) => setAllowCancellation(e.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="allow-cancellation" className="text-sm font-medium">
+                    {t('Allow Customer Cancellation')}
+                  </label>
+                </div>
+
+                {/* Require Approval — Future Appointments */}
+                <div className="md:col-span-2 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="require-appointment-approval"
+                    checked={requireAppointmentApproval}
+                    onChange={(e) => setRequireAppointmentApproval(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="require-appointment-approval" className="text-sm">
+                    <div className="font-medium">{t('Require approval for future appointments')}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {t('When on, every RESERVE booking waits for staff approval. The slot stays reserved until you approve or decline. Turn off to auto-confirm bookings.')}
+                    </div>
+                  </label>
+                </div>
+
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* ── Tab: Channels ── */}
+        {bookingSettingsTab === 'channels' && (
+          <div className="space-y-6">
+            {/* WhatsApp Queue */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-foreground">{t('WhatsApp Queue')}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t('Customers join your queue by sending a message via WhatsApp. Managed by Qflo.')}
+              </p>
+
+              <div className="flex items-center justify-between gap-4">
+                <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
+                  <input
+                    type="checkbox"
+                    checked={whatsappEnabled}
+                    onChange={(e) => setWhatsappEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+                  />
+                  <span className="text-sm font-medium text-foreground">
+                    {whatsappEnabled ? t('WhatsApp Queue Join is enabled') : t('WhatsApp Queue Join is disabled')}
+                  </span>
+                </label>
+                <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                  <div className="h-2 w-2 rounded-full bg-primary" />
+                  {t('Managed by Qflo')}
+                </div>
+              </div>
+
+              {whatsappEnabled && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      {t('Business Code')}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={whatsappCode}
+                        onChange={(e) => setWhatsappCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                        placeholder={t('e.g. CLINIC1')}
+                        maxLength={20}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground uppercase tracking-wider font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      {codeAvailability === 'checking' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{t('Checking…')}</span>
+                      )}
+                      {codeAvailability === 'available' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-600 font-medium">✓ {t('Available')}</span>
+                      )}
+                      {codeAvailability === 'taken' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-red-600 font-medium">✗ {t('Already taken')}</span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('Unique code customers use to join your queue via WhatsApp.')}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      {t('Arabic Code')} <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={arabicCode}
+                      onChange={(e) => setArabicCode(e.target.value)}
+                      placeholder={t('e.g. حدابي')}
+                      maxLength={30}
+                      dir="rtl"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground tracking-wider font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('Arabic alternative for your business code. Customers can type')} <code className="font-mono font-bold" dir="rtl">انضم {arabicCode || 'حدابي'}</code>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      {t('Default Queue')}
+                    </label>
+                    {virtualQueueCodes.length > 0 ? (
+                      <select
+                        value={whatsappDefaultVirtualCodeId}
+                        onChange={(e) => setWhatsappDefaultVirtualCodeId(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      >
+                        <option value="">{t('Select a queue...')}</option>
+                        {virtualQueueCodes.map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                        <p className="text-sm text-amber-800">
+                          {t('No virtual queue codes found.')}{' '}
+                          <Link href="/admin/virtual-codes" className="font-medium text-primary hover:underline">
+                            {t('Create one')}
+                          </Link>{' '}
+                          {t('to enable WhatsApp/Messenger queue joining.')}
+                        </p>
+                      </div>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('The queue customers join when they send your business code via WhatsApp or Messenger.')}
+                    </p>
+                  </div>
+
+                  {whatsappCode && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                      <p className="font-medium">{t('How customers join')}</p>
+                      <p className="mt-1 text-sm">
+                        {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo WhatsApp number, or scan the QR code on your join page.')}
+                      </p>
+                      {arabicCode && (
+                        <p className="mt-1 text-sm" dir="rtl">
+                          {t('Or in Arabic:')} <code className="font-semibold">انضم {arabicCode}</code>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <hr className="border-border" />
+
+            {/* Messenger Notifications */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-foreground">{t('Messenger Notifications')}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t('Customers receive queue notifications via Facebook Messenger. Managed by Qflo.')}
+              </p>
+
+              <div className="flex items-center justify-between gap-4">
+                <label className="flex items-center gap-3 rounded-lg border border-border p-4 cursor-pointer flex-1">
+                  <input
+                    type="checkbox"
+                    checked={messengerEnabled}
+                    onChange={(e) => setMessengerEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/50"
+                  />
+                  <span className="text-sm font-medium text-foreground">
+                    {messengerEnabled ? t('Messenger Notifications are enabled') : t('Messenger Notifications are disabled')}
+                  </span>
+                </label>
+                <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                  <div className="h-2 w-2 rounded-full bg-primary" />
+                  {t('Managed by Qflo')}
+                </div>
+              </div>
+
+              {messengerEnabled && (
+                <div className="space-y-4">
+                  <ConnectedPageCard pageInfo={messengerPageInfo} t={t} />
+
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    <p className="font-medium">{t('How it works')}</p>
+                    <p className="mt-1 text-sm">
+                      {t('Customers can join your queue directly through Messenger or tap "Get Messenger notifications" after booking to receive live updates about their ticket.')}
+                    </p>
+                  </div>
+
+                  {whatsappCode && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                      <p className="font-medium">{t('How customers join via Messenger')}</p>
+                      <p className="mt-1 text-sm">
+                        {t('Customers send')} <code className="font-mono font-bold">JOIN {whatsappCode.toUpperCase()}</code> {t('to the Qflo Messenger bot to join the queue.')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Display Settings ───────────────────────────────────────────── */}
@@ -1374,287 +1674,6 @@ export function SettingsClient({
                 </option>
               ))}
           </select>
-        </div>
-      </section>
-
-      {/* ── Booking Settings ──────────────────────────────────────────── */}
-      <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">{t('Booking Settings')}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('Configure how customers book future appointments — time slots, capacity, and limits.')}
-          </p>
-        </div>
-
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="booking-enabled"
-            checked={bookingEnabled}
-            onChange={(e) => setBookingEnabled(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-border"
-          />
-          <div>
-            <label htmlFor="booking-enabled" className="text-sm font-medium">
-              {t('Online Booking')}
-            </label>
-            <p className="text-xs text-muted-foreground">
-              {t('Allow customers to book appointments via WhatsApp, Messenger, and web')}
-            </p>
-          </div>
-        </div>
-
-        <div className={bookingEnabled ? '' : 'opacity-60 pointer-events-none'}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Slot Duration */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                {t('Slot Duration')}
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSlotDurationMinutes(Math.max(5, slotDurationMinutes - 5))}
-                  disabled={slotDurationMinutes <= 5}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
-                >
-                  −
-                </button>
-                <span className="min-w-[4.5rem] text-center text-sm font-semibold text-foreground tabular-nums">
-                  {slotDurationMinutes} {t('min')}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSlotDurationMinutes(Math.min(120, slotDurationMinutes + 5))}
-                  disabled={slotDurationMinutes >= 120}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-lg font-bold"
-                >
-                  +
-                </button>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t('Duration of each appointment slot')}</p>
-            </div>
-
-            {/* Booking Horizon */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                {t('Booking Horizon')}
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                {[7, 15, 30, 60, 90].map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setBookingHorizonDays(d)}
-                    className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${bookingHorizonDays === d ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-foreground hover:bg-muted'}`}
-                  >
-                    {d === 7 ? t('1 week') : d === 15 ? t('15 days') : d === 30 ? t('30 days') : d === 60 ? t('60 days') : t('90 days')}
-                  </button>
-                ))}
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={bookingHorizonDays}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (v >= 1) setBookingHorizonDays(v);
-                    }}
-                    className="w-20 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/50"
-                  />
-                  <span className="text-sm text-muted-foreground">{t('days')}</span>
-                </div>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t('How far in advance customers can book (WhatsApp, web, kiosk)')}</p>
-            </div>
-
-            {/* Slots Per Interval */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                {t('Capacity Per Slot')}
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={slotsPerInterval}
-                onChange={(e) => setSlotsPerInterval(Number(e.target.value))}
-                className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">{t('Max concurrent bookings per time slot')}</p>
-            </div>
-
-            {/* Daily Ticket Limit */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                {t('Daily Booking Limit')}
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={500}
-                  value={dailyTicketLimit}
-                  onChange={(e) => setDailyTicketLimit(Number(e.target.value))}
-                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
-                />
-                <span className="text-sm text-muted-foreground">{t('per day')}</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t('0 = no limit. Max bookings allowed per day per office.')}</p>
-            </div>
-
-            {/* Min Lead Time */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                {t('Minimum Lead Time')}
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={48}
-                  value={minBookingLeadHours}
-                  onChange={(e) => setMinBookingLeadHours(Number(e.target.value))}
-                  className="w-20 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50"
-                />
-                <span className="text-sm text-muted-foreground">{t('hours before')}</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{t('Minimum hours before appointment to allow booking')}</p>
-            </div>
-
-            {/* Allow Cancellation */}
-            <div className="flex items-center gap-3 pt-6">
-              <input
-                type="checkbox"
-                id="allow-cancellation"
-                checked={allowCancellation}
-                onChange={(e) => setAllowCancellation(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="allow-cancellation" className="text-sm font-medium">
-                {t('Allow Customer Cancellation')}
-              </label>
-            </div>
-
-            {/* Require Approval — Same-Day Tickets */}
-            <div className="md:col-span-2 flex items-start gap-3 pt-2">
-              <input
-                type="checkbox"
-                id="require-ticket-approval"
-                checked={requireTicketApproval}
-                onChange={(e) => setRequireTicketApproval(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="require-ticket-approval" className="text-sm">
-                <div className="font-medium">{t('Require approval for same-day tickets')}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {t('When on, every JOIN ticket waits for staff approval before entering the queue.')}
-                </div>
-              </label>
-            </div>
-
-            {/* Require Approval — Future Appointments */}
-            <div className="md:col-span-2 flex items-start gap-3">
-              <input
-                type="checkbox"
-                id="require-appointment-approval"
-                checked={requireAppointmentApproval}
-                onChange={(e) => setRequireAppointmentApproval(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-border"
-              />
-              <label htmlFor="require-appointment-approval" className="text-sm">
-                <div className="font-medium">{t('Require approval for future appointments')}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {t('When on, every RESERVE booking waits for staff approval. The slot stays reserved until you approve or decline. Turn off to auto-confirm bookings.')}
-                </div>
-              </label>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Custom intake fields (shared with Queue Defaults — same setting) */}
-        <div className="pt-4 border-t border-border">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div className="text-sm font-medium">{t('Custom intake fields')}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {t('These fields are asked before confirmation in both same-day queue (JOIN) and future booking (BOOK) flows via WhatsApp/Messenger.')}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCustomIntakeFields([...customIntakeFields, { label: '', label_fr: '', label_ar: '' }])}
-              className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
-            >
-              + {t('Add field')}
-            </button>
-          </div>
-
-          {customIntakeFields.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">{t('No custom fields configured. Click "Add field" to get started.')}</p>
-          ) : (
-            <div className="space-y-3">
-              {customIntakeFields.map((field, idx) => (
-                <div key={idx} className="flex items-start gap-3 rounded-lg border border-border p-3 bg-muted/30">
-                  <div className="flex-1 grid gap-2 sm:grid-cols-3">
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (EN)')}</label>
-                      <input
-                        type="text"
-                        value={field.label}
-                        onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label: e.target.value };
-                          setCustomIntakeFields(updated);
-                        }}
-                        placeholder="e.g. Color"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (FR)')}</label>
-                      <input
-                        type="text"
-                        value={field.label_fr}
-                        onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label_fr: e.target.value };
-                          setCustomIntakeFields(updated);
-                        }}
-                        placeholder="ex. Couleur"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (AR)')}</label>
-                      <input
-                        type="text"
-                        value={field.label_ar}
-                        onChange={(e) => {
-                          const updated = [...customIntakeFields];
-                          updated[idx] = { ...updated[idx], label_ar: e.target.value };
-                          setCustomIntakeFields(updated);
-                        }}
-                        placeholder="مثال: اللون"
-                        dir="rtl"
-                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setCustomIntakeFields(customIntakeFields.filter((_, i) => i !== idx))}
-                    className="mt-5 text-red-500 hover:text-red-400 text-sm font-medium"
-                    title={t('Remove')}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </section>
 

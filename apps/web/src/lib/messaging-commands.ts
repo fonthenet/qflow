@@ -587,7 +587,7 @@ const messages: Record<string, Record<Locale, string>> = {
 };
 
 // ── Notification messages — imported from @qflo/shared (single source of truth) ──
-import { notificationMessages, renderNotification } from '@qflo/shared';
+import { notificationMessages, renderNotification, getEnabledIntakeFields, getFieldLabel, type IntakeField } from '@qflo/shared';
 export { notificationMessages, renderNotification };
 
 // ── Locale detection ─────────────────────────────────────────────────
@@ -1223,10 +1223,13 @@ export async function handleInboundMessage(
           const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
             ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
             : undefined;
-          // Use stored name from name-collection step if available, otherwise WhatsApp profile name
-          const joinName = pendingSession.booking_customer_name || profileName;
-          const customData = (pendingSession.custom_intake_data as any)?.answers;
-          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, joinName, bsuid, preResolved, undefined, customData);
+          // Unified intake answers — profileName is passed as fallback (handleJoin uses it if name not in answers)
+          const customData = (pendingSession.custom_intake_data as any)?.answers ?? {};
+          // Legacy compat: if name was stored in booking_customer_name but not in answers, add it
+          if (pendingSession.booking_customer_name && !customData.name) {
+            customData.name = pendingSession.booking_customer_name;
+          }
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved, undefined, customData);
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
         } else {
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
@@ -1347,35 +1350,7 @@ export async function handleInboundMessage(
         return;
       }
 
-      // Guard: reject YES/NO confirmation keywords (Meta duplicate webhook)
-      const isConfirmKeyword = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
-      if (isConfirmKeyword) {
-        // Re-prompt for current field
-        const { data: orgC } = await supabaseCustom.from('organizations').select('settings').eq('id', customSession.organization_id).single();
-        const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgC?.settings as any)?.custom_intake_fields ?? [];
-        const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
-        const curField = fields[cData.index];
-        if (curField) {
-          const fieldLabel = customLocale === 'ar' ? (curField.label_ar || curField.label) : customLocale === 'fr' ? (curField.label_fr || curField.label) : curField.label;
-          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
-        }
-        return;
-      }
-
-      // Validate (1-200 chars)
-      if (cleaned.length < 1 || cleaned.length > 200) {
-        const { data: orgC } = await supabaseCustom.from('organizations').select('settings').eq('id', customSession.organization_id).single();
-        const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgC?.settings as any)?.custom_intake_fields ?? [];
-        const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
-        const curField = fields[cData.index];
-        if (curField) {
-          const fieldLabel = customLocale === 'ar' ? (curField.label_ar || curField.label) : customLocale === 'fr' ? (curField.label_fr || curField.label) : curField.label;
-          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
-        }
-        return;
-      }
-
-      // Load org settings for fields
+      // Load org settings for fields (unified intake_fields system)
       const { data: orgRow } = await supabaseCustom.from('organizations').select('id, name, settings').eq('id', customSession.organization_id).single();
       if (!orgRow) {
         await supabaseCustom.from('whatsapp_sessions').delete().eq('id', customSession.id);
@@ -1383,11 +1358,13 @@ export async function handleInboundMessage(
         return;
       }
 
-      const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgRow.settings as any)?.custom_intake_fields ?? [];
+      // Determine context from session: booking has booking_date, otherwise same-day join
+      const intakeContext = customSession.booking_date ? 'booking' as const : 'sameday' as const;
+      const enabledFields = getEnabledIntakeFields((orgRow.settings ?? {}) as Record<string, any>, ['phone'], intakeContext);
       const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
       const currentIndex = cData.index ?? 0;
       const answers = cData.answers ?? {};
-      const currentField = fields[currentIndex];
+      const currentField: IntakeField | undefined = enabledFields[currentIndex];
 
       if (!currentField) {
         // No field at this index — skip to next state
@@ -1396,17 +1373,80 @@ export async function handleInboundMessage(
         return;
       }
 
-      // Store the answer keyed by label
-      answers[currentField.label] = cleaned;
+      // Guard: reject YES/NO confirmation keywords (Meta duplicate webhook)
+      const isConfirmKeyword = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+      if (isConfirmKeyword) {
+        const fieldLabel = getFieldLabel(currentField, customLocale);
+        await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+        return;
+      }
+
+      // Per-field validation based on key
+      const fieldKey = currentField.key;
+      if (fieldKey === 'name') {
+        // Name: 2-100 chars
+        if (cleaned.length < 2 || cleaned.length > 100) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = cleaned;
+      } else if (fieldKey === 'phone') {
+        // Phone: basic format validation
+        const phoneDigits = cleaned.replace(/[^0-9+]/g, '');
+        if (phoneDigits.length < 6 || phoneDigits.length > 20) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = cleaned;
+      } else if (fieldKey === 'age') {
+        // Age: numeric, 1-150
+        const ageNum = parseInt(cleaned, 10);
+        if (isNaN(ageNum) || ageNum < 1 || ageNum > 150) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = String(ageNum);
+      } else if (fieldKey === 'wilaya') {
+        // Wilaya: use resolveWilaya + formatWilaya
+        const resolved = resolveWilaya(messageBody);
+        if (!resolved) {
+          await sendMessage({ to: identifier, body: t('intake_invalid_wilaya', customLocale) });
+          return;
+        }
+        answers[fieldKey] = formatWilaya(resolved, customLocale);
+      } else if (fieldKey === 'reason') {
+        // Reason: 1-200 chars, allow SKIP/PASSER/تخطي
+        const isSkip = /^(SKIP|PASSER|تخطي)$/i.test(cleaned);
+        if (isSkip) {
+          answers[fieldKey] = '';
+        } else if (cleaned.length < 1 || cleaned.length > 200) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        } else {
+          answers[fieldKey] = cleaned;
+        }
+      } else {
+        // Custom fields: 1-200 chars
+        if (cleaned.length < 1 || cleaned.length > 200) {
+          const fieldLabel = getFieldLabel(currentField, customLocale);
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+          return;
+        }
+        answers[fieldKey] = cleaned;
+      }
 
       const nextIndex = currentIndex + 1;
-      if (nextIndex < fields.length) {
+      if (nextIndex < enabledFields.length) {
         // More fields to collect
         await supabaseCustom.from('whatsapp_sessions').update({
           custom_intake_data: { index: nextIndex, answers },
         }).eq('id', customSession.id);
-        const nextField = fields[nextIndex];
-        const nextLabel = customLocale === 'ar' ? (nextField.label_ar || nextField.label) : customLocale === 'fr' ? (nextField.label_fr || nextField.label) : nextField.label;
+        const nextField = enabledFields[nextIndex];
+        const nextLabel = getFieldLabel(nextField, customLocale);
         await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: nextLabel }) });
       } else {
         // All fields collected
@@ -1424,9 +1464,9 @@ export async function handleInboundMessage(
               name: orgName,
               date: dateFormatted,
               time: customSession.booking_time,
-              customer: customSession.booking_customer_name,
-              wilaya: customSession.booking_customer_wilaya || '—',
-              reason: customSession.intake_reason || '—',
+              customer: answers.name || customSession.booking_customer_name,
+              wilaya: answers.wilaya || customSession.booking_customer_wilaya || '—',
+              reason: answers.reason || customSession.intake_reason || '—',
             }),
           });
         } else {
@@ -2695,14 +2735,12 @@ async function askJoinConfirmationDirect(
     if (closed) return;
   }
 
-  // Check if name is required before joining (ask name BEFORE confirmation)
-  const requireName = Boolean((org.settings as any)?.require_name_sameday);
-  const customFields: any[] = (org.settings as any)?.custom_intake_fields ?? [];
+  // Determine intake fields to collect (phone is auto-collected from WhatsApp/Messenger)
+  // Same-day join → context 'sameday'
+  const enabledFields = getEnabledIntakeFields((org.settings ?? {}) as Record<string, any>, ['phone'], 'sameday');
 
   let initialState: string;
-  if (requireName) {
-    initialState = 'pending_join_name';
-  } else if (customFields.length > 0) {
+  if (enabledFields.length > 0) {
     initialState = 'pending_custom_intake';
   } else {
     initialState = 'pending_confirmation';
@@ -2729,11 +2767,9 @@ async function askJoinConfirmationDirect(
     console.error('[askJoinConfirmationDirect] Insert failed:', insertErr.message);
   }
 
-  if (requireName) {
-    await sendMessage({ to: identifier, body: t('join_enter_name', locale) });
-  } else if (customFields.length > 0) {
-    const firstField = customFields[0];
-    const fieldLabel = locale === 'ar' ? (firstField.label_ar || firstField.label) : locale === 'fr' ? (firstField.label_fr || firstField.label) : firstField.label;
+  if (enabledFields.length > 0) {
+    const firstField = enabledFields[0];
+    const fieldLabel = getFieldLabel(firstField, locale);
     await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
   } else {
     await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
@@ -2973,24 +3009,44 @@ async function handleJoin(
     return;
   }
 
-  // Build customer data
+  // Build customer data from unified intake answers
   const customerData: Record<string, any> = { source: channel };
   if (channel === 'whatsapp') {
     customerData.phone = identifier;
   } else {
     customerData.messenger_psid = identifier;
   }
-  if (profileName) {
+  // Map known intake keys to customer data fields
+  if (customIntakeData) {
+    if (customIntakeData.name) {
+      customerData.name = customIntakeData.name;
+    }
+    if (customIntakeData.wilaya) {
+      customerData.wilaya = customIntakeData.wilaya;
+    }
+    if (customIntakeData.reason) {
+      customerData.reason_of_visit = customIntakeData.reason;
+    }
+    if (customIntakeData.age) {
+      customerData.age = customIntakeData.age;
+    }
+    // Merge remaining custom fields as-is
+    for (const [key, val] of Object.entries(customIntakeData)) {
+      if (!['name', 'wilaya', 'reason', 'age', 'phone'].includes(key)) {
+        customerData[key] = val;
+      }
+    }
+  }
+  // Fallback: use profileName if name wasn't collected via intake
+  if (!customerData.name && profileName) {
     customerData.name = profileName;
   }
-  if (intake?.wilaya) {
+  // Legacy intake params (backward compat for existing sessions)
+  if (intake?.wilaya && !customerData.wilaya) {
     customerData.wilaya = intake.wilaya;
   }
-  if (intake?.reason) {
+  if (intake?.reason && !customerData.reason_of_visit) {
     customerData.reason_of_visit = intake.reason;
-  }
-  if (customIntakeData) {
-    Object.assign(customerData, customIntakeData);
   }
 
   const result = await createPublicTicket({
@@ -3018,9 +3074,9 @@ async function handleJoin(
   try {
     await upsertCustomerFromBooking(supabase, {
       organizationId: org.id,
-      name: profileName || undefined,
+      name: customerData.name || undefined,
       phone: identifier, // WhatsApp/Messenger identifiers are already E.164 — no timezone needed
-      wilayaCode: intake?.wilaya || undefined,
+      wilayaCode: customerData.wilaya || intake?.wilaya || undefined,
       source: channel === 'messenger' ? 'messenger' : channel,
     });
   } catch (e) { console.warn('[join] customer upsert failed:', (e as any)?.message ?? e); }
@@ -4037,6 +4093,7 @@ async function handleBookingState(
       }).eq('id', session.id);
 
       // Store phone temporarily (we'll use identifier as phone if skipped)
+      const phoneAnswers = (session.custom_intake_data as any)?.answers ?? {};
       const orgName = await getOrgName(session.organization_id);
       const dateFormatted = formatDateForLocale(session.booking_date, locale);
       await sendMessage({
@@ -4045,9 +4102,9 @@ async function handleBookingState(
           name: orgName,
           date: dateFormatted,
           time: session.booking_time,
-          customer: session.booking_customer_name,
-          wilaya: session.booking_customer_wilaya || '—',
-          reason: session.intake_reason || '—',
+          customer: phoneAnswers.name || session.booking_customer_name,
+          wilaya: phoneAnswers.wilaya || session.booking_customer_wilaya || '—',
+          reason: phoneAnswers.reason || session.intake_reason || '—',
         }),
       });
       return true;
@@ -4066,7 +4123,8 @@ async function handleBookingState(
         await sendMessage({ to: identifier, body: t('booking_cancelled', locale) });
         return true;
       }
-      // Re-show confirmation
+      // Re-show confirmation (read from unified answers + legacy columns)
+      const confirmAnswers = (session.custom_intake_data as any)?.answers ?? {};
       const orgName = await getOrgName(session.organization_id);
       const dateFormatted = formatDateForLocale(session.booking_date, locale);
       await sendMessage({
@@ -4075,9 +4133,9 @@ async function handleBookingState(
           name: orgName,
           date: dateFormatted,
           time: session.booking_time,
-          customer: session.booking_customer_name,
-          wilaya: session.booking_customer_wilaya || '—',
-          reason: session.intake_reason || '—',
+          customer: confirmAnswers.name || session.booking_customer_name,
+          wilaya: confirmAnswers.wilaya || session.booking_customer_wilaya || '—',
+          reason: confirmAnswers.reason || session.intake_reason || '—',
         }),
       });
       return true;
@@ -4228,29 +4286,41 @@ async function handleBookingTimeChoice(
     .eq('id', session.organization_id)
     .single();
 
-  const todayStr = new Date().toLocaleDateString('en-CA', {
-    timeZone: orgRow?.timezone || 'Africa/Algiers',
-  });
-  const isToday = session.booking_date === todayStr;
-  const requireName = (orgRow?.settings as any)?.require_name_sameday ?? false;
+  // Use unified intake fields system (exclude phone — auto-collected)
+  // Future booking → context 'booking'
+  const bookingEnabledFields = getEnabledIntakeFields((orgRow?.settings ?? {}) as Record<string, any>, ['phone'], 'booking');
 
-  if (isToday && !requireName) {
-    // Skip name step for same-day bookings when not required
+  if (bookingEnabledFields.length > 0) {
+    // Intake fields to collect — go to unified pending_custom_intake
     await supabase.from('whatsapp_sessions').update({
-      state: 'booking_enter_wilaya',
+      state: 'pending_custom_intake',
       booking_time: chosenSlot.time,
-      booking_customer_name: null,
+      custom_intake_data: { index: 0, answers: {} },
     }).eq('id', session.id);
 
-    await sendMessage({ to: identifier, body: t('booking_enter_wilaya', locale) });
+    const firstField = bookingEnabledFields[0];
+    const fieldLabel = getFieldLabel(firstField, locale);
+    await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
   } else {
-    // Name is required for future bookings or when require_name_sameday is true
+    // No intake fields — go straight to booking_confirm
     await supabase.from('whatsapp_sessions').update({
-      state: 'booking_enter_name',
+      state: 'booking_confirm',
       booking_time: chosenSlot.time,
     }).eq('id', session.id);
 
-    await sendMessage({ to: identifier, body: t('booking_enter_name', locale) });
+    const orgName = await getOrgName(session.organization_id);
+    const dateFormatted = formatDateForLocale(session.booking_date, locale);
+    await sendMessage({
+      to: identifier,
+      body: t('booking_confirm', locale, {
+        name: orgName,
+        date: dateFormatted,
+        time: chosenSlot.time,
+        customer: session.booking_customer_name || '—',
+        wilaya: session.booking_customer_wilaya || '—',
+        reason: session.intake_reason || '—',
+      }),
+    });
   }
 
   return true;
@@ -4279,14 +4349,17 @@ async function confirmBooking(
 ) {
   const supabase = createAdminClient() as any;
 
-  // Re-fetch session to ensure latest intake fields (wilaya/reason) are present
+  // Re-fetch session to ensure latest intake fields are present
   const { data: fresh } = await supabase
     .from('whatsapp_sessions')
     .select('booking_customer_wilaya, intake_reason, custom_intake_data')
     .eq('id', session.id)
     .maybeSingle();
-  const wilaya = fresh?.booking_customer_wilaya || session.booking_customer_wilaya || null;
-  const reason = fresh?.intake_reason || session.intake_reason || null;
+  // Read from unified answers first, then legacy columns
+  const unifiedAnswers = (fresh?.custom_intake_data as any)?.answers ?? (session.custom_intake_data as any)?.answers ?? {};
+  const wilaya = unifiedAnswers.wilaya || fresh?.booking_customer_wilaya || session.booking_customer_wilaya || null;
+  const reason = unifiedAnswers.reason || fresh?.intake_reason || session.intake_reason || null;
+  const customerName = unifiedAnswers.name || session.booking_customer_name || null;
 
   // Build scheduled_at from booking_date + booking_time in the org's timezone
   let scheduledAt = `${session.booking_date}T${session.booking_time}:00`;
@@ -4324,18 +4397,18 @@ async function confirmBooking(
       office_id: session.office_id,
       department_id: session.department_id,
       service_id: session.service_id,
-      customer_name: session.booking_customer_name,
+      customer_name: customerName,
       customer_phone: identifier, // WhatsApp phone number
       scheduled_at: scheduledAt,
       status: initialStatus,
       calendar_token: calendarToken,
       wilaya: wilaya,
       notes: (() => {
-        const customAnswers = (fresh?.custom_intake_data as any)?.answers ?? (session.custom_intake_data as any)?.answers;
-        if (customAnswers && Object.keys(customAnswers).length > 0) {
-          const customLines = Object.entries(customAnswers).map(([k, v]) => `${k}: ${v}`).join('\n');
-          return reason ? `${reason}\n---\n${customLines}` : customLines;
-        }
+        // Build notes from non-core unified answers (exclude name/wilaya/reason/phone which have dedicated columns)
+        const extraAnswers = Object.entries(unifiedAnswers).filter(([k]) => !['name', 'wilaya', 'reason', 'phone'].includes(k));
+        const extraLines = extraAnswers.map(([k, v]) => `${k}: ${v}`).join('\n');
+        if (extraLines && reason) return `${reason}\n---\n${extraLines}`;
+        if (extraLines) return extraLines;
         return reason;
       })(),
       locale,
@@ -4374,7 +4447,7 @@ async function confirmBooking(
   const wilayaCode = wilaya ? wilaya.trim() : null;
   await upsertCustomerFromBooking(supabase, {
     organizationId: session.organization_id,
-    name: session.booking_customer_name,
+    name: customerName || undefined,
     phone: identifier,
     wilayaCode,
     source: channel === 'messenger' ? 'messenger' : 'whatsapp',

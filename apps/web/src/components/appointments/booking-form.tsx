@@ -15,6 +15,8 @@ import {
 } from '@/lib/actions/appointment-actions';
 import { buildBookingCheckInPath } from '@/lib/office-links';
 import { useI18n } from '@/components/providers/locale-provider';
+import { getEnabledIntakeFields, getFieldLabel, getFieldPlaceholder, type IntakeField, type PresetKey } from '@qflo/shared';
+import { WILAYAS, formatWilaya } from '@/lib/wilayas';
 
 interface BookingFormProps {
   office: any;
@@ -96,6 +98,7 @@ export function BookingForm({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [intakeData, setIntakeData] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [appointment, setAppointment] = useState<any>(null);
@@ -145,6 +148,22 @@ export function BookingForm({
   _todayAnchor.setUTCDate(_todayAnchor.getUTCDate() + 1);
   const tomorrow = _todayAnchor.toISOString().split('T')[0];
   const orgSettings = organization?.settings ?? {};
+  // Dynamic intake fields from org settings
+  const intakeFields = getEnabledIntakeFields(orgSettings, undefined, 'booking');
+  const intakeLocale = (locale === 'ar' || locale === 'fr') ? locale : 'en';
+
+  function getIntakeValue(field: IntakeField): string {
+    if (field.key === 'name') return customerName;
+    if (field.key === 'phone') return customerPhone;
+    return intakeData[field.key] ?? '';
+  }
+
+  function setIntakeValue(field: IntakeField, value: string) {
+    if (field.key === 'name') { setCustomerName(value); return; }
+    if (field.key === 'phone') { setCustomerPhone(value); return; }
+    setIntakeData((prev) => ({ ...prev, [field.key]: value }));
+  }
+
   const bookingEmailOtpEnabled = Boolean(orgSettings.email_otp_enabled);
   const bookingEmailOtpRequired = Boolean(
     orgSettings.email_otp_enabled && orgSettings.email_otp_required_for_booking
@@ -287,7 +306,21 @@ export function BookingForm({
   }
 
   function handleCustomerInfo() {
-    if (!customerName.trim()) {
+    // Validate required intake fields
+    for (const field of intakeFields) {
+      if (field.required && !getIntakeValue(field).trim()) {
+        const label = getFieldLabel(field, intakeLocale);
+        setError(t('Please fill in {field}', { field: label }));
+        return;
+      }
+    }
+    // Name is always required for booking even if not marked required in intake
+    const nameField = intakeFields.find((f) => f.key === 'name');
+    if (!nameField && !customerName.trim()) {
+      setError(t('Please enter your name'));
+      return;
+    }
+    if (nameField && !customerName.trim()) {
       setError(t('Please enter your name'));
       return;
     }
@@ -324,6 +357,18 @@ export function BookingForm({
       return;
     }
 
+    // Build extra notes from dynamic intake fields (age, reason, custom)
+    const extraParts: string[] = [];
+    for (const field of intakeFields) {
+      if (['name', 'phone'].includes(field.key)) continue; // mapped to dedicated columns
+      const val = (intakeData[field.key] ?? '').trim();
+      if (val) {
+        const label = getFieldLabel(field, intakeLocale);
+        extraParts.push(`${label}: ${val}`);
+      }
+    }
+    const notesFromIntake = extraParts.length > 0 ? extraParts.join(' | ') : undefined;
+
     const baseData = {
       officeId: office.id,
       departmentId: selectedDept.id,
@@ -333,6 +378,8 @@ export function BookingForm({
       customerEmail: customerEmail.trim() || undefined,
       scheduledAt,
       locale,
+      wilaya: (intakeData['wilaya'] ?? '').trim() || undefined,
+      notes: notesFromIntake,
       ...(selectedStaffId ? { staffId: selectedStaffId } : {}),
     };
 
@@ -501,6 +548,7 @@ export function BookingForm({
     setCustomerName('');
     setCustomerPhone('');
     setCustomerEmail('');
+    setIntakeData({});
     setAppointment(null);
     setSelectedStaffId(null);
     setStaffMembers([]);
@@ -969,7 +1017,7 @@ export function BookingForm({
           </div>
         )}
 
-        {/* Step 5: Customer Info */}
+        {/* Step 5: Customer Info (dynamic intake fields) */}
         {step === 'info' && (
           <div className="space-y-6">
             <div className="text-center">
@@ -980,30 +1028,107 @@ export function BookingForm({
             </div>
 
             <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  {t('Full Name')} <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder={t('Enter your full name')}
-                  className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
-                  {t('Phone Number')} <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
-                </label>
-                <input
-                  type="tel"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder={t('Enter your phone number')}
-                  className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
+              {/* Dynamic intake fields */}
+              {intakeFields.map((field) => {
+                const label = getFieldLabel(field, intakeLocale);
+                const placeholder = getFieldPlaceholder(field, intakeLocale);
+                const value = getIntakeValue(field);
+                const isRequired = field.required || field.key === 'name'; // name always required for booking
+                const presetKey = field.type === 'preset' ? (field.key as PresetKey) : null;
+
+                if (presetKey === 'wilaya') {
+                  return (
+                    <div key={field.key}>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        {t(label)}{' '}
+                        {isRequired ? (
+                          <span className="text-destructive">*</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
+                        )}
+                      </label>
+                      <select
+                        value={value}
+                        onChange={(e) => setIntakeValue(field, e.target.value)}
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="">{t(placeholder) || t('Select wilaya')}</option>
+                        {WILAYAS.map((w) => (
+                          <option key={w.code} value={formatWilaya(w, intakeLocale === 'ar' ? 'ar' : 'fr')}>
+                            {formatWilaya(w, intakeLocale === 'ar' ? 'ar' : 'fr')}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+
+                if (presetKey === 'age') {
+                  return (
+                    <div key={field.key}>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        {t(label)}{' '}
+                        {isRequired ? (
+                          <span className="text-destructive">*</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
+                        )}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="150"
+                        value={value}
+                        onChange={(e) => setIntakeValue(field, e.target.value)}
+                        placeholder={t(placeholder)}
+                        className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={field.key}>
+                    <label className="mb-1.5 block text-sm font-medium text-foreground">
+                      {t(label)}{' '}
+                      {isRequired ? (
+                        <span className="text-destructive">*</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{t('(optional)')}</span>
+                      )}
+                    </label>
+                    <input
+                      type={presetKey === 'phone' ? 'tel' : 'text'}
+                      value={value}
+                      onChange={(e) => setIntakeValue(field, e.target.value)}
+                      placeholder={t(placeholder)}
+                      autoComplete={
+                        presetKey === 'name' ? 'name' :
+                        presetKey === 'phone' ? 'tel' : 'off'
+                      }
+                      className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                );
+              })}
+
+              {/* If no intake fields configured, show fallback name field */}
+              {intakeFields.length === 0 && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">
+                    {t('Full Name')} <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder={t('Enter your full name')}
+                    className="w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              )}
+
+              {/* Email field — always shown separately (special-cased for OTP) */}
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-foreground">
                   Email{' '}
@@ -1076,14 +1201,22 @@ export function BookingForm({
                 </span>
                 <span className="font-medium text-foreground">{formatSlotTime(selectedTime)}</span>
               </div>
-              <div className="flex justify-between border-b border-border py-2">
-                <span className="text-muted-foreground">{t('Name')}</span>
-                <span className="font-medium text-foreground">{customerName}</span>
-              </div>
-              {customerPhone && (
+              {/* Dynamic intake field values */}
+              {intakeFields.map((field) => {
+                const val = getIntakeValue(field);
+                if (!val.trim()) return null;
+                return (
+                  <div key={field.key} className="flex justify-between border-b border-border py-2">
+                    <span className="text-muted-foreground">{t(getFieldLabel(field, intakeLocale))}</span>
+                    <span className="font-medium text-foreground">{val}</span>
+                  </div>
+                );
+              })}
+              {/* Fallback name if no intake fields */}
+              {intakeFields.length === 0 && customerName && (
                 <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">{t('Phone')}</span>
-                  <span className="font-medium text-foreground">{customerPhone}</span>
+                  <span className="text-muted-foreground">{t('Name')}</span>
+                  <span className="font-medium text-foreground">{customerName}</span>
                 </div>
               )}
               {customerEmail && (
@@ -1299,14 +1432,21 @@ export function BookingForm({
                   <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span>{formatSlotTime(selectedTime)}</span>
                 </div>
-                <div className="flex items-center gap-3 text-sm text-foreground">
-                  <span className="w-4 shrink-0 text-center text-muted-foreground">N</span>
-                  <span>{customerName}</span>
-                </div>
-                {customerPhone && (
+                {intakeFields.map((field) => {
+                  const val = getIntakeValue(field);
+                  if (!val.trim()) return null;
+                  const icon = field.key === 'name' ? 'N' : field.key === 'phone' ? 'P' : field.key === 'wilaya' ? 'W' : field.key === 'age' ? 'A' : '•';
+                  return (
+                    <div key={field.key} className="flex items-center gap-3 text-sm text-foreground">
+                      <span className="w-4 shrink-0 text-center text-muted-foreground">{icon}</span>
+                      <span>{val}</span>
+                    </div>
+                  );
+                })}
+                {intakeFields.length === 0 && customerName && (
                   <div className="flex items-center gap-3 text-sm text-foreground">
-                    <span className="w-4 shrink-0 text-center text-muted-foreground">P</span>
-                    <span>{customerPhone}</span>
+                    <span className="w-4 shrink-0 text-center text-muted-foreground">N</span>
+                    <span>{customerName}</span>
                   </div>
                 )}
                 {customerEmail && (
