@@ -489,6 +489,11 @@ const messages: Record<string, Record<Locale, string>> = {
     ar: '📝 يرجى إدخال *اسمك الكامل* للانضمام إلى الطابور.\nأرسل *0* للإلغاء.',
     en: '📝 Please enter your *full name* to join the queue.\nSend *0* to cancel.',
   },
+  custom_intake_prompt: {
+    fr: '📝 Veuillez entrer votre *{field}* :\nEnvoyez *0* pour annuler.',
+    ar: '📝 يرجى إدخال *{field}* الخاص بك:\nأرسل *0* للإلغاء.',
+    en: '📝 Please enter your *{field}*:\nSend *0* to cancel.',
+  },
   booking_enter_phone: {
     fr: '📱 Entrez votre *numéro de téléphone* (ou envoyez *SKIP* pour passer).\nEnvoyez *0* pour annuler.',
     ar: '📱 أدخل *رقم هاتفك* (أو أرسل *SKIP* للتخطي).\nأرسل *0* للإلغاء.',
@@ -1192,7 +1197,7 @@ export async function handleInboundMessage(
     const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
     const { data: pendingSession } = await supabaseCheck
       .from('whatsapp_sessions')
-      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, booking_customer_name, created_at')
+      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, booking_customer_name, custom_intake_data, created_at')
       .eq(identCol, identifier)
       .eq('state', 'pending_confirmation')
       .eq('channel', channel)
@@ -1220,7 +1225,8 @@ export async function handleInboundMessage(
             : undefined;
           // Use stored name from name-collection step if available, otherwise WhatsApp profile name
           const joinName = pendingSession.booking_customer_name || profileName;
-          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, joinName, bsuid, preResolved);
+          const customData = (pendingSession.custom_intake_data as any)?.answers;
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, joinName, bsuid, preResolved, undefined, customData);
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
         } else {
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
@@ -1291,14 +1297,146 @@ export async function handleInboundMessage(
       const { data: orgRow } = await supabaseName
         .from('organizations').select('id, name, settings').eq('id', nameSession.organization_id).single();
       if (orgRow) {
-        await supabaseName.from('whatsapp_sessions').update({
-          state: 'pending_confirmation',
-          booking_customer_name: cleaned,
-        }).eq('id', nameSession.id);
-        await sendMessage({ to: identifier, body: t('confirm_join', nameLocale, { name: orgRow.name }) });
+        const customFields: any[] = (orgRow.settings as any)?.custom_intake_fields ?? [];
+        if (customFields.length > 0) {
+          // Chain to custom intake fields
+          await supabaseName.from('whatsapp_sessions').update({
+            state: 'pending_custom_intake',
+            booking_customer_name: cleaned,
+            custom_intake_data: { index: 0, answers: {} },
+          }).eq('id', nameSession.id);
+          const firstField = customFields[0];
+          const fieldLabel = nameLocale === 'ar' ? (firstField.label_ar || firstField.label) : nameLocale === 'fr' ? (firstField.label_fr || firstField.label) : firstField.label;
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', nameLocale, { field: fieldLabel }) });
+        } else {
+          await supabaseName.from('whatsapp_sessions').update({
+            state: 'pending_confirmation',
+            booking_customer_name: cleaned,
+          }).eq('id', nameSession.id);
+          await sendMessage({ to: identifier, body: t('confirm_join', nameLocale, { name: orgRow.name }) });
+        }
       } else {
         await supabaseName.from('whatsapp_sessions').delete().eq('id', nameSession.id);
         await sendMessage({ to: identifier, body: t('join_failed', nameLocale) });
+      }
+      return;
+    }
+  }
+
+  // ── Awaiting custom intake field input ──
+  {
+    const supabaseCustom = createAdminClient() as any;
+    const identColC = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
+    const { data: customSession } = await supabaseCustom
+      .from('whatsapp_sessions')
+      .select('id, organization_id, locale, channel, office_id, department_id, service_id, custom_intake_data, booking_customer_name, booking_date, booking_time, booking_customer_wilaya, intake_reason')
+      .eq(identColC, identifier)
+      .eq('state', 'pending_custom_intake')
+      .eq('channel', channel)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (customSession) {
+      const customLocale: Locale = (customSession.locale as Locale) || 'fr';
+
+      // Cancel on 0
+      if (cleaned === '0') {
+        await supabaseCustom.from('whatsapp_sessions').delete().eq('id', customSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join_cancelled', customLocale) });
+        return;
+      }
+
+      // Guard: reject YES/NO confirmation keywords (Meta duplicate webhook)
+      const isConfirmKeyword = /^(OUI|YES|نعم|Y|O|1|OK|CONFIRM|CONFIRMER|تاكيد|تأكيد|NON|NO|لا|N|ANNULER|CANCEL|الغاء|إلغاء)$/i.test(cleaned);
+      if (isConfirmKeyword) {
+        // Re-prompt for current field
+        const { data: orgC } = await supabaseCustom.from('organizations').select('settings').eq('id', customSession.organization_id).single();
+        const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgC?.settings as any)?.custom_intake_fields ?? [];
+        const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
+        const curField = fields[cData.index];
+        if (curField) {
+          const fieldLabel = customLocale === 'ar' ? (curField.label_ar || curField.label) : customLocale === 'fr' ? (curField.label_fr || curField.label) : curField.label;
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+        }
+        return;
+      }
+
+      // Validate (1-200 chars)
+      if (cleaned.length < 1 || cleaned.length > 200) {
+        const { data: orgC } = await supabaseCustom.from('organizations').select('settings').eq('id', customSession.organization_id).single();
+        const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgC?.settings as any)?.custom_intake_fields ?? [];
+        const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
+        const curField = fields[cData.index];
+        if (curField) {
+          const fieldLabel = customLocale === 'ar' ? (curField.label_ar || curField.label) : customLocale === 'fr' ? (curField.label_fr || curField.label) : curField.label;
+          await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: fieldLabel }) });
+        }
+        return;
+      }
+
+      // Load org settings for fields
+      const { data: orgRow } = await supabaseCustom.from('organizations').select('id, name, settings').eq('id', customSession.organization_id).single();
+      if (!orgRow) {
+        await supabaseCustom.from('whatsapp_sessions').delete().eq('id', customSession.id);
+        await sendMessage({ to: identifier, body: t('join_failed', customLocale) });
+        return;
+      }
+
+      const fields: { label: string; label_fr?: string; label_ar?: string }[] = (orgRow.settings as any)?.custom_intake_fields ?? [];
+      const cData = (customSession.custom_intake_data as any) ?? { index: 0, answers: {} };
+      const currentIndex = cData.index ?? 0;
+      const answers = cData.answers ?? {};
+      const currentField = fields[currentIndex];
+
+      if (!currentField) {
+        // No field at this index — skip to next state
+        await supabaseCustom.from('whatsapp_sessions').delete().eq('id', customSession.id);
+        await sendMessage({ to: identifier, body: t('join_failed', customLocale) });
+        return;
+      }
+
+      // Store the answer keyed by label
+      answers[currentField.label] = cleaned;
+
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < fields.length) {
+        // More fields to collect
+        await supabaseCustom.from('whatsapp_sessions').update({
+          custom_intake_data: { index: nextIndex, answers },
+        }).eq('id', customSession.id);
+        const nextField = fields[nextIndex];
+        const nextLabel = customLocale === 'ar' ? (nextField.label_ar || nextField.label) : customLocale === 'fr' ? (nextField.label_fr || nextField.label) : nextField.label;
+        await sendMessage({ to: identifier, body: t('custom_intake_prompt', customLocale, { field: nextLabel }) });
+      } else {
+        // All fields collected
+        if (customSession.booking_date) {
+          // BOOK flow → go to booking_confirm
+          await supabaseCustom.from('whatsapp_sessions').update({
+            state: 'booking_confirm',
+            custom_intake_data: { index: nextIndex, answers },
+          }).eq('id', customSession.id);
+          const orgName = orgRow.name;
+          const dateFormatted = formatDateForLocale(customSession.booking_date, customLocale);
+          await sendMessage({
+            to: identifier,
+            body: t('booking_confirm', customLocale, {
+              name: orgName,
+              date: dateFormatted,
+              time: customSession.booking_time,
+              customer: customSession.booking_customer_name,
+              wilaya: customSession.booking_customer_wilaya || '—',
+              reason: customSession.intake_reason || '—',
+            }),
+          });
+        } else {
+          // JOIN flow → go to pending_confirmation
+          await supabaseCustom.from('whatsapp_sessions').update({
+            state: 'pending_confirmation',
+            custom_intake_data: { index: nextIndex, answers },
+          }).eq('id', customSession.id);
+          await sendMessage({ to: identifier, body: t('confirm_join', customLocale, { name: orgRow.name }) });
+        }
       }
       return;
     }
@@ -1452,7 +1590,7 @@ export async function handleInboundMessage(
       .from('whatsapp_sessions')
       .select('id, organization_id, office_id, department_id, service_id, state, locale, channel, booking_date, booking_time, booking_customer_name, booking_customer_wilaya, intake_reason')
       .eq(identColBook, identifier)
-      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
+      .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
       .eq('channel', channel)
       .gte('last_message_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()) // 15 min TTL since last interaction
       .order('created_at', { ascending: false })
@@ -1464,7 +1602,7 @@ export async function handleInboundMessage(
 
       // Free-text input states (name/wilaya/reason/phone/confirm): route to handler
       // UNLESS the message is a clear explicit command that should exit the booking flow
-      const isFreeTextState = ['booking_enter_name', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_enter_phone', 'booking_confirm'].includes(bookSession.state);
+      const isFreeTextState = ['booking_enter_name', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_enter_phone', 'booking_confirm', 'pending_custom_intake'].includes(bookSession.state);
 
       // Explicit commands that should always break out of any booking flow.
       // JOIN/STATUS/CANCEL/HELP/LIST are always commands (nobody types "join" as a reason).
@@ -2549,7 +2687,7 @@ async function askJoinConfirmationDirect(
 
   // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
-    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service']).eq('channel', channel);
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service', 'pending_custom_intake']).eq('channel', channel);
 
   // Early closed check — tell the customer immediately instead of asking YES/NO first
   if (resolved?.officeId) {
@@ -2559,10 +2697,20 @@ async function askJoinConfirmationDirect(
 
   // Check if name is required before joining (ask name BEFORE confirmation)
   const requireName = Boolean((org.settings as any)?.require_name_sameday);
+  const customFields: any[] = (org.settings as any)?.custom_intake_fields ?? [];
+
+  let initialState: string;
+  if (requireName) {
+    initialState = 'pending_join_name';
+  } else if (customFields.length > 0) {
+    initialState = 'pending_custom_intake';
+  } else {
+    initialState = 'pending_confirmation';
+  }
 
   const sessionData: Record<string, any> = {
     organization_id: org.id,
-    state: requireName ? 'pending_join_name' : 'pending_confirmation',
+    state: initialState,
     locale,
     channel,
     ...buildSessionIdentifiers(identifier, channel, bsuid),
@@ -2572,6 +2720,9 @@ async function askJoinConfirmationDirect(
     sessionData.department_id = resolved.departmentId;
     sessionData.service_id = resolved.serviceId;
   }
+  if (initialState === 'pending_custom_intake') {
+    sessionData.custom_intake_data = { index: 0, answers: {} };
+  }
 
   const { error: insertErr } = await supabase.from('whatsapp_sessions').insert(sessionData);
   if (insertErr) {
@@ -2580,6 +2731,10 @@ async function askJoinConfirmationDirect(
 
   if (requireName) {
     await sendMessage({ to: identifier, body: t('join_enter_name', locale) });
+  } else if (customFields.length > 0) {
+    const firstField = customFields[0];
+    const fieldLabel = locale === 'ar' ? (firstField.label_ar || firstField.label) : locale === 'fr' ? (firstField.label_fr || firstField.label) : firstField.label;
+    await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
   } else {
     await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
   }
@@ -2600,7 +2755,7 @@ async function askJoinConfirmation(
 
   // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
-    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service']).eq('channel', channel);
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service', 'pending_custom_intake']).eq('channel', channel);
 
   // Look up virtual queue code to see if dept/service are pre-set
   const virtualCodeKey = channel === 'messenger'
@@ -2716,6 +2871,7 @@ async function handleJoin(
   bsuid?: string,
   preResolved?: { officeId: string; departmentId: string; serviceId: string },
   intake?: { wilaya?: string; reason?: string },
+  customIntakeData?: Record<string, string>,
 ): Promise<void> {
   const supabase = createAdminClient() as any;
   const identifierColumn = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
@@ -2832,6 +2988,9 @@ async function handleJoin(
   }
   if (intake?.reason) {
     customerData.reason_of_visit = intake.reason;
+  }
+  if (customIntakeData) {
+    Object.assign(customerData, customIntakeData);
   }
 
   const result = await createPublicTicket({
@@ -3701,7 +3860,7 @@ async function startBookingFlow(
   // Clean up existing booking sessions
   await supabase.from('whatsapp_sessions').delete()
     .eq(identCol, identifier)
-    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm'])
+    .in('state', ['booking_select_service', 'booking_select_date', 'booking_select_time', 'booking_enter_name', 'booking_enter_phone', 'booking_enter_wilaya', 'booking_enter_reason', 'booking_confirm', 'pending_custom_intake'])
     .eq('channel', channel);
 
   if (!services || services.length === 0) {
@@ -3829,23 +3988,37 @@ async function handleBookingState(
         await sendMessage({ to: identifier, body: t('intake_invalid_reason', locale) });
         return true;
       }
-      await supabase.from('whatsapp_sessions').update({
-        intake_reason: reason || null,
-        state: 'booking_confirm',
-      }).eq('id', session.id);
-      const orgName = await getOrgName(session.organization_id);
-      const dateFormatted = formatDateForLocale(session.booking_date, locale);
-      await sendMessage({
-        to: identifier,
-        body: t('booking_confirm', locale, {
-          name: orgName,
-          date: dateFormatted,
-          time: session.booking_time,
-          customer: session.booking_customer_name,
-          wilaya: session.booking_customer_wilaya || '—',
-          reason: reason || '—',
-        }),
-      });
+      // Check for custom intake fields
+      const { data: orgCustom } = await supabase.from('organizations').select('settings').eq('id', session.organization_id).single();
+      const bookingCustomFields: any[] = (orgCustom?.settings as any)?.custom_intake_fields ?? [];
+      if (bookingCustomFields.length > 0) {
+        await supabase.from('whatsapp_sessions').update({
+          intake_reason: reason || null,
+          state: 'pending_custom_intake',
+          custom_intake_data: { index: 0, answers: {} },
+        }).eq('id', session.id);
+        const firstField = bookingCustomFields[0];
+        const fieldLabel = locale === 'ar' ? (firstField.label_ar || firstField.label) : locale === 'fr' ? (firstField.label_fr || firstField.label) : firstField.label;
+        await sendMessage({ to: identifier, body: t('custom_intake_prompt', locale, { field: fieldLabel }) });
+      } else {
+        await supabase.from('whatsapp_sessions').update({
+          intake_reason: reason || null,
+          state: 'booking_confirm',
+        }).eq('id', session.id);
+        const orgName = await getOrgName(session.organization_id);
+        const dateFormatted = formatDateForLocale(session.booking_date, locale);
+        await sendMessage({
+          to: identifier,
+          body: t('booking_confirm', locale, {
+            name: orgName,
+            date: dateFormatted,
+            time: session.booking_time,
+            customer: session.booking_customer_name,
+            wilaya: session.booking_customer_wilaya || '—',
+            reason: reason || '—',
+          }),
+        });
+      }
       return true;
     }
 
@@ -4109,7 +4282,7 @@ async function confirmBooking(
   // Re-fetch session to ensure latest intake fields (wilaya/reason) are present
   const { data: fresh } = await supabase
     .from('whatsapp_sessions')
-    .select('booking_customer_wilaya, intake_reason')
+    .select('booking_customer_wilaya, intake_reason, custom_intake_data')
     .eq('id', session.id)
     .maybeSingle();
   const wilaya = fresh?.booking_customer_wilaya || session.booking_customer_wilaya || null;
@@ -4157,7 +4330,14 @@ async function confirmBooking(
       status: initialStatus,
       calendar_token: calendarToken,
       wilaya: wilaya,
-      notes: reason,
+      notes: (() => {
+        const customAnswers = (fresh?.custom_intake_data as any)?.answers ?? (session.custom_intake_data as any)?.answers;
+        if (customAnswers && Object.keys(customAnswers).length > 0) {
+          const customLines = Object.entries(customAnswers).map(([k, v]) => `${k}: ${v}`).join('\n');
+          return reason ? `${reason}\n---\n${customLines}` : customLines;
+        }
+        return reason;
+      })(),
       locale,
       source: channel === 'messenger' ? 'messenger' : 'whatsapp',
     })

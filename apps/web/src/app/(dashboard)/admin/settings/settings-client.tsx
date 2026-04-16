@@ -308,6 +308,9 @@ export function SettingsClient({
   const [requireNameSameday, setRequireNameSameday] = useState<boolean>(
     settings.require_name_sameday ?? false
   );
+  const [customIntakeFields, setCustomIntakeFields] = useState<{ label: string; label_fr: string; label_ar: string }[]>(
+    settings.custom_intake_fields ?? []
+  );
 
   // Account Settings
   const [newEmail, setNewEmail] = useState('');
@@ -450,6 +453,7 @@ export function SettingsClient({
           require_ticket_approval: requireTicketApproval,
           require_appointment_approval: requireAppointmentApproval,
           require_name_sameday: requireNameSameday,
+          custom_intake_fields: customIntakeFields.filter(f => f.label.trim()),
         },
       });
 
@@ -1184,6 +1188,89 @@ export function SettingsClient({
               {t('When enabled, customers must provide their full name for same-day bookings via WhatsApp and Messenger. When disabled, same-day bookings skip the name step.')}
             </div>
           </label>
+        </div>
+
+        {/* Custom intake fields */}
+        <div className="pt-4 border-t border-border">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-sm font-medium">{t('Custom intake fields')}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {t('Add custom fields that customers must fill in before joining the queue or booking via WhatsApp/Messenger.')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCustomIntakeFields([...customIntakeFields, { label: '', label_fr: '', label_ar: '' }])}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+            >
+              + {t('Add field')}
+            </button>
+          </div>
+
+          {customIntakeFields.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">{t('No custom fields configured. Click "Add field" to get started.')}</p>
+          ) : (
+            <div className="space-y-3">
+              {customIntakeFields.map((field, idx) => (
+                <div key={idx} className="flex items-start gap-3 rounded-lg border border-border p-3 bg-muted/30">
+                  <div className="flex-1 grid gap-2 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (EN)')}</label>
+                      <input
+                        type="text"
+                        value={field.label}
+                        onChange={(e) => {
+                          const updated = [...customIntakeFields];
+                          updated[idx] = { ...updated[idx], label: e.target.value };
+                          setCustomIntakeFields(updated);
+                        }}
+                        placeholder="e.g. Color"
+                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (FR)')}</label>
+                      <input
+                        type="text"
+                        value={field.label_fr}
+                        onChange={(e) => {
+                          const updated = [...customIntakeFields];
+                          updated[idx] = { ...updated[idx], label_fr: e.target.value };
+                          setCustomIntakeFields(updated);
+                        }}
+                        placeholder="ex. Couleur"
+                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">{t('Label (AR)')}</label>
+                      <input
+                        type="text"
+                        value={field.label_ar}
+                        onChange={(e) => {
+                          const updated = [...customIntakeFields];
+                          updated[idx] = { ...updated[idx], label_ar: e.target.value };
+                          setCustomIntakeFields(updated);
+                        }}
+                        placeholder="مثال: اللون"
+                        dir="rtl"
+                        className="w-full rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomIntakeFields(customIntakeFields.filter((_, i) => i !== idx))}
+                    className="mt-5 text-red-500 hover:text-red-400 text-sm font-medium"
+                    title={t('Remove')}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
