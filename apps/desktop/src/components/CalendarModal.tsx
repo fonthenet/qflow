@@ -1178,7 +1178,19 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
         return false;
       }
 
-      // ── 4. Notify customer about reschedule (fire-and-forget via web API) ──
+      // ── 4. Log reschedule event ──
+      // Insert into ticket_events if appointment has a linked ticket
+      if (appt.ticket_id) {
+        sb.from('ticket_events').insert({
+          ticket_id: appt.ticket_id,
+          event_type: 'rescheduled',
+          metadata: { from: origScheduledAt, to: newScheduledAt, appointment_id: appointmentId },
+        }).then(({ error: evErr }) => {
+          if (evErr) console.warn('[Calendar] Failed to log reschedule event:', evErr);
+        });
+      }
+
+      // ── 5. Notify customer about reschedule (fire-and-forget via web API) ──
       try {
         cloudFetch('https://qflo.net/api/notify-reschedule', {
           method: 'POST',
@@ -3765,6 +3777,7 @@ function DesktopApptDetail({
       parked: { label: t('Parked'), icon: '⏸', color: '#64748b' },
       resumed: { label: t('Resumed'), icon: '▶', color: '#3b82f6' },
       auto_cancelled_call_next: { label: t('Auto-cancelled'), icon: '✗', color: '#ef4444' },
+      rescheduled: { label: t('Rescheduled'), icon: '📅', color: '#f59e0b' },
     };
 
     const buildTimeline = async () => {
@@ -3855,6 +3868,19 @@ function DesktopApptDetail({
         }
         if (a.status === 'declined') {
           events.push({ time: a.updated_at ?? a.created_at, label: t('Declined'), icon: '✗', color: '#ef4444' });
+        }
+      }
+
+      // Detect reschedule: if updated_at is > 30s after created_at and status hasn't changed,
+      // it's likely a reschedule. Also catches non-ticket appointments.
+      if (a.updated_at && a.created_at) {
+        const diff = new Date(a.updated_at).getTime() - new Date(a.created_at).getTime();
+        if (diff > 30000) {
+          // Check if a rescheduled event already exists from ticket_events
+          const hasRescheduleEvent = events.some(e => e.label === t('Rescheduled'));
+          if (!hasRescheduleEvent) {
+            events.push({ time: a.updated_at, label: t('Rescheduled'), icon: '📅', color: '#f59e0b' });
+          }
         }
       }
 

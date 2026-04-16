@@ -3953,12 +3953,39 @@ async function handleBookingTimeChoice(
 
   const chosenSlot = result.slots[idx - 1];
   const supabase = createAdminClient() as any;
-  await supabase.from('whatsapp_sessions').update({
-    state: 'booking_enter_name',
-    booking_time: chosenSlot.time,
-  }).eq('id', session.id);
 
-  await sendMessage({ to: identifier, body: t('booking_enter_name', locale) });
+  // Check if name can be skipped for same-day bookings
+  const { data: orgRow } = await supabase
+    .from('organizations')
+    .select('settings, timezone')
+    .eq('id', session.organization_id)
+    .single();
+
+  const todayStr = new Date().toLocaleDateString('en-CA', {
+    timeZone: orgRow?.timezone || 'Africa/Algiers',
+  });
+  const isToday = session.booking_date === todayStr;
+  const requireName = (orgRow?.settings as any)?.require_name_sameday ?? false;
+
+  if (isToday && !requireName) {
+    // Skip name step for same-day bookings when not required
+    await supabase.from('whatsapp_sessions').update({
+      state: 'booking_enter_wilaya',
+      booking_time: chosenSlot.time,
+      booking_customer_name: null,
+    }).eq('id', session.id);
+
+    await sendMessage({ to: identifier, body: t('booking_enter_wilaya', locale) });
+  } else {
+    // Name is required for future bookings or when require_name_sameday is true
+    await supabase.from('whatsapp_sessions').update({
+      state: 'booking_enter_name',
+      booking_time: chosenSlot.time,
+    }).eq('id', session.id);
+
+    await sendMessage({ to: identifier, body: t('booking_enter_name', locale) });
+  }
+
   return true;
 }
 

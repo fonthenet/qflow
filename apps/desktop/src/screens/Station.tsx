@@ -3841,12 +3841,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           title={t('Show queue panel')}
           aria-label={t('Show queue panel')}
           style={{
-            flexShrink: 0, width: 14, alignSelf: 'center',
-            height: 40, borderRadius: '4px 0 0 4px',
-            border: '1px solid var(--border, rgba(0,0,0,0.08))', borderRight: 'none',
-            background: 'var(--surface, #fff)', cursor: 'pointer',
+            flexShrink: 0, width: 18, alignSelf: 'center',
+            height: 48, borderRadius: '6px 0 0 6px',
+            border: '1px solid var(--border, rgba(255,255,255,0.15))', borderRight: 'none',
+            background: 'var(--surface2, var(--surface, rgba(255,255,255,0.08)))', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--text2, #64748b)', fontSize: 8,
+            color: 'var(--text, #e2e8f0)', fontSize: 10,
           }}
         >
           ◀
@@ -3874,12 +3874,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               aria-label={t('Hide queue panel')}
               style={{
                 position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                width: 8, height: 40, borderRadius: 4,
-                border: '1px solid rgba(0,0,0,0.08)',
-                background: 'var(--surface, #fff)', cursor: 'pointer',
+                width: 12, height: 48, borderRadius: 6,
+                border: '1px solid var(--border, rgba(255,255,255,0.15))',
+                background: 'var(--surface2, var(--surface, rgba(255,255,255,0.08)))', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: 'var(--text2, #64748b)', fontSize: 8,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                color: 'var(--text, #e2e8f0)', fontSize: 10,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
               }}
             >
               ▶

@@ -196,6 +196,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         ], help: t('sm.help.check_in_mode') },
         { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 1, min: 0, help: t('sm.help.auto_no_show') },
         { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
+        { key: 'require_name_sameday', label: t('sm.field.require_name_sameday'), type: 'bool', default: false, help: t('sm.help.require_name_sameday') },
       ],
     },
     {
@@ -832,9 +833,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const numV = typeof v === 'number' ? v : (f.default ?? 30);
       const btnStyle: React.CSSProperties = {
         width: 32, height: 32, borderRadius: 8,
-        border: '1px solid var(--border, #334155)',
-        background: 'var(--bg2, #1e293b)',
-        color: 'var(--text, #e2e8f0)',
+        border: '1px solid var(--border, #e2e8f0)',
+        background: 'var(--surface2, #f1f5f9)',
+        color: 'var(--text, #0f172a)',
         fontSize: 18, fontWeight: 700,
         cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',

@@ -305,6 +305,9 @@ export function SettingsClient({
   const [requireAppointmentApproval, setRequireAppointmentApproval] = useState<boolean>(
     settings.require_appointment_approval ?? true
   );
+  const [requireNameSameday, setRequireNameSameday] = useState<boolean>(
+    settings.require_name_sameday ?? false
+  );
 
   // Account Settings
   const [newEmail, setNewEmail] = useState('');
@@ -446,6 +449,7 @@ export function SettingsClient({
           allow_cancellation: allowCancellation,
           require_ticket_approval: requireTicketApproval,
           require_appointment_approval: requireAppointmentApproval,
+          require_name_sameday: requireNameSameday,
         },
       });
 
@@ -1164,6 +1168,23 @@ export function SettingsClient({
             </p>
           </div>
         </div>
+
+        {/* Require name — Same-day bookings */}
+        <div className="flex items-start gap-3 pt-2">
+          <input
+            type="checkbox"
+            id="require-name-sameday"
+            checked={requireNameSameday}
+            onChange={(e) => setRequireNameSameday(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+          />
+          <label htmlFor="require-name-sameday" className="text-sm">
+            <div className="font-medium">{t('Require name for same-day booking')}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {t('When enabled, customers must provide their full name for same-day bookings via WhatsApp and Messenger. When disabled, same-day bookings skip the name step.')}
+            </div>
+          </label>
+        </div>
       </section>
 
       {/* ── Display Settings ───────────────────────────────────────────── */}
@@ -1462,6 +1483,7 @@ export function SettingsClient({
                 </div>
               </label>
             </div>
+
           </div>
         </div>
       </section>
