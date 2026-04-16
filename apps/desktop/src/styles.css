@@ -207,7 +207,6 @@ select option {
 .connection-badge.offline .connection-dot { background: #ef4444; animation: pulse-red 1.5s infinite; }
 @keyframes pulse-green { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.2; } }
 
 .pending-badge { font-size: 11px; color: var(--warning); font-weight: 600; }
 .operator-name { font-weight: 600; font-size: 13px; }

@@ -1,76 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { StaffSession, SyncStatus, UpdateStatus } from '../lib/types';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import { useConfirmDialog } from './ConfirmDialog';
-
-/** Digital clock component with green LED style */
-function DigitalClock({ locale }: { locale: DesktopLocale }) {
-  const [now, setNow] = useState(new Date());
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    // Sync to next second boundary for smooth ticking
-    const msToNextSec = 1000 - (Date.now() % 1000);
-    const timeout = setTimeout(() => {
-      setNow(new Date());
-      timerRef.current = setInterval(() => setNow(new Date()), 1000);
-    }, msToNextSec);
-    return () => {
-      clearTimeout(timeout);
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
-  const seconds = now.getSeconds().toString().padStart(2, '0');
-
-  const dayNames: Record<DesktopLocale, string[]> = {
-    fr: ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'],
-    ar: ['أحد', 'إثن', 'ثلا', 'أرب', 'خمي', 'جمع', 'سبت'],
-    en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-  };
-  const monthNames: Record<DesktopLocale, string[]> = {
-    fr: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'],
-    ar: ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'],
-    en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-  };
-
-  const day = dayNames[locale]?.[now.getDay()] ?? dayNames.en[now.getDay()];
-  const month = monthNames[locale]?.[now.getMonth()] ?? monthNames.en[now.getMonth()];
-  const date = now.getDate();
-
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '2px 10px',
-      borderRadius: 8,
-      background: 'rgba(0,0,0,0.25)',
-      border: '1px solid rgba(34,197,94,0.2)',
-    }}>
-      <span style={{
-        fontFamily: "'Courier New', 'Consolas', monospace",
-        fontSize: 16,
-        fontWeight: 700,
-        color: '#22c55e',
-        letterSpacing: 1.5,
-        textShadow: '0 0 8px rgba(34,197,94,0.5), 0 0 2px rgba(34,197,94,0.3)',
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-        {hours}<span style={{ opacity: 0.6, animation: 'blink 1s step-end infinite' }}>:</span>{minutes}<span style={{ fontSize: 11, opacity: 0.5 }}>:{seconds}</span>
-      </span>
-      <span style={{
-        fontSize: 10,
-        fontWeight: 600,
-        color: 'rgba(34,197,94,0.6)',
-        lineHeight: 1.2,
-        textAlign: 'right',
-      }}>
-        {day}<br/>{date} {month}
-      </span>
-    </div>
-  );
-}
 
 declare global {
   interface Window { qf: any; }
@@ -323,9 +254,6 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
           <span className="app-name">{(locale === 'ar' && orgNameAr) ? orgNameAr : (orgName ?? session?.office_name ?? t('Qflo Station'))}</span>
           {orgName && session?.office_name && orgName !== session.office_name && (
             <span className="operator-role" style={{ marginLeft: 0 }}>{session.office_name}</span>
-          )}
-          {session && (
-            <DigitalClock locale={locale} />
           )}
         </div>
 
