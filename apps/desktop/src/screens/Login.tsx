@@ -156,12 +156,14 @@ export function Login({ onLogin, locale }: Props) {
       const effectiveOfficeId = staff.office_id ?? officeIds[0] ?? '';
 
       // Get desk assignment — first try by current_staff_id, then auto-reclaim if lost
-      let { data: desk } = await supabase
+      // Use .limit(1) instead of .single() because a staff member may be assigned to multiple desks
+      const { data: deskList } = await supabase
         .from('desks')
         .select('id, name')
         .eq('current_staff_id', staff.id)
         .eq('is_active', true)
-        .single();
+        .limit(1);
+      let desk = deskList?.[0] ?? null;
 
       // If no desk found (e.g. another device signed out and cleared it), try to reclaim
       if (!desk && effectiveOfficeId) {
