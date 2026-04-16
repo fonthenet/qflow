@@ -45,8 +45,8 @@ function DigitalClock({ locale }: { locale: DesktopLocale }) {
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '2px 10px',
       borderRadius: 8,
-      background: 'rgba(0,0,0,0.25)',
-      border: '1px solid rgba(34,197,94,0.2)',
+      background: 'var(--clock-bg, rgba(0,20,0,0.85))',
+      border: '1px solid rgba(34,197,94,0.25)',
     }}>
       <span style={{
         fontFamily: "'Courier New', 'Consolas', monospace",
