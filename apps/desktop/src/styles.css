@@ -490,7 +490,7 @@ button:not([disabled]):active {
     --text2: #475569;
     --text3: #94a3b8;
   }
-  :root:not([data-theme="dark"]) { --clock-bg: #0a1a0a; }
+  :root:not([data-theme="dark"]) { --clock-bg: #e0f2fe; --clock-text: #0369a1; --clock-text2: rgba(3,105,161,0.5); --clock-border: rgba(59,130,246,0.25); --clock-glow: none; }
   :root:not([data-theme="dark"]) .status-bar { background: #fff; border-bottom-color: #e2e8f0; }
   :root:not([data-theme="dark"]) .login-card { box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
   :root:not([data-theme="dark"]) .form-field input { background: #f8fafc; }
@@ -509,7 +509,7 @@ button:not([disabled]):active {
   --text2: #475569;
   --text3: #94a3b8;
 }
-[data-theme="light"] { --clock-bg: #0a1a0a; }
+[data-theme="light"] { --clock-bg: #e0f2fe; --clock-text: #0369a1; --clock-text2: rgba(3,105,161,0.5); --clock-border: rgba(59,130,246,0.25); --clock-glow: none; }
 [data-theme="light"] .status-bar { background: #fff; border-bottom-color: #e2e8f0; }
 [data-theme="light"] .login-card { box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
 [data-theme="light"] .form-field input { background: #f8fafc; }

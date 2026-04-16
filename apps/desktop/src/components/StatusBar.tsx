@@ -46,15 +46,15 @@ function DigitalClock({ locale }: { locale: DesktopLocale }) {
       padding: '2px 10px',
       borderRadius: 8,
       background: 'var(--clock-bg, rgba(0,20,0,0.85))',
-      border: '1px solid rgba(34,197,94,0.25)',
+      border: '1px solid var(--clock-border, rgba(34,197,94,0.25))',
     }}>
       <span style={{
         fontFamily: "'Courier New', 'Consolas', monospace",
         fontSize: 16,
         fontWeight: 700,
-        color: '#22c55e',
+        color: 'var(--clock-text, #22c55e)',
         letterSpacing: 1.5,
-        textShadow: '0 0 8px rgba(34,197,94,0.5), 0 0 2px rgba(34,197,94,0.3)',
+        textShadow: 'var(--clock-glow, 0 0 8px rgba(34,197,94,0.5))',
         fontVariantNumeric: 'tabular-nums',
       }}>
         {hours}<span style={{ opacity: 0.6, animation: 'blink 1s step-end infinite' }}>:</span>{minutes}<span style={{ fontSize: 11, opacity: 0.5 }}>:{seconds}</span>
@@ -62,7 +62,7 @@ function DigitalClock({ locale }: { locale: DesktopLocale }) {
       <span style={{
         fontSize: 10,
         fontWeight: 600,
-        color: 'rgba(34,197,94,0.6)',
+        color: 'var(--clock-text2, rgba(34,197,94,0.6))',
         lineHeight: 1.2,
         textAlign: 'right',
       }}>
