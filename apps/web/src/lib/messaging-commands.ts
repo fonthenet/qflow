@@ -1233,8 +1233,18 @@ export async function handleInboundMessage(
         await sendMessage({ to: identifier, body: t('confirm_join_cancelled', pendingLocale) });
         return;
       }
-      // Something else — clear pending and fall through to normal processing
-      await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+      // Something else — check if it's an explicit command that should exit the flow
+      const isExplicitCommand = /^(JOIN|REJOINDRE|انضم|BOOK|RESERVER|احجز|CANCEL|ANNULER|الغاء|STATUS|STATUT|حالة|HELP|AIDE|مساعدة|LIST|LISTE|قائمة)\b/i.test(command);
+      if (isExplicitCommand) {
+        // Delete session and fall through to handle the command
+        await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
+      } else {
+        // Not a command — re-prompt (protects against Meta duplicate webhooks)
+        const { data: orgForReprompt } = await supabaseCheck
+          .from('organizations').select('name').eq('id', pendingSession.organization_id).single();
+        await sendMessage({ to: identifier, body: t('confirm_join', pendingLocale, { name: orgForReprompt?.name ?? '?' }) });
+        return;
+      }
     }
   }
 
