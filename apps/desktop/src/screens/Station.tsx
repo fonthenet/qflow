@@ -1130,6 +1130,26 @@ function getTicketCustomerName(customerData: unknown) {
   return null;
 }
 
+/** Extract custom intake fields from customer_data (excludes known system keys) */
+function getCustomIntakeFields(customerData: unknown): [string, string][] {
+  if (!customerData || typeof customerData !== 'object' || Array.isArray(customerData)) return [];
+  const data = customerData as Record<string, unknown>;
+  const systemKeys = new Set([
+    'name', 'full_name', 'customer_name', 'patient_name', 'guest_name', 'party_name',
+    'phone', 'customer_phone', 'email', 'customer_email',
+    'source', 'messenger_psid', 'whatsapp_phone',
+    'wilaya', 'reason', 'reason_of_visit',
+  ]);
+  const entries: [string, string][] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (systemKeys.has(key)) continue;
+    if (typeof value === 'string' && value.trim()) {
+      entries.push([key, value.trim()]);
+    }
+  }
+  return entries;
+}
+
 function formatLocalPhone(phone: string): string {
   // Algeria: strip leading +213 or 213 and prepend 0
   const stripped = phone.replace(/[\s\-()]/g, '');
@@ -3405,6 +3425,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
+                {getCustomIntakeFields(activeTicket.customer_data).map(([key, value]) => (
+                  <div key={key} className="active-notes" style={{ fontSize: 13, color: 'var(--text2)' }}>
+                    <strong>{key}:</strong> {value}
+                  </div>
+                ))}
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
@@ -3542,6 +3567,11 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     <strong>{t('Wilaya:')}</strong> {normalizeWilayaDisplay((activeTicket.customer_data as any).wilaya)}
                   </div>
                 )}
+                {getCustomIntakeFields(activeTicket.customer_data).map(([key, value]) => (
+                  <div key={key} className="active-notes" style={{ fontSize: 13, color: 'var(--text2)' }}>
+                    <strong>{key}:</strong> {value}
+                  </div>
+                ))}
                 <div className="active-meta">
                   {names.services[activeTicket.service_id ?? ''] ?? t('Service')} &middot;{' '}
                   {names.departments[activeTicket.department_id ?? ''] ?? t('Dept')}
