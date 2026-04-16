@@ -1192,7 +1192,7 @@ export async function handleInboundMessage(
     const identCol = channel === 'messenger' ? 'messenger_psid' : 'whatsapp_phone';
     const { data: pendingSession } = await supabaseCheck
       .from('whatsapp_sessions')
-      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, created_at')
+      .select('id, organization_id, locale, channel, office_id, department_id, service_id, virtual_queue_code_id, whatsapp_phone, whatsapp_bsuid, messenger_psid, booking_customer_name, created_at')
       .eq(identCol, identifier)
       .eq('state', 'pending_confirmation')
       .eq('channel', channel)
@@ -1215,20 +1215,12 @@ export async function handleInboundMessage(
         const { data: orgRow } = await supabaseCheck
           .from('organizations').select('id, name, settings').eq('id', pendingSession.organization_id).single();
         if (orgRow) {
-          // Check if name is required for same-day tickets
-          const requireName = Boolean((orgRow.settings as any)?.require_name_sameday);
-          if (requireName) {
-            // Transition to name collection state instead of joining immediately
-            await supabaseCheck.from('whatsapp_sessions').update({
-              state: 'pending_join_name',
-            }).eq('id', pendingSession.id);
-            await sendMessage({ to: identifier, body: t('join_enter_name', pendingLocale) });
-            return;
-          }
           const preResolved = pendingSession.office_id && pendingSession.department_id && pendingSession.service_id
             ? { officeId: pendingSession.office_id, departmentId: pendingSession.department_id, serviceId: pendingSession.service_id }
             : undefined;
-          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, profileName, bsuid, preResolved);
+          // Use stored name from name-collection step if available, otherwise WhatsApp profile name
+          const joinName = pendingSession.booking_customer_name || profileName;
+          await handleJoin(identifier, orgRow as OrgContext, pendingLocale, channel, sendMessage, joinName, bsuid, preResolved);
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
         } else {
           await supabaseCheck.from('whatsapp_sessions').delete().eq('id', pendingSession.id);
@@ -1285,19 +1277,19 @@ export async function handleInboundMessage(
         return;
       }
 
-      // Name is valid — proceed with join
+      // Name is valid — store it and move to confirmation step
       const { data: orgRow } = await supabaseName
         .from('organizations').select('id, name, settings').eq('id', nameSession.organization_id).single();
       if (orgRow) {
-        const preResolved = nameSession.office_id && nameSession.department_id && nameSession.service_id
-          ? { officeId: nameSession.office_id, departmentId: nameSession.department_id, serviceId: nameSession.service_id }
-          : undefined;
-        // Pass the entered name as profileName so handleJoin uses it for customer_data.name
-        await handleJoin(identifier, orgRow as OrgContext, nameLocale, channel, sendMessage, cleaned, bsuid, preResolved);
+        await supabaseName.from('whatsapp_sessions').update({
+          state: 'pending_confirmation',
+          booking_customer_name: cleaned,
+        }).eq('id', nameSession.id);
+        await sendMessage({ to: identifier, body: t('confirm_join', nameLocale, { name: orgRow.name }) });
       } else {
+        await supabaseName.from('whatsapp_sessions').delete().eq('id', nameSession.id);
         await sendMessage({ to: identifier, body: t('join_failed', nameLocale) });
       }
-      await supabaseName.from('whatsapp_sessions').delete().eq('id', nameSession.id);
       return;
     }
   }
@@ -2547,7 +2539,7 @@ async function askJoinConfirmationDirect(
 
   // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
-    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_department', 'pending_service']).eq('channel', channel);
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service']).eq('channel', channel);
 
   // Early closed check — tell the customer immediately instead of asking YES/NO first
   if (resolved?.officeId) {
@@ -2555,9 +2547,12 @@ async function askJoinConfirmationDirect(
     if (closed) return;
   }
 
+  // Check if name is required before joining (ask name BEFORE confirmation)
+  const requireName = Boolean((org.settings as any)?.require_name_sameday);
+
   const sessionData: Record<string, any> = {
     organization_id: org.id,
-    state: 'pending_confirmation',
+    state: requireName ? 'pending_join_name' : 'pending_confirmation',
     locale,
     channel,
     ...buildSessionIdentifiers(identifier, channel, bsuid),
@@ -2572,7 +2567,12 @@ async function askJoinConfirmationDirect(
   if (insertErr) {
     console.error('[askJoinConfirmationDirect] Insert failed:', insertErr.message);
   }
-  await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
+
+  if (requireName) {
+    await sendMessage({ to: identifier, body: t('join_enter_name', locale) });
+  } else {
+    await sendMessage({ to: identifier, body: t('confirm_join', locale, { name: org.name }) });
+  }
 }
 
 // ── Join confirmation (detects multi-dept/service) ───────────────────
@@ -2590,7 +2590,7 @@ async function askJoinConfirmation(
 
   // Clean up any stale pending sessions for this user
   await supabase.from('whatsapp_sessions').delete()
-    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_department', 'pending_service']).eq('channel', channel);
+    .eq(identCol, identifier).in('state', ['pending_confirmation', 'pending_join_name', 'pending_department', 'pending_service']).eq('channel', channel);
 
   // Look up virtual queue code to see if dept/service are pre-set
   const virtualCodeKey = channel === 'messenger'
