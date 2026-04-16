@@ -1433,7 +1433,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                             updated[idx] = { ...updated[idx], label_ar: e.target.value };
                             setValues(prev => ({ ...prev, custom_intake_fields: updated }));
                           }}
-                          placeholder="\u0645\u062B\u0627\u0644: \u0627\u0644\u0644\u0648\u0646"
+                          placeholder="مثال: اللون"
                           dir="rtl"
                           style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
                         />
@@ -1530,7 +1530,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                             updated[idx] = { ...updated[idx], label_ar: e.target.value };
                             setValues(prev => ({ ...prev, custom_intake_fields: updated }));
                           }}
-                          placeholder={"\u0645\u062B\u0627\u0644: \u0627\u0644\u0644\u0648\u0646"}
+                          placeholder="مثال: اللون"
                           dir="rtl"
                           style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
                         />
