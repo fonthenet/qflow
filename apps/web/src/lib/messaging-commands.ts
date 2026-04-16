@@ -510,9 +510,9 @@ const messages: Record<string, Record<Locale, string>> = {
     en: '📝 What is the *reason* for your appointment? (briefly)\n\nSend *SKIP* to skip or *0* to cancel.',
   },
   booking_confirm: {
-    fr: '📋 *Résumé de votre réservation :*\n\n🏢 *{name}*\n📅 Date : *{date}*\n⏰ Heure : *{time}*\n👤 Nom : *{customer}*\n📍 Wilaya : *{wilaya}*\n📝 Motif : *{reason}*\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
-    ar: '📋 *ملخص حجزك:*\n\n🏢 *{name}*\n📅 التاريخ: *{date}*\n⏰ الوقت: *{time}*\n👤 الاسم: *{customer}*\n📍 الولاية: *{wilaya}*\n📝 السبب: *{reason}*\n\n✅ أرسل *نعم* للتأكيد\n❌ أرسل *لا* للإلغاء',
-    en: '📋 *Your booking summary:*\n\n🏢 *{name}*\n📅 Date: *{date}*\n⏰ Time: *{time}*\n👤 Name: *{customer}*\n📍 Wilaya: *{wilaya}*\n📝 Reason: *{reason}*\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
+    fr: '📋 *Résumé de votre réservation :*\n\n🏢 *{name}*\n📅 Date : *{date}*\n⏰ Heure : *{time}*{fields}\n\n✅ Répondez *OUI* pour confirmer\n❌ Répondez *NON* pour annuler',
+    ar: '📋 *ملخص حجزك:*\n\n🏢 *{name}*\n📅 التاريخ: *{date}*\n⏰ الوقت: *{time}*{fields}\n\n✅ أرسل *نعم* للتأكيد\n❌ أرسل *لا* للإلغاء',
+    en: '📋 *Your booking summary:*\n\n🏢 *{name}*\n📅 Date: *{date}*\n⏰ Time: *{time}*{fields}\n\n✅ Reply *YES* to confirm\n❌ Reply *NO* to cancel',
   },
   booking_confirmed: {
     fr: '✅ *Réservation confirmée !*\n\n🏢 *{name}*\n📅 *{date}* à *{time}*\n👤 *{customer}*\n\nVous recevrez un rappel 1h avant votre rendez-vous.\n\nPour annuler, envoyez *ANNULER RDV*.',
@@ -1460,15 +1460,14 @@ export async function handleInboundMessage(
           }).eq('id', customSession.id);
           const orgName = orgRow.name;
           const dateFormatted = formatDateForLocale(customSession.booking_date, customLocale);
+          const mergedAnswers = { ...answers, name: answers.name || customSession.booking_customer_name, wilaya: answers.wilaya || customSession.booking_customer_wilaya, reason: answers.reason || customSession.intake_reason };
           await sendMessage({
             to: identifier,
             body: t('booking_confirm', customLocale, {
               name: orgName,
               date: dateFormatted,
               time: customSession.booking_time,
-              customer: answers.name || customSession.booking_customer_name,
-              wilaya: answers.wilaya || customSession.booking_customer_wilaya || '—',
-              reason: answers.reason || customSession.intake_reason || '—',
+              fields: buildBookingFieldsSummary(mergedAnswers, (orgRow.settings ?? {}) as Record<string, any>, customLocale, channel),
             }),
           });
         } else {
@@ -1912,7 +1911,7 @@ export async function handleInboundMessage(
   if (bookParsed && !bookParsed.code.includes(' ')) {
     const org = await findOrgByCode(bookParsed.code, channel);
     if (org) {
-      await startBookingFlow(identifier, org, bookParsed.locale, channel, sendMessage);
+      await startBookingFlow(identifier, org, bookParsed.locale, channel, sendMessage, profileName);
     } else {
       await sendMessage({ to: identifier, body: t('code_not_found', bookParsed.locale, { code: bookParsed.code }) });
     }
@@ -1982,7 +1981,7 @@ export async function handleInboundMessage(
           settings: (orgRow.settings ?? {}) as Record<string, any>,
         };
         if (recentRow.locale) bookLocale = recentRow.locale as Locale;
-        await startBookingFlow(identifier, orgCtx, bookLocale, channel, sendMessage);
+        await startBookingFlow(identifier, orgCtx, bookLocale, channel, sendMessage, profileName);
         return;
       }
     }
@@ -3878,6 +3877,7 @@ async function startBookingFlow(
   locale: Locale,
   channel: Channel,
   sendMessage: SendFn,
+  profileName?: string,
 ) {
   // Check if booking is enabled
   if (org.settings.booking_mode === 'disabled' || !org.settings.booking_mode || org.settings.booking_mode === '') {
@@ -3939,6 +3939,7 @@ async function startBookingFlow(
       office_id: officeId,
       department_id: deptId,
       service_id: null,
+      booking_customer_name: profileName || null,
     });
 
     // Show dates directly
@@ -3958,6 +3959,7 @@ async function startBookingFlow(
       office_id: officeId,
       department_id: svc.department_id,
       service_id: svc.id,
+      booking_customer_name: profileName || null,
     });
 
     await showAvailableDates(identifier, org.name, officeId, svc.id, locale, channel, sendMessage);
@@ -3973,6 +3975,7 @@ async function startBookingFlow(
     state: 'booking_select_service',
     locale,
     office_id: officeId,
+    booking_customer_name: profileName || null,
   });
 
   await sendMessage({ to: identifier, body: t('booking_choose_service', locale, { name: org.name, list }) });
@@ -4066,15 +4069,17 @@ async function handleBookingState(
         }).eq('id', session.id);
         const orgName = await getOrgName(session.organization_id);
         const dateFormatted = formatDateForLocale(session.booking_date, locale);
+        const orgSettings = (orgCustom?.settings ?? {}) as Record<string, any>;
         await sendMessage({
           to: identifier,
           body: t('booking_confirm', locale, {
             name: orgName,
             date: dateFormatted,
             time: session.booking_time,
-            customer: session.booking_customer_name,
-            wilaya: session.booking_customer_wilaya || '—',
-            reason: reason || '—',
+            fields: buildBookingFieldsSummary(
+              { name: session.booking_customer_name, wilaya: session.booking_customer_wilaya, reason: reason },
+              orgSettings, locale, channel,
+            ),
           }),
         });
       }
@@ -4099,15 +4104,15 @@ async function handleBookingState(
       const phoneAnswers = (session.custom_intake_data as any)?.answers ?? {};
       const orgName = await getOrgName(session.organization_id);
       const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      const { data: orgPhone } = await supabase.from('organizations').select('settings').eq('id', session.organization_id).single();
+      const mergedPhone = { ...phoneAnswers, name: phoneAnswers.name || session.booking_customer_name, wilaya: phoneAnswers.wilaya || session.booking_customer_wilaya, reason: phoneAnswers.reason || session.intake_reason, phone };
       await sendMessage({
         to: identifier,
         body: t('booking_confirm', locale, {
           name: orgName,
           date: dateFormatted,
           time: session.booking_time,
-          customer: phoneAnswers.name || session.booking_customer_name,
-          wilaya: phoneAnswers.wilaya || session.booking_customer_wilaya || '—',
-          reason: phoneAnswers.reason || session.intake_reason || '—',
+          fields: buildBookingFieldsSummary(mergedPhone, ((orgPhone?.settings ?? {}) as Record<string, any>), locale, channel),
         }),
       });
       return true;
@@ -4130,15 +4135,15 @@ async function handleBookingState(
       const confirmAnswers = (session.custom_intake_data as any)?.answers ?? {};
       const orgName = await getOrgName(session.organization_id);
       const dateFormatted = formatDateForLocale(session.booking_date, locale);
+      const { data: orgConfirm } = await supabase.from('organizations').select('settings').eq('id', session.organization_id).single();
+      const mergedConfirm = { ...confirmAnswers, name: confirmAnswers.name || session.booking_customer_name, wilaya: confirmAnswers.wilaya || session.booking_customer_wilaya, reason: confirmAnswers.reason || session.intake_reason };
       await sendMessage({
         to: identifier,
         body: t('booking_confirm', locale, {
           name: orgName,
           date: dateFormatted,
           time: session.booking_time,
-          customer: confirmAnswers.name || session.booking_customer_name,
-          wilaya: confirmAnswers.wilaya || session.booking_customer_wilaya || '—',
-          reason: confirmAnswers.reason || session.intake_reason || '—',
+          fields: buildBookingFieldsSummary(mergedConfirm, ((orgConfirm?.settings ?? {}) as Record<string, any>), locale, channel),
         }),
       });
       return true;
@@ -4320,9 +4325,10 @@ async function handleBookingTimeChoice(
         name: orgName,
         date: dateFormatted,
         time: chosenSlot.time,
-        customer: session.booking_customer_name || '—',
-        wilaya: session.booking_customer_wilaya || '—',
-        reason: session.intake_reason || '—',
+        fields: buildBookingFieldsSummary(
+          { name: session.booking_customer_name, wilaya: session.booking_customer_wilaya, reason: session.intake_reason },
+          (orgRow?.settings ?? {}) as Record<string, any>, locale, channel,
+        ),
       }),
     });
   }
@@ -4401,7 +4407,7 @@ async function confirmBooking(
       office_id: session.office_id,
       department_id: session.department_id,
       service_id: session.service_id,
-      customer_name: customerName,
+      customer_name: customerName || identifier,
       customer_phone: identifier, // WhatsApp phone number
       scheduled_at: scheduledAt,
       status: initialStatus,
@@ -4725,6 +4731,29 @@ async function getOrgName(orgId: string): Promise<string> {
   const supabase = createAdminClient() as any;
   const { data } = await supabase.from('organizations').select('name').eq('id', orgId).single();
   return data?.name ?? '';
+}
+
+/** Build the dynamic intake fields section for booking summary */
+const FIELD_EMOJI: Record<string, string> = { name: '👤', wilaya: '📍', reason: '📝', phone: '📞', email: '📧', age: '🎂' };
+function buildBookingFieldsSummary(
+  answers: Record<string, string>,
+  orgSettings: Record<string, any>,
+  locale: Locale,
+  channel: string,
+  /** Legacy fallback values from session columns (pre-intake-fields bookings) */
+  legacy?: { customer?: string; wilaya?: string; reason?: string },
+): string {
+  const phoneExclude = channel === 'whatsapp' ? ['phone'] : [];
+  const enabledFields = getEnabledIntakeFields(orgSettings, phoneExclude, 'booking');
+  const lines: string[] = [];
+  for (const field of enabledFields) {
+    const value = answers[field.key] || (legacy as any)?.[field.key === 'name' ? 'customer' : field.key] || '';
+    if (!value) continue;
+    const emoji = FIELD_EMOJI[field.key] || '📋';
+    const label = getFieldLabel(field, locale);
+    lines.push(`${emoji} ${label}: *${value}*`);
+  }
+  return lines.length > 0 ? '\n' + lines.join('\n') : '';
 }
 
 function formatDateForLocale(dateStr: string, locale: Locale): string {

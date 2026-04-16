@@ -3471,6 +3471,44 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
   } else { notifyDisplays({ type: 'data_refreshed', timestamp: new Date().toISOString() }); }
   notifyStationClients({ type: 'tickets_changed' });
 
+  // ── Direct API call for instant WhatsApp/Messenger notification ──
+  // Mirrors the same logic in main.ts db:update-ticket handler
+  const isStatusTransition = safe.status && ['called', 'serving', 'served', 'no_show', 'cancelled'].includes(safe.status);
+  const isRecall = !safe.status && safe.recall_count !== undefined;
+  if ((isStatusTransition || isRecall) && isCloudReachable) {
+    let dskName: string | undefined;
+    if (safe.desk_id) dskName = (db.prepare('SELECT name FROM desks WHERE id = ?').get(safe.desk_id) as any)?.name;
+    if (!dskName) {
+      const tkDesk = db.prepare('SELECT d.name FROM tickets t JOIN desks d ON d.id = t.desk_id WHERE t.id = ?').get(ticketId) as any;
+      dskName = tkDesk?.name;
+    }
+    getAuthToken?.().then((token) => {
+      if (!token) return;
+      fetch(`${CLOUD_URL}/api/ticket-transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ticketId,
+          status: safe.status || 'called',
+          deskId: safe.desk_id,
+          deskName: dskName,
+          staffId: safe.called_by_staff_id,
+          skipNotification: false,
+          ...(safe.notes !== undefined ? { notes: safe.notes } : {}),
+          ...(isRecall ? { skipStatusUpdate: true, notifyEvent: 'recall' } : {}),
+        }),
+        signal: AbortSignal.timeout(10000),
+      }).then(async (r) => {
+        const result = await r.json().catch(() => ({}));
+        if (result.notified) {
+          db.prepare("UPDATE sync_queue SET already_notified = 1 WHERE id = ?").run(syncId);
+        }
+      }).catch((err: any) => {
+        logger.warn('KioskServer', 'ticket-transition API call failed', { error: err?.message });
+      });
+    }).catch(() => {});
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ id: ticketId, ...safe }));
 }
@@ -3542,6 +3580,34 @@ async function handleStationCallNext(body: any, res: http.ServerResponse) {
   const desk = db.prepare('SELECT name FROM desks WHERE id = ?').get(deskId) as any;
   notifyDisplays({ type: 'ticket_called', ticket_number: ticket.ticket_number, desk_name: desk?.name ?? deskId, timestamp: now });
   notifyStationClients({ type: 'tickets_changed' });
+
+  // ── Direct API call for instant WhatsApp/Messenger notification ──
+  // Mirrors the same logic in main.ts db:call-next handler
+  if (isCloudReachable) {
+    getAuthToken?.().then((token) => {
+      if (!token) return;
+      fetch(`${CLOUD_URL}/api/ticket-transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          status: 'called',
+          deskId,
+          deskName: desk?.name,
+          staffId,
+          skipNotification: false,
+        }),
+        signal: AbortSignal.timeout(10000),
+      }).then(async (r) => {
+        const result = await r.json().catch(() => ({}));
+        if (result.notified) {
+          db.prepare("UPDATE sync_queue SET already_notified = 1 WHERE id = ?").run(syncId);
+        }
+      }).catch((err: any) => {
+        logger.warn('KioskServer', 'call-next ticket-transition failed', { error: err?.message });
+      });
+    }).catch(() => {});
+  }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(ticket));
