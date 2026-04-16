@@ -166,17 +166,32 @@ export function Login({ onLogin, locale }: Props) {
       // If no desk found (e.g. another device signed out and cleared it), try to reclaim
       if (!desk && effectiveOfficeId) {
         // Look for an unassigned desk in the same office, prefer matching department
-        let query = supabase
-          .from('desks')
-          .select('id, name, department_id')
-          .eq('office_id', effectiveOfficeId)
-          .eq('is_active', true)
-          .is('current_staff_id', null);
+        let freeDesk: { id: string; name: string } | undefined;
+
         if (staff.department_id) {
-          query = query.eq('department_id', staff.department_id);
+          const { data: deptDesks } = await supabase
+            .from('desks')
+            .select('id, name')
+            .eq('office_id', effectiveOfficeId)
+            .eq('is_active', true)
+            .is('current_staff_id', null)
+            .eq('department_id', staff.department_id)
+            .limit(1);
+          freeDesk = deptDesks?.[0];
         }
-        const { data: freeDeskList } = await query.limit(1);
-        const freeDesk = freeDeskList?.[0];
+
+        // Fallback: any unassigned desk in the office (regardless of department)
+        if (!freeDesk) {
+          const { data: anyDesks } = await supabase
+            .from('desks')
+            .select('id, name')
+            .eq('office_id', effectiveOfficeId)
+            .eq('is_active', true)
+            .is('current_staff_id', null)
+            .limit(1);
+          freeDesk = anyDesks?.[0];
+        }
+
         if (freeDesk) {
           // Claim the desk
           await supabase

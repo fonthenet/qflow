@@ -306,6 +306,7 @@ async function seedConfirmedTemplate(
       .eq('id', context.staff.id);
   }
 
+  let firstCreatedDepartmentId: string | null = null;
   const departmentIdsByCode = new Map<string, string>();
   const serviceIdsByCode = new Map<string, string>();
 
@@ -328,6 +329,9 @@ async function seedConfirmedTemplate(
     }
 
     departmentIdsByCode.set(department.code, createdDepartment.id);
+    if (!firstCreatedDepartmentId) {
+      firstCreatedDepartmentId = createdDepartment.id;
+    }
 
     for (const service of department.services) {
       const { data: createdService, error: serviceError } = await context.supabase
@@ -360,6 +364,8 @@ async function seedConfirmedTemplate(
     serviceIdsByCode,
   });
 
+  let firstCreatedDeskId: string | null = null;
+
   for (const starterDesk of starterDesks) {
     const { data: createdDesk, error: deskError } = await context.supabase
       .from('desks')
@@ -369,6 +375,10 @@ async function seedConfirmedTemplate(
 
     if (deskError || !createdDesk) {
       return { error: deskError?.message ?? `Failed to create desk ${starterDesk.desk.name}` };
+    }
+
+    if (!firstCreatedDeskId) {
+      firstCreatedDeskId = createdDesk.id;
     }
 
     if (starterDesk.serviceIds.length > 0) {
@@ -383,6 +393,23 @@ async function seedConfirmedTemplate(
         return { error: deskServicesError.message };
       }
     }
+  }
+
+  // Auto-assign the admin who is running the wizard to the first desk
+  // so the Station works immediately without additional configuration
+  if (firstCreatedDeskId) {
+    await context.supabase
+      .from('desks')
+      .update({ current_staff_id: context.staff.id })
+      .eq('id', firstCreatedDeskId);
+  }
+
+  // Also set the admin's department so desk matching works seamlessly
+  if (firstCreatedDepartmentId && !context.staff.department_id) {
+    await context.supabase
+      .from('staff')
+      .update({ department_id: firstCreatedDepartmentId })
+      .eq('id', context.staff.id);
   }
 
   for (const schema of template.intakeSchemas) {
