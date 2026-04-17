@@ -19,7 +19,7 @@ const VERTICAL_SCENARIOS = [
       numberingFormat: 'department_sequence',
       remoteJoin: 'enabled',
       privacySafeDisplay: false,
-      requiredNav: '/admin/template-governance',
+      requiredNav: '/desk',
     },
   },
   {
@@ -28,9 +28,9 @@ const VERTICAL_SCENARIOS = [
     expected: {
       vertical: 'bank',
       dashboardMode: 'bank',
-      queueLifecycle: 'hybrid',
-      routingMode: 'service_first',
-      numberingFormat: 'service_sequence',
+      queueLifecycle: 'ticket',
+      routingMode: 'department_first',
+      numberingFormat: 'department_sequence',
       remoteJoin: 'enabled',
       privacySafeDisplay: true,
       requiredNav: '/admin/analytics',
@@ -41,11 +41,11 @@ const VERTICAL_SCENARIOS = [
     officeName: 'Community Clinic',
     expected: {
       vertical: 'clinic',
-      dashboardMode: 'clinic',
-      queueLifecycle: 'hybrid',
-      routingMode: 'department_first',
-      numberingFormat: 'department_sequence',
-      remoteJoin: 'limited',
+      dashboardMode: 'light_service',
+      queueLifecycle: 'waitlist',
+      routingMode: 'staff_preference',
+      numberingFormat: 'named_waitlist',
+      remoteJoin: 'enabled',
       privacySafeDisplay: true,
       requiredNav: '/admin/audit',
     },
@@ -125,8 +125,8 @@ function createOrganizationSettings(templateId: string) {
 }
 
 describe('multi-industry platform scenarios', () => {
-  it('ships starter coverage for the five launch verticals', () => {
-    expect(industryTemplates).toHaveLength(5);
+  it('ships starter coverage for all launch verticals', () => {
+    expect(industryTemplates).toHaveLength(12);
     expect(industryTemplates.map((template) => template.vertical)).toEqual(
       expect.arrayContaining(['public_service', 'bank', 'clinic', 'restaurant', 'barbershop'])
     );
