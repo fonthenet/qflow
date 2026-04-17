@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Platform, Text, TextInput, View } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, useRouter, useSegments, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +46,49 @@ import {
   addNotificationResponseListener,
   getQrTokenFromData,
 } from '@/lib/notifications';
+
+/**
+ * A Back button that never leaves the user stranded.
+ *
+ * The default iOS/Android Stack back button relies on `canGoBack()`, which
+ * returns false when the user landed on the screen via:
+ *   - a deep link (qflo://...)
+ *   - a notification tap that navigated directly
+ *   - a fresh app launch that redirected into this screen
+ *
+ * In those cases the native button renders but does nothing on tap — which
+ * is exactly the "sometimes it works, sometimes it doesn't" bug. This
+ * component gracefully falls back to a known-safe route.
+ */
+function SafeBackButton({ fallback, label }: { fallback: string; label: string }) {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const onPress = () => {
+    if (navigation.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(fallback as any);
+    }
+  };
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      hitSlop={12}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginLeft: Platform.OS === 'ios' ? 0 : 8,
+        paddingHorizontal: 6,
+        paddingVertical: 4,
+      }}
+    >
+      <Ionicons name="chevron-back" size={22} color="#fff" />
+      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
 function RootNavigator() {
   const router = useRouter();
@@ -165,18 +209,21 @@ function RootNavigator() {
           name="admin/bookings"
           options={{
             title: t('admin.bookings'),
-            headerBackTitle: t('common.back'),
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
+            // Custom Back button with a guaranteed fallback destination.
+            // The default Stack back button silently does nothing when
+            // `canGoBack()` is false (fresh launch / deep link entry).
+            headerLeft: () => <SafeBackButton fallback="/(admin)" label={t('common.back')} />,
           }}
         />
         <Stack.Screen
           name="admin/virtual-codes"
           options={{
             title: t('virtualCodes.title'),
-            headerBackTitle: t('common.back'),
             headerStyle: { backgroundColor: colors.primary },
             headerTintColor: '#fff',
+            headerLeft: () => <SafeBackButton fallback="/(admin)" label={t('common.back')} />,
           }}
         />
         <Stack.Screen

@@ -18,9 +18,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { borderRadius, fontSize, spacing } from '@/lib/theme';
+
+// Keys for credential storage. SecureStore encrypts at the OS level
+// (iOS Keychain, Android Keystore) — the right home for a saved password.
+const CRED_EMAIL_KEY = 'qflo_login_email';
+const CRED_PASSWORD_KEY = 'qflo_login_password';
+const CRED_REMEMBER_KEY = 'qflo_login_remember';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -46,6 +53,30 @@ export default function LoginScreen() {
       }
     }
   }, [authLoading, user, isStaff, staffRole]);
+
+  // Restore saved credentials if the user previously checked "Remember me"
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [savedEmail, savedPassword, savedRemember] = await Promise.all([
+          SecureStore.getItemAsync(CRED_EMAIL_KEY),
+          SecureStore.getItemAsync(CRED_PASSWORD_KEY),
+          SecureStore.getItemAsync(CRED_REMEMBER_KEY),
+        ]);
+        if (cancelled) return;
+        // Only prefill if the user opted in last time (remember === 'true')
+        if (savedRemember === 'true') {
+          if (savedEmail) setEmail(savedEmail);
+          if (savedPassword) setPassword(savedPassword);
+          setRememberMe(true);
+        } else if (savedRemember === 'false') {
+          setRememberMe(false);
+        }
+      } catch { /* secure-store can fail on some devices; default state is fine */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleLogin = async () => {
     if (!email.trim()) {
@@ -76,6 +107,18 @@ export default function LoginScreen() {
           Alert.alert(t('auth.loginFailed'), error.message);
         }
       } else if (data.user) {
+        // Persist or clear saved credentials based on the checkbox
+        try {
+          await SecureStore.setItemAsync(CRED_REMEMBER_KEY, rememberMe ? 'true' : 'false');
+          if (rememberMe) {
+            await SecureStore.setItemAsync(CRED_EMAIL_KEY, email.trim());
+            await SecureStore.setItemAsync(CRED_PASSWORD_KEY, password);
+          } else {
+            await SecureStore.deleteItemAsync(CRED_EMAIL_KEY);
+            await SecureStore.deleteItemAsync(CRED_PASSWORD_KEY);
+          }
+        } catch { /* non-fatal — login still succeeds */ }
+
         const { data: staff } = await supabase
           .from('staff')
           .select('role')

@@ -2,6 +2,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { colors } from '@/lib/theme';
+import { useOperatorStore } from '@/lib/operator-store';
 
 export default function AdminLayout() {
   const router = useRouter();
@@ -52,7 +53,16 @@ export default function AdminLayout() {
         listeners={{
           tabPress: (e) => {
             e.preventDefault();
-            router.push('/(operator)/desk');
+            // Admins don't have an operator session until they pick a desk.
+            // If one is persisted (from a previous pick), jump straight in;
+            // otherwise send them to role-select so they pick once, then it
+            // persists via zustand for subsequent taps.
+            const { session } = useOperatorStore.getState();
+            if (session?.staffId) {
+              router.push('/(operator)/desk');
+            } else {
+              router.push('/(auth)/role-select');
+            }
           },
         }}
       />

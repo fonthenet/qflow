@@ -781,7 +781,7 @@ export default function AdminQueueScreen() {
         )}
       </View>
 
-      {/* Filter chips + view mode toggle */}
+      {/* Filter chips + view mode toggle — chips inside a single capsule */}
       <View style={styles.filterBar}>
         <ScrollView
           horizontal
@@ -826,6 +826,7 @@ export default function AdminQueueScreen() {
             );
           })}
         </ScrollView>
+
 
         {/* View mode toggle */}
         {filter !== 'done' && (
@@ -981,11 +982,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
 
-  // Filter bar
+  // Filter bar — chips live inside a single rounded capsule (segmented control)
   filterBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -995,17 +999,19 @@ const styles = StyleSheet.create({
   },
   filtersContent: {
     flexDirection: 'row',
-    padding: spacing.sm,
-    gap: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.full,
+    padding: 3,
+    gap: 2,
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: 'transparent',
   },
   filterChipActive: {
     backgroundColor: colors.primary,

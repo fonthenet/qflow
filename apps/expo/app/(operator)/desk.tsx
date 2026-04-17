@@ -719,9 +719,13 @@ export default function DeskScreen() {
   }, [navigation, actionLoading, t, session?.deskName]);
 
   // ── Guards ───────────────────────────────────────────────────────
+  // If there's no operator session, send the user to the desk picker
+  // (role-select) rather than login. They may still be authenticated —
+  // they just haven't picked a desk yet (e.g. an admin tapping "My Desk"
+  // for the first time, or a fresh install right after login).
   useEffect(() => {
     if (!session) {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/role-select');
     }
   }, [session, router]);
 

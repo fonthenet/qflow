@@ -186,23 +186,27 @@ function MonthCalendar({
           return (
             <TouchableOpacity
               key={dateStr}
-              style={[
-                cal.dayCell,
-                isToday && cal.dayCellToday,
-                isSelected && cal.dayCellSelected,
-              ]}
+              style={cal.dayCell}
               onPress={() => onSelect(dateStr)}
               activeOpacity={0.6}
             >
-              <Text
+              <View
                 style={[
-                  cal.dayText,
-                  isToday && cal.dayTextToday,
-                  isSelected && cal.dayTextSelected,
+                  cal.dayPill,
+                  isToday && !isSelected && cal.dayPillToday,
+                  isSelected && cal.dayPillSelected,
                 ]}
               >
-                {day}
-              </Text>
+                <Text
+                  style={[
+                    cal.dayText,
+                    isToday && !isSelected && cal.dayTextToday,
+                    isSelected && cal.dayTextSelected,
+                  ]}
+                >
+                  {day}
+                </Text>
+              </View>
               {/* Appointment dots */}
               {dots && dots.total > 0 && (
                 <View style={cal.dotsRow}>
@@ -223,9 +227,12 @@ const cal = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   header: {
     flexDirection: 'row',
@@ -262,22 +269,35 @@ const cal = StyleSheet.create({
   },
   dayCell: {
     width: `${100 / 7}%`,
-    aspectRatio: 1,
+    aspectRatio: 1.15, // slightly wider than tall → rows are ~13% shorter
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: borderRadius.md,
   },
-  dayCellToday: {
+  // Fixed-size inner pill — guarantees a perfect circle and lets the
+  // number sit dead-center regardless of the outer cell's actual height.
+  dayPill: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayPillToday: {
     borderWidth: 1.5,
     borderColor: colors.primary + '40',
   },
-  dayCellSelected: {
+  dayPillSelected: {
     backgroundColor: colors.primary,
   },
   dayText: {
     fontSize: fontSize.sm,
     fontWeight: '600',
     color: colors.text,
+    // Explicit lineHeight matching fontSize kills the asymmetric padding
+    // RN's Text adds above/below glyphs — the number now visually centers.
+    lineHeight: fontSize.sm,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   dayTextToday: {
     fontWeight: '800',

@@ -21,6 +21,7 @@ import * as Actions from '@/lib/ticket-actions';
 import { supabase } from '@/lib/supabase';
 import { API_BASE_URL } from '@/lib/config';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import AdminSettings from '@/components/AdminSettings';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ const TZ_OPTIONS = [
 
 // ── Types ────────────────────────────────────────────────────────────
 
-type ManageTab = 'offices' | 'staff' | 'desks' | 'departments' | 'services' | 'priorities' | 'customers' | 'bookings';
+type ManageTab = 'offices' | 'staff' | 'desks' | 'departments' | 'services' | 'priorities' | 'customers' | 'bookings' | 'settings';
 
 interface StaffRow {
   id: string;
@@ -123,6 +124,7 @@ interface AppointmentRow {
 // ── Tab Configuration ────────────────────────────────────────────────
 
 const TABS: { key: ManageTab; labelKey: string; icon: string }[] = [
+  { key: 'settings', labelKey: 'adminManage.settings', icon: 'cog' },
   { key: 'offices', labelKey: 'adminManage.offices', icon: 'location' },
   { key: 'staff', labelKey: 'adminManage.staff', icon: 'people' },
   { key: 'desks', labelKey: 'adminManage.desks', icon: 'desktop' },
@@ -687,6 +689,8 @@ export default function ManageScreen() {
 
   const renderContent = () => {
     switch (tab) {
+      case 'settings':
+        return <AdminSettings />;
       case 'staff':
         return (
           <FlatList
@@ -1494,6 +1498,7 @@ export default function ManageScreen() {
   const modalTitle = useMemo(() => {
     const action = editingItem ? t('adminManage.editAction') : t('adminManage.createAction');
     const entityKeys: Record<ManageTab, string> = {
+      settings: 'adminManage.settings',
       offices: 'adminManage.office',
       staff: 'adminManage.staffMember',
       desks: 'adminManage.desk',
@@ -1508,7 +1513,7 @@ export default function ManageScreen() {
 
   // ── Show FAB? ────────────────────────────────────────────────────
 
-  const showFab = tab !== 'customers' && tab !== 'bookings';
+  const showFab = tab !== 'customers' && tab !== 'bookings' && tab !== 'settings';
 
   // ── Render ───────────────────────────────────────────────────────
 

@@ -4,3 +4,4 @@ export * from './utils';
 export * from './phone';
 export * from './messages';
 export * from './intake-fields';
+export * from './org-settings';
