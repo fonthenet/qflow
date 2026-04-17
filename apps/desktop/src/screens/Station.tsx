@@ -9,7 +9,7 @@ import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
 import { cloudFetch } from '../lib/cloud-fetch';
-import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS } from '@qflo/shared';
+import { dateKeyInTz, getDayNameFromKey, getDayHours, CALENDAR_DAYS, migrateToIntakeFields, getFieldLabel, INTAKE_PRESETS, type IntakeField, type PresetKey } from '@qflo/shared';
 
 const STATION_RDV_STATUS_COLORS: Record<string, string> = {
   pending: '#f59e0b',
@@ -96,11 +96,11 @@ function TransferModal({ desks, onTransfer, onClose, locale }: {
 }
 
 // ── In-House Booking Panel (docked at bottom of main area) ───────
-function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth, timezone = 'Africa/Algiers' }: {
+function InHouseBookingPanel({ departments, services, officeId, onBook, locale, messengerPageId, whatsappPhone, onCollapse, session, prefill, storedAuth, timezone = 'Africa/Algiers', orgSettings = {} }: {
   departments: [string, string][]; // [id, name][]
   services: { id: string; name: string; department_id: string }[];
   officeId: string;
-  onBook: (ticket: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string; wilaya?: string }; priority: number; source: string }) => Promise<any>;
+  onBook: (ticket: { department_id: string; service_id?: string; customer_data: Record<string, any>; priority: number; source: string }) => Promise<any>;
   locale: DesktopLocale;
   messengerPageId?: string | null;
   whatsappPhone?: string | null;
@@ -109,6 +109,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   prefill?: { name?: string; phone?: string; notes?: string; wilaya?: string; futureDate?: string; futureTime?: string; _ts?: number } | null;
   storedAuth?: Record<string, unknown>;
   timezone?: string;
+  orgSettings?: Record<string, any>;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
@@ -127,20 +128,45 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       setSelectedService(deptServices[0].id);
     }
   }, [selectedDept, services, selectedService]);
-  const [customerName, setCustomerName] = useState(prefill?.name ?? '');
-  const [customerPhone, setCustomerPhone] = useState(prefill?.phone ?? '');
-  const [customerReason, setCustomerReason] = useState(prefill?.notes ?? '');
-  const [customerWilaya, setCustomerWilaya] = useState(() => normalizeWilayaDisplay(prefill?.wilaya, locale === 'ar') ?? '');
+  // Unified intake fields from org settings
+  const intakeFields = useMemo(() => migrateToIntakeFields(orgSettings), [orgSettings]);
+  // In-house panel = same-day queue, so filter by 'sameday' scope
+  const enabledFields = useMemo(() => intakeFields.filter(f => f.enabled && (f.scope || 'both') !== 'booking'), [intakeFields]);
+
+  // Dynamic customer data state — keyed by field key
+  const [customerData, setCustomerData] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    if (prefill?.name) init.name = prefill.name;
+    if (prefill?.phone) init.phone = prefill.phone;
+    if (prefill?.notes) init.reason = prefill.notes;
+    if (prefill?.wilaya) init.wilaya = normalizeWilayaDisplay(prefill.wilaya, locale === 'ar') ?? '';
+    return init;
+  });
+  const setField = (key: string, value: string) => setCustomerData(prev => ({ ...prev, [key]: value }));
+
+  // Backward-compat aliases so existing code (customer search, submit, etc.) still works
+  const customerName = customerData.name ?? '';
+  const setCustomerName = (v: string) => setField('name', v);
+  const customerPhone = customerData.phone ?? '';
+  const setCustomerPhone = (v: string) => setField('phone', v);
+  const customerReason = customerData.reason ?? '';
+  const setCustomerReason = (v: string) => setField('reason', v);
+  const customerWilaya = customerData.wilaya ?? '';
+  const setCustomerWilaya = (v: string) => setField('wilaya', v);
 
   // Update walk-in + future fields when prefill changes (panel may already be mounted).
   // Always override ALL fields so a second customer click fully replaces the first.
   useEffect(() => {
     if (!prefill) return;
-    setCustomerName(prefill.name ?? ''); setFutName(prefill.name ?? '');
-    setCustomerPhone(prefill.phone ?? ''); setFutPhone(prefill.phone ?? '');
-    setCustomerReason(prefill.notes ?? ''); setFutNotes(prefill.notes ?? '');
     const displayW = normalizeWilayaDisplay(prefill.wilaya, locale === 'ar') ?? '';
-    setCustomerWilaya(displayW); setFutWilaya(displayW);
+    setCustomerData({
+      name: prefill.name ?? '',
+      phone: prefill.phone ?? '',
+      reason: prefill.notes ?? '',
+      wilaya: displayW,
+    });
+    setFutName(prefill.name ?? ''); setFutPhone(prefill.phone ?? '');
+    setFutNotes(prefill.notes ?? ''); setFutWilaya(displayW);
   }, [prefill]);
 
   // Smart customer search (shared between walk-in and future tabs)
@@ -422,15 +448,20 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     if (!selectedDept || submitting) return;
     setSubmitting(true);
     try {
+      // Build customer_data from all enabled intake fields
+      const cd: Record<string, any> = {};
+      for (const f of enabledFields) {
+        const val = customerData[f.key]?.trim();
+        if (val) {
+          // Map standard keys to expected column names
+          if (f.key === 'reason') cd.reason_of_visit = val;
+          else cd[f.key] = val;
+        }
+      }
       const result = await onBook({
         department_id: selectedDept,
         service_id: selectedService || undefined,
-        customer_data: {
-          name: customerName.trim() || undefined,
-          phone: customerPhone.trim() || undefined,
-          reason: customerReason.trim() || undefined,
-          wilaya: customerWilaya.trim() || undefined,
-        },
+        customer_data: cd,
         priority: isPriority ? 2 : 0,
         source: 'in_house',
       });
@@ -448,10 +479,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const handleNewTicket = () => {
     setCreatedTicket(null);
     setWhatsappStatus(null);
-    setCustomerName('');
-    setCustomerPhone('');
-    setCustomerReason('');
-    setCustomerWilaya('');
+    setCustomerData({});
     setIsPriority(false);
     setTimeout(() => nameRef.current?.focus(), 50);
   };
@@ -917,102 +945,133 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           )}
 
-          {/* Name with customer search */}
-          <div style={{ position: 'relative' }}>
-            <label style={labelStyle}>{t('Name')}</label>
-            <input
-              ref={nameRef}
-              type="text"
-              value={customerName}
-              onChange={(e) => { setCustomerName(e.target.value); setCustSearchQuery(e.target.value); }}
-              onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
-              onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
-              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
-              placeholder={t('Search or type name')}
-              style={inputStyle}
-              autoComplete="off"
-            />
-            {bookingTab === 'walkin' && showCustSuggestions && custSuggestions.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                marginTop: 4, maxHeight: 240, overflowY: 'auto',
-                background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
-                borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-              }}>
-                {custSuggestions.map((c) => (
-                  <div
-                    key={c.id}
-                    onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
-                    style={{
-                      padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.name || t('Unknown')}
+          {/* Dynamic intake fields rendered in configured order */}
+          {enabledFields.map((field) => {
+            const fLabel = getFieldLabel(field, locale as 'en' | 'fr' | 'ar');
+            const val = customerData[field.key] ?? '';
+
+            // Name field — with customer search autocomplete
+            if (field.key === 'name') return (
+              <div key="name" style={{ position: 'relative' }}>
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  ref={nameRef}
+                  type="text"
+                  value={val}
+                  onChange={(e) => { setField('name', e.target.value); setCustSearchQuery(e.target.value); }}
+                  onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+                  onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+                  placeholder={t('Search or type name')}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
+                {bookingTab === 'walkin' && showCustSuggestions && custSuggestions.length > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                    marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                    background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                    borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                  }}>
+                    {custSuggestions.map((c) => (
+                      <div
+                        key={c.id}
+                        onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                        style={{
+                          padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.name || t('Unknown')}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                            {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                          </div>
+                        </div>
+                        {(c.visit_count ?? 0) > 0 && (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                            {c.visit_count}× {t('Visits')}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
-                        {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
-                      </div>
-                    </div>
-                    {(c.visit_count ?? 0) > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
-                        {c.visit_count}× {t('Visits')}
-                      </span>
-                    )}
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
+            );
 
-          {/* Phone + Wilaya — 2-column row */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('Phone')}</label>
-              <input
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => { setCustomerPhone(e.target.value); setCustSearchQuery(e.target.value); }}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-                placeholder={t('Phone number')}
-                style={inputStyle}
-                autoComplete="off"
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('Wilaya')}</label>
-              <select
-                value={customerWilaya}
-                onChange={(e) => setCustomerWilaya(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-                style={inputStyle}
-              >
-                <option value="">{t('Wilaya')}</option>
-                {WILAYAS.map(w => (
-                  <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
-                    {formatWilayaLabel(w, locale === 'ar')}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+            // Phone field — with customer lookup trigger
+            if (field.key === 'phone') return (
+              <div key="phone">
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="tel"
+                  value={val}
+                  onChange={(e) => { setField('phone', e.target.value); setCustSearchQuery(e.target.value); }}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                  placeholder={t('Phone number')}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
+              </div>
+            );
 
-          {/* Reason */}
-          <div>
-            <label style={labelStyle}>{t('Reason')}</label>
-            <input
-              type="text"
-              value={customerReason}
-              onChange={(e) => setCustomerReason(e.target.value)}
-              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
-              placeholder={t('Reason for visit')}
-              style={inputStyle}
-            />
-          </div>
+            // Wilaya field — dropdown
+            if (field.key === 'wilaya') return (
+              <div key="wilaya">
+                <label style={labelStyle}>{fLabel}</label>
+                <select
+                  value={val}
+                  onChange={(e) => setField('wilaya', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                  style={inputStyle}
+                >
+                  <option value="">{fLabel}</option>
+                  {WILAYAS.map(w => (
+                    <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
+                      {formatWilayaLabel(w, locale === 'ar')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+
+            // Age field — numeric input
+            if (field.key === 'age') return (
+              <div key="age">
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={150}
+                  value={val}
+                  onChange={(e) => setField('age', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                />
+              </div>
+            );
+
+            // Reason + custom fields — text input
+            return (
+              <div key={field.key}>
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="text"
+                  value={val}
+                  onChange={(e) => setField(field.key, e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleSubmit(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                />
+              </div>
+            );
+          })}
 
           {/* Customer lookup inline */}
           {lookupLoading && <div style={{ fontSize: 10, color: 'var(--text3)' }}>{t('Looking up customer...')}</div>}
@@ -1467,6 +1526,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [customerPhoneToOpen, setCustomerPhoneToOpen] = useState<string | undefined>();
   // showAppointmentsModal removed — unified into CalendarModal
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
+  const [orgSettings, setOrgSettings] = useState<Record<string, any>>({});
   const [callTimeoutSeconds, setCallTimeoutSeconds] = useState(DEFAULT_CALL_TIMEOUT);
   const [settingsVersion, setSettingsVersion] = useState(0);
   useEffect(() => {
@@ -1485,8 +1545,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           const { data: orgData } = await sb.from('organizations').select('timezone, settings').eq('id', session.organization_id).single();
           if (orgData?.timezone) tz = normalizeOfficeTimezone(orgData.timezone);
           // Read auto_no_show_timeout (stored in minutes)
-          const orgSettings = orgData?.settings ?? {};
-          const timeoutMinutes = Number(orgSettings.auto_no_show_timeout);
+          const fetchedOrgSettings = (orgData?.settings ?? {}) as Record<string, any>;
+          if (!cancelled) setOrgSettings(fetchedOrgSettings);
+          const timeoutMinutes = Number(fetchedOrgSettings.auto_no_show_timeout);
           if (!cancelled && timeoutMinutes > 0) setCallTimeoutSeconds(timeoutMinutes * 60);
         } catch {}
         // Fallback: try local SQLite office timezone
@@ -3796,6 +3857,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   prefill={bookingPrefill}
                   storedAuth={storedAuth}
                   timezone={officeTimezone}
+                  orgSettings={orgSettings}
                 />
               </div>
             )}
@@ -4076,7 +4138,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                       ✕
                     </button>
                     <button
-                      onClick={() => { setCalendarInitialApptId(a.id); setCalendarInitialView('week'); setShowCalendarModal(true); }}
+                      onClick={() => { setCalendarInitialApptId(a.id); setCalendarInitialView('week'); setMainView('calendar'); }}
                       style={{
                         padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border, #334155)',
                         background: 'transparent', color: 'var(--text3, #94a3b8)', cursor: 'pointer',

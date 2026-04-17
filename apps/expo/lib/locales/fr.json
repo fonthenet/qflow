@@ -591,8 +591,19 @@
     "checkedIn": "Enregistré",
     "cancelled": "Annulé",
     "confirmed": "Confirmé",
+    "completed": "Terminé",
+    "noShow": "Absent",
     "noBookings": "Aucune réservation",
-    "noBookingsMsg": "Aucun rendez-vous pour aujourd'hui"
+    "noBookingsMsg": "Aucun rendez-vous pour ce jour",
+    "approve": "Approuver",
+    "approveMsg": "Approuver la réservation de {{name}} ?",
+    "decline": "Refuser",
+    "declineMsg": "Refuser la réservation de {{name}} ? Il/elle sera notifié(e).",
+    "noShowMsg": "Marquer {{name}} comme absent ?",
+    "complete": "Terminer",
+    "completeMsg": "Marquer le rendez-vous de {{name}} comme terminé ?",
+    "delete": "Supprimer",
+    "deleteMsg": "Supprimer définitivement le rendez-vous de {{name}} ? Cette action est irréversible."
   },
 
   "virtualCodes": {

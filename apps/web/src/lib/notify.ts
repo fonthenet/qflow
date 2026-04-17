@@ -75,30 +75,97 @@ export async function notifyCustomer(
       return { sent: false, channel: null, error: 'ticket_not_found' };
     }
 
-    // Find the active session for this ticket
-    const { data: sessions } = await supabase
+    // Find the session for this ticket.
+    // Prefer an active session; fall back to the most recent of any state,
+    // since some events (e.g. served) are emitted after the row has been
+    // flipped to 'completed' by other paths.
+    const { data: activeSessions } = await supabase
       .from('whatsapp_sessions')
-      .select('id, channel, whatsapp_phone, messenger_psid, locale, organization_id')
+      .select('id, channel, whatsapp_phone, messenger_psid, locale, organization_id, office_id')
       .eq('ticket_id', ticketId)
+      .eq('state', 'active')
       .order('created_at', { ascending: false })
       .limit(1);
 
-    const session = sessions?.[0];
+    let session = activeSessions?.[0];
+    if (!session) {
+      const { data: anySessions } = await supabase
+        .from('whatsapp_sessions')
+        .select('id, channel, whatsapp_phone, messenger_psid, locale, organization_id, office_id')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      session = anySessions?.[0];
+    }
     if (!session) {
       return { sent: false, channel: null, error: 'no_session' };
     }
 
-    // Resolve org name if not provided
-    let orgName = opts.orgName ?? '';
+    // ── Org name resolution — multi-stage cascade ───────────────────
+    // Stage 1: caller-provided (fastest, most explicit)
+    // Stage 2: organizations table via session.organization_id
+    // Stage 3: organizations table via ticket.office_id → offices.organization_id
+    //          (covers cases where the session's org_id points at a deleted/
+    //           wrong row but the ticket's office still resolves)
+    // Stage 4: offices.name by ticket.office_id (the venue name is a decent
+    //          stand-in when the org name isn't available)
+    // Stage 5: i18n default ("our service" / "notre service" / "خدمتنا")
+    //
+    // Any fallback beyond Stage 1 is logged so ops can spot stale data.
+    let orgName = (opts.orgName ?? '').trim();
+    let orgNameSource: 'opts' | 'session-org' | 'office-org' | 'office-name' | 'default' = 'opts';
     if (!orgName) {
+      orgNameSource = 'session-org';
       try {
-        const { data: org } = await supabase
+        const { data: org, error } = await supabase
           .from('organizations')
           .select('name')
           .eq('id', session.organization_id)
           .single();
-        orgName = org?.name ?? '';
-      } catch { /* ignore */ }
+        if (error) {
+          console.warn(`[notify] org lookup by session.organization_id=${session.organization_id} failed:`, error.message);
+        }
+        orgName = (org?.name ?? '').trim();
+      } catch (e: any) {
+        console.warn(`[notify] org lookup by session.organization_id threw:`, e?.message);
+      }
+    }
+    if (!orgName && ticket.office_id) {
+      orgNameSource = 'office-org';
+      try {
+        const { data: office } = await supabase
+          .from('offices')
+          .select('name, organization_id, organizations:organization_id(name)')
+          .eq('id', ticket.office_id)
+          .single();
+        const officeOrgName = (office?.organizations as any)?.name;
+        orgName = (officeOrgName ?? '').trim();
+        if (!orgName && office?.name) {
+          orgNameSource = 'office-name';
+          orgName = office.name.trim();
+        }
+      } catch (e: any) {
+        console.warn(`[notify] office→org lookup threw:`, e?.message);
+      }
+    }
+    if (!orgName) {
+      // Localized default — never leave WhatsApp template with empty `{name}`.
+      const defaults: Record<string, string> = {
+        fr: 'notre service',
+        ar: 'خدمتنا',
+        en: 'our service',
+      };
+      const lang = ((ticket.locale as string) || (session.locale as string) || 'fr').slice(0, 2);
+      orgName = defaults[lang] ?? defaults.fr;
+      orgNameSource = 'default';
+      console.warn(
+        `[notify] orgName fell back to default for ticket ${ticketId} ` +
+        `(session_id=${session.id} organization_id=${session.organization_id}). ` +
+        `Check whether the organizations row exists and has a non-empty name.`,
+      );
+    } else if (orgNameSource !== 'opts') {
+      // Lower-priority diagnostic so we can surface drift without alerting
+      console.info(`[notify] orgName resolved via ${orgNameSource} for ticket ${ticketId}`);
     }
 
     // Resolve locale

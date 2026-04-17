@@ -91,6 +91,16 @@ function getDeskStatusLabel(status: string, t: any): string {
   }
 }
 
+/**
+ * Resolve the effective source for a ticket.
+ * The top-level `source` column is authoritative, but some creation paths
+ * (e.g. WhatsApp/Messenger via messaging-commands) also mirror the channel
+ * into `customer_data.source`. Prefer top-level, fall back to nested.
+ */
+function resolveSource(ticket: QueueTicket): string | null {
+  return ticket.source || (ticket.customer_data as any)?.source || null;
+}
+
 function getSourceIcon(source: string | null): { name: string; color: string } {
   switch (source) {
     case 'whatsapp': return { name: 'logo-whatsapp', color: '#25D366' };
@@ -363,15 +373,32 @@ export default function AdminQueueScreen() {
 
   const handleCall = (tk: QueueTicket) => {
     confirmAction(t('adminQueue.callTicket'), t('adminQueue.callTicketMsgGeneric', { ticket: tk.ticket_number }), async () => {
-      await supabase
-        .from('tickets')
-        .update({
-          status: 'called',
-          called_at: new Date().toISOString(),
-          called_by_staff_id: staffId,
-        })
-        .eq('id', tk.id);
-      Actions.triggerNotification(tk.id, 'called').catch(() => {});
+      // Use the proper callSpecificTicket which handles desk assignment + notifications
+      if (staffId) {
+        // Find admin's assigned desk (if any) to do a proper call
+        const { data: adminDesks } = await supabase
+          .from('desks')
+          .select('id')
+          .eq('current_staff_id', staffId)
+          .eq('status', 'open')
+          .limit(1);
+        const adminDeskId = adminDesks?.[0]?.id;
+
+        if (adminDeskId) {
+          await Actions.callSpecificTicket(tk.id, adminDeskId, staffId);
+        } else {
+          // Admin has no open desk — update status directly but still notify
+          await supabase
+            .from('tickets')
+            .update({
+              status: 'called',
+              called_at: new Date().toISOString(),
+              called_by_staff_id: staffId,
+            })
+            .eq('id', tk.id);
+          Actions.triggerNotification(tk.id, 'called').catch(() => {});
+        }
+      }
     });
   };
 
@@ -513,11 +540,11 @@ export default function AdminQueueScreen() {
           {(!customerName && !customerPhone) ? (
             <View style={styles.customerRow}>
               {(() => {
-                const src = getSourceIcon(ticket.source);
+                const src = getSourceIcon(resolveSource(ticket));
                 return (
                   <View style={[styles.sourceBadge, { backgroundColor: src.color + '15' }]}>
                     <Ionicons name={src.name as any} size={12} color={src.color} />
-                    <Text style={[styles.sourceBadgeText, { color: src.color }]}>{getSourceLabel(ticket.source, t)}</Text>
+                    <Text style={[styles.sourceBadgeText, { color: src.color }]}>{getSourceLabel(resolveSource(ticket), t)}</Text>
                   </View>
                 );
               })()}
@@ -548,11 +575,11 @@ export default function AdminQueueScreen() {
                 </TouchableOpacity>
               )}
               {(() => {
-                const src = getSourceIcon(ticket.source);
+                const src = getSourceIcon(resolveSource(ticket));
                 return (
                   <View style={[styles.sourceBadge, { backgroundColor: src.color + '15' }]}>
                     <Ionicons name={src.name as any} size={11} color={src.color} />
-                    <Text style={[styles.sourceBadgeText, { color: src.color }]}>{getSourceLabel(ticket.source, t)}</Text>
+                    <Text style={[styles.sourceBadgeText, { color: src.color }]}>{getSourceLabel(resolveSource(ticket), t)}</Text>
                   </View>
                 );
               })()}

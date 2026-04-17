@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -55,6 +56,17 @@ function getStatusBg(status: string): string {
     case 'cancelled': return colors.errorLight;
     default: return colors.surfaceSecondary;
   }
+}
+
+/**
+ * Resolve the effective source for a ticket.
+ * The top-level `source` column is authoritative, but some creation paths
+ * (e.g. WhatsApp/Messenger via messaging-commands) also mirror the channel
+ * into `customer_data.source`. Prefer top-level, fall back to nested, then
+ * fall back to null (→ "Web" label).
+ */
+function resolveSource(ticket: QueueTicket): string | null {
+  return ticket.source || (ticket.customer_data as any)?.source || null;
 }
 
 function getSourceIcon(source: string | null): { name: keyof typeof Ionicons.glyphMap; color: string } {
@@ -110,8 +122,9 @@ export default function QueueScreen() {
   const names = useAdaptiveNameLookup(orgId, officeIds);
   const [activeTab, setActiveTab] = useState<FilterTab>('waiting');
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const filtered = (() => {
+  const tabFiltered = (() => {
     switch (activeTab) {
       case 'waiting': return [...queue.waiting, ...queue.parked];
       case 'called': return queue.called;
@@ -120,6 +133,17 @@ export default function QueueScreen() {
       case 'all': return [...queue.waiting, ...queue.called, ...queue.serving, ...queue.parked];
     }
   })();
+
+  // Apply search filter (ticket number or customer name, case-insensitive)
+  const filtered = searchQuery.trim()
+    ? tabFiltered.filter((tk) => {
+        const q = searchQuery.trim().toLowerCase();
+        const num = (tk.ticket_number ?? '').toLowerCase();
+        const name = (tk.customer_data?.name ?? '').toLowerCase();
+        const phone = (tk.customer_data?.phone ?? '').toLowerCase();
+        return num.includes(q) || name.includes(q) || phone.includes(q);
+      })
+    : tabFiltered;
 
   const counts: Record<FilterTab, number> = {
     waiting: queue.waiting.length + queue.parked.length,
@@ -232,7 +256,8 @@ export default function QueueScreen() {
     const deskName = item.desk_id ? names.desks[item.desk_id] : null;
     const deptName = item.department_id ? names.departments[item.department_id] : null;
     const priority = item.priority_category_id ? names.priorities[item.priority_category_id] : null;
-    const source = getSourceIcon(item.source);
+    const effectiveSource = resolveSource(item);
+    const source = getSourceIcon(effectiveSource);
     const statusColor = getStatusColor(item.status);
     const statusBg = getStatusBg(item.status);
     const isParked = item.parked_at != null;
@@ -262,11 +287,17 @@ export default function QueueScreen() {
               </View>
             )}
           </View>
-          <View style={[styles.statusChip, { backgroundColor: statusBg }]}>
-            <View style={[styles.statusDotSmall, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusChipText, { color: statusColor }]}>
-              {t(`status.${item.status === 'no_show' ? 'noShow' : item.status}`)}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={styles.waitChip}>
+              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.waitTime}>{getWaitTime(item.created_at, t)}</Text>
+            </View>
+            <View style={[styles.statusChip, { backgroundColor: statusBg }]}>
+              <View style={[styles.statusDotSmall, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusChipText, { color: statusColor }]}>
+                {t(`status.${item.status === 'no_show' ? 'noShow' : item.status}`)}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -277,7 +308,7 @@ export default function QueueScreen() {
             <View style={styles.customerRow}>
               <View style={[styles.sourceChipInline, { backgroundColor: source.color + '15' }]}>
                 <Ionicons name={source.name} size={12} color={source.color} />
-                <Text style={[styles.sourceText, { color: source.color }]}>{getSourceLabel(item.source, t)}</Text>
+                <Text style={[styles.sourceText, { color: source.color }]}>{getSourceLabel(effectiveSource, t)}</Text>
               </View>
             </View>
           ) : (
@@ -306,7 +337,7 @@ export default function QueueScreen() {
               )}
               <View style={[styles.sourceChipInline, { backgroundColor: source.color + '15' }]}>
                 <Ionicons name={source.name} size={11} color={source.color} />
-                <Text style={[styles.sourceText, { color: source.color }]}>{getSourceLabel(item.source, t)}</Text>
+                <Text style={[styles.sourceText, { color: source.color }]}>{getSourceLabel(effectiveSource, t)}</Text>
               </View>
             </View>
           )}
@@ -318,20 +349,15 @@ export default function QueueScreen() {
           )}
         </View>
 
-        {/* Bottom row: desk + wait time */}
-        <View style={styles.ticketBottomRow}>
-          {deskName && (
+        {/* Bottom row: desk (only when assigned) */}
+        {deskName ? (
+          <View style={styles.ticketBottomRow}>
             <View style={styles.deskChip}>
               <Ionicons name="desktop-outline" size={12} color={colors.textSecondary} />
               <Text style={styles.deskChipText}>{deskName}</Text>
             </View>
-          )}
-          <View style={{ flex: 1 }} />
-          <View style={styles.waitChip}>
-            <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-            <Text style={styles.waitTime}>{getWaitTime(item.created_at, t)}</Text>
           </View>
-        </View>
+        ) : null}
 
         {/* Action buttons */}
         {!isTerminal && (
@@ -399,46 +425,68 @@ export default function QueueScreen() {
         </View>
       </View>
 
-      {/* Filter Tabs -- pill style, horizontally scrollable */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsScroll}
-        contentContainerStyle={styles.tabsContainer}
-      >
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[
-                styles.tabPill,
-                isActive && { backgroundColor: tab.color + '18', borderColor: tab.color + '40' },
-              ]}
-              onPress={() => setActiveTab(tab.key)}
-            >
-              <Ionicons name={tab.icon} size={14} color={isActive ? tab.color : colors.textMuted} />
-              <Text style={[
-                styles.tabPillText,
-                isActive && { color: tab.color, fontWeight: '700' },
-              ]}>
-                {tab.label}
-              </Text>
-              <View style={[
-                styles.tabCountBadge,
-                isActive && { backgroundColor: tab.color },
-              ]}>
+      {/* Search bar */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={t('operatorQueue.searchPlaceholder', { defaultValue: 'Search ticket #, name, phone…' })}
+          placeholderTextColor={colors.textMuted}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Filter Tabs — segmented control inside a single capsule */}
+      <View style={styles.tabsOuter}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContainer}
+        >
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabPill,
+                  isActive && { backgroundColor: tab.color + '18' },
+                ]}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={tab.icon} size={14} color={isActive ? tab.color : colors.textMuted} />
                 <Text style={[
-                  styles.tabCountText,
-                  isActive && { color: '#fff' },
+                  styles.tabPillText,
+                  isActive && { color: tab.color, fontWeight: '700' },
                 ]}>
-                  {counts[tab.key]}
+                  {tab.label}
                 </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                <View style={[
+                  styles.tabCountBadge,
+                  isActive && { backgroundColor: tab.color },
+                ]}>
+                  <Text style={[
+                    styles.tabCountText,
+                    isActive && { color: '#fff' },
+                  ]}>
+                    {counts[tab.key]}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <FlatList
         data={filtered}
@@ -504,6 +552,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+
+  // Search bar
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.full,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.text,
+    paddingVertical: 4,
+  },
   summaryItem: {
     flex: 1,
     alignItems: 'center',
@@ -525,29 +592,29 @@ const styles = StyleSheet.create({
   },
 
   // Pill tabs
-  tabsScroll: {
+  tabsOuter: {
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    flexGrow: 0,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   tabsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: borderRadius.full,
+    padding: 3,
+    gap: 2,
   },
   tabPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingVertical: spacing.sm,
+    paddingVertical: 6,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: colors.surfaceSecondary,
+    backgroundColor: 'transparent',
   },
   tabPillText: {
     fontSize: 10,

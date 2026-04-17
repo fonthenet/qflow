@@ -260,6 +260,7 @@ export async function createInHouseTicket(params: {
   customerPhone?: string;
   visitReason?: string;
   priority?: number;
+  priorityCategoryId?: string | null;
 }) {
   const local = getLocal();
   if (local) {
@@ -357,6 +358,11 @@ export {
   fetchAppointments,
   checkInAppointment,
   cancelAppointment,
+  approveAppointment,
+  declineAppointment,
+  noShowAppointment,
+  completeAppointment,
+  deleteAppointment,
   fetchVirtualCodes,
   createVirtualCode,
   toggleVirtualCode,

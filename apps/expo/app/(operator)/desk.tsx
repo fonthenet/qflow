@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 
@@ -28,7 +28,6 @@ import { useOperatorStore } from '@/lib/operator-store';
 import { supabase } from '@/lib/supabase';
 import { useLocalConnectionStore } from '@/lib/local-connection-store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
-import { ConnectionBanner } from '@/components/ConnectionBanner';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -304,6 +303,7 @@ export default function DeskScreen() {
   const [switchDeskVisible, setSwitchDeskVisible] = useState(false);
   const [availableDesks, setAvailableDesks] = useState<any[]>([]);
   const [switchLoading, setSwitchLoading] = useState(false);
+  const [upcomingAppts, setUpcomingAppts] = useState<any[]>([]);
 
   const screenWidth = useScreenWidth();
   const isWide = screenWidth > 768;
@@ -375,6 +375,33 @@ export default function DeskScreen() {
       clearInterval(autoResolve);
     };
   }, [deskId, staffId]);
+
+  // ── Upcoming appointments today (read-only heads-up) ─────────────
+  useEffect(() => {
+    if (!officeId) return;
+    let cancelled = false;
+    const loadAppts = async () => {
+      try {
+        const appts = await Actions.fetchAppointments([officeId]);
+        if (cancelled) return;
+        const now = Date.now();
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+        const next = (appts as any[])
+          .filter(
+            (a) =>
+              (a.status === 'pending' || a.status === 'confirmed') &&
+              new Date(a.scheduled_at).getTime() >= now - 15 * 60 * 1000 && // include ones that started up to 15min ago
+              new Date(a.scheduled_at).getTime() <= endOfDay.getTime(),
+          )
+          .slice(0, 3);
+        setUpcomingAppts(next);
+      } catch { /* ignore — cloud may be unreachable in local mode */ }
+    };
+    loadAppts();
+    const iv = setInterval(loadAppts, 60_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [officeId]);
 
   // ── Realtime desk status sync (pick up changes from Station/web) ──
   const localMode = useLocalConnectionStore((s) => s.mode);
@@ -672,6 +699,25 @@ export default function DeskScreen() {
     setSwitchLoading(false);
   };
 
+  // ── Header: Switch Desk (left) + title with desk name ───────────
+  const navigation = useNavigation();
+  useEffect(() => {
+    const deskLabel = session?.deskName ? `${t('admin.myDesk')} · ${session.deskName}` : t('admin.myDesk');
+    navigation.setOptions({
+      title: deskLabel,
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={openSwitchDesk}
+          disabled={actionLoading}
+          activeOpacity={0.7}
+          style={styles.headerSwitchBtn}
+        >
+          <Ionicons name="swap-horizontal" size={16} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, actionLoading, t, session?.deskName]);
+
   // ── Guards ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!session) {
@@ -696,57 +742,55 @@ export default function DeskScreen() {
     );
   }
 
-  // ── Subcomponents ────────────────────────────────────────────────
-  const StationHeader = (
-    <View style={styles.stationCard}>
-      <View style={styles.stationTopRow}>
-        <View style={{ flex: 1, gap: spacing.xs }}>
-          <View style={styles.stationRow}>
-            <Image source={require('@/assets/icon.png')} style={styles.stationIcon} />
-            <Text style={styles.stationDeskName}>{session.deskName ?? t('desk.noDesk')}</Text>
-          </View>
-          <View style={styles.stationRow}>
-            <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.stationSubtext}>{session.officeName}</Text>
-          </View>
-        </View>
-        <View style={styles.statusDotRow}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusDotLabel, { color: statusColor }]}>{statusLabel}</Text>
+  // ── Upcoming Appointments card (heads-up, only when any exist) ──
+  const UpcomingAppointmentsCard = upcomingAppts.length > 0 ? (
+    <View style={styles.upcomingCard}>
+      <View style={styles.upcomingHeader}>
+        <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+        <Text style={styles.upcomingTitle}>
+          {t('desk.upcoming', { defaultValue: 'Upcoming today' })}
+        </Text>
+        <View style={styles.upcomingCount}>
+          <Text style={styles.upcomingCountText}>{upcomingAppts.length}</Text>
         </View>
       </View>
-      {/* Desk status controls */}
-      <View style={styles.deskControlsRow}>
-        {deskStatus === 'on_break' ? (
-          <TouchableOpacity
-            style={[styles.deskControlBtn, { backgroundColor: colors.success + '15', borderColor: colors.success + '30' }]}
-            onPress={handleDeskResume}
-            disabled={actionLoading}
-          >
-            <Ionicons name="play-circle-outline" size={16} color={colors.success} />
-            <Text style={[styles.deskControlText, { color: colors.success }]}>{t('adminQueue.resumeServing')}</Text>
-          </TouchableOpacity>
-        ) : !hasActive ? (
-          <TouchableOpacity
-            style={[styles.deskControlBtn, { backgroundColor: colors.warning + '15', borderColor: colors.warning + '30' }]}
-            onPress={handleDeskOnBreak}
-            disabled={actionLoading}
-          >
-            <Ionicons name="cafe-outline" size={16} color={colors.warning} />
-            <Text style={[styles.deskControlText, { color: colors.warning }]}>{t('desk.onBreak')}</Text>
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          style={[styles.deskControlBtn, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}
-          onPress={openSwitchDesk}
-          disabled={actionLoading}
-        >
-          <Ionicons name="swap-horizontal-outline" size={16} color={colors.primary} />
-          <Text style={[styles.deskControlText, { color: colors.primary }]}>{t('desk.switchDesk')}</Text>
-        </TouchableOpacity>
-      </View>
+      {upcomingAppts.map((a) => {
+        const time = new Date(a.scheduled_at).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const svcName = a.service_id ? names.services[a.service_id] ?? '' : '';
+        return (
+          <View key={a.id} style={styles.upcomingItem}>
+            <Text style={styles.upcomingTime}>{time}</Text>
+            <Text style={styles.upcomingName} numberOfLines={1}>
+              {a.customer_name}
+            </Text>
+            {svcName ? (
+              <Text style={styles.upcomingSvc} numberOfLines={1}>
+                {svcName}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
     </View>
-  );
+  ) : null;
+
+  // ── Take Break chip (compact, only when idle & not on break) ────
+  const TakeBreakChip = !hasActive && deskStatus !== 'on_break' ? (
+    <View style={styles.inlineChipRow}>
+      <TouchableOpacity
+        style={[styles.inlineChip, { backgroundColor: colors.warning + '12', borderColor: colors.warning + '30' }]}
+        onPress={handleDeskOnBreak}
+        disabled={actionLoading}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="cafe-outline" size={14} color={colors.warning} />
+        <Text style={[styles.inlineChipText, { color: colors.warning }]}>{t('desk.onBreak')}</Text>
+      </TouchableOpacity>
+    </View>
+  ) : null;
 
   const WaitingCountCard = (
     <View style={styles.waitingCard}>
@@ -776,44 +820,53 @@ export default function DeskScreen() {
 
   const CurrentTicketCard = activeTicket ? (
     <View
-      style={[
-        styles.ticketCard,
-        {
-          borderColor:
-            activeTicket.status === 'serving' ? colors.serving : colors.called,
-        },
-      ]}
+      style={styles.ticketCard}
     >
-      {/* Header */}
+      {/* Header: ticket # + status capsule (with service timer stacked below on serving) */}
       <View style={styles.ticketHeader}>
-        <View>
-          <Text style={[styles.ticketLabel, {
-            color: activeTicket.status === 'serving' ? colors.serving : colors.called,
-          }]}>
-            {activeTicket.status === 'serving' ? t('status.serving') : t('status.called')}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap', flex: 1 }}>
           <Text style={styles.ticketNumber}>{activeTicket.ticket_number}</Text>
         </View>
-        <View
-          style={[
-            styles.statusBadge,
-            {
-              backgroundColor:
-                activeTicket.status === 'serving' ? colors.servingBg : colors.calledBg,
-            },
-          ]}
-        >
-          <Text
+        <View style={{ alignItems: 'flex-end', gap: spacing.xs }}>
+          <View
             style={[
-              styles.statusBadgeText,
+              styles.statusBadge,
               {
-                color:
-                  activeTicket.status === 'serving' ? colors.serving : colors.called,
+                backgroundColor:
+                  activeTicket.status === 'serving' ? colors.servingBg : colors.calledBg,
               },
             ]}
           >
-            {activeTicket.status === 'called' ? t('status.called') : t('status.serving')}
-          </Text>
+            <Text
+              style={[
+                styles.statusBadgeText,
+                {
+                  color:
+                    activeTicket.status === 'serving' ? colors.serving : colors.called,
+                },
+              ]}
+            >
+              {activeTicket.status === 'called' ? t('status.called') : t('status.serving')}
+            </Text>
+          </View>
+          {activeTicket.status === 'serving' && activeTicket.serving_started_at ? (
+            <View style={[
+              styles.inlineTimerChip,
+              isServingOvertime && { backgroundColor: colors.error + '15' },
+            ]}>
+              <Ionicons
+                name="time-outline"
+                size={13}
+                color={isServingOvertime ? colors.error : colors.textSecondary}
+              />
+              <Text style={[
+                styles.inlineTimerText,
+                isServingOvertime && { color: colors.error },
+              ]}>
+                {formatElapsed(activeTicket.serving_started_at)}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -822,7 +875,10 @@ export default function DeskScreen() {
         {(() => {
           const hasName = !!activeTicket.customer_data?.name;
           const hasPhone = !!activeTicket.customer_data?.phone;
-          const src = activeTicket.source;
+          // Prefer top-level source column, fall back to customer_data.source
+          // (messaging-commands mirrors the channel into customer_data for
+          // WhatsApp/Messenger; this keeps display correct if either is set).
+          const src = activeTicket.source || (activeTicket.customer_data as any)?.source || null;
           const iconMap: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string; labelKey: string }> = {
             whatsapp: { name: 'logo-whatsapp', color: '#25D366', labelKey: 'source.whatsapp' },
             messenger: { name: 'chatbubble-ellipses', color: '#0084FF', labelKey: 'source.messenger' },
@@ -840,35 +896,32 @@ export default function DeskScreen() {
             </View>
           );
 
+          // Single flat row: name · phone · source
           return (
-            <>
-              {/* Name row — or source badge if no name & no phone */}
-              {(!hasName && !hasPhone) ? (
-                <View style={styles.sourceBadgeRow}>{sourceBadgeEl}</View>
-              ) : (
-                <Text style={styles.metaName}>
-                  {activeTicket.customer_data?.name || t('booking.walkIn')}
+            <View style={styles.sourceBadgeRow}>
+              {hasName ? (
+                <Text style={styles.metaName} numberOfLines={1}>
+                  {activeTicket.customer_data?.name}
                 </Text>
+              ) : !hasPhone ? (
+                <Text style={styles.metaName} numberOfLines={1}>
+                  {t('booking.walkIn')}
+                </Text>
+              ) : null}
+              {hasPhone && (
+                <TouchableOpacity
+                  style={styles.phoneBadge}
+                  onPress={() => dialPhone(activeTicket.customer_data!.phone)}
+                  activeOpacity={0.6}
+                >
+                  <Ionicons name="call" size={12} color={colors.primary} />
+                  <Text style={{ fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' }}>
+                    {activeTicket.customer_data!.phone}
+                  </Text>
+                </TouchableOpacity>
               )}
-              {/* Phone + source row (only when source NOT in name slot) */}
-              {(hasName || hasPhone) && (
-                <View style={styles.sourceBadgeRow}>
-                  {hasPhone && (
-                    <TouchableOpacity
-                      style={styles.phoneBadge}
-                      onPress={() => dialPhone(activeTicket.customer_data!.phone)}
-                      activeOpacity={0.6}
-                    >
-                      <Ionicons name="call" size={12} color={colors.primary} />
-                      <Text style={{ fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' }}>
-                        {activeTicket.customer_data!.phone}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {sourceBadgeEl}
-                </View>
-              )}
-            </>
+              {sourceBadgeEl}
+            </View>
           );
         })()}
         {priorityInfo ? (
@@ -950,26 +1003,9 @@ export default function DeskScreen() {
         </>
       ) : (
         <>
-          {/* Serving state: service timer */}
-          {activeTicket.serving_started_at ? (
-            <View style={styles.timerRow}>
-              <View style={styles.timerBlock}>
-                <Text style={styles.timerLabel}>{t('desk.serviceTime')}</Text>
-                <Text
-                  style={[
-                    styles.timerValue,
-                    isServingOvertime && { color: colors.error },
-                  ]}
-                >
-                  {formatElapsed(activeTicket.serving_started_at)}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
           {/* Primary: Mark Served */}
           <TouchableOpacity
-            style={[styles.primaryActionBtn, { backgroundColor: colors.success }]}
+            style={[styles.primaryActionBtn, { backgroundColor: '#27ae60' }]}
             onPress={handleMarkServed}
             disabled={actionLoading}
             activeOpacity={0.8}
@@ -1214,9 +1250,9 @@ export default function DeskScreen() {
   // ── Layout ───────────────────────────────────────────────────────
   const leftColumn = (
     <View style={isWide ? styles.leftColumn : undefined}>
-      {StationHeader}
+      {TakeBreakChip}
       {OnBreakBanner}
-      {WaitingCountCard}
+      {UpcomingAppointmentsCard}
       {CurrentTicketCard}
       {CallNextButton}
       {ParkedSection}
@@ -1240,7 +1276,6 @@ export default function DeskScreen() {
 
   return (
     <>
-      <ConnectionBanner />
       {OfflineBanner}
       <ScrollView
         style={styles.container}
@@ -1267,9 +1302,9 @@ export default function DeskScreen() {
           </>
         ) : (
           <>
-            {StationHeader}
+            {TakeBreakChip}
             {OnBreakBanner}
-            {WaitingCountCard}
+            {UpcomingAppointmentsCard}
             {CurrentTicketCard}
             {CallNextButton}
             {ParkedSection}
@@ -1501,7 +1536,26 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
     gap: spacing.md,
-    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  inlineTimerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  inlineTimerText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    fontVariant: ['tabular-nums'] as any,
   },
   ticketHeader: {
     flexDirection: 'row',
@@ -1879,6 +1933,102 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   deskControlText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+
+  // Header Switch Desk button (sits on the nav bar, left of title)
+  headerSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 32,
+    marginLeft: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  headerSwitchText: {
+    color: '#fff',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+  },
+
+  // Upcoming Appointments card
+  upcomingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    gap: 4,
+  },
+  upcomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  upcomingTitle: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  upcomingCount: {
+    backgroundColor: colors.primary + '18',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: borderRadius.full,
+  },
+  upcomingCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  upcomingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 3,
+  },
+  upcomingTime: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.text,
+    fontVariant: ['tabular-nums'] as any,
+    minWidth: 48,
+  },
+  upcomingName: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.text,
+    flex: 1,
+  },
+  upcomingSvc: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    maxWidth: 120,
+  },
+
+  // Inline chip row (e.g., Take Break)
+  inlineChipRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  inlineChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  inlineChipText: {
     fontSize: fontSize.xs,
     fontWeight: '700',
   },

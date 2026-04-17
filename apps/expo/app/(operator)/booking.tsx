@@ -31,9 +31,11 @@ import Animated, {
 import { useTranslation } from 'react-i18next';
 
 import { useOperatorStore } from '@/lib/operator-store';
+import { useOrg } from '@/lib/use-org';
 import * as Actions from '@/lib/data-adapter';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { API_BASE_URL } from '@/lib/config';
+import { supabase } from '@/lib/supabase';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +52,14 @@ interface Service {
   name: string;
   code: string | null;
   department_id: string;
+}
+
+interface PriorityCategory {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: string | null;
+  weight: number | null;
 }
 
 interface CreatedTicket {
@@ -255,12 +265,14 @@ function SuccessView({
 export default function InHouseBookingScreen() {
   const { t } = useTranslation();
   const { session } = useOperatorStore();
+  const { orgId } = useOrg();
   const router = useRouter();
   const officeId = session?.officeId ?? null;
 
   // Data
   const [departments, setDepartments] = useState<Department[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [priorities, setPriorities] = useState<PriorityCategory[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   // Form
@@ -269,23 +281,43 @@ export default function InHouseBookingScreen() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [visitReason, setVisitReason] = useState('');
-  const [isPriority, setIsPriority] = useState(false);
+  const [selectedPriorityId, setSelectedPriorityId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Result
   const [createdTicket, setCreatedTicket] = useState<CreatedTicket | null>(null);
 
-  // Load departments + services
+  // Load departments + services + priority categories
   useEffect(() => {
     if (!officeId) return;
     setLoadingData(true);
+    // Fetch priority categories from Supabase (works in cloud AND local mode
+    // as long as the phone has internet — matches how name-lookup does it).
+    const prioritiesPromise: Promise<PriorityCategory[]> = orgId
+      ? (async () => {
+          try {
+            const { data } = await supabase
+              .from('priority_categories')
+              .select('id, name, icon, color, weight')
+              .eq('organization_id', orgId)
+              .eq('is_active', true)
+              .order('weight', { ascending: false });
+            return (data as PriorityCategory[]) ?? [];
+          } catch {
+            return [];
+          }
+        })()
+      : Promise.resolve([]);
+
     Promise.all([
       Actions.fetchOfficeDepartments(officeId),
       Actions.fetchDepartmentServices(officeId),
+      prioritiesPromise,
     ])
-      .then(([depts, svcs]) => {
+      .then(([depts, svcs, prios]) => {
         setDepartments(depts);
         setServices(svcs);
+        setPriorities(prios);
         // Auto-select: if only 1, pick it; if operator's dept exists, pick that
         if (depts.length === 1) {
           setSelectedDeptId(depts[0].id);
@@ -336,7 +368,10 @@ export default function InHouseBookingScreen() {
         customerName: customerName.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
         visitReason: visitReason.trim() || undefined,
-        priority: isPriority ? 2 : 0,
+        priority: selectedPriorityId
+          ? priorities.find((p) => p.id === selectedPriorityId)?.weight ?? 2
+          : 0,
+        priorityCategoryId: selectedPriorityId,
       });
       setCreatedTicket(result);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -353,7 +388,7 @@ export default function InHouseBookingScreen() {
     setCustomerName('');
     setCustomerPhone('');
     setVisitReason('');
-    setIsPriority(false);
+    setSelectedPriorityId(null);
     // Keep dept/service selection for quick successive bookings
   };
 
@@ -521,39 +556,55 @@ export default function InHouseBookingScreen() {
           </View>
         </View>
 
-        {/* Priority toggle */}
-        <TouchableOpacity
-          style={[styles.priorityToggle, isPriority && styles.priorityToggleActive]}
-          onPress={() => setIsPriority(!isPriority)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={isPriority ? 'flag' : 'flag-outline'}
-            size={18}
-            color={isPriority ? colors.warning : colors.textMuted}
-          />
-          <Text
-            style={[
-              styles.priorityToggleText,
-              isPriority && { color: colors.warning },
-            ]}
-          >
-            {t('booking.priorityCustomer')}
-          </Text>
-          <View
-            style={[
-              styles.toggleSwitch,
-              isPriority && styles.toggleSwitchActive,
-            ]}
-          >
-            <View
-              style={[
-                styles.toggleKnob,
-                isPriority && styles.toggleKnobActive,
-              ]}
-            />
+        {/* Priority category picker */}
+        {priorities.length > 0 && (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>{t('booking.priorityCustomer')}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.pillRow}>
+                {/* None option */}
+                <TouchableOpacity
+                  style={[styles.pill, !selectedPriorityId && styles.pillActive]}
+                  onPress={() => setSelectedPriorityId(null)}
+                  activeOpacity={0.7}
+                >
+                  {!selectedPriorityId && <Ionicons name="checkmark-circle" size={15} color="#fff" />}
+                  <Text style={[styles.pillText, !selectedPriorityId && styles.pillTextActive]}>
+                    {t('common.none', { defaultValue: 'None' })}
+                  </Text>
+                </TouchableOpacity>
+                {priorities.map((p) => {
+                  const active = selectedPriorityId === p.id;
+                  const color = p.color ?? colors.warning;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[
+                        styles.pill,
+                        active && { backgroundColor: color, borderColor: color },
+                      ]}
+                      onPress={() => setSelectedPriorityId(p.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name="flag"
+                        size={14}
+                        color={active ? '#fff' : color}
+                      />
+                      <Text style={[
+                        styles.pillText,
+                        active && styles.pillTextActive,
+                        !active && { color },
+                      ]}>
+                        {p.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
           </View>
-        </TouchableOpacity>
+        )}
 
         {/* Submit */}
         <TouchableOpacity

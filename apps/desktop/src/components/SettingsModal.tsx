@@ -4,6 +4,77 @@ import { t as translate, type DesktopLocale } from '../lib/i18n';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
 
+// ── Intake Fields types (inlined from @qflo/shared) ─────────────
+type IntakeFieldType = 'preset' | 'custom';
+type IntakeFieldScope = 'both' | 'sameday' | 'booking';
+interface IntakeField {
+  key: string;
+  type: IntakeFieldType;
+  enabled: boolean;
+  required: boolean;
+  scope?: IntakeFieldScope;
+  label?: string;
+  label_fr?: string;
+  label_ar?: string;
+}
+type PresetKey = 'name' | 'phone' | 'age' | 'wilaya' | 'reason';
+const INTAKE_PRESETS: Record<PresetKey, { label: string; label_fr: string; label_ar: string }> = {
+  name:   { label: 'Full name',        label_fr: 'Nom complet',         label_ar: '\u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644' },
+  phone:  { label: 'Phone number',     label_fr: 'Num\u00e9ro de t\u00e9l\u00e9phone', label_ar: '\u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062a\u0641' },
+  age:    { label: 'Age',              label_fr: '\u00c2ge',             label_ar: '\u0627\u0644\u0639\u0645\u0631' },
+  wilaya: { label: 'Wilaya',           label_fr: 'Wilaya',             label_ar: '\u0627\u0644\u0648\u0644\u0627\u064a\u0629' },
+  reason: { label: 'Reason of visit',  label_fr: 'Motif de visite',    label_ar: '\u0633\u0628\u0628 \u0627\u0644\u0632\u064a\u0627\u0631\u0629' },
+};
+const PRESET_KEYS: PresetKey[] = ['name', 'phone', 'age', 'wilaya', 'reason'];
+
+function getFieldLabel(field: IntakeField, locale: 'en' | 'fr' | 'ar'): string {
+  if (field.type === 'preset') {
+    const preset = INTAKE_PRESETS[field.key as PresetKey];
+    if (preset) {
+      if (locale === 'ar') return preset.label_ar;
+      if (locale === 'fr') return preset.label_fr;
+      return preset.label;
+    }
+  }
+  if (locale === 'ar' && field.label_ar) return field.label_ar;
+  if (locale === 'fr' && field.label_fr) return field.label_fr;
+  return field.label || field.key;
+}
+
+function migrateToIntakeFields(settings: Record<string, any>): IntakeField[] {
+  if (Array.isArray(settings.intake_fields) && settings.intake_fields.length > 0) {
+    return settings.intake_fields;
+  }
+  const requireName = settings.require_name_sameday ?? false;
+  const customFields: { label: string; label_fr?: string; label_ar?: string }[] =
+    Array.isArray(settings.custom_intake_fields) ? settings.custom_intake_fields : [];
+  const fields: IntakeField[] = [
+    { key: 'name', type: 'preset', enabled: !!requireName, required: false },
+    { key: 'phone', type: 'preset', enabled: false, required: false },
+    { key: 'age', type: 'preset', enabled: false, required: false },
+    { key: 'wilaya', type: 'preset', enabled: true, required: false },
+    { key: 'reason', type: 'preset', enabled: true, required: false },
+  ];
+  for (const cf of customFields) {
+    if (!cf.label?.trim()) continue;
+    fields.push({
+      key: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'custom',
+      enabled: true,
+      required: false,
+      label: cf.label,
+      label_fr: cf.label_fr || '',
+      label_ar: cf.label_ar || '',
+    });
+  }
+  return fields;
+}
+
+function generateCustomFieldKey(): string {
+  return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
+// ── End Intake Fields types ─────────────────────────────────────
+
 interface Props {
   organizationId: string;
   officeId?: string;
@@ -70,6 +141,8 @@ interface SectionDef {
   icon: string;
   title: string;
   fields: FieldDef[];
+  /** Extra fields not in `fields` but still need init/save (for merged sections with sub-tabs) */
+  _allFields?: FieldDef[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
@@ -103,7 +176,9 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
-  const [activeSection, setActiveSection] = useState('ticketing');
+  const [activeSection, setActiveSection] = useState('booking');
+  const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments'>('intake');
+  const [expandedIntakeField, setExpandedIntakeField] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
   const originalRef = useRef<SettingsShape>({});
 
@@ -167,8 +242,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     {
       id: 'booking',
       icon: '📅',
-      title: t('sm.section.booking'),
-      fields: [
+      title: t('Booking & Queue'),
+      fields: [], // Custom-rendered with sub-tabs
+      // All booking + ticketing fields defined here for settings key extraction
+      _allFields: [
+        // Appointments sub-tab
         { key: 'booking_mode', label: t('sm.field.booking_enabled'), type: 'bool', default: false },
         { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'stepper', default: 30, min: 5, max: 120, step: 5 },
         { key: 'slots_per_interval', label: t('sm.field.slots_per_interval'), type: 'num', default: 1, min: 1 },
@@ -177,13 +255,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         { key: 'min_booking_lead_hours', label: t('sm.field.lead_hours'), type: 'num', default: 1, min: 0 },
         { key: 'allow_cancellation', label: t('sm.field.allow_cancel'), type: 'bool', default: true },
         { key: 'require_appointment_approval', label: t('sm.field.require_appointment_approval'), type: 'bool', default: true, help: t('sm.help.require_appointment_approval') },
-      ],
-    },
-    {
-      id: 'ticketing',
-      icon: '🎫',
-      title: t('sm.section.ticketing'),
-      fields: [
+        // Queue sub-tab
         { key: 'ticket_number_prefix', label: t('sm.field.ticket_prefix'), type: 'text', default: '', placeholder: 'TK-', help: t('sm.help.ticket_prefix') },
         { key: 'ticket_number_format', label: t('sm.field.ticket_format'), type: 'enum', default: 'dept_numeric', options: [
           { value: 'dept_numeric', label: t('sm.fmt.dept_numeric') },
@@ -196,7 +268,6 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         ], help: t('sm.help.check_in_mode') },
         { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 1, min: 0, help: t('sm.help.auto_no_show') },
         { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
-        { key: 'require_name_sameday', label: t('sm.field.require_name_sameday'), type: 'bool', default: false, help: t('sm.help.require_name_sameday') },
       ],
     },
     {
@@ -328,11 +399,14 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const CUSTOM_KEYS = ['whatsapp_enabled','whatsapp_code','arabic_code',
     'messenger_enabled','messenger_code','messenger_page_id',
     'web_enabled','kiosk_enabled','qr_code_enabled','virtual_queue_enabled',
-    'visit_intake_override_mode','custom_intake_fields'];
+    'visit_intake_override_mode','intake_fields'];
 
   const allFieldKeys = useMemo(() => {
     const keys: string[] = [];
-    sections.forEach(s => s.fields.forEach(f => keys.push(f.key)));
+    sections.forEach(s => {
+      s.fields.forEach(f => keys.push(f.key));
+      s._allFields?.forEach(f => keys.push(f.key));
+    });
     // Channel keys are custom-rendered (not in fields array) but must be tracked
     keys.push(...CUSTOM_KEYS);
     return keys;
@@ -426,7 +500,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Initialize values per field
       const init: Record<string, any> = {};
       sections.forEach(sec => {
-        sec.fields.forEach(f => {
+        const allFields = [...sec.fields, ...(sec._allFields ?? [])];
+        allFields.forEach(f => {
           if (f.key === 'booking_mode') {
             init[f.key] = (s.booking_mode ?? 'disabled') !== 'disabled';
             return;
@@ -446,6 +521,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Custom-rendered fields (not in fields arrays)
       const channelKeys = CUSTOM_KEYS;
       for (const ck of channelKeys) {
+        if (ck === 'intake_fields') continue; // handled below via migrateToIntakeFields
         if (ck.endsWith('_enabled')) {
           init[ck] = coerceBool(s[ck], ck === 'web_enabled' ? true : false);
         } else if (ck === 'visit_intake_override_mode') {
@@ -455,8 +531,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         }
       }
 
-      // Custom intake fields (array stored in settings)
-      init.custom_intake_fields = Array.isArray(s.custom_intake_fields) ? s.custom_intake_fields : [];
+      // Unified intake fields (migrates from legacy require_name_sameday + custom_intake_fields)
+      init.intake_fields = migrateToIntakeFields(s);
 
       setValues(init);
     } catch (e: any) {
@@ -545,19 +621,25 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (readErr) throw readErr;
       const current: SettingsShape = (((cur as any)?.settings ?? {}) as SettingsShape);
       const partial: SettingsShape = {};
-      sections.forEach(sec => sec.fields.forEach(f => {
-        const v = values[f.key];
-        if (f.key === 'booking_mode') {
-          partial.booking_mode = v ? 'simple' : 'disabled';
-          return;
-        }
-        partial[f.key] = v;
-      }));
+      sections.forEach(sec => {
+        const allFields = [...sec.fields, ...(sec._allFields ?? [])];
+        allFields.forEach(f => {
+          const v = values[f.key];
+          if (f.key === 'booking_mode') {
+            partial.booking_mode = v ? 'simple' : 'disabled';
+            return;
+          }
+          partial[f.key] = v;
+        });
+      });
       // Channel keys (custom-rendered, not in fields array)
       const channelKeys = CUSTOM_KEYS;
       for (const ck of channelKeys) { partial[ck] = values[ck]; }
-      // Custom intake fields
-      partial.custom_intake_fields = (values.custom_intake_fields ?? []).filter((f: any) => f?.label?.trim());
+      // Unified intake fields
+      partial.intake_fields = values.intake_fields;
+      // Remove legacy keys
+      partial.require_name_sameday = undefined;
+      partial.custom_intake_fields = undefined;
       // Messenger code always mirrors WhatsApp code
       partial.messenger_code = partial.whatsapp_code || '';
       const merged = { ...current, ...partial };
@@ -916,8 +998,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     return sections.map(sec => {
       const titleHit = sec.title.toLowerCase().includes(q);
       const fields = sec.fields.filter(f => titleHit || f.label.toLowerCase().includes(q));
-      return { ...sec, fields };
-    }).filter(sec => sec.fields.length > 0);
+      const allFieldsMatch = (sec._allFields ?? []).some(f => f.label.toLowerCase().includes(q));
+      // Keep section if any field matches (in fields or _allFields)
+      return { ...sec, fields, _hasMatch: fields.length > 0 || allFieldsMatch || titleHit };
+    }).filter(sec => (sec as any)._hasMatch);
   }, [sections, q]);
 
   // Whether schedule section matches search
@@ -1360,198 +1444,285 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       );
     }
 
-    if (sec.id === 'ticketing') {
-      // Render normal fields + custom intake fields editor
-      const customFields: { label: string; label_fr: string; label_ar: string }[] = values.custom_intake_fields ?? [];
-      return (
-        <div>
-          {/* Normal auto-rendered fields */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-            columnGap: 20,
-            rowGap: 0,
-          }}>
-            {sec.fields.map(renderField)}
-          </div>
-
-          {/* Custom intake fields editor */}
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border, #475569)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>{t('sm.field.custom_intake_fields')}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 2 }}>{t('sm.help.custom_intake_fields')}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setValues(prev => ({ ...prev, custom_intake_fields: [...customFields, { label: '', label_fr: '', label_ar: '' }] }))}
-                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'transparent', color: 'var(--text, #f1f5f9)', cursor: 'pointer' }}
-              >
-                + {t('sm.custom_intake.add')}
-              </button>
-            </div>
-
-            {customFields.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', fontStyle: 'italic', padding: '8px 0' }}>{t('sm.custom_intake.empty')}</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {customFields.map((field, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border, #475569)', background: 'rgba(255,255,255,0.02)' }}>
-                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_en')}</div>
-                        <input
-                          value={field.label ?? ''}
-                          onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
-                          }}
-                          placeholder="e.g. Color"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_fr')}</div>
-                        <input
-                          value={field.label_fr ?? ''}
-                          onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label_fr: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
-                          }}
-                          placeholder="ex. Couleur"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_ar')}</div>
-                        <input
-                          value={field.label_ar ?? ''}
-                          onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label_ar: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
-                          }}
-                          placeholder="مثال: اللون"
-                          dir="rtl"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = customFields.filter((_, i) => i !== idx);
-                        setValues(prev => ({ ...prev, custom_intake_fields: updated }));
-                      }}
-                      style={{ marginTop: 16, fontSize: 12, color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                      title={t('sm.custom_intake.remove')}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
     if (sec.id === 'booking') {
-      const customFields: { label: string; label_fr: string; label_ar: string }[] = values.custom_intake_fields ?? [];
+      const intakeFields: IntakeField[] = values.intake_fields ?? [];
+      const intakeLocale: 'en' | 'fr' | 'ar' = (locale === 'ar' ? 'ar' : locale === 'fr' ? 'fr' : 'en');
+      const allFields = sec._allFields ?? [];
+      // Split _allFields into queue fields and appointment fields by key
+      const appointmentKeys = new Set(['booking_mode','slot_duration_minutes','slots_per_interval','daily_ticket_limit','booking_horizon_days','min_booking_lead_hours','allow_cancellation','require_appointment_approval']);
+      const queueFields = allFields.filter(f => !appointmentKeys.has(f.key));
+      const appointmentFields = allFields.filter(f => appointmentKeys.has(f.key));
+
+      const subTabs: { id: 'intake' | 'queue' | 'appointments'; label: string }[] = [
+        { id: 'intake', label: t('Intake Fields') },
+        { id: 'queue', label: t('Queue') },
+        { id: 'appointments', label: t('Appointments') },
+      ];
+
       return (
         <div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-            columnGap: 20,
-            rowGap: 0,
-          }}>
-            {sec.fields.map(renderField)}
+          {/* Sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--border, #475569)', marginBottom: 16 }}>
+            {subTabs.map(tab => {
+              const active = bookingSubTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setBookingSubTab(tab.id)}
+                  style={{
+                    padding: '8px 16px', fontSize: 13, fontWeight: active ? 700 : 500,
+                    color: active ? 'var(--primary, #3b82f6)' : 'var(--text2, #94a3b8)',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    borderBottom: active ? '2px solid var(--primary, #3b82f6)' : '2px solid transparent',
+                    marginBottom: -2,
+                  }}
+                >{tab.label}</button>
+              );
+            })}
           </div>
 
-          {/* Custom intake fields editor (shared with ticketing — same setting) */}
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border, #475569)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>{t('sm.field.custom_intake_fields')}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 2 }}>{t('sm.help.custom_intake_fields')}</div>
+          {/* Intake sub-tab */}
+          {bookingSubTab === 'intake' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>{t('sm.field.custom_intake_fields')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 2 }}>{t('sm.help.custom_intake_fields')}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newField: IntakeField = {
+                      key: generateCustomFieldKey(),
+                      type: 'custom',
+                      enabled: true,
+                      required: false,
+                      label: '',
+                      label_fr: '',
+                      label_ar: '',
+                    };
+                    setValues(prev => ({ ...prev, intake_fields: [...intakeFields, newField] }));
+                  }}
+                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'transparent', color: 'var(--text, #f1f5f9)', cursor: 'pointer' }}
+                >
+                  + {t('sm.custom_intake.add')}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setValues(prev => ({ ...prev, custom_intake_fields: [...customFields, { label: '', label_fr: '', label_ar: '' }] }))}
-                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'transparent', color: 'var(--text, #f1f5f9)', cursor: 'pointer' }}
-              >
-                + {t('sm.custom_intake.add')}
-              </button>
-            </div>
 
-            {customFields.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', fontStyle: 'italic', padding: '8px 0' }}>{t('sm.custom_intake.empty')}</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {customFields.map((field, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border, #475569)', background: 'rgba(255,255,255,0.02)' }}>
-                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_en')}</div>
-                        <input
-                          value={field.label ?? ''}
-                          onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {intakeFields.map((field, idx) => {
+                  const isPreset = field.type === 'preset';
+                  const displayLabel = isPreset
+                    ? getFieldLabel(field, intakeLocale)
+                    : (getFieldLabel(field, intakeLocale) || field.key);
+                  const isFirst = idx === 0;
+                  const isLast = idx === intakeFields.length - 1;
+                  const isExpanded = !isPreset && (expandedIntakeField === field.key);
+                  return (
+                    <div key={field.key} style={{ borderRadius: 8, border: '1px solid var(--border, #475569)', background: 'rgba(255,255,255,0.02)', overflow: 'hidden' }}>
+                      {/* Main row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px' }}>
+                        {/* Reorder buttons */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                          <button
+                            type="button"
+                            disabled={isFirst}
+                            onClick={() => {
+                              const updated = [...intakeFields];
+                              [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
+                              setValues(prev => ({ ...prev, intake_fields: updated }));
+                            }}
+                            style={{ fontSize: 10, lineHeight: 1, padding: '1px 4px', background: 'transparent', border: 'none', color: isFirst ? 'var(--text3, #64748b)' : 'var(--text2, #94a3b8)', cursor: isFirst ? 'default' : 'pointer', opacity: isFirst ? 0.4 : 1 }}
+                            title="Move up"
+                          >&#9650;</button>
+                          <button
+                            type="button"
+                            disabled={isLast}
+                            onClick={() => {
+                              const updated = [...intakeFields];
+                              [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+                              setValues(prev => ({ ...prev, intake_fields: updated }));
+                            }}
+                            style={{ fontSize: 10, lineHeight: 1, padding: '1px 4px', background: 'transparent', border: 'none', color: isLast ? 'var(--text3, #64748b)' : 'var(--text2, #94a3b8)', cursor: isLast ? 'default' : 'pointer', opacity: isLast ? 0.4 : 1 }}
+                            title="Move down"
+                          >&#9660;</button>
+                        </div>
+
+                        {/* Toggle switch */}
+                        <label style={{ position: 'relative', display: 'inline-block', width: 32, height: 18, flexShrink: 0 }}>
+                          <input
+                            type="checkbox"
+                            checked={!!field.enabled}
+                            onChange={() => {
+                              const updated = [...intakeFields];
+                              updated[idx] = { ...updated[idx], enabled: !updated[idx].enabled };
+                              setValues(prev => ({ ...prev, intake_fields: updated }));
+                            }}
+                            style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                          />
+                          <span style={{
+                            position: 'absolute', cursor: 'pointer', inset: 0, borderRadius: 9,
+                            background: field.enabled ? '#3b82f6' : 'var(--bg3, #334155)',
+                            transition: 'background 0.2s',
+                          }}>
+                            <span style={{
+                              position: 'absolute', left: field.enabled ? 16 : 2, top: 2,
+                              width: 14, height: 14, borderRadius: '50%',
+                              background: '#fff', transition: 'left 0.2s',
+                            }} />
+                          </span>
+                        </label>
+
+                        {/* Label */}
+                        <span
+                          style={{ flex: 1, fontSize: 13, fontWeight: 500, color: field.enabled ? 'var(--text, #f1f5f9)' : 'var(--text3, #64748b)', cursor: !isPreset ? 'pointer' : 'default' }}
+                          onClick={() => { if (!isPreset) setExpandedIntakeField(isExpanded ? null : field.key); }}
+                        >
+                          {displayLabel}
+                        </span>
+
+                        {/* Badge */}
+                        {isPreset && (
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600 }}>preset</span>
+                        )}
+
+                        {/* Required toggle */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = [...intakeFields];
+                            updated[idx] = { ...updated[idx], required: !updated[idx].required };
+                            setValues(prev => ({ ...prev, intake_fields: updated }));
                           }}
-                          placeholder="e.g. Color"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_fr')}</div>
-                        <input
-                          value={field.label_fr ?? ''}
-                          onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label_fr: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
+                          style={{
+                            fontSize: 10, padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border, #475569)',
+                            background: field.required ? 'rgba(245,158,11,0.15)' : 'transparent',
+                            color: field.required ? '#fbbf24' : 'var(--text3, #64748b)',
+                            cursor: 'pointer', fontWeight: 500,
                           }}
-                          placeholder="ex. Couleur"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_ar')}</div>
-                        <input
-                          value={field.label_ar ?? ''}
+                        >
+                          {field.required ? 'Required' : 'Optional'}
+                        </button>
+
+                        {/* Scope selector */}
+                        <select
+                          value={field.scope || 'both'}
                           onChange={(e) => {
-                            const updated = [...customFields];
-                            updated[idx] = { ...updated[idx], label_ar: e.target.value };
-                            setValues(prev => ({ ...prev, custom_intake_fields: updated }));
+                            const updated = [...intakeFields];
+                            updated[idx] = { ...updated[idx], scope: e.target.value as IntakeFieldScope };
+                            setValues(prev => ({ ...prev, intake_fields: updated }));
                           }}
-                          placeholder="مثال: اللون"
-                          dir="rtl"
-                          style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
-                        />
+                          style={{
+                            fontSize: 10, padding: '1px 4px', borderRadius: 4,
+                            border: '1px solid var(--border, #475569)',
+                            background: 'var(--surface, #1e293b)',
+                            color: (field.scope || 'both') === 'both' ? 'var(--text2, #94a3b8)' : '#60a5fa',
+                            cursor: 'pointer', fontWeight: 500,
+                          }}
+                        >
+                          <option value="both">{t('Both')}</option>
+                          <option value="sameday">{t('Same-day')}</option>
+                          <option value="booking">{t('Booking')}</option>
+                        </select>
+
+                        {/* Expand / Delete for custom fields */}
+                        {!isPreset && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedIntakeField(isExpanded ? null : field.key)}
+                              style={{ fontSize: 11, background: 'transparent', border: 'none', color: 'var(--text2, #94a3b8)', cursor: 'pointer', padding: '2px 4px' }}
+                              title="Edit labels"
+                            >{isExpanded ? '\u25B2' : '\u25BC'}</button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = intakeFields.filter((_, i) => i !== idx);
+                                setValues(prev => ({ ...prev, intake_fields: updated }));
+                              }}
+                              style={{ fontSize: 12, color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '2px 4px' }}
+                              title={t('sm.custom_intake.remove')}
+                            >\u2715</button>
+                          </>
+                        )}
                       </div>
+
+                      {/* Expandable label editor for custom fields */}
+                      {isExpanded && !isPreset && (
+                        <div style={{ padding: '6px 10px 10px 42px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, borderTop: '1px solid var(--border, #475569)', background: 'rgba(0,0,0,0.1)' }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_en')}</div>
+                            <input
+                              value={field.label ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label: e.target.value };
+                                setValues(prev => ({ ...prev, intake_fields: updated }));
+                              }}
+                              placeholder="e.g. Color"
+                              style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_fr')}</div>
+                            <input
+                              value={field.label_fr ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label_fr: e.target.value };
+                                setValues(prev => ({ ...prev, intake_fields: updated }));
+                              }}
+                              placeholder="ex. Couleur"
+                              style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text2, #94a3b8)', marginBottom: 2 }}>{t('sm.custom_intake.label_ar')}</div>
+                            <input
+                              value={field.label_ar ?? ''}
+                              onChange={(e) => {
+                                const updated = [...intakeFields];
+                                updated[idx] = { ...updated[idx], label_ar: e.target.value };
+                                setValues(prev => ({ ...prev, intake_fields: updated }));
+                              }}
+                              placeholder="\u0645\u062b\u0627\u0644: \u0627\u0644\u0644\u0648\u0646"
+                              dir="rtl"
+                              style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = customFields.filter((_, i) => i !== idx);
-                        setValues(prev => ({ ...prev, custom_intake_fields: updated }));
-                      }}
-                      style={{ marginTop: 16, fontSize: 12, color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                      title={t('sm.custom_intake.remove')}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Queue sub-tab */}
+          {bookingSubTab === 'queue' && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              columnGap: 20,
+              rowGap: 0,
+            }}>
+              {queueFields.map(renderField)}
+            </div>
+          )}
+
+          {/* Appointments sub-tab */}
+          {bookingSubTab === 'appointments' && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              columnGap: 20,
+              rowGap: 0,
+            }}>
+              {appointmentFields.map(renderField)}
+            </div>
+          )}
         </div>
       );
     }

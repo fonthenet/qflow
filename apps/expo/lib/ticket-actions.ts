@@ -146,6 +146,7 @@ export async function createInHouseTicket(params: {
   customerPhone?: string;
   visitReason?: string;
   priority?: number;
+  priorityCategoryId?: string | null;
 }) {
   // 1) Generate ticket number via the DB RPC (atomic, handles daily reset)
   const { data: seqResult, error: seqError } = await supabase.rpc(
@@ -181,6 +182,7 @@ export async function createInHouseTicket(params: {
       service_id: params.serviceId || null,
       status: 'waiting',
       priority: params.priority ?? 0,
+      priority_category_id: params.priorityCategoryId ?? null,
       customer_data: customerData,
       source: 'in_house',
       created_at: new Date().toISOString(),
@@ -817,6 +819,96 @@ export async function cancelAppointment(appointmentId: string) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Cancel failed (HTTP ${res.status})`);
+  }
+}
+
+// ── Approve Appointment (pending → confirmed) ───────────────────
+export async function approveAppointment(appointmentId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'approve' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Approve failed (HTTP ${res.status})`);
+  }
+}
+
+// ── Decline Appointment (pending → cancelled) ───────────────────
+export async function declineAppointment(appointmentId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'decline' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Decline failed (HTTP ${res.status})`);
+  }
+}
+
+// ── No-Show Appointment ─────────────────────────────────────────
+export async function noShowAppointment(appointmentId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'no_show' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `No-show failed (HTTP ${res.status})`);
+  }
+}
+
+// ── Complete Appointment (checked_in → completed) ───────────────
+export async function completeAppointment(appointmentId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'complete' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Complete failed (HTTP ${res.status})`);
+  }
+}
+
+// ── Delete Appointment (permanent removal) ──────────────────────
+export async function deleteAppointment(appointmentId: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${API_BASE_URL}/api/moderate-appointment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ appointmentId, action: 'delete' }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Delete failed (HTTP ${res.status})`);
   }
 }
 

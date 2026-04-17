@@ -1,7 +1,30 @@
 /**
  * Station HTTP Client — talks directly to the Station's local server.
  * Every function takes a baseUrl (e.g., "http://192.168.1.50:3847").
+ *
+ * ───────────────────────────────────────────────────────────────────────
+ *  INVARIANT — DO NOT BREAK
+ * ───────────────────────────────────────────────────────────────────────
+ *  All `/api/station/*` endpoints require an `X-Station-Token` header.
+ *  This file is the ONLY place in the Expo app that is allowed to talk to
+ *  `/api/station/*` with raw `fetch`. Everywhere else MUST import the
+ *  relevant function from here — those go through `authedFetch`, which
+ *  fetches/caches the token from the unauthenticated `/api/station/token`
+ *  endpoint and retries once on 401/403.
+ *
+ *  A static guard test (`station-auth-guard.test.ts`) fails CI if any other
+ *  file calls `/api/station/*` directly. If you need a new Station endpoint,
+ *  add a function here that uses `authedFetch` and consume it from screens.
+ * ───────────────────────────────────────────────────────────────────────
  */
+
+/** Thrown when the Station is reachable but has no logged-in operator. */
+export class StationNotLoggedInError extends Error {
+  constructor() {
+    super('Station is running but no operator is signed in. Log in on the Station desktop app first.');
+    this.name = 'StationNotLoggedInError';
+  }
+}
 
 const TIMEOUT = 8000;
 
@@ -9,6 +32,79 @@ function abortSignal(ms = TIMEOUT): AbortSignal {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), ms);
   return controller.signal;
+}
+
+// ── Station token cache ──────────────────────────────────────────
+// Station's /api/station/token is unauthenticated and returns the
+// current station_token stored in SQLite. Anyone on the local network
+// can read it (by design — same model as the web station UI).
+
+const tokenCache = new Map<string, string>();
+
+async function fetchStationToken(baseUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${baseUrl}/api/station/token`, {
+      signal: abortSignal(),
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null) as { token?: string | null } | null;
+    return body?.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getStationToken(baseUrl: string, force = false): Promise<string | null> {
+  if (!force) {
+    const cached = tokenCache.get(baseUrl);
+    if (cached) return cached;
+  }
+  const token = await fetchStationToken(baseUrl);
+  if (token) tokenCache.set(baseUrl, token);
+  else tokenCache.delete(baseUrl);
+  return token;
+}
+
+export function clearStationToken(baseUrl: string) {
+  tokenCache.delete(baseUrl);
+}
+
+export function getCachedStationToken(baseUrl: string): string | null {
+  return tokenCache.get(baseUrl) ?? null;
+}
+
+/** Fetch wrapper that injects X-Station-Token and auto-retries on 401/403. */
+async function authedFetch(baseUrl: string, path: string, init: RequestInit = {}): Promise<Response> {
+  let token = await getStationToken(baseUrl);
+  const buildHeaders = (tk: string | null): Record<string, string> => {
+    const h: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
+    if (tk) h['X-Station-Token'] = tk;
+    return h;
+  };
+
+  let res = await fetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: buildHeaders(token),
+    signal: init.signal ?? abortSignal(),
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    // Token may have rotated, or the Station had no session when we first
+    // asked — refetch once and retry.
+    token = await getStationToken(baseUrl, true);
+    if (!token) {
+      // Station reachable + /api/station/token returned null → no logged-in
+      // operator. Give the caller a clear, actionable error.
+      throw new StationNotLoggedInError();
+    }
+    res = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: buildHeaders(token),
+      signal: init.signal ?? abortSignal(),
+    });
+  }
+  return res;
 }
 
 // ── Health ────────────────────────────────────────────────────────
@@ -22,8 +118,7 @@ export async function stationHealth(baseUrl: string) {
 // ── Session ──────────────────────────────────────────────────────
 
 export async function stationGetSession(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/session`, {
-    signal: abortSignal(),
+  const res = await authedFetch(baseUrl, `/api/station/session`, {
     headers: { 'Cache-Control': 'no-cache' },
   });
   if (!res.ok) throw new Error(`Session fetch failed: ${res.status}`);
@@ -41,9 +136,7 @@ export async function stationGetTickets(
     officeIds: officeIds.join(','),
     statuses: statuses.join(','),
   });
-  const res = await fetch(`${baseUrl}/api/station/tickets?${params}`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/tickets?${params}`);
   if (!res.ok) throw new Error(`Ticket fetch failed: ${res.status}`);
   return res.json() as Promise<any[]>;
 }
@@ -53,11 +146,10 @@ export async function stationUpdateDesk(
   deskId: string,
   updates: Record<string, any>,
 ) {
-  const res = await fetch(`${baseUrl}/api/station/update-desk`, {
+  const res = await authedFetch(baseUrl, `/api/station/update-desk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deskId, updates }),
-    signal: abortSignal(),
   });
   if (!res.ok) throw new Error(`Update desk failed: ${res.status}`);
   return res.json();
@@ -68,11 +160,10 @@ export async function stationUpdateTicket(
   ticketId: string,
   updates: Record<string, any>,
 ) {
-  const res = await fetch(`${baseUrl}/api/station/update-ticket`, {
+  const res = await authedFetch(baseUrl, `/api/station/update-ticket`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ticketId, updates }),
-    signal: abortSignal(),
   });
   if (!res.ok) throw new Error(`Update ticket failed: ${res.status}`);
   return res.json();
@@ -84,11 +175,10 @@ export async function stationCallNext(
   deskId: string,
   staffId: string,
 ) {
-  const res = await fetch(`${baseUrl}/api/station/call-next`, {
+  const res = await authedFetch(baseUrl, `/api/station/call-next`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ officeId, deskId, staffId }),
-    signal: abortSignal(),
   });
   if (!res.ok) throw new Error(`Call next failed: ${res.status}`);
   return res.json();
@@ -105,9 +195,7 @@ export async function stationQuery(
     table,
     officeIds: officeIds.join(','),
   });
-  const res = await fetch(`${baseUrl}/api/station/query?${params}`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/query?${params}`);
   if (!res.ok) throw new Error(`Query ${table} failed: ${res.status}`);
   return res.json() as Promise<any[]>;
 }
@@ -150,15 +238,13 @@ export async function stationCreateTicket(
 // ── Sync Status ──────────────────────────────────────────────────
 
 export async function stationSyncStatus(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/sync-status`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/sync-status`);
   if (!res.ok) throw new Error(`Sync status failed: ${res.status}`);
   return res.json() as Promise<{ isOnline: boolean; pendingCount: number; lastSyncAt: string | null }>;
 }
 
 export async function stationForceSync(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/sync-force`, {
+  const res = await authedFetch(baseUrl, `/api/station/sync-force`, {
     method: 'POST',
     signal: abortSignal(15000),
   });
@@ -169,6 +255,7 @@ export async function stationForceSync(baseUrl: string) {
 // ── Device Status ───────────────────────────────────────────────
 
 export async function stationDeviceStatus(baseUrl: string) {
+  // /api/device-status is NOT under /api/station/* so no auth needed
   const res = await fetch(`${baseUrl}/api/device-status`, {
     signal: abortSignal(),
   });
@@ -188,9 +275,7 @@ export async function stationDeviceStatus(baseUrl: string) {
 // ── Kiosk Info (URLs + local IP) ────────────────────────────────
 
 export async function stationKioskInfo(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/kiosk-info`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/kiosk-info`);
   if (!res.ok) throw new Error(`Kiosk info failed: ${res.status}`);
   return res.json() as Promise<{
     kioskUrl: string;
@@ -202,9 +287,7 @@ export async function stationKioskInfo(baseUrl: string) {
 // ── Public Links (cloud URLs) ───────────────────────────────────
 
 export async function stationPublicLinks(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/public-links`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/public-links`);
   if (!res.ok) return null;
   return res.json() as Promise<{
     kioskUrl: string;
@@ -215,9 +298,7 @@ export async function stationPublicLinks(baseUrl: string) {
 // ── Branding ─────────────────────────────────────────────────────
 
 export async function stationBranding(baseUrl: string) {
-  const res = await fetch(`${baseUrl}/api/station/branding`, {
-    signal: abortSignal(),
-  });
+  const res = await authedFetch(baseUrl, `/api/station/branding`);
   if (!res.ok) return null;
   return res.json();
 }

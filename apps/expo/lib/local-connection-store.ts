@@ -2,6 +2,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { stationGetSession, clearStationToken, StationNotLoggedInError } from './station-client';
 
 export interface StationSession {
   staff_id: string;
@@ -84,12 +85,12 @@ export const useLocalConnectionStore = create<LocalConnectionState>()(
           const health = await healthRes.json();
           if (!health?.status) throw new Error('Invalid station response');
 
-          // Load session
-          const sessionRes = await fetch(`${cleanUrl}/api/station/session`, {
-            signal: timeoutSignal(HEALTH_TIMEOUT),
-          });
-          const session = await sessionRes.json();
-          if (!session?.staff_id) throw new Error('No active session on Station. Log in on Station first.');
+          // Load session (station-client handles X-Station-Token auth).
+          // StationNotLoggedInError has an actionable message — let it bubble
+          // up as-is. Anything else stays as the original error.
+          clearStationToken(cleanUrl); // force fresh token fetch on reconnect
+          const session = await stationGetSession(cleanUrl);
+          if (!session?.staff_id) throw new StationNotLoggedInError();
 
           set({
             mode: 'local',
@@ -153,12 +154,9 @@ export const useLocalConnectionStore = create<LocalConnectionState>()(
             consecutiveFailures = 0;
             if (connectionStatus !== 'connected') {
               set({ connectionStatus: 'connected', lastError: null });
-              // Refresh session on recovery
+              // Refresh session on recovery (station-client handles auth)
               try {
-                const sRes = await fetch(`${stationUrl}/api/station/session`, {
-                  signal: timeoutSignal(HEALTH_TIMEOUT),
-                });
-                const sess = await sRes.json();
+                const sess = await stationGetSession(stationUrl);
                 if (sess?.staff_id) set({ stationSession: sess });
               } catch { /* keep going with old session */ }
             }

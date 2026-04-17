@@ -378,7 +378,13 @@ export function CalendarModal({ organizationId, officeId, locale, storedAuth, de
 
   // Auto-navigate to a specific appointment when opened with initialAppointmentId
   const initialApptHandled = useRef(false);
+  const prevApptIdRef = useRef<string | null | undefined>(null);
   useEffect(() => {
+    // Reset the handled flag when a new appointment ID is requested
+    if (initialAppointmentId !== prevApptIdRef.current) {
+      prevApptIdRef.current = initialAppointmentId;
+      if (initialAppointmentId) initialApptHandled.current = false;
+    }
     if (!initialAppointmentId || initialApptHandled.current || loading) return;
     // Try to find in loaded appointments first
     const appt = appointments.find(a => a.id === initialAppointmentId);

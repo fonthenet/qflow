@@ -591,8 +591,19 @@
     "checkedIn": "تم التسجيل",
     "cancelled": "ملغي",
     "confirmed": "مؤكد",
+    "completed": "مكتمل",
+    "noShow": "لم يحضر",
     "noBookings": "لا توجد حجوزات",
-    "noBookingsMsg": "لا توجد مواعيد لهذا اليوم"
+    "noBookingsMsg": "لا توجد مواعيد لهذا اليوم",
+    "approve": "موافقة",
+    "approveMsg": "الموافقة على حجز {{name}}؟",
+    "decline": "رفض",
+    "declineMsg": "رفض حجز {{name}}؟ سيتم إعلامه.",
+    "noShowMsg": "تسجيل {{name}} كغائب؟",
+    "complete": "إكمال",
+    "completeMsg": "تسجيل موعد {{name}} كمكتمل؟",
+    "delete": "حذف",
+    "deleteMsg": "حذف موعد {{name}} نهائياً؟ لا يمكن التراجع عن هذا الإجراء."
   },
 
   "virtualCodes": {

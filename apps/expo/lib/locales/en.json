@@ -591,8 +591,19 @@
     "checkedIn": "Checked In",
     "cancelled": "Cancelled",
     "confirmed": "Confirmed",
+    "completed": "Completed",
+    "noShow": "No Show",
     "noBookings": "No bookings",
-    "noBookingsMsg": "No appointments for today"
+    "noBookingsMsg": "No appointments for this day",
+    "approve": "Approve",
+    "approveMsg": "Approve {{name}}'s booking?",
+    "decline": "Decline",
+    "declineMsg": "Decline {{name}}'s booking? They will be notified.",
+    "noShowMsg": "Mark {{name}} as no-show?",
+    "complete": "Complete",
+    "completeMsg": "Mark {{name}}'s appointment as completed?",
+    "delete": "Delete",
+    "deleteMsg": "Permanently delete {{name}}'s appointment? This cannot be undone."
   },
 
   "virtualCodes": {

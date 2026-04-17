@@ -106,8 +106,59 @@ export function renderNotification(
     ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
-      msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? '?'));
+      // Normalize: treat null, undefined, and empty string the same —
+      // they all leave broken `**` markers in WhatsApp bold syntax and
+      // look unprofessional. Substitute empty; the post-process step
+      // below cleans up any bold pairs / orphan brackets we leave behind.
+      const safe = v === null || v === undefined || v === '' ? '' : String(v);
+      msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), safe);
     }
   }
-  return msg;
+  return sanitizeMessage(msg);
+}
+
+/**
+ * Post-process a notification message to remove artefacts from missing
+ * variable substitutions:
+ *   - empty bold pairs `**` or `* *` (WhatsApp would render as literal stars)
+ *   - empty parentheses `()` left from constructs like `(*{date}*)`
+ *   - doubled spaces, trailing spaces before punctuation
+ *   - stray leading separators ("at .", ", .", etc.)
+ *
+ * This is the last line of defence — callers should still pass real values,
+ * but a missed value should never produce broken output for the customer.
+ */
+export function sanitizeMessage(msg: string): string {
+  let out = msg
+    // 1. Remove empty bold pairs: "**" or "* *" (from missing *{var}*)
+    .replace(/\*\s*\*/g, '')
+    // 2. Remove empty markdown italic pairs
+    .replace(/\b_\s*_\b/g, '');
+
+  // 3. Drop leading stop-words that lose their object when the var is empty:
+  //    "at  ." → "."   "at  )" → ")"   "chez  ," → ","   "في  )" → ")"
+  //    Covers EN "at/by", FR "chez/par", AR "في/من". Case-insensitive.
+  //    Run BEFORE empty-parens so we can clean the inside first.
+  out = out.replace(/\b(at|chez|by|par)\s+(?=[.,!?;:\n\)])/gi, '');
+  out = out.replace(/(في|من)\s+(?=[.,!?;:\n\)])/g, '');
+
+  // 4. Remove empty parens/brackets that result from `(*{var}*)` or `[{var}]`
+  //    After step 1+3, these may have only whitespace inside. Loop because
+  //    stripping "(  )" → "" may expose another empty wrapper above.
+  for (let i = 0; i < 3; i++) {
+    const before = out;
+    out = out
+      .replace(/\(\s*\)/g, '')
+      .replace(/\[\s*\]/g, '');
+    if (out === before) break;
+  }
+
+  // 5. Collapse multiple spaces within a line (preserve newlines)
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  // 6. Remove space before punctuation
+  out = out.replace(/[ \t]+([.,!?;:])/g, '$1');
+  // 7. Trim each line
+  out = out.split('\n').map((l) => l.trim()).join('\n');
+
+  return out.trim();
 }
