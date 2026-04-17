@@ -1620,6 +1620,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const prevWaitingCount = useRef(0);
   const t = (key: string, values?: Record<string, string | number | null | undefined>) => translate(locale, key, values);
   const formatWait = useCallback((dateStr: string) => formatWaitLabel(dateStr, locale), [locale]);
+  /**
+   * Return a color/weight style for a ticket's wait time so operators can
+   * spot overdue tickets at a glance instead of reading the number.
+   *   < 15 min → muted (normal)
+   *  15–60 min → warning yellow
+   *   > 60 min → danger red, bold
+   */
+  const waitStyle = useCallback((dateStr: string): React.CSSProperties => {
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000));
+    if (mins > 60) return { color: '#ef4444', fontWeight: 700 };
+    if (mins >= 15) return { color: '#f59e0b', fontWeight: 600 };
+    return {};
+  }, []);
   const statusLabels = useMemo(() => ({
     available: { ...STAFF_STATUS_LABELS.available, label: t('Available') },
     on_break: { ...STAFF_STATUS_LABELS.on_break, label: t('On Break') },
@@ -3980,14 +3993,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         )}
         <div className="sidebar-section">
           <div className="sidebar-header">
-            <h3 style={{ margin: 0 }}>{t('Queue Overview')}</h3>
-            <div className="queue-stats" aria-label={t('{waiting} waiting, {called} called, {serving} serving', { waiting: waiting.length, called: called.length, serving: serving.length })}>
-              <span className="stat-pill waiting" aria-hidden="true">{t('{count} waiting', { count: waiting.length })}</span>
-              <span className="stat-pill called" aria-hidden="true">{t('{count} called', { count: called.length })}</span>
-              <span className="stat-pill serving" aria-hidden="true">{t('{count} serving', { count: serving.length })}</span>
-            </div>
-            {/* Queue / RDV tabs */}
-            <div style={{ display: 'flex', gap: 4, marginTop: 10, background: 'var(--bg, #0f172a)', padding: 4, borderRadius: 10 }}>
+            {/*
+              Removed the "Queue Overview" h3 title and the waiting/called/
+              serving stat-pills row — both were redundant with the tab
+              badges below (which already show counts) and the in-tab
+              section headers like WAITING (1) / ACTIVE (0).
+              SR users still get the breakdown via the aria-label on the
+              tab container.
+            */}
+            <div
+              style={{ display: 'flex', gap: 4, background: 'var(--bg, #0f172a)', padding: 4, borderRadius: 10 }}
+              aria-label={t('{waiting} waiting, {called} called, {serving} serving', { waiting: waiting.length, called: called.length, serving: serving.length })}
+            >
               <button
                 onClick={() => setQueueTab('queue')}
                 style={{
@@ -4039,7 +4056,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   boxShadow: queueTab === 'pending' ? '0 2px 8px rgba(245,158,11,0.35)' : 'none',
                 }}
               >
-                ⏳ {t('Pending')}
+                ⏳ {t('Approvals')}
                 <span style={{
                   background: queueTab === 'pending' ? 'rgba(0,0,0,0.18)' : (pendingTotalCount > 0 ? '#f59e0b' : 'var(--surface2, #1e293b)'),
                   color: queueTab !== 'pending' && pendingTotalCount > 0 ? '#fff' : undefined,
@@ -4477,16 +4494,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 <div className="queue-item-pos" aria-hidden="true">#{officePosition}</div>
                 <div className="queue-item-info">
                   <span className="queue-item-number">{ticket.ticket_number}</span>
-                  <span dir="auto" style={{ display: 'block', fontSize: 11, color: 'var(--text3)', unicodeBidi: 'isolate' }}>
+                  {/*
+                    dir="auto" is required so Arabic characters render in the
+                    correct order, BUT it also flips `text-align: start` to
+                    right within the span — which visually pushed the name to
+                    the far edge and left a big empty gap under the ticket
+                    number. Force `text-align: left` so the block always sits
+                    flush-left regardless of the script inside it.
+                  */}
+                  <span dir="auto" style={{ display: 'block', fontSize: 11, color: 'var(--text3)', unicodeBidi: 'isolate', textAlign: 'left' }}>
                     {getTicketCustomerName(ticket.customer_data) ?? translate(locale, 'Walk-in')}
                   </span>
                   {getTicketCustomerPhone(ticket.customer_data) && (
-                    <span style={{ display: 'block', fontSize: 10, color: 'var(--text3)', opacity: 0.8, direction: 'ltr', unicodeBidi: 'embed' }}>
+                    <span style={{ display: 'block', fontSize: 10, color: 'var(--text3)', opacity: 0.8, direction: 'ltr', unicodeBidi: 'embed', textAlign: 'left' }}>
                       {getTicketCustomerPhone(ticket.customer_data)}
                     </span>
                   )}
                 </div>
-                <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{formatWait(ticket.created_at)}</span>
+                <span className="queue-item-meta" style={{ whiteSpace: 'nowrap', flexShrink: 0, ...waitStyle(ticket.created_at) }}>{formatWait(ticket.created_at)}</span>
                 <div className="queue-item-badges">
                   {ticket.priority > 1 && <span className="badge priority">P{ticket.priority}</span>}
                   {(ticket.appointment_id || ticket.source === 'appointment') && <span className="badge booked" style={{ background: '#3b82f622', color: '#3b82f6', border: '1px solid #3b82f640' }}>📅 {translate(locale, 'Booked')}</span>}
