@@ -128,10 +128,18 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       setSelectedService(deptServices[0].id);
     }
   }, [selectedDept, services, selectedService]);
-  // Unified intake fields from org settings
+  // Unified intake fields from org settings — same source WhatsApp /
+  // Messenger / web booking flows use. Any field the admin enabled is
+  // shown on both tabs of the in-house panel so the operator captures
+  // the same customer info a self-service booking would ask for.
+  // (Scope is preserved in the config but not filtered here — the
+  //  in-house panel is manual entry by staff, and hiding fields behind
+  //  a tab switch would be a footgun. If the field is enabled, it shows.)
   const intakeFields = useMemo(() => migrateToIntakeFields(orgSettings), [orgSettings]);
-  // In-house panel = same-day queue, so filter by 'sameday' scope
-  const enabledFields = useMemo(() => intakeFields.filter(f => f.enabled && (f.scope || 'both') !== 'booking'), [intakeFields]);
+  const enabledFields = useMemo(
+    () => intakeFields.filter(f => f.enabled),
+    [intakeFields],
+  );
 
   // Dynamic customer data state — keyed by field key
   const [customerData, setCustomerData] = useState<Record<string, string>>(() => {
@@ -165,8 +173,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       reason: prefill.notes ?? '',
       wilaya: displayW,
     });
-    setFutName(prefill.name ?? ''); setFutPhone(prefill.phone ?? '');
-    setFutNotes(prefill.notes ?? ''); setFutWilaya(displayW);
+    // Future-tab fields now proxy customerData so no separate sync needed.
   }, [prefill]);
 
   // Smart customer search (shared between walk-in and future tabs)
@@ -278,17 +285,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   const pickCustomer = (c: CustSuggestion) => {
     const displayPhone = formatAlgPhoneLocal(c.phone);
     const displayWilaya = normalizeWilayaDisplay(c.wilaya_code, locale === 'ar') ?? '';
-    if (bookingTab === 'walkin') {
-      setCustomerName(c.name ?? '');
-      setCustomerPhone(displayPhone);
-      if (c.notes) setCustomerReason(c.notes);
-      if (displayWilaya) setCustomerWilaya(displayWilaya);
-    } else {
-      setFutName(c.name ?? '');
-      setFutPhone(displayPhone);
-      if (c.notes) setFutNotes(c.notes);
-      if (displayWilaya) setFutWilaya(displayWilaya);
-    }
+    // Both tabs share the same customerData registry now.
+    setCustomerName(c.name ?? '');
+    setCustomerPhone(displayPhone);
+    if (c.notes) setCustomerReason(c.notes);
+    if (displayWilaya) setCustomerWilaya(displayWilaya);
     setShowCustSuggestions(false);
     setCustSuggestions([]);
   };
@@ -317,9 +318,15 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   }, [futDept, services, futService]);
   const [futDate, setFutDate] = useState(prefill?.futureDate ?? '');
   const [futTime, setFutTime] = useState(prefill?.futureTime ?? '');
-  const [futName, setFutName] = useState(prefill?.name ?? '');
-  const [futPhone, setFutPhone] = useState(prefill?.phone ?? '');
-  const [futNotes, setFutNotes] = useState(prefill?.notes ?? '');
+  // Future-tab customer fields proxy the unified customerData registry so the
+  // Future form honors the same intake_fields config as walk-in (Age, custom
+  // fields, etc. all appear here too — nothing hardcoded).
+  const futName = customerData.name ?? '';
+  const setFutName = (v: string) => setField('name', v);
+  const futPhone = customerData.phone ?? '';
+  const setFutPhone = (v: string) => setField('phone', v);
+  const futNotes = customerData.reason ?? '';
+  const setFutNotes = (v: string) => setField('reason', v);
 
   // Switch to future tab when prefill includes a date
   useEffect(() => {
@@ -329,7 +336,8 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       if (prefill.futureTime) setFutTime(prefill.futureTime);
     }
   }, [prefill?.futureDate, prefill?.futureTime]);
-  const [futWilaya, setFutWilaya] = useState(() => normalizeWilayaDisplay(prefill?.wilaya, locale === 'ar') ?? '');
+  const futWilaya = customerData.wilaya ?? '';
+  const setFutWilaya = (v: string) => setField('wilaya', v);
   const [futSlots, setFutSlots] = useState<string[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
   const [futSubmitting, setFutSubmitting] = useState(false);
@@ -368,6 +376,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           serviceId: futService,
           customerName: futName.trim(),
           customerPhone: futPhone.trim() || undefined,
+          customerEmail: (customerData.email ?? '').trim() || undefined,
           scheduledAt: `${futDate}T${futTime}:00`,
           notes: futNotes.trim() || undefined,
           wilaya: futWilaya.trim() || undefined,
@@ -377,8 +386,10 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       const data = await res.json();
       if (res.ok && data.appointment) {
         setFutResult({ success: true, date: futDate, time: futTime });
-        // Reset entire form so the booked slot disappears and form is ready for next booking
-        setFutName(''); setFutPhone(''); setFutNotes(''); setFutWilaya(''); setFutTime('');
+        // Reset entire form so the booked slot disappears and form is ready for next booking.
+        // Clear all customerData keys (covers name/phone/wilaya/notes plus age and any custom fields).
+        setCustomerData({});
+        setFutTime('');
         // Force slots re-fetch by toggling the date (clears then restores)
         const bookedDate = futDate;
         setFutDate('');
@@ -700,101 +711,130 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           </div>
 
-          {/* Name with customer search */}
-          <div style={{ position: 'relative' }}>
-            <label style={labelStyle}>{t('Name')} *</label>
-            <input
-              type="text"
-              value={futName}
-              onChange={(e) => { setFutName(e.target.value); setCustSearchQuery(e.target.value); }}
-              onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
-              onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
-              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
-              placeholder={t('Search or type name')}
-              style={inputStyle}
-              autoComplete="off"
-            />
-            {bookingTab === 'future' && showCustSuggestions && custSuggestions.length > 0 && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                marginTop: 4, maxHeight: 240, overflowY: 'auto',
-                background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
-                borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
-              }}>
-                {custSuggestions.map((c) => (
-                  <div
-                    key={c.id}
-                    onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
-                    style={{
-                      padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {c.name || t('Unknown')}
+          {/* Dynamic intake fields — same source of truth as walk-in tab +
+              WhatsApp / Messenger / web booking. Admin's settings decide which
+              fields appear. No hardcoded Name/Phone/Wilaya/Notes here. */}
+          {enabledFields.map((field) => {
+            const fLabel = getFieldLabel(field, locale as 'en' | 'fr' | 'ar');
+            const val = customerData[field.key] ?? '';
+
+            if (field.key === 'name') return (
+              <div key="fut-name" style={{ position: 'relative' }}>
+                <label style={labelStyle}>{fLabel} *</label>
+                <input
+                  type="text"
+                  value={val}
+                  onChange={(e) => { setField('name', e.target.value); setCustSearchQuery(e.target.value); }}
+                  onFocus={() => { if (custSuggestions.length) setShowCustSuggestions(true); }}
+                  onBlur={() => setTimeout(() => setShowCustSuggestions(false), 180)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); if (e.key === 'Escape') setShowCustSuggestions(false); }}
+                  placeholder={t('Search or type name')}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
+                {bookingTab === 'future' && showCustSuggestions && custSuggestions.length > 0 && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                    marginTop: 4, maxHeight: 240, overflowY: 'auto',
+                    background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                    borderRadius: 8, boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+                  }}>
+                    {custSuggestions.map((c) => (
+                      <div
+                        key={c.id}
+                        onMouseDown={(e) => { e.preventDefault(); pickCustomer(c); }}
+                        style={{
+                          padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border, #475569)',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(139,92,246,0.15)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.name || t('Unknown')}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
+                            {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
+                          </div>
+                        </div>
+                        {(c.visit_count ?? 0) > 0 && (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
+                            {c.visit_count}× {t('Visits')}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', direction: 'ltr' }}>
-                        {formatAlgPhoneLocal(c.phone)}{c.email ? ` · ${c.email}` : ''}
-                      </div>
-                    </div>
-                    {(c.visit_count ?? 0) > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 10, background: 'rgba(59,130,246,0.18)', color: '#3b82f6' }}>
-                        {c.visit_count}× {t('Visits')}
-                      </span>
-                    )}
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
+            );
 
-          {/* Phone + Wilaya — 2-column row */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('Phone')}</label>
-              <input
-                type="tel"
-                value={futPhone}
-                onChange={(e) => { setFutPhone(e.target.value); setCustSearchQuery(e.target.value); }}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-                placeholder={t('Phone number')}
-                style={inputStyle}
-                autoComplete="off"
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>{t('Wilaya')}</label>
-              <select
-                value={futWilaya}
-                onChange={(e) => setFutWilaya(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-                style={inputStyle}
-              >
-                <option value="">{t('Wilaya')}</option>
-                {WILAYAS.map(w => (
-                  <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
-                    {formatWilayaLabel(w, locale === 'ar')}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+            if (field.key === 'phone') return (
+              <div key="fut-phone">
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="tel"
+                  value={val}
+                  onChange={(e) => { setField('phone', e.target.value); setCustSearchQuery(e.target.value); }}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                  placeholder={t('Phone number')}
+                  style={inputStyle}
+                  autoComplete="off"
+                />
+              </div>
+            );
 
-          {/* Notes */}
-          <div>
-            <label style={labelStyle}>{t('Notes')}</label>
-            <input
-              type="text"
-              value={futNotes}
-              onChange={(e) => setFutNotes(e.target.value)}
-              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
-              placeholder={t('Optional notes')}
-              style={inputStyle}
-            />
-          </div>
+            if (field.key === 'wilaya') return (
+              <div key="fut-wilaya">
+                <label style={labelStyle}>{fLabel}</label>
+                <select
+                  value={val}
+                  onChange={(e) => setField('wilaya', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                  style={inputStyle}
+                >
+                  <option value="">{fLabel}</option>
+                  {WILAYAS.map(w => (
+                    <option key={w.code} value={formatWilayaLabel(w, locale === 'ar')}>
+                      {formatWilayaLabel(w, locale === 'ar')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+
+            if (field.key === 'age') return (
+              <div key="fut-age">
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={150}
+                  value={val}
+                  onChange={(e) => setField('age', e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                />
+              </div>
+            );
+
+            // Reason + custom fields — text input
+            return (
+              <div key={`fut-${field.key}`}>
+                <label style={labelStyle}>{fLabel}</label>
+                <input
+                  type="text"
+                  value={val}
+                  onChange={(e) => setField(field.key, e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleFutureBook(); }}
+                  placeholder={fLabel}
+                  style={inputStyle}
+                />
+              </div>
+            );
+          })}
 
           {/* Submit — full width */}
           <button
@@ -3319,30 +3359,34 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 </div>
               )}
             </div>
-            <div className="pills-right">
-              {/* Unified capsule: In-House Booking + Queue + Calendar + Customers */}
+            <div className="pills-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Primary action — standalone pill, visually distinct from the view tabs.
+                  Opens the in-house booking side panel (walk-in + future in one form). */}
+              <button
+                onClick={() => setShowBookingModal(prev => !prev)}
+                title="F6"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '6px 14px', borderRadius: 20,
+                  border: `1.5px solid ${showBookingModal ? '#8b5cf6' : 'rgba(139,92,246,0.5)'}`,
+                  background: showBookingModal ? '#8b5cf6' : 'rgba(139,92,246,0.12)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                  color: showBookingModal ? '#fff' : '#a78bfa',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              >
+                + {t('New Ticket')} <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>F6</span>
+              </button>
+
+              {/* View-switcher capsule: Queue / Calendar / Customers */}
               <div style={{
                 display: 'flex', gap: 0, border: '1.5px solid var(--border, #334155)', borderRadius: 20, overflow: 'hidden',
               }}>
                 <button
-                  onClick={() => { setShowBookingModal(prev => !prev); setMainView('queue'); }}
-                  title="F6"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '5px 12px', border: 'none',
-                    background: showBookingModal ? 'rgba(139,92,246,0.2)' : 'transparent',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    color: showBookingModal ? '#8b5cf6' : 'var(--text3, #64748b)',
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}
-                >
-                  + {t('In-House Booking')} <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>F6</span>
-                </button>
-                <button
                   onClick={() => setMainView('queue')}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '5px 12px', border: 'none', borderLeft: '1px solid var(--border, #334155)',
+                    padding: '5px 12px', border: 'none',
                     background: mainView === 'queue'
                       ? (activeTicket?.status === 'serving' ? 'rgba(34,197,94,0.2)' : 'rgba(59,130,246,0.2)')
                       : activeTicket
@@ -3395,7 +3439,21 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                   }}
                 >
-                  👥 {t('Customers')}
+                  {/* Inline SVG instead of 👥 emoji so the icon can be colored
+                      (Windows renders the emoji as dim purple, invisible in dark mode). */}
+                  <svg
+                    width="14" height="14" viewBox="0 0 24 24"
+                    fill="none" stroke="#22d3ee" strokeWidth="2.2"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0 }}
+                    aria-hidden="true"
+                  >
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                  {t('Customers')}
                 </button>
               </div>
             </div>
@@ -3419,7 +3477,14 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   setCustomerPhoneToOpen(phone);
                   setMainView('customers');
                 }}
-                onSlotBook={() => {}}
+                onSlotBook={(date, time) => {
+                  // Unified intake: open the same InHouseBookingPanel that the queue
+                  // screen uses, prefilled with the selected slot. Fields come from
+                  // the admin's intake_fields config. The panel is a right-side
+                  // overlay so the operator stays on the calendar view.
+                  setBookingPrefill({ futureDate: date, futureTime: time, _ts: Date.now() });
+                  setShowBookingModal(true);
+                }}
                 initialViewMode={calendarInitialView}
                 initialAppointmentId={calendarInitialApptId}
                 embedded
@@ -3845,38 +3910,43 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               )}
             </div>
 
-            {/* In-House Booking — right side panel (resizable) */}
-            {showBookingModal && session.desk_id && (
-              <div style={{
-                width: bookingWidth, flexShrink: 0, position: 'relative',
-                borderLeft: '1px solid var(--border)', background: 'var(--surface)',
-                display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              }}>
-                <button
-                  type="button"
-                  className="station-sidebar-resizer"
-                  onPointerDown={startBookingResize}
-                />
-                <InHouseBookingPanel
-                  locale={locale}
-                  departments={Object.entries(names.departments)}
-                  services={allServices}
-                  officeId={session.office_id}
-                  onBook={bookInHouse}
-                  onCollapse={() => { setShowBookingModal(false); setBookingPrefill(null); }}
-                  messengerPageId={messengerPageId}
-                  whatsappPhone="+213551176598"
-                  session={session}
-                  prefill={bookingPrefill}
-                  storedAuth={storedAuth}
-                  timezone={officeTimezone}
-                  orgSettings={orgSettings}
-                />
-              </div>
-            )}
           </div>
           )}
           </>
+        )}
+
+        {/* In-House Booking — right side overlay, works across queue / calendar / customers views */}
+        {showBookingModal && session.desk_id && (
+          <div style={{
+            position: 'absolute', top: 42, right: 0, bottom: 0,
+            width: bookingWidth,
+            borderLeft: '1px solid var(--border)',
+            background: 'var(--surface)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            zIndex: 20,
+            boxShadow: '-8px 0 24px rgba(0,0,0,0.25)',
+          }}>
+            <button
+              type="button"
+              className="station-sidebar-resizer"
+              onPointerDown={startBookingResize}
+            />
+            <InHouseBookingPanel
+              locale={locale}
+              departments={Object.entries(names.departments)}
+              services={allServices}
+              officeId={session.office_id}
+              onBook={bookInHouse}
+              onCollapse={() => { setShowBookingModal(false); setBookingPrefill(null); }}
+              messengerPageId={messengerPageId}
+              whatsappPhone="+213551176598"
+              session={session}
+              prefill={bookingPrefill}
+              storedAuth={storedAuth}
+              timezone={officeTimezone}
+              orgSettings={orgSettings}
+            />
+          </div>
         )}
 
         {/* Calendar Modal (full-screen overlay — opens via F5 or external triggers) */}
@@ -3898,7 +3968,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               setShowCustomersModal(true);
             }}
             onSlotBook={(date, time) => {
-              // Handled inside CalendarModal's QuickBookPanel now
+              // Unified intake: close calendar overlay and open InHouseBookingPanel
+              // prefilled with the slot. Fields come from intake_fields settings.
+              setBookingPrefill({ futureDate: date, futureTime: time, _ts: Date.now() });
+              setShowCalendarModal(false);
+              setCalendarInitialApptId(null);
+              setShowBookingModal(true);
             }}
             initialViewMode={calendarInitialView}
             initialAppointmentId={calendarInitialApptId}
@@ -4019,7 +4094,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 👥 {t('Queue')}
                 <span style={{
-                  background: queueTab === 'queue' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
+                  background: queueTab === 'queue' ? 'rgba(0,0,0,0.22)' : 'rgba(148,163,184,0.22)',
+                  color: queueTab === 'queue' ? '#fff' : 'var(--text, #e2e8f0)',
                   borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
                   transition: 'all 0.2s ease',
                 }}>{waiting.length + called.length + serving.length}</span>
@@ -4038,7 +4114,8 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 📅 {t('RDV')}
                 <span style={{
-                  background: queueTab === 'rdv' ? 'rgba(0,0,0,0.18)' : 'var(--surface2, #1e293b)',
+                  background: queueTab === 'rdv' ? 'rgba(0,0,0,0.22)' : 'rgba(148,163,184,0.22)',
+                  color: queueTab === 'rdv' ? '#fff' : 'var(--text, #e2e8f0)',
                   borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
                   transition: 'all 0.2s ease',
                 }}>{totalRdvCount}</span>
@@ -4058,8 +4135,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               >
                 ⏳ {t('Approvals')}
                 <span style={{
-                  background: queueTab === 'pending' ? 'rgba(0,0,0,0.18)' : (pendingTotalCount > 0 ? '#f59e0b' : 'var(--surface2, #1e293b)'),
-                  color: queueTab !== 'pending' && pendingTotalCount > 0 ? '#fff' : undefined,
+                  background: queueTab === 'pending'
+                    ? 'rgba(0,0,0,0.22)'
+                    : (pendingTotalCount > 0 ? '#f59e0b' : 'rgba(148,163,184,0.22)'),
+                  color: queueTab === 'pending'
+                    ? '#fff'
+                    : (pendingTotalCount > 0 ? '#fff' : 'var(--text, #e2e8f0)'),
                   borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800,
                 }}>{pendingTotalCount}</span>
               </button>
