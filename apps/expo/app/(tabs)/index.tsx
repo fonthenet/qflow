@@ -366,6 +366,7 @@ export default function HomeScreen() {
     clearActiveTicket,
     history,
     savedAppointments,
+    savedPlaces,
   } = useAppStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<string | null>(null);
@@ -562,8 +563,54 @@ export default function HomeScreen() {
   // =======================================================================
   if (!activeToken) {
     const recentHistory = history.slice(0, 3);
+    const UPCOMING = new Set(['pending', 'confirmed', 'checked_in']);
+    const nextAppt = [...savedAppointments]
+      .filter((a) => !a.hidden && UPCOMING.has(a.status))
+      .sort(
+        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+      )[0];
+    const pinnedFirst = [...savedPlaces].sort((a, b) => {
+      const pinDiff = Number(!!b.isPinned) - Number(!!a.isPinned);
+      if (pinDiff !== 0) return pinDiff;
+      return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
+    });
+    const recentPlaces = pinnedFirst.slice(0, 5);
+
+    const renderNextAppt = () => {
+      if (!nextAppt) return null;
+      const when = new Date(nextAppt.scheduledAt);
+      const timeStr = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const dateStr = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      return (
+        <TouchableOpacity
+          style={[s.apptHero, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          onPress={() => router.push('/(tabs)/history')}
+          activeOpacity={0.8}
+        >
+          <View style={[s.apptHeroIcon, { backgroundColor: colors.primary + '1A' }]}>
+            <Ionicons name="calendar" size={22} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.apptHeroLabel, { color: colors.textMuted }]}>
+              {t('home.nextAppointment', { defaultValue: 'Next appointment' })}
+            </Text>
+            <Text style={[s.apptHeroTitle, { color: colors.text }]} numberOfLines={1}>
+              {nextAppt.ticketNumber ? `${nextAppt.ticketNumber} · ` : ''}
+              {nextAppt.businessName}
+            </Text>
+            <Text style={[s.apptHeroTime, { color: colors.textSecondary }]}>
+              {dateStr} · {timeStr}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+      );
+    };
+
     return (
       <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={s.emptyContent}>
+        {renderNextAppt()}
+
         <View style={s.illustrationArea}>
           <View style={[s.illustrationOuter, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : colors.primaryLight + '1F' }]}>
             <View style={[s.illustrationMiddle, { backgroundColor: isDark ? 'rgba(59,130,246,0.25)' : colors.primary + '59' }]}>
@@ -586,6 +633,42 @@ export default function HomeScreen() {
             <TouchableOpacity style={[s.manualGo, { backgroundColor: colors.primary }, !manualCode.trim() && { backgroundColor: colors.textMuted }]} onPress={handleManualSubmit} disabled={!manualCode.trim()}><Ionicons name="arrow-forward" size={20} color="#fff" /></TouchableOpacity>
           </View>
         )}
+
+        {recentPlaces.length > 0 && (
+          <View style={s.recentPlacesSection}>
+            <View style={s.recentPlacesHeader}>
+              <Text style={[s.recentTitle, { color: colors.textMuted }]}>
+                {t('home.recentPlaces', { defaultValue: 'Recent places' })}
+              </Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/places')}>
+                <Text style={[s.recentSeeAll, { color: colors.primary }]}>
+                  {t('common.seeAll', { defaultValue: 'See all' })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 2 }}>
+              {recentPlaces.map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[s.placeChip, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (p.kioskSlug) router.push(`/queue-peek/${p.kioskSlug}` as any);
+                    else router.push('/(tabs)/places');
+                  }}
+                >
+                  <View style={[s.placeChipIcon, { backgroundColor: colors.primary + '1A' }]}>
+                    <Ionicons name="storefront" size={16} color={colors.primary} />
+                  </View>
+                  <Text style={[s.placeChipName, { color: colors.text }]} numberOfLines={1}>
+                    {p.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {recentHistory.length > 0 && (
           <View style={s.recentSection}>
             <Text style={[s.recentTitle, { color: colors.textMuted }]}>{t('customer.recentVisits')}</Text>
@@ -924,6 +1007,44 @@ const s = StyleSheet.create({
   manualGo: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   recentSection: { marginTop: 32, width: '100%' },
   recentTitle: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8, paddingHorizontal: 4 },
+
+  // Home extras — next appointment hero + recent-places chips
+  apptHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  apptHeroIcon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  apptHeroLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
+  apptHeroTitle: { fontSize: 15, fontWeight: '700' },
+  apptHeroTime: { fontSize: 13, marginTop: 2 },
+  recentPlacesSection: { marginTop: 28, width: '100%' },
+  recentPlacesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  recentSeeAll: { fontSize: 13, fontWeight: '600' },
+  placeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: 200,
+  },
+  placeChipIcon: { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  placeChipName: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
+
 
   // History card
   historyCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, gap: 12 },

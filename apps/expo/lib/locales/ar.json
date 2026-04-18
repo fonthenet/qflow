@@ -1,5 +1,10 @@
 {
+  "home": {
+    "nextAppointment": "الموعد القادم",
+    "recentPlaces": "الأماكن الأخيرة"
+  },
   "common": {
+    "seeAll": "عرض الكل",
     "cancel": "إلغاء",
     "confirm": "تأكيد",
     "save": "حفظ",

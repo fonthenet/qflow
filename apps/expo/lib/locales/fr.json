@@ -1,5 +1,10 @@
 {
+  "home": {
+    "nextAppointment": "Prochain rendez-vous",
+    "recentPlaces": "Lieux récents"
+  },
   "common": {
+    "seeAll": "Voir tout",
     "cancel": "Annuler",
     "confirm": "Confirmer",
     "save": "Enregistrer",

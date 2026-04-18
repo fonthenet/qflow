@@ -1,5 +1,10 @@
 {
+  "home": {
+    "nextAppointment": "Next appointment",
+    "recentPlaces": "Recent places"
+  },
   "common": {
+    "seeAll": "See all",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "save": "Save",
