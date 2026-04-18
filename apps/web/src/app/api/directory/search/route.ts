@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getOfficePublicToken } from '@/lib/office-links';
+import { getOfficePublicSlug } from '@/lib/office-links';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 import { sanitizeString } from '@/lib/validation';
 
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
           officeId: office.id,
           officeName: office.name,
           address: office.address ?? null,
-          kioskSlug: getOfficePublicToken(office),
+          kioskSlug: getOfficePublicSlug(office),
         },
       });
     }
