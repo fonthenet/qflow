@@ -372,15 +372,61 @@ function storeLocale(locale: string) {
 // ── Get local network IP ──────────────────────────────────────────
 
 export function getLocalIP(): string {
+  // Rank non-loopback IPv4 interfaces so the Station shows an address that
+  // other devices on the same Wi-Fi / LAN can actually reach.
+  //
+  // Rejected  — never returned:
+  //   • 169.254.0.0/16  APIPA (disconnected adapter / no DHCP lease)
+  //   • 100.64.0.0/10   CGNAT range — Tailscale uses this, not reachable on LAN
+  //   • 198.18.0.0/15   benchmarking — used by Zscaler / some VPNs
+  //   • names matching common virtual adapters (Tailscale, vEthernet, WSL,
+  //     VirtualBox, VMware, Hyper-V, Docker, Loopback Pseudo-Interface)
+  //
+  // Preferred — returned first if available, in this order:
+  //   1. RFC1918 private ranges on a physical-looking adapter
+  //        192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12
+  //   2. Any other non-rejected, non-virtual IPv4
+  //   3. Anything else (last resort)
   const nets = networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]!) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
-      }
+  const VIRTUAL_RE = /tailscale|vethernet|wsl|virtualbox|vmware|hyper-?v|docker|loopback|bluetooth|npcap|vpn/i;
+
+  const isAPIPA = (ip: string) => ip.startsWith('169.254.');
+  const isCGNAT = (ip: string) => {
+    // 100.64.0.0/10 → second octet 64–127
+    if (!ip.startsWith('100.')) return false;
+    const second = Number(ip.split('.')[1]);
+    return second >= 64 && second <= 127;
+  };
+  const isBenchmark = (ip: string) => ip.startsWith('198.18.') || ip.startsWith('198.19.');
+  const isRFC1918 = (ip: string) => {
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('10.')) return true;
+    if (ip.startsWith('172.')) {
+      const second = Number(ip.split('.')[1]);
+      return second >= 16 && second <= 31;
+    }
+    return false;
+  };
+
+  type Candidate = { ip: string; name: string; rank: number };
+  const candidates: Candidate[] = [];
+  for (const [name, addrs] of Object.entries(nets)) {
+    if (!addrs) continue;
+    for (const net of addrs) {
+      if (net.family !== 'IPv4' || net.internal) continue;
+      if (isAPIPA(net.address) || isCGNAT(net.address) || isBenchmark(net.address)) continue;
+      const isVirtual = VIRTUAL_RE.test(name);
+      let rank: number;
+      if (isRFC1918(net.address) && !isVirtual) rank = 0;          // best: real LAN adapter
+      else if (isRFC1918(net.address)) rank = 1;                   // private IP but virtual adapter
+      else if (!isVirtual) rank = 2;                               // public / other, physical adapter
+      else rank = 3;                                               // virtual and not private
+      candidates.push({ ip: net.address, name, rank });
     }
   }
-  return '127.0.0.1';
+  if (candidates.length === 0) return '127.0.0.1';
+  candidates.sort((a, b) => a.rank - b.rank);
+  return candidates[0].ip;
 }
 
 // ── Station endpoint authentication ──────────────────────────────
