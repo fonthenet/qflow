@@ -52,6 +52,18 @@ export async function GET(
     request.nextUrl.searchParams.get('format') === 'json' ||
     (request.headers.get('accept') ?? '').includes('application/json');
   if (wantsJson) {
+    // Find the live ticket linked to this appointment (if any) so the mobile
+    // Queue tab can auto-switch to the live status view when staff checks the
+    // customer in. The join is by appointment_id on tickets, added in the
+    // 20260410120000_unique_appointment_ticket migration.
+    const { data: linkedTicket } = await supabase
+      .from('tickets')
+      .select('id, qr_token, ticket_number, status, called_at, completed_at')
+      .eq('appointment_id', appointment.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     return NextResponse.json({
       appointment: {
         id: appointment.id,
@@ -69,6 +81,16 @@ export async function GET(
         service_name: service?.name ?? null,
         department_name: department?.name ?? null,
       },
+      ticket: linkedTicket
+        ? {
+            id: linkedTicket.id,
+            qr_token: linkedTicket.qr_token,
+            ticket_number: linkedTicket.ticket_number,
+            status: linkedTicket.status,
+            called_at: linkedTicket.called_at,
+            completed_at: linkedTicket.completed_at,
+          }
+        : null,
     });
   }
 

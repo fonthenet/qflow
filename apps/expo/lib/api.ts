@@ -380,6 +380,18 @@ export interface AppointmentDetail {
   department_name: string | null;
 }
 
+/** The ticket created when a booking is checked in by staff. Mobile uses this
+ *  so the Queue tab can auto-switch to the live-tracking view once check-in
+ *  happens, without the customer having to scan anything. */
+export interface AppointmentLinkedTicket {
+  id: string;
+  qr_token: string;
+  ticket_number: string;
+  status: string;
+  called_at: string | null;
+  completed_at: string | null;
+}
+
 /** Fetch the latest state for one booking via the reusable calendar token endpoint. */
 export async function fetchAppointmentByToken(calendarToken: string): Promise<AppointmentDetail | null> {
   try {
@@ -392,6 +404,30 @@ export async function fetchAppointmentByToken(calendarToken: string): Promise<Ap
     return (data?.appointment as AppointmentDetail) ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Fetch the appointment *with* its linked live ticket (if any). Used by the
+ *  Queue tab's auto-recover effect: when an appointment has been checked in,
+ *  the server returns the linked ticket's qr_token so we can promote it to
+ *  the active live view. */
+export async function fetchAppointmentWithTicket(calendarToken: string): Promise<{
+  appointment: AppointmentDetail | null;
+  ticket: AppointmentLinkedTicket | null;
+}> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/calendar/${encodeURIComponent(calendarToken)}?format=json`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!res.ok) return { appointment: null, ticket: null };
+    const data = await res.json();
+    return {
+      appointment: (data?.appointment as AppointmentDetail) ?? null,
+      ticket: (data?.ticket as AppointmentLinkedTicket) ?? null,
+    };
+  } catch {
+    return { appointment: null, ticket: null };
   }
 }
 

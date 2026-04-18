@@ -22,7 +22,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { useAppStore } from '@/lib/store';
-import { fetchTicket, stopTracking } from '@/lib/api';
+import { fetchTicket, fetchAppointmentWithTicket, stopTracking } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 import { API_BASE_URL as WEB_BASE } from '@/lib/config';
@@ -358,7 +358,15 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { colors, isDark } = useTheme();
-  const { activeToken, activeTicket, setActiveToken, setActiveTicket, clearActiveTicket, history } = useAppStore();
+  const {
+    activeToken,
+    activeTicket,
+    setActiveToken,
+    setActiveTicket,
+    clearActiveTicket,
+    history,
+    savedAppointments,
+  } = useAppStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
@@ -374,33 +382,66 @@ export default function HomeScreen() {
   const activeTicketRef = useRef(activeTicket);
   activeTicketRef.current = activeTicket;
 
-  // Auto-recover an active ticket: if we have no activeToken but the user's
-  // recent history contains a same-day entry in a non-terminal state, fetch
-  // its live status and restore it so the Queue tab lands on the live view
-  // instead of the scan-QR empty state. Runs once on mount and whenever
-  // activeToken transitions to null.
+  // Auto-recover an active ticket so the Queue tab always lands on the live
+  // view when something is live. Two sources, checked in parallel:
+  //   1. Same-day ticket history entries (walk-ins) — refetched via qr_token.
+  //   2. Same-day saved appointments (future bookings) — the server now
+  //      returns a linked ticket qr_token once staff checks the customer in,
+  //      so the Queue tab can auto-switch from "you have an appointment" to
+  //      the live called/serving status.
   useEffect(() => {
     if (activeToken) return;
-    const TERMINAL = new Set(['served', 'no_show', 'cancelled']);
+    const TERMINAL_TICKET = new Set(['served', 'no_show', 'cancelled']);
+    const TERMINAL_APPT = new Set(['cancelled', 'no_show', 'completed']);
     const todayStr = new Date().toDateString();
-    const candidate = history.find((h) => {
+
+    const historyCandidate = history.find((h) => {
       if (!h.token) return false;
-      if (TERMINAL.has(h.status)) return false;
+      if (TERMINAL_TICKET.has(h.status)) return false;
       return new Date(h.date).toDateString() === todayStr;
     });
-    if (!candidate) return;
+
+    const appointmentCandidates = savedAppointments.filter((a) => {
+      if (a.hidden) return false;
+      if (TERMINAL_APPT.has(a.status)) return false;
+      return new Date(a.scheduledAt).toDateString() === todayStr;
+    });
+
+    if (!historyCandidate && appointmentCandidates.length === 0) return;
+
     let cancelled = false;
     (async () => {
-      const ticket = await fetchTicket(candidate.token);
-      if (cancelled || !ticket) return;
-      if (TERMINAL.has(ticket.status)) return;
-      setActiveToken(candidate.token);
-      setActiveTicket(ticket);
+      // 1. Walk-in ticket from history
+      if (historyCandidate) {
+        const ticket = await fetchTicket(historyCandidate.token);
+        if (cancelled) return;
+        if (ticket && !TERMINAL_TICKET.has(ticket.status)) {
+          setActiveToken(historyCandidate.token);
+          setActiveTicket(ticket);
+          return;
+        }
+      }
+
+      // 2. Appointment that has been checked in → promote linked ticket
+      for (const appt of appointmentCandidates) {
+        const { ticket } = await fetchAppointmentWithTicket(appt.calendarToken);
+        if (cancelled) return;
+        if (!ticket) continue;
+        if (TERMINAL_TICKET.has(ticket.status)) continue;
+        // Fetch the full ticket shape (with office/service/department) so the
+        // Queue view renders identically to walk-ins.
+        const full = await fetchTicket(ticket.qr_token);
+        if (cancelled) return;
+        if (!full || TERMINAL_TICKET.has(full.status)) continue;
+        setActiveToken(ticket.qr_token);
+        setActiveTicket(full);
+        return;
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeToken, history, setActiveToken, setActiveTicket]);
+  }, [activeToken, history, savedAppointments, setActiveToken, setActiveTicket]);
 
   // ---- Polling ----
   const poll = useCallback(async () => {
