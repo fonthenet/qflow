@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
     customerName?: string;
     customerPhone?: string;
     reason?: string;
+    customData?: Record<string, string>;
   };
 
   try {
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, customerName, customerPhone, reason } = body;
+  const { officeId, departmentId, serviceId, customerName, customerPhone, reason, customData } = body;
 
   if (!officeId || !departmentId || !serviceId) {
     return NextResponse.json(
@@ -83,8 +84,19 @@ export async function POST(request: NextRequest) {
     // Non-critical
   }
 
-  // Build customer data
+  // Build customer data — merge dynamic intake fields (customData) + legacy
+  // name/phone/reason for backward compatibility. Explicit legacy fields win
+  // when both are sent.
   const customerData: Record<string, string> = {};
+  if (customData && typeof customData === 'object') {
+    for (const [key, rawValue] of Object.entries(customData)) {
+      if (typeof rawValue !== 'string') continue;
+      // Keep keys that look safe (presets + generated custom_<...> keys)
+      if (!/^[a-zA-Z0-9_]{1,60}$/.test(key)) continue;
+      const value = sanitizeString(rawValue, 500);
+      if (value) customerData[key] = value;
+    }
+  }
   if (cleanCustomerName) customerData.name = cleanCustomerName;
   if (cleanCustomerPhone) customerData.phone = cleanCustomerPhone;
   if (cleanReason) customerData.reason = cleanReason;

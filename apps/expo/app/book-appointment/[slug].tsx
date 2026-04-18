@@ -60,7 +60,7 @@ export default function BookAppointmentScreen() {
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo } = useAppStore();
+  const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo, addAppointment } = useAppStore();
   const [notes, setNotes] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const timeSlotsY = useRef(0);
@@ -79,9 +79,18 @@ export default function BookAppointmentScreen() {
   const [slots, setSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
-  // Customer info
+  // Customer info — pre-fills from saved profile (Zustand persist rehydrates
+  // asynchronously, so we also watch for changes after mount).
   const [name, setName] = useState(savedName);
   const [phone, setPhone] = useState(savedPhone);
+  useEffect(() => {
+    if (savedName && !name) setName(savedName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedName]);
+  useEffect(() => {
+    if (savedPhone && !phone) setPhone(savedPhone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedPhone]);
 
   // Result
   const [appointmentId, setAppointmentId] = useState('');
@@ -200,6 +209,25 @@ export default function BookAppointmentScreen() {
 
     setAppointmentId(result.appointment.id);
     setConfirmedAt(result.appointment.scheduled_at);
+
+    // Stash token + meta locally so the "My appointments" screen can list,
+    // refresh, cancel and check in without any login.
+    if (result.appointment.calendar_token) {
+      addAppointment({
+        id: result.appointment.id,
+        calendarToken: result.appointment.calendar_token,
+        officeId: result.appointment.office_id,
+        placeId: result.appointment.office_id,
+        kioskSlug: typeof slug === 'string' ? slug : null,
+        businessName: info.office.name,
+        serviceName: service?.name ?? null,
+        departmentName: dept?.name ?? null,
+        scheduledAt: result.appointment.scheduled_at,
+        status: result.appointment.status,
+        lastSyncedAt: new Date().toISOString(),
+      });
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setStep('success');
   };

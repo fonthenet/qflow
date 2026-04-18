@@ -99,6 +99,10 @@ export default function KioskScreen() {
       name: data.office.name,
       address: data.office.address,
       kioskSlug: slug,
+      logo_url: data.organization?.logo_url ?? null,
+      vertical: (data.settings?.vertical as string | undefined) ?? null,
+      services: (data.services ?? []).map((s) => s.name.toLowerCase()),
+      bookingMode: (data.settings?.booking_mode as string | undefined) ?? null,
     });
 
     // If a department was pre-selected (from queue peek), auto-jump to service step

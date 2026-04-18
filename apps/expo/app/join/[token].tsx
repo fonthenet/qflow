@@ -17,11 +17,19 @@ import { useTranslation } from 'react-i18next';
 import { fetchJoinInfo, joinQueue, type JoinInfoResponse } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import {
+  getEnabledIntakeFields,
+  getFieldLabel,
+  getFieldPlaceholder,
+  type IntakeField,
+} from '@qflo/shared';
 
 type Step = 'loading' | 'select' | 'joining' | 'success' | 'error';
 
 export default function JoinScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale: 'en' | 'fr' | 'ar' =
+    i18n.language === 'ar' ? 'ar' : i18n.language === 'fr' ? 'fr' : 'en';
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
@@ -34,9 +42,8 @@ export default function JoinScreen() {
   const [selectedOfficeId, setSelectedOfficeId] = useState('');
   const [selectedDeptId, setSelectedDeptId] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
-  const [name, setName] = useState(savedName);
-  const [phone, setPhone] = useState(savedPhone);
-  const [reason, setReason] = useState('');
+  // Dynamic intake field values keyed by IntakeField.key
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
   // Result
   const [ticketNumber, setTicketNumber] = useState('');
@@ -61,6 +68,9 @@ export default function JoinScreen() {
         name: office.name,
         address: office.address,
         joinToken: token,
+        logo_url: data.organization?.logo_url ?? null,
+        vertical: (data.organization?.settings?.vertical as string | undefined) ?? null,
+        services: (data.services ?? []).map((s) => s.name.toLowerCase()),
       });
     }
 
@@ -115,19 +125,56 @@ export default function JoinScreen() {
       }).length
     : 0;
 
-  const canJoin = selectedOfficeId && selectedDeptId && selectedServiceId;
+  // Resolve intake fields from org settings (same-day context for remote join)
+  const intakeFields: IntakeField[] = info
+    ? getEnabledIntakeFields(info.organization.settings ?? {}, [], 'sameday')
+    : [];
+
+  // Prefill saved name/phone whenever either the intake fields load or the
+  // persisted store rehydrates (Zustand persist is async via AsyncStorage,
+  // so savedName/savedPhone may arrive after the first render).
+  useEffect(() => {
+    if (!info) return;
+    setFieldValues((prev) => {
+      const next = { ...prev };
+      for (const f of intakeFields) {
+        // Only fill if the user hasn't typed anything yet
+        const current = (next[f.key] ?? '').trim();
+        if (current) continue;
+        if (f.key === 'name' && savedName) next[f.key] = savedName;
+        else if (f.key === 'phone' && savedPhone) next[f.key] = savedPhone;
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info, savedName, savedPhone]);
+
+  const missingRequired = intakeFields.some(
+    (f) => f.required && !(fieldValues[f.key]?.trim()),
+  );
+
+  const canJoin =
+    !!selectedOfficeId && !!selectedDeptId && !!selectedServiceId && !missingRequired;
 
   // Handle join
   const handleJoin = async () => {
     if (!canJoin) return;
     setStep('joining');
+    // Collect trimmed values for enabled fields only
+    const customData: Record<string, string> = {};
+    for (const f of intakeFields) {
+      const v = (fieldValues[f.key] ?? '').trim();
+      if (v) customData[f.key] = v;
+    }
     const result = await joinQueue({
       officeId: selectedOfficeId,
       departmentId: selectedDeptId,
       serviceId: selectedServiceId,
-      customerName: name.trim() || undefined,
-      customerPhone: phone.trim() || undefined,
-      reason: reason.trim() || undefined,
+      customData,
+      // Legacy fields kept for backward compat with older servers
+      customerName: customData.name || undefined,
+      customerPhone: customData.phone || undefined,
+      reason: customData.reason || undefined,
     });
     if ('error' in result) {
       setStep('select');
@@ -330,37 +377,45 @@ export default function JoinScreen() {
         </View>
       )}
 
-      {/* Customer details */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('join.yourDetails')}</Text>
-        <Text style={styles.sectionSub}>{t('join.optionalHelpsStaff')}</Text>
-        <TextInput
-          style={styles.input}
-          placeholder={t('join.namePlaceholder')}
-          placeholderTextColor={colors.textMuted}
-          value={name}
-          onChangeText={setName}
-          autoCapitalize="words"
-          autoCorrect={false}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={t('join.phonePlaceholder')}
-          placeholderTextColor={colors.textMuted}
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          autoCorrect={false}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={t('join.reasonPlaceholder')}
-          placeholderTextColor={colors.textMuted}
-          value={reason}
-          onChangeText={setReason}
-          autoCapitalize="sentences"
-        />
-      </View>
+      {/* Customer details — dynamic intake fields from org settings */}
+      {intakeFields.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('join.yourDetails')}</Text>
+          <Text style={styles.sectionSub}>{t('join.optionalHelpsStaff')}</Text>
+          {intakeFields.map((field) => {
+            const label = getFieldLabel(field, locale);
+            const placeholder = getFieldPlaceholder(field, locale) || label;
+            const isPhone = field.key === 'phone';
+            const isAge = field.key === 'age';
+            const isName = field.key === 'name';
+            const isReason = field.key === 'reason';
+            return (
+              <View key={field.key}>
+                <Text style={styles.fieldLabel}>
+                  {label}
+                  {field.required ? <Text style={styles.fieldRequired}> *</Text> : null}
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder={placeholder}
+                  placeholderTextColor={colors.textMuted}
+                  value={fieldValues[field.key] ?? ''}
+                  onChangeText={(v) =>
+                    setFieldValues((prev) => ({ ...prev, [field.key]: v }))
+                  }
+                  keyboardType={
+                    isPhone ? 'phone-pad' : isAge ? 'number-pad' : 'default'
+                  }
+                  autoCapitalize={
+                    isName ? 'words' : isReason ? 'sentences' : 'none'
+                  }
+                  autoCorrect={false}
+                />
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {/* Join button */}
       <TouchableOpacity
@@ -610,6 +665,18 @@ const styles = StyleSheet.create({
   },
   optionCheck: {
     marginLeft: 'auto',
+  },
+
+  // Field labels
+  fieldLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  fieldRequired: {
+    color: colors.error,
+    fontWeight: '700',
   },
 
   // Inputs

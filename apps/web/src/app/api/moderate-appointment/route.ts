@@ -8,15 +8,22 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
  * POST /api/moderate-appointment
- * Body: { appointmentId: string, action: 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete', reason?: string }
+ * Body: { appointmentId?: string, calendarToken?: string, action, reason? }
  *
- * Authentication: Bearer token (Supabase JWT for staff, or service role key / INTERNAL_WEBHOOK_SECRET).
+ * Authentication:
+ *   - Staff: Bearer token (Supabase JWT, service role key, or INTERNAL_WEBHOOK_SECRET).
+ *     All actions allowed.
+ *   - Customer (mobile app, etc): `calendarToken` in body — no Bearer required.
+ *     Limited to self-service actions: `cancel`, `check_in`. The token is the
+ *     opaque per-appointment access key issued at booking time, and it resolves
+ *     to a single appointmentId server-side — no spoofing possible.
  *
  * All status transitions and side-effects (ticket sync, customer notification,
  * waitlist notification) are handled by the centralized lifecycle module.
  * check_in and complete have special handling (ticket creation / ticket served).
  */
 type ModerateAction = 'approve' | 'decline' | 'cancel' | 'no_show' | 'check_in' | 'complete' | 'delete';
+const CUSTOMER_ALLOWED_ACTIONS: ModerateAction[] = ['cancel', 'check_in'];
 
 const ACTION_TO_STATUS: Record<string, string> = {
   approve: 'confirmed',
@@ -52,25 +59,54 @@ export async function POST(request: NextRequest) {
   const blocked = await checkRateLimit(request, generalLimiter);
   if (blocked) return blocked;
 
-  const isAuthenticated = await authenticateRequest(request);
-  if (!isAuthenticated) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  let body: { appointmentId?: string; action?: ModerateAction; reason?: string };
+  let body: { appointmentId?: string; calendarToken?: string; action?: ModerateAction; reason?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { appointmentId, action, reason } = body;
+  const { calendarToken, action, reason } = body;
+  let { appointmentId } = body;
   const validActions: ModerateAction[] = ['approve', 'decline', 'cancel', 'no_show', 'check_in', 'complete', 'delete'];
+
+  // ── Auth: customer calendarToken path OR staff Bearer path ───────
+  let isCustomerAuth = false;
+  if (calendarToken && typeof calendarToken === 'string') {
+    if (!action || !CUSTOMER_ALLOWED_ACTIONS.includes(action)) {
+      return NextResponse.json(
+        { error: 'Customer token only permits cancel or check_in' },
+        { status: 403 },
+      );
+    }
+    // Resolve appointmentId from token (never trust client-provided id here)
+    const sbLookup = createAdminClient();
+    const { data: apptLookup, error: lookupErr } = await (sbLookup as any)
+      .from('appointments')
+      .select('id')
+      .eq('calendar_token', calendarToken)
+      .single();
+    if (lookupErr || !apptLookup?.id) {
+      return NextResponse.json({ error: 'Invalid appointment token' }, { status: 404 });
+    }
+    appointmentId = apptLookup.id;
+    isCustomerAuth = true;
+  } else {
+    const isAuthenticated = await authenticateRequest(request);
+    if (!isAuthenticated) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
   if (!appointmentId || !action || !validActions.includes(action)) {
     return NextResponse.json(
-      { error: 'appointmentId and action (approve|decline|cancel|no_show|check_in|complete|delete) are required' },
+      { error: 'appointmentId (or calendarToken) and action (approve|decline|cancel|no_show|check_in|complete|delete) are required' },
       { status: 400 },
     );
+  }
+  // Belt-and-braces: even if staff bypasses, customer path can never delete/approve/etc
+  if (isCustomerAuth && !CUSTOMER_ALLOWED_ACTIONS.includes(action)) {
+    return NextResponse.json({ error: 'Action not permitted with customer token' }, { status: 403 });
   }
 
   // ── delete: permanently remove appointment + linked unserved tickets ──

@@ -47,6 +47,31 @@ export async function GET(
   const service = appointment.service as { name: string; estimated_service_time: number | null } | null;
   const department = appointment.department as { name: string } | null;
 
+  // ── JSON mode — for mobile app "My appointments" list, same token auth ──
+  const wantsJson =
+    request.nextUrl.searchParams.get('format') === 'json' ||
+    (request.headers.get('accept') ?? '').includes('application/json');
+  if (wantsJson) {
+    return NextResponse.json({
+      appointment: {
+        id: appointment.id,
+        status: appointment.status,
+        scheduled_at: appointment.scheduled_at,
+        customer_name: appointment.customer_name,
+        customer_phone: appointment.customer_phone,
+        notes: appointment.notes,
+        calendar_token: appointment.calendar_token,
+        office_id: appointment.office_id,
+        department_id: appointment.department_id,
+        service_id: appointment.service_id,
+        business_name: office?.organization?.name ?? office?.name ?? null,
+        office_name: office?.name ?? null,
+        service_name: service?.name ?? null,
+        department_name: department?.name ?? null,
+      },
+    });
+  }
+
   const businessName = office?.organization?.name ?? office?.name ?? 'Business';
   const serviceName = service?.name ?? 'Service';
   const departmentName = department?.name ?? '';

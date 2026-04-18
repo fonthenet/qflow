@@ -152,6 +152,20 @@ function RootNavigator() {
     return cleanup;
   }, [localMode]);
 
+  // ---- Wait-alert background polling (runs while app is active) ---------
+  useEffect(() => {
+    // Lazy-import so the polling module doesn't drag its deps into the
+    // critical-path bundle.
+    let stop: (() => void) | null = null;
+    (async () => {
+      const { startWaitAlerts } = await import('@/lib/wait-alerts');
+      stop = startWaitAlerts();
+    })();
+    return () => {
+      stop?.();
+    };
+  }, []);
+
   // ---- Push notification setup -------------------------------------------
   useEffect(() => {
     // Create Android channels on app startup (no-op on iOS/web)
@@ -245,6 +259,7 @@ function RootNavigator() {
         <Stack.Screen name="kiosk/[slug]" options={{ title: 'Kiosk', headerShown: false }} />
         <Stack.Screen name="queue-peek/[slug]" options={{ headerShown: false }} />
         <Stack.Screen name="book-appointment/[slug]" options={{ headerShown: false }} />
+        <Stack.Screen name="appointments/index" options={{ headerShown: false }} />
       </Stack>
     </View>
   );

@@ -118,6 +118,7 @@ export interface JoinInfoResponse {
     id: string;
     name: string;
     logo_url: string | null;
+    settings?: Record<string, any>;
   };
   offices: Array<{ id: string; name: string; address: string | null }>;
   departments: Array<{ id: string; name: string; office_id: string }>;
@@ -162,6 +163,7 @@ export async function joinQueue(params: {
   customerName?: string;
   customerPhone?: string;
   reason?: string;
+  customData?: Record<string, string>;
 }): Promise<JoinQueueResult | { error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/join-queue`, {
@@ -318,6 +320,8 @@ export interface CreateBookingResult {
     customer_phone: string | null;
     scheduled_at: string;
     status: string;
+    /** Per-appointment opaque token used for customer self-service actions. */
+    calendar_token: string;
   };
 }
 
@@ -342,6 +346,85 @@ export async function createBooking(params: {
   } catch {
     return { error: 'Network error. Please try again.' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// My appointments — customer-scoped via per-appointment calendar_token
+// (Reuses platform routes: GET /api/calendar/[token] and POST /api/moderate-appointment.)
+// ---------------------------------------------------------------------------
+
+export interface AppointmentDetail {
+  id: string;
+  status: string;
+  scheduled_at: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  notes: string | null;
+  calendar_token: string;
+  office_id: string;
+  department_id: string;
+  service_id: string;
+  business_name: string | null;
+  office_name: string | null;
+  service_name: string | null;
+  department_name: string | null;
+}
+
+/** Fetch the latest state for one booking via the reusable calendar token endpoint. */
+export async function fetchAppointmentByToken(calendarToken: string): Promise<AppointmentDetail | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/calendar/${encodeURIComponent(calendarToken)}?format=json`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data?.appointment as AppointmentDetail) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Cancel a booking using the customer-owned calendar token (no Bearer). */
+export async function cancelAppointment(
+  calendarToken: string,
+  reason?: string,
+): Promise<{ ok: true; status: string } | { error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/moderate-appointment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calendarToken, action: 'cancel', reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data?.error ?? 'Failed to cancel' };
+    return { ok: true, status: data?.status ?? 'cancelled' };
+  } catch {
+    return { error: 'Network error. Please try again.' };
+  }
+}
+
+/** Check in at the venue — creates a live ticket from the appointment. */
+export async function checkInAppointment(
+  calendarToken: string,
+): Promise<{ ok: true; status: string; ticket?: { qr_token?: string; ticket_number?: string } | null } | { error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/moderate-appointment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calendarToken, action: 'check_in' }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data?.error ?? 'Failed to check in' };
+    return { ok: true, status: data?.status ?? 'checked_in', ticket: data?.ticket ?? null };
+  } catch {
+    return { error: 'Network error. Please try again.' };
+  }
+}
+
+/** ICS download URL — hand this to Linking.openURL to let the OS open Calendar. */
+export function getCalendarIcsUrl(calendarToken: string): string {
+  return `${BASE_URL}/api/calendar/${encodeURIComponent(calendarToken)}`;
 }
 
 // ---------------------------------------------------------------------------
