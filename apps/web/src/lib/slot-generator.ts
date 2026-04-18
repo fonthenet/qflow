@@ -42,6 +42,16 @@ export interface AvailableSlot {
   time: string;      // HH:MM
   remaining: number; // spots left
   total: number;     // total capacity (slots_per_interval)
+  /**
+   * True when the slot can be booked. When `false`, the slot is still
+   * returned so UIs can render it as "taken" and give the customer a
+   * full picture of the day's schedule — but the booking flow must
+   * reject it. Callers that only need bookable slots should filter
+   * on `available !== false`.
+   */
+  available: boolean;
+  /** Why the slot is unavailable. Only set when `available === false`. */
+  reason?: 'taken' | 'daily_limit';
 }
 
 export interface SlotGeneratorResult {
@@ -151,6 +161,7 @@ export async function getAvailableSlots(
     .single();
 
   const orgSettings = (org?.settings as Record<string, any> | null) ?? {};
+  const officeSettingsEarly = ((office.settings as Record<string, any>) ?? {});
   // Use org-level timezone as single source of truth
   const orgTimezone: string = org?.timezone || 'Africa/Algiers';
   const bookingMode = orgSettings.booking_mode ?? 'simple';
@@ -160,6 +171,16 @@ export async function getAvailableSlots(
   const dailyTicketLimit = Number(orgSettings.daily_ticket_limit ?? 0);
   const allowCancellation = Boolean(orgSettings.allow_cancellation ?? false);
   const minLeadHours = Number(orgSettings.min_booking_lead_hours ?? 1);
+  // "Show taken slots" is ON by default for every business (including
+  // new signups) — customers see the full day's schedule with booked
+  // slots marked as taken, which builds trust and speeds decisions.
+  // Any org/office that prefers to hide load can set hide_taken_slots
+  // to true in their settings JSON (office overrides org).
+  const hideTakenSlots = officeSettingsEarly.hide_taken_slots === true
+    ? true
+    : orgSettings.hide_taken_slots === true
+      ? true
+      : false;
 
   const baseMeta = {
     booking_mode: bookingMode,
@@ -180,7 +201,7 @@ export async function getAvailableSlots(
   }
 
   // ── Resolve visit intake override mode ──
-  const officeSettings = ((office.settings as Record<string, any>) ?? {});
+  const officeSettings = officeSettingsEarly;
   const visitIntakeOverrideMode =
     typeof orgSettings.visit_intake_override_mode === 'string'
       ? orgSettings.visit_intake_override_mode
@@ -307,11 +328,17 @@ export async function getAvailableSlots(
     .gte('scheduled_at', startOfDay)
     .lte('scheduled_at', endOfDay);
 
-  // Count bookings per slot (using office timezone, not server UTC)
+  // Count bookings per slot (using office timezone, not server UTC).
+  // Guard against malformed rows (missing/invalid scheduled_at) so one
+  // bad row can't throw from Intl.DateTimeFormat and take the whole
+  // booking grid down.
   const slotBookingCounts = new Map<string, number>();
   let totalDayBookings = 0;
   for (const a of existingAppointments ?? []) {
-    const t = timeInTz(new Date(a.scheduled_at), orgTimezone);
+    if (!a?.scheduled_at) continue;
+    const d = new Date(a.scheduled_at);
+    if (isNaN(d.getTime())) continue;
+    const t = timeInTz(d, orgTimezone);
     slotBookingCounts.set(t, (slotBookingCounts.get(t) ?? 0) + 1);
     totalDayBookings++;
   }
@@ -341,27 +368,54 @@ export async function getAvailableSlots(
   const availableSlots: AvailableSlot[] = [];
 
   for (const slot of allSlots) {
-    // Skip blocked slots
+    // Skip blocked slots outright — these aren't "taken", the business
+    // deliberately made them unavailable (break, maintenance, etc.)
+    // and customers shouldn't see them at all.
     if (isSlotBlocked(slot, blockedData)) continue;
 
-    // Skip past slots (with lead time buffer)
+    // Skip past slots (with lead time buffer) — no value to the customer.
     if (isToday) {
       const slotMs = new Date(`${date}T${slot}:00Z`).getTime();
       if (slotMs <= nowMs + minLeadMs) continue;
     }
 
-    // Skip if daily limit reached
-    if (dailyLimitReached) continue;
-
     // Check capacity
     const booked = slotBookingCounts.get(slot) ?? 0;
     const remaining = slotsPerInterval - booked;
-    if (remaining <= 0) continue;
+    const isTaken = remaining <= 0;
+
+    // Daily-limit-reached makes EVERY remaining slot effectively taken.
+    // When the limit is reached we still include the slots so the
+    // customer can see the full day's timeline (marked unavailable).
+    if (dailyLimitReached) {
+      if (hideTakenSlots) continue;
+      availableSlots.push({
+        time: slot,
+        remaining: 0,
+        total: slotsPerInterval,
+        available: false,
+        reason: 'daily_limit',
+      });
+      continue;
+    }
+
+    if (isTaken) {
+      if (hideTakenSlots) continue;
+      availableSlots.push({
+        time: slot,
+        remaining: 0,
+        total: slotsPerInterval,
+        available: false,
+        reason: 'taken',
+      });
+      continue;
+    }
 
     availableSlots.push({
       time: slot,
       remaining,
       total: slotsPerInterval,
+      available: true,
     });
   }
 

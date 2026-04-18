@@ -42,13 +42,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Return backward-compatible format (slots as string[] for existing consumers)
-  // PLUS the new enriched format
+  // Backward-compat `slots` is **available-only** string[] so old clients
+  // that just iterate `slots` never offer a taken time. New clients use
+  // `slotsDetailed` which includes taken slots with `available:false`.
+  const bookable = result.slots.filter(s => s.available !== false);
   return NextResponse.json({
     officeId: result.officeId,
     date: result.date,
-    slots: result.slots.map(s => s.time), // backward compat: string[]
-    slotsDetailed: result.slots, // new: { time, remaining, total }[]
+    slots: bookable.map(s => s.time), // backward compat: string[] of bookable only
+    slotsDetailed: result.slots, // full list — taken included, with `available` flag
     meta: result.meta,
   });
 }

@@ -4271,7 +4271,9 @@ async function handleBookingTimeChoice(
     return true;
   }
 
-  // Fetch slots for the date
+  // Fetch slots for the date (includes taken ones — the index the user
+  // typed is 1-based over the FULL displayed list, so we must keep
+  // taken slots in-place here to match.)
   const { getAvailableSlots } = await import('@/lib/slot-generator');
   const result = await getAvailableSlots({
     officeId: session.office_id,
@@ -4285,6 +4287,20 @@ async function handleBookingTimeChoice(
   }
 
   const chosenSlot = result.slots[idx - 1];
+
+  // Reject taken slots with a friendly message and re-show the list.
+  // The customer can see all options (available + taken) so this
+  // should only fire if they deliberately pick a crossed-out number.
+  if (chosenSlot.available === false) {
+    const takenMsg = locale === 'ar'
+      ? `⚠️ الوقت *${chosenSlot.time}* محجوز بالفعل. الرجاء اختيار وقت آخر.`
+      : locale === 'fr'
+        ? `⚠️ Le créneau *${chosenSlot.time}* est déjà réservé. Veuillez choisir un autre horaire.`
+        : `⚠️ The slot *${chosenSlot.time}* is already taken. Please choose another time.`;
+    await sendMessage({ to: identifier, body: takenMsg });
+    await showAvailableSlots(identifier, session.office_id, session.service_id || session.department_id, session.booking_date, locale, channel, sendMessage);
+    return true;
+  }
   const supabase = createAdminClient() as any;
 
   // Check if name can be skipped for same-day bookings
@@ -4713,14 +4729,31 @@ async function showAvailableSlots(
   const { getAvailableSlots } = await import('@/lib/slot-generator');
   const result = await getAvailableSlots({ officeId, serviceId, date });
 
+  // If the whole day has nothing to show (no slots at all — closed,
+  // holiday, etc.) tell the customer. A day with only taken slots still
+  // has entries, so we fall through and render them so the customer
+  // understands "everything is booked today" at a glance.
   if (result.slots.length === 0) {
     await sendMessage({ to: identifier, body: t('booking_no_slots', locale) });
     return;
   }
 
+  // Numbered list preserves index→slot mapping so the user can reply
+  // with a digit. Taken slots are shown with a strikethrough and
+  // (taken) tag; the reply handler rejects taken numbers with a
+  // friendly message and re-shows the same list.
+  const takenWord = locale === 'ar' ? 'محجوز' : locale === 'fr' ? 'réservé' : 'taken';
+  const fullDayWord = locale === 'ar' ? 'اليوم ممتلئ' : locale === 'fr' ? 'journée complète' : 'full day';
+  const spotsWord = locale === 'ar' ? 'متاح' : locale === 'fr' ? 'places' : 'spots';
   const list = result.slots.map((s, i) => {
-    const remaining = s.remaining > 1 ? ` (${s.remaining} ${locale === 'ar' ? 'متاح' : locale === 'fr' ? 'places' : 'spots'})` : '';
-    return `*${i + 1}* — ${s.time}${remaining}`;
+    const idx = i + 1;
+    if (s.available === false) {
+      const label = s.reason === 'daily_limit' ? fullDayWord : takenWord;
+      // WhatsApp/Messenger render ~text~ as strikethrough.
+      return `~*${idx}* — ${s.time}~ _(${label})_`;
+    }
+    const remaining = s.remaining > 1 ? ` (${s.remaining} ${spotsWord})` : '';
+    return `*${idx}* — ${s.time}${remaining}`;
   }).join('\n');
 
   const dateFormatted = formatDateForLocale(date, locale);

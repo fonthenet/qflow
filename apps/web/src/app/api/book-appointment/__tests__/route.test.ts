@@ -81,8 +81,8 @@ const AVAILABLE_SLOTS_RESULT = {
   officeId: TEST_IDS.officeId,
   date: '2026-04-15',
   slots: [
-    { time: '10:00', remaining: 2, total: 3 },
-    { time: '11:00', remaining: 1, total: 3 },
+    { time: '10:00', remaining: 2, total: 3, available: true },
+    { time: '11:00', remaining: 1, total: 3, available: true },
   ],
   meta: {
     booking_mode: 'open',
@@ -287,7 +287,7 @@ describe('POST /api/book-appointment', () => {
     getAvailableSlotsMock.mockResolvedValue({
       ...AVAILABLE_SLOTS_RESULT,
       // Only 11:00 is available, but we request 10:00
-      slots: [{ time: '11:00', remaining: 1, total: 3 }],
+      slots: [{ time: '11:00', remaining: 1, total: 3, available: true }],
     });
 
     const req = createMockRequest('POST', VALID_BODY);

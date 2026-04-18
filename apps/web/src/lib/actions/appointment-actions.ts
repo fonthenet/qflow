@@ -619,7 +619,7 @@ export async function getAvailableSlots(
   staffId?: string,
 ): Promise<{
   data: string[];
-  detailed?: { time: string; remaining: number; total: number }[];
+  detailed?: { time: string; remaining: number; total: number; available: boolean; reason?: 'taken' | 'daily_limit' }[];
   meta?: Record<string, unknown>;
   error?: string;
 }> {
@@ -633,9 +633,19 @@ export async function getAvailableSlots(
       staffId,
     });
 
+    // `data` (legacy consumers) stays available-only so nothing books a
+    // taken slot by accident. `detailed` carries the full day including
+    // taken slots + the `available` flag for richer UIs.
+    const bookable = result.slots.filter(s => s.available !== false);
     return {
-      data: result.slots.map(s => s.time),
-      detailed: result.slots.map(s => ({ time: s.time, remaining: s.remaining, total: s.total })),
+      data: bookable.map(s => s.time),
+      detailed: result.slots.map(s => ({
+        time: s.time,
+        remaining: s.remaining,
+        total: s.total,
+        available: s.available !== false,
+        reason: s.reason,
+      })),
       meta: result.meta as unknown as Record<string, unknown>,
     };
   } catch (err: unknown) {

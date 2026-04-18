@@ -87,6 +87,10 @@ function defaultOffice(overrides: Record<string, any> = {}, forDate?: string) {
 
 function defaultOrg(settingsOverrides: Record<string, any> = {}) {
   return {
+    // Pin to UTC so appointment bucketing (scheduled_at with 'Z'
+    // suffix) matches the slot time strings deterministically,
+    // regardless of the host machine's local timezone.
+    timezone: 'UTC',
     settings: {
       booking_mode: 'simple',
       booking_horizon_days: 14,
@@ -197,7 +201,7 @@ describe('getAvailableSlots', () => {
     expect(result.date).toBe(date);
     // 08:00-12:00 with 30 min slots = 8 slots, each with remaining=2 (slots_per_interval)
     expect(result.slots.length).toBe(8);
-    expect(result.slots[0]).toEqual({ time: '08:00', remaining: 2, total: 2 });
+    expect(result.slots[0]).toEqual({ time: '08:00', remaining: 2, total: 2, available: true });
     expect(result.meta.booking_mode).toBe('simple');
     expect(result.meta.office_closed).toBe(false);
     expect(result.meta.is_holiday).toBe(false);
@@ -205,9 +209,9 @@ describe('getAvailableSlots', () => {
 
   it('reduces remaining count based on existing appointments', async () => {
     const date = futureDateStr(3);
-    // Build scheduled_at as a local-time string so getHours() returns 08
-    // (the source code uses new Date(a.scheduled_at).getHours() which is local)
-    const scheduledAt = `${date}T08:00:00`;
+    // Explicit UTC so the bucket key matches 08:00 under office tz='UTC'
+    // regardless of the machine running the test.
+    const scheduledAt = `${date}T08:00:00.000Z`;
     const appointments = [{ scheduled_at: scheduledAt }];
 
     setupStandard({ appointments });
@@ -222,7 +226,7 @@ describe('getAvailableSlots', () => {
 
   it('removes fully booked slots from the result', async () => {
     const date = futureDateStr(3);
-    const scheduledAt = `${date}T08:00:00`;
+    const scheduledAt = `${date}T08:00:00.000Z`;
     // Two bookings fill up the slot (slots_per_interval=2)
     const appointments = [
       { scheduled_at: scheduledAt },
@@ -232,10 +236,18 @@ describe('getAvailableSlots', () => {
     setupStandard({ appointments });
     const result = await getAvailableSlots({ officeId: OFFICE_ID, serviceId: SERVICE_ID, date });
 
+    // Taken slots are now KEPT in the result (with available:false) so
+    // customers see the full day's timeline with booked slots marked.
+    // Businesses that prefer to hide load can opt out via
+    // `hide_taken_slots` in org/office settings.
     const slot0800 = result.slots.find((s) => s.time === '08:00');
-    expect(slot0800).toBeUndefined();
-    // Other slots should still be present
-    expect(result.slots.length).toBe(7);
+    expect(slot0800).toBeDefined();
+    expect(slot0800!.available).toBe(false);
+    expect(slot0800!.reason).toBe('taken');
+    expect(slot0800!.remaining).toBe(0);
+    expect(result.slots.length).toBe(8);
+    // Only 7 are bookable
+    expect(result.slots.filter(s => s.available !== false).length).toBe(7);
   });
 
   it('returns empty result when booking mode is disabled', async () => {
@@ -311,7 +323,11 @@ describe('getAvailableSlots', () => {
     });
     const result = await getAvailableSlots({ officeId: OFFICE_ID, serviceId: SERVICE_ID, date });
 
-    expect(result.slots).toEqual([]);
+    // When the daily limit is hit we still render the day's timeline
+    // with every remaining slot flagged unavailable+reason='daily_limit'.
+    // No slot is bookable.
+    expect(result.slots.every(s => s.available === false)).toBe(true);
+    expect(result.slots.every(s => s.reason === 'daily_limit')).toBe(true);
     expect(result.meta.daily_limit_reached).toBe(true);
     expect(result.meta.daily_booking_count).toBe(2);
   });

@@ -93,7 +93,7 @@ export function BookingForm({
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [detailedSlots, setDetailedSlots] = useState<{ time: string; remaining: number; total: number }[]>([]);
+  const [detailedSlots, setDetailedSlots] = useState<{ time: string; remaining: number; total: number; available?: boolean; reason?: 'taken' | 'daily_limit' }[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -874,7 +874,7 @@ export function BookingForm({
               <div className="flex items-center justify-center py-12">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               </div>
-            ) : availableSlots.length === 0 ? (
+            ) : (detailedSlots.length === 0 && availableSlots.length === 0) ? (
               <div className="rounded-xl border border-border bg-card p-6 text-center shadow-sm">
                 <p className="text-lg text-muted-foreground">
                   {t('No available time slots for this date.')}
@@ -884,21 +884,40 @@ export function BookingForm({
                 </p>
               </div>
             ) : (
+              // Render the full day's timeline when `detailedSlots` is
+              // populated (includes taken slots, marked disabled). Fall
+              // back to the legacy `availableSlots` string[] when the
+              // server didn't provide the enriched list.
               <div className="grid grid-cols-3 gap-3">
-                {availableSlots.map((slot) => {
-                  const detail = detailedSlots.find(d => d.time === slot);
-                  const showCapacity = detail && detail.total > 1;
+                {(detailedSlots.length > 0
+                  ? detailedSlots
+                  : availableSlots.map(t => ({ time: t, remaining: 1, total: 1, available: true, reason: undefined as any }))
+                ).map((detail) => {
+                  const slot = detail.time;
+                  const isTaken = detail.available === false;
+                  const showCapacity = !isTaken && detail.total > 1;
+                  const takenLabel = detail.reason === 'daily_limit' ? t('Full day') : t('Taken');
                   return (
                     <button
                       key={slot}
-                      onClick={() => handleSelectTime(slot)}
+                      type="button"
+                      disabled={isTaken}
+                      aria-disabled={isTaken}
+                      onClick={() => !isTaken && handleSelectTime(slot)}
                       className={`rounded-xl border p-3 text-center font-medium transition-all ${
-                        selectedTime === slot
+                        isTaken
+                          ? 'cursor-not-allowed border-border/50 bg-muted/40 text-muted-foreground/60 line-through opacity-60'
+                          : selectedTime === slot
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-border bg-card text-foreground hover:border-primary hover:shadow-sm'
                       }`}
                     >
                       {formatSlotTime(slot)}
+                      {isTaken && (
+                        <span className="mt-1 block text-[10px] uppercase tracking-wide text-muted-foreground no-underline">
+                          {takenLabel}
+                        </span>
+                      )}
                       {showCapacity && (
                         <span className={`mt-1 flex items-center justify-center gap-1 text-xs ${
                           selectedTime === slot ? 'text-primary-foreground/70' : 'text-muted-foreground'

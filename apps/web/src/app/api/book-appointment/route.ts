@@ -103,9 +103,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Daily booking limit reached for this date' }, { status: 409 });
   }
 
-  // Check if the specific time slot is available
-  const slotAvailable = availability.slots.find(s => s.time === timeStr);
-  if (!slotAvailable) {
+  // Check if the specific time slot is available.
+  // `availability.slots` now includes taken slots (with `available:false`)
+  // so we must assert BOTH presence and availability — otherwise a
+  // taken slot would pass the find() check.
+  const slotMatch = availability.slots.find(s => s.time === timeStr);
+  if (!slotMatch || slotMatch.available === false) {
     return NextResponse.json({ error: 'This time slot is not available' }, { status: 409 });
   }
 
