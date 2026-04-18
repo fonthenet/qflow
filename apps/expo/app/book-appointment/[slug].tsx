@@ -23,6 +23,12 @@ import {
 } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
+import {
+  getEnabledIntakeFields,
+  getFieldLabel,
+  getFieldPlaceholder,
+  type IntakeField,
+} from '@qflo/shared';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
 
@@ -54,14 +60,15 @@ function formatTime(slot: string): string {
 }
 
 export default function BookAppointmentScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale: 'en' | 'fr' | 'ar' =
+    i18n.language === 'ar' ? 'ar' : i18n.language === 'fr' ? 'fr' : 'en';
   const { slug, deptId: initialDeptId, serviceId: initialServiceId } =
     useLocalSearchParams<{ slug: string; deptId?: string; serviceId?: string }>();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo, addAppointment } = useAppStore();
-  const [notes, setNotes] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const timeSlotsY = useRef(0);
 
@@ -81,18 +88,40 @@ export default function BookAppointmentScreen() {
   const [slots, setSlots] = useState<SlotCell[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
-  // Customer info — pre-fills from saved profile (Zustand persist rehydrates
-  // asynchronously, so we also watch for changes after mount).
-  const [name, setName] = useState(savedName);
-  const [phone, setPhone] = useState(savedPhone);
+  // Customer info — driven by the business's configured intake fields.
+  // Keyed by the IntakeField.key so we can serialise to the right API
+  // params (name/phone/wilaya/notes) and merge the rest into notes.
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+
+  // Resolve the intake fields the business wants for future bookings.
+  const intakeFields: IntakeField[] = info
+    ? getEnabledIntakeFields(info.settings ?? {}, [], 'booking')
+    : [];
+
+  // Pre-fill saved name/phone (Zustand persist is async; re-run when it
+  // rehydrates or when the fields list changes).
   useEffect(() => {
-    if (savedName && !name) setName(savedName);
+    if (!info) return;
+    setFieldValues((prev) => {
+      const next = { ...prev };
+      for (const f of intakeFields) {
+        const current = (next[f.key] ?? '').trim();
+        if (current) continue;
+        if (f.key === 'name' && savedName) next[f.key] = savedName;
+        else if (f.key === 'phone' && savedPhone) next[f.key] = savedPhone;
+      }
+      return next;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedName]);
-  useEffect(() => {
-    if (savedPhone && !phone) setPhone(savedPhone);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedPhone]);
+  }, [info, savedName, savedPhone]);
+
+  // Back-compat convenience: most of the screen reads name/phone to
+  // decide whether to stash saved customer info + populate the summary.
+  const name = fieldValues.name ?? '';
+  const phone = fieldValues.phone ?? '';
+  const notes = fieldValues.reason ?? fieldValues.notes ?? '';
+  const setField = (key: string, v: string) =>
+    setFieldValues((prev) => ({ ...prev, [key]: v }));
 
   // Result
   const [appointmentId, setAppointmentId] = useState('');
@@ -194,8 +223,17 @@ export default function BookAppointmentScreen() {
     setStep('info');
   };
 
+  // True when any required intake field is blank.
+  const missingRequired = intakeFields.some(
+    (f) => f.required && !(fieldValues[f.key]?.trim()),
+  );
+
+  // "Name" is required by the API even if the business didn't flag it.
+  const hasNameField = intakeFields.some((f) => f.key === 'name');
+  const canSubmitInfo = !missingRequired && (!hasNameField || !!name.trim()) && !!name.trim();
+
   const handleSubmitInfo = () => {
-    if (!name.trim()) return;
+    if (!canSubmitInfo) return;
     setCustomerInfo(name.trim(), phone.trim());
     setStep('confirm');
   };
@@ -206,14 +244,35 @@ export default function BookAppointmentScreen() {
 
     const scheduledAt = `${selectedDate}T${selectedSlot}:00`;
 
+    // Map dynamic intake fields → book-appointment API params.
+    // Known presets go to their dedicated columns; everything else is
+    // folded into the `notes` field as "Label: value" lines so the
+    // staff still sees what the customer entered.
+    const trimmed = (k: string) => (fieldValues[k] ?? '').trim();
+    const mappedName = trimmed('name') || savedName || 'Guest';
+    const mappedPhone = trimmed('phone') || undefined;
+    const mappedWilaya = trimmed('wilaya') || undefined;
+    const reasonOrNotes = trimmed('reason') || trimmed('notes');
+    const extraLines: string[] = [];
+    for (const f of intakeFields) {
+      if (['name', 'phone', 'wilaya', 'reason', 'notes'].includes(f.key)) continue;
+      const v = trimmed(f.key);
+      if (!v) continue;
+      const label = getFieldLabel(f, locale);
+      extraLines.push(`${label}: ${v}`);
+    }
+    const combinedNotes = [reasonOrNotes, ...extraLines].filter(Boolean).join('\n');
+
     const result = await createBooking({
       officeId: info.office.id,
       departmentId: selectedDeptId,
       serviceId: selectedServiceId,
-      customerName: name.trim(),
-      customerPhone: phone.trim() || undefined,
+      customerName: mappedName,
+      customerPhone: mappedPhone,
       scheduledAt,
-      notes: notes.trim() || undefined,
+      notes: combinedNotes || undefined,
+      wilaya: mappedWilaya,
+      locale,
     });
 
     if ('error' in result) {
@@ -490,60 +549,72 @@ export default function BookAppointmentScreen() {
               {formatDate(selectedDate, t)} · {formatTime(selectedSlot)}
             </Text>
 
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.fullName')}</Text>
-            <TextInput
-              style={[
-                s.textInput,
-                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-              ]}
-              value={name}
-              onChangeText={setName}
-              placeholder={t('bookAppointment.fullNamePlaceholder')}
-              placeholderTextColor={colors.textMuted}
-              autoFocus
-              returnKeyType="next"
-            />
+            {intakeFields.length === 0 && (
+              <>
+                <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>
+                  {t('bookAppointment.fullName')}
+                </Text>
+                <TextInput
+                  style={[
+                    s.textInput,
+                    { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                  ]}
+                  value={name}
+                  onChangeText={(v) => setField('name', v)}
+                  placeholder={t('bookAppointment.fullNamePlaceholder')}
+                  placeholderTextColor={colors.textMuted}
+                  autoFocus
+                  returnKeyType="done"
+                />
+              </>
+            )}
 
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.phoneOptional')}</Text>
-            <TextInput
-              style={[
-                s.textInput,
-                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-              ]}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder={t('bookAppointment.phonePlaceholder')}
-              placeholderTextColor={colors.textMuted}
-              keyboardType="phone-pad"
-              returnKeyType="next"
-            />
-
-            <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>{t('bookAppointment.notesOptional')}</Text>
-            <TextInput
-              style={[
-                s.textInput,
-                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, minHeight: 72, textAlignVertical: 'top' },
-              ]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder={t('bookAppointment.notesPlaceholder')}
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={3}
-              returnKeyType="done"
-            />
+            {intakeFields.map((field, idx) => {
+              const label = getFieldLabel(field, locale);
+              const placeholder = getFieldPlaceholder(field, locale) || label;
+              const isPhone = field.key === 'phone';
+              const isAge = field.key === 'age';
+              const isName = field.key === 'name';
+              const isReason = field.key === 'reason' || field.key === 'notes';
+              return (
+                <View key={field.key}>
+                  <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>
+                    {label}
+                    {field.required ? <Text style={{ color: colors.error }}> *</Text> : null}
+                  </Text>
+                  <TextInput
+                    style={[
+                      s.textInput,
+                      { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                      isReason && { minHeight: 72, textAlignVertical: 'top' },
+                    ]}
+                    value={fieldValues[field.key] ?? ''}
+                    onChangeText={(v) => setField(field.key, v)}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType={isPhone ? 'phone-pad' : isAge ? 'number-pad' : 'default'}
+                    autoCapitalize={isName ? 'words' : isReason ? 'sentences' : 'none'}
+                    autoCorrect={false}
+                    multiline={isReason}
+                    numberOfLines={isReason ? 3 : 1}
+                    autoFocus={idx === 0}
+                    returnKeyType={idx === intakeFields.length - 1 ? 'done' : 'next'}
+                  />
+                </View>
+              );
+            })}
 
             <TouchableOpacity
               style={[
                 s.primaryBtn,
-                { backgroundColor: name.trim() ? colors.primary : colors.border },
+                { backgroundColor: canSubmitInfo ? colors.primary : colors.border },
                 { marginTop: spacing.lg },
               ]}
               onPress={handleSubmitInfo}
-              disabled={!name.trim()}
+              disabled={!canSubmitInfo}
               activeOpacity={0.8}
             >
-              <Text style={[s.primaryBtnText, { color: name.trim() ? '#fff' : colors.textMuted }]}>
+              <Text style={[s.primaryBtnText, { color: canSubmitInfo ? '#fff' : colors.textMuted }]}>
                 {t('bookAppointment.reviewBooking')}
               </Text>
             </TouchableOpacity>

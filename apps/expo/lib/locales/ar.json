@@ -71,6 +71,7 @@
     "expired": "انتهى",
     "today": "اليوم",
     "yesterday": "أمس",
+    "tomorrow": "غداً",
     "anyMoment": "في أي لحظة",
     "min": "دقيقة"
   },
@@ -558,12 +559,19 @@
   },
 
   "history": {
-    "noVisits": "لا توجد زيارات",
-    "noVisitsMsg": "سيظهر سجل قائمة الانتظار هنا بعد أول زيارة",
+    "noVisits": "لا يوجد شيء بعد",
+    "noVisitsMsg": "ستظهر تذاكرك ومواعيدك هنا.",
     "scanToJoin": "امسح للانضمام",
     "visits": "زيارات",
     "served": "تمت خدمتهم",
-    "missed": "فائتون"
+    "missed": "فائتون",
+    "total": "المجموع",
+    "upcoming": "قادمة",
+    "upcomingShort": "قادمة",
+    "startingNow": "الآن",
+    "inMinutes": "خلال {{count}} د",
+    "inHours": "خلال {{count}} س",
+    "inDays": "خلال {{count}} يوم"
   },
 
   "places": {

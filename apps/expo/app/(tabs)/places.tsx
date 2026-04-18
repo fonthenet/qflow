@@ -921,7 +921,7 @@ function AppointmentsShortcut({ colors }: { colors: ThemeColors }) {
 
   return (
     <TouchableOpacity
-      onPress={() => router.push('/appointments' as any)}
+      onPress={() => router.push('/(tabs)/history' as any)}
       activeOpacity={0.75}
       style={{
         flexDirection: 'row',

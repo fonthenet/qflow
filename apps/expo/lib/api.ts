@@ -341,6 +341,8 @@ export async function createBooking(params: {
   customerPhone?: string;
   scheduledAt: string; // ISO string
   notes?: string;
+  wilaya?: string;
+  locale?: 'en' | 'fr' | 'ar';
 }): Promise<CreateBookingResult | { error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/book-appointment`, {

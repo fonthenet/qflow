@@ -71,6 +71,7 @@
     "expired": "EXPIRED",
     "today": "Today",
     "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow",
     "anyMoment": "Any moment",
     "min": "min"
   },
@@ -558,12 +559,19 @@
   },
 
   "history": {
-    "noVisits": "No visits yet",
-    "noVisitsMsg": "Your queue history will appear here after your first visit",
+    "noVisits": "Nothing here yet",
+    "noVisitsMsg": "Your tickets and appointments will appear here.",
     "scanToJoin": "Scan to join",
     "visits": "visits",
     "served": "served",
-    "missed": "missed"
+    "missed": "missed",
+    "total": "total",
+    "upcoming": "Upcoming",
+    "upcomingShort": "upcoming",
+    "startingNow": "Now",
+    "inMinutes": "In {{count}} min",
+    "inHours": "In {{count}} h",
+    "inDays": "In {{count}} d"
   },
 
   "places": {

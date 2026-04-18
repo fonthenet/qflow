@@ -71,6 +71,7 @@
     "expired": "EXPIRÉ",
     "today": "Aujourd'hui",
     "yesterday": "Hier",
+    "tomorrow": "Demain",
     "anyMoment": "D'un moment à l'autre",
     "min": "min"
   },
@@ -558,12 +559,19 @@
   },
 
   "history": {
-    "noVisits": "Aucune visite",
-    "noVisitsMsg": "Votre historique de file d'attente apparaîtra ici après votre première visite",
+    "noVisits": "Rien pour l'instant",
+    "noVisitsMsg": "Vos tickets et rendez-vous apparaîtront ici.",
     "scanToJoin": "Scanner pour rejoindre",
     "visits": "visites",
     "served": "servis",
-    "missed": "manqués"
+    "missed": "manqués",
+    "total": "total",
+    "upcoming": "À venir",
+    "upcomingShort": "à venir",
+    "startingNow": "Maintenant",
+    "inMinutes": "Dans {{count}} min",
+    "inHours": "Dans {{count}} h",
+    "inDays": "Dans {{count}} j"
   },
 
   "places": {
