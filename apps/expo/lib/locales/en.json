@@ -566,12 +566,22 @@
     "served": "served",
     "missed": "missed",
     "total": "total",
+    "today": "Today",
     "upcoming": "Upcoming",
     "upcomingShort": "upcoming",
     "startingNow": "Now",
     "inMinutes": "In {{count}} min",
     "inHours": "In {{count}} h",
-    "inDays": "In {{count}} d"
+    "inDays": "In {{count}} d",
+    "tabToday": "Today",
+    "tabUpcoming": "Upcoming",
+    "tabPast": "Past",
+    "emptyTodayTitle": "Nothing for today",
+    "emptyTodaySub": "Same-day tickets and appointments will show up here.",
+    "emptyUpcomingTitle": "No upcoming bookings",
+    "emptyUpcomingSub": "Future appointments you book will appear here.",
+    "emptyPastTitle": "No past visits",
+    "emptyPastSub": "Completed tickets and appointments will be archived here."
   },
 
   "places": {

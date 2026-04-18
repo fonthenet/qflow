@@ -240,11 +240,23 @@ export default function HistoryScreen() {
       },
     ]);
 
-  // --- Build unified sections -----------------------------------------------
-  const sections = useMemo(() => {
-    // Upcoming: active appointments only (live tickets are tracked separately on the Queue tab)
-    const upcomingAppts: FeedItem[] = savedAppointments
-      .filter((a) => !a.hidden && UPCOMING_APPT.has(a.status))
+  // Tab state: Today (same-day) / Upcoming (future days) / Past (history).
+  type Tab = 'today' | 'upcoming' | 'past';
+  const [tab, setTab] = useState<Tab>('today');
+
+  // --- Build per-tab sections -----------------------------------------------
+  const { todaySections, upcomingSections, pastSections } = useMemo(() => {
+    // Active appointments — anything not terminal. Live tickets are tracked
+    // on the Queue tab, not here.
+    const activeAppts = savedAppointments.filter(
+      (a) => !a.hidden && UPCOMING_APPT.has(a.status),
+    );
+    const todayAppts: FeedItem[] = activeAppts
+      .filter((a) => isSameDay(a.scheduledAt))
+      .map((a) => ({ kind: 'appt' as const, ...a }))
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    const futureAppts: FeedItem[] = activeAppts
+      .filter((a) => !isSameDay(a.scheduledAt))
       .map((a) => ({ kind: 'appt' as const, ...a }))
       .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
 
@@ -277,44 +289,97 @@ export default function HistoryScreen() {
         }),
       }));
 
-    const out: Array<{ title: string; data: FeedItem[] }> = [];
-    if (upcomingAppts.length > 0) {
-      out.push({ title: t('history.upcoming'), data: upcomingAppts });
+    // Upcoming — group future appointments by day so users see Apr 20 / Apr 21.
+    const upcomingGroups: Record<string, FeedItem[]> = {};
+    for (const item of futureAppts) {
+      const iso = item.kind === 'appt' ? item.scheduledAt : (item as any).date;
+      const d = new Date(iso);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      (upcomingGroups[key] ??= []).push(item);
     }
-    out.push(...pastSections);
-    return out;
+    const upcomingSections = Object.entries(upcomingGroups)
+      .sort(([a], [b]) => a.localeCompare(b)) // ascending — nearest first
+      .map(([_key, data]) => ({
+        title: formatSectionDate(
+          data[0].kind === 'appt' ? data[0].scheduledAt : (data[0] as any).date,
+          t,
+        ),
+        data,
+      }));
+
+    // Today section is a single "flat" group — no date header needed.
+    const todaySections =
+      todayAppts.length > 0
+        ? [{ title: t('history.today'), data: todayAppts }]
+        : [];
+
+    return { todaySections, upcomingSections, pastSections };
   }, [savedAppointments, history, t]);
 
-  const stats = useMemo(() => {
-    const total = history.length + savedAppointments.filter((a) => !a.hidden).length;
-    const upcoming = savedAppointments.filter(
-      (a) => !a.hidden && UPCOMING_APPT.has(a.status),
-    ).length;
-    const served = history.filter((h) => h.status === 'served').length;
-    return { total, upcoming, served };
-  }, [history, savedAppointments]);
+  const sections =
+    tab === 'today' ? todaySections : tab === 'upcoming' ? upcomingSections : pastSections;
+  const counts = {
+    today: todaySections.reduce((n, s) => n + s.data.length, 0),
+    upcoming: upcomingSections.reduce((n, s) => n + s.data.length, 0),
+    past: pastSections.reduce((n, s) => n + s.data.length, 0),
+  };
 
-  if (sections.length === 0) {
-    return (
-      <View style={[styles.empty, { backgroundColor: colors.background }]}>
-        <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.primaryLight + '15' }]}>
-          <Ionicons name="time-outline" size={56} color={colors.primary} />
-        </View>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('history.noVisits')}</Text>
-        <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-          {t('history.noVisitsMsg')}
-        </Text>
-        <TouchableOpacity
-          style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-          activeOpacity={0.7}
-          onPress={() => router.push('/scan' as any)}
-        >
-          <Ionicons name="qr-code-outline" size={18} color="#fff" />
-          <Text style={styles.emptyButtonText}>{t('history.scanToJoin')}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const emptyCopy = {
+    today: { title: t('history.emptyTodayTitle'), sub: t('history.emptyTodaySub') },
+    upcoming: { title: t('history.emptyUpcomingTitle'), sub: t('history.emptyUpcomingSub') },
+    past: { title: t('history.emptyPastTitle'), sub: t('history.emptyPastSub') },
+  }[tab];
+
+  const TabBar = (
+    <View style={[styles.tabBar, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
+      {(['today', 'upcoming', 'past'] as Tab[]).map((key) => {
+        const active = tab === key;
+        const count = counts[key];
+        return (
+          <TouchableOpacity
+            key={key}
+            style={[
+              styles.tabPill,
+              active && { backgroundColor: colors.primary },
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setTab(key);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: active ? '#fff' : colors.textSecondary },
+              ]}
+            >
+              {t(`history.tab${key[0].toUpperCase() + key.slice(1)}`)}
+            </Text>
+            {count > 0 && (
+              <View
+                style={[
+                  styles.tabBadge,
+                  {
+                    backgroundColor: active ? 'rgba(255,255,255,0.25)' : colors.surfaceSecondary,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabBadgeText,
+                    { color: active ? '#fff' : colors.textSecondary },
+                  ]}
+                >
+                  {count}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <SectionList
@@ -331,27 +396,36 @@ export default function HistoryScreen() {
           colors={[colors.primary]}
         />
       }
-      ListHeaderComponent={
-        <View style={[styles.summaryBar, { backgroundColor: colors.surface, shadowOpacity: isDark ? 0.2 : 0.04 }]}>
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryNumber, { color: colors.text }]}>{stats.total}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.total')}</Text>
+      ListHeaderComponent={TabBar}
+      ListEmptyComponent={
+        <View style={[styles.empty, { backgroundColor: colors.background }]}>
+          <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : colors.primaryLight + '15' }]}>
+            <Ionicons
+              name={tab === 'past' ? 'time-outline' : 'calendar-outline'}
+              size={56}
+              color={colors.primary}
+            />
           </View>
-          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryNumber, { color: colors.primary }]}>{stats.upcoming}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.upcomingShort')}</Text>
-          </View>
-          <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryNumber, { color: colors.success }]}>{stats.served}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>{t('history.served')}</Text>
-          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{emptyCopy.title}</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>{emptyCopy.sub}</Text>
+          {tab === 'today' && (
+            <TouchableOpacity
+              style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/scan' as any)}
+            >
+              <Ionicons name="qr-code-outline" size={18} color="#fff" />
+              <Text style={styles.emptyButtonText}>{t('history.scanToJoin')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       }
-      renderSectionHeader={({ section }) => (
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{section.title}</Text>
-      )}
+      renderSectionHeader={({ section }) =>
+        // "Today" tab is a single flat group — no date header needed there.
+        tab === 'today' ? null : (
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>{section.title}</Text>
+        )
+      }
       renderItem={({ item }: { item: FeedItem }) => {
         if (item.kind === 'appt') {
           return (
@@ -563,24 +637,42 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
   },
   emptyButtonText: { fontSize: fontSize.md, fontWeight: '600', color: '#fff' },
-  summaryBar: {
+  // Segmented tab bar (Today / Upcoming / Past)
+  tabBar: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 4,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  tabPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 6,
-    elevation: 1,
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.full,
   },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryNumber: { fontSize: fontSize.xl, fontWeight: '700' },
-  summaryLabel: { fontSize: fontSize.xs, marginTop: 2 },
-  summaryDivider: { width: 1, height: 28 },
+  tabText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+  },
+  tabBadge: {
+    minWidth: 20,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   sectionHeader: {
     fontSize: fontSize.sm,
     fontWeight: '600',

@@ -566,12 +566,22 @@
     "served": "servis",
     "missed": "manqués",
     "total": "total",
+    "today": "Aujourd'hui",
     "upcoming": "À venir",
     "upcomingShort": "à venir",
     "startingNow": "Maintenant",
     "inMinutes": "Dans {{count}} min",
     "inHours": "Dans {{count}} h",
-    "inDays": "Dans {{count}} j"
+    "inDays": "Dans {{count}} j",
+    "tabToday": "Aujourd'hui",
+    "tabUpcoming": "À venir",
+    "tabPast": "Passé",
+    "emptyTodayTitle": "Rien pour aujourd'hui",
+    "emptyTodaySub": "Les tickets et rendez-vous du jour apparaîtront ici.",
+    "emptyUpcomingTitle": "Aucun rendez-vous à venir",
+    "emptyUpcomingSub": "Vos futurs rendez-vous apparaîtront ici.",
+    "emptyPastTitle": "Aucune visite passée",
+    "emptyPastSub": "Les tickets et rendez-vous terminés seront archivés ici."
   },
 
   "places": {

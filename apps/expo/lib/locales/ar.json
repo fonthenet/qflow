@@ -566,12 +566,22 @@
     "served": "تمت خدمتهم",
     "missed": "فائتون",
     "total": "المجموع",
+    "today": "اليوم",
     "upcoming": "قادمة",
     "upcomingShort": "قادمة",
     "startingNow": "الآن",
     "inMinutes": "خلال {{count}} د",
     "inHours": "خلال {{count}} س",
-    "inDays": "خلال {{count}} يوم"
+    "inDays": "خلال {{count}} يوم",
+    "tabToday": "اليوم",
+    "tabUpcoming": "قادمة",
+    "tabPast": "سابق",
+    "emptyTodayTitle": "لا شيء لليوم",
+    "emptyTodaySub": "ستظهر تذاكر ومواعيد اليوم هنا.",
+    "emptyUpcomingTitle": "لا توجد مواعيد قادمة",
+    "emptyUpcomingSub": "ستظهر مواعيدك المستقبلية هنا.",
+    "emptyPastTitle": "لا توجد زيارات سابقة",
+    "emptyPastSub": "سيتم أرشفة التذاكر والمواعيد المنتهية هنا."
   },
 
   "places": {
