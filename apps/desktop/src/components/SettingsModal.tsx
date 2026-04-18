@@ -45,12 +45,18 @@ function migrateToIntakeFields(settings: Record<string, any>): IntakeField[] {
   if (Array.isArray(settings.intake_fields) && settings.intake_fields.length > 0) {
     return settings.intake_fields;
   }
-  const requireName = settings.require_name_sameday ?? false;
+  // Fresh orgs (no legacy flag at all) default to name ON. Only orgs that
+  // explicitly turned name off stay off.
+  const hasLegacyRequireName = typeof settings.require_name_sameday === 'boolean';
+  const requireName = hasLegacyRequireName ? settings.require_name_sameday : true;
   const customFields: { label: string; label_fr?: string; label_ar?: string }[] =
     Array.isArray(settings.custom_intake_fields) ? settings.custom_intake_fields : [];
+  // Keep this in sync with packages/shared/src/intake-fields.ts —
+  // name + phone are ON so every platform collects identity by default.
+  // Channels that already know the customer exclude these via excludeKeys.
   const fields: IntakeField[] = [
     { key: 'name', type: 'preset', enabled: !!requireName, required: false },
-    { key: 'phone', type: 'preset', enabled: false, required: false },
+    { key: 'phone', type: 'preset', enabled: true, required: false },
     { key: 'age', type: 'preset', enabled: false, required: false },
     { key: 'wilaya', type: 'preset', enabled: true, required: false },
     { key: 'reason', type: 'preset', enabled: true, required: false },
@@ -2196,7 +2202,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             <>
               {/* LEFT: Side navigation */}
               <div style={{
-                width: 180, flexShrink: 0,
+                width: 240, flexShrink: 0,
                 borderRight: '1px solid var(--border, #475569)',
                 overflowY: 'auto',
                 padding: '8px 0',

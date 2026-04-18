@@ -63,7 +63,13 @@ export async function GET(request: NextRequest) {
   });
   const profile = platformConfig.experienceProfile.kiosk;
 
+  // Return the full raw organization settings so the mobile booking and
+  // kiosk flows read the same source of truth as every other platform
+  // (web booking form, WhatsApp/Messenger, desktop station). Computed
+  // kiosk defaults below then override/augment the raw values.
   const settings = {
+    ...orgSettings,
+    ...officeSettings,
     kiosk_welcome_message: orgSettings.kiosk_welcome_message ?? null,
     kiosk_header_text: orgSettings.kiosk_header_text ?? null,
     kiosk_theme_color: orgSettings.kiosk_theme_color ?? null,

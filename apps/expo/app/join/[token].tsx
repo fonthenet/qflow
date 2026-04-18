@@ -129,9 +129,13 @@ export default function JoinScreen() {
       }).length
     : 0;
 
-  // Resolve intake fields from org settings (same-day context for remote join)
+  // Show every intake field the business configured. Name + phone are
+  // pre-filled from the saved profile but stay editable, so a customer
+  // can correct a nickname or enter a different phone (e.g. joining for
+  // a family member). Scope filter dropped so the form matches whatever
+  // the business configured, new or legacy.
   const intakeFields: IntakeField[] = info
-    ? getEnabledIntakeFields(info.organization.settings ?? {}, [], 'sameday')
+    ? getEnabledIntakeFields(info.organization.settings ?? {})
     : [];
 
   // Prefill saved name/phone whenever either the intake fields load or the
@@ -190,14 +194,19 @@ export default function JoinScreen() {
       const v = (fieldValues[f.key] ?? '').trim();
       if (v) customData[f.key] = v;
     }
+    // Phone is hidden from the form (auto-collected) — always ship the
+    // saved profile phone with the payload. Name falls back to saved
+    // profile too, in case the business didn't show the name field.
+    const effectivePhone = customData.phone || savedPhone || undefined;
+    if (effectivePhone && !customData.phone) customData.phone = effectivePhone;
     const result = await joinQueue({
       officeId: selectedOfficeId,
       departmentId: selectedDeptId,
       serviceId: selectedServiceId,
       customData,
       // Legacy fields kept for backward compat with older servers
-      customerName: customData.name || undefined,
-      customerPhone: customData.phone || undefined,
+      customerName: customData.name || savedName || undefined,
+      customerPhone: effectivePhone,
       reason: customData.reason || undefined,
     });
     if ('error' in result) {

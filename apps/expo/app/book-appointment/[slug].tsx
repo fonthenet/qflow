@@ -94,8 +94,12 @@ export default function BookAppointmentScreen() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
   // Resolve the intake fields the business wants for future bookings.
+  // Show every intake field the business configured, including name and
+  // phone. Both are pre-filled from the saved profile but stay editable so
+  // the customer can correct a nickname or swap to a different phone for
+  // this booking (e.g. booking for a family member).
   const intakeFields: IntakeField[] = info
-    ? getEnabledIntakeFields(info.settings ?? {}, [], 'booking')
+    ? getEnabledIntakeFields(info.settings ?? {})
     : [];
 
   // Pre-fill saved name/phone (Zustand persist is async; re-run when it
@@ -220,7 +224,14 @@ export default function BookAppointmentScreen() {
   const handleSelectSlot = (slot: string) => {
     Haptics.selectionAsync();
     setSelectedSlot(slot);
-    setStep('info');
+    // If the business didn't enable any intake fields, skip the info step —
+    // name/phone come from the profile automatically (same exception we
+    // make for WhatsApp where the phone is auto-collected).
+    if (intakeFields.length === 0) {
+      setStep('confirm');
+    } else {
+      setStep('info');
+    }
   };
 
   // True when any required intake field is blank.
@@ -228,9 +239,11 @@ export default function BookAppointmentScreen() {
     (f) => f.required && !(fieldValues[f.key]?.trim()),
   );
 
-  // "Name" is required by the API even if the business didn't flag it.
-  const hasNameField = intakeFields.some((f) => f.key === 'name');
-  const canSubmitInfo = !missingRequired && (!hasNameField || !!name.trim()) && !!name.trim();
+  // "Name" is required by the API — accept either the field value (when the
+  // business shows the name input) or the saved profile name as a fallback,
+  // mirroring the WhatsApp exception where phone is auto-collected.
+  const effectiveName = (name.trim() || (savedName ?? '').trim());
+  const canSubmitInfo = !missingRequired && !!effectiveName;
 
   const handleSubmitInfo = () => {
     if (!canSubmitInfo) return;
@@ -249,8 +262,11 @@ export default function BookAppointmentScreen() {
     // folded into the `notes` field as "Label: value" lines so the
     // staff still sees what the customer entered.
     const trimmed = (k: string) => (fieldValues[k] ?? '').trim();
+    // Name + phone always fall back to the saved profile — same auto-collect
+    // exception WhatsApp makes for the phone number. The business can leave
+    // these fields off and we still send the customer's identity.
     const mappedName = trimmed('name') || savedName || 'Guest';
-    const mappedPhone = trimmed('phone') || undefined;
+    const mappedPhone = trimmed('phone') || savedPhone || undefined;
     const mappedWilaya = trimmed('wilaya') || undefined;
     const reasonOrNotes = trimmed('reason') || trimmed('notes');
     const extraLines: string[] = [];

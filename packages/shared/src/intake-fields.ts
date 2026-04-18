@@ -96,11 +96,16 @@ export function getFieldPlaceholder(field: IntakeField, locale: 'en' | 'fr' | 'a
   return '';
 }
 
-/** Default intake fields for a new business */
+/** Default intake fields for a new business.
+ *  Name + phone are ON so every platform (kiosk, web, mobile, WhatsApp,
+ *  Messenger, desktop) collects customer identity out of the box. Channels
+ *  that already know the customer (WhatsApp auto-collects phone; mobile
+ *  pre-fills both from the saved profile) exclude those fields via the
+ *  `excludeKeys` arg on `getEnabledIntakeFields`. */
 export function getDefaultIntakeFields(): IntakeField[] {
   return [
     { key: 'name', type: 'preset', enabled: true, required: false },
-    { key: 'phone', type: 'preset', enabled: false, required: false },
+    { key: 'phone', type: 'preset', enabled: true, required: false },
     { key: 'age', type: 'preset', enabled: false, required: false },
     { key: 'wilaya', type: 'preset', enabled: true, required: false },
     { key: 'reason', type: 'preset', enabled: true, required: false },
@@ -118,15 +123,22 @@ export function migrateToIntakeFields(settings: Record<string, any>): IntakeFiel
     return settings.intake_fields;
   }
 
-  const requireName = settings.require_name_sameday ?? false;
+  // If the org never had the legacy flag set at all, treat it as a fresh
+  // install and default name ON. Only respect an explicit `false` from a
+  // previously-configured business.
+  const hasLegacyRequireName = typeof settings.require_name_sameday === 'boolean';
+  const requireName = hasLegacyRequireName ? settings.require_name_sameday : true;
   const customFields: { label: string; label_fr?: string; label_ar?: string }[] =
     Array.isArray(settings.custom_intake_fields) ? settings.custom_intake_fields : [];
 
+  // Legacy migration: name respects the old require_name_sameday toggle (or
+  // defaults ON for fresh orgs); phone defaults ON so identity is collected
+  // everywhere (channels that auto-collect will exclude it). Wilaya + reason
+  // were always asked in booking flow.
   const fields: IntakeField[] = [
     { key: 'name', type: 'preset', enabled: !!requireName, required: false },
-    { key: 'phone', type: 'preset', enabled: false, required: false },
+    { key: 'phone', type: 'preset', enabled: true, required: false },
     { key: 'age', type: 'preset', enabled: false, required: false },
-    // Wilaya and reason were always asked in booking flow
     { key: 'wilaya', type: 'preset', enabled: true, required: false },
     { key: 'reason', type: 'preset', enabled: true, required: false },
   ];
