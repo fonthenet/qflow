@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -19,17 +18,14 @@ import { useAppStore } from '@/lib/store';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
 import {
   getEnabledIntakeFields,
-  getFieldLabel,
-  getFieldPlaceholder,
   type IntakeField,
 } from '@qflo/shared';
+import { IntakeForm } from '@/components/IntakeForm';
 
 type Step = 'loading' | 'select' | 'joining' | 'success' | 'error';
 
 export default function JoinScreen() {
-  const { t, i18n } = useTranslation();
-  const locale: 'en' | 'fr' | 'ar' =
-    i18n.language === 'ar' ? 'ar' : i18n.language === 'fr' ? 'fr' : 'en';
+  const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
@@ -413,40 +409,15 @@ export default function JoinScreen() {
       {/* Customer details — dynamic intake fields from org settings */}
       {intakeFields.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('join.yourDetails')}</Text>
-          <Text style={styles.sectionSub}>{t('join.optionalHelpsStaff')}</Text>
-          {intakeFields.map((field) => {
-            const label = getFieldLabel(field, locale);
-            const placeholder = getFieldPlaceholder(field, locale) || label;
-            const isPhone = field.key === 'phone';
-            const isAge = field.key === 'age';
-            const isName = field.key === 'name';
-            const isReason = field.key === 'reason';
-            return (
-              <View key={field.key}>
-                <Text style={styles.fieldLabel}>
-                  {label}
-                  {field.required ? <Text style={styles.fieldRequired}> *</Text> : null}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={placeholder}
-                  placeholderTextColor={colors.textMuted}
-                  value={fieldValues[field.key] ?? ''}
-                  onChangeText={(v) =>
-                    setFieldValues((prev) => ({ ...prev, [field.key]: v }))
-                  }
-                  keyboardType={
-                    isPhone ? 'phone-pad' : isAge ? 'number-pad' : 'default'
-                  }
-                  autoCapitalize={
-                    isName ? 'words' : isReason ? 'sentences' : 'none'
-                  }
-                  autoCorrect={false}
-                />
-              </View>
-            );
-          })}
+          <IntakeForm
+            fields={intakeFields}
+            values={fieldValues}
+            onChange={(key, v) =>
+              setFieldValues((prev) => ({ ...prev, [key]: v }))
+            }
+            title={t('join.yourDetails')}
+            subtitle={t('join.optionalHelpsStaff')}
+          />
         </View>
       )}
 

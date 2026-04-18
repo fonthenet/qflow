@@ -26,9 +26,9 @@ import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import {
   getEnabledIntakeFields,
   getFieldLabel,
-  getFieldPlaceholder,
   type IntakeField,
 } from '@qflo/shared';
+import { IntakeForm } from '@/components/IntakeForm';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
 
@@ -585,40 +585,14 @@ export default function BookAppointmentScreen() {
               </>
             )}
 
-            {intakeFields.map((field, idx) => {
-              const label = getFieldLabel(field, locale);
-              const placeholder = getFieldPlaceholder(field, locale) || label;
-              const isPhone = field.key === 'phone';
-              const isAge = field.key === 'age';
-              const isName = field.key === 'name';
-              const isReason = field.key === 'reason' || field.key === 'notes';
-              return (
-                <View key={field.key}>
-                  <Text style={[s.fieldLabel, { color: colors.textSecondary }]}>
-                    {label}
-                    {field.required ? <Text style={{ color: colors.error }}> *</Text> : null}
-                  </Text>
-                  <TextInput
-                    style={[
-                      s.textInput,
-                      { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-                      isReason && { minHeight: 72, textAlignVertical: 'top' },
-                    ]}
-                    value={fieldValues[field.key] ?? ''}
-                    onChangeText={(v) => setField(field.key, v)}
-                    placeholder={placeholder}
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType={isPhone ? 'phone-pad' : isAge ? 'number-pad' : 'default'}
-                    autoCapitalize={isName ? 'words' : isReason ? 'sentences' : 'none'}
-                    autoCorrect={false}
-                    multiline={isReason}
-                    numberOfLines={isReason ? 3 : 1}
-                    autoFocus={idx === 0}
-                    returnKeyType={idx === intakeFields.length - 1 ? 'done' : 'next'}
-                  />
-                </View>
-              );
-            })}
+            <IntakeForm
+              fields={intakeFields}
+              values={fieldValues}
+              onChange={setField}
+              autoFocusFirst
+              title={null}
+              subtitle={null}
+            />
 
             <TouchableOpacity
               style={[
