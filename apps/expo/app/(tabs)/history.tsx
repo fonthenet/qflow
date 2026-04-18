@@ -518,8 +518,10 @@ function ApptCard({
   onRemove: () => void;
 }) {
   const terminal = TERMINAL_APPT.has(appt.status);
-  const canCheckIn =
-    !terminal && (appt.status === 'confirmed' || appt.status === 'pending') && isSameDay(appt.scheduledAt);
+  // Self check-in is disabled — customers must be checked in by the
+  // business at the office (staff or kiosk). The button is hidden; we
+  // keep the flag around as a constant so the render path stays simple.
+  const canCheckIn = false;
 
   const color = apptStatusColor(appt.status, colors);
   const when = new Date(appt.scheduledAt);

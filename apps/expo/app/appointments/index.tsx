@@ -225,10 +225,9 @@ export default function AppointmentsScreen() {
   const renderCard = (appt: SavedAppointment) => {
     const busy = busyIds.has(appt.id);
     const terminal = isTerminal(appt.status);
-    const canCheckIn =
-      !terminal &&
-      (appt.status === 'confirmed' || appt.status === 'pending') &&
-      isSameCalendarDay(appt.scheduledAt);
+    // Self check-in is disabled — the business checks customers in at the
+    // office (staff or kiosk). Flag kept as `false` so render stays simple.
+    const canCheckIn = false;
 
     return (
       <View
