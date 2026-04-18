@@ -2110,7 +2110,8 @@ async function getDirectoryData(channel: Channel) {
   const listed = (orgs ?? [])
     .filter((o: any) => {
       const s = (o.settings ?? {}) as Record<string, any>;
-      if (!s.listed_in_directory) return false;
+      // Default: listed unless admin explicitly opted out
+      if (s.listed_in_directory === false) return false;
       if (!s[enabledKey] && !s.whatsapp_enabled) return false;
       const code = (s[codeKey] ?? s.whatsapp_code ?? '').toString().trim();
       return code.length >= 2;

@@ -167,12 +167,12 @@ export function SettingsClient({
     settings.business_category ?? 'other'
   );
   const [listedInDirectory, setListedInDirectory] = useState<boolean>(
-    settings.listed_in_directory ?? false
+    settings.listed_in_directory ?? true
   );
 
   // Ticket Settings
   const [checkInMode, setCheckInMode] = useState<string>(
-    settings.default_check_in_mode ?? 'manual'
+    settings.default_check_in_mode ?? 'hybrid'
   );
   const [ticketPrefix, setTicketPrefix] = useState<string>(
     settings.ticket_number_prefix ?? ''
@@ -276,7 +276,7 @@ export function SettingsClient({
 
   // Booking Settings
   const [bookingEnabled, setBookingEnabled] = useState<boolean>(
-    (settings.booking_mode ?? 'disabled') !== 'disabled'
+    (settings.booking_mode ?? 'simple') !== 'disabled'
   );
   const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(
     settings.slot_duration_minutes ?? 30
