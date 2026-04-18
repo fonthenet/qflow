@@ -468,6 +468,8 @@
   },
 
   "customer": {
+    "ticketCalledTitle": "À votre tour !",
+    "ticketCalledBody": "Le personnel vous appelle maintenant. Dirigez-vous vers le comptoir.",
     "liveQueue": "FILE EN DIRECT",
     "seconds": "SECONDES",
     "expired": "EXPIRÉ",

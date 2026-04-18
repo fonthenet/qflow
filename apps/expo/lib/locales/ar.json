@@ -468,6 +468,8 @@
   },
 
   "customer": {
+    "ticketCalledTitle": "حان دورك!",
+    "ticketCalledBody": "الموظف يناديك الآن. توجّه إلى المكتب.",
     "liveQueue": "قائمة مباشرة",
     "seconds": "ثوانٍ",
     "expired": "انتهى",

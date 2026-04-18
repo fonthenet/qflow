@@ -6,18 +6,21 @@ import {
   Easing,
   Linking,
   PanResponder,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import { useAppStore } from '@/lib/store';
 import { fetchTicket, stopTracking } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -295,10 +298,10 @@ function CustomerInfoCard({ ticket: tk }: { ticket: import('@/lib/api').TicketRe
     <View style={s.customerCard}>
       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }} onPress={() => setExpanded(e => !e)} activeOpacity={0.7}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Ionicons name="person-circle-outline" size={18} color="#94a3b8" />
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase' }}>{t('customer.myInfo')}</Text>
+          <Ionicons name="person-circle-outline" size={18} color="#e2e8f0" />
+          <Text style={{ fontSize: 12, fontWeight: '700', color: '#e2e8f0', letterSpacing: 1.5, textTransform: 'uppercase' }}>{t('customer.myInfo')}</Text>
         </View>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#64748b" />
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="#e2e8f0" />
       </TouchableOpacity>
 
       {expanded && (
@@ -310,8 +313,8 @@ function CustomerInfoCard({ ticket: tk }: { ticket: import('@/lib/api').TicketRe
           ].map(({ key, label, icon, keyboard }) => (
             <View key={key} style={{ gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name={icon as any} size={13} color="#64748b" />
-                <Text style={{ fontSize: 11, color: '#64748b', fontWeight: '600', letterSpacing: 1 }}>{label.toUpperCase()}</Text>
+                <Ionicons name={icon as any} size={13} color="#cbd5e1" />
+                <Text style={{ fontSize: 12, color: '#cbd5e1', fontWeight: '700', letterSpacing: 1 }}>{label.toUpperCase()}</Text>
               </View>
               <TextInput
                 value={draft[key as keyof typeof draft]}
@@ -336,9 +339,9 @@ function CustomerInfoCard({ ticket: tk }: { ticket: import('@/lib/api').TicketRe
 
       {!expanded && hasData && (
         <View style={{ marginTop: 10, gap: 6 }}>
-          {cd?.name ? <View style={s.customerRow}><Ionicons name="person-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.fullName')}</Text><Text style={s.customerValue}>{cd.name}</Text></View> : null}
-          {cd?.phone ? <View style={s.customerRow}><Ionicons name="call-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.phoneNumber')}</Text><Text style={s.customerValue}>{cd.phone}</Text></View> : null}
-          {cd?.email ? <View style={s.customerRow}><Ionicons name="mail-outline" size={15} color="#94a3b8" /><Text style={s.customerLabel}>{t('customer.email')}</Text><Text style={s.customerValue}>{cd.email}</Text></View> : null}
+          {cd?.name ? <View style={s.customerRow}><Ionicons name="person-outline" size={15} color="#e2e8f0" /><Text style={s.customerLabel}>{t('customer.fullName')}</Text><Text style={s.customerValue}>{cd.name}</Text></View> : null}
+          {cd?.phone ? <View style={s.customerRow}><Ionicons name="call-outline" size={15} color="#e2e8f0" /><Text style={s.customerLabel}>{t('customer.phoneNumber')}</Text><Text style={s.customerValue}>{cd.phone}</Text></View> : null}
+          {cd?.email ? <View style={s.customerRow}><Ionicons name="mail-outline" size={15} color="#e2e8f0" /><Text style={s.customerLabel}>{t('customer.email')}</Text><Text style={s.customerValue}>{cd.email}</Text></View> : null}
         </View>
       )}
       {!expanded && !hasData && (
@@ -389,9 +392,36 @@ export default function HomeScreen() {
     setIsOffline(false);
     setSyncLabel(t('customer.syncedTime', { time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) }));
     if (prevStatusRef.current && prevStatusRef.current !== ticket.status) {
-      if (ticket.status === 'called') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      else if (ticket.status === 'serving') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      else if (['served', 'no_show', 'cancelled'].includes(ticket.status)) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (ticket.status === 'called') {
+        // Strong multi-burst ring vibration pattern so the customer notices
+        // even when the screen is off (Android) or muted. Pattern is
+        // [wait, vibrate, wait, vibrate, ...] in ms.
+        Vibration.vibrate(
+          Platform.OS === 'android'
+            ? [0, 500, 250, 500, 250, 500]
+            : [0, 500, 500, 500, 500, 500],
+        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        // Fire a local notification — plays the default alert sound in the
+        // foreground (setNotificationHandler has shouldPlaySound: true) and
+        // uses the queue-alerts channel's ring pattern on Android.
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: t('customer.ticketCalledTitle', { defaultValue: 'Your turn!' }),
+            body: t('customer.ticketCalledBody', {
+              defaultValue: 'Staff is calling you now. Head to the counter.',
+            }),
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            ...(Platform.OS === 'android' ? { channelId: 'queue-alerts' } : {}),
+          },
+          trigger: null,
+        }).catch(() => {});
+      } else if (ticket.status === 'serving') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
     }
     prevStatusRef.current = ticket.status;
     setActiveTicket(ticket);
@@ -873,10 +903,10 @@ const s = StyleSheet.create({
   detailsCellValue: { fontSize: 14, fontWeight: '600', color: '#e2e8f0', lineHeight: 20 },
 
   // Customer info card
-  customerCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', padding: 16 },
-  customerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
-  customerLabel: { fontSize: 12, color: '#64748b', width: 50 },
-  customerValue: { fontSize: 14, fontWeight: '600', color: '#e2e8f0', flex: 1 },
+  customerCard: { backgroundColor: 'rgba(15,23,42,0.35)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 16 },
+  customerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.10)' },
+  customerLabel: { fontSize: 13, color: '#cbd5e1', fontWeight: '600', width: 90 },
+  customerValue: { fontSize: 14, fontWeight: '700', color: '#ffffff', flex: 1 },
 
   // Alerts banner
   alertsBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 9999 },
@@ -897,5 +927,5 @@ const s = StyleSheet.create({
   infoRowValue: { fontSize: 15, fontWeight: '600', color: '#fff', marginTop: 1 },
 
   // Footer
-  footer: { fontSize: 11, fontWeight: '600', color: '#334155', letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center', marginTop: 'auto', paddingTop: 16 },
+  footer: { fontSize: 11, fontWeight: '600', color: '#000000', letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center', marginTop: 'auto', paddingTop: 16 },
 });

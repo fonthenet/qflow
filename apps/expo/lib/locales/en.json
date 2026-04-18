@@ -468,6 +468,8 @@
   },
 
   "customer": {
+    "ticketCalledTitle": "Your turn!",
+    "ticketCalledBody": "Staff is calling you now. Head to the counter.",
     "liveQueue": "LIVE QUEUE",
     "seconds": "SECONDS",
     "expired": "EXPIRED",
