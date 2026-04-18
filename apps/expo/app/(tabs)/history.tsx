@@ -19,6 +19,7 @@ import {
   cancelAppointment,
   checkInAppointment,
   fetchAppointmentByToken,
+  fetchAppointmentWithTicket,
   getCalendarIcsUrl,
 } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -119,12 +120,18 @@ export default function HistoryScreen() {
     if (targets.length === 0) return;
     await Promise.all(
       targets.map(async (a) => {
-        const latest = await fetchAppointmentByToken(a.calendarToken);
-        if (latest) {
+        // Use the richer endpoint so we pick up the linked ticket (qr_token
+        // + ticket_number) as soon as staff checks the customer in. Falls
+        // back to the base appointment fields if no ticket is linked yet.
+        const { appointment, ticket } = await fetchAppointmentWithTicket(a.calendarToken);
+        if (appointment) {
           updateAppointment(a.id, {
-            status: latest.status,
-            scheduledAt: latest.scheduled_at,
+            status: appointment.status,
+            scheduledAt: appointment.scheduled_at,
             lastSyncedAt: new Date().toISOString(),
+            ticketNumber: ticket?.ticket_number ?? a.ticketNumber ?? null,
+            ticketQrToken: ticket?.qr_token ?? a.ticketQrToken ?? null,
+            ticketStatus: ticket?.status ?? a.ticketStatus ?? null,
           });
         }
       }),
@@ -533,7 +540,7 @@ function ApptCard({
       <View style={styles.apptHeader}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.apptTitle, { color: colors.text }]} numberOfLines={1}>
-            {appt.businessName}
+            {appt.ticketNumber ? `${appt.ticketNumber} · ` : ''}{appt.businessName}
           </Text>
           {appt.serviceName ? (
             <Text style={[styles.apptSub, { color: colors.textSecondary }]} numberOfLines={1}>

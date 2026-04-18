@@ -21,6 +21,7 @@ import {
   cancelAppointment,
   checkInAppointment,
   fetchAppointmentByToken,
+  fetchAppointmentWithTicket,
   getCalendarIcsUrl,
 } from '@/lib/api';
 
@@ -113,12 +114,15 @@ export default function AppointmentsScreen() {
       savedAppointments
         .filter((a) => !a.hidden)
         .map(async (a) => {
-          const latest = await fetchAppointmentByToken(a.calendarToken);
-          if (latest) {
+          const { appointment, ticket } = await fetchAppointmentWithTicket(a.calendarToken);
+          if (appointment) {
             updateAppointment(a.id, {
-              status: latest.status,
-              scheduledAt: latest.scheduled_at,
+              status: appointment.status,
+              scheduledAt: appointment.scheduled_at,
               lastSyncedAt: new Date().toISOString(),
+              ticketNumber: ticket?.ticket_number ?? a.ticketNumber ?? null,
+              ticketQrToken: ticket?.qr_token ?? a.ticketQrToken ?? null,
+              ticketStatus: ticket?.status ?? a.ticketStatus ?? null,
             });
           }
         }),

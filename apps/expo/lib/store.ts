@@ -68,6 +68,12 @@ export interface SavedAppointment {
   createdAt: string; // ISO — when the booking was made
   lastSyncedAt?: string; // ISO — last remote status refresh
   hidden?: boolean; // user dismissed from list after terminal status
+  // Set once staff checks the customer in and a live ticket is issued.
+  // Mobile uses these to render the ticket number on cards and to promote
+  // the appointment to the Queue tab's live tracking view.
+  ticketNumber?: string | null;
+  ticketQrToken?: string | null;
+  ticketStatus?: string | null;
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
