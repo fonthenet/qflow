@@ -129,26 +129,35 @@ export function StatusBar({ session, syncStatus, updateStatus, stationVersion, o
       return;
     }
 
-    window.qf.org?.getBranding?.()
-      .then((b: { orgName: string | null; orgNameAr: string | null; logoUrl: string | null; brandColor: string | null }) => {
-        setLogoUrl(b?.logoUrl ?? null);
-        setOrgName(b?.orgName ?? null);
-        setOrgNameAr(b?.orgNameAr ?? null);
-        // Apply org brand color as CSS variable for white-label
-        if (b?.brandColor) {
-          document.documentElement.style.setProperty('--primary', b.brandColor);
-          document.documentElement.style.setProperty('--called', b.brandColor);
-        } else {
+    const fetchBranding = () => {
+      window.qf.org?.getBranding?.()
+        .then((b: { orgName: string | null; orgNameAr: string | null; logoUrl: string | null; brandColor: string | null }) => {
+          setLogoUrl(b?.logoUrl ?? null);
+          setOrgName(b?.orgName ?? null);
+          setOrgNameAr(b?.orgNameAr ?? null);
+          // Apply org brand color as CSS variable for white-label
+          if (b?.brandColor) {
+            document.documentElement.style.setProperty('--primary', b.brandColor);
+            document.documentElement.style.setProperty('--called', b.brandColor);
+          } else {
+            document.documentElement.style.removeProperty('--primary');
+            document.documentElement.style.removeProperty('--called');
+          }
+        })
+        .catch(() => {
+          setLogoUrl(null);
+          setOrgName(null);
           document.documentElement.style.removeProperty('--primary');
           document.documentElement.style.removeProperty('--called');
-        }
-      })
-      .catch(() => {
-        setLogoUrl(null);
-        setOrgName(null);
-        document.documentElement.style.removeProperty('--primary');
-        document.documentElement.style.removeProperty('--called');
-      });
+        });
+    };
+
+    fetchBranding();
+
+    // Listen for in-app branding updates (logo upload, etc.)
+    const onUpdate = () => fetchBranding();
+    window.addEventListener('qflo:branding-updated', onUpdate);
+    return () => window.removeEventListener('qflo:branding-updated', onUpdate);
   }, [session]);
 
   useEffect(() => {

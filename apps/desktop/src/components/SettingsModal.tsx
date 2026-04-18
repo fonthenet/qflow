@@ -191,6 +191,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [orgNameAr, setOrgNameAr] = useState<string>('');
   const [originalOrgNameAr, setOriginalOrgNameAr] = useState<string>('');
 
+  // Logo upload state (writes directly to Supabase via /api/upload-logo, no save-gated)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
   // Office-level: timezone + operating hours
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   const [originalTimezone, setOriginalTimezone] = useState<string>('Africa/Algiers');
@@ -446,7 +452,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const orgId = await resolveOrgId();
       const sb = await getSupabase();
       const [{ data, error: err }, officeResult, holidayResult] = await Promise.all([
-        sb.from('organizations').select('name, name_ar, settings, timezone').eq('id', orgId).single(),
+        sb.from('organizations').select('name, name_ar, settings, timezone, logo_url').eq('id', orgId).single(),
         officeId
           ? sb.from('offices').select('operating_hours, settings').eq('id', officeId).single()
           : Promise.resolve({ data: null, error: null }),
@@ -463,6 +469,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const nameAr = ((data as any)?.name_ar ?? '') as string;
       setOrgNameAr(nameAr);
       setOriginalOrgNameAr(nameAr);
+      setLogoUrl(((data as any)?.logo_url ?? null) as string | null);
 
       // Load org-level timezone (single source of truth for the business)
       const orgTz = (data as any)?.timezone || 'Africa/Algiers';
@@ -603,6 +610,62 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   }, [values, sections, orgName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasErrors = Object.keys(errors).length > 0;
+
+  // ─── Logo upload ──────────────────────────────────────────────────
+  async function handleLogoFile(file: File | null | undefined) {
+    if (!file) return;
+    setLogoError(null);
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      setLogoError(t('Invalid file type. Use PNG, JPG, WebP, or SVG.'));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError(t('File too large (max 2MB)'));
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const orgId = await resolveOrgId();
+      const token = await ensureAuth();
+      if (!token) throw new Error('Not authenticated');
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('organizationId', orgId);
+      const res = await fetch('https://qflo.net/api/upload-logo', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.url) throw new Error(data?.error || `Upload failed (${res.status})`);
+      setLogoUrl(data.url);
+      try { window.dispatchEvent(new CustomEvent('qflo:branding-updated')); } catch {}
+    } catch (e: any) {
+      setLogoError(e?.message ?? 'Upload failed');
+    } finally {
+      setLogoUploading(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  }
+
+  async function handleLogoRemove() {
+    if (!logoUrl) return;
+    setLogoError(null);
+    setLogoUploading(true);
+    try {
+      const orgId = await resolveOrgId();
+      const sb = await getSupabase();
+      const { error: updErr } = await sb.from('organizations').update({ logo_url: null }).eq('id', orgId);
+      if (updErr) throw updErr;
+      setLogoUrl(null);
+      try { window.dispatchEvent(new CustomEvent('qflo:branding-updated')); } catch {}
+    } catch (e: any) {
+      setLogoError(e?.message ?? 'Failed to remove logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  }
 
   // ─── Save ─────────────────────────────────────────────────────────
   async function handleSave() {
@@ -1716,23 +1779,317 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           )}
 
           {/* Appointments sub-tab */}
-          {bookingSubTab === 'appointments' && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              columnGap: 20,
-              rowGap: 0,
-            }}>
-              {appointmentFields.map(renderField)}
-            </div>
-          )}
+          {bookingSubTab === 'appointments' && (() => {
+            const bookingOn = !!values.booking_mode;
+            const slotDur: number = typeof values.slot_duration_minutes === 'number' ? values.slot_duration_minutes : 30;
+            const horizon: number = typeof values.booking_horizon_days === 'number' ? values.booking_horizon_days : 90;
+            const leadHrs: number = typeof values.min_booking_lead_hours === 'number' ? values.min_booking_lead_hours : 1;
+            const perSlot: number = typeof values.slots_per_interval === 'number' ? values.slots_per_interval : 1;
+            const dailyLim: number = typeof values.daily_ticket_limit === 'number' ? values.daily_ticket_limit : 0;
+            const cancelOn: boolean = values.allow_cancellation !== false;
+            const approvalOn: boolean = values.require_appointment_approval === undefined ? true : !!values.require_appointment_approval;
+            const update = (k: string, v: any) => setValues(prev => ({ ...prev, [k]: v }));
+
+            const cardStyle: React.CSSProperties = {
+              background: 'var(--surface2, #334155)',
+              border: '1px solid var(--border, #475569)',
+              borderRadius: 10,
+              padding: 14,
+              display: 'flex', flexDirection: 'column', gap: 14,
+            };
+            const cardHeaderStyle: React.CSSProperties = {
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--text3, #64748b)',
+            };
+            const pillStyle = (active: boolean): React.CSSProperties => ({
+              padding: '5px 12px', borderRadius: 999, fontSize: 12, cursor: 'pointer',
+              border: `1px solid ${active ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)'}`,
+              background: active ? 'var(--primary, #3b82f6)' : 'var(--surface, #1e293b)',
+              color: active ? '#fff' : 'var(--text, #f1f5f9)',
+              fontWeight: active ? 600 : 500,
+              transition: 'all 0.1s',
+            });
+            const numInputStyle: React.CSSProperties = { ...inputStyle, width: 74, padding: '6px 8px', fontSize: 12 };
+            const unitStyle: React.CSSProperties = { fontSize: 12, color: 'var(--text3, #64748b)' };
+
+            const PresetRow = ({ value, presets, min, max, unit, setter, labelFor }: {
+              value: number; presets: { n: number; label: string }[];
+              min: number; max: number; unit: string;
+              setter: (n: number) => void; labelFor: string;
+            }) => {
+              const clampAndSet = (n: number) => setter(Math.max(min, Math.min(max, n)));
+              const isCustom = !presets.some(p => p.n === value);
+              return (
+                <div>
+                  <label style={labelStyle}>{labelFor}</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {presets.map(p => (
+                      <button
+                        key={p.n}
+                        type="button"
+                        onClick={() => clampAndSet(p.n)}
+                        style={pillStyle(value === p.n)}
+                      >{p.label}</button>
+                    ))}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '2px 4px 2px 8px', borderRadius: 999,
+                      border: `1px solid ${isCustom ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)'}`,
+                      background: isCustom ? 'rgba(59,130,246,0.08)' : 'transparent',
+                    }}>
+                      <input
+                        type="number"
+                        value={value ?? ''}
+                        min={min}
+                        max={max}
+                        onChange={(e) => {
+                          const s = e.target.value;
+                          if (s === '') { setter(min); return; }
+                          const n = Number(s);
+                          if (Number.isFinite(n)) clampAndSet(n);
+                        }}
+                        style={{ ...numInputStyle, width: 56, border: 'none', background: 'transparent', padding: '2px 0', textAlign: 'center' }}
+                      />
+                      <span style={unitStyle}>{unit}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            };
+
+            // Live summary — short, factual chips
+            const summaryBits: string[] = [];
+            summaryBits.push(`${slotDur} ${t('min')}`);
+            summaryBits.push(`${perSlot}/${t('slot')}`);
+            summaryBits.push(`${horizon} ${t('sm.unit.days')}`);
+            if (leadHrs > 0) summaryBits.push(`≥ ${leadHrs}h ${t('lead')}`);
+            if (dailyLim > 0) summaryBits.push(`${t('max')} ${dailyLim}/${t('day')}`);
+
+            return (
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 14,
+                opacity: bookingOn ? 1 : 1, // always 1 so master toggle is clearly visible
+              }}>
+                {/* Master toggle card */}
+                <div style={{
+                  ...cardStyle,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  gap: 16, padding: 16,
+                  borderColor: bookingOn ? '#22c55e66' : 'var(--border, #475569)',
+                  background: bookingOn
+                    ? 'linear-gradient(90deg, rgba(34,197,94,0.08), var(--surface2, #334155))'
+                    : 'var(--surface2, #334155)',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>
+                      {t('sm.field.booking_enabled')}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text2, #94a3b8)', marginTop: 3 }}>
+                      {t('Allow customers to book appointments via WhatsApp, Messenger, and the web portal')}
+                    </div>
+                  </div>
+                  <Toggle on={bookingOn} onChange={(v) => update('booking_mode', v)} />
+                </div>
+
+                {/* Rest is dimmed & not editable when booking is off */}
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 14,
+                  opacity: bookingOn ? 1 : 0.4,
+                  pointerEvents: bookingOn ? 'auto' : 'none',
+                }}>
+                  {/* Timing card */}
+                  <div style={cardStyle}>
+                    <div style={cardHeaderStyle}>{t('Timing & availability')}</div>
+                    <PresetRow
+                      value={slotDur}
+                      presets={[{ n: 15, label: '15 min' }, { n: 30, label: '30 min' }, { n: 45, label: '45 min' }, { n: 60, label: '1 h' }, { n: 90, label: '1 h 30' }]}
+                      min={5} max={240} unit={t('min')}
+                      setter={(n) => update('slot_duration_minutes', n)}
+                      labelFor={t('sm.field.slot_duration')}
+                    />
+                    <PresetRow
+                      value={horizon}
+                      presets={[{ n: 7, label: '1 sem.' }, { n: 15, label: '15 ' + t('sm.unit.days') }, { n: 30, label: '30 ' + t('sm.unit.days') }, { n: 60, label: '60 ' + t('sm.unit.days') }, { n: 90, label: '90 ' + t('sm.unit.days') }]}
+                      min={1} max={365} unit={t('sm.unit.days')}
+                      setter={(n) => update('booking_horizon_days', n)}
+                      labelFor={t('sm.field.horizon_days')}
+                    />
+                    <PresetRow
+                      value={leadHrs}
+                      presets={[{ n: 0, label: t('None') }, { n: 1, label: '1 h' }, { n: 2, label: '2 h' }, { n: 4, label: '4 h' }, { n: 24, label: '24 h' }, { n: 48, label: '48 h' }]}
+                      min={0} max={168} unit="h"
+                      setter={(n) => update('min_booking_lead_hours', n)}
+                      labelFor={t('sm.field.lead_hours')}
+                    />
+                  </div>
+
+                  {/* Capacity card */}
+                  <div style={cardStyle}>
+                    <div style={cardHeaderStyle}>{t('Capacity limits')}</div>
+                    <PresetRow
+                      value={perSlot}
+                      presets={[{ n: 1, label: '1' }, { n: 2, label: '2' }, { n: 3, label: '3' }, { n: 5, label: '5' }, { n: 10, label: '10' }]}
+                      min={1} max={50} unit={t('per slot')}
+                      setter={(n) => update('slots_per_interval', n)}
+                      labelFor={t('sm.field.slots_per_interval')}
+                    />
+
+                    <div>
+                      <label style={labelStyle}>{t('sm.field.daily_limit')}</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => update('daily_ticket_limit', 0)}
+                          style={pillStyle(dailyLim === 0)}
+                        >{t('Unlimited')}</button>
+                        <span style={unitStyle}>{t('or')}</span>
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '2px 4px 2px 8px', borderRadius: 999,
+                          border: `1px solid ${dailyLim > 0 ? 'var(--primary, #3b82f6)' : 'var(--border, #475569)'}`,
+                          background: dailyLim > 0 ? 'rgba(59,130,246,0.08)' : 'transparent',
+                        }}>
+                          <input
+                            type="number"
+                            value={dailyLim > 0 ? dailyLim : ''}
+                            min={0} max={500}
+                            placeholder={t('Unlimited')}
+                            onChange={(e) => {
+                              const s = e.target.value;
+                              if (s === '') { update('daily_ticket_limit', 0); return; }
+                              const n = Number(s);
+                              if (Number.isFinite(n)) update('daily_ticket_limit', Math.max(0, Math.min(500, n)));
+                            }}
+                            style={{ ...numInputStyle, width: 70, border: 'none', background: 'transparent', padding: '2px 0', textAlign: 'center' }}
+                          />
+                          <span style={unitStyle}>/{t('day')}</span>
+                        </div>
+                      </div>
+                      <div style={helpStyle}>{t('Cap the total number of bookings per day for this office. Unlimited = no cap.')}</div>
+                    </div>
+                  </div>
+
+                  {/* Customer controls card */}
+                  <div style={cardStyle}>
+                    <div style={cardHeaderStyle}>{t('Customer controls')}</div>
+
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>
+                          {t('sm.field.allow_cancel')}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 3 }}>
+                          {t('Customers can cancel their booking from the confirmation link or chat before the appointment.')}
+                        </div>
+                      </div>
+                      <Toggle on={cancelOn} onChange={(v) => update('allow_cancellation', v)} />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border, #475569)', paddingTop: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)' }}>
+                          {t('sm.field.require_appointment_approval')}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 3 }}>
+                          {t('sm.help.require_appointment_approval')}
+                        </div>
+                      </div>
+                      <Toggle on={approvalOn} onChange={(v) => update('require_appointment_approval', v)} />
+                    </div>
+                  </div>
+
+                  {/* Live summary */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '10px 14px', borderRadius: 10,
+                    background: 'rgba(59,130,246,0.08)',
+                    border: '1px solid rgba(59,130,246,0.25)',
+                    fontSize: 12, color: 'var(--text, #f1f5f9)',
+                  }}>
+                    <span style={{ fontSize: 14 }}>📋</span>
+                    <span style={{ fontWeight: 600 }}>{t('Summary')}:</span>
+                    {summaryBits.map((s, i) => (
+                      <span key={i} style={{
+                        padding: '2px 8px', borderRadius: 999,
+                        background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #475569)',
+                        fontSize: 11, fontWeight: 500,
+                      }}>{s}</span>
+                    ))}
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3, #64748b)' }}>
+                      {approvalOn ? t('Needs approval') : t('Auto-confirmed')}
+                      {' · '}
+                      {cancelOn ? t('Cancellable') : t('Non-cancellable')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       );
     }
 
     return (
       <div>
-        {/* Org name at top of business section */}
+        {/* Logo + org name at top of business section */}
+        {sec.id === 'business' && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--surface, #1e293b)', border: '1px solid var(--border, #334155)' }}>
+            <div style={{
+              width: 72, height: 72, flexShrink: 0,
+              borderRadius: 10, background: 'var(--bg, #0f172a)',
+              border: '1px dashed var(--border, #475569)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden',
+            }}>
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontSize: 32, fontWeight: 700, color: 'var(--text3, #64748b)' }}>Q</span>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #f1f5f9)', marginBottom: 2 }}>{t('Company logo')}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginBottom: 8 }}>
+                {t('Shown on the station header, tickets, kiosk & display. PNG, JPG, WebP or SVG, max 2MB.')}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleLogoFile(e.target.files?.[0])}
+                />
+                <button
+                  type="button"
+                  disabled={logoUploading}
+                  onClick={() => logoInputRef.current?.click()}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    background: 'var(--primary, #3b82f6)', color: '#fff',
+                    border: 'none', cursor: logoUploading ? 'wait' : 'pointer', opacity: logoUploading ? 0.6 : 1,
+                  }}
+                >
+                  {logoUploading ? t('Uploading…') : (logoUrl ? t('Replace logo') : t('Upload logo'))}
+                </button>
+                {logoUrl && !logoUploading && (
+                  <button
+                    type="button"
+                    onClick={handleLogoRemove}
+                    style={{
+                      padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                      background: 'transparent', color: 'var(--text2, #94a3b8)',
+                      border: '1px solid var(--border, #475569)', cursor: 'pointer',
+                    }}
+                  >
+                    {t('Remove')}
+                  </button>
+                )}
+              </div>
+              {logoError && <div style={{ ...errStyle, marginTop: 6 }}>{logoError}</div>}
+            </div>
+          </div>
+        )}
         {sec.id === 'business' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 20, rowGap: 0, marginBottom: 4 }}>
             <div style={{ padding: '5px 0' }}>

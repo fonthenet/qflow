@@ -61,8 +61,11 @@ export async function POST(request: NextRequest) {
     .eq('organization_id', organizationId)
     .maybeSingle();
 
-  if (!membership || !['owner', 'admin'].includes(membership.role)) {
-    return NextResponse.json({ error: 'Forbidden — admin role required' }, { status: 403 });
+  // Allow owner/admin plus manager-tier station roles (admin, manager, branch_admin).
+  // Desk operators and other limited roles cannot change branding.
+  const ALLOWED_ROLES = ['owner', 'admin', 'manager', 'branch_admin'];
+  if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
+    return NextResponse.json({ error: 'Forbidden — manager role or higher required' }, { status: 403 });
   }
 
   // ── Ensure storage bucket exists ──
