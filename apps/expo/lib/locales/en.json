@@ -45,10 +45,15 @@
     "serving": "Serving",
     "served": "Served",
     "noShow": "No Show",
+    "no_show": "No Show",
     "cancelled": "Cancelled",
     "transferred": "Transferred",
     "parked": "On Hold",
-    "missed": "Missed"
+    "missed": "Missed",
+    "pending": "Pending",
+    "confirmed": "Confirmed",
+    "checked_in": "Checked in",
+    "completed": "Completed"
   },
 
   "source": {
@@ -875,9 +880,10 @@
 
   "tabs": {
     "queue": "Queue",
+    "active": "Active",
     "places": "Places",
     "station": "Station",
-    "history": "History",
+    "history": "Activity",
     "profile": "Profile"
   },
 

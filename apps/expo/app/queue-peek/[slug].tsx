@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { BookCTA } from '@/components/BookCTA';
 
 const REFRESH_INTERVAL_MS = 15_000;
 
@@ -229,16 +230,12 @@ export default function QueuePeekScreen() {
         <Text style={s.joinAnyBtnText}>{t('queuePeek.getTicketNow')}</Text>
       </TouchableOpacity>
 
-      {status?.bookingMode !== 'disabled' && (
-        <TouchableOpacity
-          style={[s.bookLaterBtn, { borderColor: colors.border }]}
-          onPress={() => router.push(`/book-appointment/${slug}` as any)}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          <Text style={[s.bookLaterBtnText, { color: colors.primary }]}>{t('queuePeek.bookForLater')}</Text>
-        </TouchableOpacity>
-      )}
+      <BookCTA
+        slug={slug}
+        bookingMode={status?.bookingMode}
+        variant="outline"
+        style={{ marginTop: spacing.sm }}
+      />
     </ScrollView>
   );
 }

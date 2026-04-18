@@ -1,16 +1,13 @@
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { useAuth } from '@/lib/auth-context';
 
 export default function TabLayout() {
   const { t } = useTranslation();
   const { activeToken } = useAppStore();
-  const { colors, isDark } = useTheme();
-  const { isStaff } = useAuth();
-  const router = useRouter();
+  const { colors } = useTheme();
   // When tracking, force dark regardless of theme
   const isTrackingDark = !!activeToken;
 
@@ -31,15 +28,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: t('tabs.queue'),
+          title: t('tabs.active', { defaultValue: 'Active' }),
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="ticket-outline" size={size} color={color} />
+            <Ionicons name="pulse-outline" size={size} color={color} />
           ),
         }}
         listeners={{
           tabPress: () => {
             // Only clear the active ticket when it's actually finished.
-            // For waiting / called / serving we keep it so the Queue tab
+            // For waiting / called / serving we keep it so the Active tab
             // lands the user right on the live status view.
             const { activeTicket, clearActiveTicket } = useAppStore.getState();
             const terminal =
@@ -59,25 +56,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="station"
-        options={{
-          title: t('tabs.station'),
-          href: isStaff ? undefined : null,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="desktop-outline" size={size} color={color} />
-          ),
-        }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
-            router.push('/(operator)/desk');
-          },
-        }}
-      />
-      <Tabs.Screen
         name="history"
         options={{
-          title: t('tabs.history'),
+          title: t('tabs.history', { defaultValue: 'Activity' }),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="time-outline" size={size} color={color} />
           ),
@@ -92,6 +73,9 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* Station moved out of the tab bar — access via Profile. The file
+          remains as a redirect in case anyone deep-links to the tab. */}
+      <Tabs.Screen name="station" options={{ href: null }} />
     </Tabs>
   );
 }

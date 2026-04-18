@@ -45,10 +45,15 @@
     "serving": "En service",
     "served": "Servi",
     "noShow": "Absent",
+    "no_show": "Absent",
     "cancelled": "Annulé",
     "transferred": "Transféré",
     "parked": "En pause",
-    "missed": "Manqué"
+    "missed": "Manqué",
+    "pending": "En attente",
+    "confirmed": "Confirmé",
+    "checked_in": "Enregistré",
+    "completed": "Terminé"
   },
 
   "source": {
@@ -811,9 +816,10 @@
 
   "tabs": {
     "queue": "File",
+    "active": "En cours",
     "places": "Lieux",
     "station": "Poste",
-    "history": "Historique",
+    "history": "Activité",
     "profile": "Profil"
   },
 

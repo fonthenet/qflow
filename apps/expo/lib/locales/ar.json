@@ -45,10 +45,15 @@
     "serving": "قيد الخدمة",
     "served": "تمت الخدمة",
     "noShow": "لم يحضر",
+    "no_show": "لم يحضر",
     "cancelled": "ملغي",
     "transferred": "محوّل",
     "parked": "معلّق",
-    "missed": "فائت"
+    "missed": "فائت",
+    "pending": "قيد الانتظار",
+    "confirmed": "مؤكد",
+    "checked_in": "تم التسجيل",
+    "completed": "مكتمل"
   },
 
   "source": {
@@ -811,9 +816,10 @@
 
   "tabs": {
     "queue": "القائمة",
+    "active": "نشط",
     "places": "الأماكن",
     "station": "المحطة",
-    "history": "السجل",
+    "history": "النشاط",
     "profile": "الملف الشخصي"
   },
 

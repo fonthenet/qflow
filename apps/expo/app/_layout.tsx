@@ -256,10 +256,10 @@ function RootNavigator() {
             presentation: 'modal',
           }}
         />
+        <Stack.Screen name="scan" options={{ headerShown: false }} />
         <Stack.Screen name="kiosk/[slug]" options={{ title: 'Kiosk', headerShown: false }} />
         <Stack.Screen name="queue-peek/[slug]" options={{ headerShown: false }} />
         <Stack.Screen name="book-appointment/[slug]" options={{ headerShown: false }} />
-        <Stack.Screen name="appointments/index" options={{ headerShown: false }} />
       </Stack>
     </View>
   );
