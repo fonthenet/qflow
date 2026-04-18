@@ -720,7 +720,10 @@
     "namePlaceholder": "Name",
     "phonePlaceholder": "Phone number",
     "reasonPlaceholder": "Reason for visit (optional)",
-    "joinQueue": "Join Queue"
+    "joinQueue": "Join Queue",
+    "bookForLater": "Book for Later",
+    "bookForLaterSub": "Reserve a time instead of waiting in line",
+    "or": "or"
   },
 
   "kiosk": {

@@ -688,7 +688,10 @@
     "namePlaceholder": "Nom",
     "phonePlaceholder": "Numéro de téléphone",
     "reasonPlaceholder": "Motif de visite (facultatif)",
-    "joinQueue": "Rejoindre la file"
+    "joinQueue": "Rejoindre la file",
+    "bookForLater": "Réserver pour plus tard",
+    "bookForLaterSub": "Réservez un créneau au lieu d'attendre",
+    "or": "ou"
   },
 
   "kiosk": {

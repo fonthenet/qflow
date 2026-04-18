@@ -120,7 +120,7 @@ export interface JoinInfoResponse {
     logo_url: string | null;
     settings?: Record<string, any>;
   };
-  offices: Array<{ id: string; name: string; address: string | null }>;
+  offices: Array<{ id: string; name: string; address: string | null; kiosk_slug?: string | null }>;
   departments: Array<{ id: string; name: string; office_id: string }>;
   services: Array<{
     id: string;

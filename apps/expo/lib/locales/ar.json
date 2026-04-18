@@ -688,7 +688,10 @@
     "namePlaceholder": "الاسم",
     "phonePlaceholder": "رقم الهاتف",
     "reasonPlaceholder": "سبب الزيارة (اختياري)",
-    "joinQueue": "انضم للطابور"
+    "joinQueue": "انضم للطابور",
+    "bookForLater": "احجز لوقت لاحق",
+    "bookForLaterSub": "احجز موعداً بدلاً من الانتظار",
+    "or": "أو"
   },
 
   "kiosk": {

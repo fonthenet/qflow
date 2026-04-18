@@ -62,12 +62,16 @@ export default function JoinScreen() {
     setInfo(data);
 
     // Save each office in this join link to Places immediately
+    const orgBookingMode =
+      (data.organization?.settings?.booking_mode as string | undefined) ?? null;
     for (const office of data.offices) {
       recordPlace({
         id: office.id,
         name: office.name,
         address: office.address,
         joinToken: token,
+        kioskSlug: office.kiosk_slug ?? undefined,
+        bookingMode: orgBookingMode,
         logo_url: data.organization?.logo_url ?? null,
         vertical: (data.organization?.settings?.vertical as string | undefined) ?? null,
         services: (data.services ?? []).map((s) => s.name.toLowerCase()),
@@ -155,6 +159,26 @@ export default function JoinScreen() {
 
   const canJoin =
     !!selectedOfficeId && !!selectedDeptId && !!selectedServiceId && !missingRequired;
+
+  // Booking ("Book for later") — available when the org opted into appointments
+  // and we have a kiosk slug for the selected office (the book-appointment
+  // screen is slug-keyed).
+  const bookingMode =
+    (info?.organization.settings?.booking_mode as string | undefined) ?? 'disabled';
+  const bookingEnabled = bookingMode === 'appointment' || bookingMode === 'hybrid';
+  const selectedOffice = info?.offices.find((o) => o.id === selectedOfficeId);
+  const canBook = bookingEnabled && !!selectedOffice?.kiosk_slug;
+
+  const handleBookForLater = () => {
+    if (!canBook || !selectedOffice?.kiosk_slug) return;
+    const params = new URLSearchParams();
+    if (selectedDeptId) params.set('deptId', selectedDeptId);
+    if (selectedServiceId) params.set('serviceId', selectedServiceId);
+    const qs = params.toString();
+    router.push(
+      `/book-appointment/${selectedOffice.kiosk_slug}${qs ? `?${qs}` : ''}` as any,
+    );
+  };
 
   // Handle join
   const handleJoin = async () => {
@@ -433,6 +457,29 @@ export default function JoinScreen() {
           </>
         )}
       </TouchableOpacity>
+
+      {/* Book for later — shown only when the org enables appointments */}
+      {canBook && (
+        <>
+          <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>{t('join.or')}</Text>
+            <View style={styles.orLine} />
+          </View>
+          <TouchableOpacity
+            style={styles.bookButton}
+            onPress={handleBookForLater}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bookButtonText}>{t('join.bookForLater')}</Text>
+              <Text style={styles.bookButtonSub}>{t('join.bookForLaterSub')}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        </>
+      )}
 
       <View style={{ height: spacing.xxl }} />
     </ScrollView>
@@ -714,5 +761,47 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '700',
     color: '#fff',
+  },
+
+  // "or" divider
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  orText: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+
+  // Book for later
+  bookButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '40',
+  },
+  bookButtonText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  bookButtonSub: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

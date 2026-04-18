@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getOfficePublicSlug } from '@/lib/office-links';
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token')?.trim();
@@ -40,16 +41,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Virtual queue is disabled' }, { status: 403 });
   }
 
-  // Fetch offices
-  const { data: offices } = await supabase
+  // Fetch offices — include settings so we can derive the public kiosk slug,
+  // which lets mobile jump straight into the book-appointment flow.
+  const { data: rawOffices } = await supabase
     .from('offices')
-    .select('id, name, address')
+    .select('id, name, address, settings')
     .eq('organization_id', virtualCode.organization_id)
     .eq('is_active', true)
     .order('name');
+  const offices = (rawOffices ?? []).map((o: any) => ({
+    id: o.id,
+    name: o.name,
+    address: o.address,
+    kiosk_slug: getOfficePublicSlug(o),
+  }));
 
   // Fetch departments
-  const officeIds = (offices ?? []).map((o) => o.id);
+  const officeIds = offices.map((o) => o.id);
   const { data: departments } = officeIds.length > 0
     ? await supabase
         .from('departments')
@@ -87,7 +95,7 @@ export async function GET(request: NextRequest) {
       service_id: virtualCode.service_id,
     },
     organization,
-    offices: offices ?? [],
+    offices,
     departments: departments ?? [],
     services: services ?? [],
     waitingTickets: (waitingTickets ?? []).map((t) => ({
