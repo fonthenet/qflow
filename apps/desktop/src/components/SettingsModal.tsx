@@ -70,8 +70,11 @@ function migrateToIntakeFields(settings: Record<string, any>): IntakeField[] {
   return fields;
 }
 
-function generateCustomFieldKey(): string {
-  return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+function generateCustomFieldKey(existing: IntakeField[]): string {
+  const taken = new Set(existing.map(f => f.key));
+  let n = 1;
+  while (taken.has(`custom_${n}`)) n++;
+  return `custom_${n}`;
 }
 // ── End Intake Fields types ─────────────────────────────────────
 
@@ -1494,7 +1497,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   type="button"
                   onClick={() => {
                     const newField: IntakeField = {
-                      key: generateCustomFieldKey(),
+                      key: generateCustomFieldKey(intakeFields),
                       type: 'custom',
                       enabled: true,
                       required: false,
@@ -1515,7 +1518,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                   const isPreset = field.type === 'preset';
                   const displayLabel = isPreset
                     ? getFieldLabel(field, intakeLocale)
-                    : (getFieldLabel(field, intakeLocale) || field.key);
+                    : (getFieldLabel(field, intakeLocale) || t('sm.custom_intake.untitled'));
                   const isFirst = idx === 0;
                   const isLast = idx === intakeFields.length - 1;
                   const isExpanded = !isPreset && (expandedIntakeField === field.key);
@@ -1643,7 +1646,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                               }}
                               style={{ fontSize: 12, color: '#ef4444', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '2px 4px' }}
                               title={t('sm.custom_intake.remove')}
-                            >\u2715</button>
+                            >{'\u2715'}</button>
                           </>
                         )}
                       </div>
@@ -1686,7 +1689,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                                 updated[idx] = { ...updated[idx], label_ar: e.target.value };
                                 setValues(prev => ({ ...prev, intake_fields: updated }));
                               }}
-                              placeholder="\u0645\u062b\u0627\u0644: \u0627\u0644\u0644\u0648\u0646"
+                              placeholder={'\u0645\u062b\u0627\u0644: \u0627\u0644\u0644\u0648\u0646'}
                               dir="rtl"
                               style={{ width: '100%', padding: '4px 8px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border, #475569)', background: 'var(--bg2, #1e293b)', color: 'var(--text, #f1f5f9)' }}
                             />

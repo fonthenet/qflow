@@ -364,6 +364,14 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
   const handleFutureBook = async () => {
     if (!futDept || !futService || !futDate || !futTime || !futName.trim() || futSubmitting) return;
+    // Enforce required intake fields configured in Settings
+    const missing = enabledFields
+      .filter(f => f.required && !(customerData[f.key]?.trim()))
+      .map(f => getFieldLabel(f, locale as 'en' | 'fr' | 'ar'));
+    if (missing.length > 0) {
+      setFutResult({ success: false, error: `${t('Please fill required fields')}: ${missing.join(', ')}` });
+      return;
+    }
     setFutSubmitting(true);
     setFutResult(null);
     try {
@@ -457,6 +465,14 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
   const handleSubmit = async () => {
     if (!selectedDept || submitting) return;
+    // Enforce required intake fields configured in Settings
+    const missing = enabledFields
+      .filter(f => f.required && !(customerData[f.key]?.trim()))
+      .map(f => getFieldLabel(f, locale as 'en' | 'fr' | 'ar'));
+    if (missing.length > 0) {
+      alert(`${t('Please fill required fields')}: ${missing.join(', ')}`);
+      return;
+    }
     setSubmitting(true);
     try {
       // Build customer_data from all enabled intake fields
@@ -716,11 +732,13 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               fields appear. No hardcoded Name/Phone/Wilaya/Notes here. */}
           {enabledFields.map((field) => {
             const fLabel = getFieldLabel(field, locale as 'en' | 'fr' | 'ar');
+            const isReq = field.key === 'name' || !!field.required;
+            const fLabelReq = `${fLabel}${isReq ? ' *' : ''}`;
             const val = customerData[field.key] ?? '';
 
             if (field.key === 'name') return (
               <div key="fut-name" style={{ position: 'relative' }}>
-                <label style={labelStyle}>{fLabel} *</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="text"
                   value={val}
@@ -772,7 +790,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
             if (field.key === 'phone') return (
               <div key="fut-phone">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="tel"
                   value={val}
@@ -787,7 +805,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
             if (field.key === 'wilaya') return (
               <div key="fut-wilaya">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <select
                   value={val}
                   onChange={(e) => setField('wilaya', e.target.value)}
@@ -806,7 +824,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
 
             if (field.key === 'age') return (
               <div key="fut-age">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="number"
                   min={1}
@@ -823,7 +841,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             // Reason + custom fields — text input
             return (
               <div key={`fut-${field.key}`}>
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="text"
                   value={val}
@@ -988,12 +1006,14 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
           {/* Dynamic intake fields rendered in configured order */}
           {enabledFields.map((field) => {
             const fLabel = getFieldLabel(field, locale as 'en' | 'fr' | 'ar');
+            const isReq = !!field.required;
+            const fLabelReq = `${fLabel}${isReq ? ' *' : ''}`;
             const val = customerData[field.key] ?? '';
 
             // Name field — with customer search autocomplete
             if (field.key === 'name') return (
               <div key="name" style={{ position: 'relative' }}>
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   ref={nameRef}
                   type="text"
@@ -1047,7 +1067,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             // Phone field — with customer lookup trigger
             if (field.key === 'phone') return (
               <div key="phone">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="tel"
                   value={val}
@@ -1063,7 +1083,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             // Wilaya field — dropdown
             if (field.key === 'wilaya') return (
               <div key="wilaya">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <select
                   value={val}
                   onChange={(e) => setField('wilaya', e.target.value)}
@@ -1083,7 +1103,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             // Age field — numeric input
             if (field.key === 'age') return (
               <div key="age">
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="number"
                   min={1}
@@ -1100,7 +1120,7 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             // Reason + custom fields — text input
             return (
               <div key={field.key}>
-                <label style={labelStyle}>{fLabel}</label>
+                <label style={labelStyle}>{fLabelReq}</label>
                 <input
                   type="text"
                   value={val}
@@ -3114,7 +3134,31 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const serving = useMemo(() => tickets.filter((t) => t.status === 'serving'), [tickets]);
 
   // ── Recent activity log ─────────────────────────────────────────
-  const [recentActivity, setRecentActivity] = useState<Array<{ ticket: string; action: string; time: string }>>([]);
+  const [recentActivity, setRecentActivity] = useState<Array<{ id?: string | null; ticket: string; action: string; time: string }>>([]);
+  // Inline expansion of a recent-activity row — holds the ticket id of the
+  // row the operator is currently "drilling into" (null = all collapsed).
+  const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
+  const [expandedTicketData, setExpandedTicketData] = useState<{ events: any[]; ticket: any } | null>(null);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+
+  // Fetch timeline + ticket whenever the expanded row changes.
+  useEffect(() => {
+    if (!expandedTicketId) { setExpandedTicketData(null); return; }
+    let cancelled = false;
+    setExpandedLoading(true);
+    (window as any).qf?.ticketTimeline?.get(expandedTicketId).then((res: any) => {
+      if (cancelled) return;
+      let ticket = res?.ticket ?? null;
+      if (ticket && typeof ticket.customer_data === 'string') {
+        try { ticket.customer_data = JSON.parse(ticket.customer_data); } catch { ticket.customer_data = {}; }
+      }
+      setExpandedTicketData({ events: res?.events ?? [], ticket });
+      setExpandedLoading(false);
+    }).catch(() => {
+      if (!cancelled) { setExpandedTicketData({ events: [], ticket: null }); setExpandedLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [expandedTicketId]);
 
   // Load recent activity from audit log on mount (persisted across restarts)
   useEffect(() => {
@@ -3122,6 +3166,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     (window as any).qf?.activity?.getRecent(session.office_id, 10).then((rows: any[]) => {
       if (rows?.length) {
         setRecentActivity(rows.map((r: any) => ({
+          id: r.id ?? null,
           ticket: r.ticket,
           action: translateAction(r.action),
           time: formatDesktopTime(r.time, locale),
@@ -3906,6 +3951,136 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   >
                     {t('Call Next ({count})', { count: waiting.length })} <span className="shortcut-hint">F8</span>
                   </button>
+
+                  {/* Recent Activity — always-visible canvas card with clickable tickets.
+                      Clicking a ticket sets the waiting-list search filter so the
+                      operator can quickly locate it in the side panel. */}
+                  {recentActivity.length > 0 && (
+                    <div style={{
+                      marginTop: 32, width: '100%', maxWidth: 520,
+                      background: 'var(--surface, #1e293b)',
+                      border: '1px solid var(--border, #334155)',
+                      borderRadius: 12, padding: '16px 18px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h4 style={{
+                          fontSize: 13, fontWeight: 800, color: 'var(--text2, #94a3b8)',
+                          letterSpacing: locale === 'ar' ? 'normal' : 1.2,
+                          textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const,
+                          margin: 0,
+                        }}>
+                          {t('Recent Activity ({count})', { count: recentActivity.length })}
+                        </h4>
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                          {t('Click a ticket to find it')}
+                        </span>
+                      </div>
+                      <div
+                        role="list"
+                        aria-label={t('Recent activity')}
+                        style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}
+                      >
+                        {recentActivity.slice(0, 15).map((a, i) => {
+                          const isCompleted = a.action === t('Completed');
+                          const isNoShow = a.action === t('No Show');
+                          const isCancelled = a.action === t('Cancelled') || a.action === t('cancelled');
+                          const badgeBg = isCompleted ? 'rgba(34,197,94,0.15)'
+                            : isNoShow ? 'rgba(249,115,22,0.15)'
+                            : isCancelled ? 'rgba(239,68,68,0.15)'
+                            : 'rgba(59,130,246,0.15)';
+                          const badgeColor = isCompleted ? '#22c55e'
+                            : isNoShow ? '#f97316'
+                            : isCancelled ? '#ef4444'
+                            : '#3b82f6';
+                          const rowId = a.id || tickets.find(tk => tk.ticket_number === a.ticket)?.id || null;
+                          const isExpanded = rowId !== null && expandedTicketId === rowId;
+                          return (
+                            <div key={i} style={{ display: 'flex', flexDirection: 'column' }}>
+                              <button
+                                role="listitem"
+                                type="button"
+                                aria-expanded={isExpanded}
+                                onClick={() => {
+                                  if (!rowId) {
+                                    // Fallback when no id — filter the waiting list.
+                                    const stillWaiting = waiting.some(tk => tk.ticket_number === a.ticket);
+                                    if (stillWaiting) {
+                                      setSearchFilter(a.ticket);
+                                      setShowAllWaiting(false);
+                                    }
+                                    showToast(`${a.ticket} — ${a.action}`, 'info');
+                                    return;
+                                  }
+                                  setExpandedTicketId((cur) => (cur === rowId ? null : rowId));
+                                }}
+                                title={t('Show ticket details')}
+                                style={{
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                  gap: 12, padding: '12px 14px',
+                                  borderRadius: isExpanded ? '10px 10px 0 0' : 10,
+                                  background: isExpanded ? 'rgba(59,130,246,0.10)' : 'transparent',
+                                  border: '1px solid ' + (isExpanded ? 'rgba(59,130,246,0.35)' : 'transparent'),
+                                  borderBottom: isExpanded ? '1px solid rgba(59,130,246,0.35)' : undefined,
+                                  cursor: 'pointer', textAlign: 'inherit',
+                                  color: 'var(--text, #e2e8f0)',
+                                  transition: 'background 0.15s, border-color 0.15s',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isExpanded) {
+                                    e.currentTarget.style.background = 'rgba(59,130,246,0.08)';
+                                    e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isExpanded) {
+                                    e.currentTarget.style.background = 'transparent';
+                                    e.currentTarget.style.borderColor = 'transparent';
+                                  }
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                                  <span style={{
+                                    display: 'inline-block', width: 12, color: '#60a5fa',
+                                    fontSize: 12, transform: isExpanded ? 'rotate(90deg)' : 'none',
+                                    transition: 'transform 0.15s',
+                                  }}>▶</span>
+                                  <strong style={{
+                                    fontSize: 15, fontVariantNumeric: 'tabular-nums',
+                                    color: '#60a5fa', minWidth: 70,
+                                  }}>{a.ticket}</strong>
+                                  <span style={{ fontSize: 13, color: 'var(--text3, #94a3b8)' }}>· {a.time}</span>
+                                </span>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 12,
+                                  whiteSpace: 'nowrap',
+                                  background: badgeBg, color: badgeColor,
+                                }}>
+                                  {a.action}
+                                </span>
+                              </button>
+                              {isExpanded && (
+                                <InlineTicketDetails
+                                  loading={expandedLoading}
+                                  data={expandedTicketData}
+                                  locale={locale as 'en' | 'fr' | 'ar'}
+                                  t={t}
+                                  onFindInWaiting={(num) => {
+                                    const stillWaiting = waiting.some(tk => tk.ticket_number === num);
+                                    if (stillWaiting) {
+                                      setSearchFilter(num);
+                                      setShowAllWaiting(false);
+                                      setExpandedTicketId(null);
+                                    }
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -4092,7 +4267,16 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                   boxShadow: queueTab === 'queue' ? '0 2px 8px rgba(59,130,246,0.35)' : 'none',
                 }}
               >
-                👥 {t('Queue')}
+                <svg width="14" height="14" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2.2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  style={{ flexShrink: 0 }} aria-hidden="true">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                {t('Queue')}
                 <span style={{
                   background: queueTab === 'queue' ? 'rgba(0,0,0,0.22)' : 'rgba(148,163,184,0.22)',
                   color: queueTab === 'queue' ? '#fff' : 'var(--text, #e2e8f0)',
@@ -4666,7 +4850,28 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
               </button>
             )}
             {filteredWaiting.length === 0 && (
-              <div className="queue-empty">{searchFilter ? t('No matches') : t('No customers waiting')}</div>
+              <div className="queue-empty">
+                {searchFilter ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                    <span>{t('No matches for "{query}"', { query: searchFilter })}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchFilter('')}
+                      style={{
+                        fontSize: 11, fontWeight: 600,
+                        padding: '4px 10px', borderRadius: 6,
+                        border: '1px solid rgba(59,130,246,0.4)',
+                        background: 'rgba(59,130,246,0.12)',
+                        color: '#60a5fa', cursor: 'pointer',
+                      }}
+                    >
+                      {t('Clear filter')}
+                    </button>
+                  </div>
+                ) : (
+                  t('No customers waiting')
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -4791,42 +4996,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           );
         })()}
 
-        {/* Recent Activity — collapsed by default */}
-        {recentActivity.length > 0 && (
-          <div className="sidebar-section" style={{ flex: '0 0 auto' }}>
-            <button
-              onClick={() => setShowActivity(v => !v)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-              }}
-            >
-              <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
-                {t('Recent Activity ({count})', { count: recentActivity.length })}
-              </h4>
-              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showActivity ? '▲' : '▼'}</span>
-            </button>
-            {showActivity && (
-              <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6 }} role="list" aria-label={t('Recent activity')}>
-                {recentActivity.slice(0, 10).map((a, i) => (
-                  <div key={i} role="listitem" style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '3px 0', fontSize: 11, color: 'var(--text2)',
-                  }}>
-                    <span><strong>{a.ticket}</strong> {a.action} · {a.time}</span>
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, marginLeft: 6, whiteSpace: 'nowrap',
-                      background: a.action === t('Completed') ? 'rgba(34,197,94,0.15)' : a.action === t('No Show') ? 'rgba(249,115,22,0.15)' : 'rgba(59,130,246,0.15)',
-                      color: a.action === t('Completed') ? '#22c55e' : a.action === t('No Show') ? '#f97316' : '#3b82f6',
-                    }}>
-                      {a.action}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Recent Activity moved to the main canvas idle panel (see idle-panel above). */}
 
         {/* Office Open/Closed Status */}
         <OfficeHoursBadge locale={locale} session={session} />
@@ -5249,6 +5419,176 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
         <div className={`toast toast-${toast.type}`}>
           {toast.message}
         </div>
+      )}
+
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Inline ticket details panel
+// Rendered directly beneath a Recent Activity row when the operator
+// clicks it — shows customer data, timestamps, and the audit timeline
+// without a modal overlay.
+// ─────────────────────────────────────────────────────────────────────
+function InlineTicketDetails({
+  loading,
+  data,
+  locale,
+  t,
+  onFindInWaiting,
+}: {
+  loading: boolean;
+  data: { events: any[]; ticket: any } | null;
+  locale: 'en' | 'fr' | 'ar';
+  t: (k: string, p?: Record<string, any>) => string;
+  onFindInWaiting: (ticketNumber: string) => void;
+}) {
+  const ticket = data?.ticket;
+  const events = data?.events ?? [];
+  const customerData: Record<string, any> = ticket?.customer_data ?? {};
+  const statusColor: Record<string, string> = {
+    waiting: '#3b82f6', called: '#8b5cf6', serving: '#22c55e',
+    served: '#16a34a', no_show: '#f97316', cancelled: '#ef4444',
+  };
+
+  return (
+    <div style={{
+      borderLeft: '1px solid rgba(59,130,246,0.35)',
+      borderRight: '1px solid rgba(59,130,246,0.35)',
+      borderBottom: '1px solid rgba(59,130,246,0.35)',
+      borderRadius: '0 0 10px 10px',
+      background: 'rgba(59,130,246,0.04)',
+      padding: '16px 18px',
+      display: 'flex', flexDirection: 'column', gap: 18,
+      direction: locale === 'ar' ? 'rtl' : 'ltr',
+      textAlign: locale === 'ar' ? 'right' : 'left',
+    }}>
+      {loading ? (
+        <div style={{ color: 'var(--text3)', fontSize: 14 }}>{t('Loading…')}</div>
+      ) : !ticket ? (
+        <div style={{ color: 'var(--text3)', fontSize: 14 }}>{t('Ticket not found')}</div>
+      ) : (
+        <>
+          {/* Status + quick meta */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 12, fontWeight: 800, padding: '5px 14px', borderRadius: 12,
+              background: `${statusColor[ticket.status] || '#64748b'}22`,
+              color: statusColor[ticket.status] || '#64748b',
+              textTransform: 'uppercase', letterSpacing: 1,
+            }}>
+              {t(ticket.status)}
+            </span>
+            {ticket.priority > 0 && (
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>
+                {t('Priority')}: {ticket.priority}
+              </span>
+            )}
+            {ticket.recall_count > 0 && (
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>
+                {t('Recalls')}: {ticket.recall_count}
+              </span>
+            )}
+            {ticket.is_remote ? <span style={{ fontSize: 13, color: 'var(--text3)' }}>· {t('Remote')}</span> : null}
+            {ticket.source ? <span style={{ fontSize: 13, color: 'var(--text3)' }}>· {t(ticket.source)}</span> : null}
+          </div>
+
+          {/* Customer data */}
+          {Object.keys(customerData).length > 0 && (
+            <section style={{ textAlign: 'start' }}>
+              <h5 style={{
+                margin: '0 0 8px 0', fontSize: 12, fontWeight: 800, color: 'var(--text2)',
+                letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'start',
+              }}>{t('Customer')}</h5>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14 }}>
+                {Object.entries(customerData).filter(([, v]) => v !== null && v !== '').map(([k, v]) => (
+                  <div key={k} style={{
+                    display: 'flex', justifyContent: 'space-between', gap: 16,
+                    padding: '4px 0', borderBottom: '1px dashed rgba(148,163,184,0.12)',
+                  }}>
+                    <span style={{ color: 'var(--text3)', textTransform: 'capitalize', textAlign: 'start' }}>{k}</span>
+                    <span style={{ color: 'var(--text)', textAlign: 'end' }}>{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Timestamps */}
+          <section style={{ textAlign: 'start' }}>
+            <h5 style={{
+              margin: '0 0 8px 0', fontSize: 12, fontWeight: 800, color: 'var(--text2)',
+              letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'start',
+            }}>{t('Timestamps')}</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14 }}>
+              {([
+                ['created_at', t('Created')],
+                ['called_at', t('Called')],
+                ['serving_started_at', t('Serving started')],
+                ['completed_at', t('Completed')],
+                ['cancelled_at', t('Cancelled')],
+                ['parked_at', t('Parked')],
+              ] as const).filter(([k]) => ticket[k]).map(([k, label]) => (
+                <div key={k} style={{
+                  display: 'flex', justifyContent: 'space-between', gap: 16,
+                  padding: '4px 0', borderBottom: '1px dashed rgba(148,163,184,0.12)',
+                }}>
+                  <span style={{ color: 'var(--text3)', textAlign: 'start' }}>{label}</span>
+                  <span style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums', textAlign: 'end' }}>
+                    {formatDesktopTime(ticket[k], locale)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Audit timeline */}
+          {events.length > 0 && (
+            <section style={{ textAlign: 'start' }}>
+              <h5 style={{
+                margin: '0 0 8px 0', fontSize: 12, fontWeight: 800, color: 'var(--text2)',
+                letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'start',
+              }}>{t('Timeline')} ({events.length})</h5>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
+                {events.map((ev, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 12, alignItems: 'flex-start',
+                    padding: '7px 12px', borderRadius: 8,
+                    background: 'rgba(15,23,42,0.4)', fontSize: 13,
+                  }}>
+                    <span style={{ color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', minWidth: 90 }}>
+                      {formatDesktopTime(ev.created_at, locale)}
+                    </span>
+                    <span style={{ color: 'var(--text)', flex: 1 }}>
+                      <strong>{t(ev.to_status || ev.event_type)}</strong>
+                      {ev.from_status && ev.to_status && ev.from_status !== ev.to_status && (
+                        <span style={{ color: 'var(--text3)' }}> ({t(ev.from_status)} → {t(ev.to_status)})</span>
+                      )}
+                      {ev.source && <span style={{ color: 'var(--text3)' }}> · {t(ev.source)}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Actions */}
+          {ticket.status === 'waiting' && (
+            <div>
+              <button
+                onClick={() => onFindInWaiting(ticket.ticket_number)}
+                style={{
+                  background: 'rgba(59,130,246,0.15)', color: '#60a5fa',
+                  border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8,
+                  padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {t('Find in waiting list')}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

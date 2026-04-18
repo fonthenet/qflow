@@ -1007,21 +1007,56 @@ function setupIPC() {
     const callTs = Date.now();
 
     // ── CLOUD PRE-CHECK: verify which tickets are truly still waiting in Supabase ──
-    // This prevents calling tickets that were cancelled/resolved remotely by customers
+    // This prevents calling tickets that were cancelled/resolved remotely by customers.
+    //
+    // We fetch BOTH the cloud "waiting" set AND recent history ("served/cancelled/no_show"
+    // from the last 48h). A local ticket is only auto-cancelled when BOTH are true:
+    //   1. not in cloud waiting (could be missing for many reasons — RLS, auth, pagination)
+    //   2. present in cloud history as a terminal state — proves it really was resolved
+    // If #2 can't be proven we skip the ticket for this Call Next round instead of
+    // cancelling it. The sync-pull mirror will reconcile it properly later.
+    //
+    // Empty-result guard: if both cloud fetches succeed but return empty sets,
+    // that's almost always a dead auth token / RLS issue (not "every ticket is gone").
+    // Discard the pre-check entirely to avoid wiping valid local data.
     let cloudWaitingIds: Set<string> | null = null;
+    let cloudHistoryIds: Set<string> | null = null;
     if (syncEngine?.isOnline) {
       try {
         const token = await syncEngine.ensureFreshToken();
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&status=eq.waiting&select=id`,
-          {
-            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-            signal: AbortSignal.timeout(3000),
+        const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        const [waitingRes, historyRes] = await Promise.all([
+          fetch(
+            `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&status=eq.waiting&select=id`,
+            {
+              headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+              signal: AbortSignal.timeout(3000),
+            }
+          ),
+          fetch(
+            `${SUPABASE_URL}/rest/v1/tickets?office_id=eq.${officeId}&status=in.(served,cancelled,no_show)&cancelled_at=gte.${cutoff}&select=id`,
+            {
+              headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+              signal: AbortSignal.timeout(3000),
+            }
+          ),
+        ]);
+        if (waitingRes.ok && historyRes.ok) {
+          const waitingRows = await waitingRes.json();
+          const historyRows = await historyRes.json();
+          const waitingSet = new Set<string>(waitingRows.map((r: any) => r.id));
+          const historySet = new Set<string>(historyRows.map((r: any) => r.id));
+
+          // Empty-result safeguard — match sync.ts:1812
+          const localActiveCount = (db.prepare(
+            "SELECT count(*) as cnt FROM tickets WHERE office_id = ? AND status = 'waiting'"
+          ).get(officeId) as any)?.cnt ?? 0;
+          if (waitingSet.size === 0 && historySet.size === 0 && localActiveCount > 0) {
+            logger.warn('call-next', 'Cloud pre-check returned empty sets with local waiting > 0 — skipping pre-check (likely auth/RLS issue)', { officeId, localActiveCount });
+          } else {
+            cloudWaitingIds = waitingSet;
+            cloudHistoryIds = historySet;
           }
-        );
-        if (res.ok) {
-          const rows = await res.json();
-          cloudWaitingIds = new Set(rows.map((r: any) => r.id));
         }
       } catch {
         // Cloud check failed — proceed with local data (offline-first)
@@ -1056,7 +1091,22 @@ function setupIPC() {
         const isRecent = ticketInfo?.created_at && (Date.now() - new Date(ticketInfo.created_at).getTime()) < 120_000;
 
         if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !ticketInfo?.is_offline && !hasPendingSync && !isRecent) {
-          // This ticket was cancelled/resolved remotely — adopt cloud state locally.
+          // Missing from cloud waiting. Only adopt cancel IF cloud history confirms
+          // the ticket really is terminal — otherwise this is likely a flaky query
+          // and we must not silently cancel a live ticket (no sync queue row is
+          // emitted for auto-cancels, so WhatsApp / display / customer are never
+          // notified, and the customer just disappears from the queue).
+          const confirmedTerminal = cloudHistoryIds?.has(candidate.id) ?? false;
+          if (!confirmedTerminal) {
+            logger.warn('call-next', 'Local waiting ticket missing from cloud waiting but no history record — skipping, not cancelling', {
+              ticketId: candidate.id,
+              officeId,
+            });
+            // Skip this ticket for Call Next but leave it waiting — sync-pull
+            // mirror will reconcile with proper 48h history on next pull cycle.
+            continue;
+          }
+          // Cloud history confirms terminal — safe to adopt cloud state locally.
           // We do NOT enqueue a sync_queue row here because the cloud is already
           // the source of truth for this transition. Setting BOTH cancelled_at and
           // completed_at ensures the pull-merge protection at sync.ts:1333 recognizes
@@ -1066,7 +1116,7 @@ function setupIPC() {
             fromStatus: 'waiting',
             toStatus: 'cancelled',
             source: 'call_next_cloud_precheck',
-            details: { reason: 'not_in_cloud_waiting' },
+            details: { reason: 'confirmed_terminal_in_cloud_history' },
           });
           db.prepare("UPDATE tickets SET status = 'cancelled', cancelled_at = ?, completed_at = ? WHERE id = ? AND status = 'waiting'")
             .run(now, now, candidate.id);
@@ -1448,7 +1498,7 @@ function setupIPC() {
     try {
       // Get the latest event per ticket (final status only), ordered by most recent
       const rows = db.prepare(`
-        SELECT a.ticket_number, a.event_type, a.to_status, a.created_at, a.details
+        SELECT a.ticket_id, a.ticket_number, a.event_type, a.to_status, a.created_at, a.details
         FROM ticket_audit_log a
         INNER JOIN (
           SELECT ticket_id, MAX(created_at) as max_created
@@ -1460,6 +1510,7 @@ function setupIPC() {
         LIMIT ?
       `).all(limit) as any[];
       return rows.map((r: any) => ({
+        id: r.ticket_id || null,
         ticket: r.ticket_number || '?',
         action: r.to_status || r.event_type || 'unknown',
         time: r.created_at,
@@ -1479,9 +1530,12 @@ function setupIPC() {
         ORDER BY created_at ASC
       `).all(ticketId) as any[];
 
-      // Also get ticket timestamps as fallback/supplement
+      // Also get full ticket row as fallback/supplement
       const ticket = db.prepare(`
-        SELECT created_at, called_at, serving_started_at, completed_at, cancelled_at, parked_at, status
+        SELECT id, ticket_number, office_id, department_id, service_id, desk_id,
+               status, priority, customer_data, created_at, called_at,
+               serving_started_at, completed_at, cancelled_at, parked_at,
+               recall_count, notes, is_remote, source
         FROM tickets WHERE id = ?
       `).get(ticketId) as any;
 
