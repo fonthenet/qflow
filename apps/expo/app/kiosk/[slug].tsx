@@ -281,9 +281,15 @@ export default function KioskScreen() {
         <Text style={[s.orgName, isTablet && { fontSize: fontSize.md }]}>
           {info?.organization.name}
         </Text>
-        <Text style={[s.officeName, { fontSize: isTablet ? fontSize.lg : fontSize.md }]}>
-          {info?.office.name}
-        </Text>
+        {/* Only show office name when it differs from the org name —
+            otherwise users see e.g. "DZD / DZD" which reads as a bug. */}
+        {info?.office.name &&
+          info.office.name.trim().toLowerCase() !==
+            (info.organization.name ?? '').trim().toLowerCase() && (
+            <Text style={[s.officeName, { fontSize: isTablet ? fontSize.lg : fontSize.md }]}>
+              {info.office.name}
+            </Text>
+          )}
       </View>
       <View style={s.backArrow} />
     </View>
@@ -320,6 +326,13 @@ export default function KioskScreen() {
 
   // ---- Home step ----
   if (step === 'home') {
+    // Self-service is off when the business runs in staff-check-in-only mode.
+    // We know this up front from /api/kiosk-info, so rather than let the user
+    // tap Get Ticket and then bounce with a red error, disable the CTA and
+    // lead with a neutral info banner pointing them at the right action.
+    const selfServiceDisabled =
+      (info?.settings as any)?.default_check_in_mode === 'manual';
+
     return (
       <View style={s.screenContainer} onTouchStart={touchActivity}>
         <Header />
@@ -329,26 +342,34 @@ export default function KioskScreen() {
           </View>
           <Text style={[s.welcomeTitle, { fontSize: headingSize }]}>{t('kiosk.welcome')}</Text>
           <Text style={[s.welcomeSub, { fontSize: bodySize }]}>
-            {t('kiosk.tapToGetTicket')}
+            {selfServiceDisabled
+              ? t('kiosk.staffCheckInSub', {
+                  defaultValue: 'Please check in at the front desk, or book an appointment.',
+                })
+              : t('kiosk.tapToGetTicket')}
           </Text>
 
-          {errorMsg ? (
+          {/* Show server-side errors as red only when the failure was unexpected.
+              The staff-only case is handled by the banner + disabled button below. */}
+          {errorMsg && !selfServiceDisabled ? (
             <View style={s.errorBanner}>
               <Ionicons name="warning-outline" size={16} color={colors.error} />
               <Text style={s.errorBannerText}>{errorMsg}</Text>
             </View>
           ) : null}
 
-          <TouchableOpacity
-            style={[s.primaryBtn, isTablet && s.primaryBtnTablet]}
-            onPress={goToDepartments}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="ticket" size={isTablet ? 26 : 22} color="#fff" />
-            <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
-              {t('kiosk.getTicket')}
-            </Text>
-          </TouchableOpacity>
+          {!selfServiceDisabled && (
+            <TouchableOpacity
+              style={[s.primaryBtn, isTablet && s.primaryBtnTablet]}
+              onPress={goToDepartments}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="ticket" size={isTablet ? 26 : 22} color="#fff" />
+              <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
+                {t('kiosk.getTicket')}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {info?.settings?.appointments_enabled && (
             <TouchableOpacity
