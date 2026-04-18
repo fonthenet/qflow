@@ -23,6 +23,7 @@ import {
   getCalendarIcsUrl,
 } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { visitStatusColors } from '@/lib/visit';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
@@ -93,12 +94,8 @@ function formatCountdown(iso: string, t: (k: string, o?: any) => string): string
 }
 
 function apptStatusColor(status: string, colors: ThemeColors): string {
-  const s = status?.toLowerCase();
-  if (s === 'confirmed' || s === 'checked_in' || s === 'serving') return colors.success;
-  if (s === 'pending') return colors.warning;
-  if (s === 'cancelled' || s === 'no_show') return colors.error;
-  if (s === 'completed') return colors.textMuted;
-  return colors.textSecondary;
+  // Delegate to the shared mapper so ticket + appointment pills agree.
+  return visitStatusColors(status, colors).fg;
 }
 
 export default function HistoryScreen() {
