@@ -83,12 +83,28 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Write to the sheet
-    await writeSheetValues(accessToken, sheetId, rows);
+    try {
+      await writeSheetValues(accessToken, sheetId, rows);
+    } catch (writeErr: any) {
+      const msg = (writeErr?.message || 'Write failed').slice(0, 500);
+      await sb
+        .from('sheet_links')
+        .update({ last_error: msg, last_error_at: new Date().toISOString() })
+        .eq('organization_id', orgId);
+      throw writeErr;
+    }
 
-    // 5. Update last_pushed_at
+    // 5. Update last_pushed_at + clear any prior error
+    const now = new Date().toISOString();
     await sb
       .from('sheet_links')
-      .update({ last_pushed_at: new Date().toISOString(), last_row_count: (customers?.length ?? 0) })
+      .update({
+        last_pushed_at: now,
+        last_row_count: customers?.length ?? 0,
+        last_success_at: now,
+        last_error: null,
+        last_error_at: null,
+      })
       .eq('organization_id', orgId);
 
     return NextResponse.json(

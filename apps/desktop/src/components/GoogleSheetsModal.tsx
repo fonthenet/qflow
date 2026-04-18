@@ -3,7 +3,11 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { cloudFetch } from '../lib/cloud-fetch';
 
 interface SheetFile { id: string; name: string; modifiedTime: string }
-interface SheetInfo { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number; autoSync: boolean }
+interface SheetInfo {
+  id: string; name: string; url: string;
+  lastPushedAt: string | null; rowCount: number; autoSync: boolean;
+  lastError?: string | null; lastErrorAt?: string | null; lastSuccessAt?: string | null;
+}
 interface GStatus { connected: boolean; email: string | null; sheet: SheetInfo | null }
 
 interface Props {
@@ -25,6 +29,7 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
   const [pasteUrl, setPasteUrl] = useState('');
   const [newTitle, setNewTitle] = useState('Qflo Customers');
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -39,17 +44,29 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
   async function connectGoogle() {
     try {
       setError(null);
+      setConnecting(true);
       const orgId = await resolveOrgId();
       window.open(`https://qflo.net/api/google/oauth/start?org=${encodeURIComponent(orgId)}`, '_blank');
-      // Poll for connection
+      // Poll for connection up to ~3 min
       let tries = 0;
       const id = window.setInterval(async () => {
         tries++;
-        await refresh();
-        const s = await (await cloudFetch(`${API}/status?org=${encodeURIComponent(orgId)}`)).json();
-        if (s.connected || tries > 90) { window.clearInterval(id); setStatus(s); }
+        try {
+          const s = await (await cloudFetch(`${API}/status?org=${encodeURIComponent(orgId)}`)).json();
+          if (s.connected) {
+            window.clearInterval(id);
+            setStatus(s);
+            setConnecting(false);
+            return;
+          }
+        } catch { /* ignore transient errors */ }
+        if (tries > 90) {
+          window.clearInterval(id);
+          setConnecting(false);
+          setError(t('Connection timed out. Please try again.'));
+        }
       }, 2000);
-    } catch (e: any) { setError(e?.message ?? String(e)); }
+    } catch (e: any) { setError(e?.message ?? String(e)); setConnecting(false); }
   }
 
   async function disconnectGoogle() {
@@ -179,13 +196,40 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
         {/* Not connected */}
         {!status?.connected && (
           <div>
-            <p style={{ color: 'var(--text2, #64748b)', fontSize: 14, lineHeight: 1.6 }}>
-              {t('Connect a Google account to push your customer list to Google Sheets. The sheet stays in your Drive and updates automatically.')}
+            <p style={{ color: 'var(--text2, #64748b)', fontSize: 14, lineHeight: 1.6, marginTop: 0 }}>
+              {t('Connect a Google account to push your customer list to Google Sheets. The sheet stays in your Drive and updates automatically every 15 minutes.')}
             </p>
-            <button onClick={connectGoogle} style={{
-              background: '#10b981', color: '#fff', border: 'none', padding: '12px 20px',
-              borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%',
-            }}>📊 {t('Connect Google account')}</button>
+            <button
+              onClick={connectGoogle}
+              disabled={connecting}
+              style={{
+                background: connecting ? '#64748b' : '#fff',
+                color: connecting ? '#fff' : '#3c4043',
+                border: '1px solid ' + (connecting ? '#64748b' : '#dadce0'),
+                padding: '12px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: connecting ? 'wait' : 'pointer', width: '100%',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                boxShadow: '0 1px 2px rgba(60,64,67,0.08)',
+              }}
+            >
+              {connecting ? (
+                <>
+                  <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'qflo-spin 0.8s linear infinite' }} />
+                  {t('Waiting for Google authorization…')}
+                </>
+              ) : (
+                <>
+                  <GoogleGlyph />
+                  {t('Sign in with Google')}
+                </>
+              )}
+            </button>
+            {connecting && (
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2, #64748b)', textAlign: 'center' }}>
+                {t('A browser window should have opened. Complete the sign-in there.')}
+              </div>
+            )}
+            <style>{`@keyframes qflo-spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         )}
 
@@ -223,9 +267,20 @@ export function GoogleSheetsModal({ open, onClose, resolveOrgId, t }: Props) {
                   </div>
                 </div>
 
+                {status.sheet.lastError && (
+                  <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid #ef4444', color: '#b91c1c', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ {t('Last sync failed')}</div>
+                    <div style={{ opacity: 0.8, marginBottom: 8, wordBreak: 'break-word' }}>{status.sheet.lastError}</div>
+                    <button onClick={pushNow} disabled={busy} style={{
+                      background: '#ef4444', color: '#fff', border: 'none',
+                      padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}>{t('Retry now')}</button>
+                  </div>
+                )}
+
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, cursor: 'pointer', fontSize: 14 }}>
                   <input type="checkbox" checked={status.sheet.autoSync} onChange={toggleAutoSync} disabled={busy} />
-                  {t('Auto-sync every 5 minutes')}
+                  {t('Auto-sync every 15 minutes')}
                 </label>
 
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -297,6 +352,18 @@ const btnDanger: React.CSSProperties = {
   background: 'transparent', color: '#ef4444', border: '1px solid #ef4444',
   padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
+function GoogleGlyph() {
+  // Google "G" logo, inline SVG (official brand colors).
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+  );
+}
+
 const inputStyle: React.CSSProperties = {
   flex: 1, background: '#ffffff', border: '1px solid var(--border, #cbd5e1)',
   color: 'var(--text, #0f172a)', padding: '10px 12px', borderRadius: 6, fontSize: 13,

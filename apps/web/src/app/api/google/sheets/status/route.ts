@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
   const { data: link } = await sb
     .from('sheet_links')
-    .select('sheet_id, sheet_name, last_pushed_at, last_row_count, auto_sync, sheet_url')
+    .select('sheet_id, sheet_name, last_pushed_at, last_row_count, auto_sync, sheet_url, last_error, last_error_at, last_success_at')
     .eq('organization_id', orgId)
     .maybeSingle();
   return NextResponse.json(
@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
             lastPushedAt: link.last_pushed_at,
             rowCount: link.last_row_count,
             autoSync: link.auto_sync !== false,
+            lastError: link.last_error ?? null,
+            lastErrorAt: link.last_error_at ?? null,
+            lastSuccessAt: link.last_success_at ?? null,
           }
         : null,
     },

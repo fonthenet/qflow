@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface SheetFile { id: string; name: string; modifiedTime: string }
-interface SheetInfo { id: string; name: string; url: string; lastPushedAt: string | null; rowCount: number; autoSync: boolean }
+interface SheetInfo {
+  id: string; name: string; url: string;
+  lastPushedAt: string | null; rowCount: number; autoSync: boolean;
+  lastError?: string | null; lastErrorAt?: string | null; lastSuccessAt?: string | null;
+}
 interface GStatus { connected: boolean; email: string | null; sheet: SheetInfo | null }
 
 const API = '/api/google/sheets';
@@ -19,6 +23,7 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
   const [pasteUrl, setPasteUrl] = useState('');
   const [newTitle, setNewTitle] = useState('Qflo Customers');
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -30,12 +35,29 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
   useEffect(() => { refresh(); }, [refresh]);
 
   function connect() {
+    setError(null);
+    setConnecting(true);
     const win = window.open(`/api/google/oauth/start?org=${encodeURIComponent(organizationId)}`, '_blank', 'width=600,height=700');
     let tries = 0;
     const id = window.setInterval(async () => {
       tries++;
-      await refresh();
-      if (status?.connected || tries > 90 || win?.closed) window.clearInterval(id);
+      try {
+        const res = await fetch(`${API}/status?org=${encodeURIComponent(organizationId)}`);
+        if (res.ok) {
+          const s = await res.json();
+          setStatus(s);
+          if (s.connected) {
+            window.clearInterval(id);
+            setConnecting(false);
+            return;
+          }
+        }
+      } catch { /* ignore */ }
+      if (tries > 90 || win?.closed) {
+        window.clearInterval(id);
+        setConnecting(false);
+        if (tries > 90) setError('Connection timed out. Please try again.');
+      }
     }, 2000);
   }
 
@@ -124,11 +146,30 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
       {!status?.connected && (
         <div>
           <p className="mb-4 text-sm text-slate-400">
-            Connect a Google account to push your customer list to Google Sheets. The sheet stays in your Drive and updates automatically every 5 minutes.
+            Connect a Google account to push your customer list to Google Sheets. The sheet stays in your Drive and auto-syncs every 15 minutes.
           </p>
-          <button onClick={connect} className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600">
-            Connect Google account
+          <button
+            onClick={connect}
+            disabled={connecting}
+            className="inline-flex w-full items-center justify-center gap-3 rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-wait disabled:opacity-70"
+          >
+            {connecting ? (
+              <>
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                Waiting for Google authorization…
+              </>
+            ) : (
+              <>
+                <GoogleGlyph />
+                Sign in with Google
+              </>
+            )}
           </button>
+          {connecting && (
+            <p className="mt-2 text-center text-xs text-slate-400">
+              A popup should have opened. Complete the sign-in there.
+            </p>
+          )}
         </div>
       )}
 
@@ -161,9 +202,19 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
                 </div>
               </div>
 
+              {status.sheet.lastError && (
+                <div className="mb-4 rounded border border-red-500 bg-red-500/10 p-3 text-xs text-red-300">
+                  <div className="mb-1 font-semibold">⚠ Last sync failed</div>
+                  <div className="mb-2 break-words opacity-80">{status.sheet.lastError}</div>
+                  <button onClick={pushNow} disabled={busy} className="rounded bg-red-500 px-3 py-1 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50">
+                    Retry now
+                  </button>
+                </div>
+              )}
+
               <label className="mb-4 flex items-center gap-2 text-sm text-slate-200">
                 <input type="checkbox" checked={status.sheet.autoSync} onChange={toggleAutoSync} disabled={busy} />
-                Auto-sync every 5 minutes
+                Auto-sync every 15 minutes
               </label>
 
               <div className="flex flex-wrap gap-2">
@@ -214,5 +265,16 @@ export function GoogleSheetsCard({ organizationId }: { organizationId: string })
         </div>
       )}
     </div>
+  );
+}
+
+function GoogleGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
   );
 }
