@@ -833,6 +833,7 @@
     "selectDateTime": "Select Date & Time",
     "availableTimesFor": "Available times for {{date}}",
     "noSlotsOnDay": "No available slots on this day.\nTry another date above.",
+    "taken": "Taken",
     "tapDateToSeeTimes": "Tap a date above to see available times",
     "changeService": "Change service",
     "yourDetails": "Your Details",

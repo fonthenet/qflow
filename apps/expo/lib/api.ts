@@ -284,7 +284,15 @@ export async function fetchQueueStatus(slug: string): Promise<QueueStatusRespons
 export interface BookingSlotsResponse {
   officeId: string;
   date: string;
-  slots: string[]; // HH:MM
+  slots: string[]; // HH:MM — bookable only (backward-compat)
+  /** Full day grid including taken slots. Each entry has an `available` flag. */
+  slotsDetailed?: Array<{
+    time: string;
+    remaining: number;
+    total: number;
+    available: boolean;
+    reason?: 'taken' | 'daily_limit';
+  }>;
   meta?: {
     booking_mode: string;
     booking_horizon_days: number;

@@ -769,6 +769,7 @@
     "selectDateTime": "اختر التاريخ والوقت",
     "availableTimesFor": "الأوقات المتاحة لـ {{date}}",
     "noSlotsOnDay": "لا توجد مواعيد متاحة في هذا اليوم.\nجرب تاريخاً آخر.",
+    "taken": "محجوز",
     "tapDateToSeeTimes": "اضغط على تاريخ لعرض الأوقات المتاحة",
     "changeService": "تغيير الخدمة",
     "yourDetails": "بياناتك",

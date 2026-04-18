@@ -75,8 +75,10 @@ export default function BookAppointmentScreen() {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
 
-  // Available slots
-  const [slots, setSlots] = useState<string[]>([]);
+  // Available slots — detailed grid including taken ones (grey) so the
+  // customer sees the full day's schedule, not just gaps.
+  type SlotCell = { time: string; available: boolean; reason?: 'taken' | 'daily_limit' };
+  const [slots, setSlots] = useState<SlotCell[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
   // Customer info — pre-fills from saved profile (Zustand persist rehydrates
@@ -138,7 +140,20 @@ export default function BookAppointmentScreen() {
     setSlots([]);
     const result = await fetchBookingSlots(slug, selectedServiceId, date);
     setSlotsLoading(false);
-    setSlots(result?.slots ?? []);
+    // Prefer the detailed grid (includes taken slots). Fall back to the flat
+    // available-only list if an older server is responding.
+    const detailed = result?.slotsDetailed;
+    if (detailed && detailed.length > 0) {
+      setSlots(
+        detailed.map((s) => ({
+          time: s.time,
+          available: s.available,
+          reason: s.reason,
+        })),
+      );
+    } else {
+      setSlots((result?.slots ?? []).map((t) => ({ time: t, available: true })));
+    }
     // Auto-scroll to time slots after loading
     setTimeout(() => {
       if (timeSlotsY.current > 0) {
@@ -406,22 +421,49 @@ export default function BookAppointmentScreen() {
                   </View>
                 ) : (
                   <View style={s.slotsGrid}>
-                    {slots.map((slot) => (
-                      <TouchableOpacity
-                        key={slot}
-                        style={[
-                          s.slotChip,
-                          { backgroundColor: colors.surface, borderColor: colors.borderLight },
-                          selectedSlot === slot && { backgroundColor: colors.primary, borderColor: colors.primary },
-                        ]}
-                        onPress={() => handleSelectSlot(slot)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={[s.slotText, { color: selectedSlot === slot ? '#fff' : colors.text }]}>
-                          {formatTime(slot)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {slots.map((slot) => {
+                      const isSelected = selectedSlot === slot.time;
+                      const isTaken = !slot.available;
+                      return (
+                        <TouchableOpacity
+                          key={slot.time}
+                          style={[
+                            s.slotChip,
+                            { backgroundColor: colors.surface, borderColor: colors.borderLight },
+                            isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                            isTaken && {
+                              backgroundColor: colors.surfaceSecondary,
+                              borderColor: colors.borderLight,
+                              opacity: 0.55,
+                            },
+                          ]}
+                          onPress={() => !isTaken && handleSelectSlot(slot.time)}
+                          disabled={isTaken}
+                          activeOpacity={isTaken ? 1 : 0.75}
+                        >
+                          <Text
+                            style={[
+                              s.slotText,
+                              {
+                                color: isSelected
+                                  ? '#fff'
+                                  : isTaken
+                                  ? colors.textMuted
+                                  : colors.text,
+                                textDecorationLine: isTaken ? 'line-through' : 'none',
+                              },
+                            ]}
+                          >
+                            {formatTime(slot.time)}
+                          </Text>
+                          {isTaken && (
+                            <Text style={[s.slotTakenLabel, { color: colors.textMuted }]}>
+                              {t('bookAppointment.taken')}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
               </View>
@@ -904,6 +946,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   slotText: { fontSize: fontSize.sm, fontWeight: '600' },
+  slotTakenLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 
   emptySlots: {
     borderWidth: 1,

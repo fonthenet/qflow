@@ -769,6 +769,7 @@
     "selectDateTime": "Choisir la date et l'heure",
     "availableTimesFor": "Horaires disponibles pour {{date}}",
     "noSlotsOnDay": "Aucun créneau disponible ce jour.\nEssayez une autre date.",
+    "taken": "Pris",
     "tapDateToSeeTimes": "Choisissez une date pour voir les horaires",
     "changeService": "Changer de service",
     "yourDetails": "Vos coordonnées",
