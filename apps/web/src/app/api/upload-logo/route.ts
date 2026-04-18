@@ -52,19 +52,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'File must be under 2 MB' }, { status: 400 });
   }
 
-  // ── Verify user belongs to this organization ──
+  // ── Verify user belongs to this organization (staff table) ──
   const sb = createAdminClient() as any;
   const { data: membership } = await sb
-    .from('organization_members')
-    .select('role')
-    .eq('user_id', user.id)
+    .from('staff')
+    .select('role, is_active')
+    .eq('auth_user_id', user.id)
     .eq('organization_id', organizationId)
     .maybeSingle();
 
-  // Allow owner/admin plus manager-tier station roles (admin, manager, branch_admin).
-  // Desk operators and other limited roles cannot change branding.
+  // Allow owner/admin plus manager-tier station roles.
+  // Desk operators, receptionists, agents, analysts cannot change branding.
   const ALLOWED_ROLES = ['owner', 'admin', 'manager', 'branch_admin'];
-  if (!membership || !ALLOWED_ROLES.includes(membership.role)) {
+  if (!membership || membership.is_active === false || !ALLOWED_ROLES.includes(membership.role)) {
     return NextResponse.json({ error: 'Forbidden — manager role or higher required' }, { status: 403 });
   }
 
