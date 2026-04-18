@@ -38,10 +38,14 @@ export default function TabLayout() {
         }}
         listeners={{
           tabPress: () => {
-            const { activeToken, clearActiveTicket } = useAppStore.getState();
-            if (activeToken) {
-              clearActiveTicket();
-            }
+            // Only clear the active ticket when it's actually finished.
+            // For waiting / called / serving we keep it so the Queue tab
+            // lands the user right on the live status view.
+            const { activeTicket, clearActiveTicket } = useAppStore.getState();
+            const terminal =
+              !!activeTicket &&
+              ['served', 'no_show', 'cancelled'].includes(activeTicket.status);
+            if (terminal) clearActiveTicket();
           },
         }}
       />

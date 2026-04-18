@@ -374,6 +374,34 @@ export default function HomeScreen() {
   const activeTicketRef = useRef(activeTicket);
   activeTicketRef.current = activeTicket;
 
+  // Auto-recover an active ticket: if we have no activeToken but the user's
+  // recent history contains a same-day entry in a non-terminal state, fetch
+  // its live status and restore it so the Queue tab lands on the live view
+  // instead of the scan-QR empty state. Runs once on mount and whenever
+  // activeToken transitions to null.
+  useEffect(() => {
+    if (activeToken) return;
+    const TERMINAL = new Set(['served', 'no_show', 'cancelled']);
+    const todayStr = new Date().toDateString();
+    const candidate = history.find((h) => {
+      if (!h.token) return false;
+      if (TERMINAL.has(h.status)) return false;
+      return new Date(h.date).toDateString() === todayStr;
+    });
+    if (!candidate) return;
+    let cancelled = false;
+    (async () => {
+      const ticket = await fetchTicket(candidate.token);
+      if (cancelled || !ticket) return;
+      if (TERMINAL.has(ticket.status)) return;
+      setActiveToken(candidate.token);
+      setActiveTicket(ticket);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeToken, history, setActiveToken, setActiveTicket]);
+
   // ---- Polling ----
   const poll = useCallback(async () => {
     if (!activeToken) return;
