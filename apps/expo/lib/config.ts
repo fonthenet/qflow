@@ -9,9 +9,19 @@ export const API_BASE_URL =
 export const SUPABASE_URL =
   process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ofyyzuocifigyyhqxxqw.supabase.co';
 
-export const SUPABASE_ANON_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9meXl6dW9jaWZpZ3l5aHF4eHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNjcwNDMsImV4cCI6MjA4ODg0MzA0M30.WzFn3aNgu7amI8ddplcnJJeD2Kilfy-HrsxrFTAWgeQ';
+// Supabase anon key is a public, RLS-gated JWT — safe to ship in a mobile
+// bundle. We still require it to come from env at build time so it can be
+// rotated without a code change. A missing value fails loudly rather than
+// silently shipping a stale hardcoded key.
+const anonKeyFromEnv = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+if (!anonKeyFromEnv && !__DEV__) {
+  // In release builds this would break auth immediately — fail the bundle
+  // with a clear message instead.
+  throw new Error(
+    'EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. Configure it in EAS project secrets before building.',
+  );
+}
+export const SUPABASE_ANON_KEY = anonKeyFromEnv || '';
 
 export const SUPPORT_EMAIL = 'support@qflo.net';
 

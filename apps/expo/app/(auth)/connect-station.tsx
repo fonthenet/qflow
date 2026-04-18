@@ -51,13 +51,13 @@ interface DiscoveryResult {
 async function getLocalSubnet(): Promise<string | null> {
   try {
     const ip = await Network.getIpAddressAsync();
-    console.log('[discovery] Device IP:', ip);
+    if (__DEV__) console.log('[discovery] Device IP:', ip);
     if (!ip || ip === '0.0.0.0') return null;
     const parts = ip.split('.');
     if (parts.length !== 4) return null;
     return `${parts[0]}.${parts[1]}.${parts[2]}`;
   } catch (err) {
-    console.warn('[discovery] getIpAddressAsync failed:', err);
+    if (__DEV__) console.warn('[discovery] getIpAddressAsync failed:', err);
     return null;
   }
 }
@@ -220,10 +220,10 @@ export default function ConnectStationScreen() {
 
     try {
       const subnet = await getLocalSubnet();
-      console.log('[discovery] Subnet:', subnet);
+      if (__DEV__) console.log('[discovery] Subnet:', subnet);
       if (!subnet) { setError(t('connectStation.noWifi')); setScanning(false); return; }
 
-      console.log(`[discovery] Scanning ${subnet}.1-254 on ports ${DISCOVERY_PORT}, ${API_PROBE_PORTS.join(',')}`);
+      if (__DEV__) console.log(`[discovery] Scanning ${subnet}.1-254 on ports ${DISCOVERY_PORT}, ${API_PROBE_PORTS.join(',')}`);
       const result = await scanSubnet(
         subnet,
         (scanned, total) => setScanProgress({ scanned, total }),

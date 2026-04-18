@@ -16,6 +16,8 @@
       "bundleIdentifier": "com.qflo.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Qflo uses the camera to scan QR codes at service locations.",
+        "NSUserNotificationsUsageDescription": "Qflo sends notifications to alert you when your turn is approaching so you can return to the desk in time.",
+        "NSLocalNetworkUsageDescription": "Qflo scans your local Wi-Fi to discover a nearby Qflo Station for offline ticket join and check-in.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
