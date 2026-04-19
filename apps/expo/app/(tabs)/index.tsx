@@ -255,10 +255,13 @@ function CountdownCircle({ calledAt }: { calledAt: string }) {
     return () => clearInterval(id);
   }, [calledAt]);
 
-  const phase = remaining > 30 ? 'green' : remaining > 10 ? 'yellow' : 'red';
+  // Only the circle carries the urgency color — the rest of the screen stays
+  // in the user's theme. Green > 30s, orange 10–30s, red < 10s (expired).
+  const phaseColor =
+    remaining > 30 ? '#22c55e' : remaining > 10 ? '#f59e0b' : '#ef4444';
   const expired = remaining === 0;
   return (
-    <View style={[s.countdownCircle, { borderColor: 'rgba(255,255,255,0.30)', backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+    <View style={[s.countdownCircle, { borderColor: phaseColor, backgroundColor: phaseColor }]}>
       <Text style={s.countdownNumber}>{remaining}</Text>
       <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
     </View>
@@ -386,12 +389,13 @@ function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ti
 // Info row item (for "Your Turn" card — where to go, what to show, what to do)
 // ---------------------------------------------------------------------------
 function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+  const p = usePhasePalette();
   return (
     <View style={s.infoRow}>
-      <View style={s.infoRowIcon}><Ionicons name={icon} size={20} color="rgba(255,255,255,0.8)" /></View>
+      <View style={[s.infoRowIcon, { backgroundColor: p.innerBg, borderWidth: 1, borderColor: p.innerBorder }]}><Ionicons name={icon} size={20} color={p.iconColor} /></View>
       <View style={{ flex: 1 }}>
-        <Text style={s.infoRowLabel}>{label}</Text>
-        <Text style={s.infoRowValue}>{value}</Text>
+        <Text style={[s.infoRowLabel, { color: p.textMuted }]}>{label}</Text>
+        <Text style={[s.infoRowValue, { color: p.text }]}>{value}</Text>
       </View>
     </View>
   );
@@ -1017,16 +1021,12 @@ export default function HomeScreen() {
   // Matches web your-turn.tsx exactly
   // =======================================================================
   if (isCalled) {
-    const remaining = tk.called_at ? Math.max(0, CALL_WAIT_SECONDS - Math.floor((Date.now() - new Date(tk.called_at).getTime()) / 1000)) : CALL_WAIT_SECONDS;
-    const phase = remaining > 30 ? 'green' : remaining > 10 ? 'yellow' : 'red';
-    const bgColor = phase === 'green' ? '#1a6f49' : phase === 'yellow' ? '#b97613' : '#8e1f1f';
-
     return (
       <Animated.View style={{ flex: 1, transform: [{ translateX: swipeAnim }] }} {...swipePan.panHandlers}>
       <ScrollView
-        style={{ flex: 1, backgroundColor: bgColor }}
+        style={{ flex: 1, backgroundColor: p.bg }}
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, gap: 10, flexGrow: 1 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="rgba(255,255,255,0.6)" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={p.refreshTint} />}
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
       >
@@ -1035,50 +1035,44 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={backToList}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: p.innerBg, borderWidth: 1, borderColor: p.innerBorder, alignItems: 'center', justifyContent: 'center' }}
             accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
           >
-            <Ionicons name="chevron-back" size={18} color="#fff" />
+            <Ionicons name="chevron-back" size={18} color={p.iconColor} />
           </TouchableOpacity>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 1.2, textTransform: 'uppercase' }} numberOfLines={1}>{officeName}</Text>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.7)' }}>{tk.ticket_number}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: p.title, letterSpacing: 1.2, textTransform: 'uppercase' }} numberOfLines={1}>{officeName}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: p.textMuted }}>{tk.ticket_number}</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Pill label={t('customer.refresh')} onPress={handleRefresh} tone="primary" />
+            <Pill label={t('customer.refresh')} onPress={handleRefresh} tone="secondary" />
             <Pill label={t('customer.end')} onPress={confirmEndVisit} tone="danger" />
           </View>
         </View>
 
-        {/* Hero: centered countdown, bell parked in top-right corner */}
+        {/* Hero: centered countdown — only the circle carries the urgency color. */}
         <View style={{ alignItems: 'center', gap: 8, marginTop: 4 }}>
-          {/* Countdown centered */}
           {tk.called_at && <CountdownCircle calledAt={tk.called_at} />}
 
-          <Text style={{ fontSize: 26, fontWeight: '900', color: '#fff', textAlign: 'center', letterSpacing: -0.3, marginTop: 6 }} numberOfLines={2}>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: p.heading, textAlign: 'center', letterSpacing: -0.3, marginTop: 6 }} numberOfLines={2}>
             {t('customer.goToDesk', { desk: deskName })}
           </Text>
 
           {(tk.recall_count ?? 0) > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.18)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 9999 }}>
-              <Ionicons name="refresh" size={12} color="#fff" />
-              <Text style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}>{t('customer.recalledCount', { count: tk.recall_count })}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: p.innerBg, borderWidth: 1, borderColor: p.innerBorder, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 9999 }}>
+              <Ionicons name="refresh" size={12} color={p.iconColor} />
+              <Text style={{ fontSize: 12, fontWeight: '600', color: p.text }}>{t('customer.recalledCount', { count: tk.recall_count })}</Text>
             </View>
           )}
-
-          {/* Bell — small, animated, fixed in the top-right corner of the hero area */}
-          <View pointerEvents="none" style={{ position: 'absolute', top: -4, right: 4 }}>
-            <AnimatedBell />
-          </View>
         </View>
 
         {/* Info card — dropped "What to do" row; time is self-evident from countdown */}
-        <View style={s.infoCard}>
+        <View style={[s.infoCard, { backgroundColor: p.cardBg, borderColor: p.cardBorder }]}>
           <InfoRow icon="location-outline" label={t('customer.whereToGo')} value={deskName} />
           <InfoRow icon="document-text-outline" label={t('customer.whatToShow')} value={`${t('customer.ticket')} ${tk.ticket_number}`} />
         </View>
 
-        <CustomerInfoCard ticket={tk} onColored />
+        <CustomerInfoCard ticket={tk} />
       </ScrollView>
       </Animated.View>
     );
