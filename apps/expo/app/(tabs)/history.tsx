@@ -122,11 +122,26 @@ export default function HistoryScreen() {
   // so the customer learns about approvals / declines / cancellations /
   // no-shows the same way a WhatsApp user would. Mirrors the template
   // messages the server sends in lifecycle.ts → transitionAppointment.
+  // Keep the appointment list in a ref so refreshAppointments has a stable
+  // identity. Without this, every updateAppointment() call rebuilds the
+  // callback, and the useFocusEffect below would re-invoke refreshAppointments
+  // on every single state update — causing a feedback loop that freezes the
+  // UI when a status transition lands (e.g. Station approves).
+  const savedAppointmentsRef = useRef(savedAppointments);
+  useEffect(() => {
+    savedAppointmentsRef.current = savedAppointments;
+  }, [savedAppointments]);
+
+  const refreshingRef = useRef(false);
+
   const refreshAppointments = useCallback(async () => {
-    const targets = savedAppointments.filter(
+    if (refreshingRef.current) return; // guard against overlapping polls
+    const targets = savedAppointmentsRef.current.filter(
       (a) => !a.hidden && !TERMINAL_APPT.has(a.status),
     );
     if (targets.length === 0) return;
+    refreshingRef.current = true;
+    try {
     await Promise.all(
       targets.map(async (a) => {
         // Use the richer endpoint so we pick up the linked ticket (qr_token
@@ -158,7 +173,10 @@ export default function HistoryScreen() {
         }
       }),
     );
-  }, [savedAppointments, updateAppointment, t]);
+    } finally {
+      refreshingRef.current = false;
+    }
+  }, [updateAppointment, t]);
 
   // Refresh on screen focus
   useFocusEffect(
