@@ -896,6 +896,7 @@
     "reviewBooking": "Review Booking",
     "confirmBooking": "Confirm Booking",
     "confirmAppointment": "Confirm Appointment",
+    "bookingInProgress": "Booking...",
     "editDetails": "Edit details",
     "available": "Available",
     "selected": "Selected",

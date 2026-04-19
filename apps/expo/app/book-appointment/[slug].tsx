@@ -160,6 +160,9 @@ export default function BookAppointmentScreen() {
   // Result
   const [appointmentId, setAppointmentId] = useState('');
   const [confirmedAt, setConfirmedAt] = useState('');
+  // Prevents double-submit when the user double-taps the Book button while
+  // the network call is still pending. Reset on error so they can retry.
+  const [submitting, setSubmitting] = useState(false);
 
   const horizonDays = info?.settings?.booking_horizon_days ?? 90;
   const availableDates = nextOpenDays(
@@ -287,7 +290,9 @@ export default function BookAppointmentScreen() {
   };
 
   const handleConfirm = async () => {
+    if (submitting) return; // guard against double-tap
     if (!info || !selectedDeptId || !selectedServiceId || !selectedDate || !selectedSlot) return;
+    setSubmitting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const scheduledAt = `${selectedDate}T${selectedSlot}:00`;
@@ -329,6 +334,7 @@ export default function BookAppointmentScreen() {
     if ('error' in result) {
       setErrorMsg(result.error);
       setStep('error');
+      setSubmitting(false); // allow retry after error
       return;
     }
 
@@ -668,15 +674,26 @@ export default function BookAppointmentScreen() {
             </View>
 
             <TouchableOpacity
-              style={[s.primaryBtn, { backgroundColor: colors.primary, marginTop: spacing.lg }]}
+              style={[
+                s.primaryBtn,
+                { backgroundColor: colors.primary, marginTop: spacing.lg },
+                submitting && { opacity: 0.6 },
+              ]}
               onPress={handleConfirm}
               activeOpacity={0.8}
+              disabled={submitting}
             >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-              <Text style={[s.primaryBtnText, { marginLeft: 6 }]}>{t('bookAppointment.confirmAppointment')}</Text>
+              {submitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+              )}
+              <Text style={[s.primaryBtnText, { marginLeft: 6 }]}>
+                {submitting ? t('bookAppointment.bookingInProgress') : t('bookAppointment.confirmAppointment')}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={s.backLink} onPress={() => setStep('info')}>
+            <TouchableOpacity style={s.backLink} onPress={() => setStep('info')} disabled={submitting}>
               <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.editDetails')}</Text>
             </TouchableOpacity>
           </View>

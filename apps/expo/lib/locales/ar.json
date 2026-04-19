@@ -863,6 +863,7 @@
     "reviewBooking": "مراجعة الحجز",
     "confirmBooking": "تأكيد الحجز",
     "confirmAppointment": "تأكيد الموعد",
+    "bookingInProgress": "جارٍ الحجز...",
     "editDetails": "تعديل التفاصيل",
     "available": "متاح",
     "selected": "محدد",

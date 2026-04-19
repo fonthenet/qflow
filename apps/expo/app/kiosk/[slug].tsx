@@ -50,6 +50,10 @@ export default function KioskScreen() {
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<KioskInfoResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  // Double-tap guard for the "Get Ticket" button. Step flips to 'loading'
+  // inside issueTicket but the button stays mounted for one microtask — a
+  // fast double-tap on the tablet can otherwise fire two requests.
+  const [submitting, setSubmitting] = useState(false);
 
   // Selections
   const [selectedDeptId, setSelectedDeptId] = useState('');
@@ -240,6 +244,7 @@ export default function KioskScreen() {
 
   const submitIntake = () => {
     touchActivity();
+    if (submitting) return; // double-tap guard
     if (hasMissingRequired(intakeFields, intakeValues)) {
       setErrorMsg(
         t('join.fillRequired', { defaultValue: 'Please fill in the required fields.' })
@@ -260,6 +265,7 @@ export default function KioskScreen() {
     priority?: number
   ) => {
     if (!info) return;
+    setSubmitting(true);
     setStep('loading');
     // Build customerData from intake values (trim + drop empties)
     const customerData: Record<string, string> = {};
@@ -285,10 +291,12 @@ export default function KioskScreen() {
     if ('error' in result) {
       setErrorMsg(result.error);
       setStep('home');
+      setSubmitting(false); // allow retry after error
       return;
     }
     setTicket(result.ticket);
     setStep('issued');
+    setSubmitting(false);
     // Record in history + remember as active so the Active tab lands on it
     // even if the user backs out without tapping "Track position".
     addToHistory({
@@ -712,11 +720,17 @@ export default function KioskScreen() {
               s.primaryBtn,
               isTablet && s.primaryBtnTablet,
               { marginTop: spacing.lg, alignSelf: 'center' },
+              submitting && { opacity: 0.6 },
             ]}
             onPress={submitIntake}
             activeOpacity={0.8}
+            disabled={submitting}
           >
-            <Ionicons name="ticket" size={isTablet ? 24 : 20} color="#fff" />
+            {submitting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="ticket" size={isTablet ? 24 : 20} color="#fff" />
+            )}
             <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
               {t('kiosk.getTicket')}
             </Text>

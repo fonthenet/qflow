@@ -863,6 +863,7 @@
     "reviewBooking": "Vérifier la réservation",
     "confirmBooking": "Confirmer la réservation",
     "confirmAppointment": "Confirmer le rendez-vous",
+    "bookingInProgress": "Réservation...",
     "editDetails": "Modifier les détails",
     "available": "Disponible",
     "selected": "Sélectionné",
