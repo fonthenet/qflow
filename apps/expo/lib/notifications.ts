@@ -103,6 +103,43 @@ export async function registerForPush(ticketId: string, qrToken?: string): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Appointment push — register after a successful booking so the customer gets
+// instant APNs/Android push for approve / decline / cancel / no-show.
+// ---------------------------------------------------------------------------
+export async function registerForAppointmentPush(appointmentId: string): Promise<boolean> {
+  const granted = await requestPermissions();
+  if (!granted) return false;
+
+  try {
+    if (Platform.OS === 'ios') {
+      const token = await Notifications.getDevicePushTokenAsync();
+      return registerApns({
+        appointmentId,
+        deviceToken: token.data as string,
+        kind: 'alert',
+        environment: 'production',
+        bundleId: 'com.qflo.app',
+      });
+    }
+
+    if (Platform.OS === 'android') {
+      const token = await Notifications.getDevicePushTokenAsync();
+      const result = await registerAndroid({
+        appointmentId,
+        deviceToken: token.data as string,
+        packageName: 'com.qflo.app',
+      });
+      return result.ok;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn('[Notifications] registerForAppointmentPush failed:', err);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Listeners — re-exported for use in _layout.tsx
 // ---------------------------------------------------------------------------
 export function addNotificationListener(

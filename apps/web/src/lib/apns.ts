@@ -385,6 +385,25 @@ async function loadTicketTokens(ticketId: string) {
   return { supabase, tokens: (tokens ?? []) as APNsTokenRecord[] };
 }
 
+async function loadAppointmentTokens(appointmentId: string) {
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) {
+    return { supabase: null, tokens: [] };
+  }
+
+  const { data: tokens, error } = await supabase
+    .from('apns_tokens')
+    .select('id, device_token, environment')
+    .eq('appointment_id', appointmentId);
+
+  if (error) {
+    console.error('[APNs] Failed to fetch appointment tokens:', error);
+    return { supabase, tokens: [] };
+  }
+
+  return { supabase, tokens: (tokens ?? []) as APNsTokenRecord[] };
+}
+
 async function sendToTicketTokens(
   ticketId: string,
   kind: APNsKind,
@@ -442,6 +461,46 @@ export async function sendAPNsToTicket(
   return sendToTicketTokens(ticketId, 'alert', (token, target) =>
     sendAlertNotification(token.device_token, payload, target)
   );
+}
+
+export async function sendAPNsToAppointment(
+  appointmentId: string,
+  payload: APNsPayload
+): Promise<boolean> {
+  if (!hasAPNsCredentials()) {
+    return false;
+  }
+
+  const { supabase, tokens } = await loadAppointmentTokens(appointmentId);
+  if (!supabase) {
+    return false;
+  }
+
+  const matchingTokens = tokens.filter((token) => parseAPNsTarget(token.environment).kind === 'alert');
+  if (matchingTokens.length === 0) {
+    console.log('[APNs] No alert tokens for appointment:', appointmentId);
+    return false;
+  }
+
+  console.log('[APNs] Sending alert notification for appointment:', appointmentId);
+  let anySent = false;
+
+  for (const token of matchingTokens) {
+    const target = parseAPNsTarget(token.environment);
+    const result = await sendAlertNotification(token.device_token, payload, target);
+
+    if (result.success) {
+      anySent = true;
+      continue;
+    }
+
+    if (result.status === 410 || result.reason === 'Unregistered') {
+      console.log('[APNs] Removing invalid appointment token:', token.id);
+      await supabase.from('apns_tokens').delete().eq('id', token.id);
+    }
+  }
+
+  return anySent;
 }
 
 export async function sendLiveActivityUpdateToTicket(

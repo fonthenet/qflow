@@ -9,11 +9,11 @@ function getTrimmedEnv(name: string): string | undefined {
 
 export async function POST(request: NextRequest) {
   try {
-    const { ticketId, qrToken, deviceToken, packageName } = await request.json();
+    const { ticketId, appointmentId, qrToken, deviceToken, packageName } = await request.json();
 
-    if ((!ticketId && !qrToken) || !deviceToken) {
+    if ((!ticketId && !qrToken && !appointmentId) || !deviceToken) {
       return NextResponse.json(
-        { error: 'ticketId or qrToken and deviceToken are required' },
+        { error: 'ticketId, appointmentId, or qrToken and deviceToken are required' },
         { status: 400 }
       );
     }
@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     let resolvedTicketId = ticketId as string | undefined;
-    if (!resolvedTicketId && qrToken) {
+    const resolvedAppointmentId = appointmentId as string | undefined;
+
+    if (!resolvedAppointmentId && !resolvedTicketId && qrToken) {
       const { data: ticket, error } = await supabase
         .from('tickets')
         .select('id')
@@ -47,8 +49,8 @@ export async function POST(request: NextRequest) {
       resolvedTicketId = ticket.id;
     }
 
-    if (!resolvedTicketId) {
-      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+    if (!resolvedTicketId && !resolvedAppointmentId) {
+      return NextResponse.json({ error: 'Ticket or appointment not found' }, { status: 404 });
     }
 
     await supabase
@@ -56,30 +58,36 @@ export async function POST(request: NextRequest) {
       .delete()
       .eq('device_token', deviceToken);
 
+    const upsertRow: Record<string, unknown> = {
+      device_token: deviceToken,
+      package_name: typeof packageName === 'string' ? packageName : null,
+      last_seen_at: new Date().toISOString(),
+    };
+    if (resolvedAppointmentId) {
+      upsertRow.appointment_id = resolvedAppointmentId;
+    } else {
+      upsertRow.ticket_id = resolvedTicketId;
+    }
+
     const { error: insertError } = await supabase
       .from('android_tokens')
-      .upsert(
-        {
-          ticket_id: resolvedTicketId,
-          device_token: deviceToken,
-          package_name: typeof packageName === 'string' ? packageName : null,
-          last_seen_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'ticket_id,device_token',
-        }
-      );
+      .upsert(upsertRow, {
+        onConflict: resolvedAppointmentId
+          ? 'appointment_id,device_token'
+          : 'ticket_id,device_token',
+      });
 
     if (insertError) {
       console.error('[Android Register] Insert failed:', insertError);
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
-    const snapshot = await getAndroidTicketState(resolvedTicketId);
+    const snapshot = resolvedTicketId ? await getAndroidTicketState(resolvedTicketId) : null;
 
     return NextResponse.json({
       ok: true,
-      ticketId: resolvedTicketId,
+      ticketId: resolvedTicketId ?? null,
+      appointmentId: resolvedAppointmentId ?? null,
       androidPushConfigured: hasAndroidPushCredentials(),
       snapshot,
     });

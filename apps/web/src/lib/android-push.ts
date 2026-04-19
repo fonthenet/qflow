@@ -12,14 +12,16 @@ type AndroidPushType =
   | 'served'
   | 'no_show'
   | 'buzz'
-  | 'stop_tracking';
+  | 'stop_tracking'
+  | 'appointment_update';
 
 interface AndroidPushPayload {
   type: AndroidPushType;
   title: string;
   body: string;
   url?: string;
-  ticketId: string;
+  ticketId?: string;
+  appointmentId?: string;
   ticketNumber?: string;
   qrToken?: string;
   position?: number | null;
@@ -37,7 +39,7 @@ interface AndroidPushPayload {
 
 interface AndroidTokenRecord {
   id: string;
-  ticket_id: string;
+  ticket_id: string | null;
   device_token: string;
   package_name: string | null;
 }
@@ -198,11 +200,15 @@ function buildCollapseKey(payload: AndroidPushPayload): string | undefined {
     return undefined;
   }
 
+  const key = payload.ticketId ?? payload.appointmentId ?? 'unknown';
   if (payload.type === 'called' || payload.type === 'recall') {
-    return `qf-alert-${payload.ticketId}`;
+    return `qf-alert-${key}`;
+  }
+  if (payload.type === 'appointment_update') {
+    return `qf-appt-${key}`;
   }
 
-  return `qf-live-${payload.ticketId}`;
+  return `qf-live-${key}`;
 }
 
 function getAndroidMessagePriority(type: AndroidPushType): 'HIGH' | 'NORMAL' {
@@ -234,7 +240,8 @@ function serializePayload(payload: AndroidPushPayload): Record<string, string> {
     type: payload.type,
     title: payload.title,
     body: payload.body,
-    ticketId: payload.ticketId,
+    ticketId: payload.ticketId ?? '',
+    appointmentId: payload.appointmentId ?? '',
     url: payload.url ?? '',
     ticketNumber: payload.ticketNumber ?? '',
     qrToken: payload.qrToken ?? '',
@@ -343,6 +350,49 @@ async function loadAndroidTokens(ticketId: string) {
     supabase,
     tokens: (data ?? []) as AndroidTokenRecord[],
   };
+}
+
+export async function sendAndroidToAppointment(
+  appointmentId: string,
+  payload: AndroidPushPayload
+): Promise<boolean> {
+  if (!hasAndroidPushCredentials()) {
+    return false;
+  }
+
+  const supabase = createServiceSupabaseClient();
+  if (!supabase) return false;
+
+  const { data, error } = await supabase
+    .from('android_tokens')
+    .select('id, ticket_id, device_token, package_name')
+    .eq('appointment_id', appointmentId);
+
+  if (error) {
+    console.error('[AndroidPush] Failed to fetch appointment tokens:', error);
+    return false;
+  }
+
+  const tokens = (data ?? []) as AndroidTokenRecord[];
+  if (tokens.length === 0) return false;
+
+  let anySent = false;
+  for (const token of tokens) {
+    const result = await sendFCMMessage(token.device_token, payload);
+    if (result.success) {
+      anySent = true;
+      continue;
+    }
+    console.error(
+      `[AndroidPush] Failed to send to appt token ${token.id}:`,
+      result.status,
+      result.error
+    );
+    if (result.status === 404 || result.error?.includes('UNREGISTERED')) {
+      await supabase.from('android_tokens').delete().eq('id', token.id);
+    }
+  }
+  return anySent;
 }
 
 export async function sendAndroidToTicket(

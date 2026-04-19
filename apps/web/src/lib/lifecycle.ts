@@ -16,6 +16,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { sendMessengerMessage } from '@/lib/messenger';
 import { t as tMsg, type Locale, phoneLookupCandidates } from '@/lib/messaging-commands';
+import { sendAPNsToAppointment } from '@/lib/apns';
+import { sendAndroidToAppointment } from '@/lib/android-push';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -340,7 +342,39 @@ export async function transitionAppointment(
   const msgBody = tMsg(templateKey, resolved.locale, templateParams);
   const { notified, notifyError } = await sendNotification(resolved, msgBody);
 
+  // 8. Instant mobile push (APNs + Android) to the appointment's registered devices.
+  // Fire-and-forget so notification latency doesn't delay the HTTP response.
+  try {
+    const pushTitle = pushTitleForStatus(newStatus, resolved.locale, orgName);
+    const pushBody = msgBody.slice(0, 240);
+    void sendAPNsToAppointment(appointmentId, { title: pushTitle, body: pushBody }).catch(() => {});
+    void sendAndroidToAppointment(appointmentId, {
+      type: 'appointment_update',
+      title: pushTitle,
+      body: pushBody,
+      appointmentId,
+      status: newStatus,
+    }).catch(() => {});
+  } catch {
+    /* never let push failures block the transition */
+  }
+
   return { ok: true, status: newStatus, notified, channel: resolved.channel, notifyError };
+}
+
+function pushTitleForStatus(status: AppointmentStatus, locale: Locale, orgName: string): string {
+  const L = locale === 'ar' ? 'ar' : locale === 'en' ? 'en' : 'fr';
+  const prefix = orgName ? `${orgName} · ` : '';
+  const map: Record<string, Record<string, string>> = {
+    confirmed: { en: 'Appointment approved', fr: 'Rendez-vous approuvé', ar: 'تمت الموافقة على الموعد' },
+    declined: { en: 'Appointment declined', fr: 'Rendez-vous refusé', ar: 'تم رفض الموعد' },
+    cancelled: { en: 'Appointment cancelled', fr: 'Rendez-vous annulé', ar: 'تم إلغاء الموعد' },
+    no_show: { en: 'Missed appointment', fr: 'Rendez-vous manqué', ar: 'موعد فائت' },
+    checked_in: { en: 'Checked in', fr: 'Enregistré', ar: 'تم تسجيل الحضور' },
+    completed: { en: 'Appointment completed', fr: 'Rendez-vous terminé', ar: 'اكتمل الموعد' },
+    pending: { en: 'Appointment pending', fr: 'Rendez-vous en attente', ar: 'موعد قيد المراجعة' },
+  };
+  return prefix + (map[status]?.[L] ?? 'Appointment update');
 }
 
 /**

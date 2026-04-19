@@ -27,6 +27,7 @@ import {
   type IntakeField,
 } from '@qflo/shared';
 import { IntakeForm } from '@/components/IntakeForm';
+import { registerForAppointmentPush } from '@/lib/notifications';
 import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
@@ -367,6 +368,11 @@ export default function BookAppointmentScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setStep('success');
+
+    // Register this device for instant APNs/Android push on appointment
+    // lifecycle transitions (approve/decline/cancel/no-show). Fire-and-forget —
+    // the polling fallback in history.tsx still covers devices that decline push.
+    void registerForAppointmentPush(result.appointment.id).catch(() => {});
   };
 
   const dept = info?.departments.find((d) => d.id === selectedDeptId);

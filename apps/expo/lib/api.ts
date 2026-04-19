@@ -55,7 +55,8 @@ export async function fetchTicket(token: string): Promise<TicketResponse | null>
 }
 
 export async function registerApns(params: {
-  ticketId: string;
+  ticketId?: string;
+  appointmentId?: string;
   deviceToken: string;
   kind?: 'alert' | 'liveactivity';
   environment?: string;
@@ -67,6 +68,7 @@ export async function registerApns(params: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ticketId: params.ticketId,
+        appointmentId: params.appointmentId,
         deviceToken: params.deviceToken,
         kind: params.kind ?? 'alert',
         environment: params.environment ?? 'production',
@@ -81,16 +83,18 @@ export async function registerApns(params: {
 
 export async function registerAndroid(params: {
   ticketId?: string;
+  appointmentId?: string;
   qrToken?: string;
   deviceToken: string;
   packageName?: string;
-}): Promise<{ ok: boolean; ticketId?: string }> {
+}): Promise<{ ok: boolean; ticketId?: string; appointmentId?: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/android-register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ticketId: params.ticketId,
+        appointmentId: params.appointmentId,
         qrToken: params.qrToken,
         deviceToken: params.deviceToken,
         packageName: params.packageName ?? 'com.qflo.app',
@@ -98,7 +102,7 @@ export async function registerAndroid(params: {
     });
     if (!res.ok) return { ok: false };
     const data = await res.json();
-    return { ok: true, ticketId: data.ticketId };
+    return { ok: true, ticketId: data.ticketId, appointmentId: data.appointmentId };
   } catch {
     return { ok: false };
   }

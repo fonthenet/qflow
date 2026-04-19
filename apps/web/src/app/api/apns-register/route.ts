@@ -36,11 +36,11 @@ function parseAPNsKind(rawTarget: string | null): 'alert' | 'liveactivity' {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { ticketId, deviceToken, kind, environment, bundleId } = await request.json();
+    const { ticketId, appointmentId, deviceToken, kind, environment, bundleId } = await request.json();
 
-    if (!ticketId || !deviceToken) {
+    if ((!ticketId && !appointmentId) || !deviceToken) {
       return NextResponse.json(
-        { error: 'ticketId and deviceToken are required' },
+        { error: 'ticketId or appointmentId and deviceToken are required' },
         { status: 400 }
       );
     }
@@ -61,10 +61,13 @@ export async function POST(request: NextRequest) {
 
     const normalizedKind = kind === 'liveactivity' ? 'liveactivity' : 'alert';
 
+    const targetColumn = appointmentId ? 'appointment_id' : 'ticket_id';
+    const targetValue = appointmentId || ticketId;
+
     const { data: existingTokens, error: existingError } = await supabase
       .from('apns_tokens')
       .select('id, environment')
-      .eq('ticket_id', ticketId);
+      .eq(targetColumn, targetValue);
 
     if (existingError) {
       console.error('[APNs Register] Failed to fetch existing tokens:', existingError);
@@ -89,20 +92,26 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert new token
+    const insertPayload: Record<string, unknown> = {
+      device_token: deviceToken,
+      environment: encodeAPNsTarget(normalizedKind, environment, bundleId),
+    };
+    if (appointmentId) {
+      insertPayload.appointment_id = appointmentId;
+    } else {
+      insertPayload.ticket_id = ticketId;
+    }
+
     const { error } = await supabase
       .from('apns_tokens')
-      .insert({
-        ticket_id: ticketId,
-        device_token: deviceToken,
-        environment: encodeAPNsTarget(normalizedKind, environment, bundleId),
-      });
+      .insert(insertPayload);
 
     if (error) {
       console.error('[APNs Register] Insert failed:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log('[APNs Register] Token saved for ticket:', ticketId);
+    console.log('[APNs Register] Token saved for', appointmentId ? 'appointment' : 'ticket', targetValue);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
