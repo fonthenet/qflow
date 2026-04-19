@@ -8,6 +8,10 @@ vi.mock('electron', () => ({
     isEncryptionAvailable: () => false,
     decryptString: () => '',
   },
+  app: {
+    getPath: () => '/tmp/qflow-test',
+    isPackaged: false,
+  },
 }));
 
 // Mock logTicketEvent from db module
