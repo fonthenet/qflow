@@ -295,8 +295,10 @@ function CountdownCircle({ calledAt }: { calledAt: string }) {
       end={{ x: 1, y: 1 }}
       style={[s.countdownCircle, { borderColor: phaseColor }]}
     >
-      <Text style={s.countdownNumber}>{displayRemaining}</Text>
-      <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
+      <View style={s.countdownContent}>
+        <Text style={s.countdownNumber}>{displayRemaining}</Text>
+        <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
+      </View>
     </LinearGradient>
   );
 }
@@ -1461,7 +1463,21 @@ const s = StyleSheet.create({
   alertsBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 9999 },
 
   // Countdown circle (called state)
-  countdownCircle: { width: 160, height: 160, borderRadius: 80, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 16, overflow: 'hidden' },
+  // Loose organic "blob" shape — asymmetric corner radii instead of a
+  // perfect circle. Slight rotation gives it a hand-drawn feel while the
+  // inner Text stays level (we counter-rotate on the content).
+  countdownCircle: {
+    width: 160, height: 160,
+    borderTopLeftRadius: 72,
+    borderTopRightRadius: 92,
+    borderBottomRightRadius: 64,
+    borderBottomLeftRadius: 96,
+    borderWidth: 1,
+    justifyContent: 'center', alignItems: 'center',
+    marginTop: 16, overflow: 'hidden',
+    transform: [{ rotate: '-8deg' }],
+  },
+  countdownContent: { alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '8deg' }] },
   countdownNumber: { fontSize: 52, fontWeight: '900', color: '#fff', fontVariant: ['tabular-nums'], textAlign: 'center', includeFontPadding: false, textAlignVertical: 'center' },
   countdownLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 2, marginTop: 4, textAlign: 'center' },
 
