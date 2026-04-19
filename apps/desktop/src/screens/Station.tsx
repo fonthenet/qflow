@@ -5,8 +5,6 @@ import { formatDesktopTime, formatWaitLabel, t as translate, type DesktopLocale 
 import { WILAYAS, formatWilayaLabel, normalizeWilayaDisplay } from '../lib/wilayas';
 import { CustomersModal } from '../components/CustomersModal';
 import { SettingsModal } from '../components/SettingsModal';
-import { TeamModal } from '../components/TeamModal';
-import { BusinessAdminModal } from '../components/BusinessAdminModal';
 import { CalendarModal } from '../components/CalendarModal';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import DatePicker from '../components/DatePicker';
@@ -1697,8 +1695,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const [expandedPendingId, setExpandedPendingId] = useState<string | null>(null);
   const prevPendingCount = useRef(0);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showTeamModal, setShowTeamModal] = useState(false);
-  const [showBusinessAdminModal, setShowBusinessAdminModal] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarInitialView, setCalendarInitialView] = useState<'week' | 'month' | 'list'>('week');
   const [calendarInitialApptId, setCalendarInitialApptId] = useState<string | null>(null);
@@ -1716,9 +1713,9 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   }, [mainView]);
   // Listen for native File > Settings menu click
   useEffect(() => {
-    const off = (window as any).qf?.settings?.onOpenSettings?.(() => setShowSettingsModal(true));
-    const offTeam = (window as any).qf?.settings?.onOpenTeam?.(() => setShowTeamModal(true));
-    const offBiz = (window as any).qf?.settings?.onOpenBusinessAdmin?.(() => setShowBusinessAdminModal(true));
+    const off = (window as any).qf?.settings?.onOpenSettings?.(() => { setSettingsInitialSection(undefined); setShowSettingsModal(true); });
+    const offTeam = (window as any).qf?.settings?.onOpenTeam?.(() => { setSettingsInitialSection('team'); setShowSettingsModal(true); });
+    const offBiz = (window as any).qf?.settings?.onOpenBusinessAdmin?.(() => { setSettingsInitialSection('business_admin'); setShowSettingsModal(true); });
     return () => {
       if (typeof off === 'function') off();
       if (typeof offTeam === 'function') offTeam();
@@ -2515,8 +2512,12 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             >✓</button>
             <button
               disabled={busy}
-              onClick={() => {
-                if (!window.confirm(t('Decline this appointment? The customer will be notified.'))) return;
+              onClick={async () => {
+                const ok = await styledConfirm(
+                  t('Decline this appointment? The customer will be notified.'),
+                  { confirmLabel: t('Decline'), cancelLabel: t('Cancel'), variant: 'danger' },
+                );
+                if (!ok) return;
                 moderateAppointment(a.id, 'decline');
               }}
               title={t('Decline')}
@@ -3658,6 +3659,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                 locale={locale}
                 storedAuth={storedAuth}
                 timezone={officeTimezone}
+                businessCategory={orgSettings.business_category}
                 onClose={() => setMainView('queue')}
                 onBookCustomer={(c) => {
                   setBookingPrefill({ ...c, _ts: Date.now() });
@@ -4267,7 +4269,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           />
         )}
 
-        {/* Settings Modal */}
+        {/* Settings Modal (hosts Team & Business Admin inline) */}
         {showSettingsModal && (
           <SettingsModal
             organizationId={session.organization_id}
@@ -4275,31 +4277,10 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             locale={locale}
             storedAuth={storedAuth}
             officeName={session.office_name}
-            onClose={() => { setShowSettingsModal(false); setSettingsVersion(v => v + 1); }}
-            onOpenTeam={() => setShowTeamModal(true)}
-            onOpenBusinessAdmin={() => setShowBusinessAdminModal(true)}
-          />
-        )}
-
-        {/* Team Modal */}
-        {showTeamModal && (
-          <TeamModal
-            organizationId={session.organization_id}
             callerUserId={session.user_id}
             callerRole={session.role}
-            locale={locale}
-            onClose={() => setShowTeamModal(false)}
-          />
-        )}
-
-        {/* Business Administration Modal */}
-        {showBusinessAdminModal && (
-          <BusinessAdminModal
-            organizationId={session.organization_id}
-            callerUserId={session.user_id}
-            callerRole={session.role}
-            locale={locale}
-            onClose={() => setShowBusinessAdminModal(false)}
+            initialSection={settingsInitialSection}
+            onClose={() => { setShowSettingsModal(false); setSettingsInitialSection(undefined); setSettingsVersion(v => v + 1); }}
           />
         )}
 
@@ -4310,6 +4291,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             locale={locale}
             storedAuth={storedAuth}
             timezone={officeTimezone}
+            businessCategory={orgSettings.business_category}
             onClose={() => { setShowCustomersModal(false); setCustomerPhoneToOpen(undefined); }}
             onBookCustomer={(c) => {
               setBookingPrefill({ ...c, _ts: Date.now() });
@@ -4713,10 +4695,17 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
                           >✓</button>
                           <button
                             disabled={busy}
-                            onClick={() => {
-                              const reason = window.prompt(t('Decline this ticket? The customer will be notified.\n\nReason (optional):'), '');
-                              if (reason === null) return;
-                              moderatePendingTicket(p.id, 'decline', reason.trim() || undefined);
+                            onClick={async () => {
+                              // Electron's renderer ignores window.prompt/confirm in some
+                              // configurations, so use the in-app styled confirm dialog.
+                              // The optional reason field is skipped; the customer is
+                              // still notified via the generic "declined" template.
+                              const ok = await styledConfirm(
+                                t('Decline this ticket? The customer will be notified.'),
+                                { confirmLabel: t('Decline'), cancelLabel: t('Cancel'), variant: 'danger' },
+                              );
+                              if (!ok) return;
+                              moderatePendingTicket(p.id, 'decline');
                             }}
                             title={t('Decline')}
                             style={{

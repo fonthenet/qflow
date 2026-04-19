@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   // Check if office requires ticket approval + virtual queue enabled
   const { data: officeRow } = await supabase
     .from('offices')
-    .select('settings, organization:organizations(settings)')
+    .select('organization_id, timezone, settings, organization:organizations(settings, timezone)')
     .eq('id', officeId)
     .single();
   const _vqOrgSettings = (((officeRow as any)?.organization?.settings) ?? {}) as Record<string, any>;
@@ -63,10 +63,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const requireApproval = Boolean(
+  let requireApproval = Boolean(
     (officeRow?.settings as any)?.require_ticket_approval ??
       _vqOrgSettings.require_ticket_approval
   );
+  // Per-customer override: trusted customers skip the approval gate.
+  if (requireApproval && cleanCustomerPhone) {
+    const orgId = (officeRow as any)?.organization_id as string | undefined;
+    const tz = ((officeRow as any)?.organization?.timezone as string | undefined)
+      ?? ((officeRow as any)?.timezone as string | undefined)
+      ?? null;
+    if (orgId) {
+      try {
+        const { isCustomerAutoApprove } = await import('@/lib/customer-auto-approve');
+        const trusted = await isCustomerAutoApprove(supabase, orgId, cleanCustomerPhone, tz);
+        if (trusted) requireApproval = false;
+      } catch { /* best-effort */ }
+    }
+  }
   const initialStatus = requireApproval ? 'pending_approval' : 'waiting';
 
   // Generate ticket number

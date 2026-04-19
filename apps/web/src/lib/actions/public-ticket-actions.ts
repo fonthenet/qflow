@@ -267,10 +267,28 @@ export async function createPublicTicket(input: CreatePublicTicketInput) {
   // channels (WhatsApp, Messenger, kiosk, mobile app, QR code) are held
   // in `pending_approval` state until a provider approves them via Station.
   // Provider-originated sources (`in_house`, `appointment`) always bypass.
-  const requireApproval = Boolean(
+  let requireApproval = Boolean(
     officeSettings.require_ticket_approval ?? organizationSettings.require_ticket_approval
   );
   const providerOriginated = input.source === 'in_house' || input.source === 'appointment';
+  // Per-customer override: trusted customers (flagged via
+  // `auto_approve_reservations` on the customer row) skip the approval gate.
+  if (requireApproval && !providerOriginated && orgId) {
+    const phoneForLookup =
+      typeof input.customerData?.phone === 'string' ? input.customerData.phone : null;
+    if (phoneForLookup) {
+      try {
+        const { isCustomerAutoApprove } = await import('@/lib/customer-auto-approve');
+        const trusted = await isCustomerAutoApprove(
+          supabase,
+          orgId,
+          phoneForLookup,
+          orgTz,
+        );
+        if (trusted) requireApproval = false;
+      } catch { /* best-effort */ }
+    }
+  }
   if (requireApproval && !providerOriginated && input.status === undefined) {
     status = 'pending_approval';
   }

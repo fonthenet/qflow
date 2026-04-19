@@ -8,6 +8,7 @@ import DatePicker from './DatePicker';
 import { GoogleSheetsModal } from './GoogleSheetsModal';
 import { normalizePhone } from '@qflo/shared';
 import { useConfirmDialog } from './ConfirmDialog';
+import { RichTextEditor } from './RichTextEditor';
 
 interface Customer {
   id: string;
@@ -34,9 +35,11 @@ interface Customer {
   marriage_date?: string | null;
   created_at?: string | null;
   previous_names?: string[] | null;
+  customer_file?: string | null;
+  auto_approve_reservations?: boolean | null;
 }
 
-const CUSTOMER_SELECT = 'id, name, phone, email, visit_count, last_visit_at, last_booking_at, booking_count, notes, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, spouse_gender, marriage_date, created_at, previous_names';
+const CUSTOMER_SELECT = 'id, name, phone, email, visit_count, last_visit_at, last_booking_at, booking_count, notes, gender, date_of_birth, blood_type, file_number, address, wilaya_code, city, is_couple, spouse_name, spouse_dob, spouse_blood_type, spouse_gender, marriage_date, created_at, previous_names, customer_file, auto_approve_reservations';
 
 type SortKey = 'name' | 'last_visit' | 'bookings' | 'created';
 type GroupKey = 'none' | 'wilaya' | 'city' | 'gender' | 'visit_month';
@@ -53,7 +56,12 @@ interface Props {
   embedded?: boolean;
   /** Increment to trigger a background data refresh (no loading flash) */
   refreshKey?: number;
+  /** Org's business category (from settings.business_category). Medical
+   *  categories get extra fields (blood type, couple file). */
+  businessCategory?: string;
 }
+
+const MEDICAL_CATEGORIES = new Set(['clinic', 'dentist', 'pharmacy']);
 
 function initials(name: string | null, phone: string | null) {
   const src = (name && name.trim()) || (phone && phone.trim()) || '?';
@@ -125,8 +133,9 @@ function timeAgo(iso: string | null, t: (k: string, v?: any) => string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone, embedded, refreshKey }: Props) {
+export function CustomersModal({ organizationId, locale, storedAuth, onClose, onBookCustomer, initialPhone, timezone, embedded, refreshKey, businessCategory }: Props) {
   const t = (k: string, v?: Record<string, any>) => translate(locale, k, v);
+  const isMedical = MEDICAL_CATEGORIES.has((businessCategory || '').toLowerCase());
   const { confirm: styledConfirm } = useConfirmDialog();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,6 +166,41 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
   const [detailForm, setDetailForm] = useState<Partial<Customer>>({});
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  // Auto-save status for notes + customer_file: 'idle' | 'saving' | 'saved' | 'error'
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveBaselineRef = useRef<{ notes: string; customer_file: string } | null>(null);
+
+  // User-resizable width for the detail panel (drag the left edge). Persisted
+  // in localStorage so it survives relaunches. Width is stored as pixels.
+  const [detailWidth, setDetailWidth] = useState<number>(() => {
+    const v = typeof window !== 'undefined' ? window.localStorage.getItem('qflo.customers.detailWidth') : null;
+    const n = v ? parseInt(v, 10) : NaN;
+    return Number.isFinite(n) && n >= 420 ? n : 720;
+  });
+  const dragStartRef = useRef<{ x: number; w: number } | null>(null);
+  const onResizeDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStartRef.current = { x: e.clientX, w: detailWidth };
+    const onMove = (ev: MouseEvent) => {
+      const start = dragStartRef.current; if (!start) return;
+      // Dragging left grows the panel (it's on the right side of the modal).
+      const next = Math.max(420, Math.min(1400, start.w + (start.x - ev.clientX)));
+      setDetailWidth(next);
+    };
+    const onUp = () => {
+      dragStartRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      try { window.localStorage.setItem('qflo.customers.detailWidth', String(detailWidth)); } catch { /* no-op */ }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [detailWidth]);
+  // Persist width after it settles
+  useEffect(() => {
+    try { window.localStorage.setItem('qflo.customers.detailWidth', String(detailWidth)); } catch { /* no-op */ }
+  }, [detailWidth]);
 
   // Backwards compat helpers
   const detailName = detailForm.name ?? '';
@@ -177,7 +221,89 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
       phone: formatPhoneDisplay(c.phone),
     });
     setDetailError(null);
+    autoSaveBaselineRef.current = { notes: c.notes ?? '', customer_file: c.customer_file ?? '' };
+    setAutoSaveStatus('idle');
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null; }
+
+    // If a local SQLite draft exists for this customer, it means the last
+    // auto-save to Supabase failed (offline / token expired). Prefer the draft
+    // so the user sees their unsaved text on reopen. The next successful
+    // auto-save will push it to cloud and clear the draft.
+    (async () => {
+      try {
+        const draft = await (window as any).qf?.customerDrafts?.get?.(c.id);
+        if (!draft) return;
+        const draftNotes = (draft.notes ?? '') as string;
+        const draftFile = (draft.customer_file ?? '') as string;
+        const serverNotes = c.notes ?? '';
+        const serverFile = c.customer_file ?? '';
+        if (draftNotes === serverNotes && draftFile === serverFile) {
+          // Draft matches server → stale row, clear it.
+          try { await (window as any).qf?.customerDrafts?.clear?.(c.id); } catch { /* no-op */ }
+          return;
+        }
+        setDetailForm(f => ({ ...f, notes: draftNotes, customer_file: draftFile }));
+        // Baseline stays at server values so the auto-save effect will fire
+        // and push the draft up on the next debounce tick.
+        setAutoSaveStatus('error'); // visible hint: there are unsynced edits.
+      } catch { /* drafts are best-effort */ }
+    })();
   }
+
+  // ── Auto-save notes + customer_file after typing stops ─────────────────
+  // Only these two free-text fields auto-save; structured fields wait for the
+  // explicit "Enregistrer" button so a half-edited field doesn't get persisted.
+  useEffect(() => {
+    if (!detail) return;
+    const baseline = autoSaveBaselineRef.current;
+    if (!baseline) return;
+    const curNotes = (detailForm.notes ?? '').trim();
+    const curFile = (detailForm.customer_file ?? '').trim();
+    const baseNotes = (baseline.notes ?? '').trim();
+    const baseFile = (baseline.customer_file ?? '').trim();
+    if (curNotes === baseNotes && curFile === baseFile) return;
+
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaveStatus('saving');
+      const patch: any = {
+        notes: curNotes || null,
+        customer_file: curFile || null,
+      };
+      // 1) Write the local SQLite draft FIRST — this is the offline safety net.
+      //    Even if Supabase is unreachable, the user's edits survive a restart.
+      try {
+        await (window as any).qf?.customerDrafts?.save?.(detail.id, patch.notes, patch.customer_file);
+      } catch { /* draft is best-effort */ }
+      // 2) Push to Supabase.
+      try {
+        const sb = await getSupabase();
+        const { error: upErr } = await sb.from('customers').update(patch).eq('id', detail.id);
+        if (upErr) {
+          setAutoSaveStatus('error');
+          return; // Keep the draft — it'll sync on the next successful edit or the save button.
+        }
+        // Cloud write succeeded → clear the local draft to keep the table tiny.
+        try { await (window as any).qf?.customerDrafts?.clear?.(detail.id); } catch { /* no-op */ }
+        // Reflect persisted values in the row list so a later "Enregistrer" doesn't blow them away.
+        setCustomers(prev => prev.map(c => c.id === detail.id ? { ...c, notes: patch.notes, customer_file: patch.customer_file } : c));
+        autoSaveBaselineRef.current = { notes: curNotes, customer_file: curFile };
+        setAutoSaveStatus('saved');
+      } catch {
+        setAutoSaveStatus('error'); // Draft already written above → nothing lost.
+      }
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [detailForm.notes, detailForm.customer_file, detail]);
+
+  useEffect(() => {
+    if (autoSaveStatus !== 'saved') return;
+    const tm = setTimeout(() => setAutoSaveStatus('idle'), 1800);
+    return () => clearTimeout(tm);
+  }, [autoSaveStatus]);
 
   async function handleSaveDetail() {
     if (!detail) return;
@@ -206,6 +332,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
         marriage_date: f.is_couple ? (f.marriage_date || null) : null,
         previous_names: Array.isArray(f.previous_names) ? f.previous_names : [],
+        customer_file: (f.customer_file ?? '').trim() || null,
+        auto_approve_reservations: !!f.auto_approve_reservations,
       };
       const { error: updErr } = await sb
         .from('customers')
@@ -386,6 +514,8 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
         spouse_blood_type: f.is_couple ? (f.spouse_blood_type || null) : null,
         spouse_gender: f.is_couple ? (f.spouse_gender || null) : null,
         marriage_date: f.is_couple ? (f.marriage_date || null) : null,
+        customer_file: (f.customer_file ?? '').trim() || null,
+        auto_approve_reservations: !!f.auto_approve_reservations,
       };
 
       if (match) {
@@ -693,7 +823,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           background: 'var(--surface, #1e293b)', width: '100%', height: '100%',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
         } : {
-          background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: detail ? 1280 : 920,
+          background: 'var(--surface, #1e293b)', borderRadius: 'var(--radius, 12px)', width: '100%', maxWidth: detail ? 1600 : 920,
           maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
           transition: 'max-width 0.2s ease',
           border: '1px solid var(--border, #475569)', boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
@@ -883,13 +1013,15 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                   <option value="female">{t('Female')}</option>
                 </select>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <span style={lbl}>{t('Blood Type')}</span>
-                <select style={sel} value={filterBlood} onChange={(e) => setFilterBlood(e.target.value)}>
-                  <option value="">{t('All')}</option>
-                  {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
+              {isMedical && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={lbl}>{t('Blood Type')}</span>
+                  <select style={sel} value={filterBlood} onChange={(e) => setFilterBlood(e.target.value)}>
+                    <option value="">{t('All')}</option>
+                    {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <span style={lbl}>{t('Visit Month')}</span>
                 <select style={sel} value={filterVisitMonth} onChange={(e) => setFilterVisitMonth(e.target.value)}>
@@ -934,10 +1066,12 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                   <option value="visit_month">{t('Visit Month')}</option>
                 </select>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2, #94a3b8)', gridColumn: '1 / span 2' }}>
-                <input type="checkbox" checked={filterCoupleOnly} onChange={(e) => setFilterCoupleOnly(e.target.checked)} />
-                {t('Couple files only')}
-              </label>
+              {isMedical && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2, #94a3b8)', gridColumn: '1 / span 2' }}>
+                  <input type="checkbox" checked={filterCoupleOnly} onChange={(e) => setFilterCoupleOnly(e.target.checked)} />
+                  {t('Couple files only')}
+                </label>
+              )}
               <button
                 onClick={() => {
                   setFilterWilaya(''); setFilterCity(''); setFilterGender(''); setFilterBlood('');
@@ -1076,12 +1210,28 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
           {detail && (
             <div
               style={{
-                width: 420, minWidth: 420, flexShrink: 0,
-                borderLeft: '1px solid var(--border, #475569)',
+                width: detailWidth, minWidth: 420, flexShrink: 0,
                 background: 'var(--surface, #1e293b)',
                 display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                position: 'relative',
               }}
             >
+              {/* Resize handle — drag to grow/shrink the detail panel */}
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={t('Resize panel')}
+                onMouseDown={onResizeDown}
+                title={t('Drag to resize')}
+                style={{
+                  position: 'absolute', left: -3, top: 0, bottom: 0, width: 7,
+                  cursor: 'col-resize', zIndex: 5,
+                  // Thin visible line in the middle of the wider hit target.
+                  background: 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 2px, var(--primary, #3b82f6) 2px, var(--primary, #3b82f6) 5px, transparent 5px)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(90deg, transparent 3px, var(--border, #475569) 3px, var(--border, #475569) 4px, transparent 4px)'; }}
+              />
               <div style={{
                 padding: '16px 18px', borderBottom: '1px solid var(--border, #475569)',
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -1101,6 +1251,26 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                     {(detail.visit_count || 0)} {t('Visits')} · {detail.last_visit_at ? timeAgo(detail.last_visit_at, t) : '—'}
                   </p>
                 </div>
+                {autoSaveStatus !== 'idle' && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
+                    background:
+                      autoSaveStatus === 'saving' ? 'rgba(100,116,139,0.18)' :
+                      autoSaveStatus === 'saved'  ? 'rgba(16,185,129,0.15)' :
+                                                    'rgba(239,68,68,0.15)',
+                    color:
+                      autoSaveStatus === 'saving' ? 'var(--text2, #94a3b8)' :
+                      autoSaveStatus === 'saved'  ? '#047857' :
+                                                    '#b91c1c',
+                    border: `1px solid ${
+                      autoSaveStatus === 'saving' ? 'rgba(100,116,139,0.35)' :
+                      autoSaveStatus === 'saved'  ? 'rgba(16,185,129,0.35)' :
+                                                    'rgba(239,68,68,0.35)'
+                    }`,
+                  }}>
+                    {autoSaveStatus === 'saving' ? t('Saving…') : autoSaveStatus === 'saved' ? t('Saved') : t('Save failed')}
+                  </span>
+                )}
                 <button
                   onClick={() => { if (!detailBusy) setDetail(null); }}
                   style={{
@@ -1122,6 +1292,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                   form={detailForm}
                   setField={setDetailField as any}
                   disabled={detailBusy}
+                  isMedical={isMedical}
                 />
                 {detailError && (
                   <div style={{
@@ -1219,6 +1390,7 @@ export function CustomersModal({ organizationId, locale, storedAuth, onClose, on
                 form={addForm}
                 setField={setAddField as any}
                 disabled={addBusy}
+                isMedical={isMedical}
               />
               {addError && (
                 <div style={{
@@ -1500,9 +1672,10 @@ interface FormFieldsProps {
   form: Partial<Customer>;
   setField: (k: keyof Customer, v: any) => void;
   disabled?: boolean;
+  isMedical?: boolean;
 }
 
-function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
+function CustomerFormFields({ t, form, setField, disabled, isMedical = false }: FormFieldsProps) {
   const inp: React.CSSProperties = {
     width: '100%', padding: '9px 11px', borderRadius: 6,
     border: '1px solid var(--border, #475569)', background: 'var(--bg, #0f172a)',
@@ -1583,7 +1756,7 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
       </div>
 
       <div style={sect}>{t('Personal')}</div>
-      <div style={grid3}>
+      <div style={isMedical ? grid3 : grid2}>
         <div>
           <label style={lbl}>{t('Gender')}</label>
           <select style={inp} value={form.gender ?? ''} onChange={(e) => setField('gender', e.target.value)} disabled={disabled}>
@@ -1596,13 +1769,15 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
           <label style={lbl}>{t('Date of Birth')}</label>
           <DatePicker style={inp} value={form.date_of_birth ?? ''} onChange={(e) => setField('date_of_birth', e.target.value)} disabled={disabled} />
         </div>
-        <div>
-          <label style={lbl}>{t('Blood Type')}</label>
-          <select style={inp} value={form.blood_type ?? ''} onChange={(e) => setField('blood_type', e.target.value)} disabled={disabled}>
-            <option value="">—</option>
-            {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
+        {isMedical && (
+          <div>
+            <label style={lbl}>{t('Blood Type')}</label>
+            <select style={inp} value={form.blood_type ?? ''} onChange={(e) => setField('blood_type', e.target.value)} disabled={disabled}>
+              <option value="">—</option>
+              {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={sect}>{t('Address')}</div>
@@ -1627,46 +1802,83 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
         <input type="text" style={inp} value={form.address ?? ''} onChange={(e) => setField('address', e.target.value)} disabled={disabled} />
       </div>
 
-      <div style={sect}>{t('Couple File')}</div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2, #94a3b8)' }}>
-        <input type="checkbox" checked={!!form.is_couple} onChange={(e) => setField('is_couple', e.target.checked)} disabled={disabled} />
-        {t('This is a married couple file (husband & wife in one record)')}
-      </label>
-      {form.is_couple && (
+      {isMedical && (
         <>
-          <div style={grid3}>
-            <div>
-              <label style={lbl}>{t('Spouse Name')}</label>
-              <input type="text" style={inp} value={form.spouse_name ?? ''} onChange={(e) => setField('spouse_name', e.target.value)} disabled={disabled} />
-            </div>
-            <div>
-              <label style={lbl}>{t('Spouse Gender')}</label>
-              <select style={inp} value={form.spouse_gender ?? ''} onChange={(e) => setField('spouse_gender', e.target.value)} disabled={disabled}>
-                <option value="">—</option>
-                <option value="male">{t('Male')}</option>
-                <option value="female">{t('Female')}</option>
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>{t('Spouse Blood Type')}</label>
-              <select style={inp} value={form.spouse_blood_type ?? ''} onChange={(e) => setField('spouse_blood_type', e.target.value)} disabled={disabled}>
-                <option value="">—</option>
-                {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={grid2}>
-            <div>
-              <label style={lbl}>{t('Spouse Date of Birth')}</label>
-              <DatePicker style={inp} value={form.spouse_dob ?? ''} onChange={(e) => setField('spouse_dob', e.target.value)} disabled={disabled} />
-            </div>
-            <div>
-              <label style={lbl}>{t('Marriage Date')}</label>
-              <DatePicker style={inp} value={form.marriage_date ?? ''} onChange={(e) => setField('marriage_date', e.target.value)} disabled={disabled} />
-            </div>
-          </div>
+          <div style={sect}>{t('Couple File')}</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2, #94a3b8)' }}>
+            <input type="checkbox" checked={!!form.is_couple} onChange={(e) => setField('is_couple', e.target.checked)} disabled={disabled} />
+            {t('This is a married couple file (husband & wife in one record)')}
+          </label>
+          {form.is_couple && (
+            <>
+              <div style={grid3}>
+                <div>
+                  <label style={lbl}>{t('Spouse Name')}</label>
+                  <input type="text" style={inp} value={form.spouse_name ?? ''} onChange={(e) => setField('spouse_name', e.target.value)} disabled={disabled} />
+                </div>
+                <div>
+                  <label style={lbl}>{t('Spouse Gender')}</label>
+                  <select style={inp} value={form.spouse_gender ?? ''} onChange={(e) => setField('spouse_gender', e.target.value)} disabled={disabled}>
+                    <option value="">—</option>
+                    <option value="male">{t('Male')}</option>
+                    <option value="female">{t('Female')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={lbl}>{t('Spouse Blood Type')}</label>
+                  <select style={inp} value={form.spouse_blood_type ?? ''} onChange={(e) => setField('spouse_blood_type', e.target.value)} disabled={disabled}>
+                    <option value="">—</option>
+                    {BLOOD_TYPES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={grid2}>
+                <div>
+                  <label style={lbl}>{t('Spouse Date of Birth')}</label>
+                  <DatePicker style={inp} value={form.spouse_dob ?? ''} onChange={(e) => setField('spouse_dob', e.target.value)} disabled={disabled} />
+                </div>
+                <div>
+                  <label style={lbl}>{t('Marriage Date')}</label>
+                  <DatePicker style={inp} value={form.marriage_date ?? ''} onChange={(e) => setField('marriage_date', e.target.value)} disabled={disabled} />
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
+
+      {/* Auto-approve toggle: when on, this customer's reservations skip the
+          org-level approval gate on the web, mobile, WhatsApp, and Messenger
+          booking paths. Same-day and future bookings both honor the flag. */}
+      <div style={sect}>✅ {t('Trusted Customer')}</div>
+      <label
+        style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '10px 12px', borderRadius: 8,
+          border: '1px solid var(--border, #475569)',
+          background: form.auto_approve_reservations
+            ? 'rgba(34,197,94,0.08)'
+            : 'var(--surface2, #0f172a)',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={!!form.auto_approve_reservations}
+          onChange={(e) => setField('auto_approve_reservations', e.target.checked)}
+          disabled={disabled}
+          style={{ marginTop: 2, width: 16, height: 16 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text, #f1f5f9)' }}>
+            {t('Auto-approve this customer\'s reservations')}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginTop: 2, lineHeight: 1.5 }}>
+            {t('When your business requires approval for new bookings, this client\'s same-day and future reservations will be auto-confirmed — web, mobile, WhatsApp, and Messenger.')}
+          </div>
+        </div>
+      </label>
 
       <div style={sect}>📝 {t('Notes')}</div>
       <textarea
@@ -1676,6 +1888,19 @@ function CustomerFormFields({ t, form, setField, disabled }: FormFieldsProps) {
         rows={3}
         placeholder={t('Internal notes about this customer...')}
         style={{ ...inp, fontFamily: 'inherit', resize: 'vertical' }}
+      />
+
+      <div style={sect}>📄 {t('Customer File')}</div>
+      <div style={{ fontSize: 11, color: 'var(--text3, #64748b)', marginBottom: 6 }}>
+        {t('A rich document attached to this customer — formatted like a Word file.')}
+      </div>
+      <RichTextEditor
+        t={t as any}
+        value={form.customer_file ?? ''}
+        onChange={(html) => setField('customer_file', html)}
+        disabled={disabled}
+        minHeight={260}
+        placeholder={t('Start typing — use the toolbar to format headings, lists, bold, etc.')}
       />
     </div>
   );
