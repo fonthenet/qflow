@@ -828,6 +828,23 @@
     "notificationsEnabled": "Notifications activées"
   },
 
+  "apptAlert": {
+    "approvedTitle": "Rendez-vous approuvé",
+    "approvedBody": "{{business}} a confirmé votre rendez-vous.",
+    "declinedTitle": "Rendez-vous refusé",
+    "declinedBody": "{{business}} n'a pas pu confirmer votre rendez-vous.",
+    "cancelledTitle": "Rendez-vous annulé",
+    "cancelledBody": "{{business}} a annulé votre rendez-vous.",
+    "noShowTitle": "Marqué comme manqué",
+    "noShowBody": "{{business}} a marqué votre rendez-vous comme manqué.",
+    "checkedInTitle": "Vous êtes dans la file",
+    "checkedInBody": "{{business}} vous a enregistré pour votre rendez-vous.",
+    "servingTitle": "C'est votre tour",
+    "servingBody": "{{business}} vous reçoit maintenant.",
+    "completedTitle": "Rendez-vous terminé",
+    "completedBody": "Merci d'avoir visité {{business}}."
+  },
+
   "appointments": {
     "title": "Mes rendez-vous",
     "subtitle": "Vos réservations enregistrées sur cet appareil.",
@@ -866,7 +883,9 @@
     "bookingDisabled": "La réservation en ligne n'est pas disponible pour ce commerce.",
     "goBack": "Retour",
     "appointmentBooked": "Rendez-vous réservé !",
-    "appointmentConfirmed": "Votre rendez-vous a été confirmé.",
+    "appointmentConfirmed": "Votre rendez-vous a été confirmé. Vous recevrez un rappel avant qu'il commence.",
+    "pendingTitle": "En attente d'approbation",
+    "pendingSub": "Votre demande de rendez-vous a été envoyée au commerce. Nous vous préviendrons dès qu'elle sera approuvée ou refusée.",
     "business": "Commerce",
     "service": "Service",
     "date": "Date",

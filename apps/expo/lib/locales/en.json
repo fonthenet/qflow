@@ -829,6 +829,23 @@
     "notificationsEnabled": "Notifications enabled"
   },
 
+  "apptAlert": {
+    "approvedTitle": "Appointment approved",
+    "approvedBody": "{{business}} confirmed your appointment.",
+    "declinedTitle": "Appointment declined",
+    "declinedBody": "{{business}} couldn't confirm your appointment.",
+    "cancelledTitle": "Appointment cancelled",
+    "cancelledBody": "{{business}} cancelled your appointment.",
+    "noShowTitle": "Marked as missed",
+    "noShowBody": "{{business}} marked your appointment as missed.",
+    "checkedInTitle": "You're in the queue",
+    "checkedInBody": "{{business}} checked you in for your appointment.",
+    "servingTitle": "It's your turn",
+    "servingBody": "{{business}} is serving you now.",
+    "completedTitle": "Appointment completed",
+    "completedBody": "Thanks for visiting {{business}}."
+  },
+
   "appointments": {
     "title": "My Appointments",
     "subtitle": "Your bookings saved on this device.",
@@ -867,7 +884,9 @@
     "bookingDisabled": "Online booking is not available for this business.",
     "goBack": "Go Back",
     "appointmentBooked": "Appointment Booked!",
-    "appointmentConfirmed": "Your appointment has been confirmed.",
+    "appointmentConfirmed": "Your appointment has been confirmed. You'll receive a reminder before it starts.",
+    "pendingTitle": "Waiting for approval",
+    "pendingSub": "Your appointment request has been sent to the business. We'll notify you as soon as it's approved or declined.",
     "business": "Business",
     "service": "Service",
     "date": "Date",

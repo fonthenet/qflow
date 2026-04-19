@@ -160,6 +160,10 @@ export default function BookAppointmentScreen() {
   // Result
   const [appointmentId, setAppointmentId] = useState('');
   const [confirmedAt, setConfirmedAt] = useState('');
+  // Tracks the server-assigned status so the success screen can show
+  // "pending approval" copy when the business has require_appointment_approval
+  // turned on — the same distinction the WhatsApp booking flow makes.
+  const [confirmedStatus, setConfirmedStatus] = useState<string>('confirmed');
   // Prevents double-submit when the user double-taps the Book button while
   // the network call is still pending. Reset on error so they can retry.
   const [submitting, setSubmitting] = useState(false);
@@ -340,6 +344,7 @@ export default function BookAppointmentScreen() {
 
     setAppointmentId(result.appointment.id);
     setConfirmedAt(result.appointment.scheduled_at);
+    setConfirmedStatus(result.appointment.status || 'confirmed');
 
     // Stash token + meta locally so the "My appointments" screen can list,
     // refresh, cancel and check in without any login.
@@ -396,15 +401,23 @@ export default function BookAppointmentScreen() {
   // ---- SUCCESS ----
   if (step === 'success') {
     const d = new Date(confirmedAt);
+    // `pending` means the business has require_appointment_approval on —
+    // the slot is held but the appointment isn't final until staff acts
+    // on it. Same distinction WhatsApp makes in confirmBooking().
+    const isPending = confirmedStatus === 'pending';
+    const iconColor = isPending ? colors.warning : colors.success;
+    const iconName = isPending ? 'time-outline' : 'checkmark-circle';
+    const titleKey = isPending ? 'bookAppointment.pendingTitle' : 'bookAppointment.appointmentBooked';
+    const subKey = isPending ? 'bookAppointment.pendingSub' : 'bookAppointment.appointmentConfirmed';
     return (
       <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md }]}>
         <View style={[s.successCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
-          <View style={[s.iconCircle, { backgroundColor: colors.success + '18' }]}>
-            <Ionicons name="checkmark-circle" size={56} color={colors.success} />
+          <View style={[s.iconCircle, { backgroundColor: iconColor + '18' }]}>
+            <Ionicons name={iconName as any} size={56} color={iconColor} />
           </View>
-          <Text style={[s.successTitle, { color: colors.text }]}>{t('bookAppointment.appointmentBooked')}</Text>
+          <Text style={[s.successTitle, { color: colors.text }]}>{t(titleKey)}</Text>
           <Text style={[s.successSub, { color: colors.textSecondary }]}>
-            {t('bookAppointment.appointmentConfirmed')}
+            {t(subKey)}
           </Text>
 
           <View style={[s.summaryBlock, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderLight }]}>

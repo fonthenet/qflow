@@ -828,6 +828,23 @@
     "notificationsEnabled": "تم تفعيل الإشعارات"
   },
 
+  "apptAlert": {
+    "approvedTitle": "تمت الموافقة على الموعد",
+    "approvedBody": "أكّد {{business}} موعدك.",
+    "declinedTitle": "تم رفض الموعد",
+    "declinedBody": "تعذّر على {{business}} تأكيد موعدك.",
+    "cancelledTitle": "تم إلغاء الموعد",
+    "cancelledBody": "ألغى {{business}} موعدك.",
+    "noShowTitle": "تم وضع علامة غائب",
+    "noShowBody": "وضع {{business}} موعدك كغائب.",
+    "checkedInTitle": "أنت في الطابور",
+    "checkedInBody": "سجّلك {{business}} لموعدك.",
+    "servingTitle": "حان دورك",
+    "servingBody": "{{business}} يستقبلك الآن.",
+    "completedTitle": "اكتمل الموعد",
+    "completedBody": "شكرًا لزيارتك {{business}}."
+  },
+
   "appointments": {
     "title": "مواعيدي",
     "subtitle": "حجوزاتك المحفوظة على هذا الجهاز.",
@@ -866,7 +883,9 @@
     "bookingDisabled": "الحجز عبر الإنترنت غير متاح لهذا المكان.",
     "goBack": "رجوع",
     "appointmentBooked": "تم حجز الموعد!",
-    "appointmentConfirmed": "تم تأكيد موعدك.",
+    "appointmentConfirmed": "تم تأكيد موعدك. ستصلك رسالة تذكير قبل بدايته.",
+    "pendingTitle": "بانتظار الموافقة",
+    "pendingSub": "تم إرسال طلب موعدك إلى النشاط التجاري. سنُعلمك فور الموافقة عليه أو رفضه.",
     "business": "المكان",
     "service": "الخدمة",
     "date": "التاريخ",

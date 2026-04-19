@@ -25,6 +25,7 @@ import {
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { visitStatusColors } from '@/lib/visit';
 import { formatTime } from '@/lib/format-date';
+import { notifyAppointmentStatusChange } from '@/lib/appointment-alerts';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
@@ -117,6 +118,10 @@ export default function HistoryScreen() {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
   // --- Refresh upcoming/same-day appointments (live status tracking) --------
+  // Also detects status transitions and fires a local notification + haptic
+  // so the customer learns about approvals / declines / cancellations /
+  // no-shows the same way a WhatsApp user would. Mirrors the template
+  // messages the server sends in lifecycle.ts → transitionAppointment.
   const refreshAppointments = useCallback(async () => {
     const targets = savedAppointments.filter(
       (a) => !a.hidden && !TERMINAL_APPT.has(a.status),
@@ -129,18 +134,31 @@ export default function HistoryScreen() {
         // back to the base appointment fields if no ticket is linked yet.
         const { appointment, ticket } = await fetchAppointmentWithTicket(a.calendarToken);
         if (appointment) {
+          const previousStatus = a.status;
+          const nextStatus = appointment.status;
           updateAppointment(a.id, {
-            status: appointment.status,
+            status: nextStatus,
             scheduledAt: appointment.scheduled_at,
             lastSyncedAt: new Date().toISOString(),
             ticketNumber: ticket?.ticket_number ?? a.ticketNumber ?? null,
             ticketQrToken: ticket?.qr_token ?? a.ticketQrToken ?? null,
             ticketStatus: ticket?.status ?? a.ticketStatus ?? null,
           });
+          // Fire an alert *after* persisting the new status so the user
+          // can tap through to the updated card. Fire-and-forget —
+          // notifyAppointmentStatusChange swallows its own errors.
+          if (previousStatus !== nextStatus) {
+            notifyAppointmentStatusChange({
+              previousStatus,
+              nextStatus,
+              businessName: a.businessName,
+              t,
+            });
+          }
         }
       }),
     );
-  }, [savedAppointments, updateAppointment]);
+  }, [savedAppointments, updateAppointment, t]);
 
   // Refresh on screen focus
   useFocusEffect(
