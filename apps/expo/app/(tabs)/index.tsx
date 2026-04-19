@@ -523,7 +523,7 @@ function CustomerInfoCard({ ticket: tk, onColored = false }: { ticket: import('@
 // Main screen
 // ===========================================================================
 export default function HomeScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const p = usePhasePalette();
@@ -824,7 +824,7 @@ export default function HomeScreen() {
       if (!nextAppt) return null;
       const tz = nextAppt.officeTimezone ?? null;
       const timeStr = formatTime(nextAppt.scheduledAt, tz);
-      const dateStr = formatDate(nextAppt.scheduledAt, tz, undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const dateStr = formatDate(nextAppt.scheduledAt, tz, i18n.language, { weekday: 'short', month: 'short', day: 'numeric' });
       return (
         <TouchableOpacity
           style={[s.apptHero, { backgroundColor: colors.surface, borderColor: colors.border }]}
