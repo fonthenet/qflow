@@ -17,6 +17,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useAppStore, type SavedPlace } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { fetchQueueStatus, searchDirectory, type QueueStatusResponse, type DirectorySearchResult } from '@/lib/api';
@@ -471,6 +472,8 @@ export default function PlacesScreen() {
   const [alertPlace, setAlertPlace] = useState<SavedPlace | null>(null);
   const [directoryResults, setDirectoryResults] = useState<DirectorySearchResult[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [addingOfficeId, setAddingOfficeId] = useState<string | null>(null);
+  const [addedBanner, setAddedBanner] = useState<string | null>(null);
 
   // Keep a stable ref to savedPlaces so the search effect only re-runs on
   // query changes (savedPlaces re-identifies on every status poll, which was
@@ -728,6 +731,38 @@ export default function PlacesScreen() {
   const isEmpty = savedPlaces.length === 0;
   return (
     <>
+      {addedBanner && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: spacing.md,
+            left: spacing.md,
+            right: spacing.md,
+            zIndex: 50,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+            paddingVertical: 10,
+            paddingHorizontal: spacing.md,
+            borderRadius: borderRadius.md,
+            backgroundColor: colors.success,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.18,
+            shadowRadius: 8,
+            elevation: 6,
+          }}
+        >
+          <Ionicons name="checkmark-circle" size={20} color="#fff" />
+          <Text style={{ flex: 1, color: '#fff', fontWeight: '700', fontSize: fontSize.sm }} numberOfLines={1}>
+            {t('places.addedToPlaces', {
+              name: addedBanner,
+              defaultValue: '{{name}} added to Places',
+            })}
+          </Text>
+        </View>
+      )}
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={styles.content}
@@ -818,68 +853,101 @@ export default function PlacesScreen() {
         {search.trim().length >= 1 ? (
           <>
             {filtered.map(renderCard)}
-            {directoryResults.map((r) => (
-              <TouchableOpacity
-                key={r.officeId}
-                activeOpacity={0.7}
-                onPress={() => {
-                  // Save the place locally and clear the search so the user
-                  // lands back on their Places list with the new entry
-                  // pinned to the top. They can tap through to the queue
-                  // from there — matches the "favorite first, act second"
-                  // pattern that already applies to pinned/recent places.
-                  recordPlace({
-                    id: r.officeId,
-                    name: r.orgName,
-                    address: r.address,
-                    kioskSlug: r.kioskSlug,
-                    logo_url: r.logoUrl,
-                    vertical: r.category ?? null,
-                  });
-                  setSearch('');
-                }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing.sm,
-                  padding: spacing.md,
-                  marginHorizontal: spacing.md,
-                  marginTop: spacing.xs,
-                  borderRadius: borderRadius.md,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <View
+            {directoryResults.map((r) => {
+              const isAdding = addingOfficeId === r.officeId;
+              return (
+                <TouchableOpacity
+                  key={r.officeId}
+                  activeOpacity={0.6}
+                  disabled={isAdding}
+                  onPress={async () => {
+                    // Give the tap something loud to do: haptic, a transient
+                    // "adding" spinner on the row, then a confirmation banner
+                    // before we clear the search and drop the user back on
+                    // their list. Without this the tap felt like a no-op
+                    // because the search UI just collapsed.
+                    setAddingOfficeId(r.officeId);
+                    try {
+                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    } catch {
+                      /* haptics unavailable — non-fatal */
+                    }
+                    recordPlace({
+                      id: r.officeId,
+                      name: r.orgName,
+                      address: r.address,
+                      kioskSlug: r.kioskSlug,
+                      logo_url: r.logoUrl,
+                      vertical: r.category ?? null,
+                    });
+                    setAddedBanner(r.orgName);
+                    // Small delay so the user sees the added-state before the
+                    // search view collapses.
+                    setTimeout(() => {
+                      setAddingOfficeId(null);
+                      setSearch('');
+                    }, 350);
+                    setTimeout(() => {
+                      setAddedBanner((current) =>
+                        current === r.orgName ? null : current,
+                      );
+                    }, 2400);
+                  }}
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 10,
-                    backgroundColor: colors.primary + '1A',
+                    flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'center',
+                    gap: spacing.sm,
+                    padding: spacing.md,
+                    marginHorizontal: spacing.md,
+                    marginTop: spacing.xs,
+                    borderRadius: borderRadius.md,
+                    backgroundColor: isAdding ? colors.primary + '14' : colors.surface,
+                    borderWidth: 1,
+                    borderColor: isAdding ? colors.primary : colors.border,
                   }}
                 >
-                  <Ionicons name="storefront-outline" size={20} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    style={{ fontSize: fontSize.md, fontWeight: '600', color: colors.text }}
-                    numberOfLines={1}
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      backgroundColor: colors.primary + '1A',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
                   >
-                    {r.orgName}
-                  </Text>
-                  <Text
-                    style={{ fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 }}
-                    numberOfLines={1}
-                  >
-                    {[r.officeName, r.address].filter(Boolean).join(' · ')}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            ))}
+                    {isAdding ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons name="storefront-outline" size={20} color={colors.primary} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text
+                      style={{ fontSize: fontSize.md, fontWeight: '600', color: colors.text }}
+                      numberOfLines={1}
+                    >
+                      {r.orgName}
+                    </Text>
+                    <Text
+                      style={{ fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 }}
+                      numberOfLines={1}
+                    >
+                      {[r.officeName, r.address].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  {isAdding ? (
+                    <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.primary }}>
+                      {t('places.adding', { defaultValue: 'Adding…' })}
+                    </Text>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="add-circle" size={22} color={colors.primary} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
 
             {directoryLoading && (
               <ActivityIndicator style={{ marginTop: spacing.sm }} color={colors.primary} />
