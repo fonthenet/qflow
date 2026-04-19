@@ -1461,9 +1461,9 @@ const s = StyleSheet.create({
   alertsBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 9999 },
 
   // Countdown circle (called state)
-  countdownCircle: { width: 160, height: 160, borderRadius: 80, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
-  countdownNumber: { fontSize: 52, fontWeight: '900', color: '#fff', fontVariant: ['tabular-nums'] },
-  countdownLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 2, marginTop: 4 },
+  countdownCircle: { width: 160, height: 160, borderRadius: 80, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 16, overflow: 'hidden' },
+  countdownNumber: { fontSize: 52, fontWeight: '900', color: '#fff', fontVariant: ['tabular-nums'], textAlign: 'center', includeFontPadding: false, textAlignVertical: 'center' },
+  countdownLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 2, marginTop: 4, textAlign: 'center' },
 
   // Elapsed time (serving)
   elapsedTime: { fontSize: 28, fontWeight: '700', color: '#34d399', fontVariant: ['tabular-nums'], marginTop: 4 },
