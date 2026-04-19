@@ -646,6 +646,16 @@ export default function HomeScreen() {
     setSyncLabel(t('customer.syncedTime', { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) }));
     if (prevStatusRef.current && prevStatusRef.current !== ticket.status) {
       if (ticket.status === 'called') {
+        // Pull the customer back to the Queue tab so the counter/desk info
+        // is front-and-center the moment staff calls them — no matter what
+        // tab they're currently on (Places, History, Profile, etc.). The
+        // poll runs tab-agnostically thanks to the tabs layout keeping
+        // screens mounted, but the user still needs to *see* the tracking
+        // view to know where to head.
+        // Clear the swipe-back dismiss flag so the tracking view
+        // hydrates even if the user had swiped it away earlier.
+        dismissedRef.current = false;
+        try { router.replace('/(tabs)/' as any); } catch {}
         // Strong multi-burst ring vibration pattern so the customer notices
         // even when the screen is off (Android) or muted. Pattern is
         // [wait, vibrate, wait, vibrate, ...] in ms.
@@ -671,6 +681,13 @@ export default function HomeScreen() {
           trigger: null,
         }).catch(() => {});
       } else if (ticket.status === 'serving') {
+        // Same auto-switch on serving — covers the case where the user
+        // missed the called transition (app backgrounded, or the status
+        // jumped straight to serving from a fast-moving queue).
+        // Clear the swipe-back dismiss flag so the tracking view
+        // hydrates even if the user had swiped it away earlier.
+        dismissedRef.current = false;
+        try { router.replace('/(tabs)/' as any); } catch {}
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else if (['served', 'no_show', 'cancelled'].includes(ticket.status)) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -678,7 +695,7 @@ export default function HomeScreen() {
     }
     prevStatusRef.current = ticket.status;
     setActiveTicket(ticket);
-  }, [activeToken, setActiveTicket]);
+  }, [activeToken, setActiveTicket, router, t]);
 
   useEffect(() => {
     if (!activeToken) return;
