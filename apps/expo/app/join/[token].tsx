@@ -68,6 +68,7 @@ export default function JoinScreen() {
         joinToken: token,
         kioskSlug: office.kiosk_slug ?? undefined,
         bookingMode: orgBookingMode,
+        timezone: (office as any).timezone ?? null,
         logo_url: data.organization?.logo_url ?? null,
         vertical: (data.organization?.settings?.vertical as string | undefined) ?? null,
         services: (data.services ?? []).map((s) => s.name.toLowerCase()),

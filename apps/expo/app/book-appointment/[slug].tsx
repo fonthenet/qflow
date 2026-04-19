@@ -313,6 +313,7 @@ export default function BookAppointmentScreen() {
         scheduledAt: result.appointment.scheduled_at,
         status: result.appointment.status,
         lastSyncedAt: new Date().toISOString(),
+        officeTimezone: info.office.timezone ?? null,
       });
     }
 

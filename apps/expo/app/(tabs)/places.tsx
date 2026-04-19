@@ -21,6 +21,7 @@ import { useAppStore, type SavedPlace } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { fetchQueueStatus, searchDirectory, type QueueStatusResponse, type DirectorySearchResult } from '@/lib/api';
 import { checkWaitAlertsNow } from '@/lib/wait-alerts';
+import { formatDate } from '@/lib/format-date';
 import { API_BASE_URL } from '@/lib/config';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
@@ -111,10 +112,7 @@ function PlaceCard({
 }) {
   const { t, i18n } = useTranslation();
   const dateStr = place.lastSeenAt
-    ? new Date(place.lastSeenAt).toLocaleDateString(i18n.language || undefined, {
-        month: 'short',
-        day: 'numeric',
-      })
+    ? formatDate(place.lastSeenAt, place.timezone, i18n.language)
     : null;
 
   const hasSlug = !!place.kioskSlug;

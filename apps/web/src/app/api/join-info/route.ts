@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   // which lets mobile jump straight into the book-appointment flow.
   const { data: rawOffices } = await supabase
     .from('offices')
-    .select('id, name, address, settings')
+    .select('id, name, address, settings, timezone')
     .eq('organization_id', virtualCode.organization_id)
     .eq('is_active', true)
     .order('name');
@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
     id: o.id,
     name: o.name,
     address: o.address,
+    timezone: o.timezone ?? null,
     kiosk_slug: getOfficePublicSlug(o),
   }));
 

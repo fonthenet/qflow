@@ -25,6 +25,7 @@ import * as Notifications from 'expo-notifications';
 import { useAppStore } from '@/lib/store';
 import { fetchTicket, fetchAppointmentWithTicket, stopTracking } from '@/lib/api';
 import { cancelTicket } from '@/lib/ticket-actions';
+import { formatTime, formatDate } from '@/lib/format-date';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 import { API_BASE_URL as WEB_BASE } from '@/lib/config';
@@ -338,12 +339,11 @@ const HISTORY_STATUS_CONFIG: Record<string, { statusKey: string; color: string; 
   serving: { statusKey: 'status.serving', color: '#f97316', icon: 'pulse' },
 };
 
-function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string }; onPress: () => void; colors?: any }) {
+function HistoryCard({ entry, onPress, colors: c }: { entry: { token: string; ticketNumber: string; officeName: string; serviceName: string; status: string; date: string; officeTimezone?: string | null }; onPress: () => void; colors?: any }) {
   const { t, i18n } = useTranslation();
   const { colors: themeColors } = useTheme();
   const col = c || themeColors;
-  const d = new Date(entry.date);
-  const dateStr = d.toLocaleDateString(i18n.language || undefined, { month: 'short', day: 'numeric' });
+  const dateStr = formatDate(entry.date, entry.officeTimezone, i18n.language);
   const statusCfg = HISTORY_STATUS_CONFIG[entry.status] ?? HISTORY_STATUS_CONFIG.served;
   return (
     <TouchableOpacity style={[s.historyCard, { backgroundColor: col.surface, borderColor: col.borderLight }]} onPress={onPress} activeOpacity={0.7}>
@@ -403,7 +403,7 @@ function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap;
 function VisitDetailsGrid({ ticket: tk }: { ticket: import('@/lib/api').TicketResponse }) {
   const { t } = useTranslation();
   const p = usePhasePalette();
-  const checkedIn = new Date(tk.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const checkedIn = formatTime(tk.created_at, tk.office?.timezone);
   const source = tk.is_remote ? t('customer.remoteJoin') : t('customer.walkInVisit');
   const items: Array<{ label: string; value: string }> = [
     { label: t('customer.checkedIn'), value: checkedIn },
@@ -822,9 +822,9 @@ export default function HomeScreen() {
 
     const renderNextAppt = () => {
       if (!nextAppt) return null;
-      const when = new Date(nextAppt.scheduledAt);
-      const timeStr = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-      const dateStr = when.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      const tz = nextAppt.officeTimezone ?? null;
+      const timeStr = formatTime(nextAppt.scheduledAt, tz);
+      const dateStr = formatDate(nextAppt.scheduledAt, tz, undefined, { weekday: 'short', month: 'short', day: 'numeric' });
       return (
         <TouchableOpacity
           style={[s.apptHero, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -1239,7 +1239,7 @@ export default function HomeScreen() {
         <View style={[s.detailsCell, { backgroundColor: p.innerBg, borderColor: p.innerBorder }]}>
           <Text style={[s.detailsCellLabel, { color: p.textMuted }]}>{t('customer.checkedIn')}</Text>
           <Text style={[s.detailsCellValue, { color: p.text }]}>
-            {new Date(tk.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}
+            {formatTime(tk.created_at, tk.office?.timezone)}
           </Text>
         </View>
         <View style={[s.detailsCell, { backgroundColor: p.innerBg, borderColor: p.innerBorder }]}>

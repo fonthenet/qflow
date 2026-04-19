@@ -23,6 +23,7 @@ export interface TicketResponse {
     id: string;
     name: string;
     organization_id: string;
+    timezone?: string | null;
   } | null;
   department: {
     id: string;
@@ -184,7 +185,7 @@ export async function joinQueue(params: {
 // ---------------------------------------------------------------------------
 
 export interface KioskInfoResponse {
-  office: { id: string; name: string; address: string | null; organization_id: string };
+  office: { id: string; name: string; address: string | null; organization_id: string; timezone?: string | null };
   organization: { id: string; name: string; logo_url: string | null };
   departments: Array<{ id: string; name: string; code: string; sort_order: number }>;
   services: Array<{
@@ -254,7 +255,7 @@ export async function createKioskTicket(params: {
 // ---------------------------------------------------------------------------
 
 export interface QueueStatusResponse {
-  office: { id: string; name: string; address: string | null };
+  office: { id: string; name: string; address: string | null; timezone?: string | null };
   departments: Array<{
     id: string;
     name: string;
@@ -418,6 +419,7 @@ export interface AppointmentDetail {
   service_id: string;
   business_name: string | null;
   office_name: string | null;
+  office_timezone?: string | null;
   service_name: string | null;
   department_name: string | null;
 }

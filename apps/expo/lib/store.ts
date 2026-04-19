@@ -13,6 +13,8 @@ interface HistoryEntry {
   officeId?: string;
   kioskSlug?: string;
   joinToken?: string;
+  /** Office timezone — used to format dates/times in the office's local clock. */
+  officeTimezone?: string | null;
 }
 
 /** A business the user has discovered by scanning a QR code or opening a join link. */
@@ -48,6 +50,9 @@ export interface SavedPlace {
   waitAlertThreshold?: number | null;
   /** Last time we fired a wait-alert for this place — to debounce noise */
   waitAlertLastFiredAt?: string | null;
+  /** IANA timezone of the office (e.g. 'Africa/Algiers'). Used so that all
+   *  times rendered on Places/ queue-peek reflect the office's local clock. */
+  timezone?: string | null;
 }
 
 /** A booking the user has made, kept locally so we can list/cancel without a login.
@@ -74,6 +79,8 @@ export interface SavedAppointment {
   ticketNumber?: string | null;
   ticketQrToken?: string | null;
   ticketStatus?: string | null;
+  /** Office timezone — used when formatting scheduled_at for the customer. */
+  officeTimezone?: string | null;
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -171,6 +178,7 @@ export const useAppStore = create<AppState>()(
             officeId: ticket.office?.id,
             kioskSlug: get().activeKioskSlug ?? undefined,
             joinToken: get().activeJoinToken ?? undefined,
+            officeTimezone: ticket.office?.timezone ?? null,
           });
 
           // Bump lastSeenAt on the place (visit count is derived from history)

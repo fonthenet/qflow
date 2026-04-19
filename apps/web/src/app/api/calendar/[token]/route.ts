@@ -34,7 +34,7 @@ export async function GET(
       `*,
        service:services(name, estimated_service_time),
        department:departments(name),
-       office:offices(name, organization:organizations(name))`
+       office:offices(name, timezone, organization:organizations(name))`
     ) as any)
     .eq('calendar_token', token)
     .single();
@@ -43,7 +43,7 @@ export async function GET(
     return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
   }
 
-  const office = appointment.office as { name: string; organization: { name: string } | null } | null;
+  const office = appointment.office as { name: string; timezone: string | null; organization: { name: string } | null } | null;
   const service = appointment.service as { name: string; estimated_service_time: number | null } | null;
   const department = appointment.department as { name: string } | null;
 
@@ -78,6 +78,7 @@ export async function GET(
         service_id: appointment.service_id,
         business_name: office?.organization?.name ?? office?.name ?? null,
         office_name: office?.name ?? null,
+        office_timezone: office?.timezone ?? null,
         service_name: service?.name ?? null,
         department_name: department?.name ?? null,
       },

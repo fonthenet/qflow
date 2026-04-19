@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
+import { formatTime } from '@/lib/format-date';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { BookCTA } from '@/components/BookCTA';
 
@@ -107,7 +108,7 @@ export default function QueuePeekScreen() {
   }
 
   const updatedStr = lastUpdated
-    ? lastUpdated.toLocaleTimeString(undefined, {
+    ? formatTime(lastUpdated, status?.timezone ?? null, undefined, {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',

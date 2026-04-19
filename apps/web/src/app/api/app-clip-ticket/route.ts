@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   ] = await Promise.all([
     supabase
       .from('offices')
-      .select('id, name, organization_id')
+      .select('id, name, organization_id, timezone')
       .eq('id', ticket.office_id)
       .single(),
     supabase

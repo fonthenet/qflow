@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   // Find office by slug – query all active offices then match slug
   const { data: offices, error: officesError } = await supabase
     .from('offices')
-    .select('id, name, address, organization_id, settings')
+    .select('id, name, address, organization_id, settings, timezone')
     .eq('is_active', true);
 
   if (officesError) {
@@ -125,6 +125,7 @@ export async function GET(request: NextRequest) {
       name: office.name,
       address: office.address ?? null,
       organization_id: office.organization_id,
+      timezone: (office as any).timezone ?? null,
     },
     organization: org
       ? {

@@ -52,5 +52,6 @@ export async function GET(request: NextRequest) {
     slots: bookable.map(s => s.time), // backward compat: string[] of bookable only
     slotsDetailed: result.slots, // full list — taken included, with `available` flag
     meta: result.meta,
+    timezone: (office as any).timezone ?? null,
   });
 }

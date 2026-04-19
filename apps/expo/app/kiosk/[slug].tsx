@@ -142,6 +142,7 @@ export default function KioskScreen() {
       vertical: (data.settings?.vertical as string | undefined) ?? null,
       services: (data.services ?? []).map((s) => s.name.toLowerCase()),
       bookingMode: (data.settings?.booking_mode as string | undefined) ?? null,
+      timezone: data.office.timezone ?? null,
     });
 
     // If a department was pre-selected (from queue peek), auto-jump to service step
@@ -302,6 +303,7 @@ export default function KioskScreen() {
       date: new Date().toISOString(),
       officeId: info.office.id,
       kioskSlug: slug ?? undefined,
+      officeTimezone: info.office.timezone ?? null,
     });
     setActiveKioskSlug(slug ?? null);
     setActiveToken(result.ticket.qr_token);

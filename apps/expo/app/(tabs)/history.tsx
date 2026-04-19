@@ -24,6 +24,7 @@ import {
 } from '@/lib/api';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { visitStatusColors } from '@/lib/visit';
+import { formatTime } from '@/lib/format-date';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
@@ -467,8 +468,7 @@ function TicketRow({
 }) {
   const cfg = TICKET_STATUS[item.status] ?? TICKET_STATUS.served;
   const statusColor = (colors as any)[cfg.colorKey] ?? colors.success;
-  const date = new Date(item.date);
-  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const timeStr = formatTime(item.date, (item as any).officeTimezone);
 
   return (
     <TouchableOpacity
@@ -528,8 +528,7 @@ function ApptCard({
   const canCheckIn = false;
 
   const color = apptStatusColor(appt.status, colors);
-  const when = new Date(appt.scheduledAt);
-  const whenStr = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const whenStr = formatTime(appt.scheduledAt, appt.officeTimezone);
   const countdown = !terminal ? formatCountdown(appt.scheduledAt, t) : null;
 
   return (
