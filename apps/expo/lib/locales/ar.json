@@ -828,6 +828,18 @@
     "notificationsEnabled": "تم تفعيل الإشعارات"
   },
 
+  "appointments": {
+    "status": {
+      "pending": "قيد الانتظار",
+      "confirmed": "مؤكد",
+      "checked_in": "تم التسجيل",
+      "serving": "قيد التنفيذ",
+      "completed": "مكتمل",
+      "cancelled": "ملغى",
+      "no_show": "لم يحضر"
+    }
+  },
+
   "bookAppointment": {
     "bookingUnavailable": "الحجز غير متاح",
     "businessNotFound": "لم يتم العثور على هذا المكان.",

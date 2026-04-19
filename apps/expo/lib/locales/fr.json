@@ -828,6 +828,18 @@
     "notificationsEnabled": "Notifications activées"
   },
 
+  "appointments": {
+    "status": {
+      "pending": "En attente",
+      "confirmed": "Confirmé",
+      "checked_in": "Enregistré",
+      "serving": "En cours",
+      "completed": "Terminé",
+      "cancelled": "Annulé",
+      "no_show": "Absent"
+    }
+  },
+
   "bookAppointment": {
     "bookingUnavailable": "Réservation indisponible",
     "businessNotFound": "Ce commerce est introuvable.",
