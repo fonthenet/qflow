@@ -345,6 +345,8 @@ export type Database = {
       offices: {
         Row: {
           address: string | null
+          city: string | null
+          country: string | null
           created_at: string | null
           id: string
           is_active: boolean | null
@@ -354,9 +356,12 @@ export type Database = {
           settings: Json | null
           timezone: string | null
           updated_at: string | null
+          wilaya: string | null
         }
         Insert: {
           address?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
@@ -366,9 +371,12 @@ export type Database = {
           settings?: Json | null
           timezone?: string | null
           updated_at?: string | null
+          wilaya?: string | null
         }
         Update: {
           address?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string | null
           id?: string
           is_active?: boolean | null
@@ -378,6 +386,7 @@ export type Database = {
           settings?: Json | null
           timezone?: string | null
           updated_at?: string | null
+          wilaya?: string | null
         }
         Relationships: []
       }
