@@ -149,6 +149,7 @@ export async function createOffice(formData: FormData) {
     .insert({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
+      wilaya: (formData.get('wilaya') as string) || null,
       city: (formData.get('city') as string) || null,
       country: (formData.get('country') as string) || null,
       timezone: normalizeOfficeTimezone(formData.get('timezone') as string),
@@ -186,6 +187,7 @@ export async function updateOffice(id: string, formData: FormData) {
     .update({
       name: formData.get('name') as string,
       address: (formData.get('address') as string) || null,
+      wilaya: (formData.get('wilaya') as string) || null,
       city: (formData.get('city') as string) || null,
       country: (formData.get('country') as string) || null,
       timezone: normalizeOfficeTimezone(formData.get('timezone') as string),

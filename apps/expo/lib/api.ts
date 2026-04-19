@@ -311,6 +311,8 @@ export interface DirectorySearchResult {
   officeId: string;
   officeName: string;
   address: string | null;
+  wilaya: string | null;
+  city: string | null;
   kioskSlug: string;
 }
 

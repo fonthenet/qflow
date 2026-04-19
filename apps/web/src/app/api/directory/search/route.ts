@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getOfficePublicSlug } from '@/lib/office-links';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 import { sanitizeString } from '@/lib/validation';
+import { getWilayaByCode } from '@qflo/shared';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
   // want it discoverable).
   const { data: offices } = await supabase
     .from('offices')
-    .select('id, name, address, organization_id, settings, is_active')
+    .select('id, name, address, wilaya, city, organization_id, settings, is_active')
     .in('organization_id', orgIds);
 
   const officeList = offices ?? [];
@@ -97,6 +98,8 @@ export async function GET(request: NextRequest) {
       officeId: string;
       officeName: string;
       address: string | null;
+      wilaya: string | null;
+      city: string | null;
       kioskSlug: string;
     };
   };
@@ -111,8 +114,17 @@ export async function GET(request: NextRequest) {
     const category = (orgSettings.business_category ?? '') as string;
     const extras = deptStringsByOffice.get(office.id) ?? [];
 
+    const officeWilaya = (office as any).wilaya ?? null;
+    const officeCity = (office as any).city ?? null;
+    // Resolve wilaya code to its French name so "oran" or "16" both match.
+    const wilayaLabel = (() => {
+      if (!officeWilaya) return '';
+      const w = getWilayaByCode(String(officeWilaya));
+      return w ? `${w.name} ${w.nameAr}` : String(officeWilaya);
+    })();
+
     const primary = [(org as any).name, office.name].filter(Boolean).join(' ');
-    const secondary = [office.address ?? '', category, ...extras]
+    const secondary = [office.address ?? '', category, wilayaLabel, officeCity ?? '', ...extras]
       .filter(Boolean)
       .join(' ');
 
@@ -128,6 +140,8 @@ export async function GET(request: NextRequest) {
           officeId: office.id,
           officeName: office.name,
           address: office.address ?? null,
+          wilaya: officeWilaya,
+          city: officeCity,
           kioskSlug: getOfficePublicSlug(office),
         },
       });

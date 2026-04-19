@@ -4,6 +4,7 @@ import { PrioritiesEditor } from './PrioritiesEditor';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
+import { ALGERIA_WILAYAS, getCommunes } from '../lib/algeria-wilayas';
 
 // ── Intake Fields types (inlined from @qflo/shared) ─────────────
 type IntakeFieldType = 'preset' | 'custom';
@@ -207,6 +208,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // Office-level: timezone + operating hours
   const [officeTimezone, setOfficeTimezone] = useState<string>('Africa/Algiers');
   const [originalTimezone, setOriginalTimezone] = useState<string>('Africa/Algiers');
+  // Office-level: wilaya + city (Algerian province + commune)
+  const [officeWilaya, setOfficeWilaya] = useState<string>('');
+  const [originalWilaya, setOriginalWilaya] = useState<string>('');
+  const [officeCity, setOfficeCity] = useState<string>('');
+  const [originalCity, setOriginalCity] = useState<string>('');
   type DaySchedule = { open: string; close: string; closed: boolean; break_start?: string; break_end?: string };
   const defaultSchedule: Record<string, DaySchedule> = Object.fromEntries(
     WEEK_DAYS.map(d => [d.key, { open: '08:00', close: '17:00', closed: d.key === 'friday' || d.key === 'saturday' }]),
@@ -485,7 +491,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const [{ data, error: err }, officeResult, holidayResult] = await Promise.all([
         sb.from('organizations').select('name, name_ar, settings, timezone, logo_url').eq('id', orgId).single(),
         officeId
-          ? sb.from('offices').select('operating_hours, settings').eq('id', officeId).single()
+          ? sb.from('offices').select('operating_hours, settings, wilaya, city').eq('id', officeId).single()
           : Promise.resolve({ data: null, error: null }),
         officeId
           ? sb.from('office_holidays').select('*').eq('office_id', officeId).order('holiday_date', { ascending: true })
@@ -510,6 +516,12 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // Load office operating hours
       if (officeResult?.data) {
         const ofc = officeResult.data as any;
+        const wilaya = typeof ofc.wilaya === 'string' ? ofc.wilaya : '';
+        const city = typeof ofc.city === 'string' ? ofc.city : '';
+        setOfficeWilaya(wilaya);
+        setOriginalWilaya(wilaya);
+        setOfficeCity(city);
+        setOriginalCity(city);
         const oh = ofc.operating_hours as Record<string, { open: string; close: string; break_start?: string; break_end?: string } | null> | null;
         const sched: Record<string, DaySchedule> = {};
         for (const d of WEEK_DAYS) {
@@ -599,6 +611,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     if (orgName !== originalOrgName) return true;
     if (orgNameAr !== originalOrgNameAr) return true;
     if (officeTimezone !== originalTimezone) return true;
+    if (officeWilaya !== originalWilaya) return true;
+    if (officeCity !== originalCity) return true;
     if (JSON.stringify(schedule) !== JSON.stringify(originalSchedule)) return true;
     if (JSON.stringify(holidays) !== JSON.stringify(originalHolidays)) return true;
     const o = originalRef.current;
@@ -622,7 +636,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       if (cur !== orig) return true;
     }
     return false;
-  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr, officeTimezone, originalTimezone, schedule, originalSchedule, holidays, originalHolidays]);
+  }, [values, allFieldKeys, orgName, originalOrgName, orgNameAr, originalOrgNameAr, officeTimezone, originalTimezone, officeWilaya, originalWilaya, officeCity, originalCity, schedule, originalSchedule, holidays, originalHolidays]);
 
   // ─── Validation ───────────────────────────────────────────────────
   const errors = useMemo(() => {
@@ -777,6 +791,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           }
           officeUpdate.operating_hours = operatingHours;
         }
+        if (officeWilaya !== originalWilaya) officeUpdate.wilaya = officeWilaya || null;
+        if (officeCity !== originalCity) officeUpdate.city = officeCity || null;
         if (Object.keys(officeUpdate).length > 0) {
           const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
           if (ofcErr) throw ofcErr;
@@ -2235,6 +2251,48 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
                 style={{ ...inputStyle, direction: 'rtl', textAlign: 'right' }}
                 placeholder="الاسم بالعربية"
               />
+            </div>
+          </div>
+        )}
+        {sec.id === 'business' && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            columnGap: 20,
+            rowGap: 0,
+            marginBottom: 4,
+          }}>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('Wilaya')}</label>
+              <select
+                value={officeWilaya}
+                onChange={(e) => {
+                  setOfficeWilaya(e.target.value);
+                  setOfficeCity(''); // reset city when wilaya changes
+                }}
+                style={inputStyle}
+              >
+                <option value="">{t('Select wilaya')}</option>
+                {ALGERIA_WILAYAS.map((w) => (
+                  <option key={w.code} value={w.code}>{w.code} — {w.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ padding: '5px 0' }}>
+              <label style={labelStyle}>{t('City')}</label>
+              <select
+                value={officeCity}
+                onChange={(e) => setOfficeCity(e.target.value)}
+                disabled={!officeWilaya}
+                style={{ ...inputStyle, opacity: officeWilaya ? 1 : 0.5 }}
+              >
+                <option value="">
+                  {officeWilaya ? t('Select city') : t('Select wilaya first')}
+                </option>
+                {(officeWilaya ? getCommunes(officeWilaya) : []).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}
