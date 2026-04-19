@@ -13,7 +13,8 @@ type AndroidPushType =
   | 'no_show'
   | 'buzz'
   | 'stop_tracking'
-  | 'appointment_update';
+  | 'appointment_update'
+  | 'appointment_rescheduled';
 
 interface AndroidPushPayload {
   type: AndroidPushType;

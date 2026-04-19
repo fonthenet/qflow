@@ -152,9 +152,18 @@ export default function HistoryScreen() {
         if (appointment) {
           const previousStatus = a.status;
           const nextStatus = appointment.status;
+          const previousAt = a.scheduledAt;
+          const nextAt = appointment.scheduled_at;
+          // Detect reschedule: scheduled_at changed for an appointment that
+          // was already known locally. Compare by timestamp (ms) rather
+          // than string to shrug off minor formatting differences.
+          const wasRescheduled =
+            !!previousAt &&
+            !!nextAt &&
+            new Date(previousAt).getTime() !== new Date(nextAt).getTime();
           updateAppointment(a.id, {
             status: nextStatus,
-            scheduledAt: appointment.scheduled_at,
+            scheduledAt: nextAt,
             lastSyncedAt: new Date().toISOString(),
             ticketNumber: ticket?.ticket_number ?? a.ticketNumber ?? null,
             ticketQrToken: ticket?.qr_token ?? a.ticketQrToken ?? null,
@@ -163,7 +172,19 @@ export default function HistoryScreen() {
           // Fire an alert *after* persisting the new status so the user
           // can tap through to the updated card. Fire-and-forget —
           // notifyAppointmentStatusChange swallows its own errors.
-          if (previousStatus !== nextStatus) {
+          if (wasRescheduled) {
+            notifyAppointmentStatusChange({
+              previousStatus,
+              nextStatus,
+              businessName: a.businessName,
+              t,
+              rescheduled: {
+                previousAt: previousAt!,
+                nextAt: nextAt!,
+                timezone: a.officeTimezone ?? null,
+              },
+            });
+          } else if (previousStatus !== nextStatus) {
             notifyAppointmentStatusChange({
               previousStatus,
               nextStatus,

@@ -848,7 +848,9 @@
     "servingTitle": "It's your turn",
     "servingBody": "{{business}} is serving you now.",
     "completedTitle": "Appointment completed",
-    "completedBody": "Thanks for visiting {{business}}."
+    "completedBody": "Thanks for visiting {{business}}.",
+    "rescheduledTitle": "Appointment rescheduled",
+    "rescheduledBody": "{{business}} moved your appointment to {{date}} at {{time}}."
   },
 
   "appointments": {

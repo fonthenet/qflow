@@ -428,6 +428,29 @@ export async function notifyAppointmentRescheduled(
   });
   const { notified, notifyError } = await sendNotification(resolved, msgBody);
 
+  // 5. Instant mobile push to registered devices so the customer sees the
+  //    new time immediately — not at the next 20s poll. Mirrors the
+  //    transitionAppointment() push path. Fire-and-forget.
+  try {
+    const L = resolved.locale === 'ar' ? 'ar' : resolved.locale === 'en' ? 'en' : 'fr';
+    const titleByLocale: Record<string, string> = {
+      en: 'Appointment rescheduled',
+      fr: 'Rendez-vous reporté',
+      ar: 'تم تغيير موعد الحجز',
+    };
+    const pushTitle = (orgName ? `${orgName} · ` : '') + (titleByLocale[L] ?? 'Appointment rescheduled');
+    const pushBody = msgBody.slice(0, 240);
+    void sendAPNsToAppointment(appointmentId, { title: pushTitle, body: pushBody }).catch(() => {});
+    void sendAndroidToAppointment(appointmentId, {
+      type: 'appointment_rescheduled',
+      title: pushTitle,
+      body: pushBody,
+      appointmentId,
+    }).catch(() => {});
+  } catch {
+    /* never let push failures block the reschedule */
+  }
+
   return { notified, channel: resolved.channel, notifyError };
 }
 

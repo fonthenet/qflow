@@ -847,7 +847,9 @@
     "servingTitle": "C'est votre tour",
     "servingBody": "{{business}} vous reçoit maintenant.",
     "completedTitle": "Rendez-vous terminé",
-    "completedBody": "Merci d'avoir visité {{business}}."
+    "completedBody": "Merci d'avoir visité {{business}}.",
+    "rescheduledTitle": "Rendez-vous reporté",
+    "rescheduledBody": "{{business}} a déplacé votre rendez-vous au {{date}} à {{time}}."
   },
 
   "appointments": {

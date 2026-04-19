@@ -847,7 +847,9 @@
     "servingTitle": "حان دورك",
     "servingBody": "{{business}} يستقبلك الآن.",
     "completedTitle": "اكتمل الموعد",
-    "completedBody": "شكرًا لزيارتك {{business}}."
+    "completedBody": "شكرًا لزيارتك {{business}}.",
+    "rescheduledTitle": "تم تغيير موعد الحجز",
+    "rescheduledBody": "نقل {{business}} موعدك إلى {{date}} في {{time}}."
   },
 
   "appointments": {

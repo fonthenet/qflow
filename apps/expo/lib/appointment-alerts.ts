@@ -28,16 +28,43 @@ export interface AppointmentAlertContext {
   nextStatus: string;
   businessName?: string | null;
   t: T;
+  /** Set when the appointment was rescheduled — fires a reschedule alert
+   *  even if the status didn't change (confirmed → confirmed at new time). */
+  rescheduled?: { previousAt: string; nextAt: string; timezone?: string | null };
 }
 
 /** Maps a status transition to { title, body } the user sees. Returns null
  *  when the transition isn't worth alerting on (e.g. no change, or a silent
  *  internal reshuffle like pending→pending). */
 function resolveAlert(ctx: AppointmentAlertContext): { title: string; body: string; channel: 'queue-alerts' | 'queue-updates' } | null {
-  const { previousStatus, nextStatus, businessName, t } = ctx;
-  if (!previousStatus || previousStatus === nextStatus) return null;
-
+  const { previousStatus, nextStatus, businessName, rescheduled, t } = ctx;
   const biz = businessName || t('common.business', { defaultValue: 'the business' });
+
+  // Rescheduled — staff moved the appointment to a new date/time. Fires even
+  // when the status didn't transition (e.g. confirmed → confirmed at new
+  // time). Checked BEFORE the no-status-change early-return below.
+  if (rescheduled) {
+    const dt = new Date(rescheduled.nextAt);
+    const tz = rescheduled.timezone || undefined;
+    const dateStr = new Intl.DateTimeFormat(undefined, {
+      weekday: 'short', month: 'short', day: 'numeric', timeZone: tz,
+    }).format(dt);
+    const timeStr = new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+    }).format(dt);
+    return {
+      title: t('apptAlert.rescheduledTitle', { defaultValue: 'Appointment rescheduled' }),
+      body: t('apptAlert.rescheduledBody', {
+        defaultValue: `${biz} moved your appointment to ${dateStr} at ${timeStr}.`,
+        business: biz,
+        date: dateStr,
+        time: timeStr,
+      }),
+      channel: 'queue-alerts',
+    };
+  }
+
+  if (!previousStatus || previousStatus === nextStatus) return null;
 
   // Approved (pending → confirmed)
   if (previousStatus === 'pending' && nextStatus === 'confirmed') {
@@ -117,7 +144,10 @@ export async function notifyAppointmentStatusChange(ctx: AppointmentAlertContext
   const bad = ['declined', 'cancelled', 'no_show'].includes(ctx.nextStatus);
   const good = ['confirmed', 'serving', 'completed'].includes(ctx.nextStatus);
   try {
-    if (bad) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (ctx.rescheduled) {
+      // Rescheduled — warning-level nudge (user may need to change plans).
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } else if (bad) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     else if (good) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     else Haptics.selectionAsync();
   } catch {
