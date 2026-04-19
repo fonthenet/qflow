@@ -1660,7 +1660,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               <Toggle on={!!values.whatsapp_enabled} onChange={(on) => setValues(p => ({ ...p, whatsapp_enabled: on }))} />
             </div>
             {values.whatsapp_enabled && (() => {
-              const renderStatus = (s: Availability, rtl?: boolean): JSX.Element | null => {
+              const renderStatus = (s: Availability, rtl?: boolean): React.ReactElement | null => {
                 if (s === 'idle') return null;
                 const style: React.CSSProperties = {
                   position: 'absolute',
