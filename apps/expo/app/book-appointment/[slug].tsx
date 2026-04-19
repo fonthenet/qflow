@@ -375,7 +375,7 @@ export default function BookAppointmentScreen() {
 
         <TouchableOpacity
           style={[s.primaryBtn, { backgroundColor: colors.primary }]}
-          onPress={() => router.replace('/' as any)}
+          onPress={() => router.replace('/(tabs)/places' as any)}
           activeOpacity={0.8}
         >
           <Text style={s.primaryBtnText}>{t('common.done')}</Text>
