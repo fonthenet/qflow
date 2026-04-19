@@ -778,7 +778,15 @@ export default function KioskScreen() {
 
           <TouchableOpacity
             style={[s.secondaryBtn, isTablet && s.secondaryBtnTablet]}
-            onPress={goHome}
+            onPress={() => {
+              // Skip the welcome/book screen — restart directly into the
+              // ticket flow the customer just used (department picker, or
+              // straight into services if only one department).
+              touchActivity();
+              resetSelections();
+              setTicket(null);
+              goToDepartments();
+            }}
             activeOpacity={0.7}
           >
             <Ionicons name="add-circle-outline" size={isTablet ? 24 : 20} color={colors.primary} />
