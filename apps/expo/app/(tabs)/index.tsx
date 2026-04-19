@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore } from '@/lib/store';
 import { fetchTicket, fetchAppointmentWithTicket, stopTracking, submitFeedback, fetchFeedback } from '@/lib/api';
 import { cancelTicket } from '@/lib/ticket-actions';
@@ -279,13 +280,24 @@ function CountdownCircle({ calledAt }: { calledAt: string }) {
     bb = lerp(11, 94, tt);
   }
   const phaseColor = `rgb(${rr}, ${gg}, ${bb})`;
+  // Build a top-left → bottom-right gradient using a lighter and darker
+  // shade of the current phase color so the circle has depth while still
+  // reading as one semantic color.
+  const clamp = (v: number) => Math.max(0, Math.min(255, v));
+  const lighter = `rgb(${clamp(rr + 40)}, ${clamp(gg + 40)}, ${clamp(bb + 40)})`;
+  const darker = `rgb(${clamp(rr - 40)}, ${clamp(gg - 40)}, ${clamp(bb - 40)})`;
   const displayRemaining = Math.max(0, Math.ceil(r));
   const expired = displayRemaining === 0;
   return (
-    <View style={[s.countdownCircle, { borderColor: phaseColor, backgroundColor: phaseColor }]}>
+    <LinearGradient
+      colors={[lighter, phaseColor, darker]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[s.countdownCircle, { borderColor: phaseColor }]}
+    >
       <Text style={s.countdownNumber}>{displayRemaining}</Text>
       <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
-    </View>
+    </LinearGradient>
   );
 }
 
