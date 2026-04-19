@@ -699,8 +699,11 @@ export default function DeskScreen() {
     setSwitchLoading(false);
   };
 
-  // ── Header: Switch Desk (left) + title with desk name ───────────
+  // ── Header: Switch Desk (left) + title with desk name + pause/local (right) ───
   const navigation = useNavigation();
+  const connectionStatus = useLocalConnectionStore((s) => s.connectionStatus);
+  const isLocalMode = localMode === 'local';
+  const showPauseInHeader = !hasActive && deskStatus !== 'on_break';
   useEffect(() => {
     const deskLabel = session?.deskName ? `${t('admin.myDesk')} · ${session.deskName}` : t('admin.myDesk');
     navigation.setOptions({
@@ -715,8 +718,48 @@ export default function DeskScreen() {
           <Ionicons name="swap-horizontal" size={16} color="#fff" />
         </TouchableOpacity>
       ),
+      headerRight: () => (
+        <View style={styles.headerRightRow}>
+          {showPauseInHeader ? (
+            <TouchableOpacity
+              style={styles.headerPauseChip}
+              onPress={handleDeskOnBreak}
+              disabled={actionLoading}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="cafe-outline" size={14} color="#fbbf24" />
+              <Text style={styles.headerPauseText}>{t('desk.onBreak')}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {isLocalMode ? (
+            <TouchableOpacity
+              style={styles.headerLocalBadge}
+              onPress={() => router.push('/(operator)/settings')}
+              activeOpacity={0.7}
+            >
+              <View
+                style={[
+                  styles.headerLocalDot,
+                  connectionStatus === 'error' && styles.headerLocalDotError,
+                ]}
+              />
+              <Text style={styles.headerLocalText}>{t('connectStation.localMode')}</Text>
+              <Ionicons name="chevron-down" size={12} color="#86efac" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ),
     });
-  }, [navigation, actionLoading, t, session?.deskName]);
+  }, [
+    navigation,
+    actionLoading,
+    t,
+    session?.deskName,
+    showPauseInHeader,
+    isLocalMode,
+    connectionStatus,
+    router,
+  ]);
 
   // ── Guards ───────────────────────────────────────────────────────
   // If there's no operator session, send the user to the desk picker
@@ -782,20 +825,7 @@ export default function DeskScreen() {
     </View>
   ) : null;
 
-  // ── Take Break chip (compact, only when idle & not on break) ────
-  const TakeBreakChip = !hasActive && deskStatus !== 'on_break' ? (
-    <View style={styles.inlineChipRow}>
-      <TouchableOpacity
-        style={[styles.inlineChip, { backgroundColor: colors.warning + '12', borderColor: colors.warning + '30' }]}
-        onPress={handleDeskOnBreak}
-        disabled={actionLoading}
-        activeOpacity={0.7}
-      >
-        <Ionicons name="cafe-outline" size={14} color={colors.warning} />
-        <Text style={[styles.inlineChipText, { color: colors.warning }]}>{t('desk.onBreak')}</Text>
-      </TouchableOpacity>
-    </View>
-  ) : null;
+  // ── Take Break chip moved to the header (see navigation.setOptions above) ──
 
   const WaitingCountCard = (
     <View style={styles.waitingCard}>
@@ -1256,7 +1286,6 @@ export default function DeskScreen() {
   // ── Layout ───────────────────────────────────────────────────────
   const leftColumn = (
     <View style={isWide ? styles.leftColumn : undefined}>
-      {TakeBreakChip}
       {OnBreakBanner}
       {UpcomingAppointmentsCard}
       {CurrentTicketCard}
@@ -1308,7 +1337,6 @@ export default function DeskScreen() {
           </>
         ) : (
           <>
-            {TakeBreakChip}
             {OnBreakBanner}
             {UpcomingAppointmentsCard}
             {CurrentTicketCard}
@@ -1953,6 +1981,51 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  headerRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginRight: spacing.sm,
+  },
+  headerPauseChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(251, 191, 36, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.40)',
+  },
+  headerPauseText: {
+    color: '#fbbf24',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  headerLocalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+  },
+  headerLocalDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#22c55e',
+  },
+  headerLocalDotError: {
+    backgroundColor: '#ef4444',
+  },
+  headerLocalText: {
+    color: '#86efac',
+    fontSize: 10,
+    fontWeight: '700',
   },
   headerSwitchText: {
     color: '#fff',

@@ -151,7 +151,21 @@ export async function stationUpdateDesk(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deskId, updates }),
   });
-  if (!res.ok) throw new Error(`Update desk failed: ${res.status}`);
+  if (!res.ok) {
+    // Surface the actual server error so CHECK/trigger failures are visible
+    // in the UI instead of being hidden behind a bare "500".
+    let detail = '';
+    try {
+      const body = await res.json();
+      if (body && typeof body.error === 'string') detail = `: ${body.error}`;
+    } catch {
+      try {
+        const text = await res.text();
+        if (text) detail = `: ${text}`;
+      } catch { /* ignore */ }
+    }
+    throw new Error(`Update desk failed (${res.status})${detail}`);
+  }
   return res.json();
 }
 

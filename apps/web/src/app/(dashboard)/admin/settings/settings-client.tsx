@@ -245,6 +245,9 @@ export function SettingsClient({
   );
   const [codeAvailability, setCodeAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const codeCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedArabicCode = settings.arabic_code ?? '';
+  const [arabicCodeAvailability, setArabicCodeAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const arabicCodeCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const normalized = whatsappCode.toUpperCase().trim();
@@ -260,6 +263,21 @@ export function SettingsClient({
     }, 500);
     return () => { if (codeCheckTimer.current) clearTimeout(codeCheckTimer.current); };
   }, [whatsappCode, savedWhatsappCode]);
+
+  useEffect(() => {
+    const trimmed = arabicCode.trim();
+    if (!trimmed || trimmed.length < 2 || trimmed === savedArabicCode.trim()) {
+      setArabicCodeAvailability('idle');
+      return;
+    }
+    setArabicCodeAvailability('checking');
+    if (arabicCodeCheckTimer.current) clearTimeout(arabicCodeCheckTimer.current);
+    arabicCodeCheckTimer.current = setTimeout(async () => {
+      const result = await checkWhatsAppCodeAvailability(trimmed);
+      setArabicCodeAvailability(result.available ? 'available' : 'taken');
+    }, 500);
+    return () => { if (arabicCodeCheckTimer.current) clearTimeout(arabicCodeCheckTimer.current); };
+  }, [arabicCode, savedArabicCode]);
 
   const [whatsappBusinessPhone, setWhatsappBusinessPhone] = useState<string>(
     settings.whatsapp_business_phone ?? ''
@@ -1459,15 +1477,26 @@ export function SettingsClient({
                     <label className="block text-sm font-medium text-muted-foreground mb-1">
                       {t('Arabic Code')} <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
                     </label>
-                    <input
-                      type="text"
-                      value={arabicCode}
-                      onChange={(e) => setArabicCode(e.target.value)}
-                      placeholder={t('e.g. حدابي')}
-                      maxLength={30}
-                      dir="rtl"
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground tracking-wider font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={arabicCode}
+                        onChange={(e) => setArabicCode(e.target.value)}
+                        placeholder={t('e.g. حدابي')}
+                        maxLength={30}
+                        dir="rtl"
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground tracking-wider font-semibold focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      {arabicCodeAvailability === 'checking' && (
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{t('Checking…')}</span>
+                      )}
+                      {arabicCodeAvailability === 'available' && (
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-emerald-600 font-medium">✓ {t('Available')}</span>
+                      )}
+                      {arabicCodeAvailability === 'taken' && (
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-red-600 font-medium">✗ {t('Already taken')}</span>
+                      )}
+                    </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {t('Arabic alternative for your business code. Customers can type')} <code className="font-mono font-bold" dir="rtl">انضم {arabicCode || 'حدابي'}</code>
                     </p>

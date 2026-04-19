@@ -828,17 +828,25 @@ function setupIPC() {
     }
     if (Object.keys(safeUpdates).length === 0) return null;
 
-    const sets = Object.entries(safeUpdates)
-      .map(([key]) => `${key} = ?`)
-      .join(', ');
-    const values = Object.values(safeUpdates);
-
     // ── Capture previous state BEFORE the update for audit trail ──
     const prevTicket = safeUpdates.status
       ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any
       : null;
 
-    // ── Validate status transition ──
+    // Allow no-op status updates — e.g. parking a 'waiting' ticket sends
+    // status='waiting' again but only meaningfully changes parked_at. Drop
+    // the unchanged status so the validator doesn't reject the whole payload.
+    if (safeUpdates.status && prevTicket && prevTicket.status === safeUpdates.status) {
+      delete safeUpdates.status;
+    }
+    if (Object.keys(safeUpdates).length === 0) return null;
+
+    const sets = Object.entries(safeUpdates)
+      .map(([key]) => `${key} = ?`)
+      .join(', ');
+    const values = Object.values(safeUpdates);
+
+    // ── Validate status transition (only when status actually changes) ──
     if (safeUpdates.status && prevTicket && !isValidTransition(prevTicket.status, safeUpdates.status)) {
       logger.warn('ipc', 'Invalid transition', { from: prevTicket.status, to: safeUpdates.status, ticketId });
       return null;
@@ -1017,14 +1025,37 @@ function setupIPC() {
     const allowed = ['status', 'current_staff_id'] as const;
     const cols: string[] = [];
     const vals: any[] = [];
+    const safe: Record<string, any> = {};
     for (const key of allowed) {
       if (key in updates) {
         cols.push(`${key} = ?`);
         vals.push(updates[key]);
+        safe[key] = updates[key];
       }
     }
     if (cols.length === 0) return false;
-    db.prepare(`UPDATE desks SET ${cols.join(', ')} WHERE id = ?`).run(...vals, deskId);
+    if (safe.status && !['open', 'closed', 'on_break'].includes(String(safe.status))) {
+      logger.warn('IPC', 'Rejected invalid desk status', { deskId, status: safe.status });
+      return false;
+    }
+    try {
+      db.prepare(`UPDATE desks SET ${cols.join(', ')} WHERE id = ?`).run(...vals, deskId);
+    } catch (err: any) {
+      logger.error('IPC', 'Desk update failed', { deskId, safe, error: err?.message });
+      return false;
+    }
+    // Queue sync to cloud so Supabase stays in sync with Station-UI-driven changes
+    // (mobile uses HTTP which already does this; this keeps the two paths consistent).
+    try {
+      const syncId = `desk-${deskId}-${Date.now()}`;
+      db.prepare(
+        `INSERT INTO sync_queue (id, operation, table_name, record_id, payload, created_at) VALUES (?, 'UPDATE', 'desks', ?, ?, ?)`,
+      ).run(syncId, deskId, JSON.stringify(safe), new Date().toISOString());
+      syncEngine?.pushImmediate(syncId);
+    } catch (err: any) {
+      logger.warn('IPC', 'Failed to queue desk sync', { deskId, error: err?.message });
+    }
+    notifyStationClients({ type: 'tickets_changed' });
     return true;
   });
 

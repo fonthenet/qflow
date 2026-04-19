@@ -756,6 +756,45 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       partial.custom_intake_fields = undefined;
       // Messenger code always mirrors WhatsApp code
       partial.messenger_code = partial.whatsapp_code || '';
+
+      // Uniqueness guard: WhatsApp code + Arabic code must not collide with
+      // any other organization's whatsapp_code or arabic_code. Mirrors the
+      // portal's `checkWhatsAppCodeAvailability` — belt-and-braces on the
+      // Station side in case the admin edits codes here while offline and
+      // another org claimed them in the meantime.
+      const incomingWaCode = typeof partial.whatsapp_code === 'string'
+        ? (partial.whatsapp_code as string).toUpperCase().trim()
+        : '';
+      const incomingArCode = typeof partial.arabic_code === 'string'
+        ? (partial.arabic_code as string).trim()
+        : '';
+      if (incomingWaCode || incomingArCode) {
+        try {
+          const { data: otherOrgs } = await sb
+            .from('organizations')
+            .select('id, settings')
+            .neq('id', orgId);
+          for (const o of otherOrgs ?? []) {
+            const s = (((o as any).settings) ?? {}) as Record<string, any>;
+            const otherWa = (s.whatsapp_code ?? '').toString().toUpperCase().trim();
+            const otherAr = (s.arabic_code ?? '').toString().trim();
+            if (incomingWaCode && (incomingWaCode === otherWa || incomingWaCode === otherAr.toUpperCase())) {
+              throw new Error(`${t('sm.field.whatsapp_code')} "${incomingWaCode}" — ${t('Already taken')}`);
+            }
+            if (incomingArCode && (incomingArCode === otherAr || incomingArCode.toUpperCase() === otherWa)) {
+              throw new Error(`${t('sm.field.arabic_code')} "${incomingArCode}" — ${t('Already taken')}`);
+            }
+          }
+        } catch (collisionErr: any) {
+          // If the query itself fails (offline) we let the save proceed — the
+          // server-side guard in web will still reject a collision when the
+          // record syncs. Only abort if this is our own thrown uniqueness error.
+          if (collisionErr && typeof collisionErr.message === 'string' && collisionErr.message.includes(t('Already taken'))) {
+            throw collisionErr;
+          }
+        }
+      }
+
       const merged = { ...current, ...partial };
       const updatePayload: any = { settings: merged };
       if (orgName !== originalOrgName) updatePayload.name = orgName;

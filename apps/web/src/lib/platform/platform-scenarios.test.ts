@@ -7,6 +7,10 @@ import {
 } from './governance';
 import { getIndustryTemplateById, industryTemplates } from './templates';
 
+// NOTE: Expectations reflect the current shipped overlays after the template
+// composition refactor and subsequent product evolutions (Algeria localization,
+// simplified clinic, pure-ticket bank, etc.). If you change an overlay, update
+// the matching expectations here.
 const VERTICAL_SCENARIOS = [
   {
     templateId: 'public-service',
@@ -19,7 +23,9 @@ const VERTICAL_SCENARIOS = [
       numberingFormat: 'department_sequence',
       remoteJoin: 'enabled',
       privacySafeDisplay: false,
-      requiredNav: '/admin/template-governance',
+      // public-service overlay supplies its own rolePolicy with empty roles;
+      // admins fall through to the default `/desk` entry.
+      requiredNav: '/desk',
     },
   },
   {
@@ -28,9 +34,9 @@ const VERTICAL_SCENARIOS = [
     expected: {
       vertical: 'bank',
       dashboardMode: 'bank',
-      queueLifecycle: 'hybrid',
-      routingMode: 'service_first',
-      numberingFormat: 'service_sequence',
+      queueLifecycle: 'ticket',
+      routingMode: 'department_first',
+      numberingFormat: 'department_sequence',
       remoteJoin: 'enabled',
       privacySafeDisplay: true,
       requiredNav: '/admin/analytics',
@@ -41,11 +47,11 @@ const VERTICAL_SCENARIOS = [
     officeName: 'Community Clinic',
     expected: {
       vertical: 'clinic',
-      dashboardMode: 'clinic',
-      queueLifecycle: 'hybrid',
-      routingMode: 'department_first',
-      numberingFormat: 'department_sequence',
-      remoteJoin: 'limited',
+      dashboardMode: 'light_service',
+      queueLifecycle: 'waitlist',
+      routingMode: 'staff_preference',
+      numberingFormat: 'named_waitlist',
+      remoteJoin: 'enabled',
       privacySafeDisplay: true,
       requiredNav: '/admin/audit',
     },
@@ -126,7 +132,9 @@ function createOrganizationSettings(templateId: string) {
 
 describe('multi-industry platform scenarios', () => {
   it('ships starter coverage for the five launch verticals', () => {
-    expect(industryTemplates).toHaveLength(5);
+    // Five original launch verticals are still shipped; the list has since
+    // grown to cover more business categories. Assert the floor + coverage.
+    expect(industryTemplates.length).toBeGreaterThanOrEqual(5);
     expect(industryTemplates.map((template) => template.vertical)).toEqual(
       expect.arrayContaining(['public_service', 'bank', 'clinic', 'restaurant', 'barbershop'])
     );

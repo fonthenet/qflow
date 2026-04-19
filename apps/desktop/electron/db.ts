@@ -124,7 +124,7 @@ export function initDB() {
       department_id TEXT,
       office_id TEXT,
       is_active INTEGER DEFAULT 1,
-      status TEXT DEFAULT 'open' CHECK(status IN ('open','closed','paused','break')),
+      status TEXT DEFAULT 'open' CHECK(status IN ('open','closed','on_break')),
       current_staff_id TEXT,
       updated_at TEXT
     );
@@ -241,11 +241,70 @@ export function initDB() {
   try { db.exec(`ALTER TABLE desks ADD COLUMN display_name TEXT`); } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE session ADD COLUMN station_token TEXT`); } catch { /* already exists */ }
 
+  // ── Migrate away from the old desks.status CHECK constraint ────────────
+  // Original schema used CHECK(status IN ('open','closed','paused','break'))
+  // but cloud uses ('open','closed','on_break'). SQLite can't ALTER CHECK in
+  // place, and the writable_schema hack doesn't take effect until the DB is
+  // reopened — the current connection keeps enforcing the cached old CHECK.
+  // So use SQLite's canonical table-rebuild pattern: create a new table with
+  // the correct CHECK, copy rows over, drop the old table, rename. The new
+  // constraint takes effect immediately on the open connection.
+  try {
+    const row = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'desks'"
+    ).get() as { sql?: string } | undefined;
+    const existingSql = row?.sql ?? '';
+    const hasCheck = /CHECK\s*\(\s*status\s+IN\s*\(/i.test(existingSql);
+    const allowsOnBreak = /'on_break'/.test(existingSql);
+    if (hasCheck && !allowsOnBreak) {
+      logger.info('db', 'Migrating desks.status CHECK constraint to (open, closed, on_break)');
+      db.transaction(() => {
+        // Normalize any rows that still carry the obsolete statuses so the
+        // INSERT into the new table won't fail on the fresh CHECK.
+        db.exec(`UPDATE desks SET status = 'on_break' WHERE status IN ('paused','break')`);
+        // Drop the existing BEFORE-UPDATE/INSERT triggers (if any) so they
+        // don't fire during the copy. They'll be recreated just below.
+        db.exec(`DROP TRIGGER IF EXISTS trg_desks_status_check_insert`);
+        db.exec(`DROP TRIGGER IF EXISTS trg_desks_status_check_update`);
+        db.exec(`
+          CREATE TABLE desks_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            display_name TEXT,
+            department_id TEXT,
+            office_id TEXT,
+            is_active INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','closed','on_break')),
+            current_staff_id TEXT,
+            updated_at TEXT
+          )
+        `);
+        db.exec(`
+          INSERT INTO desks_new (id, name, display_name, department_id, office_id, is_active, status, current_staff_id, updated_at)
+          SELECT id, name, display_name, department_id, office_id, is_active, status, current_staff_id, updated_at
+          FROM desks
+        `);
+        db.exec(`DROP TABLE desks`);
+        db.exec(`ALTER TABLE desks_new RENAME TO desks`);
+      })();
+      const integrity = db.prepare('PRAGMA integrity_check').get() as any;
+      logger.info('db', 'desks CHECK migration complete', { integrity: integrity?.integrity_check });
+    }
+  } catch (err: any) {
+    logger.error('db', 'Failed to migrate desks CHECK constraint', { error: err?.message });
+  }
+
   // ── CHECK constraint enforcement via triggers (for existing DBs without inline CHECKs) ──
   // SQLite cannot ALTER TABLE to add CHECK constraints, so we use BEFORE triggers.
+  // Desk statuses MUST match the cloud schema (('open','closed','on_break')) so
+  // values round-trip through sync. An earlier version of this file used
+  // ('paused','break') here — drop the old triggers before recreating so old
+  // DBs get the corrected allow-list.
   const VALID_TICKET_STATUSES = `('issued','pending_approval','waiting','called','serving','served','cancelled','no_show','transferred','parked')`;
-  const VALID_DESK_STATUSES = `('open','closed','paused','break')`;
+  const VALID_DESK_STATUSES = `('open','closed','on_break')`;
   try {
+    db.exec(`DROP TRIGGER IF EXISTS trg_desks_status_check_insert`);
+    db.exec(`DROP TRIGGER IF EXISTS trg_desks_status_check_update`);
     db.exec(`
       CREATE TRIGGER IF NOT EXISTS trg_tickets_status_check_insert
       BEFORE INSERT ON tickets
@@ -263,7 +322,7 @@ export function initDB() {
       END
     `);
     db.exec(`
-      CREATE TRIGGER IF NOT EXISTS trg_desks_status_check_insert
+      CREATE TRIGGER trg_desks_status_check_insert
       BEFORE INSERT ON desks
       WHEN NEW.status NOT IN ${VALID_DESK_STATUSES}
       BEGIN
@@ -271,7 +330,7 @@ export function initDB() {
       END
     `);
     db.exec(`
-      CREATE TRIGGER IF NOT EXISTS trg_desks_status_check_update
+      CREATE TRIGGER trg_desks_status_check_update
       BEFORE UPDATE OF status ON desks
       WHEN NEW.status NOT IN ${VALID_DESK_STATUSES}
       BEGIN

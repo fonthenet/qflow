@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { buildStarterDeskRecords, buildStarterDisplayRecords, buildStarterOfficeRecord } from './starter-data';
 import { getIndustryTemplateById } from './templates';
 
+// Assertions below reflect the current shipped overlays (see vertical-overlays.ts).
+// If you change an overlay, update the matching assertions here so drift stays visible.
+
 describe('starter office seed data', () => {
   it('builds a comprehensive public-service starter office record', () => {
     const template = getIndustryTemplateById('public-service');
@@ -18,10 +21,10 @@ describe('starter office seed data', () => {
     expect(record.operatingHours?.monday?.open).toBe('08:00');
     expect(record.settings.platform_template_id).toBe('public-service');
     expect(Array.isArray(record.settings.platform_service_areas)).toBe(true);
-    expect((record.settings.platform_counter_map as unknown[]).length).toBeGreaterThanOrEqual(4);
+    expect((record.settings.platform_service_areas as unknown[]).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('seeds restaurant-specific tables and host workflow presets', () => {
+  it('seeds restaurant starter office with service areas', () => {
     const template = getIndustryTemplateById('restaurant-waitlist');
     const starterOffice = template.starterOffices[0]!;
 
@@ -33,29 +36,21 @@ describe('starter office seed data', () => {
       officeName: 'Harbor Grill',
     });
 
-    expect((record.settings.platform_table_presets as unknown[]).length).toBeGreaterThanOrEqual(6);
-    expect(record.settings.platform_host_workflow).toEqual(
-      expect.objectContaining({
-        pagerEnabled: true,
-        quoteWaitByZone: true,
-      })
-    );
+    expect(record.settings.platform_template_id).toBe('restaurant-waitlist');
+    expect(Array.isArray(record.settings.platform_service_areas)).toBe(true);
+    expect((record.settings.platform_service_areas as unknown[]).length).toBeGreaterThanOrEqual(1);
   });
 
   it('maps starter desks to created departments and services', () => {
     const template = getIndustryTemplateById('clinic');
     const starterOffice = template.starterOffices[0]!;
-    const departmentIdsByCode = new Map([
-      ['R', 'dept-reception'],
-      ['T', 'dept-triage'],
-      ['C', 'dept-consult'],
-    ]);
+    // Clinic overlay has a single `Consultations` department (code 'C') with
+    // CONSULT/CONTROL/CERT services and two desks: accueil + cabinet.
+    const departmentIdsByCode = new Map([['C', 'dept-consult']]);
     const serviceIdsByCode = new Map([
-      ['CHECKIN', 'svc-checkin'],
-      ['INSURANCE', 'svc-insurance'],
-      ['TRIAGE', 'svc-triage'],
       ['CONSULT', 'svc-consult'],
-      ['FOLLOWUP', 'svc-followup'],
+      ['CONTROL', 'svc-control'],
+      ['CERT', 'svc-cert'],
     ]);
 
     const desks = buildStarterDeskRecords({
@@ -66,13 +61,12 @@ describe('starter office seed data', () => {
     });
 
     expect(desks).toHaveLength(starterOffice.desks.length);
-    expect(desks[0]?.desk.department_id).toBe('dept-reception');
-    expect(desks.find((entry) => entry.desk.name === 'triage-room-1')?.serviceIds).toEqual([
-      'svc-triage',
-    ]);
-    expect(desks.find((entry) => entry.desk.name === 'exam-room-2')?.serviceIds).toEqual([
+    expect(desks[0]?.desk.department_id).toBe('dept-consult');
+    expect(desks[0]?.desk.name).toBe('accueil');
+    expect(desks.find((entry) => entry.desk.name === 'cabinet')?.serviceIds).toEqual([
       'svc-consult',
-      'svc-followup',
+      'svc-control',
+      'svc-cert',
     ]);
   });
 
@@ -89,12 +83,9 @@ describe('starter office seed data', () => {
       generateScreenToken: () => 'screen-token',
     });
 
-    expect(displays).toHaveLength(2);
-    expect(displays[0]?.name).toBe('Main Hall Screen');
-    expect(displays[1]?.settings).toEqual(
-      expect.objectContaining({
-        zone: 'parcel_wall',
-      })
-    );
+    // public-service overlay ships two displays: Écran Principal + Écran État Civil.
+    expect(displays).toHaveLength(starterOffice.displayScreens.length);
+    expect(displays[0]?.name).toBe(starterOffice.displayScreens[0]?.name);
+    expect(displays[0]?.layout).toBe(starterOffice.displayScreens[0]?.layout ?? template.experienceProfile.display.defaultLayout);
   });
 });

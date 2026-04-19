@@ -32,6 +32,33 @@ export async function updateOrganizationSettings(data: {
     ...data.settings,
   };
 
+  // Guard: WhatsApp code + Arabic code must be unique across organizations.
+  // Mirrors the portal availability check — belt-and-braces in case the client
+  // debounced check didn't catch a late-write collision.
+  const incomingWaCode = typeof data.settings?.whatsapp_code === 'string'
+    ? data.settings.whatsapp_code.toUpperCase().trim()
+    : '';
+  const incomingArCode = typeof data.settings?.arabic_code === 'string'
+    ? data.settings.arabic_code.trim()
+    : '';
+  if (incomingWaCode || incomingArCode) {
+    const { data: otherOrgs } = await context.supabase
+      .from('organizations')
+      .select('id, settings')
+      .neq('id', context.staff.organization_id);
+    for (const org of otherOrgs ?? []) {
+      const s = ((org as any).settings ?? {}) as Record<string, any>;
+      const otherWa = (s.whatsapp_code ?? '').toString().toUpperCase().trim();
+      const otherAr = (s.arabic_code ?? '').toString().trim();
+      if (incomingWaCode && (incomingWaCode === otherWa || incomingWaCode === otherAr.toUpperCase())) {
+        return { error: `Business code "${incomingWaCode}" is already taken by another organization.` };
+      }
+      if (incomingArCode && (incomingArCode === otherAr || incomingArCode.toUpperCase() === otherWa)) {
+        return { error: `Arabic code "${incomingArCode}" is already taken by another organization.` };
+      }
+    }
+  }
+
   const { error } = await context.supabase
     .from('organizations')
     .update({

@@ -3771,11 +3771,21 @@ function handleStationUpdateTicket(body: any, res: http.ServerResponse) {
   for (const [k, v] of Object.entries(updates)) { if (ALLOWED.has(k)) safe[k] = v; }
   if (!Object.keys(safe).length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); return; }
 
-  const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
-  const vals = Object.values(safe);
   const prev = safe.status ? db.prepare('SELECT ticket_number, status FROM tickets WHERE id = ?').get(ticketId) as any : null;
 
-  // Validate status transition
+  // Allow no-op status updates — e.g. parking a 'waiting' ticket re-sends
+  // status='waiting' but only meaningfully changes parked_at / desk_id. Drop
+  // the unchanged status so the transition validator doesn't reject the whole
+  // payload as an "invalid" waiting→waiting transition.
+  if (safe.status && prev && prev.status === safe.status) {
+    delete safe.status;
+  }
+  if (!Object.keys(safe).length) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('null'); return; }
+
+  const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
+  const vals = Object.values(safe);
+
+  // Validate status transition (only when status is actually changing)
   if (safe.status && prev && !isValidTransition(prev.status, safe.status)) {
     logger.warn('KioskServer', `Invalid transition: ${prev.status} → ${safe.status} for ticket ${ticketId}`);
     res.writeHead(409, { 'Content-Type': 'application/json' });
@@ -3870,9 +3880,24 @@ function handleStationUpdateDesk(body: any, res: http.ServerResponse) {
     return;
   }
 
+  // Validate desk status up-front so we return a clear 400 instead of a
+  // SQLite trigger-throwing 500 if the client sends an unknown value.
+  if (safe.status && !['open', 'closed', 'on_break'].includes(String(safe.status))) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `Invalid desk status: ${safe.status}` }));
+    return;
+  }
+
   const sets = Object.entries(safe).map(([k]) => `${k} = ?`).join(', ');
   const vals = [...Object.values(safe), deskId];
-  db.prepare(`UPDATE desks SET ${sets} WHERE id = ?`).run(...vals);
+  try {
+    db.prepare(`UPDATE desks SET ${sets} WHERE id = ?`).run(...vals);
+  } catch (err: any) {
+    logger.error('KioskServer', 'Desk update failed', { deskId, safe, error: err?.message });
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err?.message ?? 'Desk update failed' }));
+    return;
+  }
 
   // Sync to cloud
   const syncId = `desk-${deskId}-${Date.now()}`;

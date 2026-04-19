@@ -1587,9 +1587,24 @@ export class SyncEngine {
 
       if (desksRes.ok) {
         const desks = await desksRes.json();
-        const stmt = this.db.prepare(`INSERT OR REPLACE INTO desks (id, name, display_name, department_id, office_id, is_active, current_staff_id, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        // Protect locally-modified desks (e.g. operator just tapped "En pause" on
+        // mobile) from being overwritten by a pull that races ahead of our push.
+        // Any desk with a pending sync_queue UPDATE is considered locally-owned
+        // until that UPDATE syncs — skip overwriting its status & current_staff_id.
+        const pendingDeskIds = new Set(
+          (this.db.prepare(
+            "SELECT DISTINCT record_id FROM sync_queue WHERE synced_at IS NULL AND table_name = 'desks'"
+          ).all() as any[]).map((r: any) => r.record_id)
+        );
+        const fullStmt = this.db.prepare(`INSERT OR REPLACE INTO desks (id, name, display_name, department_id, office_id, is_active, current_staff_id, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        // For locally-modified desks: refresh only static metadata, keep local status/current_staff_id
+        const metaStmt = this.db.prepare(`UPDATE desks SET name = ?, display_name = ?, department_id = ?, office_id = ?, is_active = ?, updated_at = ? WHERE id = ?`);
         for (const d of desks) {
-          stmt.run(d.id, d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, d.current_staff_id, d.status ?? 'open', now);
+          if (pendingDeskIds.has(d.id)) {
+            metaStmt.run(d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, now, d.id);
+          } else {
+            fullStmt.run(d.id, d.name, d.display_name ?? null, d.department_id, d.office_id, d.is_active ? 1 : 0, d.current_staff_id, d.status ?? 'open', now);
+          }
         }
       }
 

@@ -20,7 +20,6 @@ import { useOrg } from '@/lib/use-org';
 import { useOperatorStore } from '@/lib/operator-store';
 import * as Actions from '@/lib/data-adapter';
 import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
-import { ConnectionBanner } from '@/components/ConnectionBanner';
 
 type FilterTab = 'waiting' | 'called' | 'serving' | 'parked' | 'all';
 
@@ -401,7 +400,6 @@ export default function QueueScreen() {
 
   return (
     <View style={styles.container}>
-      <ConnectionBanner />
       {/* Summary bar */}
       <View style={styles.summaryBar}>
         <View style={styles.summaryItem}>
