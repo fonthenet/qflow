@@ -116,6 +116,11 @@ export default function QueuePeekScreen() {
       })
     : null;
 
+  // Closed = not open right now AND not 24/7. When closed we disable the
+  // "Get a ticket now" CTA + per-department Join buttons so users don't
+  // create tickets the office will reject later.
+  const isClosed = !status.alwaysOpen && status.openNow === false;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -250,14 +255,20 @@ export default function QueuePeekScreen() {
                 </View>
               </View>
 
-              {/* Join button */}
+              {/* Join button — greyed out when the office is closed */}
               <TouchableOpacity
-                style={[s.joinDeptBtn, { backgroundColor: colors.primary }]}
+                style={[
+                  s.joinDeptBtn,
+                  { backgroundColor: isClosed ? colors.textMuted : colors.primary, opacity: isClosed ? 0.6 : 1 },
+                ]}
                 onPress={() => handleJoinDept(dept.id)}
+                disabled={isClosed}
                 activeOpacity={0.8}
               >
-                <Text style={s.joinDeptBtnText}>{t('queuePeek.join')}</Text>
-                <Ionicons name="arrow-forward" size={14} color="#fff" />
+                <Text style={s.joinDeptBtnText}>
+                  {isClosed ? t('queuePeek.closedNow') : t('queuePeek.join')}
+                </Text>
+                {!isClosed && <Ionicons name="arrow-forward" size={14} color="#fff" />}
               </TouchableOpacity>
             </View>
           </View>
@@ -272,14 +283,27 @@ export default function QueuePeekScreen() {
         </View>
       )}
 
-      {/* CTA row */}
+      {/* CTA row — greyed out when the office is closed */}
       <TouchableOpacity
-        style={[s.joinAnyBtn, { backgroundColor: colors.primary }]}
+        style={[
+          s.joinAnyBtn,
+          {
+            backgroundColor: isClosed ? colors.textMuted : colors.primary,
+            opacity: isClosed ? 0.6 : 1,
+          },
+        ]}
         onPress={handleJoinAny}
+        disabled={isClosed}
         activeOpacity={0.8}
       >
-        <Ionicons name="ticket-outline" size={20} color="#fff" />
-        <Text style={s.joinAnyBtnText}>{t('queuePeek.getTicketNow')}</Text>
+        <Ionicons
+          name={isClosed ? 'lock-closed-outline' : 'ticket-outline'}
+          size={20}
+          color="#fff"
+        />
+        <Text style={s.joinAnyBtnText}>
+          {isClosed ? t('queuePeek.closedComeBack', { defaultValue: 'Closed — come back later' }) : t('queuePeek.getTicketNow')}
+        </Text>
       </TouchableOpacity>
 
       <BookCTA
