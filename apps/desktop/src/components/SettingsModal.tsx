@@ -235,6 +235,80 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   // All settings values stored in a single map (string->any)
   const [values, setValues] = useState<Record<string, any>>({});
 
+  // ── WhatsApp / Arabic code availability (real-time, debounced) ──
+  // Mirrors the web portal's `checkWhatsAppCodeAvailability`: on every change
+  // to either code we wait 500 ms then query Supabase's `organizations` table
+  // and check that no *other* org already uses the code as either its
+  // whatsapp_code or arabic_code.
+  type Availability = 'idle' | 'checking' | 'available' | 'taken';
+  const [waCodeAvailability, setWaCodeAvailability] = useState<Availability>('idle');
+  const [arCodeAvailability, setArCodeAvailability] = useState<Availability>('idle');
+  const waCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const arCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedWaCodeRef = useRef<string>('');
+  const savedArCodeRef = useRef<string>('');
+
+  const runCodeAvailability = useCallback(
+    async (code: string, field: 'whatsapp_code' | 'arabic_code'): Promise<Availability> => {
+      const normalized = field === 'whatsapp_code' ? code.toUpperCase().trim() : code.trim();
+      if (!normalized || normalized.length < 2) return 'idle';
+      try {
+        const sb = await getSupabase();
+        const orgId = orgIdRef.current;
+        const { data: otherOrgs } = await sb
+          .from('organizations')
+          .select('id, settings')
+          .neq('id', orgId);
+        const taken = (otherOrgs ?? []).some((o: any) => {
+          const s = ((o?.settings) ?? {}) as Record<string, any>;
+          const otherWa = (s.whatsapp_code ?? '').toString().toUpperCase().trim();
+          const otherAr = (s.arabic_code ?? '').toString().trim();
+          if (field === 'whatsapp_code') {
+            return normalized === otherWa || normalized === otherAr.toUpperCase();
+          }
+          return normalized === otherAr || normalized.toUpperCase() === otherWa;
+        });
+        return taken ? 'taken' : 'available';
+      } catch {
+        // Offline or query failure — show idle so the user isn't blocked.
+        return 'idle';
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const raw = (values.whatsapp_code ?? '').toString();
+    const normalized = raw.toUpperCase().trim();
+    if (!normalized || normalized.length < 2 || normalized === savedWaCodeRef.current.toUpperCase().trim()) {
+      setWaCodeAvailability('idle');
+      return;
+    }
+    setWaCodeAvailability('checking');
+    if (waCheckTimerRef.current) clearTimeout(waCheckTimerRef.current);
+    waCheckTimerRef.current = setTimeout(async () => {
+      const result = await runCodeAvailability(raw, 'whatsapp_code');
+      setWaCodeAvailability(result);
+    }, 500);
+    return () => { if (waCheckTimerRef.current) clearTimeout(waCheckTimerRef.current); };
+  }, [values.whatsapp_code, runCodeAvailability]);
+
+  useEffect(() => {
+    const raw = (values.arabic_code ?? '').toString();
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.length < 2 || trimmed === savedArCodeRef.current.trim()) {
+      setArCodeAvailability('idle');
+      return;
+    }
+    setArCodeAvailability('checking');
+    if (arCheckTimerRef.current) clearTimeout(arCheckTimerRef.current);
+    arCheckTimerRef.current = setTimeout(async () => {
+      const result = await runCodeAvailability(raw, 'arabic_code');
+      setArCodeAvailability(result);
+    }, 500);
+    return () => { if (arCheckTimerRef.current) clearTimeout(arCheckTimerRef.current); };
+  }, [values.arabic_code, runCodeAvailability]);
+
   // ─── Section & field definitions ─────────────────────────────────
   const sections: SectionDef[] = useMemo(() => [
     {
@@ -590,6 +664,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       init.intake_fields = migrateToIntakeFields(s);
 
       setValues(init);
+      // Snapshot the saved codes so live availability checks can skip the
+      // already-persisted value (no point flagging your own code as taken).
+      savedWaCodeRef.current = (init.whatsapp_code ?? '').toString();
+      savedArCodeRef.current = (init.arabic_code ?? '').toString();
     } catch (e: any) {
       setError(e?.message ?? t('Failed to load settings'));
     } finally {
@@ -1581,21 +1659,64 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
               </div>
               <Toggle on={!!values.whatsapp_enabled} onChange={(on) => setValues(p => ({ ...p, whatsapp_enabled: on }))} />
             </div>
-            {values.whatsapp_enabled && (
-              <div style={fieldRowStyle}>
-                <div>
-                  <div style={miniLabel}>{t('sm.field.whatsapp_code')}</div>
-                  <input value={values.whatsapp_code || ''} onChange={e => setValues(p => ({...p, whatsapp_code: e.target.value}))} placeholder="MYBUSINESS" style={miniInput} />
-                  <div style={miniHelp}>{t('sm.help.whatsapp_code')}</div>
+            {values.whatsapp_enabled && (() => {
+              const renderStatus = (s: Availability, rtl?: boolean): JSX.Element | null => {
+                if (s === 'idle') return null;
+                const style: React.CSSProperties = {
+                  position: 'absolute',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  pointerEvents: 'none',
+                };
+                if (rtl) style.left = 10; else style.right = 10;
+                if (s === 'checking') return <span style={{ ...style, color: '#9ca3af' }}>{t('sm.code.checking') || 'Checking…'}</span>;
+                if (s === 'available') return <span style={{ ...style, color: '#22c55e' }}>✓ {t('sm.code.available') || 'Available'}</span>;
+                return <span style={{ ...style, color: '#ef4444' }}>✗ {t('sm.code.taken') || 'Already taken'}</span>;
+              };
+              return (
+                <div style={fieldRowStyle}>
+                  <div>
+                    <div style={miniLabel}>{t('sm.field.whatsapp_code')}</div>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        value={values.whatsapp_code || ''}
+                        onChange={e => setValues(p => ({ ...p, whatsapp_code: e.target.value.toUpperCase() }))}
+                        placeholder="MYBUSINESS"
+                        style={{
+                          ...miniInput,
+                          paddingRight: 92,
+                          borderColor: waCodeAvailability === 'taken' ? '#ef4444' : (miniInput as any).borderColor,
+                        }}
+                      />
+                      {renderStatus(waCodeAvailability, false)}
+                    </div>
+                    <div style={miniHelp}>{t('sm.help.whatsapp_code')}</div>
+                  </div>
+                  <div />
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <div style={miniLabel}>{t('sm.field.arabic_code')}</div>
+                    <div style={{ position: 'relative', maxWidth: 220 }}>
+                      <input
+                        value={values.arabic_code || ''}
+                        onChange={e => setValues(p => ({ ...p, arabic_code: e.target.value }))}
+                        placeholder="اسم_النشاط"
+                        style={{
+                          ...miniInput,
+                          direction: 'rtl',
+                          textAlign: 'right',
+                          paddingLeft: 92,
+                          borderColor: arCodeAvailability === 'taken' ? '#ef4444' : (miniInput as any).borderColor,
+                        }}
+                      />
+                      {renderStatus(arCodeAvailability, true)}
+                    </div>
+                    <div style={miniHelp}>{t('sm.help.arabic_code')}</div>
+                  </div>
                 </div>
-                <div />
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <div style={miniLabel}>{t('sm.field.arabic_code')}</div>
-                  <input value={values.arabic_code || ''} onChange={e => setValues(p => ({...p, arabic_code: e.target.value}))} placeholder="اسم_النشاط" style={{ ...miniInput, direction: 'rtl', textAlign: 'right', maxWidth: 220 }} />
-                  <div style={miniHelp}>{t('sm.help.arabic_code')}</div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* ── Messenger ────────────────── */}
