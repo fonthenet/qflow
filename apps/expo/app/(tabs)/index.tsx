@@ -869,28 +869,49 @@ export default function HomeScreen() {
     setActiveTicket(null);
   }, [setActiveToken, setActiveTicket]);
 
+  // Swipe left (or right, for RTL/edge back) returns to the Active list view.
+  // Declared above the reset-effect so the dep array doesn't TDZ on first
+  // render (Babel's const→var keeps it from crashing, but the value is
+  // `undefined` in the first dep comparison, which fires an extra effect).
+  const swipeAnim = useRef(new Animated.Value(0)).current;
+
   // Reset the swipe transform whenever the tracking view is (re)shown so a
   // mid-gesture unmount can't leave the next render visually shifted.
   useEffect(() => {
     if (activeToken) swipeAnim.setValue(0);
   }, [activeToken, swipeAnim]);
 
-  // Swipe left (or right, for RTL/edge back) returns to the Active list view.
-  const swipeAnim = useRef(new Animated.Value(0)).current;
   const swipePan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_e, gs) =>
       Math.abs(gs.dx) > 15 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5,
     onPanResponderMove: (_e, gs) => {
-      // Follow the finger on either axis for feedback, capped.
-      const capped = Math.max(Math.min(gs.dx * 0.4, 80), -80);
+      // Rubber-band feel: follow 60 % of the finger with a soft cap so a
+      // hard pull past the threshold still looks like motion, not a
+      // stuck wall. Cap is wider than the old 80 px so the commit
+      // threshold (100 px) sits comfortably inside the travel range and
+      // the visible position matches the "will it trigger?" mental model.
+      const capped = Math.max(Math.min(gs.dx * 0.6, 140), -140);
       swipeAnim.setValue(capped);
     },
     onPanResponderRelease: (_e, gs) => {
       if (Math.abs(gs.dx) > 100) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        // Snap back to 0 before unmounting so the next render starts clean.
-        swipeAnim.setValue(0);
-        backToList();
+        // Continue the motion off-screen in the swipe direction, THEN
+        // swap the view once the animation finishes. The old code reset
+        // the transform to 0 synchronously before calling backToList(),
+        // which produced a visible single-frame snap before React
+        // replaced the tracking view — the "jump" users were seeing.
+        const exitTo = gs.dx > 0 ? 400 : -400;
+        Animated.timing(swipeAnim, {
+          toValue: exitTo,
+          duration: 180,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          // Reset first so the next mount of this screen starts clean,
+          // even if the animation was interrupted.
+          swipeAnim.setValue(0);
+          if (finished) backToList();
+        });
         return;
       }
       Animated.spring(swipeAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
