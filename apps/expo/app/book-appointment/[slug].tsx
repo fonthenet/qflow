@@ -192,10 +192,18 @@ export default function BookAppointmentScreen() {
       return;
     }
     setInfo(data);
-    // Pre-select dept if provided
-    if (initialDeptId && data.departments.some((d) => d.id === initialDeptId)) {
-      setSelectedDeptId(initialDeptId);
-      if (initialServiceId && data.services.some((s) => s.id === initialServiceId && s.department_id === initialDeptId)) {
+    // Pre-select dept if provided via deep link, OR auto-select when the
+    // office has only a single department (skipping a forced one-option
+    // picker the user can't meaningfully answer).
+    let deptToUse = initialDeptId && data.departments.some((d) => d.id === initialDeptId)
+      ? initialDeptId
+      : null;
+    if (!deptToUse && data.departments.length === 1) {
+      deptToUse = data.departments[0].id;
+    }
+    if (deptToUse) {
+      setSelectedDeptId(deptToUse);
+      if (initialServiceId && data.services.some((s) => s.id === initialServiceId && s.department_id === deptToUse)) {
         setSelectedServiceId(initialServiceId);
         setStep('date');
       } else {
@@ -521,9 +529,13 @@ export default function BookAppointmentScreen() {
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={s.backLink} onPress={() => setStep('department')}>
-              <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.changeDepartment')}</Text>
-            </TouchableOpacity>
+            {/* Hide "change department" when there's only one — there's
+                nothing to switch to. */}
+            {info && info.departments.length > 1 && (
+              <TouchableOpacity style={s.backLink} onPress={() => setStep('department')}>
+                <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.changeDepartment')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 

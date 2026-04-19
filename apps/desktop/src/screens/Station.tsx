@@ -681,20 +681,22 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
             </div>
           )}
 
-          {/* Department */}
-          <div>
-            <label style={labelStyle}>{t('Department')} *</label>
-            <select
-              value={futDept}
-              onChange={(e) => { setFutDept(e.target.value); setFutService(''); setFutSlots([]); setFutTime(''); }}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="">{t('Select...')}</option>
-              {departments.map(([id, name]) => (
-                <option key={id} value={id}>{name}</option>
-              ))}
-            </select>
-          </div>
+          {/* Department — hidden when there's only one (auto-selected). */}
+          {departments.length > 1 && (
+            <div>
+              <label style={labelStyle}>{t('Department')} *</label>
+              <select
+                value={futDept}
+                onChange={(e) => { setFutDept(e.target.value); setFutService(''); setFutSlots([]); setFutTime(''); }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="">{t('Select...')}</option>
+                {departments.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Service */}
           {futDept && futDeptServices.length > 0 && (
@@ -1007,20 +1009,24 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
       ) : (
         /* ── Walk-in Booking Form — vertical stack for side panel ── */
         <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* Department */}
-          <div>
-            <label style={labelStyle}>{t('Department')} *</label>
-            <select
-              value={selectedDept}
-              onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="">{t('Select...')}</option>
-              {departments.map(([id, name]) => (
-                <option key={id} value={id}>{name}</option>
-              ))}
-            </select>
-          </div>
+          {/* Department — hidden when there's only one (auto-selected via
+              the effect above). No point forcing the operator to confirm
+              a one-option dropdown. */}
+          {departments.length > 1 && (
+            <div>
+              <label style={labelStyle}>{t('Department')} *</label>
+              <select
+                value={selectedDept}
+                onChange={(e) => { setSelectedDept(e.target.value); setSelectedService(''); }}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+              >
+                <option value="">{t('Select...')}</option>
+                {departments.map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Service */}
           {selectedDept && deptServices.length > 0 && (
