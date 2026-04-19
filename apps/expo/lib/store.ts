@@ -100,6 +100,9 @@ interface AppState {
   customerName: string;
   customerPhone: string;
   themeMode: ThemeMode;
+  /** Map of ticketId → submitted feedback. Survives reloads and active-token
+   *  changes so the served-ticket screen never re-prompts after submission. */
+  feedbackByTicketId: Record<string, { rating: number; comment: string | null; submittedAt: string }>;
 
   setActiveToken: (token: string | null) => void;
   setActiveTicket: (ticket: TicketResponse | null) => void;
@@ -132,6 +135,9 @@ interface AppState {
   updateAppointment: (id: string, patch: Partial<SavedAppointment>) => void;
   /** Remove a saved appointment from the local list (does not touch the server). */
   removeAppointment: (id: string) => void;
+
+  /** Record that feedback was submitted for a ticket (local cache). */
+  recordFeedback: (ticketId: string, rating: number, comment?: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -147,6 +153,7 @@ export const useAppStore = create<AppState>()(
       customerName: '',
       customerPhone: '',
       themeMode: 'dark' as ThemeMode,
+      feedbackByTicketId: {},
 
       setActiveToken: (token) => set({ activeToken: token }),
 
@@ -333,6 +340,19 @@ export const useAppStore = create<AppState>()(
       removeAppointment: (id) => {
         set({ savedAppointments: get().savedAppointments.filter((a) => a.id !== id) });
       },
+
+      recordFeedback: (ticketId, rating, comment) => {
+        set({
+          feedbackByTicketId: {
+            ...get().feedbackByTicketId,
+            [ticketId]: {
+              rating,
+              comment: comment?.trim() || null,
+              submittedAt: new Date().toISOString(),
+            },
+          },
+        });
+      },
     }),
     {
       name: 'qflo-store',
@@ -345,6 +365,7 @@ export const useAppStore = create<AppState>()(
         customerName: state.customerName,
         customerPhone: state.customerPhone,
         themeMode: state.themeMode,
+        feedbackByTicketId: state.feedbackByTicketId,
       }),
     }
   )

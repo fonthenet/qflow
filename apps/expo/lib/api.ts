@@ -1,4 +1,5 @@
 import { API_BASE_URL as BASE_URL } from './config';
+import { supabase } from './supabase';
 
 export interface TicketResponse {
   id: string;
@@ -559,6 +560,52 @@ export async function triggerRecovery(): Promise<any> {
     const res = await fetch(`${BASE_URL}/api/queue-recovery`, { method: 'POST' });
     if (!res.ok) return null;
     return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feedback — mirrors apps/web feedback-form.tsx: one feedback row per ticket.
+// ---------------------------------------------------------------------------
+
+export interface StoredFeedback {
+  rating: number;
+  comment: string | null;
+}
+
+/** Insert a feedback row for a served ticket. Returns true on success. */
+export async function submitFeedback(params: {
+  ticketId: string;
+  serviceId: string | null;
+  staffId?: string | null;
+  rating: number;
+  comment?: string | null;
+}): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('feedback').insert({
+      ticket_id: params.ticketId,
+      service_id: params.serviceId,
+      staff_id: params.staffId ?? null,
+      rating: params.rating,
+      comment: params.comment?.trim() || null,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** Fetch the existing feedback row for a ticket, if any. */
+export async function fetchFeedback(ticketId: string): Promise<StoredFeedback | null> {
+  try {
+    const { data } = await supabase
+      .from('feedback')
+      .select('rating, comment')
+      .eq('ticket_id', ticketId)
+      .maybeSingle();
+    if (!data) return null;
+    return { rating: data.rating, comment: data.comment ?? null };
   } catch {
     return null;
   }

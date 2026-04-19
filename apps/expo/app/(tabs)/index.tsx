@@ -23,7 +23,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { useAppStore } from '@/lib/store';
-import { fetchTicket, fetchAppointmentWithTicket, stopTracking } from '@/lib/api';
+import { fetchTicket, fetchAppointmentWithTicket, stopTracking, submitFeedback, fetchFeedback } from '@/lib/api';
 import { cancelTicket } from '@/lib/ticket-actions';
 import { formatTime, formatDate } from '@/lib/format-date';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -536,14 +536,21 @@ export default function HomeScreen() {
     history,
     savedAppointments,
     savedPlaces,
+    feedbackByTicketId,
+    recordFeedback,
   } = useAppStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  // Derive submitted-state from the persisted store so the prompt never
+  // reappears after the user has already rated a ticket. Local rating state
+  // is only used for the brief moment between tap and server confirmation.
   const [rating, setRating] = useState(0);
-  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const ticketIdForFeedback = activeTicket?.id ?? null;
+  const storedFeedback = ticketIdForFeedback ? feedbackByTicketId[ticketIdForFeedback] : null;
+  const ratingSubmitted = !!storedFeedback;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncLabel, setSyncLabel] = useState(t('customer.syncing'));
@@ -681,7 +688,24 @@ export default function HomeScreen() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [activeToken, poll]);
 
-  useEffect(() => { setRating(0); setRatingSubmitted(false); }, [activeToken]);
+  useEffect(() => { setRating(0); }, [activeToken]);
+
+  // When we land on a served ticket, reconcile with the server: if feedback
+  // was already submitted (e.g. from another device, or before a reinstall),
+  // mirror it into the local store so the prompt stays hidden.
+  useEffect(() => {
+    const tid = activeTicket?.id;
+    if (!tid) return;
+    if (activeTicket?.status !== 'served') return;
+    if (feedbackByTicketId[tid]) return;
+    let cancelled = false;
+    (async () => {
+      const existing = await fetchFeedback(tid);
+      if (cancelled || !existing) return;
+      recordFeedback(tid, existing.rating, existing.comment);
+    })();
+    return () => { cancelled = true; };
+  }, [activeTicket?.id, activeTicket?.status, feedbackByTicketId, recordFeedback]);
 
   const handleStopTracking = async () => {
     const ticketId = activeTicket?.id;
@@ -1123,7 +1147,19 @@ export default function HomeScreen() {
               {!ratingSubmitted ? (
                 <>
                   <Text style={{ fontSize: 15, color: p.textMuted }}>{t('customer.rateExperience')}</Text>
-                  <StarRating rating={rating} onRate={(n) => { setRating(n); setRatingSubmitted(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} />
+                  <StarRating rating={rating} onRate={(n) => {
+                    setRating(n);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    // Optimistically persist locally so the prompt hides
+                    // immediately even if the network call is slow or fails.
+                    recordFeedback(tk.id, n, null);
+                    submitFeedback({
+                      ticketId: tk.id,
+                      serviceId: tk.service_id,
+                      staffId: null,
+                      rating: n,
+                    }).catch(() => {});
+                  }} />
                 </>
               ) : (
                 <Text style={{ fontSize: 15, color: '#4ade80', fontWeight: '600' }}>{t('customer.thanksFeedback')}</Text>
