@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
     customerName?: string;
     customerPhone?: string;
     customerData?: Record<string, unknown>;
+    source?: string;
   };
 
   try {
@@ -27,7 +28,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, priorityCategoryId, priority, customerName, customerPhone, customerData } = body;
+  const { officeId, departmentId, serviceId, priorityCategoryId, priority, customerName, customerPhone, customerData, source: bodySource } = body;
+
+  // Optional source override — lets the mobile app tag its tickets as
+  // 'mobile_app' so they don't all show up as 'Kiosque' on the Station.
+  // Whitelist to known channels; anything else falls back to 'kiosk'.
+  const ALLOWED_SOURCES = new Set(['kiosk', 'mobile_app', 'qr_code', 'portal', 'web']);
+  const resolvedSource =
+    typeof bodySource === 'string' && ALLOWED_SOURCES.has(bodySource) ? bodySource : 'kiosk';
+  const isRemote = resolvedSource === 'mobile_app' || resolvedSource === 'portal' || resolvedSource === 'web';
 
   if (!officeId || !departmentId || !serviceId) {
     return NextResponse.json(
@@ -138,8 +147,8 @@ export async function POST(request: NextRequest) {
       priority: priority ?? 0,
       priority_category_id: priorityCategoryId ?? null,
       customer_data: Object.keys(cleanCustomerData).length > 0 ? cleanCustomerData : null,
-      is_remote: false,
-      source: 'kiosk',
+      is_remote: isRemote,
+      source: resolvedSource,
     })
     .select('id, qr_token, ticket_number, status, estimated_wait_minutes')
     .single();
@@ -154,7 +163,10 @@ export async function POST(request: NextRequest) {
       ticket_id: ticket.id,
       event_type: 'joined',
       to_status: initialStatus,
-      metadata: { source: 'native_kiosk', pending_approval: requireApproval },
+      metadata: {
+        source: resolvedSource === 'kiosk' ? 'native_kiosk' : resolvedSource,
+        pending_approval: requireApproval,
+      },
     });
   }
 

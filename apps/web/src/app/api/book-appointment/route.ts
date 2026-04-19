@@ -24,6 +24,11 @@ export async function POST(request: NextRequest) {
   const { officeId, departmentId, serviceId, customerName, customerPhone, customerEmail, scheduledAt, notes, wilaya, staffId, locale: bodyLocale, source: bodySource } =
     body as Record<string, string | undefined>;
   const isInHouse = bodySource === 'in_house';
+  // Resolve the channel tag that gets stored on the row. Whitelist known
+  // values so e.g. the mobile app can claim its own 'mobile_app' badge.
+  const APPT_ALLOWED_SOURCES = new Set(['in_house', 'mobile_app', 'portal', 'qr_code', 'web']);
+  const resolvedSource =
+    typeof bodySource === 'string' && APPT_ALLOWED_SOURCES.has(bodySource) ? bodySource : 'web';
 
   if (!officeId || !departmentId || !serviceId || !customerName || !scheduledAt) {
     return NextResponse.json(
@@ -122,7 +127,7 @@ export async function POST(request: NextRequest) {
       notes: cleanNotes || null,
       wilaya: cleanWilaya || null,
       locale: (bodyLocale === 'ar' || bodyLocale === 'en' || bodyLocale === 'fr') ? bodyLocale : null,
-      source: isInHouse ? 'in_house' : 'web',
+      source: resolvedSource,
       ...(staffId ? { staff_id: staffId } : {}),
     })
     .select('id, office_id, department_id, service_id, customer_name, customer_phone, customer_email, scheduled_at, status, notes, wilaya, calendar_token, staff_id')

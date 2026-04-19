@@ -275,10 +275,12 @@ export async function createKioskTicket(params: {
   customerData?: Record<string, string>;
 }): Promise<KioskTicketResult | { error: string }> {
   try {
+    // Tag tickets created from the mobile app as `mobile_app` so the Station
+    // doesn't label them "Kiosque". The server whitelists this value.
     const res = await fetchWithTimeout(`${BASE_URL}/api/kiosk-ticket`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, source: 'mobile_app' }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error ?? 'Failed to create ticket' };
@@ -428,10 +430,12 @@ export async function createBooking(params: {
   locale?: 'en' | 'fr' | 'ar';
 }): Promise<CreateBookingResult | { error: string }> {
   try {
+    // Tag appointments from the mobile app as `mobile_app` so the Station
+    // shows the correct channel badge instead of the default "web".
     const res = await fetchWithTimeout(`${BASE_URL}/api/book-appointment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, source: 'mobile_app' }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error ?? 'Failed to book appointment' };
