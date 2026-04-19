@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { assertBookingAllowed, BookingGuardError } from '@/lib/booking-guard';
 import {
   clearBookingEmailOtpCookie,
   hasVerifiedBookingEmail,
@@ -119,6 +120,25 @@ export async function createAppointment(data: CreateAppointmentData) {
     wilaya: normalizeWilayaDisplay(data.wilaya) || null,
     ...(data.staffId ? { staff_id: data.staffId } : {}),
   };
+
+  // Centralized booking gate — same rules as web/WhatsApp/Messenger paths.
+  // Admin UI is treated as in-house: staff can override office_closed/holiday/
+  // slot-level checks to rescue walk-ins, but booking_mode=disabled and
+  // always_closed still hard-block.
+  try {
+    await assertBookingAllowed({
+      officeId: data.officeId,
+      serviceId: data.serviceId,
+      scheduledAt: data.scheduledAt,
+      staffId: data.staffId,
+      isInHouse: true,
+    });
+  } catch (err) {
+    if (err instanceof BookingGuardError) {
+      return { error: err.message };
+    }
+    throw err;
+  }
 
   const { data: appointment, error } = await supabase
     .from('appointments')

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { assertBookingAllowed, BookingGuardError } from '@/lib/booking-guard';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { getQueuePosition } from '@/lib/queue-position';
 import { createPublicTicket } from '@/lib/actions/public-ticket-actions';
@@ -4401,6 +4402,40 @@ async function confirmBooking(
     bookingOrgTz = orgTzRow?.timezone || 'Africa/Algiers';
     scheduledAt = toTimezoneAware(scheduledAt, bookingOrgTz);
   } catch { /* fallback to naive string */ }
+
+  // Centralized booking gate — same rules the web/admin paths enforce.
+  // Rejects bookings when the business has booking_mode=disabled, is
+  // always_closed, the office is closed on the day, it's a holiday, the
+  // daily limit is reached, or the slot is taken. Keeps WhatsApp/Messenger
+  // in lockstep with every other write path.
+  try {
+    await assertBookingAllowed({
+      officeId: session.office_id,
+      serviceId: session.service_id || session.department_id,
+      scheduledAt: `${session.booking_date}T${session.booking_time}:00`,
+    });
+  } catch (err) {
+    if (err instanceof BookingGuardError) {
+      console.warn('[booking] blocked by guard:', err.reason, err.message);
+      // Map guard reason → user-facing chat reply, then reset the session
+      // to the appropriate step so the user can recover without losing context.
+      if (err.reason === 'slot_unavailable' || err.reason === 'daily_limit_reached') {
+        await sendMessage({ to: identifier, body: t('booking_slot_taken', locale) });
+        await supabase.from('whatsapp_sessions').update({
+          state: 'booking_select_time',
+          booking_time: null,
+        }).eq('id', session.id);
+        await showAvailableSlots(identifier, session.office_id, session.service_id || session.department_id, session.booking_date, locale, channel, sendMessage);
+        return;
+      }
+      // Hard blocks (disabled / always_closed / office_closed / holiday):
+      // cancel the session and tell the user the business isn't booking.
+      await supabase.from('whatsapp_sessions').delete().eq('id', session.id);
+      await sendMessage({ to: identifier, body: err.message });
+      return;
+    }
+    throw err;
+  }
 
   // Create appointment via direct insert (using service role)
   const { nanoid } = await import('nanoid');

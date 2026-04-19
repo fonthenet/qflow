@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { nanoid } from 'nanoid';
-import { getAvailableSlots } from '@/lib/slot-generator';
+import { checkBookingAllowed } from '@/lib/booking-guard';
 import { upsertCustomerFromBooking } from '@/lib/upsert-customer';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { t as tMsg, type Locale } from '@/lib/messaging-commands';
@@ -68,48 +68,26 @@ export async function POST(request: NextRequest) {
   // Normalize scheduledAt to office timezone (converts naive datetime to timezone-aware)
   const resolvedScheduledAt = toTimezoneAware(scheduledAt, officeTz);
 
-  // Extract date and time for validation (use the raw input time, which is in office local)
-  const dateStr = scheduledAt.split('T')[0];
-  const timePart = scheduledAt.split('T')[1] || '00:00';
-  const timeStr = timePart.substring(0, 5); // "HH:MM"
   if (_bookOrgSettings.web_enabled === false) {
     return NextResponse.json({ error: 'Web booking is disabled for this business' }, { status: 403 });
   }
 
-  // Use centralized slot generator to validate availability
-  const availability = await getAvailableSlots({
+  // Centralized booking gate — same rules as WhatsApp/Messenger/admin paths.
+  // Honors booking_mode=disabled, always_closed, office_closed, holidays,
+  // daily limits, and slot availability. In-house bookings can override
+  // office_closed/holiday/slot-level checks (walk-in rescue).
+  const guard = await checkBookingAllowed({
     officeId,
     serviceId,
-    date: dateStr,
+    scheduledAt,
     staffId,
+    isInHouse,
   });
-
-  // Check if booking is disabled
-  if (availability.meta.booking_mode === 'disabled') {
-    return NextResponse.json({ error: 'Booking is currently disabled for this business' }, { status: 403 });
-  }
-
-  // Check if office is closed or holiday
-  if (availability.meta.office_closed) {
-    return NextResponse.json({ error: 'Office is closed on this date' }, { status: 400 });
-  }
-
-  if (availability.meta.is_holiday) {
-    return NextResponse.json({ error: 'This date is a holiday' }, { status: 400 });
-  }
-
-  // Check daily limit
-  if (availability.meta.daily_limit_reached) {
-    return NextResponse.json({ error: 'Daily booking limit reached for this date' }, { status: 409 });
-  }
-
-  // Check if the specific time slot is available.
-  // `availability.slots` now includes taken slots (with `available:false`)
-  // so we must assert BOTH presence and availability — otherwise a
-  // taken slot would pass the find() check.
-  const slotMatch = availability.slots.find(s => s.time === timeStr);
-  if (!slotMatch || slotMatch.available === false) {
-    return NextResponse.json({ error: 'This time slot is not available' }, { status: 409 });
+  if (!guard.ok) {
+    return NextResponse.json(
+      { error: guard.message, reason: guard.reason },
+      { status: guard.status ?? 400 },
+    );
   }
 
   const calendarToken = nanoid(16);
