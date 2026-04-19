@@ -246,23 +246,44 @@ function Pill({ label, onPress, tone = 'primary' }: { label: string; onPress: ()
 // ---------------------------------------------------------------------------
 function CountdownCircle({ calledAt }: { calledAt: string }) {
   const { t } = useTranslation();
-  const [remaining, setRemaining] = useState(CALL_WAIT_SECONDS);
+  // Fractional remaining — updated on a 100ms tick so the color can shift
+  // smoothly between green → orange → red instead of snapping at thresholds.
+  // The displayed number is still rounded to whole seconds.
+  const [remainingExact, setRemainingExact] = useState(CALL_WAIT_SECONDS);
   useEffect(() => {
     const start = new Date(calledAt).getTime();
-    const tick = () => setRemaining(Math.max(0, CALL_WAIT_SECONDS - Math.floor((Date.now() - start) / 1000)));
+    const tick = () => setRemainingExact(Math.max(0, CALL_WAIT_SECONDS - (Date.now() - start) / 1000));
     tick();
-    const id = setInterval(tick, 1000);
+    const id = setInterval(tick, 100);
     return () => clearInterval(id);
   }, [calledAt]);
 
+  // Piecewise linear interpolation across three RGB stops:
+  //   0s    red    (239, 68, 68)
+  //   10s   orange (245, 158, 11)
+  //   60s   green  ( 34, 197, 94)
   // Only the circle carries the urgency color — the rest of the screen stays
-  // in the user's theme. Green > 30s, orange 10–30s, red < 10s (expired).
-  const phaseColor =
-    remaining > 30 ? '#22c55e' : remaining > 10 ? '#f59e0b' : '#ef4444';
-  const expired = remaining === 0;
+  // in the user's theme.
+  const r = remainingExact;
+  const lerp = (a: number, b: number, tt: number) => Math.round(a + (b - a) * tt);
+  let rr: number, gg: number, bb: number;
+  if (r <= 10) {
+    const tt = Math.max(0, Math.min(1, r / 10));
+    rr = lerp(239, 245, tt);
+    gg = lerp(68, 158, tt);
+    bb = lerp(68, 11, tt);
+  } else {
+    const tt = Math.max(0, Math.min(1, (r - 10) / (CALL_WAIT_SECONDS - 10)));
+    rr = lerp(245, 34, tt);
+    gg = lerp(158, 197, tt);
+    bb = lerp(11, 94, tt);
+  }
+  const phaseColor = `rgb(${rr}, ${gg}, ${bb})`;
+  const displayRemaining = Math.max(0, Math.ceil(r));
+  const expired = displayRemaining === 0;
   return (
     <View style={[s.countdownCircle, { borderColor: phaseColor, backgroundColor: phaseColor }]}>
-      <Text style={s.countdownNumber}>{remaining}</Text>
+      <Text style={s.countdownNumber}>{displayRemaining}</Text>
       <Text style={s.countdownLabel}>{expired ? t('customer.expired') : t('customer.seconds')}</Text>
     </View>
   );
