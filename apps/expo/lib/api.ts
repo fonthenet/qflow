@@ -185,7 +185,17 @@ export async function joinQueue(params: {
 // ---------------------------------------------------------------------------
 
 export interface KioskInfoResponse {
-  office: { id: string; name: string; address: string | null; organization_id: string; timezone?: string | null };
+  office: {
+    id: string;
+    name: string;
+    address: string | null;
+    organization_id: string;
+    timezone?: string | null;
+    /** Per-day hours keyed monday..sunday. Closed days have `{ open:'', close:'' }` or are absent. */
+    operating_hours?: Record<string, { open: string; close: string } | null> | null;
+    always_open?: boolean;
+    always_closed?: boolean;
+  };
   organization: { id: string; name: string; logo_url: string | null };
   departments: Array<{ id: string; name: string; code: string; sort_order: number }>;
   services: Array<{

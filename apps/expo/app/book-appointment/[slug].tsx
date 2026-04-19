@@ -31,13 +31,45 @@ import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
 
-function nextNDays(n: number): string[] {
+const WEEKDAY_KEYS_ORDERED = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
+
+/** Returns YYYY-MM-DD strings for the next n days that the office is open.
+ *  Respects `operating_hours` (per-day open/close) and the `always_open` /
+ *  `always_closed` override flags so the calendar never lets a customer pick
+ *  a day when the business is closed. Falls back to every day when we have
+ *  no hours info yet (first render before fetchKioskInfo resolves). */
+function nextOpenDays(
+  n: number,
+  operatingHours: Record<string, { open: string; close: string } | null> | null | undefined,
+  alwaysOpen: boolean,
+  alwaysClosed: boolean,
+): string[] {
+  if (alwaysClosed) return [];
   const days: string[] = [];
   const now = new Date();
   for (let i = 0; i < n; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
-    days.push(d.toISOString().split('T')[0]);
+    const iso = d.toISOString().split('T')[0];
+    if (alwaysOpen || !operatingHours) {
+      days.push(iso);
+      continue;
+    }
+    const key = WEEKDAY_KEYS_ORDERED[d.getDay()];
+    const hours = operatingHours[key];
+    const open = hours?.open?.trim();
+    const close = hours?.close?.trim();
+    // Closed when no entry, or when open/close are blank, or 00:00-00:00.
+    const isClosed = !hours || !open || !close || (open === close && open === '00:00');
+    if (!isClosed) days.push(iso);
   }
   return days;
 }
@@ -130,7 +162,12 @@ export default function BookAppointmentScreen() {
   const [confirmedAt, setConfirmedAt] = useState('');
 
   const horizonDays = info?.settings?.booking_horizon_days ?? 90;
-  const availableDates = nextNDays(horizonDays);
+  const availableDates = nextOpenDays(
+    horizonDays,
+    info?.office.operating_hours ?? null,
+    info?.office.always_open ?? false,
+    info?.office.always_closed ?? false,
+  );
 
   const loadInfo = useCallback(async () => {
     if (!slug) return;
