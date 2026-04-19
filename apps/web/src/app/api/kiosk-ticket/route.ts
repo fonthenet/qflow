@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { getQueuePosition } from '@/lib/queue-position';
 import { checkRateLimit, publicLimiter } from '@/lib/rate-limit';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { checkVisitAllowed } from '@/lib/visit-guard';
 import { isValidUUID, sanitizeString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
@@ -73,6 +74,20 @@ export async function POST(request: NextRequest) {
   if (orgSettings.default_check_in_mode === 'manual') {
     return NextResponse.json({ error: 'Self-service ticket creation is disabled. Please check in at the front desk.' }, { status: 403 });
   }
+
+  // Centralized visit gate — same rules as /api/join-queue, createPublicTicket.
+  // Rejects tickets when the business is always_closed or outside operating
+  // hours. Native kiosk running at the front desk is *not* treated as in-house
+  // here — the hardware is self-service; staff use the Station app for walk-in
+  // rescue.
+  const visitGuard = await checkVisitAllowed({ officeId });
+  if (!visitGuard.ok) {
+    return NextResponse.json(
+      { error: visitGuard.message, reason: visitGuard.reason },
+      { status: visitGuard.status ?? 403 },
+    );
+  }
+
   const requireApproval = Boolean(
     (officeRow?.settings as any)?.require_ticket_approval ??
       orgSettings.require_ticket_approval

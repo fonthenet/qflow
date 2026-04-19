@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { getQueuePosition } from '@/lib/queue-position';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { checkVisitAllowed } from '@/lib/visit-guard';
 import { isValidUUID, sanitizeString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
@@ -50,6 +51,18 @@ export async function POST(request: NextRequest) {
   if (_vqOrgSettings.virtual_queue_enabled === false) {
     return NextResponse.json({ error: 'Virtual queue is disabled for this business' }, { status: 403 });
   }
+
+  // Centralized visit gate — same rules as /api/kiosk-ticket, createPublicTicket.
+  // Rejects remote joins when the business is always_closed or outside
+  // operating hours.
+  const visitGuard = await checkVisitAllowed({ officeId });
+  if (!visitGuard.ok) {
+    return NextResponse.json(
+      { error: visitGuard.message, reason: visitGuard.reason },
+      { status: visitGuard.status ?? 403 },
+    );
+  }
+
   const requireApproval = Boolean(
     (officeRow?.settings as any)?.require_ticket_approval ??
       _vqOrgSettings.require_ticket_approval
