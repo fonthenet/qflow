@@ -76,7 +76,7 @@ function getStatusIcon(status: string): string {
 }
 
 function formatTime12(dateStr: string): string {
-  return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return new Date(dateStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 // ── Calendar Helpers ─────────────────────────────────────────────────
@@ -100,11 +100,11 @@ function toDateStr(y: number, m: number, d: number): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-function formatMonthYear(y: number, m: number): string {
-  return new Date(y, m).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function formatMonthYear(y: number, m: number, lang?: string): string {
+  return new Date(y, m).toLocaleDateString(lang || undefined, { month: 'long', year: 'numeric' });
 }
 
-const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DOW_WEEKDAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
 // ── Calendar Component ──────────────────────────────────────────────
 
@@ -117,6 +117,7 @@ function MonthCalendar({
   onSelect: (date: string) => void;
   appointmentDots: Record<string, { total: number; pending: number; confirmed: number }>;
 }) {
+  const { t, i18n } = useTranslation();
   const [viewYear, setViewYear] = useState(() => parseInt(selectedDate.slice(0, 4)));
   const [viewMonth, setViewMonth] = useState(() => parseInt(selectedDate.slice(5, 7)) - 1);
 
@@ -158,7 +159,7 @@ function MonthCalendar({
           }}
           activeOpacity={0.7}
         >
-          <Text style={cal.monthLabel}>{formatMonthYear(viewYear, viewMonth)}</Text>
+          <Text style={cal.monthLabel}>{formatMonthYear(viewYear, viewMonth, i18n.language)}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigateMonth(1)} style={cal.navBtn}>
           <Ionicons name="chevron-forward" size={20} color={colors.text} />
@@ -167,8 +168,8 @@ function MonthCalendar({
 
       {/* Day of week headers */}
       <View style={cal.dowRow}>
-        {DOW_LABELS.map((d) => (
-          <Text key={d} style={cal.dowText}>{d}</Text>
+        {DOW_WEEKDAY_KEYS.map((d) => (
+          <Text key={d} style={cal.dowText}>{t(`queuePeek.weekday.${d}`)}</Text>
         ))}
       </View>
 
@@ -322,7 +323,7 @@ const cal = StyleSheet.create({
 // ── Main Screen ──────────────────────────────────────────────────────
 
 export default function BookingsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { orgId, officeIds, loading: orgLoading } = useOrg();
   const names = useNameLookup(orgId, officeIds);
 
@@ -700,7 +701,7 @@ export default function BookingsScreen() {
             color={colors.primary}
           />
           <Text style={s.calToggleText}>
-            {new Date(dateFilter + 'T12:00:00').toLocaleDateString('en-US', {
+            {new Date(dateFilter + 'T12:00:00').toLocaleDateString(i18n.language || undefined, {
               weekday: 'short', month: 'short', day: 'numeric',
             })}
           </Text>

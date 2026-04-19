@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase, ensureAuth } from '../lib/supabase';
+import { PrioritiesEditor } from './PrioritiesEditor';
 import { t as translate, type DesktopLocale } from '../lib/i18n';
 import DatePicker from './DatePicker';
 import TimePicker from './TimePicker';
@@ -129,7 +130,7 @@ const TIMEZONES = [
 
 type SettingsShape = Record<string, any>;
 
-type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon' | 'stepper';
+type FieldType = 'bool' | 'num' | 'text' | 'textarea' | 'enum' | 'multi' | 'horizon' | 'stepper' | 'color' | 'header';
 
 interface FieldDef {
   key: string;
@@ -186,7 +187,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState('');
   const [activeSection, setActiveSection] = useState('booking');
-  const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments'>('intake');
+  const [bookingSubTab, setBookingSubTab] = useState<'intake' | 'queue' | 'appointments' | 'priorities'>('intake');
   const [expandedIntakeField, setExpandedIntakeField] = useState<string | null>(null);
   const orgIdRef = useRef<string>('');
   const originalRef = useRef<SettingsShape>({});
@@ -212,6 +213,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   );
   const [schedule, setSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
   const [originalSchedule, setOriginalSchedule] = useState<Record<string, DaySchedule>>(defaultSchedule);
+  // Snapshot of the weekly schedule taken right before the user flips "always
+  // open" ON — so we can restore it if they flip it back OFF in the same
+  // session, instead of losing their hours to default/zero values.
+  const scheduleBeforeAlwaysOpenRef = useRef<Record<string, DaySchedule> | null>(null);
 
   // Holidays
   type Holiday = { id?: string; holiday_date: string; name: string; is_full_day: boolean; open_time?: string; close_time?: string };
@@ -262,7 +267,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       // All booking + ticketing fields defined here for settings key extraction
       _allFields: [
         // Appointments sub-tab
-        { key: 'booking_mode', label: t('sm.field.booking_enabled'), type: 'bool', default: false },
+        { key: 'booking_mode', label: t('sm.field.booking_enabled'), type: 'bool', default: true },
         { key: 'slot_duration_minutes', label: t('sm.field.slot_duration'), type: 'stepper', default: 30, min: 5, max: 120, step: 5 },
         { key: 'slots_per_interval', label: t('sm.field.slots_per_interval'), type: 'num', default: 1, min: 1 },
         { key: 'daily_ticket_limit', label: t('sm.field.daily_limit'), type: 'num', default: 0, min: 0, unlimitedWhenZero: true },
@@ -277,11 +282,17 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           { value: 'prefix_numeric', label: t('sm.fmt.prefix_numeric') },
           { value: 'prefix_dept_numeric', label: t('sm.fmt.prefix_dept_numeric') },
         ]},
-        { key: 'default_check_in_mode', label: t('sm.field.check_in_mode'), type: 'enum', default: 'manual', options: [
+        // Check-in mode — must match the web admin's options. The server
+        // (apps/web/src/app/api/kiosk-ticket/route.ts) blocks self-service
+        // kiosk ticket creation when this is 'manual', so the enum values
+        // here have to match exactly or settings round-trips lose fidelity.
+        { key: 'default_check_in_mode', label: t('sm.field.check_in_mode'), type: 'enum', default: 'hybrid', options: [
+          { value: 'self_service', label: t('sm.checkin.self_service') },
           { value: 'manual', label: t('sm.checkin.manual') },
-          { value: 'auto', label: t('sm.checkin.auto') },
+          { value: 'hybrid', label: t('sm.checkin.hybrid') },
         ], help: t('sm.help.check_in_mode') },
         { key: 'auto_no_show_timeout', label: t('sm.field.auto_no_show'), type: 'num', default: 1, min: 0, help: t('sm.help.auto_no_show') },
+        { key: 'max_queue_size', label: t('sm.field.max_queue'), type: 'num', default: 50, min: 0, unlimitedWhenZero: true, help: t('sm.help.max_queue') },
         { key: 'require_ticket_approval', label: t('sm.field.require_ticket_approval'), type: 'bool', default: false, help: t('sm.help.require_ticket_approval') },
       ],
     },
@@ -307,15 +318,29 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       icon: '🖥',
       title: t('sm.section.display'),
       fields: [
-        { key: 'announcement_sound_enabled', label: t('sm.field.announcement_sound'), type: 'bool', default: true },
-        { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
-        { key: 'kiosk_welcome_message', label: t('sm.field.kiosk_welcome'), type: 'text', default: '' },
-        { key: 'kiosk_header_text', label: t('sm.field.kiosk_header'), type: 'text', default: '' },
-        { key: 'kiosk_button_label', label: t('sm.field.kiosk_button'), type: 'text', default: '' },
-        { key: 'kiosk_theme_color', label: t('sm.field.kiosk_theme'), type: 'text', default: '', placeholder: '#3b82f6' },
-        { key: 'kiosk_idle_timeout', label: t('sm.field.kiosk_idle'), type: 'num', default: 60, min: 10 },
+        // ── Kiosk flow ───────────────────────────────────────────────
+        { key: '__hdr_kiosk_flow', label: t('sm.hdr.kiosk_flow'), type: 'header', default: null, help: t('sm.hdr.kiosk_flow_help') },
+        { key: 'kiosk_mode', label: t('sm.field.kiosk_mode'), type: 'enum', default: 'normal', options: [
+          { value: 'normal', label: t('sm.kiosk_mode.normal') },
+          { value: 'quick_book', label: t('sm.kiosk_mode.quick_book') },
+        ], help: t('sm.help.kiosk_mode') },
+        { key: 'kiosk_idle_timeout', label: t('sm.field.kiosk_idle'), type: 'num', default: 60, min: 10, help: t('sm.help.kiosk_idle') },
         { key: 'kiosk_show_estimated_time', label: t('sm.field.kiosk_show_eta'), type: 'bool', default: true },
         { key: 'kiosk_show_priorities', label: t('sm.field.kiosk_show_priorities'), type: 'bool', default: false },
+
+        // ── Kiosk copy & branding ───────────────────────────────────
+        { key: '__hdr_kiosk_brand', label: t('sm.hdr.kiosk_brand'), type: 'header', default: null },
+        { key: 'kiosk_welcome_message', label: t('sm.field.kiosk_welcome'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_welcome') },
+        { key: 'kiosk_header_text', label: t('sm.field.kiosk_header'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_header') },
+        { key: 'kiosk_button_label', label: t('sm.field.kiosk_button'), type: 'text', default: '', placeholder: t('sm.ph.kiosk_button') },
+        { key: 'kiosk_theme_color', label: t('sm.field.kiosk_theme'), type: 'color', default: '#3b82f6', placeholder: '#3b82f6', help: t('sm.help.kiosk_theme') },
+        { key: 'kiosk_show_logo', label: t('sm.field.kiosk_show_logo'), type: 'bool', default: true, help: t('sm.help.kiosk_show_logo') },
+        { key: 'kiosk_logo_url', label: t('sm.field.kiosk_logo_url'), type: 'text', default: '', placeholder: 'https://…/logo.png', help: t('sm.help.kiosk_logo_url') },
+
+        // ── Sound & announcements ───────────────────────────────────
+        { key: '__hdr_sound', label: t('sm.hdr.sound'), type: 'header', default: null },
+        { key: 'announcement_sound_enabled', label: t('sm.field.announcement_sound'), type: 'bool', default: true, help: t('sm.help.announcement_sound') },
+        { key: 'voice_announcements', label: t('sm.field.voice_announcements'), type: 'bool', default: false, help: t('sm.help.voice_announcements') },
       ],
     },
     {
@@ -419,8 +444,8 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
   const allFieldKeys = useMemo(() => {
     const keys: string[] = [];
     sections.forEach(s => {
-      s.fields.forEach(f => keys.push(f.key));
-      s._allFields?.forEach(f => keys.push(f.key));
+      s.fields.forEach(f => { if (f.type !== 'header') keys.push(f.key); });
+      s._allFields?.forEach(f => { if (f.type !== 'header') keys.push(f.key); });
     });
     // Channel keys are custom-rendered (not in fields array) but must be tracked
     keys.push(...CUSTOM_KEYS);
@@ -519,7 +544,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         const allFields = [...sec.fields, ...(sec._allFields ?? [])];
         allFields.forEach(f => {
           if (f.key === 'booking_mode') {
-            init[f.key] = (s.booking_mode ?? 'disabled') !== 'disabled';
+            init[f.key] = (s.booking_mode ?? 'simple') !== 'disabled';
             return;
           }
           const raw = s[f.key];
@@ -529,8 +554,10 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             case 'horizon': init[f.key] = raw == null ? f.default : coerceNum(raw, f.default); break;
             case 'text':
             case 'textarea':
+            case 'color':
             case 'enum': init[f.key] = coerceStr(raw, f.default); break;
             case 'multi': init[f.key] = coerceArr(raw, f.default); break;
+            case 'header': break;
           }
         });
       });
@@ -578,7 +605,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
     for (const key of allFieldKeys) {
       const cur = values[key];
       if (key === 'booking_mode') {
-        const origEnabled = (o.booking_mode ?? 'disabled') !== 'disabled';
+        const origEnabled = (o.booking_mode ?? 'simple') !== 'disabled';
         if (cur !== origEnabled) return true;
         continue;
       }
@@ -696,6 +723,7 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       sections.forEach(sec => {
         const allFields = [...sec.fields, ...(sec._allFields ?? [])];
         allFields.forEach(f => {
+          if (f.type === 'header') return;
           const v = values[f.key];
           if (f.key === 'booking_mode') {
             partial.booking_mode = v ? 'simple' : 'disabled';
@@ -726,25 +754,33 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
 
       // Save office-level fields (timezone + operating hours)
       if (officeId) {
-        const operatingHours: Record<string, any> = {};
-        for (const d of WEEK_DAYS) {
-          const day = schedule[d.key];
-          if (day.closed) {
-            operatingHours[d.key] = { open: '00:00', close: '00:00' };
-          } else {
-            const entry: any = { open: day.open, close: day.close };
-            if (day.break_start && day.break_end) {
-              entry.break_start = day.break_start;
-              entry.break_end = day.break_end;
+        // When "always open" is ON we intentionally preserve whatever
+        // operating_hours are already in the DB — if the admin flips it back
+        // OFF later, we want the real weekly schedule to still be there
+        // instead of an all-zero calendar.
+        const isAlwaysOpen = merged.visit_intake_override_mode === 'always_open';
+        const officeUpdate: any = {};
+        if (!isAlwaysOpen) {
+          const operatingHours: Record<string, any> = {};
+          for (const d of WEEK_DAYS) {
+            const day = schedule[d.key];
+            if (day.closed) {
+              operatingHours[d.key] = { open: '00:00', close: '00:00' };
+            } else {
+              const entry: any = { open: day.open, close: day.close };
+              if (day.break_start && day.break_end) {
+                entry.break_start = day.break_start;
+                entry.break_end = day.break_end;
+              }
+              operatingHours[d.key] = entry;
             }
-            operatingHours[d.key] = entry;
           }
+          officeUpdate.operating_hours = operatingHours;
         }
-        const officeUpdate: any = {
-          operating_hours: operatingHours,
-        };
-        const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
-        if (ofcErr) throw ofcErr;
+        if (Object.keys(officeUpdate).length > 0) {
+          const { error: ofcErr } = await sb.from('offices').update(officeUpdate).eq('id', officeId);
+          if (ofcErr) throw ofcErr;
+        }
 
         // Save timezone to org level (single source of truth)
         if (officeTimezone !== originalTimezone) {
@@ -1046,6 +1082,69 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
         </div>
       );
     }
+    if (f.type === 'header') {
+      return (
+        <div
+          key={f.key}
+          style={{
+            gridColumn: '1 / -1',
+            marginTop: 14,
+            marginBottom: 2,
+            paddingTop: 10,
+            borderTop: '1px solid var(--border, #334155)',
+          }}
+        >
+          <div style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+            textTransform: 'uppercase', color: 'var(--text3, #64748b)',
+          }}>{f.label}</div>
+          {f.help && <div style={{ ...helpStyle, marginTop: 2 }}>{f.help}</div>}
+        </div>
+      );
+    }
+    if (f.type === 'color') {
+      const raw = typeof v === 'string' && v ? v : '';
+      const valid = /^#[0-9a-fA-F]{6}$/.test(raw);
+      const pickerValue = valid ? raw : (f.default || '#3b82f6');
+      return (
+        <div key={f.key} style={{ padding: '5px 0' }}>
+          <label style={labelStyle}>{f.label}</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="color"
+              value={pickerValue}
+              onChange={(e) => setV(e.target.value)}
+              style={{
+                width: 40, height: 34, padding: 2, borderRadius: 6,
+                border: '1px solid var(--border, #475569)',
+                background: 'transparent', cursor: 'pointer',
+              }}
+            />
+            <input
+              type="text"
+              value={raw}
+              onChange={(e) => setV(e.target.value)}
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder={placeholder || '#3b82f6'}
+            />
+            {raw && (
+              <button
+                type="button"
+                onClick={() => setV('')}
+                style={{
+                  padding: '6px 10px', fontSize: 12, borderRadius: 6,
+                  border: '1px solid var(--border, #475569)',
+                  background: 'transparent', color: 'var(--text2, #94a3b8)',
+                  cursor: 'pointer',
+                }}
+              >{t('sm.color.reset')}</button>
+            )}
+          </div>
+          {f.help && <div style={helpStyle}>{f.help}</div>}
+          {err && <div style={errStyle}>{err}</div>}
+        </div>
+      );
+    }
     // text — single column by default
     return (
       <div key={f.key} style={{ padding: '5px 0' }}>
@@ -1137,7 +1236,20 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
           </div>
           <Toggle
             on={values.visit_intake_override_mode === 'always_open'}
-            onChange={(on) => setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }))}
+            onChange={(on) => {
+              if (on) {
+                // Turning ON: snapshot the current weekly schedule so we can
+                // put it back if the admin toggles OFF again.
+                scheduleBeforeAlwaysOpenRef.current = JSON.parse(JSON.stringify(schedule));
+              } else {
+                // Turning OFF: restore the pre-always-open snapshot if we have
+                // one, otherwise fall back to the last loaded schedule so the
+                // admin never ends up with an all-zero / blanked-out calendar.
+                const restored = scheduleBeforeAlwaysOpenRef.current ?? originalSchedule;
+                setSchedule(JSON.parse(JSON.stringify(restored)));
+              }
+              setValues(prev => ({ ...prev, visit_intake_override_mode: on ? 'always_open' : 'business_hours' }));
+            }}
           />
         </div>
 
@@ -1525,10 +1637,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
       const queueFields = allFields.filter(f => !appointmentKeys.has(f.key));
       const appointmentFields = allFields.filter(f => appointmentKeys.has(f.key));
 
-      const subTabs: { id: 'intake' | 'queue' | 'appointments'; label: string }[] = [
+      const subTabs: { id: 'intake' | 'queue' | 'appointments' | 'priorities'; label: string }[] = [
         { id: 'intake', label: t('Intake Fields') },
         { id: 'queue', label: t('Queue') },
         { id: 'appointments', label: t('Appointments') },
+        { id: 'priorities', label: t('prio.tabLabel') },
       ];
 
       return (
@@ -1782,6 +1895,11 @@ export function SettingsModal({ organizationId, officeId, locale, storedAuth, of
             }}>
               {queueFields.map(renderField)}
             </div>
+          )}
+
+          {/* Priorities sub-tab — mirrors /admin/priorities on the web portal. */}
+          {bookingSubTab === 'priorities' && orgIdRef.current && (
+            <PrioritiesEditor organizationId={orgIdRef.current} locale={locale as any} />
           )}
 
           {/* Appointments sub-tab */}

@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAppStore } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
@@ -61,6 +62,7 @@ export default function ScanScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { setActiveToken } = useAppStore();
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [scanState, setScanState] = useState<ScanState>('scanning');
@@ -245,9 +247,13 @@ export default function ScanScreen() {
         )}
       </Animated.View>
 
-      {/* Back button + title */}
-      <View style={styles.topSection}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
+      {/* Back button + title — padded past the device notch / status bar */}
+      <View style={[styles.topSection, { paddingTop: insets.top + spacing.md }]}>
+        <TouchableOpacity
+          style={[styles.backButton, { top: insets.top + spacing.md }]}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.scanTitle}>{t('scan.scanQR')}</Text>
@@ -255,7 +261,7 @@ export default function ScanScreen() {
       </View>
 
       {/* Bottom controls */}
-      <View style={styles.bottomSection}>
+      <View style={[styles.bottomSection, { paddingBottom: insets.bottom + spacing.lg }]}>
         <TouchableOpacity style={styles.torchButton} onPress={() => setTorch((p) => !p)} activeOpacity={0.7}>
           <Ionicons name={torch ? 'flash' : 'flash-outline'} size={26} color="#fff" />
         </TouchableOpacity>
@@ -325,12 +331,12 @@ const styles = StyleSheet.create({
   feedbackIcon: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
   feedbackText: { fontSize: fontSize.lg, fontWeight: '600', color: '#fff', marginTop: spacing.md },
 
-  topSection: { position: 'absolute', top: 0, left: 0, right: 0, paddingTop: Platform.OS === 'ios' ? 60 : 46, paddingHorizontal: spacing.lg, alignItems: 'center' },
-  backButton: { position: 'absolute', left: spacing.lg, top: Platform.OS === 'ios' ? 60 : 46, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  topSection: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: spacing.lg, alignItems: 'center' },
+  backButton: { position: 'absolute', left: spacing.lg, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   scanTitle: { fontSize: fontSize.xxl, fontWeight: '700', color: '#fff', marginBottom: spacing.xs },
   scanSubtitle: { fontSize: fontSize.md, color: 'rgba(255,255,255,0.75)', textAlign: 'center' },
 
-  bottomSection: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: Platform.OS === 'ios' ? 50 : 36, alignItems: 'center', gap: spacing.md },
+  bottomSection: { position: 'absolute', bottom: 0, left: 0, right: 0, alignItems: 'center', gap: spacing.md },
   torchButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs },
   manualEntryBottomLink: { fontSize: fontSize.md, color: '#fff', fontWeight: '500', textDecorationLine: 'underline' },
   tipText: { fontSize: fontSize.xs, color: 'rgba(255,255,255,0.5)', textAlign: 'center', paddingHorizontal: spacing.xl },

@@ -300,7 +300,7 @@ export function QueueCard({ ticket, onTicketUpdated }: { ticket: TicketResponse;
   const accentColor = statusAccent(ticket.status, t);
   const serviceLabel = ticket.service?.name ?? ticket.department?.name ?? null;
   const peopleAhead = ticket.position != null && ticket.position > 0 ? ticket.position - 1 : 0;
-  const syncedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const syncedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
   let completedDurationMin: number | null = null;
   if (ticket.status === 'served' && ticket.completed_at && ticket.created_at) {

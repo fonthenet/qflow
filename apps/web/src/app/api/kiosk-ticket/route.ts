@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     priority?: number;
     customerName?: string;
     customerPhone?: string;
+    customerData?: Record<string, unknown>;
   };
 
   try {
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { officeId, departmentId, serviceId, priorityCategoryId, priority, customerName, customerPhone } = body;
+  const { officeId, departmentId, serviceId, priorityCategoryId, priority, customerName, customerPhone, customerData } = body;
 
   if (!officeId || !departmentId || !serviceId) {
     return NextResponse.json(
@@ -43,6 +44,19 @@ export async function POST(request: NextRequest) {
   }
   const cleanCustomerName = customerName ? sanitizeString(customerName, 200) : undefined;
   const cleanCustomerPhone = customerPhone ? sanitizeString(customerPhone, 30) : undefined;
+
+  // Build customer_data from dynamic intake fields + legacy name/phone
+  const cleanCustomerData: Record<string, string> = {};
+  if (customerData && typeof customerData === 'object') {
+    for (const [key, rawValue] of Object.entries(customerData)) {
+      if (typeof rawValue !== 'string') continue;
+      if (!/^[a-zA-Z0-9_]{1,60}$/.test(key)) continue;
+      const value = sanitizeString(rawValue, 500);
+      if (value) cleanCustomerData[key] = value;
+    }
+  }
+  if (cleanCustomerName) cleanCustomerData.name = cleanCustomerName;
+  if (cleanCustomerPhone) cleanCustomerData.phone = cleanCustomerPhone;
 
   const supabase = createAdminClient();
 
@@ -108,6 +122,7 @@ export async function POST(request: NextRequest) {
       estimated_wait_minutes: estimatedWait,
       priority: priority ?? 0,
       priority_category_id: priorityCategoryId ?? null,
+      customer_data: Object.keys(cleanCustomerData).length > 0 ? cleanCustomerData : null,
       is_remote: false,
       source: 'kiosk',
     })

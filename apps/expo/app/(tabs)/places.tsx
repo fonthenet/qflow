@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAppStore, type SavedPlace } from '@/lib/store';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
-import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
+import { fetchQueueStatus, searchDirectory, type QueueStatusResponse, type DirectorySearchResult } from '@/lib/api';
 import { checkWaitAlertsNow } from '@/lib/wait-alerts';
 import { API_BASE_URL } from '@/lib/config';
 
@@ -58,6 +58,14 @@ function statusBadge(
       label: t('places.closed'),
       color: colors.textMuted,
       dot: colors.textMuted,
+    };
+  }
+  // Closed per operating hours (and not 24/7) → show Closed
+  if (entry.status && entry.status.openNow === false && !entry.status.alwaysOpen) {
+    return {
+      label: t('queuePeek.closedNow', { defaultValue: 'Closed' }),
+      color: colors.error,
+      dot: colors.error,
     };
   }
   const waiting = entry.status?.totalWaiting ?? 0;
@@ -101,9 +109,9 @@ function PlaceCard({
   colors: ThemeColors;
   isDark: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const dateStr = place.lastSeenAt
-    ? new Date(place.lastSeenAt).toLocaleDateString(undefined, {
+    ? new Date(place.lastSeenAt).toLocaleDateString(i18n.language || undefined, {
         month: 'short',
         day: 'numeric',
       })
@@ -462,10 +470,45 @@ export default function PlacesScreen() {
   const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [sheetPlace, setSheetPlace] = useState<SavedPlace | null>(null);
   const [alertPlace, setAlertPlace] = useState<SavedPlace | null>(null);
+  const [directoryResults, setDirectoryResults] = useState<DirectorySearchResult[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+
+  // Keep a stable ref to savedPlaces so the search effect only re-runs on
+  // query changes (savedPlaces re-identifies on every status poll, which was
+  // causing the spinner to flash every 60s).
+  const savedPlacesRef = useRef(savedPlaces);
+  savedPlacesRef.current = savedPlaces;
+
+  // Debounced directory search — fires as soon as the user types anything.
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length === 0) {
+      setDirectoryResults([]);
+      setDirectoryLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDirectoryLoading(true);
+    const timer = setTimeout(async () => {
+      const results = await searchDirectory(q);
+      if (cancelled) return;
+      const savedOfficeIds = new Set(savedPlacesRef.current.map((p) => p.id));
+      setDirectoryResults(results.filter((r) => !savedOfficeIds.has(r.officeId)));
+      setDirectoryLoading(false);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
 
   // --- Live queue status fetcher -----------------------------------------
+  // NOTE: we intentionally read savedPlaces via a ref here. markPlaceOk and
+  // setPlaceBookingMode produce a new savedPlaces array on every call, which
+  // — if this callback depended on savedPlaces directly — would change its
+  // identity, re-trigger the useFocusEffect below, and recurse forever.
   const fetchAllStatuses = useCallback(async () => {
-    const slugs = savedPlaces
+    const slugs = savedPlacesRef.current
       .filter((p) => p.kioskSlug)
       .map((p) => ({ id: p.id, slug: p.kioskSlug! }));
     if (slugs.length === 0) return;
@@ -497,7 +540,8 @@ export default function PlacesScreen() {
         }
       }),
     );
-  }, [savedPlaces, markPlaceOk, markPlaceFailed, setPlaceBookingMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markPlaceOk, markPlaceFailed, setPlaceBookingMode]);
 
   // Fetch on focus + refresh every 60s while focused
   const focusTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -726,31 +770,45 @@ export default function PlacesScreen() {
           />
         }
       >
-        {/* My appointments shortcut — only shown when there are bookings */}
-        <AppointmentsShortcut colors={colors} />
-
-        {/* Search bar */}
-        <View
-          style={[
-            styles.searchBar,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Ionicons name="search-outline" size={18} color={colors.textMuted} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder={t('places.searchPlaces')}
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch('')}>
-              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
+        {/* Search bar + compact Add button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md }}>
+          <View
+            style={[
+              styles.searchBar,
+              { flex: 1, marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Ionicons name="search-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={t('places.searchPlaces')}
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            accessibilityLabel={t('places.addNewPlace')}
+            onPress={() => router.push('/scan' as any)}
+            activeOpacity={0.8}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: borderRadius.md,
+              backgroundColor: colors.primary,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="qr-code-outline" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
 
         {/* Category chips */}
@@ -779,50 +837,95 @@ export default function PlacesScreen() {
           </ScrollView>
         )}
 
-        {/* Scan banner */}
-        <TouchableOpacity
-          style={[
-            styles.scanBanner,
-            {
-              backgroundColor: isDark ? 'rgba(59,130,246,0.10)' : colors.infoLight,
-              borderColor: colors.primary + '20',
-            },
-          ]}
-          onPress={() => router.push('/scan' as any)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.scanBannerIcon, { backgroundColor: colors.primary }]}>
-            <Ionicons name="qr-code-outline" size={20} color="#fff" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.scanBannerTitle, { color: colors.text }]}>
-              {t('places.addNewPlace')}
-            </Text>
-            <Text style={[styles.scanBannerSub, { color: colors.textSecondary }]}>
-              {t('places.scanQR')}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-        </TouchableOpacity>
+        {/* When searching, render a single flat list that merges matching
+            saved places + public directory results — no sub-section headers,
+            no count. When not searching, fall back to the normal sectioned
+            view (Pinned / Recent / Older). */}
+        {search.trim().length >= 1 ? (
+          <>
+            {filtered.map(renderCard)}
+            {directoryResults.map((r) => (
+              <TouchableOpacity
+                key={r.officeId}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/kiosk/${r.kioskSlug}` as any)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.sm,
+                  padding: spacing.md,
+                  marginHorizontal: spacing.md,
+                  marginTop: spacing.xs,
+                  borderRadius: borderRadius.md,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: colors.primary + '1A',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="storefront-outline" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{ fontSize: fontSize.md, fontWeight: '600', color: colors.text }}
+                    numberOfLines={1}
+                  >
+                    {r.orgName}
+                  </Text>
+                  <Text
+                    style={{ fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 }}
+                    numberOfLines={1}
+                  >
+                    {[r.officeName, r.address].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
 
-        {/* Count */}
-        <Text style={[styles.countLabel, { color: colors.textMuted }]}>
-          {filtered.length} place{filtered.length !== 1 ? 's' : ''}
-        </Text>
+            {directoryLoading && (
+              <ActivityIndicator style={{ marginTop: spacing.sm }} color={colors.primary} />
+            )}
 
-        {/* Sections */}
-        {filtered.length === 0 ? (
-          <View style={styles.noResults}>
-            <Ionicons name="search-outline" size={32} color={colors.textMuted} />
-            <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-              {t('common.noResults')}
-            </Text>
-          </View>
+            {!directoryLoading && filtered.length === 0 && directoryResults.length === 0 && (
+              <View style={styles.noResults}>
+                <Ionicons name="search-outline" size={32} color={colors.textMuted} />
+                <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+                  {t('common.noResults')}
+                </Text>
+              </View>
+            )}
+          </>
         ) : (
           <>
-            {renderSection(t('places.pinned'), pinned)}
-            {renderSection(t('places.recent'), recent)}
-            {renderSection(t('places.older'), older)}
+            {/* Count */}
+            <Text style={[styles.countLabel, { color: colors.textMuted }]}>
+              {t('places.count', { count: filtered.length })}
+            </Text>
+
+            {filtered.length === 0 ? (
+              <View style={styles.noResults}>
+                <Ionicons name="search-outline" size={32} color={colors.textMuted} />
+                <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+                  {t('common.noResults')}
+                </Text>
+              </View>
+            ) : (
+              <>
+                {renderSection(t('places.pinned'), pinned)}
+                {renderSection(t('places.recent'), recent)}
+                {renderSection(t('places.older'), older)}
+              </>
+            )}
           </>
         )}
 

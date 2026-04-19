@@ -468,7 +468,7 @@ function TicketRow({
   const cfg = TICKET_STATUS[item.status] ?? TICKET_STATUS.served;
   const statusColor = (colors as any)[cfg.colorKey] ?? colors.success;
   const date = new Date(item.date);
-  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 
   return (
     <TouchableOpacity
@@ -529,7 +529,7 @@ function ApptCard({
 
   const color = apptStatusColor(appt.status, colors);
   const when = new Date(appt.scheduledAt);
-  const whenStr = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const whenStr = when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   const countdown = !terminal ? formatCountdown(appt.scheduledAt, t) : null;
 
   return (

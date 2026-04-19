@@ -762,6 +762,7 @@ export default function DeskScreen() {
         const time = new Date(a.scheduled_at).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
+          hour12: false,
         });
         const svcName = a.service_id ? names.services[a.service_id] ?? '' : '';
         return (
@@ -1239,6 +1240,7 @@ export default function DeskScreen() {
                   ? new Date(ticket.completed_at).toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
+                      hour12: false,
                     })
                   : ''}
               </Text>

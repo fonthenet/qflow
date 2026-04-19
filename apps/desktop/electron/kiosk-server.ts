@@ -527,6 +527,12 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
         handleDevicePing(req, res);
       } else if (path === '/api/device-status' && req.method === 'GET') {
         handleDeviceStatus(res);
+      // Cloud proxy (used by remote /station browser to reach qflo.net
+      // without CORS). MUST live at top level — it used to be nested
+      // under /api/station/* which meant this path never matched and
+      // booking-slots, book-appointment, moderate-* calls all 404'd.
+      } else if (path === '/api/cloud-proxy') {
+        handleCloudProxy(req, url, res);
       // ── Station UI served over local network ─────────────────────
       } else if (path === '/station' || path === '/station/') {
         serveStationIndex(res);
@@ -546,6 +552,10 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
       // Config endpoint (unauthenticated — only public Supabase URL + anon key)
       } else if (path === '/api/station/config' && req.method === 'GET') {
         handleStationConfig(res);
+      // Ping endpoint (unauthenticated — remote /station page probes this to detect if Electron is running)
+      } else if (path === '/api/station/ping' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: true, ts: Date.now() }));
       // ── Station HTTP API (mirrors Electron IPC) ──────────────────
       // All /api/station/* endpoints require X-Station-Token authentication
       } else if (path.startsWith('/api/station/') || path === '/api/station') {
@@ -593,8 +603,6 @@ export function startKioskServer(port = 3847, requestedPort?: number): Promise<{
           handleCacheGet(url, res);
         } else if (path === '/api/station/cache-appointments' && req.method === 'POST') {
           handleCacheSave(req, res);
-        } else if (path === '/api/cloud-proxy') {
-          handleCloudProxy(req, url, res);
         } else {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Not found' }));
@@ -896,7 +904,7 @@ async function handleKioskInfo(url: URL, res: http.ServerResponse) {
     business_hours: businessStatus,
     visit_intake_override_mode: visitIntakeOverrideMode,
     kiosk_config: kioskConfig,
-    default_check_in_mode: organizationSettings.default_check_in_mode || 'manual',
+    default_check_in_mode: organizationSettings.default_check_in_mode || 'hybrid',
     whatsapp_phone: whatsappPhone,
     messenger_page_id: messengerPageId,
   }));
@@ -1356,7 +1364,13 @@ function serveStaticKioskFile(fileName: string, res: http.ServerResponse) {
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
   try {
     const filePath = join(KIOSK_DIR, fileName);
-    const content = readFileSync(filePath, 'utf-8');
+    let content = readFileSync(filePath, 'utf-8');
+    // Inject the offline detector into kiosk.html so the tablet shows a
+    // translated "Station offline" overlay the moment the Electron
+    // Station is closed, instead of silently hanging with dead data.
+    if (fileName === 'kiosk.html') {
+      content = content.replace('</body>', offlineDetectorScriptTag() + '\n</body>');
+    }
     res.writeHead(200, {
       'Content-Type': contentType,
       'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1368,6 +1382,76 @@ function serveStaticKioskFile(fileName: string, res: http.ServerResponse) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
   }
+}
+
+// ── Offline-detector script (shared by kiosk & display pages) ─────
+// Returns a <script> tag containing a self-contained detector that:
+//   • Pings /api/station/ping every 2 s
+//   • Hooks any open SSE on /api/events via onerror (instant detection)
+//   • Shows a full-page translated overlay when the Station is gone
+//   • Auto-hides the overlay when ping succeeds again
+// Both pages already open an EventSource on /api/events, so detection
+// is effectively instant (SSE onerror fires within milliseconds when
+// the TCP socket closes), with the ping loop as a safety net for
+// half-open sockets and environments where SSE isn't active yet.
+function offlineDetectorScriptTag(): string {
+  return `<script>(function(){
+  var strings = {
+    en: { title: 'Qflo Station is offline', sub: 'Waiting for the Station to come back online…', status: 'Reconnecting…' },
+    fr: { title: 'La station Qflo est hors ligne', sub: 'En attente du retour de la station…', status: 'Reconnexion…' },
+    ar: { title: 'محطة Qflo غير متصلة', sub: 'في انتظار عودة المحطة للاتصال…', status: 'إعادة الاتصال…' }
+  };
+  function t(){ var l = localStorage.getItem('qflo_station_locale') || document.documentElement.lang || 'en'; if (l.indexOf('-') > 0) l = l.split('-')[0]; return strings[l] || strings.en; }
+  var reachable = true, pendingOff = null, graceMs = 1500;
+  function build(){
+    var el = document.getElementById('qf-offline-overlay'); if (el) return el;
+    el = document.createElement('div'); el.id = 'qf-offline-overlay'; el.setAttribute('role','alert'); el.setAttribute('aria-live','assertive');
+    el.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(15,23,42,0.88);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;color:#f8fafc;font-family:-apple-system,Segoe UI,system-ui,sans-serif;text-align:center;padding:24px';
+    var s = t();
+    el.innerHTML = '<div style="max-width:520px;background:#0f172a;border:1px solid rgba(239,68,68,0.45);border-radius:20px;padding:36px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">'
+      + '<div style="font-size:56px;line-height:1;margin-bottom:18px">🔌</div>'
+      + '<div id="qfo-title" style="font-size:24px;font-weight:700;margin-bottom:10px">' + s.title + '</div>'
+      + '<div id="qfo-sub" style="font-size:16px;color:#cbd5e1;margin-bottom:20px">' + s.sub + '</div>'
+      + '<div style="display:inline-flex;align-items:center;gap:10px;font-size:14px;color:#94a3b8">'
+      + '<span style="width:12px;height:12px;border-radius:50%;background:#ef4444;animation:qfo-pulse 1.2s ease-in-out infinite" aria-hidden="true"></span>'
+      + '<span id="qfo-status">' + s.status + '</span>'
+      + '</div></div>';
+    if (!document.getElementById('qfo-kf')) {
+      var st = document.createElement('style'); st.id = 'qfo-kf';
+      st.textContent = '@keyframes qfo-pulse{0%,100%{opacity:1}50%{opacity:0.35}}';
+      document.head.appendChild(st);
+    }
+    document.body.appendChild(el); return el;
+  }
+  function refresh(){ var s = t(); var a=document.getElementById('qfo-title'); if(a)a.textContent=s.title; var b=document.getElementById('qfo-sub'); if(b)b.textContent=s.sub; var c=document.getElementById('qfo-status'); if(c)c.textContent=s.status; }
+  function setOn(ok){ if (ok === reachable) return; reachable = ok; var el = build(); refresh(); el.style.display = ok ? 'none' : 'flex'; }
+  function markOffSoon(){ if (pendingOff) return; pendingOff = setTimeout(function(){ pendingOff = null; setOn(false); }, graceMs); }
+  function markOn(){ if (pendingOff){ clearTimeout(pendingOff); pendingOff = null; } setOn(true); }
+  // Active probe (safety net)
+  setInterval(function(){
+    fetch('/api/station/ping', { cache:'no-store' }).then(function(r){ if (r.ok) markOn(); else markOffSoon(); }).catch(function(){ markOffSoon(); });
+  }, 2000);
+  // Hook any EventSource the page opens so we catch drops instantly.
+  var _ES = window.EventSource;
+  if (_ES) {
+    window.EventSource = function(url, cfg){
+      var es = new _ES(url, cfg);
+      try {
+        es.addEventListener('open', markOn);
+        es.addEventListener('message', markOn);
+        es.addEventListener('error', markOffSoon);
+      } catch(_) {}
+      return es;
+    };
+    window.EventSource.prototype = _ES.prototype;
+    window.EventSource.CONNECTING = _ES.CONNECTING;
+    window.EventSource.OPEN = _ES.OPEN;
+    window.EventSource.CLOSED = _ES.CLOSED;
+  }
+  // Refresh overlay text when language changes (kiosk toggles lang on documentElement).
+  new MutationObserver(refresh).observe(document.documentElement, { attributes: true, attributeFilter: ['lang','dir'] });
+  window.addEventListener('storage', function(e){ if (e.key === 'qflo_station_locale') refresh(); });
+})();</script>`;
 }
 
 // ── Track Ticket API ──────────────────────────────────────────────
@@ -2661,6 +2745,7 @@ async function serveDisplayPage(url: URL, res: http.ServerResponse) {
       if (!sseAlive) fetchData();
     }, 10000);
   <\/script>
+  ${offlineDetectorScriptTag()}
 </body>
 </html>`;
 
@@ -2791,10 +2876,144 @@ function serveStationIndex(res: http.ServerResponse) {
   var errorListeners = [];
   var sse = null;
 
+  // ── Station reachability ────────────────────────────────────────
+  // The SSE stream is our heartbeat with the desktop Qflo Station.
+  // When the Station closes (taskkill, shutdown, crash, or network
+  // drop) the TCP connection closes and EventSource fires onerror
+  // within milliseconds — effectively instant. We flip a flag and
+  // overlay the whole page so the operator on this remote browser
+  // tab knows immediately that actions will fail until the Station
+  // comes back. Once SSE re-opens we dismiss the overlay.
+  //
+  // We also proactively fail in-flight calls to get()/post() so
+  // the app does not hang on dead sockets while the overlay is up.
+  var stationReachable = true;
+  var offlineSince = 0;
+  var offlineGraceMs = 1500; // ignore brief blips (Station restart <1.5s)
+  var pendingOfflineTimer = null;
+
+  // Offline overlay translations (matches apps/desktop/src/lib/i18n.ts)
+  var OFFLINE_STRINGS = {
+    en: {
+      title: 'Qflo Station is offline',
+      sub: 'Waiting for the Station to come back online…',
+      status: 'Reconnecting…',
+      badge: '⚠ Station offline',
+      local: '📡 Local',
+    },
+    fr: {
+      title: 'La station Qflo est hors ligne',
+      sub: 'En attente du retour de la station…',
+      status: 'Reconnexion…',
+      badge: '⚠ Station hors ligne',
+      local: '📡 Local',
+    },
+    ar: {
+      title: 'محطة Qflo غير متصلة',
+      sub: 'في انتظار عودة المحطة للاتصال…',
+      status: 'إعادة الاتصال…',
+      badge: '⚠ المحطة غير متصلة',
+      local: '📡 محلي',
+    },
+  };
+  function offlineT() {
+    var lang = (typeof currentLang !== 'undefined' && currentLang) ? currentLang : (localStorage.getItem('qflo_station_locale') || 'en');
+    return OFFLINE_STRINGS[lang] || OFFLINE_STRINGS.en;
+  }
+
+  function ensureOfflineOverlay() {
+    var el = document.getElementById('qf-station-offline-overlay');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'qf-station-offline-overlay';
+    el.setAttribute('role', 'alert');
+    el.setAttribute('aria-live', 'assertive');
+    el.style.cssText = [
+      'position:fixed','inset:0','z-index:2147483647',
+      'background:rgba(15,23,42,0.82)','backdrop-filter:blur(4px)',
+      '-webkit-backdrop-filter:blur(4px)',
+      'display:none','align-items:center','justify-content:center',
+      'color:#f8fafc','font-family:inherit','text-align:center','padding:24px',
+    ].join(';');
+    var s = offlineT();
+    el.innerHTML = ''
+      + '<div style="max-width:480px;background:#0f172a;border:1px solid rgba(239,68,68,0.45);border-radius:16px;padding:28px 24px;box-shadow:0 20px 60px rgba(0,0,0,0.5)">'
+      +   '<div style="font-size:44px;line-height:1;margin-bottom:14px">🔌</div>'
+      +   '<div id="qf-station-offline-title" style="font-size:20px;font-weight:700;margin-bottom:8px">' + s.title + '</div>'
+      +   '<div id="qf-station-offline-sub" style="font-size:14px;color:#cbd5e1;margin-bottom:16px">' + s.sub + '</div>'
+      +   '<div style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#94a3b8">'
+      +     '<span style="width:10px;height:10px;border-radius:50%;background:#ef4444;animation:qf-pulse 1.2s ease-in-out infinite" aria-hidden="true"></span>'
+      +     '<span id="qf-station-offline-status">' + s.status + '</span>'
+      +   '</div>'
+      + '</div>';
+    // Keyframes for the pulse dot (scoped to this id; harmless if dup)
+    if (!document.getElementById('qf-station-offline-kf')) {
+      var style = document.createElement('style');
+      style.id = 'qf-station-offline-kf';
+      style.textContent = '@keyframes qf-pulse{0%,100%{opacity:1}50%{opacity:0.35}}';
+      document.head.appendChild(style);
+    }
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function setStationReachable(ok) {
+    if (ok === stationReachable) return;
+    stationReachable = ok;
+    var s = offlineT();
+    var badge = document.getElementById('qf-mode-badge');
+    if (badge) {
+      if (ok) {
+        badge.className = (badge.className.indexOf('qf-in-statusbar') >= 0) ? 'local qf-in-statusbar' : 'local';
+        badge.textContent = s.local;
+        badge.style.background = '';
+        badge.style.color = '';
+      } else {
+        badge.className = (badge.className.indexOf('qf-in-statusbar') >= 0) ? 'qf-in-statusbar' : '';
+        badge.textContent = s.badge;
+        badge.style.background = 'rgba(239,68,68,0.18)';
+        badge.style.color = '#fca5a5';
+      }
+    }
+    var overlay = ensureOfflineOverlay();
+    refreshOfflineOverlayText();
+    overlay.style.display = ok ? 'none' : 'flex';
+    if (!ok) offlineSince = Date.now();
+  }
+
+  function refreshOfflineOverlayText() {
+    var s = offlineT();
+    var t = document.getElementById('qf-station-offline-title'); if (t) t.textContent = s.title;
+    var sub = document.getElementById('qf-station-offline-sub'); if (sub) sub.textContent = s.sub;
+    var st = document.getElementById('qf-station-offline-status'); if (st) st.textContent = s.status;
+    var badge = document.getElementById('qf-mode-badge');
+    if (badge) badge.textContent = stationReachable ? s.local : s.badge;
+  }
+  // Make available to the lang-toggle onclick handler.
+  window.__qfRefreshOfflineOverlay = refreshOfflineOverlayText;
+
+  function markOfflineSoon() {
+    // Debounce to swallow the ~100ms gap of a Station auto-update /
+    // quick restart; show overlay only if still offline after grace.
+    if (pendingOfflineTimer) return;
+    pendingOfflineTimer = setTimeout(function() {
+      pendingOfflineTimer = null;
+      if (sse && sse.readyState === EventSource.OPEN) return; // recovered
+      setStationReachable(false);
+    }, offlineGraceMs);
+  }
+
+  function markOnline() {
+    if (pendingOfflineTimer) { clearTimeout(pendingOfflineTimer); pendingOfflineTimer = null; }
+    setStationReachable(true);
+  }
+
   function connectSSE() {
     if (sse) { try { sse.close(); } catch(e) {} }
     sse = new EventSource(API + '/api/station/events' + (STATION_TOKEN ? '?token=' + encodeURIComponent(STATION_TOKEN) : ''));
+    sse.onopen = function() { markOnline(); };
     sse.onmessage = function(e) {
+      markOnline();
       try {
         var data = JSON.parse(e.data);
         if (data.type === 'tickets_changed') {
@@ -2810,13 +3029,27 @@ function serveStationIndex(res: http.ServerResponse) {
       } catch(err) {}
     };
     sse.onerror = function() {
-      // On disconnect (Station restart), re-acquire token before reconnecting
+      // EventSource auto-reconnects, but we still mark offline so the
+      // UI reflects reality immediately. We also re-acquire the token
+      // on a manual backoff because the Station token may have
+      // rotated after a restart.
+      markOfflineSoon();
       retryToken().then(function() {
-        setTimeout(connectSSE, 3000);
+        setTimeout(connectSSE, 2000);
       });
     };
   }
   connectSSE();
+
+  // A short active probe on a timer as a safety net: EventSource.onerror
+  // doesn't always fire on every network kill (OS-level TCP reset can
+  // leave the socket half-open until a write is attempted). A cheap
+  // /api/station/ping request every 4s fails fast and flips the badge.
+  setInterval(function() {
+    fetch(API + '/api/station/ping', { cache: 'no-store' })
+      .then(function(r) { if (r && r.ok) markOnline(); else markOfflineSoon(); })
+      .catch(function() { markOfflineSoon(); });
+  }, 4000);
 
   window.qf = {
     isKiosk: true,
@@ -3017,10 +3250,13 @@ function serveStationIndex(res: http.ServerResponse) {
   var langLabels = { en: 'EN', fr: 'FR', ar: 'عر' };
   var currentLang = localStorage.getItem('qflo_station_locale') || 'ar';
 
+  // Build the lang toggle + mode badge and mount them into the top
+  // StatusBar's center strip — between the "Connected" pill and the
+  // version/update pills. The StatusBar is rendered by React after
+  // hydration, so we poll briefly until the mount point exists; if it
+  // never appears (e.g. login screen before the bar mounts) we fall
+  // back to the bottom-bar placement we used historically.
   window.addEventListener('load', function() {
-    var bar = document.createElement('div');
-    bar.id = 'qf-bottom-bar';
-
     var langBtn = document.createElement('button');
     langBtn.id = 'qf-lang-toggle';
     langBtn.textContent = langLabels[currentLang] || 'EN';
@@ -3035,16 +3271,70 @@ function serveStationIndex(res: http.ServerResponse) {
       document.documentElement.lang = currentLang;
       document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
       document.body.dir = currentLang === 'ar' ? 'rtl' : 'ltr';
+      if (typeof window.__qfRefreshOfflineOverlay === 'function') window.__qfRefreshOfflineOverlay();
     };
 
     var badge = document.createElement('div');
     badge.id = 'qf-mode-badge';
     badge.className = 'local';
-    badge.textContent = '📡 Local';
+    var _initStrs = (OFFLINE_STRINGS[currentLang] || OFFLINE_STRINGS.en);
+    badge.textContent = _initStrs.local;
 
-    bar.appendChild(langBtn);
-    bar.appendChild(badge);
-    document.body.appendChild(bar);
+    function mount() {
+      var center = document.querySelector('.status-bar-center');
+      if (!center) return false;
+      // If already mounted in the top bar, stop.
+      if (center.contains(langBtn)) return true;
+
+      // Preferred anchor: the first update-badge inside the centre
+      // strip (Version pill, or Check for Updates if no version).
+      // Inserting before it places the two badges right after the
+      // connection-badge. Falls back to append when no anchor exists.
+      var anchor = center.querySelector('.update-badge');
+      // Remove from any previous parent (e.g. bottom bar fallback).
+      if (langBtn.parentNode) langBtn.parentNode.removeChild(langBtn);
+      if (badge.parentNode) badge.parentNode.removeChild(badge);
+      if (anchor) {
+        center.insertBefore(langBtn, anchor);
+        center.insertBefore(badge, anchor);
+      } else {
+        center.appendChild(langBtn);
+        center.appendChild(badge);
+      }
+      // Add a marker class so CSS knows these are in the top strip
+      // and should not be fixed-positioned.
+      langBtn.classList.add('qf-in-statusbar');
+      badge.classList.add('qf-in-statusbar');
+      return true;
+    }
+
+    function fallbackBottomBar() {
+      if (document.getElementById('qf-bottom-bar')) return;
+      var bar = document.createElement('div');
+      bar.id = 'qf-bottom-bar';
+      bar.appendChild(langBtn);
+      bar.appendChild(badge);
+      document.body.appendChild(bar);
+    }
+
+    // Try immediately, then watch for the status bar to mount. Give
+    // up after 10s and use the bottom-bar fallback so the controls
+    // are always reachable even on screens that never render the bar.
+    if (!mount()) {
+      fallbackBottomBar();
+      var attempts = 0;
+      var iv = setInterval(function() {
+        attempts++;
+        if (mount()) {
+          // Successfully promoted to top bar — drop the fallback.
+          var stale = document.getElementById('qf-bottom-bar');
+          if (stale && stale.childNodes.length === 0) stale.remove();
+          clearInterval(iv);
+        } else if (attempts >= 50) {
+          clearInterval(iv);
+        }
+      }, 200);
+    }
   });
 })();
 </script>`;

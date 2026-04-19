@@ -606,6 +606,8 @@
     "book": "Book",
     "ticket_one": "{{count}} ticket",
     "ticket_other": "{{count}} tickets",
+    "count_one": "{{count}} place",
+    "count_other": "{{count}} places",
     "open": "Open",
     "busy": "Busy",
     "closed": "Closed",
@@ -757,6 +759,7 @@
   },
 
   "kiosk": {
+    "intakeSub": "We'll use this to notify you when it's your turn.",
     "loadingKiosk": "Loading kiosk...",
     "kioskUnavailable": "Kiosk Unavailable",
     "unavailableMsg": "This kiosk is unavailable or the office was not found.",
@@ -798,7 +801,23 @@
     "join": "Join",
     "updated": "Updated {{time}}",
     "getTicketNow": "Get a Ticket Now",
-    "bookForLater": "Book for Later"
+    "bookForLater": "Book for Later",
+    "viewKioskList": "View full service list",
+    "workSchedule": "Work schedule",
+    "openNow": "Open now",
+    "closedNow": "Closed",
+    "closedToday": "Closed",
+    "alwaysOpen": "Open 24/7",
+    "today": "Today",
+    "weekday": {
+      "monday": "Mon",
+      "tuesday": "Tue",
+      "wednesday": "Wed",
+      "thursday": "Thu",
+      "friday": "Fri",
+      "saturday": "Sat",
+      "sunday": "Sun"
+    }
   },
 
   "ticketView": {

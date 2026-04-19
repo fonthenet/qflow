@@ -788,6 +788,25 @@ html[dir="rtl"] .stat-pill { letter-spacing: normal; text-transform: none; }
   #qf-bottom-bar { bottom: 6px; }
 }
 
+/* When the shim lifts the lang/mode controls into the top StatusBar
+   (remote /station view), let them flow inline between the
+   connection-badge and the update/version pills instead of being
+   fixed at the bottom of the page. */
+.status-bar-center #qf-lang-toggle.qf-in-statusbar,
+.status-bar-center #qf-mode-badge.qf-in-statusbar {
+  position: static;
+  transform: none;
+  opacity: 1;
+}
+.status-bar-center #qf-mode-badge.qf-in-statusbar {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+.status-bar-center #qf-lang-toggle.qf-in-statusbar {
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
 /* ── Station Action Pills (Toolbar) ──── */
 .station-action-pills {
   display: flex;

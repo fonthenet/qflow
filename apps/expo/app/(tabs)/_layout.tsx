@@ -6,22 +6,19 @@ import { useTheme } from '@/lib/theme';
 
 export default function TabLayout() {
   const { t } = useTranslation();
-  const { activeToken } = useAppStore();
   const { colors } = useTheme();
-  // When tracking, force dark regardless of theme
-  const isTrackingDark = !!activeToken;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: isTrackingDark ? '#38bdf8' : colors.primary,
-        tabBarInactiveTintColor: isTrackingDark ? '#64748b' : colors.textMuted,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
-          backgroundColor: isTrackingDark ? '#0f172a' : colors.surface,
-          borderTopColor: isTrackingDark ? '#1e293b' : colors.border,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
         },
-        headerStyle: { backgroundColor: isTrackingDark ? '#020617' : colors.surface },
-        headerTintColor: isTrackingDark ? '#f8fafc' : colors.text,
+        headerStyle: { backgroundColor: colors.surface },
+        headerTintColor: colors.text,
         headerShadowVisible: false,
       }}
     >

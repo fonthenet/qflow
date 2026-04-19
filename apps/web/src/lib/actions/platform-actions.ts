@@ -552,6 +552,8 @@ async function seedConfirmedTemplate(
         slots_per_interval: currentOrgSettings.slots_per_interval ?? 1,
         allow_cancellation: currentOrgSettings.allow_cancellation ?? true,
         min_booking_lead_hours: currentOrgSettings.min_booking_lead_hours ?? 1,
+        // Same-day self-service enabled by default — customer can toggle off
+        default_check_in_mode: currentOrgSettings.default_check_in_mode || 'hybrid',
       };
       await context.supabase
         .from('organizations')

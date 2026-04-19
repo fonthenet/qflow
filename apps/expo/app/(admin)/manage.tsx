@@ -988,7 +988,7 @@ export default function ManageScreen() {
 
         const formatTime12 = (isoStr: string) => {
           const d = new Date(isoStr);
-          return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+          return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
         };
 
         const getBookingStatusColor = (status: string) => {

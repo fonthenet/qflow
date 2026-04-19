@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -19,19 +19,33 @@ import {
   type KioskTicketResult,
 } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
-import { colors, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { useTheme, borderRadius, fontSize, spacing, type ThemeColors } from '@/lib/theme';
+import { getEnabledIntakeFields, type IntakeField } from '@qflo/shared';
+import { IntakeForm, hasMissingRequired, type IntakeValues } from '@/components/IntakeForm';
+import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
-type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'issued' | 'error';
+type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'intake' | 'issued' | 'error';
 
 const IDLE_TIMEOUT_MS = 60_000;
 
 export default function KioskScreen() {
   const { t } = useTranslation();
-  const { slug, deptId: initialDeptId } = useLocalSearchParams<{ slug: string; deptId?: string }>();
+  const { slug, deptId: initialDeptId, start: startParam } = useLocalSearchParams<{ slug: string; deptId?: string; start?: string }>();
   const router = useRouter();
-  const { setActiveToken, setActiveKioskSlug, recordPlace } = useAppStore();
+  const {
+    setActiveToken,
+    setActiveKioskSlug,
+    recordPlace,
+    addToHistory,
+    customerName: savedName,
+    customerPhone: savedPhone,
+    setCustomerInfo,
+  } = useAppStore();
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
+  const { colors } = useTheme();
+  const kbPad = useKeyboardPadding();
+  const s = useMemo(() => makeStyles(colors), [colors]);
 
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<KioskInfoResponse | null>(null);
@@ -43,8 +57,32 @@ export default function KioskScreen() {
   const [selectedPriorityId, setSelectedPriorityId] = useState('');
   const [selectedPriorityWeight, setSelectedPriorityWeight] = useState<number | undefined>();
 
+  // Intake form values
+  const [intakeValues, setIntakeValues] = useState<IntakeValues>({});
+
   // Result
   const [ticket, setTicket] = useState<KioskTicketResult['ticket'] | null>(null);
+
+  // Derive enabled intake fields from business settings
+  const intakeFields: IntakeField[] = useMemo(
+    () => (info ? getEnabledIntakeFields(info.settings ?? {}) : []),
+    [info]
+  );
+
+  // Prefill name/phone from saved profile when fields load
+  useEffect(() => {
+    if (!info || intakeFields.length === 0) return;
+    setIntakeValues((prev) => {
+      const next = { ...prev };
+      for (const f of intakeFields) {
+        const current = (next[f.key] ?? '').trim();
+        if (current) continue;
+        if (f.key === 'name' && savedName) next[f.key] = savedName;
+        else if (f.key === 'phone' && savedPhone) next[f.key] = savedPhone;
+      }
+      return next;
+    });
+  }, [info, intakeFields, savedName, savedPhone]);
 
   // Idle timeout
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,6 +117,7 @@ export default function KioskScreen() {
     setSelectedPriorityWeight(undefined);
     setTicket(null);
     setErrorMsg('');
+    setIntakeValues({});
   };
 
   // Fetch kiosk info
@@ -109,10 +148,20 @@ export default function KioskScreen() {
     if (initialDeptId && data.departments.some((d) => d.id === initialDeptId)) {
       setSelectedDeptId(initialDeptId);
       setStep('service');
+    } else if (startParam === 'pick') {
+      // Coming from queue-peek's "Get a Ticket Now" — skip the welcome screen.
+      // If the business only has one department, jump past dept selection too.
+      const depts = [...data.departments].sort((a, b) => a.sort_order - b.sort_order);
+      if (depts.length === 1) {
+        setSelectedDeptId(depts[0].id);
+        setStep('service');
+      } else {
+        setStep('department');
+      }
     } else {
       setStep('home');
     }
-  }, [slug, initialDeptId, recordPlace]);
+  }, [slug, initialDeptId, startParam, recordPlace]);
 
   useEffect(() => {
     loadInfo();
@@ -161,6 +210,8 @@ export default function KioskScreen() {
     setSelectedServiceId(serviceId);
     if (priorities.length > 0) {
       setStep('priority');
+    } else if (intakeFields.length > 0) {
+      setStep('intake');
     } else {
       issueTicket(serviceId);
     }
@@ -170,12 +221,36 @@ export default function KioskScreen() {
     touchActivity();
     setSelectedPriorityId(priorityId);
     setSelectedPriorityWeight(weight);
-    issueTicket(selectedServiceId, priorityId, weight);
+    if (intakeFields.length > 0) {
+      setStep('intake');
+    } else {
+      issueTicket(selectedServiceId, priorityId, weight);
+    }
   };
 
   const skipPriority = () => {
     touchActivity();
-    issueTicket(selectedServiceId);
+    if (intakeFields.length > 0) {
+      setStep('intake');
+    } else {
+      issueTicket(selectedServiceId);
+    }
+  };
+
+  const submitIntake = () => {
+    touchActivity();
+    if (hasMissingRequired(intakeFields, intakeValues)) {
+      setErrorMsg(
+        t('join.fillRequired', { defaultValue: 'Please fill in the required fields.' })
+      );
+      return;
+    }
+    setErrorMsg('');
+    // Persist name/phone back to the store so other flows prefill too
+    const name = (intakeValues.name ?? '').trim();
+    const phone = (intakeValues.phone ?? '').trim();
+    if (name || phone) setCustomerInfo(name || savedName, phone || savedPhone);
+    issueTicket(selectedServiceId, selectedPriorityId || undefined, selectedPriorityWeight);
   };
 
   const issueTicket = async (
@@ -185,12 +260,26 @@ export default function KioskScreen() {
   ) => {
     if (!info) return;
     setStep('loading');
+    // Build customerData from intake values (trim + drop empties)
+    const customerData: Record<string, string> = {};
+    let nameOut: string | undefined;
+    let phoneOut: string | undefined;
+    for (const f of intakeFields) {
+      const v = (intakeValues[f.key] ?? '').trim();
+      if (!v) continue;
+      customerData[f.key] = v;
+      if (f.key === 'name') nameOut = v;
+      if (f.key === 'phone') phoneOut = v;
+    }
     const result = await createKioskTicket({
       officeId: info.office.id,
       departmentId: selectedDeptId,
       serviceId,
       priorityCategoryId,
       priority,
+      customerName: nameOut,
+      customerPhone: phoneOut,
+      customerData: Object.keys(customerData).length > 0 ? customerData : undefined,
     });
     if ('error' in result) {
       setErrorMsg(result.error);
@@ -199,32 +288,59 @@ export default function KioskScreen() {
     }
     setTicket(result.ticket);
     setStep('issued');
+    // Record in history + remember as active so the Active tab lands on it
+    // even if the user backs out without tapping "Track position".
+    addToHistory({
+      token: result.ticket.qr_token,
+      ticketNumber: result.ticket.ticket_number,
+      officeName: info.office.name,
+      serviceName:
+        info.services.find((sv) => sv.id === serviceId)?.name ??
+        info.departments.find((d) => d.id === selectedDeptId)?.name ??
+        'General',
+      status: result.ticket.status,
+      date: new Date().toISOString(),
+      officeId: info.office.id,
+      kioskSlug: slug ?? undefined,
+    });
+    setActiveKioskSlug(slug ?? null);
+    setActiveToken(result.ticket.qr_token);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     resetIdleTimer();
   };
 
   const handleTrack = () => {
     if (!ticket) return;
-    setActiveKioskSlug(slug ?? null);
-    setActiveToken(ticket.qr_token);
+    // activeToken/kioskSlug already set in issueTicket — just navigate
     router.replace('/(tabs)');
   };
 
   const handleBack = () => {
     touchActivity();
+    const cameFromPeek = startParam === 'pick' || !!initialDeptId;
     switch (step) {
       case 'department':
-        goHome();
+        // If we skipped home (arrived from queue-peek), pop back to it.
+        if (cameFromPeek) {
+          router.back();
+        } else {
+          goHome();
+        }
         break;
       case 'service':
         if (departments.length <= 1) {
-          goHome();
+          if (cameFromPeek) router.back();
+          else goHome();
         } else {
           setStep('department');
         }
         break;
       case 'priority':
         setStep('service');
+        break;
+      case 'intake':
+        if (priorities.length > 0) setStep('priority');
+        else setStep('service');
         break;
       case 'issued':
         goHome();
@@ -522,11 +638,15 @@ export default function KioskScreen() {
               activeOpacity={0.7}
             >
               <View style={[s.cardIcon, p.color ? { backgroundColor: p.color + '18' } : undefined]}>
-                <Ionicons
-                  name={(p.icon as any) ?? 'flag-outline'}
-                  size={isTablet ? 28 : 24}
-                  color={p.color ?? colors.primary}
-                />
+                {p.icon && /[^\x00-\x7F]/.test(p.icon) ? (
+                  <Text style={{ fontSize: isTablet ? 28 : 24 }}>{p.icon}</Text>
+                ) : (
+                  <Ionicons
+                    name={(p.icon as any) || 'flag-outline'}
+                    size={isTablet ? 28 : 24}
+                    color={p.color ?? colors.primary}
+                  />
+                )}
               </View>
               <View style={s.cardBody}>
                 <Text style={[s.cardTitle, isTablet && { fontSize: fontSize.lg }]}>{p.name}</Text>
@@ -537,6 +657,67 @@ export default function KioskScreen() {
 
           <TouchableOpacity style={s.skipBtn} onPress={skipPriority} activeOpacity={0.7}>
             <Text style={[s.skipBtnText, { fontSize: bodySize }]}>{t('kiosk.skipStandardPriority')}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ---- Intake (name/phone/custom fields) ----
+  if (step === 'intake') {
+    return (
+      <View style={s.screenContainer} onTouchStart={touchActivity}>
+        <Header showBack />
+        <ScrollView
+          contentContainerStyle={[
+            s.scrollContent,
+            { maxWidth: containerMaxWidth, padding: containerPadding, paddingBottom: 80 + kbPad },
+          ]}
+          style={s.scrollView}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+        >
+          <Text style={[s.stepTitle, { fontSize: subheadingSize }]}>
+            {t('join.yourDetails', { defaultValue: 'Your details' })}
+          </Text>
+          <Text style={[s.stepSub, { fontSize: bodySize }]}>
+            {t('kiosk.intakeSub', {
+              defaultValue: 'We\'ll use this to notify you when it\'s your turn.',
+            })}
+          </Text>
+
+          <IntakeForm
+            fields={intakeFields}
+            values={intakeValues}
+            onChange={(key, value) =>
+              setIntakeValues((prev) => ({ ...prev, [key]: value }))
+            }
+            autoFocusFirst
+            title={null}
+            subtitle={null}
+          />
+
+          {errorMsg ? (
+            <View style={[s.errorBanner, { marginTop: spacing.md }]}>
+              <Ionicons name="warning-outline" size={16} color={colors.error} />
+              <Text style={s.errorBannerText}>{errorMsg}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[
+              s.primaryBtn,
+              isTablet && s.primaryBtnTablet,
+              { marginTop: spacing.lg, alignSelf: 'center' },
+            ]}
+            onPress={submitIntake}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="ticket" size={isTablet ? 24 : 20} color="#fff" />
+            <Text style={[s.primaryBtnText, isTablet && { fontSize: fontSize.xl }]}>
+              {t('kiosk.getTicket')}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -613,22 +794,19 @@ export default function KioskScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// Styles — light kiosk theme
+// Styles — theme-aware (light/dark)
 // ---------------------------------------------------------------------------
-const KIOSK_BG = '#f8fafc';
-const KIOSK_SURFACE = '#ffffff';
-
-const s = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   // Layout
   screenContainer: {
     flex: 1,
-    backgroundColor: KIOSK_BG,
+    backgroundColor: colors.background,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: KIOSK_BG,
+    backgroundColor: colors.background,
     paddingHorizontal: spacing.xl,
     gap: spacing.sm,
   },
@@ -661,7 +839,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingTop: spacing.xxl,
     paddingBottom: spacing.md,
-    backgroundColor: KIOSK_SURFACE,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
@@ -780,7 +958,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    backgroundColor: KIOSK_SURFACE,
+    backgroundColor: colors.surface,
     paddingVertical: spacing.md + 2,
     paddingHorizontal: spacing.xl,
     borderRadius: borderRadius.lg,
@@ -869,7 +1047,7 @@ const s = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: KIOSK_SURFACE,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.sm,

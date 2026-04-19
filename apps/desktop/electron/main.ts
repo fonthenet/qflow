@@ -5,7 +5,7 @@ import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { initSentry } from './sentry';
 import { logger } from './logger';
-import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase } from './db';
+import { initDB, getDB, closeDB, generateOfflineTicketNumber, reserveTicketNumber, logTicketEvent, startAutoBackup, stopAutoBackup, backupDatabase, getLastRecovery, prepareFreshDatabase } from './db';
 import { SyncEngine } from './sync';
 import { startKioskServer, stopKioskServer, startDiscoveryBroadcast, getLocalIP, notifyDisplays, notifyStationClients, setOnTicketCreated, setSyncStatusGetter, setOnForceSync, setAuthTokenGetter, type SSEEvent } from './kiosk-server';
 import { CONFIG } from './config';
@@ -488,6 +488,33 @@ function setupIPC() {
     supabaseAnonKey: SUPABASE_ANON_KEY,
     APP_VERSION: CONFIG.APP_VERSION,
   }));
+
+  // ── Database recovery / health ────────────────────────────────────
+  // Frontend calls this after the window finishes loading to find out
+  // whether the local DB was auto-repaired on startup. When the result
+  // is not 'healthy' the Station shows a one-time banner so the
+  // operator knows to verify today's tickets.
+  ipcMain.handle('db:recovery-status', () => getLastRecovery());
+
+  // Manual "Rebuild from Cloud" — Settings → Advanced. Quarantines
+  // the current DB, then asks the app to relaunch. On next boot the
+  // fresh schema is created and the sync engine rehydrates from the
+  // cloud after re-login.
+  ipcMain.handle('db:rebuild-from-cloud', async () => {
+    try {
+      // Stop outbound sync so nothing writes during the swap
+      try { syncEngine?.stop(); } catch { /* best-effort */ }
+      const result = prepareFreshDatabase();
+      logger.warn('db', 'Manual rebuild-from-cloud requested — relaunching', result);
+      app.relaunch();
+      // Defer quit so the IPC reply reaches the renderer first
+      setTimeout(() => app.exit(0), 300);
+      return { ok: true, quarantined: result.quarantined };
+    } catch (err: any) {
+      logger.error('db', 'rebuild-from-cloud failed', { error: err?.message });
+      return { ok: false, error: err?.message ?? 'unknown' };
+    }
+  });
 
   // ── Offline Queue Operations ──────────────────────────────────────
 
@@ -1091,37 +1118,42 @@ function setupIPC() {
         const isRecent = ticketInfo?.created_at && (Date.now() - new Date(ticketInfo.created_at).getTime()) < 120_000;
 
         if (cloudWaitingIds && !cloudWaitingIds.has(candidate.id) && !ticketInfo?.is_offline && !hasPendingSync && !isRecent) {
-          // Missing from cloud waiting. Only adopt cancel IF cloud history confirms
-          // the ticket really is terminal — otherwise this is likely a flaky query
-          // and we must not silently cancel a live ticket (no sync queue row is
-          // emitted for auto-cancels, so WhatsApp / display / customer are never
-          // notified, and the customer just disappears from the queue).
+          // The ticket is waiting locally but not present in the cloud "waiting"
+          // set. Two possible realities:
+          //   A) The ticket really was resolved remotely (customer cancelled via
+          //      WhatsApp, another station served them, etc.) — we should adopt
+          //      that terminal state instead of calling a dead ticket.
+          //   B) The cloud query just happened to miss it (RLS/auth glitch,
+          //      sync-pull not caught up, replication lag) — calling the ticket
+          //      is correct and safe.
+          //
+          // Only treat as (A) when cloud *history* positively proves the ticket
+          // is terminal. Otherwise we must proceed and call the ticket — the
+          // earlier "skip without cancelling" behaviour stranded perfectly
+          // valid tickets whenever the cloud query came back empty or partial.
           const confirmedTerminal = cloudHistoryIds?.has(candidate.id) ?? false;
-          if (!confirmedTerminal) {
-            logger.warn('call-next', 'Local waiting ticket missing from cloud waiting but no history record — skipping, not cancelling', {
-              ticketId: candidate.id,
-              officeId,
+          if (confirmedTerminal) {
+            // Adopt cloud's terminal state locally. We set BOTH cancelled_at
+            // and completed_at so the pull-merge protection at sync.ts:1333
+            // recognizes this as an operator-style cancel and won't flap the
+            // row back to 'waiting' on the next pull if cloud transiently
+            // disagrees. No sync_queue row — cloud is already source of truth.
+            logTicketEvent(candidate.id, 'auto_cancelled_call_next', {
+              fromStatus: 'waiting',
+              toStatus: 'cancelled',
+              source: 'call_next_cloud_precheck',
+              details: { reason: 'confirmed_terminal_in_cloud_history' },
             });
-            // Skip this ticket for Call Next but leave it waiting — sync-pull
-            // mirror will reconcile with proper 48h history on next pull cycle.
+            db.prepare("UPDATE tickets SET status = 'cancelled', cancelled_at = ?, completed_at = ? WHERE id = ? AND status = 'waiting'")
+              .run(now, now, candidate.id);
+            skippedCount++;
             continue;
           }
-          // Cloud history confirms terminal — safe to adopt cloud state locally.
-          // We do NOT enqueue a sync_queue row here because the cloud is already
-          // the source of truth for this transition. Setting BOTH cancelled_at and
-          // completed_at ensures the pull-merge protection at sync.ts:1333 recognizes
-          // this as an operator-style cancel (not an auto-cancel) and won't flap
-          // the row back to 'waiting' on the next pull if cloud transiently disagrees.
-          logTicketEvent(candidate.id, 'auto_cancelled_call_next', {
-            fromStatus: 'waiting',
-            toStatus: 'cancelled',
-            source: 'call_next_cloud_precheck',
-            details: { reason: 'confirmed_terminal_in_cloud_history' },
+          // Not confirmed terminal — fall through and call the ticket.
+          logger.warn('call-next', 'Local waiting ticket missing from cloud waiting but not confirmed terminal — calling anyway (sync will reconcile)', {
+            ticketId: candidate.id,
+            officeId,
           });
-          db.prepare("UPDATE tickets SET status = 'cancelled', cancelled_at = ?, completed_at = ? WHERE id = ? AND status = 'waiting'")
-            .run(now, now, candidate.id);
-          skippedCount++;
-          continue;
         }
 
         // Call this ticket
@@ -1496,19 +1528,26 @@ function setupIPC() {
 
   ipcMain.handle('activity:get-recent', (_e, officeId: string, limit = 20) => {
     try {
-      // Get the latest event per ticket (final status only), ordered by most recent
-      const rows = db.prepare(`
+      // Return the latest event per ticket, newest first. We widen the window
+      // to 7 days (was 24h) so a slow shift still sees yesterday's completions,
+      // and we filter by office via a join on `tickets` so the recent list
+      // doesn't mix offices when an operator switches desks.
+      const hasOffice = typeof officeId === 'string' && officeId.length > 0;
+      const sql = `
         SELECT a.ticket_id, a.ticket_number, a.event_type, a.to_status, a.created_at, a.details
         FROM ticket_audit_log a
         INNER JOIN (
           SELECT ticket_id, MAX(created_at) as max_created
           FROM ticket_audit_log
-          WHERE created_at >= datetime('now', '-24 hours')
+          WHERE created_at >= datetime('now', '-7 days')
           GROUP BY ticket_id
         ) latest ON a.ticket_id = latest.ticket_id AND a.created_at = latest.max_created
+        ${hasOffice ? 'INNER JOIN tickets t ON t.id = a.ticket_id AND t.office_id = ?' : ''}
         ORDER BY a.created_at DESC
         LIMIT ?
-      `).all(limit) as any[];
+      `;
+      const params = hasOffice ? [officeId, limit] : [limit];
+      const rows = db.prepare(sql).all(...params) as any[];
       return rows.map((r: any) => ({
         id: r.ticket_id || null,
         ticket: r.ticket_number || '?',
@@ -2073,8 +2112,40 @@ app.whenReady().then(async () => {
   // Init structured logger (purges logs older than 14 days)
   logger.init({ minLevel: app.isPackaged ? 'info' : 'debug' });
 
-  // Init SQLite
-  initDB();
+  // Init SQLite — with hard-guard recovery. If initDB throws (corrupt
+  // WAL replay, disk I/O error, schema migration failure on a damaged
+  // file) we quarantine the DB and retry ONCE with a clean slate so
+  // the app still boots. Sync will rehydrate from the cloud; the UI
+  // will prompt the user to re-login.
+  try {
+    initDB();
+  } catch (err: any) {
+    logger.error('boot', 'initDB failed — forcing fresh DB and retrying', { error: err?.message });
+    try { prepareFreshDatabase(); } catch (e: any) {
+      logger.error('boot', 'prepareFreshDatabase also failed', { error: e?.message });
+    }
+    initDB(); // if this throws, the app exits — at that point the
+              // environment itself (disk, permissions) is broken.
+  }
+
+  const recovery = getLastRecovery();
+  if (recovery && recovery.action !== 'healthy') {
+    logger.warn('boot', 'Started with recovered database', recovery);
+    // Surface to the operator. Notification is a hard requirement here
+    // — a silent repair risks confusion when "today's ticket list" looks
+    // different than what was on screen before the crash. The renderer
+    // will also pick this up via db:recovery-status once the window is
+    // ready and render a more detailed banner.
+    app.whenReady().then(() => {
+      try {
+        const title = 'Qflo Station — local database repaired';
+        const body = recovery.action === 'restored'
+          ? 'The local database was corrupt and has been restored from the latest healthy backup. Please verify today\'s tickets.'
+          : 'The local database could not be repaired and has been rebuilt from the cloud. Please sign in again.';
+        new Notification({ title, body }).show();
+      } catch { /* notifications optional */ }
+    });
+  }
 
   // Start automatic database backups (daily, keeps last 7)
   startAutoBackup();

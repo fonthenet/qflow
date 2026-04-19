@@ -338,7 +338,11 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
   }, [prefill?.futureDate, prefill?.futureTime]);
   const futWilaya = customerData.wilaya ?? '';
   const setFutWilaya = (v: string) => setField('wilaya', v);
-  const [futSlots, setFutSlots] = useState<string[]>([]);
+  // Enriched slot shape: includes taken slots so the operator sees the
+  // full day's timeline (taken ones render disabled). `slots` from the
+  // API is still available-only for back-compat; we prefer `slotsDetailed`.
+  type FutSlot = { time: string; remaining: number; total: number; available: boolean; reason?: 'taken' | 'daily_limit' };
+  const [futSlots, setFutSlots] = useState<FutSlot[]>([]);
   const [futSlotsLoading, setFutSlotsLoading] = useState(false);
   const [futSubmitting, setFutSubmitting] = useState(false);
   const [futResult, setFutResult] = useState<{ success: boolean; date?: string; time?: string; error?: string } | null>(null);
@@ -356,7 +360,24 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
     // Use the links:public API to get the slug, or call booking-slots with officeId
     cloudFetch(`https://qflo.net/api/booking-slots?slug=${encodeURIComponent(officeId)}&serviceId=${encodeURIComponent(futService)}&date=${futDate}`, { signal: ctrl.signal })
       .then(r => r.json())
-      .then(data => { setFutSlots(data.slots ?? []); })
+      .then(data => {
+        // Prefer the enriched list (includes taken slots). Fall back to
+        // the legacy string[] if the server is old — every slot in that
+        // fallback is bookable by definition.
+        const detailed: any[] = Array.isArray(data.slotsDetailed) ? data.slotsDetailed : null;
+        if (detailed) {
+          setFutSlots(detailed.map(s => ({
+            time: s.time,
+            remaining: Number(s.remaining ?? 0),
+            total: Number(s.total ?? 1),
+            available: s.available !== false,
+            reason: s.reason,
+          })));
+        } else {
+          const legacy: string[] = Array.isArray(data.slots) ? data.slots : [];
+          setFutSlots(legacy.map(t => ({ time: t, remaining: 1, total: 1, available: true })));
+        }
+      })
       .catch(() => setFutSlots([]))
       .finally(() => setFutSlotsLoading(false));
     return () => ctrl.abort();
@@ -711,13 +732,28 @@ function InHouseBookingPanel({ departments, services, officeId, onBook, locale, 
               ) : futSlots.length > 0 ? (
                 <select
                   value={futTime}
-                  onChange={(e) => setFutTime(e.target.value)}
+                  onChange={(e) => {
+                    // Guard: never accept a taken slot even if somehow selected.
+                    const picked = futSlots.find(s => s.time === e.target.value);
+                    if (picked && picked.available === false) return;
+                    setFutTime(e.target.value);
+                  }}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                 >
                   <option value="">{t('Select...')}</option>
-                  {futSlots.map(slot => (
-                    <option key={slot} value={slot}>{slot}</option>
-                  ))}
+                  {futSlots.map(slot => {
+                    const takenLabel = slot.reason === 'daily_limit' ? t('full day') : t('taken');
+                    return (
+                      <option
+                        key={slot.time}
+                        value={slot.time}
+                        disabled={!slot.available}
+                        style={!slot.available ? { color: '#94a3b8' } : undefined}
+                      >
+                        {slot.time}{!slot.available ? ` — ${takenLabel}` : (slot.total > 1 ? ` (${slot.remaining}/${slot.total})` : '')}
+                      </option>
+                    );
+                  })}
                 </select>
               ) : (
                 <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: 'var(--text3)', fontSize: 11 }}>
@@ -1459,16 +1495,18 @@ function RemoteSupportSection({ t, locale }: { t: (key: string, values?: Record<
   return (
     <div className="sidebar-section">
       <button
+        type="button"
         onClick={() => setShowSupport((v) => !v)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-          padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+          padding: '6px 0', border: 'none', background: 'transparent', cursor: 'pointer',
+          userSelect: 'none',
         }}
       >
-        <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
+        <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0, pointerEvents: 'none' }}>
           {t('Remote Support')}
         </h4>
-        <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showSupport ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 12, color: 'var(--text3)', minWidth: 24, minHeight: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>{showSupport ? '▲' : '▼'}</span>
       </button>
       {showSupport && (
         <div style={{ marginTop: 8 }}>
@@ -1570,6 +1608,24 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   };
 
   const { confirm: styledConfirm } = useConfirmDialog();
+  // ── DB recovery banner ────────────────────────────────────────────
+  // Shown once per session when startup recovered from a corrupt local
+  // DB. Dismiss is stored in sessionStorage so it doesn't re-appear on
+  // window focus/route changes in the same run. On next launch, if the
+  // new DB is healthy, the banner simply doesn't show.
+  const [dbRecovery, setDbRecovery] = useState<null | { action: string; fromBackup?: string; reason?: string }>(null);
+  useEffect(() => {
+    if (sessionStorage.getItem('qflo_db_recovery_dismissed') === '1') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await window.qf?.db?.recoveryStatus?.();
+        if (!cancelled && r && r.action && r.action !== 'healthy') setDbRecovery(r);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
   const [names, setNames] = useState<Record<string, Record<string, string>>>({
@@ -2704,7 +2760,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const startServing = (id: string) => {
     updateTicketStatus(id, { status: 'serving', serving_started_at: new Date().toISOString() });
     const ticket = tickets.find((t) => t.id === id);
-    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Serving'));
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Serving'), ticket.id);
   };
 
   const complete = (id: string) => {
@@ -2713,7 +2769,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'served', completed_at: new Date().toISOString(), ...notesUpdate });
     const ticket = tickets.find((t) => t.id === id);
-    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Completed'));
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Completed'), ticket.id);
     showToast(t('{ticket} completed', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'success');
   };
 
@@ -2723,7 +2779,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'no_show', completed_at: new Date().toISOString(), ...notesUpdate });
     const ticket = tickets.find((t) => t.id === id);
-    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'));
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'No Show'), ticket.id);
     showToast(t('{ticket} marked no-show', { ticket: ticket?.ticket_number ?? translate(locale, 'Ticket') }), 'info');
   };
 
@@ -2737,7 +2793,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       showToast(result.error, 'error');
     } else {
       showToast(t('{name} has been banned', { name: result?.name || name || 'Customer' }), 'info');
-      if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Banned'));
+      if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Banned'), ticket.id);
     }
   };
 
@@ -2747,7 +2803,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       called_at: new Date().toISOString(),
       recall_count: (t?.recall_count ?? 0) + 1,
     });
-    if (t) addActivity(t.ticket_number, translate(locale, 'Recalled'));
+    if (t) addActivity(t.ticket_number, translate(locale, 'Recalled'), t.id);
   };
 
   const requeue = (id: string) => {
@@ -2761,7 +2817,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       parked_at: null,
     });
     const t = tickets.find((t) => t.id === id);
-    if (t) addActivity(t.ticket_number, translate(locale, 'Requeued'));
+    if (t) addActivity(t.ticket_number, translate(locale, 'Requeued'), t.id);
   };
 
   const takeOver = (id: string) => {
@@ -2770,7 +2826,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       called_by_staff_id: session.staff_id,
     });
     const ticket = tickets.find((t) => t.id === id);
-    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Taken over'));
+    if (ticket) addActivity(ticket.ticket_number, translate(locale, 'Taken over'), ticket.id);
   };
 
   const park = (id: string) => {
@@ -2785,7 +2841,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     });
     const ticket = tickets.find((t) => t.id === id);
     if (ticket) {
-      addActivity(ticket.ticket_number, translate(locale, 'Ticket parked'));
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket parked'), ticket.id);
       showToast(t('Ticket parked'), 'info');
     }
   };
@@ -2809,7 +2865,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     });
     const ticket = tickets.find((tk) => tk.id === id);
     if (ticket) {
-      addActivity(ticket.ticket_number, translate(locale, 'Ticket called back to desk'));
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket called back to desk'), ticket.id);
       showToast(t('Ticket called back to desk'), 'success');
     }
   };
@@ -2822,7 +2878,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     });
     const ticket = tickets.find((tk) => tk.id === id);
     if (ticket) {
-      addActivity(ticket.ticket_number, translate(locale, 'Ticket sent back to queue'));
+      addActivity(ticket.ticket_number, translate(locale, 'Ticket sent back to queue'), ticket.id);
       showToast(t('Ticket sent back to queue'), 'info');
     }
   };
@@ -2834,7 +2890,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     const notesUpdate = ticketNotes.trim() ? { notes: ticketNotes.trim() } : {};
     updateTicketStatus(id, { status: 'cancelled', completed_at: ts, ...notesUpdate });
     const tk = tickets.find((x) => x.id === id);
-    if (tk) addActivity(tk.ticket_number, translate(locale, 'Cancelled'));
+    if (tk) addActivity(tk.ticket_number, translate(locale, 'Cancelled'), tk.id);
   };
 
   const bookInHouse = async (data: { department_id: string; service_id?: string; customer_data: { name?: string; phone?: string; reason?: string; wilaya?: string }; priority: number; source: string; appointment_id?: string }) => {
@@ -2861,7 +2917,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
       fetchTickets();
       const customerLabel = data.customer_data.name || translate(locale, 'Walk-in');
       showToast(translate(locale, 'Ticket created: {ticket} for {name}', { ticket: result.ticket_number, name: customerLabel }), 'success');
-      addActivity(result.ticket_number, translate(locale, 'In-house booking'));
+      addActivity(result.ticket_number, translate(locale, 'In-house booking'), result.id);
       return result; // return to modal for confirmation screen
     } catch (err: any) {
       showToast(translate(locale, 'Failed to create ticket'), 'error');
@@ -3163,7 +3219,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   // Load recent activity from audit log on mount (persisted across restarts)
   useEffect(() => {
     if (!session?.office_id) return;
-    (window as any).qf?.activity?.getRecent(session.office_id, 10).then((rows: any[]) => {
+    (window as any).qf?.activity?.getRecent(session.office_id, 20).then((rows: any[]) => {
       if (rows?.length) {
         setRecentActivity(rows.map((r: any) => ({
           id: r.id ?? null,
@@ -3175,13 +3231,19 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
     }).catch(() => {});
   }, [locale, session?.office_id, translateAction]);
 
-  // Track completed actions — only keep the latest status per ticket
-  const addActivity = useCallback((ticket: string, action: string) => {
+  // Track completed actions — only keep the latest status per ticket.
+  // `id` is the ticket id; pass it so the row can be clicked to expand
+  // ticket details. Call sites without an id at hand fall back to a
+  // lookup by ticket_number in local state at click time.
+  const addActivity = useCallback((ticket: string, action: string, id?: string | null) => {
     setRecentActivity((prev) => {
       const filtered = prev.filter((a) => a.ticket !== ticket);
+      // Keep up to 20 entries in memory so a busy shift doesn't churn the
+      // list. The idle-panel renderer already caps what it displays via
+      // .slice(0, 15), so extra headroom here is free.
       return [
-        { ticket, action, time: formatDesktopTime(new Date(), locale) },
-        ...filtered.slice(0, 9),
+        { id: id ?? null, ticket, action, time: formatDesktopTime(new Date(), locale) },
+        ...filtered.slice(0, 19),
       ];
     });
   }, [locale]);
@@ -3216,7 +3278,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const VISIBLE_CHUNK = 50;
   const [showAllWaiting, setShowAllWaiting] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
-  const [showDevices, setShowDevices] = useState(true);
+  const [showDevices, setShowDevices] = useState(false);
   const visibleWaiting = useMemo(() => {
     if (showAllWaiting || filteredWaiting.length <= VISIBLE_CHUNK) return filteredWaiting;
     return filteredWaiting.slice(0, VISIBLE_CHUNK);
@@ -3260,6 +3322,39 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
   const minutesUntil = (iso: string) => Math.round((new Date(iso).getTime() - Date.now()) / 60000);
   return (
     <div className="station" role="main">
+      {dbRecovery && (
+        <div
+          role="alert"
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+            background: dbRecovery.action === 'fresh' ? '#b45309' : '#1d4ed8',
+            color: '#fff', padding: '10px 16px', display: 'flex', alignItems: 'center',
+            gap: 12, fontSize: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            {dbRecovery.action === 'restored'
+              ? t('Local database was repaired from a backup. Please verify today’s tickets.')
+              : t('Local database was rebuilt from the cloud. Please sign in again and verify today’s tickets.')}
+          </span>
+          <button
+            onClick={async () => {
+              if (!confirm(t('Rebuild the local database from the cloud? This will sign you out.'))) return;
+              try { await window.qf?.db?.rebuildFromCloud?.(); } catch { /* app will relaunch */ }
+            }}
+            style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer' }}
+          >
+            {t('Rebuild from cloud')}
+          </button>
+          <button
+            onClick={() => { sessionStorage.setItem('qflo_db_recovery_dismissed', '1'); setDbRecovery(null); }}
+            aria-label={t('Dismiss')}
+            style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: 18, cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* Sidebar toggle for mobile/tablet */}
       {isSmallScreen && (
         <>
@@ -5052,16 +5147,18 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
           return (
             <div className="sidebar-section">
               <button
+                type="button"
                 onClick={() => setShowDevices((v) => !v)}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                  padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+                  padding: '6px 0', border: 'none', background: 'transparent', cursor: 'pointer',
+                  userSelect: 'none',
                 }}
               >
-                <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0 }}>
+                <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text3)', textTransform: locale === 'ar' ? 'none' as const : 'uppercase' as const, letterSpacing: locale === 'ar' ? 'normal' : 1, margin: 0, pointerEvents: 'none' }}>
                   {isRemote ? t('Remote Access') : t('Devices & Network')}
                 </h4>
-                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{showDevices ? '▲' : '▼'}</span>
+                <span style={{ fontSize: 12, color: 'var(--text3)', minWidth: 24, minHeight: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>{showDevices ? '▲' : '▼'}</span>
               </button>
               {showDevices && (
                 <>
@@ -5140,7 +5237,7 @@ export function Station({ session, locale, isOnline, staffStatus, queuePaused, o
             updateTicketStatus(activeTicket.id, {
               desk_id: deskId, status: 'waiting', called_at: null, called_by_staff_id: null,
             });
-            addActivity(activeTicket.ticket_number, `→ ${deskName}`);
+            addActivity(activeTicket.ticket_number, `→ ${deskName}`, activeTicket.id);
             showToast(t('Transferred to {deskName}', { deskName }), 'info');
             setShowTransferModal(false);
           }}

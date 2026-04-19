@@ -86,16 +86,30 @@ export async function GET(request: NextRequest) {
   const totalWaiting = deptStats.reduce((sum, d) => sum + d.waiting, 0);
   const totalServing = deptStats.reduce((sum, d) => sum + d.serving, 0);
 
-  // Work schedule: normalize operating_hours to a weekday map (mon..sun ->
-  // { open, close } | null). Compute "open now" against the office's timezone.
+  // Work schedule: normalize operating_hours to a weekday map keyed by the
+  // canonical long-form weekday names used by the admin UI + slot-generator
+  // (monday..sunday). Compute "open now" against the office's timezone.
   const rawHours = ((office as any).operating_hours ?? {}) as Record<
     string,
     { open: string; close: string } | null
   >;
   const timezone = ((office as any).timezone as string | null) ?? null;
-  const weekdayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+  const weekdayKeys = [
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  ] as const;
   const operatingHours: Record<string, { open: string; close: string } | null> = {};
-  for (const d of weekdayKeys) operatingHours[d] = rawHours[d] ?? null;
+  // Accept both long-form ("monday") and 3-letter ("mon") keys — old rows may
+  // have either, and we want to be forgiving.
+  const shortToLong: Record<string, string> = {
+    mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday',
+    fri: 'friday', sat: 'saturday', sun: 'sunday',
+  };
+  for (const d of weekdayKeys) {
+    operatingHours[d] = rawHours[d] ?? null;
+  }
+  for (const [short, long] of Object.entries(shortToLong)) {
+    if (!operatingHours[long] && rawHours[short]) operatingHours[long] = rawHours[short];
+  }
 
   // 24/7 override — stored as `visit_intake_override_mode = 'always_open'` at
   // either the org or office level (the "Always open" switch in Settings).
@@ -125,8 +139,11 @@ export async function GET(request: NextRequest) {
     });
     const parts = fmt.formatToParts(now);
     const wd = parts.find((p) => p.type === 'weekday')?.value?.toLowerCase() ?? '';
-    const map: Record<string, string> = { mon: 'mon', tue: 'tue', wed: 'wed', thu: 'thu', fri: 'fri', sat: 'sat', sun: 'sun' };
-    todayKey = map[wd] ?? null;
+    const shortToLongDay: Record<string, string> = {
+      mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday',
+      fri: 'friday', sat: 'saturday', sun: 'sunday',
+    };
+    todayKey = shortToLongDay[wd] ?? null;
     const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
     const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
     let h24 = parseInt(hh, 10);

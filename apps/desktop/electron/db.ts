@@ -3,25 +3,54 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './logger';
+import {
+  recoverDatabaseIfNeeded,
+  checkOpenDatabaseIntegrity,
+  checkIntegrity as checkIntegrityOfFile,
+  quarantineDatabase,
+  type RecoveryOutcome,
+} from './db-integrity';
 
 let db: Database.Database;
+
+// The outcome of the last startup recovery pass. Consumed by main.ts
+// to surface a banner in the renderer ("Local database was repaired...")
+// or to trigger a forced re-login + full resync when we started fresh.
+let lastRecovery: RecoveryOutcome | null = null;
+export function getLastRecovery(): RecoveryOutcome | null {
+  return lastRecovery;
+}
 
 export function initDB() {
   const userDataPath = app.getPath('userData');
   const dbDir = path.join(userDataPath, 'data');
+  const backupDir = path.join(userDataPath, 'backups');
 
-  // Ensure directory exists
+  // Ensure directories exist
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
 
   const dbPath = path.join(dbDir, 'qflo.db');
-  db = new Database(dbPath);
 
-  // WAL mode for crash safety — survives power failures
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('foreign_keys = ON');
+  // ── Pre-open corruption recovery ──────────────────────────────────
+  // Run integrity checks BEFORE opening the main handle. If the file
+  // is corrupt we quarantine it and restore from the newest healthy
+  // backup (or start fresh and let the sync engine rehydrate from the
+  // cloud). This is the commercial-grade guard: users never see
+  // mystery failures caused by a bad page — the app heals itself.
+  lastRecovery = recoverDatabaseIfNeeded({ dbPath, backupDir });
+  if (lastRecovery.action !== 'healthy') {
+    logger.warn('db', 'Database auto-recovery executed', lastRecovery);
+  }
+
+  db = openDatabaseWithFallback(dbPath, backupDir);
+  // pragmas (journal_mode=WAL, synchronous=NORMAL, foreign_keys=ON)
+  // are set inside openDatabaseWithFallback so they apply on fallback
+  // paths too — do not re-set here.
 
   // Create tables
   db.exec(`
@@ -308,14 +337,19 @@ export function initDB() {
   // Indexes that depend on migrated columns (must come after ALTER TABLEs)
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(next_retry_at) WHERE synced_at IS NULL AND next_retry_at IS NOT NULL`); } catch { /* */ }
 
-  // ── Integrity check on startup — detect corruption early ──
-  try {
-    const integrity = db.pragma('integrity_check') as any[];
-    if (integrity?.[0]?.integrity_check !== 'ok') {
-      logger.error('db', 'INTEGRITY CHECK FAILED', { integrity });
-    }
-  } catch (err) {
-    logger.error('db', 'Could not run integrity check', { err });
+  // ── Post-open integrity check ─────────────────────────────────────
+  // recoverDatabaseIfNeeded already ran a read-only integrity check
+  // before we opened. This is a belt-and-braces second pass: opening
+  // a DB can replay a stale WAL and reveal corruption the pre-open
+  // check missed. If it fails here, we cannot continue — throwing
+  // trips the outer handler in main.ts which restarts the app with a
+  // clean DB.
+  const postOpen = checkOpenDatabaseIntegrity(db);
+  if (!postOpen.ok) {
+    logger.error('db', 'Post-open integrity check failed — aborting initDB', postOpen);
+    try { db.close(); } catch { /* already bad */ }
+    quarantineDatabase(dbPath);
+    throw new Error(`Database corrupt after open: ${postOpen.reason}`);
   }
 
   // Cleanup old audit log entries (keep 90 days)
@@ -354,6 +388,56 @@ export function initDB() {
 export function getDB(): Database.Database {
   if (!db) throw new Error('Database not initialized');
   return db;
+}
+
+// ── Defensive DB open ─────────────────────────────────────────────
+// `new Database(path)` can throw SQLITE_CORRUPT on open when a stale
+// WAL references freed pages, even though the pre-open read-only
+// probe succeeded. When that happens, quarantine and retry with a
+// clean file (restored from backup if we have one, else empty).
+// After one retry, give up and let the error propagate — at that
+// point, something outside SQLite is wrong (disk, permissions, A/V)
+// and silently continuing would hide the real problem.
+function openDatabaseWithFallback(dbPath: string, backupDir: string): Database.Database {
+  try {
+    const handle = new Database(dbPath);
+    handle.pragma('journal_mode = WAL');
+    handle.pragma('synchronous = NORMAL');
+    handle.pragma('foreign_keys = ON');
+    return handle;
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    logger.error('db', 'Primary DB open failed — attempting recovery', { error: msg });
+    quarantineDatabase(dbPath);
+    // Re-run recovery now that the broken file is out of the way.
+    // recoverDatabaseIfNeeded is a no-op when the file is missing and
+    // will restore from backup if a healthy one exists.
+    lastRecovery = recoverDatabaseIfNeeded({ dbPath, backupDir });
+    const retry = new Database(dbPath);
+    retry.pragma('journal_mode = WAL');
+    retry.pragma('synchronous = NORMAL');
+    retry.pragma('foreign_keys = ON');
+    logger.warn('db', 'DB reopened after fallback', { outcome: lastRecovery });
+    return retry;
+  }
+}
+
+// ── Manual rebuild from cloud ─────────────────────────────────────
+// Exposed through IPC for the Settings → Advanced → "Rebuild local
+// database" action, and used by main.ts when startup recovery left us
+// on a fresh empty DB (so sync can tell the user to re-login).
+//
+// Caller MUST stop the sync engine before calling and restart the app
+// after — we don't try to hot-swap the `db` singleton while other
+// modules hold references to it.
+export function prepareFreshDatabase(): { quarantined: string } {
+  const userDataPath = app.getPath('userData');
+  const dbPath = path.join(userDataPath, 'data', 'qflo.db');
+  try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
+  try { db?.close(); } catch { /* already closed */ }
+  const quarantined = quarantineDatabase(dbPath);
+  logger.warn('db', 'Fresh database requested — quarantined current DB', { quarantined });
+  return { quarantined };
 }
 
 // ── Graceful DB shutdown ─────────────────────────────────────────
@@ -480,14 +564,31 @@ export function backupDatabase(): { path: string; size: number } | null {
       fs.mkdirSync(backupDir, { recursive: true });
     }
 
+    // Refuse to snapshot a corrupt source. A backup of a bad DB is
+    // worse than no backup — it poisons the recovery pool.
+    const sourceCheck = checkOpenDatabaseIntegrity(db);
+    if (!sourceCheck.ok) {
+      logger.error('db:backup', 'Source DB failed integrity check — refusing to back up', sourceCheck);
+      return null;
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const backupPath = path.join(backupDir, `qflo-${timestamp}.db`);
 
     // Use SQLite backup API (safe, atomic)
     db.backup(backupPath);
 
+    // Verify the backup we just wrote. If it fails, delete it so the
+    // recovery scanner never picks a corrupt file.
+    const verify = checkIntegrityOfFile(backupPath);
+    if (!verify.ok) {
+      logger.error('db:backup', 'Backup failed integrity verification — deleting', { backupPath, verify });
+      try { fs.unlinkSync(backupPath); } catch { /* best-effort */ }
+      return null;
+    }
+
     const stats = fs.statSync(backupPath);
-    logger.info('db:backup', 'Backup created', { backupPath, sizeKB: (stats.size / 1024).toFixed(1) });
+    logger.info('db:backup', 'Backup created and verified', { backupPath, sizeKB: (stats.size / 1024).toFixed(1) });
 
     // Cleanup: keep only the last 7 backups
     const backups = fs.readdirSync(backupDir)

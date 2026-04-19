@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('qf', {
       ipcRenderer.invoke('db:ban-customer', ticketId, reason),
     updateDesk: (deskId: string, updates: any) =>
       ipcRenderer.invoke('db:update-desk', deskId, updates),
+    // Health & recovery
+    recoveryStatus: () => ipcRenderer.invoke('db:recovery-status'),
+    rebuildFromCloud: () => ipcRenderer.invoke('db:rebuild-from-cloud'),
   },
 
   // Local cache (survives auth failures — prevents data disappearance)

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +27,7 @@ import {
   type IntakeField,
 } from '@qflo/shared';
 import { IntakeForm } from '@/components/IntakeForm';
+import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
 
@@ -43,20 +42,18 @@ function nextNDays(n: number): string[] {
   return days;
 }
 
-function formatDate(dateStr: string, t?: (key: string) => string): string {
+function formatDate(dateStr: string, t?: (key: string) => string, locale?: string): string {
   const d = new Date(dateStr + 'T12:00:00');
   const today = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
   if (dateStr === today) return t ? t('bookAppointment.today') : 'Today';
   if (dateStr === tomorrow) return t ? t('bookAppointment.tomorrow') : 'Tomorrow';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(locale || undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function formatTime(slot: string): string {
   const [h, m] = slot.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${m === 0 ? '00' : m} ${ampm}`;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 export default function BookAppointmentScreen() {
@@ -67,6 +64,7 @@ export default function BookAppointmentScreen() {
     useLocalSearchParams<{ slug: string; deptId?: string; serviceId?: string }>();
   const router = useRouter();
   const { colors, isDark } = useTheme();
+  const kbPad = useKeyboardPadding();
   const insets = useSafeAreaInsets();
   const { customerName: savedName, customerPhone: savedPhone, setCustomerInfo, addAppointment } = useAppStore();
   const scrollRef = useRef<ScrollView>(null);
@@ -368,7 +366,7 @@ export default function BookAppointmentScreen() {
           <View style={[s.summaryBlock, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderLight }]}>
             <Row label={t('bookAppointment.business')} value={info?.office.name ?? ''} colors={colors} />
             <Row label={t('bookAppointment.service')} value={service?.name ?? ''} colors={colors} />
-            <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t)} colors={colors} />
+            <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t, i18n.language)} colors={colors} />
             <Row label={t('bookAppointment.time')} value={formatTime(selectedSlot)} colors={colors} />
             <Row label={t('bookAppointment.name')} value={name} colors={colors} />
           </View>
@@ -386,11 +384,15 @@ export default function BookAppointmentScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView ref={scrollRef} contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md }]} keyboardShouldPersistTaps="handled">
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={[s.content, { paddingTop: insets.top + spacing.md, paddingBottom: 80 + kbPad }]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+      >
         {/* Back row */}
         <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={20} color={colors.primary} />
@@ -483,7 +485,7 @@ export default function BookAppointmentScreen() {
               <View style={{ marginTop: spacing.md }} onLayout={(e) => { timeSlotsY.current = e.nativeEvent.layout.y; }}>
                 <Text style={[s.timeSectionLabel, { color: colors.text }]}>
                   <Ionicons name="time-outline" size={16} color={colors.primary} />
-                  {'  '}{t('bookAppointment.availableTimesFor', { date: formatDate(selectedDate, t) })}
+                  {'  '}{t('bookAppointment.availableTimesFor', { date: formatDate(selectedDate, t, i18n.language) })}
                 </Text>
                 {slotsLoading ? (
                   <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg, marginBottom: spacing.md }} />
@@ -562,7 +564,7 @@ export default function BookAppointmentScreen() {
           <View>
             <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.yourDetails')}</Text>
             <Text style={[s.sectionSub, { color: colors.textSecondary }]}>
-              {formatDate(selectedDate, t)} · {formatTime(selectedSlot)}
+              {formatDate(selectedDate, t, i18n.language)} · {formatTime(selectedSlot)}
             </Text>
 
             {intakeFields.length === 0 && (
@@ -620,7 +622,7 @@ export default function BookAppointmentScreen() {
               <Row label={t('bookAppointment.business')} value={info?.office.name ?? ''} colors={colors} />
               <Row label={t('bookAppointment.department')} value={dept?.name ?? ''} colors={colors} />
               <Row label={t('bookAppointment.service')} value={service?.name ?? ''} colors={colors} />
-              <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t)} colors={colors} />
+              <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t, i18n.language)} colors={colors} />
               <Row label={t('bookAppointment.time')} value={formatTime(selectedSlot)} colors={colors} />
               <Row label={t('bookAppointment.name')} value={name} colors={colors} />
               {phone ? <Row label={t('bookAppointment.phone')} value={phone} colors={colors} /> : null}
@@ -642,7 +644,7 @@ export default function BookAppointmentScreen() {
           </View>
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -660,7 +662,7 @@ function MiniCalendar({
   colors: ReturnType<typeof useTheme>['colors'];
   isDark: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const availableSet = new Set(availableDates);
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -671,7 +673,8 @@ function MiniCalendar({
   const [viewYear, setViewYear] = useState(initialMonth.getFullYear());
   const [viewMonth, setViewMonth] = useState(initialMonth.getMonth());
 
-  const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const WEEKDAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+  const WEEKDAYS = WEEKDAY_KEYS.map((k) => t(`queuePeek.weekday.${k}`));
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   // Use UTC noon to avoid local timezone shifting the day
@@ -680,7 +683,7 @@ function MiniCalendar({
     return new Date(dateKey + 'T12:00:00Z').getUTCDay(); // 0=Sun
   })();
 
-  const monthLabel = new Date(viewYear, viewMonth).toLocaleDateString('en-US', {
+  const monthLabel = new Date(viewYear, viewMonth).toLocaleDateString(i18n.language || undefined, {
     month: 'long',
     year: 'numeric',
   });

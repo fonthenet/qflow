@@ -604,7 +604,40 @@
     "addNewPlace": "Ajouter un nouveau lieu",
     "viewQueues": "Voir les files",
     "ticket_one": "{{count}} ticket",
-    "ticket_other": "{{count}} tickets"
+    "ticket_other": "{{count}} tickets",
+    "count_one": "{{count}} lieu",
+    "count_other": "{{count}} lieux",
+    "book": "Réserver",
+    "open": "Ouvert",
+    "busy": "Occupé",
+    "closed": "Fermé",
+    "waiting_one": "{{count}} en attente",
+    "waiting_other": "{{count}} en attente",
+    "waitMinutes": "~{{count}} min",
+    "youreInQueue": "Vous êtes dans cette file",
+    "position": "Position n° {{count}}",
+    "pinned": "Épinglé",
+    "recent": "Récents",
+    "older": "Plus anciens",
+    "allCategories": "Tous",
+    "removeTitle": "Supprimer le lieu ?",
+    "removeMessage": "Cela retire uniquement {{name}} de votre liste de lieux. Votre historique est conservé.",
+    "cancel": "Annuler",
+    "remove": "Supprimer",
+    "share": "Partager",
+    "pin": "Épingler",
+    "unpin": "Désépingler",
+    "setWaitAlert": "Définir une alerte d'attente",
+    "clearWaitAlert": "Désactiver l'alerte d'attente",
+    "waitAlertPrompt": "Me notifier quand l'attente descend à :",
+    "waitAlertSet": "Alerte définie — nous vous avertirons quand {{count}} personnes ou moins attendent",
+    "waitAlertCleared": "Alerte d'attente désactivée",
+    "waitAlertNotificationTitle": "File courte à {{name}}",
+    "waitAlertNotificationBody": "Seulement {{count}} en attente maintenant — bon moment pour y aller.",
+    "linkBroken": "Ce lien de file a peut-être expiré. Scannez à nouveau le code QR.",
+    "shareMessage": "Rejoignez la file à {{name}} :",
+    "addByCode": "Ajouter par code",
+    "addByCodeHint": "Entrez un code Qflo à 6 caractères"
   },
 
   "profile": {
@@ -725,6 +758,7 @@
   },
 
   "kiosk": {
+    "intakeSub": "Nous l'utiliserons pour vous prévenir quand ce sera votre tour.",
     "loadingKiosk": "Chargement du kiosque…",
     "kioskUnavailable": "Kiosque indisponible",
     "unavailableMsg": "Ce kiosque est indisponible ou le bureau est introuvable.",
@@ -766,7 +800,23 @@
     "join": "Rejoindre",
     "updated": "Mis à jour {{time}}",
     "getTicketNow": "Obtenir un ticket maintenant",
-    "bookForLater": "Réserver pour plus tard"
+    "bookForLater": "Réserver pour plus tard",
+    "viewKioskList": "Voir la liste complète des services",
+    "workSchedule": "Horaires d'ouverture",
+    "openNow": "Ouvert maintenant",
+    "closedNow": "Fermé",
+    "closedToday": "Fermé",
+    "alwaysOpen": "Ouvert 24h/24",
+    "today": "Aujourd'hui",
+    "weekday": {
+      "monday": "Lun",
+      "tuesday": "Mar",
+      "wednesday": "Mer",
+      "thursday": "Jeu",
+      "friday": "Ven",
+      "saturday": "Sam",
+      "sunday": "Dim"
+    }
   },
 
   "ticketView": {

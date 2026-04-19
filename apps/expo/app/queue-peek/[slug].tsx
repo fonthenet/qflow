@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +31,7 @@ export default function QueuePeekScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(
@@ -62,8 +65,15 @@ export default function QueuePeekScreen() {
   };
 
   const handleJoinAny = () => {
-    router.push(`/kiosk/${slug}` as any);
+    // Skip the redundant kiosk welcome screen — jump straight into
+    // department/service selection. `start=pick` tells the kiosk to auto-advance
+    // past the "home" step on load.
+    router.push(`/kiosk/${slug}?start=pick` as any);
   };
+
+  const weekdayKeys = [
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+  ] as const;
 
   // ---- Loading ----
   if (loading) {
@@ -101,6 +111,7 @@ export default function QueuePeekScreen() {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
+        hour12: false,
       })
     : null;
 
@@ -141,6 +152,46 @@ export default function QueuePeekScreen() {
           </Text>
         )}
       </View>
+
+      {/* Work schedule pill button (opens modal) */}
+      {status.operatingHours && (
+        <TouchableOpacity
+          onPress={() => setScheduleOpen(true)}
+          activeOpacity={0.8}
+          style={[
+            s.schedulePill,
+            { backgroundColor: colors.surface, borderColor: colors.borderLight },
+          ]}
+        >
+          <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+          <Text style={[s.schedulePillText, { color: colors.text }]} numberOfLines={1}>
+            {(() => {
+              const todayHours = status.todayKey ? status.operatingHours?.[status.todayKey] : null;
+              const allDay = status.alwaysOpen || (todayHours && todayHours.open === todayHours.close);
+              if (allDay) return `${t('queuePeek.workSchedule')} · ${t('queuePeek.alwaysOpen')}`;
+              if (todayHours) return `${t('queuePeek.workSchedule')} · ${todayHours.open} – ${todayHours.close}`;
+              return `${t('queuePeek.workSchedule')} · ${t('queuePeek.closedToday')}`;
+            })()}
+          </Text>
+          <View style={[
+            s.openBadge,
+            { backgroundColor: status.openNow ? colors.success + '20' : colors.error + '15' },
+          ]}>
+            <View style={[s.openDot, { backgroundColor: status.openNow ? colors.success : colors.error }]} />
+            <Text style={[
+              s.openBadgeText,
+              { color: status.openNow ? colors.success : colors.error },
+            ]}>
+              {status.alwaysOpen
+                ? t('queuePeek.alwaysOpen')
+                : status.openNow
+                  ? t('queuePeek.openNow')
+                  : t('queuePeek.closedNow')}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
 
       {/* Summary */}
       <View style={s.summaryRow}>
@@ -236,6 +287,78 @@ export default function QueuePeekScreen() {
         variant="outline"
         style={{ marginTop: spacing.sm }}
       />
+
+      {/* Schedule modal */}
+      <Modal
+        visible={scheduleOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setScheduleOpen(false)}
+      >
+        <Pressable style={s.modalBackdrop} onPress={() => setScheduleOpen(false)}>
+          <Pressable
+            style={[s.modalCard, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={s.modalHeader}>
+              <Text style={[s.modalTitle, { color: colors.text }]}>{t('queuePeek.workSchedule')}</Text>
+              <TouchableOpacity onPress={() => setScheduleOpen(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[
+              s.openBadge,
+              { alignSelf: 'flex-start', backgroundColor: status.openNow ? colors.success + '20' : colors.error + '15', marginBottom: spacing.md },
+            ]}>
+              <View style={[s.openDot, { backgroundColor: status.openNow ? colors.success : colors.error }]} />
+              <Text style={[
+                s.openBadgeText,
+                { color: status.openNow ? colors.success : colors.error },
+              ]}>
+                {status.alwaysOpen
+                  ? t('queuePeek.alwaysOpen')
+                  : status.openNow
+                    ? t('queuePeek.openNow')
+                    : t('queuePeek.closedNow')}
+              </Text>
+            </View>
+
+            {weekdayKeys.map((day) => {
+              const hours = status.operatingHours?.[day];
+              const isToday = status.todayKey === day;
+              const isAllDay = status.alwaysOpen || (hours && hours.open === hours.close);
+              return (
+                <View
+                  key={day}
+                  style={[
+                    s.modalDayRow,
+                    { borderBottomColor: colors.borderLight },
+                    isToday && { backgroundColor: colors.primary + '10' },
+                  ]}
+                >
+                  <Text style={[
+                    s.modalDayLabel,
+                    { color: isToday ? colors.primary : colors.text, fontWeight: isToday ? '800' : '600' },
+                  ]}>
+                    {t(`queuePeek.weekday.${day}`)}{isToday ? ` · ${t('queuePeek.today')}` : ''}
+                  </Text>
+                  <Text style={[
+                    s.modalDayHours,
+                    { color: isAllDay ? colors.success : hours ? colors.text : colors.textMuted },
+                  ]}>
+                    {isAllDay
+                      ? t('queuePeek.alwaysOpen')
+                      : hours
+                        ? `${hours.open} – ${hours.close}`
+                        : t('queuePeek.closedToday')}
+                  </Text>
+                </View>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -438,6 +561,74 @@ const s = StyleSheet.create({
     color: '#fff',
   },
 
+  schedulePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    marginBottom: spacing.lg,
+  },
+  schedulePillText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  openBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+  },
+  openDot: { width: 6, height: 6, borderRadius: 3 },
+  openBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+  },
+  modalDayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.sm,
+  },
+  modalDayLabel: {
+    fontSize: fontSize.md,
+  },
+  modalDayHours: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
   bookLaterBtn: {
     flexDirection: 'row',
     alignItems: 'center',

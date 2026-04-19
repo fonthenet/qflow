@@ -356,7 +356,7 @@
       S.services = data.services;
       S.businessHours = data.business_hours || null;
       S.kioskConfig = data.kiosk_config || null;
-      S.checkInMode = data.default_check_in_mode || 'manual';
+      S.checkInMode = data.default_check_in_mode || 'hybrid';
       S.whatsappPhone = data.whatsapp_phone || '';
       S.messengerPageId = data.messenger_page_id || '';
       S.priorities = data.priorities || null;

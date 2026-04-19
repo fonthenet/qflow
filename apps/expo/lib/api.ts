@@ -231,6 +231,9 @@ export async function createKioskTicket(params: {
   serviceId: string;
   priorityCategoryId?: string;
   priority?: number;
+  customerName?: string;
+  customerPhone?: string;
+  customerData?: Record<string, string>;
 }): Promise<KioskTicketResult | { error: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/kiosk-ticket`, {
@@ -265,6 +268,11 @@ export interface QueueStatusResponse {
   totalWaiting: number;
   totalServing: number;
   bookingMode?: string;
+  operatingHours?: Record<string, { open: string; close: string } | null>;
+  timezone?: string | null;
+  openNow?: boolean;
+  todayKey?: string | null;
+  alwaysOpen?: boolean;
 }
 
 export async function fetchQueueStatus(slug: string): Promise<QueueStatusResponse | null> {
@@ -274,6 +282,40 @@ export async function fetchQueueStatus(slug: string): Promise<QueueStatusRespons
     return (await res.json()) as QueueStatusResponse;
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public directory search
+// ---------------------------------------------------------------------------
+export interface DirectorySearchResult {
+  orgId: string;
+  orgName: string;
+  logoUrl: string | null;
+  category: string | null;
+  officeId: string;
+  officeName: string;
+  address: string | null;
+  kioskSlug: string;
+}
+
+export async function searchDirectory(query: string): Promise<DirectorySearchResult[]> {
+  // Abort after 8s so the spinner can never hang indefinitely if the route
+  // is unreachable (e.g. older Vercel deploy without /api/directory/search).
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(
+      `${BASE_URL}/api/directory/search?q=${encodeURIComponent(query)}`,
+      { signal: controller.signal },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { results?: DirectorySearchResult[] };
+    return data.results ?? [];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

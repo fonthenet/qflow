@@ -604,7 +604,40 @@
     "addNewPlace": "إضافة مكان جديد",
     "viewQueues": "عرض القوائم",
     "ticket_one": "تذكرة واحدة",
-    "ticket_other": "{{count}} تذاكر"
+    "ticket_other": "{{count}} تذاكر",
+    "count_one": "مكان واحد",
+    "count_other": "{{count}} أماكن",
+    "book": "حجز",
+    "open": "مفتوح",
+    "busy": "مزدحم",
+    "closed": "مغلق",
+    "waiting_one": "{{count}} في الانتظار",
+    "waiting_other": "{{count}} في الانتظار",
+    "waitMinutes": "~{{count}} د",
+    "youreInQueue": "أنت في هذه القائمة",
+    "position": "المركز #{{count}}",
+    "pinned": "مثبّت",
+    "recent": "حديثة",
+    "older": "أقدم",
+    "allCategories": "الكل",
+    "removeTitle": "إزالة المكان؟",
+    "removeMessage": "سيؤدي هذا فقط إلى إزالة {{name}} من قائمة الأماكن. سيبقى السجل محفوظاً.",
+    "cancel": "إلغاء",
+    "remove": "إزالة",
+    "share": "مشاركة",
+    "pin": "تثبيت",
+    "unpin": "إلغاء التثبيت",
+    "setWaitAlert": "ضبط تنبيه الانتظار",
+    "clearWaitAlert": "إيقاف تنبيه الانتظار",
+    "waitAlertPrompt": "أبلغني عندما ينخفض الانتظار إلى:",
+    "waitAlertSet": "تم ضبط التنبيه — سنخبرك عندما يكون {{count}} أو أقل في الانتظار",
+    "waitAlertCleared": "تم إيقاف تنبيه الانتظار",
+    "waitAlertNotificationTitle": "القائمة قصيرة في {{name}}",
+    "waitAlertNotificationBody": "فقط {{count}} في الانتظار الآن — وقت مناسب للذهاب.",
+    "linkBroken": "قد يكون رابط القائمة منتهي الصلاحية. امسح رمز QR مجدداً.",
+    "shareMessage": "انضم إلى القائمة في {{name}}:",
+    "addByCode": "إضافة برمز",
+    "addByCodeHint": "أدخل رمز Qflo مكوّن من 6 أحرف"
   },
 
   "profile": {
@@ -725,6 +758,7 @@
   },
 
   "kiosk": {
+    "intakeSub": "سنستخدم هذه المعلومات لإشعارك عندما يحين دورك.",
     "loadingKiosk": "جارٍ تحميل الكشك…",
     "kioskUnavailable": "الكشك غير متاح",
     "unavailableMsg": "هذا الكشك غير متاح أو لم يتم العثور على المكتب.",
@@ -766,7 +800,23 @@
     "join": "انضم",
     "updated": "آخر تحديث {{time}}",
     "getTicketNow": "احصل على تذكرة الآن",
-    "bookForLater": "احجز لوقت لاحق"
+    "bookForLater": "احجز لوقت لاحق",
+    "viewKioskList": "عرض قائمة الخدمات الكاملة",
+    "workSchedule": "ساعات العمل",
+    "openNow": "مفتوح الآن",
+    "closedNow": "مغلق",
+    "closedToday": "مغلق",
+    "alwaysOpen": "مفتوح 24/7",
+    "today": "اليوم",
+    "weekday": {
+      "monday": "الإثنين",
+      "tuesday": "الثلاثاء",
+      "wednesday": "الأربعاء",
+      "thursday": "الخميس",
+      "friday": "الجمعة",
+      "saturday": "السبت",
+      "sunday": "الأحد"
+    }
   },
 
   "ticketView": {

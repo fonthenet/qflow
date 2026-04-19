@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +19,7 @@ import {
   type IntakeField,
 } from '@qflo/shared';
 import { IntakeForm } from '@/components/IntakeForm';
+import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
 type Step = 'loading' | 'select' | 'joining' | 'success' | 'error';
 
@@ -29,6 +28,7 @@ export default function JoinScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
   const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
+  const kbPad = useKeyboardPadding();
 
   const [step, setStep] = useState<Step>('loading');
   const [info, setInfo] = useState<JoinInfoResponse | null>(null);
@@ -271,12 +271,12 @@ export default function JoinScreen() {
   const selectedService = availableServices.find((s) => s.id === selectedServiceId);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: 80 + kbPad }]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
+      automaticallyAdjustKeyboardInsets
     >
       {/* Header */}
       <View style={styles.header}>
@@ -463,7 +463,6 @@ export default function JoinScreen() {
 
       <View style={{ height: spacing.xxl }} />
     </ScrollView>
-    </KeyboardAvoidingView>
   );
 }
 
