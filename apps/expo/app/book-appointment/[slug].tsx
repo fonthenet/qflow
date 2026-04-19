@@ -239,12 +239,21 @@ export default function BookAppointmentScreen() {
     } else {
       setSlots((result?.slots ?? []).map((t) => ({ time: t, available: true })));
     }
-    // Auto-scroll to time slots after loading
-    setTimeout(() => {
+    // Auto-scroll to time slots after loading. On slow Android devices a
+    // flat setTimeout(100) can fire before the slot-section's onLayout has
+    // run, leaving us with a stale Y of 0. Chain two RAFs so we wait for
+    // the commit *and* the subsequent layout pass, then bail out with a
+    // 300 ms fallback if the Y still hasn't been captured (happens when
+    // the section is already above the fold — no scroll needed).
+    const attempt = (tries: number) => {
       if (timeSlotsY.current > 0) {
-        scrollRef.current?.scrollTo({ y: timeSlotsY.current - 20, animated: true });
+        scrollRef.current?.scrollTo({ y: Math.max(0, timeSlotsY.current - 24), animated: true });
+        return;
       }
-    }, 100);
+      if (tries <= 0) return;
+      requestAnimationFrame(() => attempt(tries - 1));
+    };
+    requestAnimationFrame(() => requestAnimationFrame(() => attempt(6)));
   }, [slug, selectedServiceId]);
 
   useEffect(() => {
@@ -276,10 +285,14 @@ export default function BookAppointmentScreen() {
   const handleSelectSlot = (slot: string) => {
     Haptics.selectionAsync();
     setSelectedSlot(slot);
-    // If the business didn't enable any intake fields, skip the info step —
-    // name/phone come from the profile automatically (same exception we
-    // make for WhatsApp where the phone is auto-collected).
-    if (intakeFields.length === 0) {
+    // If the business didn't enable any intake fields AND we already know
+    // the customer's name (from their saved profile), skip the info step —
+    // same shortcut WhatsApp gets for the auto-collected phone. If the
+    // profile is empty, show the minimal name input so the staff sees who
+    // booked. This keeps the confirm screen from landing on a blank "Name"
+    // row for brand-new users who never filled out their profile.
+    const hasSavedIdentity = !!(savedName ?? '').trim();
+    if (intakeFields.length === 0 && hasSavedIdentity) {
       setStep('confirm');
     } else {
       setStep('info');
@@ -690,7 +703,14 @@ export default function BookAppointmentScreen() {
         )}
 
         {/* ---- CONFIRM ---- */}
-        {step === 'confirm' && (
+        {step === 'confirm' && (() => {
+          // Show the effective identity in the summary, not the raw
+          // fieldValues — when the business has no intake fields configured
+          // we still want the customer to see *who* they're booking as so
+          // a "Guest" ticket doesn't surprise them at the counter.
+          const displayName = (name.trim() || (savedName ?? '').trim()) || t('bookAppointment.guest', { defaultValue: 'Guest' });
+          const displayPhone = phone.trim() || (savedPhone ?? '').trim();
+          return (
           <View>
             <Text style={[s.sectionTitle, { color: colors.text }]}>{t('bookAppointment.confirmBooking')}</Text>
 
@@ -700,8 +720,8 @@ export default function BookAppointmentScreen() {
               <Row label={t('bookAppointment.service')} value={service?.name ?? ''} colors={colors} />
               <Row label={t('bookAppointment.date')} value={formatDate(selectedDate, t, i18n.language)} colors={colors} />
               <Row label={t('bookAppointment.time')} value={formatTime(selectedSlot)} colors={colors} />
-              <Row label={t('bookAppointment.name')} value={name} colors={colors} />
-              {phone ? <Row label={t('bookAppointment.phone')} value={phone} colors={colors} /> : null}
+              <Row label={t('bookAppointment.name')} value={displayName} colors={colors} />
+              {displayPhone ? <Row label={t('bookAppointment.phone')} value={displayPhone} colors={colors} /> : null}
               {notes.trim() ? <Row label={t('bookAppointment.notes')} value={notes.trim()} colors={colors} /> : null}
             </View>
 
@@ -729,7 +749,8 @@ export default function BookAppointmentScreen() {
               <Text style={[s.backLinkText, { color: colors.textSecondary }]}>{t('bookAppointment.editDetails')}</Text>
             </TouchableOpacity>
           </View>
-        )}
+          );
+        })()}
       </ScrollView>
     </View>
   );

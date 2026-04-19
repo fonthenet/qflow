@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,12 @@ export interface BookCTAProps {
   variant?: 'primary' | 'outline';
   /** Optional override label */
   label?: string;
+  /**
+   * Optional second-line hint under the main label — used on queue-peek
+   * to distinguish "Book for later" from "Get a ticket now". Omit to keep
+   * the compact single-line variant used in Places / place detail.
+   */
+  subtitle?: string;
   style?: any;
 }
 
@@ -26,6 +32,7 @@ export function BookCTA({
   bookingMode,
   variant = 'outline',
   label,
+  subtitle,
   style,
 }: BookCTAProps) {
   const { t } = useTranslation();
@@ -39,6 +46,7 @@ export function BookCTA({
   const bg = isPrimary ? colors.primary : 'transparent';
   const fg = isPrimary ? '#fff' : colors.primary;
   const border = isPrimary ? 'transparent' : colors.border;
+  const subFg = isPrimary ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
 
   return (
     <TouchableOpacity
@@ -47,13 +55,21 @@ export function BookCTA({
       style={[
         styles.btn,
         { backgroundColor: bg, borderColor: border, borderWidth: isPrimary ? 0 : 1.5 },
+        subtitle ? styles.btnStacked : null,
         style,
       ]}
     >
       <Ionicons name="calendar-outline" size={18} color={fg} />
-      <Text style={[styles.text, { color: fg }]}>
-        {label ?? t('queuePeek.bookForLater', { defaultValue: 'Book for later' })}
-      </Text>
+      <View style={subtitle ? styles.labelCol : undefined}>
+        <Text style={[styles.text, { color: fg }]}>
+          {label ?? t('queuePeek.bookForLater', { defaultValue: 'Book for later' })}
+        </Text>
+        {subtitle ? (
+          <Text style={[styles.subtitle, { color: subFg }]} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -67,8 +83,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: borderRadius.lg,
   },
+  btnStacked: {
+    paddingVertical: spacing.md - 2,
+  },
+  labelCol: {
+    alignItems: 'center',
+  },
   text: {
     fontSize: fontSize.md,
     fontWeight: '700',
+  },
+  subtitle: {
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+    marginTop: 1,
   },
 });

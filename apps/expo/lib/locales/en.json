@@ -599,6 +599,9 @@
   "places": {
     "noPlaces": "No places yet",
     "noPlacesMsg": "Scan a business QR code to add it here. You'll be able to check wait times and join queues without scanning again.",
+    "emptyTitle": "Find your first place",
+    "emptyLead": "Scan a business QR code, or search by name, service, or city.",
+    "emptySearchLink": "Find a place by name",
     "scanQR": "Scan QR Code",
     "searchPlaces": "Search places, services…",
     "findPlaceholder": "Search businesses to add…",
@@ -805,6 +808,8 @@
     "join": "Join",
     "updated": "Updated {{time}}",
     "getTicketNow": "Get a Ticket Now",
+    "getTicketNowSub": "Walk in — join the queue now",
+    "bookForLaterSub": "Reserve a specific date & time",
     "closedComeBack": "Closed — come back later",
     "bookForLater": "Book for Later",
     "viewKioskList": "View full service list",
@@ -927,7 +932,8 @@
     "available": "Available",
     "selected": "Selected",
     "today": "Today",
-    "tomorrow": "Tomorrow"
+    "tomorrow": "Tomorrow",
+    "guest": "Guest"
   },
 
   "tabs": {

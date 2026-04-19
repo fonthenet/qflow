@@ -284,7 +284,9 @@ export default function QueuePeekScreen() {
         </View>
       )}
 
-      {/* CTA row — greyed out when the office is closed */}
+      {/* Primary CTA — walk-up / "join the queue now". Greyed out when
+          the office is closed; the subtitle disappears in that state so
+          the disabled button isn't crowded with copy. */}
       <TouchableOpacity
         style={[
           s.joinAnyBtn,
@@ -302,15 +304,23 @@ export default function QueuePeekScreen() {
           size={20}
           color="#fff"
         />
-        <Text style={s.joinAnyBtnText}>
-          {isClosed ? t('queuePeek.closedComeBack', { defaultValue: 'Closed — come back later' }) : t('queuePeek.getTicketNow')}
-        </Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={s.joinAnyBtnText}>
+            {isClosed ? t('queuePeek.closedComeBack', { defaultValue: 'Closed — come back later' }) : t('queuePeek.getTicketNow')}
+          </Text>
+          {!isClosed && (
+            <Text style={s.joinAnyBtnSub}>
+              {t('queuePeek.getTicketNowSub', { defaultValue: 'Walk in — join the queue now' })}
+            </Text>
+          )}
+        </View>
       </TouchableOpacity>
 
       <BookCTA
         slug={slug}
         bookingMode={status?.bookingMode}
         variant="outline"
+        subtitle={t('queuePeek.bookForLaterSub', { defaultValue: 'Reserve a specific date & time' })}
         style={{ marginTop: spacing.sm }}
       />
 
@@ -585,6 +595,12 @@ const s = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '700',
     color: '#fff',
+  },
+  joinAnyBtnSub: {
+    fontSize: fontSize.xs,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 1,
   },
 
   schedulePill: {

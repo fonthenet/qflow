@@ -599,6 +599,9 @@
   "places": {
     "noPlaces": "Aucun lieu",
     "noPlacesMsg": "Scannez un code QR d'entreprise pour l'ajouter ici. Vous pourrez vérifier les temps d'attente et rejoindre les files sans scanner à nouveau.",
+    "emptyTitle": "Trouvez votre premier lieu",
+    "emptyLead": "Scannez un code QR, ou recherchez par nom, service ou ville.",
+    "emptySearchLink": "Chercher un lieu par nom",
     "scanQR": "Scanner un code QR",
     "searchPlaces": "Rechercher des lieux…",
     "findPlaceholder": "Rechercher des entreprises à ajouter…",
@@ -805,6 +808,8 @@
     "join": "Rejoindre",
     "updated": "Mis à jour {{time}}",
     "getTicketNow": "Obtenir un ticket maintenant",
+    "getTicketNowSub": "Sur place — rejoignez la file dès maintenant",
+    "bookForLaterSub": "Réservez une date et une heure précises",
     "closedComeBack": "Fermé — revenez plus tard",
     "bookForLater": "Réserver pour plus tard",
     "viewKioskList": "Voir la liste complète des services",
@@ -927,7 +932,8 @@
     "available": "Disponible",
     "selected": "Sélectionné",
     "today": "Aujourd'hui",
-    "tomorrow": "Demain"
+    "tomorrow": "Demain",
+    "guest": "Invité"
   },
 
   "tabs": {

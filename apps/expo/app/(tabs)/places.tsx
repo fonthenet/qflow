@@ -481,6 +481,10 @@ export default function PlacesScreen() {
   const savedPlacesRef = useRef(savedPlaces);
   savedPlacesRef.current = savedPlaces;
 
+  // Ref to the top-of-screen search input so the empty-state "Find a place"
+  // link can focus it instead of dropping the user into a dead end.
+  const searchInputRef = useRef<TextInput | null>(null);
+
   // Debounced directory search — fires as soon as the user types anything.
   useEffect(() => {
     const q = search.trim();
@@ -785,6 +789,7 @@ export default function PlacesScreen() {
           >
             <Ionicons name="search-outline" size={18} color={colors.textMuted} />
             <TextInput
+              ref={searchInputRef}
               style={[styles.searchInput, { color: colors.text }]}
               placeholder={
                 isEmpty
@@ -973,22 +978,14 @@ export default function PlacesScreen() {
               <Ionicons name="storefront-outline" size={56} color={colors.primary} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              {t('places.noPlaces')}
+              {t('places.emptyTitle', { defaultValue: 'Find your first place' })}
             </Text>
+            {/* One sentence instead of title + subtitle + hint. The old
+                copy stacked three text blocks which read as a wall; this
+                leads the eye straight to the CTAs. */}
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              {t('places.noPlacesMsg')}
-            </Text>
-            <Text
-              style={{
-                fontSize: fontSize.sm,
-                color: colors.textMuted,
-                textAlign: 'center',
-                marginBottom: spacing.md,
-                maxWidth: 300,
-              }}
-            >
-              {t('places.searchHint', {
-                defaultValue: 'Search by name, service, or city above — or scan a QR at the counter.',
+              {t('places.emptyLead', {
+                defaultValue: 'Scan a business QR code, or search by name, service, or city.',
               })}
             </Text>
             <TouchableOpacity
@@ -998,6 +995,21 @@ export default function PlacesScreen() {
             >
               <Ionicons name="qr-code-outline" size={20} color="#fff" />
               <Text style={styles.emptyActionText}>{t('places.scanQR')}</Text>
+            </TouchableOpacity>
+            {/* Secondary link — instead of a dead "search above" hint,
+                focus the search input so the user lands where they need
+                to type. Works on iOS and Android; no-op if the ref isn't
+                mounted yet. */}
+            <TouchableOpacity
+              onPress={() => searchInputRef.current?.focus()}
+              activeOpacity={0.6}
+              hitSlop={10}
+              style={{ marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            >
+              <Ionicons name="search-outline" size={16} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontSize: fontSize.sm, fontWeight: '600' }}>
+                {t('places.emptySearchLink', { defaultValue: 'Find a place by name' })}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (

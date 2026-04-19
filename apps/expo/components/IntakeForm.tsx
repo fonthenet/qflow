@@ -252,6 +252,11 @@ function WilayaPicker({
               ]}
               autoCorrect={false}
               autoCapitalize="none"
+              // Focus the search immediately so the user can just start
+              // typing — faster than scrolling 58 wilayas. Modal animates
+              // in first, so the keyboard ride-up feels coordinated.
+              autoFocus
+              returnKeyType="search"
             />
 
             <FlatList
@@ -340,8 +345,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    maxHeight: '80%',
-    minHeight: '55%',
+    // Target a sheet that feels like a picker, not a second screen —
+    // 75% max so the form behind stays in peripheral vision, 45% min so
+    // there's always enough room for the search field and a handful of
+    // results without feeling cramped.
+    maxHeight: '75%',
+    minHeight: '45%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
