@@ -97,6 +97,21 @@ export async function GET(request: NextRequest) {
   const operatingHours: Record<string, { open: string; close: string } | null> = {};
   for (const d of weekdayKeys) operatingHours[d] = rawHours[d] ?? null;
 
+  // 24/7 override — stored as `visit_intake_override_mode = 'always_open'` at
+  // either the org or office level (the "Always open" switch in Settings).
+  const officeSettings = ((office as any).settings as Record<string, any> | null) ?? {};
+  const alwaysOpen =
+    officeSettings.visit_intake_override_mode === 'always_open' ||
+    orgSettings.visit_intake_override_mode === 'always_open';
+
+  // Helper: treat times as minutes since midnight. Supports overnight ranges
+  // (close < open → spans midnight) and the common "close === open" shorthand
+  // that admins use to mean "open all day".
+  const parseMin = (v: string) => {
+    const [h = '0', m = '0'] = (v ?? '').split(':');
+    return parseInt(h, 10) * 60 + parseInt(m, 10);
+  };
+
   let openNow = false;
   let todayKey: string | null = null;
   try {
@@ -114,14 +129,27 @@ export async function GET(request: NextRequest) {
     todayKey = map[wd] ?? null;
     const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
     const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
-    const nowMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
-    const today = todayKey ? operatingHours[todayKey] : null;
-    if (today) {
-      const [oh, om] = today.open.split(':').map(Number);
-      const [ch, cm] = today.close.split(':').map(Number);
-      const o = oh * 60 + om;
-      const c = ch * 60 + cm;
-      openNow = nowMin >= o && nowMin < c;
+    let h24 = parseInt(hh, 10);
+    if (h24 === 24) h24 = 0; // some locales format midnight as 24
+    const nowMin = h24 * 60 + parseInt(mm, 10);
+
+    if (alwaysOpen) {
+      openNow = true;
+    } else {
+      const today = todayKey ? operatingHours[todayKey] : null;
+      if (today) {
+        const o = parseMin(today.open);
+        const c = parseMin(today.close);
+        if (o === c) {
+          // open == close → treat as 24h
+          openNow = true;
+        } else if (c > o) {
+          openNow = nowMin >= o && nowMin < c;
+        } else {
+          // overnight: e.g. 18:00 → 02:00
+          openNow = nowMin >= o || nowMin < c;
+        }
+      }
     }
   } catch {
     /* ignore */
@@ -141,5 +169,6 @@ export async function GET(request: NextRequest) {
     timezone,
     openNow,
     todayKey,
+    alwaysOpen,
   });
 }
