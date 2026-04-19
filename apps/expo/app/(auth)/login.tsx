@@ -23,10 +23,12 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { borderRadius, fontSize, spacing } from '@/lib/theme';
 
-// Keys for credential storage. SecureStore encrypts at the OS level
-// (iOS Keychain, Android Keystore) — the right home for a saved password.
+// Keys for credential storage. We persist email + a "remember" flag only.
+// The password is never stored — Supabase auth persists a refresh token via
+// AsyncStorage (see lib/supabase.ts) and auto-refreshes, so users stay signed
+// in across launches without the app holding a plaintext password.
 const CRED_EMAIL_KEY = 'qflo_login_email';
-const CRED_PASSWORD_KEY = 'qflo_login_password';
+const CRED_PASSWORD_KEY = 'qflo_login_password'; // legacy — cleared on launch
 const CRED_REMEMBER_KEY = 'qflo_login_remember';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -54,21 +56,21 @@ export default function LoginScreen() {
     }
   }, [authLoading, user, isStaff, staffRole]);
 
-  // Restore saved credentials if the user previously checked "Remember me"
+  // Restore saved email + remember-me preference on mount. Also proactively
+  // clear any legacy stored password from previous builds (see CRED_PASSWORD_KEY).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [savedEmail, savedPassword, savedRemember] = await Promise.all([
+        // Best-effort wipe of legacy plaintext password on every launch.
+        SecureStore.deleteItemAsync(CRED_PASSWORD_KEY).catch(() => {});
+        const [savedEmail, savedRemember] = await Promise.all([
           SecureStore.getItemAsync(CRED_EMAIL_KEY),
-          SecureStore.getItemAsync(CRED_PASSWORD_KEY),
           SecureStore.getItemAsync(CRED_REMEMBER_KEY),
         ]);
         if (cancelled) return;
-        // Only prefill if the user opted in last time (remember === 'true')
         if (savedRemember === 'true') {
           if (savedEmail) setEmail(savedEmail);
-          if (savedPassword) setPassword(savedPassword);
           setRememberMe(true);
         } else if (savedRemember === 'false') {
           setRememberMe(false);
@@ -107,16 +109,18 @@ export default function LoginScreen() {
           Alert.alert(t('auth.loginFailed'), error.message);
         }
       } else if (data.user) {
-        // Persist or clear saved credentials based on the checkbox
+        // Persist or clear saved email based on the checkbox. The password
+        // is never stored — Supabase's refresh-token session already keeps
+        // the user signed in across launches (see lib/supabase.ts).
         try {
           await SecureStore.setItemAsync(CRED_REMEMBER_KEY, rememberMe ? 'true' : 'false');
           if (rememberMe) {
             await SecureStore.setItemAsync(CRED_EMAIL_KEY, email.trim());
-            await SecureStore.setItemAsync(CRED_PASSWORD_KEY, password);
           } else {
             await SecureStore.deleteItemAsync(CRED_EMAIL_KEY);
-            await SecureStore.deleteItemAsync(CRED_PASSWORD_KEY);
           }
+          // Always clear any legacy stored password (no-op on fresh installs)
+          await SecureStore.deleteItemAsync(CRED_PASSWORD_KEY).catch(() => {});
         } catch { /* non-fatal — login still succeeds */ }
 
         const { data: staff } = await supabase

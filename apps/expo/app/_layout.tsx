@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { useTranslation } from 'react-i18next';
 import '@/lib/i18n'; // initialise i18n
-import { isRTL } from '@/lib/i18n';
+import { backIconName, isRTL } from '@/lib/i18n';
 
 // ── Global RTL text defaults ────────────────────────────────────────
 // Sets writingDirection on ALL Text & TextInput so Arabic renders
@@ -84,7 +84,7 @@ function SafeBackButton({ fallback, label }: { fallback: string; label: string }
         paddingVertical: 4,
       }}
     >
-      <Ionicons name="chevron-back" size={22} color="#fff" />
+      <Ionicons name={backIconName('chevron')} size={22} color="#fff" />
       <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{label}</Text>
     </TouchableOpacity>
   );
@@ -95,9 +95,20 @@ function RootNavigator() {
   const segments = useSegments();
   const { user, isLoading, isStaff, staffRole } = useAuth();
   const hasRedirected = useRef(false);
+  // Track the user id that owned the last redirect so we reset the guard when
+  // the signed-in account changes — otherwise signing out + signing back in
+  // as a different-role user within one session skips the redirect.
+  const lastRedirectUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (isLoading) return;
+    // Reset redirect guard whenever the authenticated user changes (including
+    // sign-out → null, and sign-in as a different account).
+    const currentUserId = user?.id ?? null;
+    if (lastRedirectUserRef.current !== currentUserId) {
+      hasRedirected.current = false;
+      lastRedirectUserRef.current = currentUserId;
+    }
 
     // On web, the Expo app is the customer-facing app only.
     // The admin dashboard is the separate Next.js app — never redirect to it.

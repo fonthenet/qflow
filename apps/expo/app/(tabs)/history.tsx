@@ -134,6 +134,11 @@ export default function HistoryScreen() {
   }, [savedAppointments]);
 
   const refreshingRef = useRef(false);
+  // Memo of (appointmentId → last scheduled_at we already fired a reschedule
+  // notification for). Prevents duplicate banners when the ref hasn't caught
+  // up with the store yet, or when two overlapping polls land before
+  // updateAppointment commits.
+  const notifiedRescheduleRef = useRef<Record<string, string>>({});
 
   const refreshAppointments = useCallback(async () => {
     if (refreshingRef.current) return; // guard against overlapping polls
@@ -172,7 +177,8 @@ export default function HistoryScreen() {
           // Fire an alert *after* persisting the new status so the user
           // can tap through to the updated card. Fire-and-forget —
           // notifyAppointmentStatusChange swallows its own errors.
-          if (wasRescheduled) {
+          if (wasRescheduled && notifiedRescheduleRef.current[a.id] !== nextAt) {
+            notifiedRescheduleRef.current[a.id] = nextAt!;
             notifyAppointmentStatusChange({
               previousStatus,
               nextStatus,

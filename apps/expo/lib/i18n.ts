@@ -87,4 +87,15 @@ export function isRTL(): boolean {
   return i18n.language === 'ar';
 }
 
+/** Ionicons back-arrow name that mirrors in RTL. Use this wherever a screen
+ *  renders a "← back" affordance so Arabic users see the arrow pointing the
+ *  correct (visual) way. Pass the style you want: 'arrow' → arrow-back /
+ *  arrow-forward; 'chevron' → chevron-back / chevron-forward. */
+export function backIconName(style: 'arrow' | 'chevron' = 'chevron'):
+  | 'chevron-back' | 'chevron-forward' | 'arrow-back' | 'arrow-forward' {
+  const rtl = isRTL();
+  if (style === 'arrow') return rtl ? 'arrow-forward' : 'arrow-back';
+  return rtl ? 'chevron-forward' : 'chevron-back';
+}
+
 export default i18n;

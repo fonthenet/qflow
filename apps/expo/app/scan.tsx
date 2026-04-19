@@ -18,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAppStore } from '@/lib/store';
+import { backIconName } from '@/lib/i18n';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 
 import { API_BASE_URL as BASE_URL } from '@/lib/config';
@@ -254,7 +255,7 @@ export default function ScanScreen() {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name={backIconName('arrow')} size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.scanTitle}>{t('scan.scanQR')}</Text>
         <Text style={styles.scanSubtitle}>{t('scan.pointAtQR')}</Text>

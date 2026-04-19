@@ -641,7 +641,8 @@
     "linkBroken": "Ce lien de file a peut-être expiré. Scannez à nouveau le code QR.",
     "shareMessage": "Rejoignez la file à {{name}} :",
     "addByCode": "Ajouter par code",
-    "addByCodeHint": "Entrez un code Qflo à 6 caractères"
+    "addByCodeHint": "Entrez un code Qflo à 6 caractères",
+    "invalidCode": "Ce code n'est pas valide"
   },
 
   "profile": {

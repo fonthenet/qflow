@@ -165,8 +165,18 @@ export const useAppStore = create<AppState>()(
 
       addToHistory: (entry) => {
         const existing = get().history;
+        // Preserve the original "first seen" date for a given token — polling
+        // loops call addToHistory on every tick to refresh status, and without
+        // this guard the entry's date ticks forward constantly, making "Past
+        // visits" timestamps creep into the future. Keep the earliest date we
+        // ever recorded for this token; callers can still override by passing
+        // a different token (new ticket).
+        const prior = existing.find((h) => h.token === entry.token);
         const filtered = existing.filter((h) => h.token !== entry.token);
-        set({ history: [entry, ...filtered].slice(0, 50) });
+        const merged: HistoryEntry = prior
+          ? { ...entry, date: prior.date }
+          : entry;
+        set({ history: [merged, ...filtered].slice(0, 50) });
       },
 
       clearActiveTicket: (opts) => {

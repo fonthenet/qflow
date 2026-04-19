@@ -23,6 +23,7 @@ import { useTheme, borderRadius, fontSize, spacing, type ThemeColors } from '@/l
 import { getEnabledIntakeFields, type IntakeField } from '@qflo/shared';
 import { IntakeForm, hasMissingRequired, type IntakeValues } from '@/components/IntakeForm';
 import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
+import { backIconName } from '@/lib/i18n';
 
 type Step = 'loading' | 'home' | 'department' | 'service' | 'priority' | 'intake' | 'issued' | 'error';
 
@@ -400,7 +401,7 @@ export default function KioskScreen() {
     <View style={[s.header, { paddingHorizontal: containerPadding }]}>
       {showBack && (
         <TouchableOpacity style={s.backArrow} onPress={handleBack} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={isTablet ? 28 : 24} color={colors.text} />
+          <Ionicons name={backIconName('arrow')} size={isTablet ? 28 : 24} color={colors.text} />
         </TouchableOpacity>
       )}
       <View style={s.headerCenter}>

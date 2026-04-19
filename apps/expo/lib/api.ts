@@ -1,6 +1,29 @@
 import { API_BASE_URL as BASE_URL } from './config';
 import { supabase } from './supabase';
 
+/** fetch wrapper that aborts after `timeoutMs` (default 15 s) so a stalled
+ *  request doesn't hang the UI indefinitely. Callers that already catch
+ *  errors keep working unchanged — a timeout throws a regular AbortError
+ *  which their try/catch handles. Add an explicit `signal` to opt out
+ *  (e.g. if a caller needs to pass its own AbortController). */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit & { timeoutMs?: number } = {},
+): Promise<Response> {
+  const { timeoutMs = 15000, signal: callerSignal, ...rest } = init;
+  if (callerSignal) {
+    // Caller owns cancellation — just forward it.
+    return fetch(input, { ...rest, signal: callerSignal });
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...rest, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface TicketResponse {
   id: string;
   qr_token: string;
@@ -46,7 +69,7 @@ export interface TicketResponse {
 
 export async function fetchTicket(token: string): Promise<TicketResponse | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/app-clip-ticket?token=${encodeURIComponent(token)}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/app-clip-ticket?token=${encodeURIComponent(token)}`);
     if (!res.ok) return null;
     const data = await res.json();
     return data as TicketResponse;
@@ -64,7 +87,7 @@ export async function registerApns(params: {
   bundleId?: string;
 }): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/api/apns-register`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/apns-register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -90,7 +113,7 @@ export async function registerAndroid(params: {
   packageName?: string;
 }): Promise<{ ok: boolean; ticketId?: string; appointmentId?: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/android-register`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/android-register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -144,7 +167,7 @@ export interface JoinInfoResponse {
 
 export async function fetchJoinInfo(token: string): Promise<JoinInfoResponse | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/join-info?token=${encodeURIComponent(token)}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/join-info?token=${encodeURIComponent(token)}`);
     if (!res.ok) return null;
     return (await res.json()) as JoinInfoResponse;
   } catch {
@@ -172,7 +195,7 @@ export async function joinQueue(params: {
   customData?: Record<string, string>;
 }): Promise<JoinQueueResult | { error: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/join-queue`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/join-queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -223,7 +246,7 @@ export interface KioskInfoResponse {
 
 export async function fetchKioskInfo(slug: string): Promise<KioskInfoResponse | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/kiosk-info?slug=${encodeURIComponent(slug)}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/kiosk-info?slug=${encodeURIComponent(slug)}`);
     if (!res.ok) return null;
     return (await res.json()) as KioskInfoResponse;
   } catch {
@@ -252,7 +275,7 @@ export async function createKioskTicket(params: {
   customerData?: Record<string, string>;
 }): Promise<KioskTicketResult | { error: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/kiosk-ticket`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/kiosk-ticket`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -293,7 +316,7 @@ export interface QueueStatusResponse {
 
 export async function fetchQueueStatus(slug: string): Promise<QueueStatusResponse | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/queue-status?slug=${encodeURIComponent(slug)}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/queue-status?slug=${encodeURIComponent(slug)}`);
     if (!res.ok) return null;
     return (await res.json()) as QueueStatusResponse;
   } catch {
@@ -323,7 +346,7 @@ export async function searchDirectory(query: string): Promise<DirectorySearchRes
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/api/directory/search?q=${encodeURIComponent(query)}`,
       { signal: controller.signal },
     );
@@ -368,7 +391,7 @@ export async function fetchBookingSlots(
   date: string // YYYY-MM-DD
 ): Promise<BookingSlotsResponse | null> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/api/booking-slots?slug=${encodeURIComponent(slug)}&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(date)}`
     );
     if (!res.ok) return null;
@@ -405,7 +428,7 @@ export async function createBooking(params: {
   locale?: 'en' | 'fr' | 'ar';
 }): Promise<CreateBookingResult | { error: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/book-appointment`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/book-appointment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -456,7 +479,7 @@ export interface AppointmentLinkedTicket {
 /** Fetch the latest state for one booking via the reusable calendar token endpoint. */
 export async function fetchAppointmentByToken(calendarToken: string): Promise<AppointmentDetail | null> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/api/calendar/${encodeURIComponent(calendarToken)}?format=json`,
       { headers: { Accept: 'application/json' } },
     );
@@ -477,7 +500,7 @@ export async function fetchAppointmentWithTicket(calendarToken: string): Promise
   ticket: AppointmentLinkedTicket | null;
 }> {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/api/calendar/${encodeURIComponent(calendarToken)}?format=json`,
       { headers: { Accept: 'application/json' } },
     );
@@ -498,7 +521,7 @@ export async function cancelAppointment(
   reason?: string,
 ): Promise<{ ok: true; status: string } | { error: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/moderate-appointment`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/moderate-appointment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ calendarToken, action: 'cancel', reason }),
@@ -516,7 +539,7 @@ export async function checkInAppointment(
   calendarToken: string,
 ): Promise<{ ok: true; status: string; ticket?: { qr_token?: string; ticket_number?: string } | null } | { error: string }> {
   try {
-    const res = await fetch(`${BASE_URL}/api/moderate-appointment`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/moderate-appointment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ calendarToken, action: 'check_in' }),
@@ -540,7 +563,7 @@ export function getCalendarIcsUrl(calendarToken: string): string {
 
 export async function sendHeartbeat(deskId: string, staffId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/api/desk-heartbeat`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/desk-heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deskId, staffId }),
@@ -557,7 +580,7 @@ export async function sendHeartbeat(deskId: string, staffId: string): Promise<bo
 
 export async function triggerRecovery(): Promise<any> {
   try {
-    const res = await fetch(`${BASE_URL}/api/queue-recovery`, { method: 'POST' });
+    const res = await fetchWithTimeout(`${BASE_URL}/api/queue-recovery`, { method: 'POST' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -613,7 +636,7 @@ export async function fetchFeedback(ticketId: string): Promise<StoredFeedback | 
 
 export async function stopTracking(ticketId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/api/tracking-stop`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/tracking-stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticketId }),

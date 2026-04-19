@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -181,9 +181,13 @@ export default function JoinScreen() {
     );
   };
 
-  // Handle join
+  // Handle join — ref guard prevents double-tap duplicate tickets
+  // (setStep is async so checking `step` isn't enough)
+  const submittingRef = useRef(false);
   const handleJoin = async () => {
     if (!canJoin) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setStep('joining');
     // Collect trimmed values for enabled fields only
     const customData: Record<string, string> = {};
@@ -209,6 +213,7 @@ export default function JoinScreen() {
     if ('error' in result) {
       setStep('select');
       setErrorMsg(result.error);
+      submittingRef.current = false;
       return;
     }
     setTicketNumber(result.ticket.ticket_number);

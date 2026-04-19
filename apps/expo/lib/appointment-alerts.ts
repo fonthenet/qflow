@@ -20,6 +20,17 @@
 import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
+import i18n from './i18n';
+
+/** Map the app's i18n language to a BCP-47 tag Intl.DateTimeFormat accepts.
+ *  Falls back to 'fr' (the app's default) if the language is unknown. */
+function intlLocale(): string {
+  const lang = i18n.language || 'fr';
+  if (lang.startsWith('ar')) return 'ar';
+  if (lang.startsWith('fr')) return 'fr';
+  if (lang.startsWith('en')) return 'en';
+  return lang;
+}
 
 type T = (key: string, opts?: any) => string;
 
@@ -46,10 +57,11 @@ function resolveAlert(ctx: AppointmentAlertContext): { title: string; body: stri
   if (rescheduled) {
     const dt = new Date(rescheduled.nextAt);
     const tz = rescheduled.timezone || undefined;
-    const dateStr = new Intl.DateTimeFormat(undefined, {
+    const loc = intlLocale();
+    const dateStr = new Intl.DateTimeFormat(loc, {
       weekday: 'short', month: 'short', day: 'numeric', timeZone: tz,
     }).format(dt);
-    const timeStr = new Intl.DateTimeFormat(undefined, {
+    const timeStr = new Intl.DateTimeFormat(loc, {
       hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
     }).format(dt);
     return {

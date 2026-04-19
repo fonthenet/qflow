@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Easing,
   KeyboardAvoidingView,
   Linking,
@@ -19,7 +20,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +29,7 @@ import { fetchTicket, fetchAppointmentWithTicket, stopTracking, submitFeedback, 
 import { cancelTicket } from '@/lib/ticket-actions';
 import { formatTime, formatDate } from '@/lib/format-date';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
+import { backIconName } from '@/lib/i18n';
 
 import { API_BASE_URL as WEB_BASE } from '@/lib/config';
 const CALL_WAIT_SECONDS = 60;
@@ -564,6 +566,11 @@ function CustomerInfoCard({ ticket: tk, onColored = false }: { ticket: import('@
 export default function HomeScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const pathname = usePathname();
+  // Keep a ref so the poll callback (stable identity via useCallback) can
+  // read the current pathname without being re-created on every nav event.
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
   const { colors, isDark } = useTheme();
   const p = usePhasePalette();
   const {
@@ -684,7 +691,12 @@ export default function HomeScreen() {
     setIsOffline(false);
     setSyncLabel(t('customer.syncedTime', { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) }));
     if (prevStatusRef.current && prevStatusRef.current !== ticket.status) {
-      if (ticket.status === 'called') {
+      // Skip alerts for recalls (recall_count > 0 means staff already called
+      // once and pressed again) — the server re-sends its own push, and we
+      // don't want the tab-switch + big vibration to feel like a fresh event
+      // on every recall.
+      const isRecall = ((ticket as any).recall_count ?? 0) > 0;
+      if (ticket.status === 'called' && !isRecall) {
         // Pull the customer back to the Queue tab so the counter/desk info
         // is front-and-center the moment staff calls them — no matter what
         // tab they're currently on (Places, History, Profile, etc.). The
@@ -694,7 +706,19 @@ export default function HomeScreen() {
         // Clear the swipe-back dismiss flag so the tracking view
         // hydrates even if the user had swiped it away earlier.
         dismissedRef.current = false;
-        try { router.replace('/(tabs)/' as any); } catch {}
+        // Don't yank the user out of a modal flow (booking, join, kiosk,
+        // connect-station, etc.) — the tab switch would dismiss any sheet
+        // presented on top of the tabs stack, destroying form state. A
+        // pathname that starts with "/book-appointment", "/join", "/kiosk",
+        // "/scan", "/connect-station", "/queue-peek" etc. means we're on a
+        // non-tabs modal route; only redirect when we're already on a tabs
+        // pathname (which covers "/", "/history", "/places", "/profile").
+        const currentPath = pathnameRef.current ?? '';
+        const tabsRoots = ['/', '/history', '/places', '/profile'];
+        const inTabs = tabsRoots.some((p) => currentPath === p || currentPath.startsWith(p + '?') || currentPath.startsWith(p + '/'));
+        if (inTabs) {
+          try { router.replace('/(tabs)/' as any); } catch {}
+        }
         // Strong multi-burst ring vibration pattern so the customer notices
         // even when the screen is off (Android) or muted. Pattern is
         // [wait, vibrate, wait, vibrate, ...] in ms.
@@ -704,21 +728,11 @@ export default function HomeScreen() {
             : [0, 500, 500, 500, 500, 500],
         );
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        // Fire a local notification — plays the default alert sound in the
-        // foreground (setNotificationHandler has shouldPlaySound: true) and
-        // uses the queue-alerts channel's ring pattern on Android.
-        Notifications.scheduleNotificationAsync({
-          content: {
-            title: t('customer.ticketCalledTitle', { defaultValue: 'Your turn!' }),
-            body: t('customer.ticketCalledBody', {
-              defaultValue: 'Staff is calling you now. Head to the counter.',
-            }),
-            sound: 'default',
-            priority: Notifications.AndroidNotificationPriority.MAX,
-            ...(Platform.OS === 'android' ? { channelId: 'queue-alerts' } : {}),
-          },
-          trigger: null,
-        }).catch(() => {});
+        // NOTE: local scheduleNotificationAsync deliberately removed — the
+        // server sends an APNs/FCM push for the same transition, and our
+        // foreground notification handler (shouldShowAlert: true) surfaces
+        // it as a banner. Firing a local one on top would show two banners
+        // to the user.
       } else if (ticket.status === 'serving') {
         // Same auto-switch on serving — covers the case where the user
         // missed the called transition (app backgrounded, or the status
@@ -739,9 +753,29 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!activeToken) return;
     failCountRef.current = 0; setLoadError(null);
-    poll();
-    intervalRef.current = setInterval(poll, 5000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    // Only poll while the app is in the foreground. Backgrounded polling
+    // burns radio/battery, keeps firing notifications for transitions the
+    // user already got via push, and races with the APNs/FCM pipeline.
+    const startPolling = () => {
+      poll();
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(poll, 5000);
+    };
+    const stopPolling = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    if (AppState.currentState === 'active') startPolling();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') startPolling();
+      else stopPolling();
+    });
+    return () => {
+      stopPolling();
+      sub.remove();
+    };
   }, [activeToken, poll]);
 
   useEffect(() => { setRating(0); }, [activeToken]);
@@ -1073,7 +1107,7 @@ export default function HomeScreen() {
             style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: p.innerBg, borderWidth: 1, borderColor: p.innerBorder, alignItems: 'center', justifyContent: 'center' }}
             accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
           >
-            <Ionicons name="chevron-back" size={18} color={p.iconColor} />
+            <Ionicons name={backIconName('chevron')} size={18} color={p.iconColor} />
           </TouchableOpacity>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
             <Text style={{ fontSize: 13, fontWeight: '800', color: p.title, letterSpacing: 1.2, textTransform: 'uppercase' }} numberOfLines={1}>{officeName}</Text>
@@ -1253,7 +1287,7 @@ export default function HomeScreen() {
           style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center' }}
           accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
         >
-          <Ionicons name="chevron-back" size={20} color={p.textSecondary} />
+          <Ionicons name={backIconName('chevron')} size={20} color={p.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={[s.businessName, { color: p.title }]} numberOfLines={1}>{officeName}</Text>

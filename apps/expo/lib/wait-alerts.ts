@@ -9,7 +9,7 @@
  * Initialised once from app/_layout.tsx. Pauses when the app goes to
  * background to save battery and re-ticks when it returns to foreground.
  */
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import i18n from './i18n';
 import { useAppStore } from './store';
@@ -67,6 +67,11 @@ async function tick(): Promise<void> {
               placeId: place.id,
               kioskSlug: place.kioskSlug,
             },
+            // Route to the existing "Queue Updates" channel (see
+            // lib/notifications.ts:setupAndroidChannels). Without an explicit
+            // channelId Android would fall through to a "default" channel we
+            // never created, robbing the user of a dedicated toggle.
+            ...(Platform.OS === 'android' ? { channelId: 'queue-updates' } : {}),
           },
           trigger: null, // fire immediately
         });

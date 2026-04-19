@@ -4,3 +4,12 @@
 
 expo-env.d.ts
 # @end expo-cli.expo/
+
+# Build artifacts — never commit installer/bundle outputs
+*.aab
+*.apk
+*.ipa
+*.app
+.expo/
+dist/
+

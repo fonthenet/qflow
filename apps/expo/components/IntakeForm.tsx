@@ -117,6 +117,16 @@ export function IntakeForm({
                 numberOfLines={isMultiline ? 3 : 1}
                 autoFocus={autoFocusFirst && idx === 0}
                 returnKeyType={idx === fields.length - 1 ? 'done' : 'next'}
+                // Per-field length caps — match the WhatsApp validators in
+                // messaging-commands.ts so every surface enforces the same
+                // limits. Prevents a paste-bomb into "reason" (or any other
+                // free-text field) from reaching the server.
+                maxLength={
+                  isName ? 100 :
+                  isPhone ? 20 :
+                  isAge ? 3 :
+                  isMultiline ? 200 : 200
+                }
               />
             )}
           </View>

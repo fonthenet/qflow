@@ -641,7 +641,8 @@
     "linkBroken": "قد يكون رابط القائمة منتهي الصلاحية. امسح رمز QR مجدداً.",
     "shareMessage": "انضم إلى القائمة في {{name}}:",
     "addByCode": "إضافة برمز",
-    "addByCodeHint": "أدخل رمز Qflo مكوّن من 6 أحرف"
+    "addByCodeHint": "أدخل رمز Qflo مكوّن من 6 أحرف",
+    "invalidCode": "هذا الرمز غير صالح"
   },
 
   "profile": {

@@ -18,6 +18,7 @@ import { fetchQueueStatus, type QueueStatusResponse } from '@/lib/api';
 import { formatTime } from '@/lib/format-date';
 import { useTheme, borderRadius, fontSize, spacing } from '@/lib/theme';
 import { BookCTA } from '@/components/BookCTA';
+import { backIconName } from '@/lib/i18n';
 
 const REFRESH_INTERVAL_MS = 15_000;
 
@@ -136,7 +137,7 @@ export default function QueuePeekScreen() {
     >
       {/* Back */}
       <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
-        <Ionicons name="arrow-back" size={20} color={colors.primary} />
+        <Ionicons name={backIconName('arrow')} size={20} color={colors.primary} />
         <Text style={[s.backText, { color: colors.primary }]}>{t('common.back')}</Text>
       </TouchableOpacity>
 

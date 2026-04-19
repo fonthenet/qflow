@@ -28,6 +28,7 @@ import {
 } from '@qflo/shared';
 import { IntakeForm } from '@/components/IntakeForm';
 import { registerForAppointmentPush } from '@/lib/notifications';
+import { backIconName, isRTL } from '@/lib/i18n';
 import { useKeyboardPadding } from '@/lib/use-keyboard-padding';
 
 type Step = 'loading' | 'department' | 'service' | 'date' | 'time' | 'info' | 'confirm' | 'success' | 'error';
@@ -466,7 +467,7 @@ export default function BookAppointmentScreen() {
       >
         {/* Back row */}
         <TouchableOpacity style={s.backRow} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={20} color={colors.primary} />
+          <Ionicons name={backIconName('arrow')} size={20} color={colors.primary} />
           <Text style={[s.backText, { color: colors.primary }]}>{t('common.back')}</Text>
         </TouchableOpacity>
 
@@ -822,11 +823,11 @@ function MiniCalendar({
       {/* Month navigation */}
       <View style={cs.monthHeader}>
         <TouchableOpacity onPress={goPrev} disabled={!canGoPrev} activeOpacity={0.6} style={cs.navBtn}>
-          <Ionicons name="chevron-back" size={20} color={canGoPrev ? colors.text : colors.borderLight} />
+          <Ionicons name={isRTL() ? 'chevron-forward' : 'chevron-back'} size={20} color={canGoPrev ? colors.text : colors.borderLight} />
         </TouchableOpacity>
         <Text style={[cs.monthLabel, { color: colors.text }]}>{monthLabel}</Text>
         <TouchableOpacity onPress={goNext} disabled={!canGoNext} activeOpacity={0.6} style={cs.navBtn}>
-          <Ionicons name="chevron-forward" size={20} color={canGoNext ? colors.text : colors.borderLight} />
+          <Ionicons name={isRTL() ? 'chevron-back' : 'chevron-forward'} size={20} color={canGoNext ? colors.text : colors.borderLight} />
         </TouchableOpacity>
       </View>
 
