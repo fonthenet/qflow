@@ -27,7 +27,7 @@ export default function JoinScreen() {
   const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token: string }>();
   const router = useRouter();
-  const { setActiveToken, setActiveJoinToken, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
+  const { setActiveToken, setActiveJoinToken, addToHistory, recordPlace, customerName: savedName, customerPhone: savedPhone } = useAppStore();
   const kbPad = useKeyboardPadding();
 
   const [step, setStep] = useState<Step>('loading');
@@ -215,6 +215,24 @@ export default function JoinScreen() {
     setTicketToken(result.ticket.qr_token);
     setStep('success');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    // Record the ticket in local history immediately — matches the kiosk
+    // join flow. Without this, tickets joined via virtual-queue links never
+    // show up under "Recent visits" on the Active tab.
+    const office = info?.offices.find((o) => o.id === selectedOfficeId);
+    const service = info?.services.find((sv) => sv.id === selectedServiceId);
+    const dept = info?.departments.find((d) => d.id === selectedDeptId);
+    addToHistory({
+      token: result.ticket.qr_token,
+      ticketNumber: result.ticket.ticket_number,
+      officeName: office?.name ?? info?.organization.name ?? 'Unknown',
+      serviceName: service?.name ?? dept?.name ?? 'General',
+      status: result.ticket.status,
+      date: new Date().toISOString(),
+      officeId: office?.id,
+      joinToken: token ?? undefined,
+      officeTimezone: null,
+    });
   };
 
   const handleTrack = () => {
