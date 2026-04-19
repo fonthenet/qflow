@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "git-guardrails-claude-code": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "a04bf71be9abc44ca3b00e2f1740b37d2e471abadd20d43a31bccff7135baedf"
+    },
+    "improve-codebase-architecture": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "92ffd85a803661d754221f7aba260ee2065d3402eadf78872e227146fe1d6fbf"
+    },
+    "prd-to-issues": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "bf716dcf8babe700d05bb62892a1f6630d03044e0e04bac0c03780bd6508da5f"
+    },
+    "prd-to-plan": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "b602c684d70f1a27bce4d9db8fe5cca15e2923c083d6e4e6eda9d3fc0895afed"
+    },
+    "qa": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "a608d889794ef7f21a5dd31d96ca502b5e6f27b466ada759a3bf9846a2e6b236"
+    },
+    "setup-pre-commit": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "f2ce8663857d919cf7e4146cd716b0aee1757b85123b758e6e7d98fcbaf14054"
+    },
+    "tdd": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "e4453d2f51a009f6b49876cc4d46ce452194c54ea931d4a552a0eb0e9dd24c27"
+    },
+    "write-a-prd": {
+      "source": "mattpocock/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "computedHash": "d4234a2ebcf89b745a9e33f7e0831aef6ff5cbe48f91db54796ae7cd897d78a8"
+    }
+  }
+}

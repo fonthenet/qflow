@@ -99,7 +99,7 @@ interface AppState {
   setActiveKioskSlug: (slug: string | null) => void;
   setActiveJoinToken: (token: string | null) => void;
   addToHistory: (entry: HistoryEntry) => void;
-  clearActiveTicket: () => void;
+  clearActiveTicket: (opts?: { terminalStatus?: string }) => void;
   setCustomerInfo: (name: string, phone: string) => void;
   setThemeMode: (mode: ThemeMode) => void;
   /** Called when a business is first encountered (QR scan, join link). Creates or updates savedPlaces entry. */
@@ -155,7 +155,7 @@ export const useAppStore = create<AppState>()(
         set({ history: [entry, ...filtered].slice(0, 50) });
       },
 
-      clearActiveTicket: () => {
+      clearActiveTicket: (opts) => {
         const ticket = get().activeTicket;
         if (ticket) {
           get().addToHistory({
@@ -163,7 +163,10 @@ export const useAppStore = create<AppState>()(
             ticketNumber: ticket.ticket_number,
             officeName: ticket.office?.name ?? 'Unknown',
             serviceName: ticket.service?.name ?? ticket.department?.name ?? 'General',
-            status: ticket.status,
+            // Let the caller stamp a terminal status (e.g. 'cancelled' after
+            // the user taps "End visit"). Otherwise fall back to the ticket's
+            // last known status so the history card still reflects reality.
+            status: opts?.terminalStatus ?? ticket.status,
             date: new Date().toISOString(),
             officeId: ticket.office?.id,
             kioskSlug: get().activeKioskSlug ?? undefined,

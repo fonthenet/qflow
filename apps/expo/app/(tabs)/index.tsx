@@ -711,13 +711,30 @@ export default function HomeScreen() {
           dismissedRef.current = false;
           return;
         }
+        // tracking-stop returns ok=true even when the ticket was already
+        // terminal. Re-fetch to verify the server really shows the ticket as
+        // cancelled — if it doesn't, surface an error instead of silently
+        // pretending everything worked.
+        const verify = await fetchTicket(activeTicket?.qr_token ?? '').catch(() => null);
+        if (verify && !['cancelled', 'served', 'no_show', 'transferred'].includes(verify.status)) {
+          Alert.alert(
+            t('common.error', { defaultValue: 'Error' }),
+            t('customer.endVisitFailed', {
+              defaultValue: "Couldn't end the visit. Please try again.",
+            }),
+          );
+          dismissedRef.current = false;
+          return;
+        }
       } else {
         // We updated the row directly — still fire the REST endpoint so the
         // server can clean up push tokens / live activities.
         stopTracking(ticketId).catch(() => {});
       }
     }
-    clearActiveTicket();
+    // Stamp 'cancelled' in history so auto-recover never re-hydrates this on
+    // next app launch (even if poll caches stale ticket data).
+    clearActiveTicket({ terminalStatus: 'cancelled' });
     prevStatusRef.current = null;
   };
   const confirmEndVisit = () => {

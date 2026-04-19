@@ -375,16 +375,22 @@ export async function markNoShow(ticketId: string) {
 }
 
 // ── Cancel Ticket ─────────────────────────────────────────────────
+// Cancel any non-terminal ticket. We guard against overwriting an already
+// terminal status (served/no_show/cancelled/transferred) with a NOT IN filter,
+// but otherwise we allow cancel from waiting/issued/called/serving/parked etc.
 export async function cancelTicket(ticketId: string) {
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from('tickets')
     .update({
       status: 'cancelled',
       completed_at: new Date().toISOString(),
-    })
+    }, { count: 'exact' })
     .eq('id', ticketId)
-    .in('status', ['waiting', 'issued', 'called']);
+    .not('status', 'in', '(served,no_show,cancelled,transferred)');
   if (error) throw new Error(error.message);
+  // If RLS silently filtered the row out, count will be 0 — surface as error
+  // so the caller can fall back to the service-role REST endpoint.
+  if (count === 0) throw new Error('cancel_blocked_or_already_terminal');
   triggerNotification(ticketId, 'cancelled').catch(() => {});
   // Sync appointment via lifecycle API
   await syncTicketTerminal(ticketId, 'cancelled');

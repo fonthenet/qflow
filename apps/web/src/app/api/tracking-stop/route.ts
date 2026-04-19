@@ -49,8 +49,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    const cancellableStatuses = new Set(['issued', 'waiting', 'called']);
-    const shouldLeaveQueue = cancellableStatuses.has(existingTicket.status);
+    // Any non-terminal status can be cancelled by the customer leaving the
+     // queue — including 'serving' (customer walks away mid-service) and
+     // 'parked' (temporarily on hold). Only statuses that are already final
+     // should be left alone.
+    const terminalStatuses = new Set(['served', 'no_show', 'cancelled', 'transferred']);
+    const shouldLeaveQueue = !terminalStatuses.has(existingTicket.status);
 
     if (shouldLeaveQueue) {
       const { error: updateError } = await supabase
