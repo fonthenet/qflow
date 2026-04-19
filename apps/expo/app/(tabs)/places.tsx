@@ -458,6 +458,7 @@ export default function PlacesScreen() {
     markPlaceOk,
     markPlaceFailed,
     setPlaceBookingMode,
+    recordPlace,
     history,
     activeTicket,
   } = useAppStore();
@@ -846,7 +847,22 @@ export default function PlacesScreen() {
               <TouchableOpacity
                 key={r.officeId}
                 activeOpacity={0.7}
-                onPress={() => router.push(`/kiosk/${r.kioskSlug}` as any)}
+                onPress={() => {
+                  // Save the place locally and clear the search so the user
+                  // lands back on their Places list with the new entry
+                  // pinned to the top. They can tap through to the queue
+                  // from there — matches the "favorite first, act second"
+                  // pattern that already applies to pinned/recent places.
+                  recordPlace({
+                    id: r.officeId,
+                    name: r.orgName,
+                    address: r.address,
+                    kioskSlug: r.kioskSlug,
+                    logo_url: r.logoUrl,
+                    vertical: r.category ?? null,
+                  });
+                  setSearch('');
+                }}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
