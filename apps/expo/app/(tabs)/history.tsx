@@ -65,7 +65,11 @@ function isSameDay(iso: string): boolean {
   return d.toDateString() === now.toDateString();
 }
 
-function formatSectionDate(dateStr: string, t: (k: string) => string): string {
+function formatSectionDate(
+  dateStr: string,
+  t: (k: string) => string,
+  locale?: string,
+): string {
   const date = new Date(dateStr);
   const now = new Date();
   const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -74,7 +78,9 @@ function formatSectionDate(dateStr: string, t: (k: string) => string): string {
   if (diff === 0) return t('time.today');
   if (diff === 1) return t('time.yesterday');
   if (diff === -1) return t('time.tomorrow');
-  return date.toLocaleDateString(undefined, {
+  // Pass the app's active language so the month ("avril" vs "April") matches
+  // the rest of the UI instead of falling back to the device locale.
+  return date.toLocaleDateString(locale, {
     month: 'long',
     day: 'numeric',
     year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
@@ -100,7 +106,7 @@ function apptStatusColor(status: string, colors: ThemeColors): string {
 }
 
 export default function HistoryScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { history, savedAppointments } = useAppStore();
@@ -286,6 +292,7 @@ export default function HistoryScreen() {
         title: formatSectionDate(
           data[0].kind === 'appt' ? data[0].scheduledAt : data[0].date,
           t,
+          i18n.language,
         ),
         data: data.sort((a, b) => {
           const ai = a.kind === 'appt' ? a.scheduledAt : a.date;
